@@ -1,0 +1,27 @@
+{
+  "source": "GET https://gateway.vitanaland.com/api/v1/events?topic=orb.navigator.requested&limit=15",
+  "captured_at": "2026-09-18T10:03:xx-10:04:xxZ (session-relative; see recorded response below)",
+  "relevant_event": {
+    "id": "e3ff91c8-7902-4572-a640-9357df836006",
+    "vtid": "VTID-NAV-01",
+    "type": "orb.navigator.requested",
+    "topic": "orb.navigator.requested",
+    "source": "orb-tools-shared",
+    "status": "info",
+    "message": "navigate auto-redirect to DISCOVER.CART (/cart)",
+    "created_at": "2026-09-18T09:57:41.428+00:00",
+    "payload": {
+      "message": "navigate auto-redirect to DISCOVER.CART (/cart)",
+      "vtid": "VTID-NAV-01",
+      "env": "production",
+      "route": "/cart",
+      "reason": "najnovije vesti otvori ekran",
+      "is_mobile": false,
+      "screen_id": "DISCOVER.CART",
+      "session_id": "live-99f9553e-72b3-4731-8d43-797c2ab7f408",
+      "is_anonymous": false,
+      "had_mobile_route": false
+    }
+  },
+  "note": "payload.reason is Serbian: \"najnovije vesti otvori ekran\" = \"open the latest news screen\". The auto-redirected screen_id (DISCOVER.CART, the shopping cart) shares no real relationship with the query — this is the live 'random screen' incident VTID-04049 fixes. Adjacent event in the same window ('navigate_to_screen HOME.NEWS_ALL', session live-9adb6f62-...) confirms the DB catalog + navigate_to_screen tool resolve the News screens correctly when the model sends the right screen_id directly — the bug lives specifically in the free-text navigate tool's consultNavigator resolution path, not the catalog itself."
+}

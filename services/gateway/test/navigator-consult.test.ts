@@ -38,6 +38,20 @@ jest.mock('../src/services/orb-memory-bridge', () => ({
   writeMemoryItemWithIdentity: jest.fn().mockResolvedValue({ ok: true, id: 'test-mem-id' }),
 }));
 
+// VTID-04049: partial mock — only override the two semantic-search entry
+// points so the fast/keyword path (every other existing test in this file)
+// keeps running against the real static catalog byte-for-byte.
+const mockAreCatalogEmbeddingsReady = jest.fn();
+const mockSemanticSearchCatalog = jest.fn();
+jest.mock('../src/lib/navigation-catalog', () => {
+  const actual = jest.requireActual('../src/lib/navigation-catalog');
+  return {
+    ...actual,
+    areCatalogEmbeddingsReady: (...args: any[]) => mockAreCatalogEmbeddingsReady(...args),
+    semanticSearchCatalog: (...args: any[]) => mockSemanticSearchCatalog(...args),
+  };
+});
+
 import {
   consultNavigator,
   formatConsultResultForLLM,
@@ -46,6 +60,7 @@ import {
   NavigatorConsultResult,
 } from '../src/services/navigator-consult';
 import { writeMemoryItemWithIdentity } from '../src/services/orb-memory-bridge';
+import { NAVIGATION_CATALOG } from '../src/lib/navigation-catalog';
 
 const mockWrite = writeMemoryItemWithIdentity as jest.MockedFunction<typeof writeMemoryItemWithIdentity>;
 
@@ -130,6 +145,11 @@ beforeEach(() => {
   mockWrite.mockClear();
   mockSearchKnowledgeDocs.mockResolvedValue([]); // default: no KB hits
   mockEmptyMemory();
+  // Default: embeddings not ready, matching this suite's prior behavior
+  // (every pre-existing test in this file ran with the real, empty
+  // semantic path) — only the VTID-04049 describe block below opts in.
+  mockAreCatalogEmbeddingsReady.mockReset().mockReturnValue(false);
+  mockSemanticSearchCatalog.mockReset().mockResolvedValue([]);
 });
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -158,6 +178,57 @@ describe('consultNavigator — confidence bucketing', () => {
     expect(result.confidence).toBe('low');
     expect(result.primary).toBeNull();
     expect(result.blocked_reason).toBe('no_match');
+  });
+});
+
+describe('consultNavigator — pure semantic guess never auto-navigates (VTID-04049)', () => {
+  // Live incident: a Serbian free-text query with zero keyword overlap
+  // against the (EN/DE) catalog auto-redirected to DISCOVER.CART via the
+  // embedding-only path. Reproduced here by mocking a semantic hit on a
+  // query the REAL keyword scorer (unmocked, running against the true
+  // static catalog) cannot possibly match — proving the fix engages
+  // specifically when there is zero literal evidence for the pick, not
+  // merely a low keyword score.
+  const cartEntry = NAVIGATION_CATALOG.find(e => e.screen_id === 'DISCOVER.CART');
+  const nonsenseQuery = 'zibblequant frostvale plombicorn — xyzzy blorptastic';
+
+  test('zero keyword support, no viable runner-up → asks instead of confidently redirecting', async () => {
+    expect(cartEntry).toBeDefined(); // sanity: the live-incident screen_id still exists
+    mockAreCatalogEmbeddingsReady.mockReturnValue(true);
+    mockSemanticSearchCatalog.mockResolvedValue([
+      { entry: cartEntry, similarity: 0.8 },
+    ]);
+
+    const result = await consultNavigator(authedInput({ question: nonsenseQuery }));
+
+    // The old behavior this fix removes: decision:'confident' + a directive
+    // straight to DISCOVER.CART on pure vector similarity, no real evidence.
+    //
+    // `primary` legitimately still names the top pick (DISCOVER.CART) — that
+    // field is "best guess to talk about", unchanged by this fix and shared
+    // with the existing medium-confidence/confirmation branches. What this
+    // fix actually changes, and what orb-tools-shared.ts's auto-redirect
+    // gate (`consultResult.primary && confidence !== 'low' && !blocked_reason`)
+    // actually reads before dispatching a navigate directive, is
+    // `blocked_reason` — asserting that is the real safety contract, not the
+    // identity of `primary`.
+    expect(result.decision).not.toBe('confident');
+    expect(result.blocked_reason).toBe('no_match');
+  });
+
+  test('zero keyword support WITH a viable second candidate → medium confidence, asks either/or, never auto-navigates', async () => {
+    const overviewEntry = NAVIGATION_CATALOG.find(e => e.screen_id === 'HOME.OVERVIEW');
+    expect(overviewEntry).toBeDefined();
+    mockAreCatalogEmbeddingsReady.mockReturnValue(true);
+    mockSemanticSearchCatalog.mockResolvedValue([
+      { entry: cartEntry, similarity: 0.8 },
+      { entry: overviewEntry, similarity: 0.6 },
+    ]);
+
+    const result = await consultNavigator(authedInput({ question: nonsenseQuery }));
+
+    expect(result.decision).not.toBe('confident');
+    expect(result.confirmation_needed).toBe(true);
   });
 });
 

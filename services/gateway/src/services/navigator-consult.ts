@@ -658,6 +658,20 @@ export async function consultNavigator(
   if (isWeakSemanticOnly) {
     console.log(`[VTID-NAV-SEMANTIC] Weak semantic-only top pick (sim=${topHybrid!.semanticScore.toFixed(3)} < ${CONSULT_CONFIG.MIN_SEMANTIC_ONLY_SIMILARITY}) — demoting to low confidence`);
   }
+  // VTID-04049: a match with ZERO keyword support at all (pure vector
+  // similarity, no literal word overlap anywhere) must never silently
+  // auto-navigate, however high its similarity score. Clearing
+  // MIN_SEMANTIC_ONLY_SIMILARITY only proves the embedding found SOME
+  // resemblance — a short, generic phrase in a language the catalog has no
+  // native content for (a Serbian "otvori ekran" / "open screen" ask
+  // embedding near an unrelated screen whose own copy happens to mention
+  // "screen") clears that floor easily while carrying no real evidence for
+  // THIS screen over any other. Live incident: "najnovije vesti otvori
+  // ekran" (Serbian for "open the latest news screen") auto-redirected to
+  // DISCOVER.CART. Forces the `decision` computation below to ask instead
+  // of guessing — the same "ask, don't guess" contract navigate_to_screen's
+  // own DISAMBIGUATION rule already applies for a multi-screen request.
+  const isPureSemanticGuess = !!(topHybrid && topHybrid.keywordScore === 0 && topHybrid.semanticScore > 0);
 
   // VTID-NAV-02: build the top-3 picks payload for telemetry. Attach the raw
   // score so the admin Telemetry view can surface near-misses and the admin
@@ -681,12 +695,14 @@ export async function consultNavigator(
   } else if (top.score >= CONSULT_CONFIG.HIGH_CONFIDENCE_MIN) {
     // Strong winner — but if 2nd is close, downgrade to medium
     const ratio = second ? second.score / top.score : 0;
-    if (second && ratio >= CONSULT_CONFIG.AMBIGUITY_RATIO) {
+    if (isPureSemanticGuess || (second && ratio >= CONSULT_CONFIG.AMBIGUITY_RATIO)) {
       confidence = 'medium';
       confirmationNeeded = true;
       primary = entryToPick(top.entry, input.lang);
-      alternative = entryToPick(second.entry, input.lang);
-      suggestedQuestion = buildClarification(top.entry, second.entry, input.lang);
+      if (second && second.score >= CONSULT_CONFIG.MEDIUM_CONFIDENCE_MIN) {
+        alternative = entryToPick(second.entry, input.lang);
+        suggestedQuestion = buildClarification(top.entry, second.entry, input.lang);
+      }
     } else {
       confidence = 'high';
       primary = entryToPick(top.entry, input.lang);
@@ -731,6 +747,10 @@ export async function consultNavigator(
   //   - `low` confidence (or auth-blocked) → unknown
   //   - top has runner-up within AMBIGUITY_GAP AND runner-up clears
   //     DISAMBIGUATE_RUNNER_UP_MIN → ambiguous
+  //   - top is a PURE semantic guess (VTID-04049 — zero keyword support)
+  //     with no viable runner-up to offer as an either/or → unknown, ask
+  //     to rephrase, rather than confidently auto-navigating on vector
+  //     similarity alone
   //   - otherwise → confident
   //
   // Also build `alternatives[]` (up to 3) for the caller to surface in the
@@ -767,6 +787,13 @@ export async function consultNavigator(
       if (!suggestedQuestion && alternatives.length >= 2) {
         suggestedQuestion = buildClarification(top!.entry, runnerUp!.entry, input.lang);
       }
+    } else if (isPureSemanticGuess) {
+      // VTID-04049: zero keyword evidence and no viable runner-up to offer
+      // as an either/or — refuse to auto-navigate on vector similarity
+      // alone (see the incident note on isPureSemanticGuess's declaration).
+      decision = 'unknown';
+      blockedReason = blockedReason || 'no_match';
+      confirmationNeeded = true;
     } else {
       decision = 'confident';
       alternatives = [entryToPick(top!.entry, input.lang)];
