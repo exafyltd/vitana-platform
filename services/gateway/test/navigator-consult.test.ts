@@ -203,8 +203,17 @@ describe('consultNavigator — pure semantic guess never auto-navigates (VTID-04
 
     // The old behavior this fix removes: decision:'confident' + a directive
     // straight to DISCOVER.CART on pure vector similarity, no real evidence.
+    //
+    // `primary` legitimately still names the top pick (DISCOVER.CART) — that
+    // field is "best guess to talk about", unchanged by this fix and shared
+    // with the existing medium-confidence/confirmation branches. What this
+    // fix actually changes, and what orb-tools-shared.ts's auto-redirect
+    // gate (`consultResult.primary && confidence !== 'low' && !blocked_reason`)
+    // actually reads before dispatching a navigate directive, is
+    // `blocked_reason` — asserting that is the real safety contract, not the
+    // identity of `primary`.
     expect(result.decision).not.toBe('confident');
-    expect(result.primary?.screen_id).not.toBe('DISCOVER.CART');
+    expect(result.blocked_reason).toBe('no_match');
   });
 
   test('zero keyword support WITH a viable second candidate → medium confidence, asks either/or, never auto-navigates', async () => {

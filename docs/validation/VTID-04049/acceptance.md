@@ -23,7 +23,7 @@ either/or; with none, it asks the user to clarify (`decision: 'unknown'`,
 a nonexistent "inbox / AI feed / news" split with no matching real `screen_id`, giving the
 model no correct template for the actual News 3-way split.
 
-AC-1 — a zero-keyword-support (pure semantic) match with no viable second candidate never resolves `decision: 'confident'`; the picked screen is not silently returned as the navigation target.
+AC-1 — a zero-keyword-support (pure semantic) match with no viable second candidate never resolves `decision: 'confident'`, and `blocked_reason` is set to `'no_match'` — the exact field orb-tools-shared.ts's auto-redirect gate (`primary && confidence !== 'low' && !blocked_reason`) reads before dispatching a navigate directive, so the caller never actually redirects the user to the guessed screen.
 TEST: services/gateway/test/navigator-consult.test.ts
 
 AC-2 — a zero-keyword-support match WITH a viable second candidate still sets `confirmation_needed: true` and never resolves `decision: 'confident'` — it offers the either/or instead of guessing.
