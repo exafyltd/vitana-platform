@@ -2456,13 +2456,39 @@ unblock:**
    one more time for a fully consistent snapshot, verify row counts and
    spot-check RLS/identity parity (B4), flip connection strings, unfreeze.
 
+**Write-freeze mechanism — decided and scripted.** Platform owner chose
+DB-level REVOKE (over app-level maintenance mode alone) specifically
+because it blocks every write path — gateway API, any direct-from-frontend
+Supabase writes, edge functions, cron jobs — at the database-role level
+rather than relying on every write path in two repos having been routed
+through one choke point. `scripts/aws/aurora-cutover-freeze-writes.sql`
+(blanket `REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public
+FROM anon, authenticated, service_role` — safe as a blanket statement
+since revoking can only narrow privileges, never widen them) and
+`scripts/aws/aurora-cutover-restore-grants.sql` (4,174 precise `GRANT`
+statements, generated live from Supabase's actual current
+`information_schema.role_table_grants` for those three roles — deliberately
+NOT a blanket re-grant, which would widen `anon`'s/`authenticated`'s write
+footprint beyond what existed pre-cutover, a real security regression even
+with RLS as a second gate). Confirmed DMS's own connection
+(`postgres.inmkhvwdcuyhnxkgfvsb`, the Supabase superuser-equivalent role,
+per `aws dms describe-endpoints`) is NOT one of the three revoked roles —
+the final full-load DMS run is unaffected by the freeze. Auth-schema
+writes (session refresh/login) and Storage are deliberately left
+untouched — freezing those would break login with no data-consistency
+benefit, since neither is part of this Postgres dump/restore.
+**Regenerate `aurora-cutover-restore-grants.sql` if grants change before
+the actual window** — it is a live snapshot, not a static file, and other
+concurrent work on this shared Supabase project could add/remove grants
+before 2026-09-20.
+
 **Still open, in priority order:** (a) get the RLS-DDL execution unblocked
-— this is now the single most time-critical item; (b) design/confirm the
-actual write-freeze mechanism (no candidate identified yet — app-level
-maintenance mode? revoke write grants on Supabase? something else?); (c)
-root-cause the 2-table DROP_AND_CREATE conflict properly and pick
-`TRUNCATE_BEFORE_LOAD` vs. a manual fix; (d) a rehearsal full-load run
-timed with RLS intact; (e) post-restore identity/RLS parity verification
-(B4) before any connection-string flip. Never write to production Supabase
-outside this narrowly-scoped, already-approved migration mechanism; never
-take destructive AWS actions — both hold throughout.
+— this is now the single most time-critical item; (b) root-cause the
+2-table DROP_AND_CREATE conflict properly and pick `TRUNCATE_BEFORE_LOAD`
+vs. a manual fix; (c) a rehearsal full-load run timed with RLS intact; (d)
+post-restore identity/RLS parity verification (B4) before any
+connection-string flip; (e) regenerate the restore-grants script
+immediately before the real window if any time has passed since
+2026-09-18. Never write to production Supabase outside this narrowly-scoped,
+already-approved migration mechanism; never take destructive AWS actions
+— both hold throughout.
