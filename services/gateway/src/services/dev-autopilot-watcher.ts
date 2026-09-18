@@ -358,7 +358,15 @@ export function analyzeVerificationWindow(
     if (typeof e.type === 'string' && (
       e.type.startsWith('dev_autopilot.') ||
       e.type.startsWith('self_healing.') ||
-      e.type.startsWith('cicd.')
+      e.type.startsWith('cicd.') ||
+      // VTID-04043: ledger lifecycle transitions and Operator on-ramp
+      // bookkeeping are task-plane events about OTHER VTIDs, never a
+      // production runtime error. Measured 2026-09-18: a chat cancel of
+      // VTID-04040 emitted `vtid.lifecycle.failed` (status error) inside
+      // f8d79e6c's window and failed + escalated VTID-04038 while its PR
+      // #3412 was green.
+      e.type.startsWith('vtid.lifecycle.') ||
+      e.type.startsWith('operator.execution_onramp.')
     )) return false;
     return true;
   });
