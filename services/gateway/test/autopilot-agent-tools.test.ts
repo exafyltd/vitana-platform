@@ -69,6 +69,52 @@ describe('VTID-04006 executeAgentTool', () => {
     expect(w2.result).toContain('[end of file');
   });
 
+  it('VTID-04042: read_file windows a file above TEXT_FILE_MAX_BYTES by streaming instead of refusing it', async () => {
+    // ~2.4 MB: 60,000 lines of ~40 chars — the shape of the Command Hub app.js
+    // (2.6 MB) that Run #6 could not read in any range.
+    const lines = Array.from({ length: 60_000 }, (_, i) => `var line_${i + 1} = 'padding-padding-padding-x';`);
+    lines[27_110] = 'function formatTurnCostBadge(meta) { /* marker */ }';
+    await fs.writeFile(path.join(root, 'services/gateway/src/huge.js'), lines.join('\n'));
+    const st = await fs.stat(path.join(root, 'services/gateway/src/huge.js'));
+    expect(st.size).toBeGreaterThan(2_000_000);
+
+    const w = await executeAgentTool('read_file', { path: 'services/gateway/src/huge.js', start_line: 27_105, end_line: 27_115 }, ctx);
+    expect(w.isError).toBeFalsy();
+    expect(w.result).toContain('27111\tfunction formatTurnCostBadge(meta)');
+    expect(w.result).toMatch(/^\s*27105\t/);
+    expect(w.result).not.toContain('27116\t');
+    expect(w.result).toContain('file has 60000 lines — read from start_line=27116');
+
+    const head = await executeAgentTool('read_file', { path: 'services/gateway/src/huge.js' }, ctx);
+    expect(head.isError).toBeFalsy();
+    expect(head.result).toMatch(/^\s+1\tvar line_1 /);
+    expect(head.result).toContain(`read from start_line=${READ_MAX_LINES + 1}`);
+
+    const tail = await executeAgentTool('read_file', { path: 'services/gateway/src/huge.js', start_line: 59_999 }, ctx);
+    expect(tail.result).toContain('60000\tvar line_60000');
+    expect(tail.result).toContain('[end of file, 60000 lines]');
+  });
+
+  it('VTID-04042: search_text streams a file above TEXT_FILE_MAX_BYTES and reports the real line number', async () => {
+    const lines = Array.from({ length: 60_000 }, (_, i) => `var line_${i + 1} = 'padding-padding-padding-x';`);
+    lines[27_110] = 'function formatTurnCostBadge(meta) { /* marker */ }';
+    await fs.writeFile(path.join(root, 'services/gateway/src/huge.js'), lines.join('\n'));
+    const r = await executeAgentTool('search_text', { pattern: 'formatTurnCostBadge', path: 'services/gateway/src' }, ctx);
+    expect(r.isError).toBeFalsy();
+    expect(r.result).toContain('services/gateway/src/huge.js:27111: function formatTurnCostBadge(meta)');
+  });
+
+  it('VTID-04042: a large binary file is reported as binary by read_file and skipped by search_text', async () => {
+    const buf = Buffer.alloc(2_100_000, 0x41);
+    buf[1000] = 0; // NUL byte
+    await fs.writeFile(path.join(root, 'services/gateway/src/blob.bin'), buf);
+    const r = await executeAgentTool('read_file', { path: 'services/gateway/src/blob.bin' }, ctx);
+    expect(r.isError).toBe(true);
+    expect(r.result).toContain('binary file');
+    const s = await executeAgentTool('search_text', { pattern: 'AAAA', path: 'services/gateway/src', glob: 'services/gateway/src/blob.bin' }, ctx);
+    expect(s.result).toBe('(no matches)');
+  });
+
   it('read_file on a missing file or an escape is an error, not a throw', async () => {
     expect((await executeAgentTool('read_file', { path: 'nope.ts' }, ctx)).isError).toBe(true);
     const esc = await executeAgentTool('read_file', { path: '../../etc/hosts' }, ctx);
