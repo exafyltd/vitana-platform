@@ -1,0 +1,53 @@
+# VTID-04036 — commands log
+
+## Trace (read-only, oasis_events on the shared Supabase project)
+
+  -- the three reported sessions, all stages, 23:05–23:20 UTC 2026-09-17
+  select created_at, metadata from oasis_events
+    where metadata::text like '%d8aa2ed7ecf7%' or ... '%114a805af7dc%' or ... '%806adac753cd%'
+  → input_transcription previews are clean Serbian on every turn
+  → tool_call (get_day_summary / get_current_screen) → orb.live.tool.executed
+    response_sent:true → turn_complete with audio_out UNCHANGED (silent turn)
+  → session 1: 1007 "Request contains an invalid argument." at turn 5
+  → outputs/oasis-trace-2026-09-17.txt
+
+  -- Serbian sessions with a tool_call in the last 3 days, did any speak after it?
+  → speaks_after_tool = 0 on every session
+
+## Docs consulted
+
+  https://ai.google.dev/api/live  (BidiGenerateContentToolResponse:
+    "matched to the respective FunctionCall objects by the id field")
+  https://ai.google.dev/gemini-api/docs/live-tools  (model does not start
+    responding until the tool response is sent; examples echo id=fc.id)
+
+## Code
+
+  services/gateway/src/orb/live/upstream/vertex-live-client.ts        (serverIssuedCallIds, echo id)
+  services/gateway/src/orb/live/upstream/gemini-api-key-live-client.ts (same)
+  services/gateway/src/routes/orb-live.ts                              (legacy sender + isServerIssuedFunctionCallId)
+
+## Verification (local)
+
+  cd services/gateway
+  npx tsc --noEmit -p tsconfig.json            → exit 0
+  npx jest test/orb/live/upstream/vertex-live-client.test.ts \
+           test/orb/live/upstream/gemini-api-key-live-client.test.ts \
+           test/orb/live/session/upstream-provider-parity.test.ts \
+           test/orb/live/vertex-function-response-id.test.ts \
+           test/orb/live/session/still-here-complaint-backstop.test.ts
+                                               → 5 suites, 93 tests, 0 failures
+  → outputs/test-results.txt
+
+## AC-7 (post-merge, staging, test account only — voice session start/stop,
+## no community content, per CLAUDE.md's documented exception)
+
+  # 16 kHz mono PCM16 utterance synthesized with Amazon Polly (en-US, Joanna):
+  #   "What is my Vitana index today?" — any language works, the bridge's
+  #   system instruction answers in Serbian; what is under test is the
+  #   tool-response leg, not STT.
+  node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated \
+       --trials=<n> --utterance-pcm=<path to the PCM>
+  # then read back oasis_events for each session_id:
+  #   tool_call → orb.live.tool.executed → model_start_speaking (same turn), no 1007
+  → outputs/live-verification-post-merge.txt

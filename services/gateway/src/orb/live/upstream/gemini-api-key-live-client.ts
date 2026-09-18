@@ -112,6 +112,8 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
   private audioOutputHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
   private toolCallHandler: ((e: ToolCallEvent) => void) | null = null;
+  /** VTID-04036: function-call ids the server issued and we have not yet answered. */
+  private readonly serverIssuedCallIds = new Set<string>();
   private turnCompleteHandler: ((e: TurnCompleteEvent) => void) | null = null;
   private interruptedHandler: ((e: InterruptedEvent) => void) | null = null;
   private sessionResumptionHandler: ((e: SessionResumptionEvent) => void) | null = null;
@@ -379,12 +381,18 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
     if (this.ws.readyState !== WebSocket.OPEN) return false;
 
     // Same BidiGenerateContent envelope as VertexLiveClient.sendToolResult
-    // (shared proto definitions) — 'id' rejected, failures as Error output.
+    // (shared proto definitions). VTID-04036: the server-issued call id is
+    // echoed so the Live API can match the response to its pending
+    // FunctionCall — see the Vertex client for the measured failure when
+    // it is omitted. Failures ship as an `Error: …` output string.
     const outputText = result.success ? result.output : `Error: ${result.error ?? 'tool failed'}`;
+    const echoId = result.callId && this.serverIssuedCallIds.has(result.callId) ? result.callId : undefined;
+    if (echoId) this.serverIssuedCallIds.delete(echoId);
     const message = {
       tool_response: {
         function_responses: [
           {
+            ...(echoId ? { id: echoId } : {}),
             name: result.name,
             response: { output: outputText },
           },
@@ -466,6 +474,9 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
         args: fc.args || {},
         id: fc.id,
       }));
+      for (const c of calls) {
+        if (typeof c.id === 'string' && c.id.length > 0) this.serverIssuedCallIds.add(c.id);
+      }
       if (calls.length > 0) {
         this.toolCallHandler?.({ calls });
       }
