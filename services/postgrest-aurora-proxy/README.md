@@ -99,6 +99,74 @@ Two containers in one ECS task:
   `0000_auth_roles.sql` already exist — that groundwork from PR #3087 is
   done, this build doesn't need to repeat it.
 
+## Status update, 2026-09-19 (VTID-04101) — both items below are RESOLVED
+
+Both blockers this section originally described are closed, verified live
+the same day, under the platform-owner's Option A override (see the
+second correction notice above — Auth stays on Supabase permanently, this
+proxy is now the actual near-term target, not a stale artifact):
+
+- **Item 0 (FK constraints) is moot — Aurora has 0 foreign keys on the
+  public schema today**, confirmed via `pg_constraint`. Nothing to drop.
+  (Whether they were dropped and never restored, or something else
+  changed since August, wasn't investigated — the practical effect is the
+  same: no FK-drop step is needed before a full-load reload.)
+- **Item 1 (the `authenticator` role) already existed** — but its stored
+  password had drifted stale, the SAME class of defect independently found
+  and fixed the same day on the DMS target endpoint's own stored
+  `vitana_admin` password (see `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`
+  / the VTID-04084 branch history). Fixed by re-syncing the role's password
+  to match `vitana/aurora/prod/postgrest-authenticator-uri` via the RDS-
+  managed master secret (`rds!cluster-...`, readable by this session — a
+  DIFFERENT secret from the hand-named `vitana/aurora/prod/*` ones the
+  Deny below still blocks). The secret itself, the `anon`/`authenticated`/
+  `service_role` grants, and the four `auth.*` shim functions were all
+  already correct — confirmed live, not assumed.
+- **Aurora's data is now correct and RLS-complete, not just schema-ready**:
+  a fresh full-load reload (`vitana-fullload-rehearsal-v2`, TRUNCATE_BEFORE_LOAD,
+  592/594 tables, row counts verified matching Supabase exactly on
+  `profiles`/`chat_messages`/`app_users`) plus the full RLS-parity DDL
+  (606 tables RLS-enabled, 1,059 policies, matching Supabase's live
+  `pg_policies` snapshot) both ran and were verified the same day.
+- **The remaining blocker is now purely AWS-provisioning, not credentials
+  or data**: this session's IAM identity (`claude-code-aws-agent`) gets
+  `AccessDenied` on `ecr:CreateRepository`, `ecr:GetAuthorizationToken`
+  (i.e. it cannot even `docker login`, so it cannot push an image under
+  ANY repo), and `ecs:CreateService` — confirmed live 2026-09-19, the
+  same "needs an operator with AWS admin rights" shape this repo's other
+  services (erp-bridge, the Vertex Serbian bridge) already hit. What
+  changed: `ecs:RegisterTaskDefinition` (additive, versioned, never
+  destructive) DOES succeed from this session — used to validate the new
+  provisioning script's task-definition JSON is well-formed against the
+  live account before handing it to the operator.
+- **New, simpler plan than the original ALB-based one below**: reuse the
+  `vitana.internal` Cloud Map private-DNS namespace already created for
+  erp-bridge, instead of an ALB target group + host-header rule. The
+  gateway only ever needs to reach this proxy from inside the VPC (no
+  browser ever calls it directly), so plain internal HTTP at
+  `http://postgrest-aurora.vitana.internal:8080` is simpler and sidesteps
+  CLAUDE.md §1b's documented ALB-priority trap entirely — same posture
+  erp-bridge already uses successfully. The ECS app-tier security group
+  (`sg-0fbcf7b59b1f0d685`, same SG `vitana-gateway`/erp-bridge run in)
+  **already has an ingress rule into Aurora's SG on 5432** — no new
+  security-group rule is needed either.
+- **New provisioning script + workflow, ready for the operator to run**:
+  `scripts/aws/setup-postgrest-aurora-proxy-staging.sh` (dry-run by
+  default, `--apply` to execute — mirrors `setup-erp-bridge-staging.sh`
+  exactly) and `.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`
+  (CI build+push+roll, staging-only, same shape as
+  `AWS-STAGE-DEPLOY-ERP-BRIDGE.yml`). Once the operator runs
+  `provision --apply`, the very next push to `main` under this directory
+  (or a manual dispatch) builds and rolls the real proxy image — no
+  bootstrap-tenant-style gate is needed here, since Aurora's data is
+  already correct and can serve real reads from the first deploy.
+
+The sections below (from "What's blocking a live deploy right now" through
+"Remaining steps once vitana_admin access is available") are the
+**original 2026-08-12 plan, kept for historical record** — its item 4
+(ALB target group + host-header rule) is superseded by the Cloud Map
+approach above; its items 0–1 are resolved as described above.
+
 ## What's blocking a live deploy right now
 
 **Two** missing pieces, and both need the same privileged access this
@@ -168,18 +236,24 @@ empty-password lockout on this same cluster), not a bug to route around.
 
 ## Remaining steps once vitana_admin access is available
 
-0. Run `aurora-fk-drop-2026-08-12.sql`, then restart the DMS task
-   (`vitana-supabase-to-aurora-v3`) via `reload-target` — it was left
-   **stopped**, not flailing, so this is a clean resume, not a recovery.
-1. Run the `authenticator` role SQL above, create its secret.
+**Superseded by the 2026-09-19 status update above — items 0-1 are
+already done, items 2-4 are replaced by one script.** For the CURRENT
+plan: run `scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision
+--apply`, then push to `main` under this directory (or dispatch
+`AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`) to build and roll the real
+image. The steps below are kept for historical record only.
+
+0. ~~Run `aurora-fk-drop-2026-08-12.sql`, then restart the DMS task~~ —
+   moot, Aurora has 0 FKs on the public schema as of 2026-09-19.
+1. ~~Run the `authenticator` role SQL above, create its secret~~ — already
+   existed; only its password needed re-syncing (done 2026-09-19).
 2. Build + push the `proxy` image to ECR (`cloud-run-source-deploy`-style
    repo, or a new `vitana-postgrest-aurora-proxy` ECR repo).
 3. Create the ECS execution/task roles, register the task definition.
-4. New ECS service on `Vitana-ECS-Cluster` (same cluster as AWS staging
-   gateway), target group + ALB host-header rule
-   (`aurora-staging-rest.vitanaland.com` or similar — remember: priority
-   **< 10**, the path-based rules at priority 10 route to staging
-   regardless of `Host` otherwise, per CLAUDE.md §1b's documented trap).
+4. ~~New ECS service on `Vitana-ECS-Cluster` ... target group + ALB
+   host-header rule~~ — replaced by a Cloud Map private-DNS entry in the
+   existing `vitana.internal` namespace (see 2026-09-19 status update);
+   no ALB rule, no host-header priority risk.
 5. Point `gateway-staging`'s `SUPABASE_URL` at the new host — **staging
    only**, never production, until this has actually been tested.
 6. Smoke test: an authenticated request through the real login flow, then
