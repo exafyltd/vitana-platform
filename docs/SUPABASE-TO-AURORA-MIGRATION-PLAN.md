@@ -253,12 +253,28 @@ Two consequences for this migration:
 > sites at it while the ~16 genuine identity/Auth-API files keep talking
 > to real Supabase Auth directly, migrate Edge Functions and flip
 > `STORAGE_PROVIDER=s3`, then once verified: downgrade the Supabase
-> project to free tier (Auth-only load is light) and decommission the DMS
-> replication instance (the "extra computer" the cost deadline is actually
-> about). GoTrue/Auth is explicitly **not** replaced by Cognito or any
-> self-issued-JWT service under this override — do not build toward that
-> without a fresh, explicit re-confirmation from the platform owner, since
-> this is now the second reversal on this exact question.
+> project itself (its paid compute add-on / Pro plan — the actual
+> "extra computer and subscription" the platform owner asked about) to
+> free tier, since Auth-only load is light enough to fit it. GoTrue/Auth
+> is explicitly **not** replaced by Cognito or any self-issued-JWT service
+> under this override — do not build toward that without a fresh, explicit
+> re-confirmation from the platform owner, since this is now the second
+> reversal on this exact question.
+>
+> **Cost clarification, same 2026-09-19 session: AWS cost is NOT a
+> driver here at all.** The platform owner stated explicitly: *"Any cost
+> on AWS is ok, costs on Supabase are not ok."* Aurora, the DMS replication
+> instance, ECS, and every other AWS resource in this migration may run
+> in parallel with Supabase **indefinitely** at no urgency — there is no
+> AWS-side reason to rush, delete, or "clean up" any AWS resource as part
+> of hitting this deadline. **Do not delete, stop, or otherwise tear down
+> any AWS resource (the DMS instance included) to save cost** — it was
+> briefly, mistakenly treated as the cost driver earlier the same session
+> before this correction, and the platform owner explicitly said not to
+> delete anything on AWS. The only cost this migration is actually solving
+> for is the Supabase subscription/compute-add-on bill, and only once
+> Supabase's real load (post-migration: Auth only) is light enough for the
+> free tier.
 >
 > **Historical note, superseded by the above.** DECIDED 2026-08-25 was
 > Option B. The platform owner's then-standing directive — full migration
