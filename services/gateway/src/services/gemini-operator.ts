@@ -4087,7 +4087,13 @@ async function callVertexWithTools(
     vtid: vtid || null,
     service: 'gemini-operator',
     systemPrompt,
-    maxTokens: 4096,
+    // VTID-04102: was 4096 — half the deepseekAdapter's own default (8000).
+    // This call carries the full bootstrap pack + codebase-overview block +
+    // memory context + tool catalog as system prompt and is expected to plan
+    // multi-step tool use, so 4096 was tight enough to truncate mid-turn on a
+    // real task (measured live: output_tokens===4096, tool_calls:0, empty
+    // text). Matches the router-wide default instead of a narrower one.
+    maxTokens: 8000,
     tools: routerTools,
     history: conversationHistory.map((m) => ({ role: m.role, content: m.content })),
   });
@@ -4110,6 +4116,22 @@ async function callVertexWithTools(
   }
 
   const reply = r.text || '';
+  if (!reply) {
+    // VTID-04102: `r.ok` only means the provider answered, not that the
+    // answer was usable — a response truncated at max_tokens before
+    // finishing a tool call or any prose (measured live: output_tokens
+    // pinned at the maxTokens cap, tool_calls:0, text empty) satisfies
+    // `ok:true` with nothing a user can read. Silently returning '' here
+    // rendered as "No response received" in the Command Hub with zero
+    // diagnostic and no recovery. Throw instead, exactly like the `!r.ok`
+    // branch above — the caller's own catch falls through to
+    // processLocalRouting(), the real fallback the comment on that branch
+    // already relies on, instead of treating an unusable success as done.
+    throw new Error(
+      `Operator LLM call returned no text and no tool calls via ${r.provider}/${r.model} ` +
+        `(output_tokens=${r.usage?.outputTokens ?? 'unknown'}, likely truncated at max_tokens)`,
+    );
+  }
   console.log(`[VTID-01023] operator returned text response (${reply.length} chars) via ${r.provider}`);
   return { reply, provider: r.provider, model: r.model, usage: r.usage };
 }
@@ -4156,7 +4178,11 @@ CRITICAL — Sharing links:
     const r = await callViaRouter('operator', renderedResults, {
       service: 'gemini-operator-tool-results',
       systemPrompt,
-      maxTokens: 4096,
+      // VTID-04102: matches the plan call's budget (see callVertexWithTools) —
+      // same truncation risk, same fix. This call site already degrades
+      // gracefully to formatToolResultsAsResponse() on an empty/failed
+      // result, so the raised cap here is prevention, not a new safety net.
+      maxTokens: 8000,
       history: [{ role: 'user', content: originalText }],
     });
 
