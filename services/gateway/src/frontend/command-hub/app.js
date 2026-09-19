@@ -781,14 +781,21 @@ function switchOperatorThread(threadId) {
     state.operatorConversationId = thread.conversationId;
     var history = getOperatorThreadHistory(thread.id);
     state.operatorChatHistory = history;
+    // VTID-04033/04104: closing the OLD thread's follows first — they belong
+    // to a conversation no longer on screen — before restoring the NEW
+    // thread's own followExecIds (carried through from persisted history,
+    // see sendChatMessage()'s assistantHistoryEntry) and reattaching them.
+    closeAllOperatorExecutionFollows();
     state.chatMessages = history.map(function (msg) {
         return {
             type: msg.role === 'user' ? 'user' : 'system',
             content: msg.content,
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            ts: msg.ts
+            ts: msg.ts,
+            followExecIds: msg.followExecIds
         };
     });
+    reattachFollowedExecutions(state.chatMessages);
     renderApp();
 }
 
@@ -1228,9 +1235,14 @@ function initOperatorChatSession() {
                 type: msg.role === 'user' ? 'user' : 'system',
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                ts: msg.ts
+                ts: msg.ts,
+                followExecIds: msg.followExecIds
             };
         });
+        // VTID-04104: a page reload landing on a thread with a still-running
+        // (or recently finished) execution must not render it as dead —
+        // reattach the live follow the same way switchOperatorThread() does.
+        reattachFollowedExecutions(state.chatMessages);
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
 }
@@ -23666,6 +23678,25 @@ function closeAllOperatorExecutionFollows() {
     state.operatorExecFollow = {};
 }
 
+/**
+ * VTID-04104: re-open the live SSE follow for every execution a restored
+ * chat history references, after switchOperatorThread() or the page-load
+ * bootstrap rebuild state.chatMessages from persisted history. The stream
+ * (GET /executions/:id/stream) replays an execution's full step history
+ * from the start on every fresh connect and emits `terminal` immediately if
+ * it already finished, so this is safe to call unconditionally — a still-
+ * running execution resumes its live ticker/turn list, an already-finished
+ * one just shows its final status instead of nothing at all.
+ */
+function reattachFollowedExecutions(chatMessages) {
+    (chatMessages || []).forEach(function (msg) {
+        if (!msg || !Array.isArray(msg.followExecIds)) return;
+        msg.followExecIds.forEach(function (execId) {
+            followOperatorExecution(execId);
+        });
+    });
+}
+
 function describeFollowedStep(step) {
     if (!step) return '';
     var topic = String(step.topic || '').replace('dev_autopilot.execution.', '').replace('dev_autopilot.agent.', 'agent.');
@@ -23952,11 +23983,21 @@ async function sendChatMessage() {
             }
         }
 
-        // VTID-01027: Add assistant response to session history
+        // VTID-01027: Add assistant response to session history.
+        // VTID-04104: followExecIds must be persisted here too, not only on
+        // the in-memory chatMessages entry below — operatorChatHistory is
+        // what actually survives a thread switch or page reload
+        // (saveOperatorThreadHistory/getOperatorThreadHistory), and without
+        // this field the restore path (switchOperatorThread, the page-load
+        // bootstrap) can never re-attach the live follow panel for a turn
+        // that queued an execution, even though the execution itself keeps
+        // running on the backend the whole time.
+        var turnFollowExecIds = extractFollowedExecutionIds(result.toolResults);
         var assistantHistoryEntry = {
             role: 'assistant',
             content: replyContent,
-            ts: Date.now()
+            ts: Date.now(),
+            followExecIds: turnFollowExecIds
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
         saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
@@ -23972,11 +24013,11 @@ async function sendChatMessage() {
             createdTask: result.createdTask,
             toolResults: result.toolResults,
             meta: result.meta,
-            followExecIds: extractFollowedExecutionIds(result.toolResults)
+            followExecIds: turnFollowExecIds
         });
 
         // VTID-04033: follow every execution this turn queued or approved.
-        (state.chatMessages[state.chatMessages.length - 1].followExecIds || []).forEach(function (execId) {
+        turnFollowExecIds.forEach(function (execId) {
             var tr = (result.toolResults || []).filter(function (t) { return t && t.response && t.response.execution_id === execId; })[0];
             followOperatorExecution(execId, tr ? OPERATOR_EXEC_FOLLOW_TOOLS[tr.name] : null);
         });
