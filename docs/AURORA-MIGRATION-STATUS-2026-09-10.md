@@ -2563,14 +2563,24 @@ which would wipe RLS off all 605 tables again, not just the two that
 currently fail outright. `TRUNCATE_BEFORE_LOAD` requires the target table
 to already exist with the right structure, which holds here — every
 included table was already created by a prior `vitana-fullload-only` run.
-**Not executed** — creating (and especially starting) this task truncates
-and reloads every included table on the live Aurora database; per the
-credential-scoping precedent established earlier in this file, a new kind
-of AWS-mutating action needs its own explicit go-ahead, not an inference
-from the earlier RLS-DDL approval. The script's dry-run output (the exact
-`aws dms create-replication-task` command) has been verified to build
-correctly and both embedded JSON blobs (table mappings, task settings)
-parse as valid JSON.
+**Created (2026-09-19), authorized explicitly by the platform owner
+("You got authorization to actually run aurora-cutover-rehearsal-task.sh
+--apply").** `arn:aws:dms:eu-central-1:472838866351:task:
+7KLLMH3EXJGVPEFRP7M33CVA7Q`, identifier `vitana-fullload-rehearsal`,
+status `ready` (confirmed via `describe-replication-tasks` polling).
+**Created only, per the script's own design — NOT started.** The
+authorization covered exactly the `--apply` command, which per the
+script's own documented behavior creates the task definition and
+explicitly does not start it ("This task is NOT started yet"). Starting
+it (a `start-replication-task --start-replication-task-type
+reload-target` call) is the next, separate step — it truncates and
+reloads every included table on live Aurora and is the actual rehearsal
+run; it has not been requested or executed yet. Both embedded JSON blobs
+(table mappings, task settings) were verified to parse as valid JSON
+before creation, and the live task's own returned `TableMappings`/
+`ReplicationTaskSettings` confirm the settings applied exactly as
+intended — `TargetTablePrepMode: "TRUNCATE_BEFORE_LOAD"`, all 16 mapping
+rules identical to `vitana-fullload-only`.
 
 **RLS-restoration DDL is now a committed, ready-to-run script (2026-09-19)
 — `scripts/aws/aurora-restore-rls-parity.sql`.** 1,664 statements (605
@@ -2606,19 +2616,24 @@ from the top).
 Aurora credential to use for the RLS DDL — this is now the single most
 time-critical item, not the harness permission (that's cleared); (b)
 execute the 1,664-statement script once (a) is answered; (c) get
-authorization to create + start
-`scripts/aws/aurora-cutover-rehearsal-task.sh --apply` (drafted, dry-run
-verified, not yet run — this both root-causes and fixes the 2-table
-DROP_AND_CREATE conflict at once, since `TRUNCATE_BEFORE_LOAD` sidesteps
-it structurally rather than diagnosing DMS's inferred-DDL behavior
-further); (d) resolve the `products`/`knowledge_docs` "known-broken" vs.
-"exclude-done" distinction found above before deciding those two stay
-excluded on the final run; (e) identify what mechanism keeps the other 11
-excluded tables in sync and decide whether it needs repointing at Aurora
-post-cutover; (f) run the rehearsal task (once created) and get a real
-timing measurement with RLS intact; (g) post-restore identity/RLS parity
-verification (B4) before any connection-string flip; (h) regenerate the
-restore-grants script immediately before the real window if any time has
-passed since 2026-09-18. Never write to production Supabase outside this
+authorization to START `vitana-fullload-rehearsal` (created, `ready`,
+ARN `arn:aws:dms:eu-central-1:472838866351:task:
+7KLLMH3EXJGVPEFRP7M33CVA7Q` — see above; creation was authorized and
+done 2026-09-19, starting it is a separate step not yet requested); (d)
+resolve the `products`/`knowledge_docs` "known-broken" vs. "exclude-done"
+distinction found above before deciding those two stay excluded on the
+final run; (e) identify what mechanism keeps the other 11 excluded tables
+in sync and decide whether it needs repointing at Aurora post-cutover;
+(f) once started, get a real timing measurement from the rehearsal run
+with RLS intact, and confirm it actually clears the
+`conversation_messages`/`reminders` conflict; (g) post-restore
+identity/RLS parity verification (B4) before any connection-string flip;
+(h) regenerate the restore-grants script immediately before the real
+window if any time has passed since 2026-09-18; (i) delete
+`vitana-fullload-rehearsal` once its rehearsal purpose is served (`aws
+dms delete-replication-task --replication-task-arn
+arn:aws:dms:eu-central-1:472838866351:task:7KLLMH3EXJGVPEFRP7M33CVA7Q`)
+— it should not be left as a second, forgotten full-load task pointed at
+the same databases. Never write to production Supabase outside this
 narrowly-scoped, already-approved migration mechanism; never take
 destructive AWS actions — both hold throughout.
