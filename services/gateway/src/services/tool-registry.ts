@@ -178,6 +178,27 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     },
   ],
   [
+    'autopilot_activate_recommendation',
+    {
+      name: 'autopilot_activate_recommendation',
+      description: 'VTID-04111: Activate a specific Dev Autopilot recommendation by id — allocates its VTID (idempotent: a second call on an already-activated recommendation just returns the existing VTID) and, for a manually-bridgeable source_type, starts a real execution with the cooldown skipped. Irreversible for the VTID allocation. Only after the user explicitly asks to activate THIS recommendation; exafy_admin session required.',
+      parameters_schema: {
+        type: 'object',
+        properties: {
+          recommendation_id: {
+            type: 'string',
+            description: 'The recommendation\'s UUID (full UUID only — recommendation ids do not have a prefix-resolution convention the way execution ids do).',
+          },
+        },
+        required: ['recommendation_id'],
+      },
+      allowed_roles: ['operator', 'admin', 'developer'],
+      enabled: true,
+      category: 'autopilot',
+      vtid: 'VTID-04111',
+    },
+  ],
+  [
     'autopilot_cancel_execution',
     {
       name: 'autopilot_cancel_execution',
@@ -1314,7 +1335,7 @@ export async function runToolHealthChecks(): Promise<ToolHealthResponse> {
   const supabaseAvailable = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
 
   // Update health for Supabase-dependent tools
-  const supabaseTools = ['autopilot_create_task', 'autopilot_execute_task', 'autopilot_run_task', 'autopilot_review_execution', 'autopilot_approve_execution', 'autopilot_reject_execution', 'autopilot_cancel_execution', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
+  const supabaseTools = ['autopilot_create_task', 'autopilot_execute_task', 'autopilot_run_task', 'autopilot_review_execution', 'autopilot_approve_execution', 'autopilot_reject_execution', 'autopilot_activate_recommendation', 'autopilot_cancel_execution', 'autopilot_get_status', 'autopilot_list_recent_tasks', 'knowledge_search', 'memory_write', 'memory_search', 'recall_conversation_at_time', 'discover_oasis_tasks', 'dev_list_tasks', 'dev_get_task_detail', 'dev_generate_spec', 'dev_get_spec', 'dev_validate_spec', 'dev_quality_check', 'dev_approve_spec', 'dev_list_approvals', 'dev_approval_count', 'dev_approve_item', 'dev_reject_item', 'dev_query_oasis_events'];
   for (const toolName of supabaseTools) {
     updateToolHealth(
       toolName,
