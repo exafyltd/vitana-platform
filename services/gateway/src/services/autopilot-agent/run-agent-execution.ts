@@ -52,6 +52,9 @@ const AGENT_PRIMARY_MODEL = process.env.AGENT_PRIMARY_MODEL || 'deepseek-flash';
 const AGENT_MAX_TURNS = Number.parseInt(process.env.AGENT_MAX_TURNS || '60', 10);
 const AGENT_DEADLINE_MS = Number.parseInt(process.env.AGENT_DEADLINE_MS || String(22 * 60_000), 10);
 const AGENT_MAX_FIX_ROUNDS = Number.parseInt(process.env.AGENT_MAX_FIX_ROUNDS || '3', 10);
+/** VTID-04112: chars of history resent per turn before older tool results
+ *  are trimmed — see agent-loop.ts's HISTORY_CHAR_BUDGET for why. */
+const AGENT_HISTORY_CHAR_BUDGET = Number.parseInt(process.env.AGENT_HISTORY_CHAR_BUDGET || '120000', 10);
 const AGENT_MAX_TOKENS = Number.parseInt(process.env.AGENT_MAX_TOKENS || '8000', 10);
 const AGENT_NODE_MODULES_SOURCE = process.env.AGENT_NODE_MODULES_SOURCE || '/app/node_modules';
 const AGENT_SKIP_TSC = (process.env.AGENT_SKIP_TSC || 'false').toLowerCase() === 'true';
@@ -234,7 +237,7 @@ export async function runAgentExecutionSession(
         systemPrompt, prompt, tools: AGENT_TOOLS, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
         callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
-        isCancelled: () => cancelRequested,
+        isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,
       });
       history = loop.history; totalTurns += loop.turns;
       usage.inputTokens += loop.usage.inputTokens; usage.outputTokens += loop.usage.outputTokens;

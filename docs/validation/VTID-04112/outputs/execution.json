@@ -1,0 +1,60 @@
+{
+  "vtid": "VTID-04112",
+  "title": "Dev Autopilot agent executor: bound resent history to fix silent DeepSeek empty-completion failures",
+  "investigation": {
+    "trigger": "Platform owner: \"Every attempt to build something with Operator failed. Are you aware of that???????\"",
+    "window": "prior 3 days",
+    "source": "dev_autopilot_executions / dev_autopilot_outcomes / oasis_events (Supabase MCP execute_sql, read-only)",
+    "failed_runs": 26,
+    "total_runs": 43,
+    "failure_reasons_observed": [
+      "agent hit the N-turn cap without calling finish",
+      "model answered with text N times in a row without calling finish"
+    ],
+    "turn_cap_range_tried": "33-120",
+    "representative_execution": {
+      "execution_id": "5d301440-dcea-4668-aac6-f4a6d2f5bc08",
+      "related_vtid": "VTID-04109",
+      "turns": 81,
+      "cumulative_input_tokens": 6870421,
+      "cumulative_output_tokens": 186912,
+      "cost_usd": 1.14,
+      "elapsed_ms": 958949,
+      "failure_signature": "three consecutive dev_autopilot.agent.llm steps with message \"text (0 chars)\""
+    }
+  },
+  "root_cause": "agent-loop.ts's runAgentLoop() resent the full, unboundedly growing conversation history on every turn; DeepSeek's visible output shares its max_tokens budget with internal reasoning tokens, so once resent context is large enough the model's reasoning alone can exhaust the budget before any visible content/tool_calls are produced, yielding an HTTP 200 empty completion the loop cannot distinguish from the model choosing text over a tool call.",
+  "fix": {
+    "file": "services/gateway/src/services/autopilot-agent/agent-loop.ts",
+    "new_export": "trimHistoryForBudget(history, maxChars = 120_000)",
+    "mechanism": "trims the OLDEST tool results to a short notice, one at a time, until under budget or only the most recent message remains; never mutates the caller's stored history, only the copy sent to callLlm",
+    "wiring_file": "services/gateway/src/services/autopilot-agent/run-agent-execution.ts",
+    "new_env_var": "AGENT_HISTORY_CHAR_BUDGET",
+    "default_budget_chars": 120000
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 7,
+    "own_suite": {
+      "file": "services/gateway/test/autopilot-agent-loop.test.ts",
+      "tests_total": 13,
+      "tests_passing": 13,
+      "pre_existing_tests_unaffected": 6
+    },
+    "regression_sweep": {
+      "suites": [
+        "test/autopilot-agent-scope-validate.test.ts",
+        "test/autopilot-agent-tools.test.ts",
+        "test/llm-router-agentic.test.ts",
+        "test/vtid-04016-agent-check-guard.test.ts",
+        "test/vtid-04046-agent-prompt-date.test.ts",
+        "test/vtid-04032-cancel-running-execution.test.ts",
+        "test/vtid-04029-dev-autopilot-pr-approval.test.ts"
+      ],
+      "suites_total_including_own": 9,
+      "tests_total": 133,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — the next real signal is a long-running staging agent-executor run completing or failing for a genuinely different reason instead of the empty-completion pattern"
+}
