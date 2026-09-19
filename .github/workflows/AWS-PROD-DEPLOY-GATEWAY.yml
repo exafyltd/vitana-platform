@@ -541,11 +541,41 @@ jobs:
           # 5-min TTL reuse so a retry lands on a warm entry instead of paying
           # a fresh ~4.4s build. Staleness contract is identical to the legacy
           # VERTEX_BOOTSTRAP_CACHE that is already live here.
+          # VTID-04098 — two MORE flags pinned here, and one live bug fixed by
+          # pinning them.
+          #
+          # Read off the LIVE production task definition (rev 108) on
+          # 2026-09-19, not off this file:
+          #   FEATURE_LATENCY_TELEMETRY_ENV     = "production"
+          #   FEATURE_ORB_SAFE_FAST_GREETING_ENV = "production"
+          # `production` is NOT one of the three values feature-flags.ts
+          # accepts ('off' | 'staging-only' | 'staging+prod'), so both resolved
+          # to OFF. Production has therefore had NO phase-level voice latency
+          # telemetry (`voice.latency.measured` never emitted) and NO
+          # greeting-facts prefetch, while the task def read as though both
+          # were on. VTID-04098 also makes that class of typo log loudly and
+          # surface as `invalid_value` on /admin/health/feature-flags; pinning
+          # the correct values here is what actually repairs the live state,
+          # because this strip-then-add block overwrites whatever is there.
+          #
+          # LATENCY_TELEMETRY is the one that has to go first: without it there
+          # is no way to measure a voice latency change in production at all,
+          # which is why every measurement in VTID-04096/04097 had to be taken
+          # on staging. It emits one OASIS event per session establishment.
+          #
+          # NOT pinned here, deliberately: FEATURE_ORB_NOVA_PREWARM_ENV and
+          # FEATURE_ORB_GREETING_PREBUFFER_ENV. Both only take effect on the
+          # WebSocket session path (`handleWsPrewarmMessage`, and the
+          # `greetingDeferred` branch), and production resolves SSE because
+          # FEATURE_ORB_WS_TRANSPORT_ENV is not enabled here. Turning them on
+          # in prod today would change nothing and would look like a fix.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV") | not) ]
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV") | not) ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
-                    {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
+                    {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
+                    {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )')
 
           # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
           # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed

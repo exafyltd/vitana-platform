@@ -202,13 +202,31 @@ jobs:
         # exactly one variable change + one dispatch. Never AWS access keys
         # here — Nova auth is the task role via the SDK default chain.
         #
-        # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
-        # is upserted to "off" below (2026-07-28, disabled) -- rejected on
-        # product grounds (voice mismatch: the Cloud TTS bridge phrase is
-        # never the same voice as the live upstream). See STAGE-DEPLOY.yml
-        # for the full rationale. Explicitly set to "off" (not removed) so
-        # it cannot silently drift back to a stale "staging-only" value
-        # left on the task definition from before.
+        # BOOTSTRAP-NOVA-SONIC-VOICE / VTID-04100:
+        # FEATURE_ORB_GREETING_TTS_BRIDGE_ENV was upserted to "off" on
+        # 2026-07-28, rejected on PRODUCT grounds, not technical ones: the
+        # bridge phrase is synthesized by a different engine from the live
+        # upstream, so the user hears one voice say the filler and another
+        # voice continue. That objection has NOT gone away — the bridge is
+        # Polly now rather than Cloud TTS, and Polly is still not a Nova
+        # Sonic voice.
+        #
+        # It is set to "staging-only" here so the trade can be HEARD and
+        # decided on evidence, because the measured cost of not having it is
+        # large: on staging 2026-09-19, authenticated `de`, first MODEL audio
+        # was p50 ~2.5-3.0s and p90 up to 7.5s, while a bridge frame lands in
+        # the time it takes to write one SSE event. VTID-04100 also made the
+        # bridge cached and its pre-connect await bounded, so the mechanism no
+        # longer costs a Polly round trip per session and can no longer stall
+        # a connect the way VTID-03802 did.
+        #
+        # PROD IS DELIBERATELY NOT CHANGED. Reversing a recorded product
+        # decision for every real user is the platform owner's call, not a
+        # side effect of a latency VTID. Listen on preview-aws first; if the
+        # voice change is acceptable, promote by pinning the same value on
+        # AWS-PROD-DEPLOY-GATEWAY.yml. If it is not, set this back to "off"
+        # and the measured win has to come from the directive and tool-catalog
+        # budgets (VTID-04096/04097) alone.
         #
         # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
         # upserted to "staging-only" below. Checked live in this repo: it
@@ -793,7 +811,7 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},

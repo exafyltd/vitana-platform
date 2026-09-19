@@ -129,7 +129,14 @@ describe('wiring (source contract)', () => {
     const i = src.indexOf('enforceToolCatalogBudget(toolsIn, toolBudget)');
     expect(i).toBeGreaterThan(0);
     const window = src.slice(Math.max(0, i - 1500), i);
-    expect(window).toContain("session.upstreamProvider === 'vertex'");
+    // VTID-04097 deliberately widened this: the guard is now resolved
+    // per-provider (`resolveToolCatalogByteBudgetFor`) instead of being gated
+    // on `=== 'vertex'`, because the oversized catalog costs Nova p90 -4.4s
+    // even though Nova accepts it. What this test exists to protect is
+    // UNCHANGED and still asserted below: the guard must key on the resolved
+    // PROVIDER and never on the session language, so it can never become a
+    // Serbian-only or language-conditional behaviour.
+    expect(window).toContain('resolveToolCatalogByteBudgetFor(session.upstreamProvider)');
     expect(window).not.toMatch(/isVertexSerbianBridgeLanguage|lang === 'sr'/);
   });
   test('a trim is observable as an OASIS diag, not console-only', () => {

@@ -41,7 +41,14 @@
  */
 
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
-import { buildNewDayOverviewBlock } from '../assistant-continuation/providers/new-day-overview-prompt';
+import {
+  buildNewDayOverviewBlock,
+  buildNewDayOverviewOpenerLine,
+} from '../assistant-continuation/providers/new-day-overview-prompt';
+import {
+  resolveGreetingDirectiveByteBudget,
+  greetingDirectiveExceedsBudget,
+} from '../../orb/live/instruction/greeting-directive-budget';
 import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
@@ -598,7 +605,7 @@ function tryNewDayOverviewRung(
       ledger,
       ctx.nowIso ? { nowIso: ctx.nowIso } : undefined,
     );
-    const block = buildNewDayOverviewBlock({
+    const buildArgs = {
       payload: ctx.newdayOverview,
       lang: ctx.greetLang,
       // VTID-03646 — was `(ctx.firstName as string).trim()`, a cast that was
@@ -613,7 +620,21 @@ function tryNewDayOverviewRung(
       factDeltas,
       previousUtterance: ledger.last_utterance,
       sessionsToday: ledger.sessions_today,
-    });
+    };
+    // VTID-04096 — the full block renders ~19 KB and is sent as the greeting
+    // TURN text, which the model must read before its first audio token.
+    // Measured in production over 30 days (p50 greeting_sent ->
+    // model_start_speaking): this rung 5,805 ms at 19,177 chars, against
+    // 1,545 ms for the 551-char safe_fast_proactive rung. Over budget we send
+    // the compact variant, which keeps the payload, the already-spoken ledger
+    // and the name/length rules and drops the static tuition. Same rung, same
+    // effects, same wake_opener — only the directive shrinks, exactly as
+    // VTID-03646 did for day_close. `ORB_GREETING_DIRECTIVE_BYTE_BUDGET=0`
+    // restores the full block with no deploy.
+    const fullBlock = buildNewDayOverviewBlock(buildArgs);
+    const directiveBudget = resolveGreetingDirectiveByteBudget();
+    const overBudget = greetingDirectiveExceedsBudget(fullBlock, directiveBudget);
+    const block = overBudget ? buildNewDayOverviewOpenerLine(buildArgs) : fullBlock;
     if (block && block.trim().length > 0) {
       const o = ctx.newdayOverview;
       return {
@@ -624,6 +645,11 @@ function tryNewDayOverviewRung(
           lang: ctx.lang,
           prompt_len: block.length,
           wake_opener: wakeOpener,
+          // VTID-04096: queryable, so the effect of the budget on real
+          // sessions can be read out of oasis_events rather than inferred.
+          directive_reduced: overBudget,
+          directive_full_len: fullBlock.length,
+          directive_budget_bytes: directiveBudget,
           bucket: ctx.bucket,
           briefing_date: ctx.todayTz,
           overview_signals: {

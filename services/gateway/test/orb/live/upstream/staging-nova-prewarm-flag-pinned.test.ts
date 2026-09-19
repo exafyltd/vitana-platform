@@ -51,6 +51,13 @@ describe('VTID-03779: staging pins FEATURE_ORB_NOVA_PREWARM_ENV', () => {
       '../../../../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml',
     );
     const prodYml = fs.readFileSync(prodWorkflow, 'utf8');
-    expect(prodYml).not.toContain('FEATURE_ORB_NOVA_PREWARM_ENV');
+    // VTID-04098: assert the absence of the PIN, not of the string.
+    // The prod workflow now explains in a comment why this flag is
+    // deliberately left unpinned (FEATURE_ORB_NOVA_PREWARM_ENV only takes
+    // effect on the WebSocket session path, and prod resolves SSE), so a
+    // bare substring check would fail on the documentation of the very
+    // invariant it is protecting. What must never appear is the jq upsert.
+    expect(prodYml).not.toMatch(/\{name:"FEATURE_ORB_NOVA_PREWARM_ENV"/);
+    expect(prodYml).not.toMatch(/name:\s*"FEATURE_ORB_NOVA_PREWARM_ENV",\s*value:/);
   });
 });
