@@ -32,6 +32,10 @@ import { tt, GATEWAY_DEFAULT_LOCALE, type GatewayLocale } from '../i18n/catalog'
 import { getUserLocale } from '../i18n/server-locale';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from './autopilot-recommendations-repository';
+// VTID-04108: widened from a hardcoded dev_autopilot/dev_autopilot_impact
+// check to the shared manual-activation allowlist (adds community/health)
+// - kept in sync with what bridgeActivationToExecution() itself accepts.
+import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -1587,10 +1591,12 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
       }
     }
 
-    // Bridge dev_autopilot* activations into the executor (cooldown skipped).
-    // Without this, "Activate" only writes the vtid_ledger row and the card
-    // sits in IN PROGRESS forever — there is no other code path that picks
-    // up vtid_ledger rows for these findings. The reaper tick in
+    // Bridge activations into the executor (cooldown skipped) for every
+    // manually-bridgeable source_type (VTID-04108: dev_autopilot* plus
+    // community/health). Without this, "Activate" only writes the
+    // vtid_ledger row and the card sits in IN PROGRESS forever — there is
+    // no other code path that picks up vtid_ledger rows for these
+    // findings. The reaper tick in
     // dev-autopilot-execute.ts catches any failures from this fire-and-forget
     // call. Fire-and-forget on purpose so a slow LLM plan generation doesn't
     // block the activate response.
@@ -1605,7 +1611,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
           );
           const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
           const srcType = srcRows[0]?.source_type;
-          if (srcType === 'dev_autopilot' || srcType === 'dev_autopilot_impact') {
+          if (isManuallyBridgeableSourceType(srcType)) {
             const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
             bridgeActivationToExecution(id, userId || null)
               .then((br) => {
