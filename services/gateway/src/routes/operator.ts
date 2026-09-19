@@ -75,6 +75,16 @@ import {
   describeAwsProdGateway,
   toRevisionRow,
 } from '../services/aws-gateway-admin';
+// VTID-04117: live ECS rollout state for the Deployments screen's "currently
+// live" strip — the same read-only client the Operator Console's
+// `dev_aws_ecs_status` tool already uses (VTID-03836).
+import { describeEcsServices, type EcsServiceStatus } from '../services/aws-ecs-readonly';
+import {
+  LIVE_STATUS_TARGETS,
+  buildLiveStatusTargetResult,
+  validateRedeployRequest,
+  REDEPLOY_REASON_MAX_LEN,
+} from '../services/deployment-live-status';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
 import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
@@ -1229,6 +1239,176 @@ router.get('/deployments', async (req: Request, res: Response) => {
       error: 'Internal server error',
       detail: errorMessage,
     });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /deployments/live-status, POST /deployments/redeploy — VTID-04117.
+//
+// The three existing deployment-history screens (Overview > Release Feed,
+// Operator > Deployments, Infrastructure > Deployments) all render rows
+// from `software_versions` — the deploy LOG. None of them asks AWS "what is
+// actually running right now" — the exact gap that let PR #1114 sit broken
+// on 100% of vitana-community-app-awsdr production with a green-looking
+// deploy history and no screen able to show the mismatch (VTID-04115).
+//
+// This does not add a fourth screen. `/live-status` feeds a "currently
+// live" strip on the existing Operator > Deployments screen; `/redeploy`
+// adds the one real action that screen was missing, scoped to community-app
+// production — the AWS-native equivalent of a rollback, since ECS has no
+// Cloud-Run-style traffic split to revert. Gateway is deliberately NOT
+// wired for /redeploy: AWS-PROD-DEPLOY-GATEWAY.yml has no "rebuild an
+// arbitrary past commit" deploy_mode (only promote-staging / rebuild-main /
+// env-only) and its task-def build step is already near GitHub Actions'
+// ~21,000-char per-step expression limit (VTID-03709's own comment) —
+// adding a fourth mode there is a separate, more careful change.
+// ---------------------------------------------------------------------------
+
+router.get('/deployments/live-status', requireAdminAuth, async (_req: Request, res: Response) => {
+  try {
+    const ecsNames = LIVE_STATUS_TARGETS.map(t => t.ecsService);
+
+    let ecsList: EcsServiceStatus[] = [];
+    let ecsError: string | null = null;
+    try {
+      ecsList = await describeEcsServices(ecsNames);
+    } catch (err) {
+      ecsError = err instanceof Error ? err.message : 'ecs_describe_failed';
+    }
+    const ecsByName = new Map<string, EcsServiceStatus>();
+    for (const svc of ecsList) ecsByName.set(svc.serviceName, svc);
+
+    const historyResult = await getDeploymentHistory(100);
+    const rows = historyResult.ok ? (historyResult.deployments || []) : [];
+
+    const targets = await Promise.all(
+      LIVE_STATUS_TARGETS.map(async (t) => {
+        const ecs = ecsByName.get(t.ecsService) || null;
+
+        let resolvedCommit: string | null = null;
+        let resolveError: string | null = null;
+        if (t.kind === 'gateway') {
+          try {
+            const build = t.environment === 'production'
+              ? await describeAwsProdGateway()
+              : await describeAwsStagingGateway();
+            resolvedCommit = build.commitSha || null;
+          } catch (err) {
+            resolveError = err instanceof Error ? err.message : 'build_info_unreachable';
+          }
+        }
+
+        const latestSuccess = rows.find(r => r.service === t.service && r.status === 'success') || null;
+
+        return buildLiveStatusTargetResult(
+          t,
+          ecs
+            ? {
+                status: ecs.status,
+                desired_count: ecs.desiredCount,
+                running_count: ecs.runningCount,
+                pending_count: ecs.pendingCount,
+                rollout_state: ecs.deployments?.[0]?.rolloutState || null,
+                task_definition: ecs.taskDefinition,
+              }
+            : null,
+          resolvedCommit,
+          resolveError,
+          latestSuccess?.git_commit || null,
+          latestSuccess?.created_at || null,
+        );
+      })
+    );
+
+    return res.status(200).json({ ok: true, targets, ecs_error: ecsError });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[Operator] Error fetching live deployment status: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+router.post('/deployments/redeploy', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || '').toString().trim();
+  const commit = (req.body?.commit || '').toString().trim();
+  const reason = (req.body?.reason || '').toString().trim().slice(0, REDEPLOY_REASON_MAX_LEN);
+
+  const validation = validateRedeployRequest(service, commit, reason);
+  if (!validation.ok) {
+    return res.status(400).json({ ok: false, error: validation.error, detail: validation.detail });
+  }
+
+  const FRONTEND_REPO = process.env.FRONTEND_DEPLOY_REPO || 'exafyltd/vitana-v1';
+  const FRONTEND_TOKEN = process.env.FRONTEND_DEPLOY_TOKEN;
+  if (!FRONTEND_TOKEN) {
+    return res.status(503).json({
+      ok: false,
+      error: 'frontend_deploy_token_not_set',
+      detail: 'FRONTEND_DEPLOY_TOKEN not set — cannot dispatch AWS-PROD-DEPLOY-FRONTEND.yml from here. Dispatch it manually with commit_sha pinned, or set the secret.',
+    });
+  }
+
+  const allocation = await allocateVtid('redeploy.api', 'INFRA', 'FRONTEND');
+  if (!allocation.ok || !allocation.vtid) {
+    return res.status(503).json({
+      ok: false,
+      error: 'vtid_allocation_failed',
+      detail: allocation.message || allocation.error || 'unknown',
+    });
+  }
+  const vtid = allocation.vtid;
+
+  await emitOasisEvent({
+    vtid,
+    type: 'production.redeploy.requested',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `redeploy: ${service} → ${commit.slice(0, 12)} (${reason})`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { request_id: requestId, service, commit, reason },
+  });
+
+  try {
+    await triggerWorkflow(
+      FRONTEND_REPO,
+      'AWS-PROD-DEPLOY-FRONTEND.yml',
+      'main',
+      {
+        reason: `Command Hub redeploy (${vtid}): ${reason} — by ${identity.user_id}`,
+        commit_sha: commit,
+      },
+      FRONTEND_TOKEN,
+    );
+
+    let workflowUrl: string | null = null;
+    try {
+      const runs = await getWorkflowRuns(FRONTEND_REPO, 'AWS-PROD-DEPLOY-FRONTEND.yml');
+      workflowUrl = runs.workflow_runs[0]?.html_url ?? null;
+    } catch {
+      // URL lookup is cosmetic — the dispatch above already succeeded.
+    }
+
+    return res.status(200).json({ ok: true, vtid, service, commit, workflow_url: workflowUrl });
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : 'dispatch_failed';
+    await emitOasisEvent({
+      vtid,
+      type: 'production.redeploy.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `redeploy: ${service} → ${commit.slice(0, 12)} dispatch failed — ${detail}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, service, commit, deploy_error: detail },
+    });
+    return res.status(500).json({ ok: false, vtid, error: 'dispatch_failed', detail });
   }
 });
 

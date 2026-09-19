@@ -4512,6 +4512,9 @@ const state = {
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
     operatorEventStream: { items: [], loading: false, error: null, fetched: false, domainFilter: 'all' },
     operatorDeployments: { deployments: [], approvals: [], loading: false, error: null, fetched: false },
+    // VTID-04117: live ECS state per §1b service, shown as a "currently
+    // live" strip above the deploy log on the Operator > Deployments screen.
+    operatorLiveStatus: { targets: [], loading: false, error: null, fetched: false, redeploying: null },
     operatorRunbook: { attention: [], recommendations: [], loading: false, error: null, fetched: false },
 
     // Governance missing
@@ -31497,6 +31500,181 @@ function renderOperatorEventStreamView() {
 }
 
 // ---------------------------------------------------------------------------
+// 16b. fetchOperatorLiveStatus / redeployCommunityAppCommit — VTID-04117.
+// "Currently live" strip: what's actually running on ECS right now, for
+// every §1b service, cross-checked against the deploy log's latest success
+// row — plus the one real rollback action ECS has (a commit-pinned
+// redeploy), scoped to community-app production.
+// ---------------------------------------------------------------------------
+function fetchOperatorLiveStatus() {
+    if (state.operatorLiveStatus.loading) return;
+    state.operatorLiveStatus.loading = true;
+    state.operatorLiveStatus.error = null;
+
+    fetch('/api/v1/operator/deployments/live-status', {
+        method: 'GET',
+        headers: buildContextHeaders()
+    }).then(function (r) {
+        if (!r.ok) throw new Error('live-status: ' + r.status);
+        return r.json();
+    }).then(function (data) {
+        state.operatorLiveStatus.targets = data.targets || [];
+        state.operatorLiveStatus.fetched = true;
+    }).catch(function (err) {
+        state.operatorLiveStatus.error = err.message;
+    }).finally(function () {
+        state.operatorLiveStatus.loading = false;
+        renderApp();
+    });
+}
+
+function redeployCommunityAppCommit(commit) {
+    var reason = window.prompt(
+        'Redeploy vitana-community-app-awsdr (production) at commit ' + commit.substring(0, 12) + '.\n\n' +
+        'Reason for this redeploy (required):'
+    );
+    if (reason === null) return; // cancelled
+    reason = reason.trim();
+    if (!reason) {
+        window.alert('A reason is required.');
+        return;
+    }
+    if (!window.confirm('Confirm: redeploy vitana-community-app-awsdr to ' + commit.substring(0, 12) + '?\n\n' + reason)) {
+        return;
+    }
+
+    state.operatorLiveStatus.redeploying = commit;
+    renderApp();
+
+    fetch('/api/v1/operator/deployments/redeploy', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+        body: JSON.stringify({ service: 'vitana-community-app-awsdr', commit: commit, reason: reason })
+    }).then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
+    .then(function (result) {
+        if (result.ok && result.data.ok) {
+            window.alert('Redeploy dispatched (' + result.data.vtid + '). ' +
+                (result.data.workflow_url ? 'Workflow: ' + result.data.workflow_url : 'Check GitHub Actions for progress.'));
+        } else {
+            window.alert('Redeploy failed: ' + (result.data.detail || result.data.error || 'unknown error'));
+        }
+    }).catch(function (err) {
+        window.alert('Redeploy request failed: ' + err.message);
+    }).finally(function () {
+        state.operatorLiveStatus.redeploying = null;
+        state.operatorLiveStatus.fetched = false;
+        state.operatorDeployments.fetched = false;
+        fetchOperatorLiveStatus();
+        fetchOperatorDeployments();
+    });
+}
+
+/**
+ * renderOperatorLiveStatusStrip - "currently live" cards, one per §1b
+ * service/environment. Shows ECS rollout state and, for gateway only
+ * (frontend has no build-info endpoint), a commit drift warning against
+ * the latest logged success row.
+ */
+function renderOperatorLiveStatusStrip() {
+    var wrap = document.createElement('div');
+    wrap.style.marginTop = '4px';
+    wrap.style.marginBottom = '20px';
+
+    var stripHeader = document.createElement('div');
+    stripHeader.className = 'section-title';
+    stripHeader.textContent = 'Currently Live (ECS)';
+    wrap.appendChild(stripHeader);
+
+    if (state.operatorLiveStatus.loading && state.operatorLiveStatus.targets.length === 0) {
+        var loadingDiv = document.createElement('div');
+        loadingDiv.className = 'placeholder-content';
+        loadingDiv.textContent = 'Loading live status…';
+        wrap.appendChild(loadingDiv);
+        return wrap;
+    }
+
+    if (state.operatorLiveStatus.error && state.operatorLiveStatus.targets.length === 0) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'placeholder-content error-text';
+        errDiv.textContent = 'Error: ' + state.operatorLiveStatus.error;
+        wrap.appendChild(errDiv);
+        return wrap;
+    }
+
+    var grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(240px, 1fr))';
+    grid.style.gap = '10px';
+
+    state.operatorLiveStatus.targets.forEach(function (t) {
+        var card = document.createElement('div');
+        card.className = 'attention-item';
+        card.style.borderLeftColor = t.drift ? '#ef4444' : '#22c55e';
+
+        var top = document.createElement('div');
+        top.className = 'attention-item-top';
+        var name = document.createElement('span');
+        name.className = 'attention-vtid';
+        name.textContent = t.service + ' (' + t.environment + ')';
+        top.appendChild(name);
+        card.appendChild(top);
+
+        var body = document.createElement('div');
+        body.style.fontSize = '12px';
+        body.style.marginTop = '4px';
+        body.style.lineHeight = '1.5';
+
+        if (t.ecs) {
+            body.appendChild(document.createTextNode(
+                'ECS: ' + t.ecs.status + ' — ' + t.ecs.running_count + '/' + t.ecs.desired_count + ' running' +
+                (t.ecs.rollout_state ? ' (' + t.ecs.rollout_state + ')' : '')
+            ));
+            body.appendChild(document.createElement('br'));
+        } else {
+            body.appendChild(document.createTextNode('ECS: unavailable'));
+            body.appendChild(document.createElement('br'));
+        }
+
+        if (t.resolved_commit) {
+            body.appendChild(document.createTextNode('Live commit: ' + t.resolved_commit.substring(0, 12)));
+            body.appendChild(document.createElement('br'));
+        }
+        if (t.logged_commit) {
+            body.appendChild(document.createTextNode('Last logged deploy: ' + t.logged_commit.substring(0, 12)));
+            body.appendChild(document.createElement('br'));
+        }
+        if (t.resolve_error) {
+            body.appendChild(document.createTextNode('(' + t.resolve_error + ')'));
+            body.appendChild(document.createElement('br'));
+        }
+
+        card.appendChild(body);
+
+        if (t.drift) {
+            var driftBadge = document.createElement('span');
+            driftBadge.className = 'status-badge status-error';
+            driftBadge.style.marginTop = '4px';
+            driftBadge.style.display = 'inline-block';
+            driftBadge.textContent = 'DRIFT: live commit ≠ last logged deploy';
+            card.appendChild(driftBadge);
+        }
+
+        grid.appendChild(card);
+    });
+
+    wrap.appendChild(grid);
+
+    var note = document.createElement('div');
+    note.style.fontSize = '11px';
+    note.style.opacity = '0.7';
+    note.style.marginTop = '6px';
+    note.textContent = 'Frontend (community-app) has no build-info endpoint to resolve a live commit here — verify a frontend deploy by sampling the served JS chunk hash (see CLAUDE.md).';
+    wrap.appendChild(note);
+
+    return wrap;
+}
+
+// ---------------------------------------------------------------------------
 // 17. fetchOperatorDeployments — deployments + pending approvals
 // ---------------------------------------------------------------------------
 async function fetchOperatorDeployments() {
@@ -31545,6 +31723,9 @@ function renderOperatorDeploymentsView() {
     if (!state.operatorDeployments.fetched && !state.operatorDeployments.loading) {
         fetchOperatorDeployments();
     }
+    if (!state.operatorLiveStatus.fetched && !state.operatorLiveStatus.loading) {
+        fetchOperatorLiveStatus();
+    }
 
     // Loading
     if (state.operatorDeployments.loading && state.operatorDeployments.deployments.length === 0 && state.operatorDeployments.approvals.length === 0) {
@@ -31587,6 +31768,9 @@ function renderOperatorDeploymentsView() {
     };
     header.appendChild(refreshBtn);
     container.appendChild(header);
+
+    // ── Currently Live (ECS) — VTID-04117 ──
+    container.appendChild(renderOperatorLiveStatusStrip());
 
     // ── A. Pending Approvals ──
     var apprSection = document.createElement('div');
@@ -31666,7 +31850,7 @@ function renderOperatorDeploymentsView() {
 
         var thead = document.createElement('thead');
         var headerRow = document.createElement('tr');
-        ['Service', 'Commit', 'Status', 'Env', 'Initiator', 'Time'].forEach(function (h) {
+        ['Service', 'Commit', 'Status', 'Env', 'Initiator', 'Time', 'Action'].forEach(function (h) {
             var th = document.createElement('th');
             th.textContent = h;
             headerRow.appendChild(th);
@@ -31706,6 +31890,26 @@ function renderOperatorDeploymentsView() {
             timeTd.className = 'event-timestamp';
             timeTd.textContent = formatEventTimestamp(d.created_at);
             row.appendChild(timeTd);
+
+            // VTID-04117: the one AWS-native rollback action — redeploy this
+            // exact commit to community-app production. Gateway has no
+            // arbitrary-commit rebuild mode (see the route's own comment),
+            // so this only ever appears on community-app rows.
+            var actionTd = document.createElement('td');
+            if (d.service === 'vitana-community-app-awsdr' && d.status === 'success' && d.git_commit) {
+                var redeployBtn = document.createElement('button');
+                redeployBtn.className = 'btn btn-sm';
+                var isRedeployingThis = state.operatorLiveStatus.redeploying === d.git_commit;
+                redeployBtn.textContent = isRedeployingThis ? 'Dispatching…' : 'Redeploy';
+                redeployBtn.disabled = !!state.operatorLiveStatus.redeploying;
+                redeployBtn.onclick = function (commit) {
+                    return function () { redeployCommunityAppCommit(commit); };
+                }(d.git_commit);
+                actionTd.appendChild(redeployBtn);
+            } else {
+                actionTd.textContent = '—';
+            }
+            row.appendChild(actionTd);
 
             tbody.appendChild(row);
         });

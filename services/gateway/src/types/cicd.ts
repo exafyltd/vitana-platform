@@ -936,6 +936,11 @@ export type CicdEventType =
   | 'production.publish.completed'
   | 'production.publish.failed'
   | 'production.revert.completed'
+  // VTID-04117: commit-pinned redeploy from the Operator > Deployments
+  // "currently live" strip — community-app production only, see
+  // deployment-live-status.ts's module header for why gateway is excluded.
+  | 'production.redeploy.requested'
+  | 'production.redeploy.failed'
   // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
   //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
   //                  with canary=true.  No traffic shift yet.
