@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04095",
+  "found_during": "live verification of VTID-04094 (W0-W5c operator agent plan against staging)",
+  "root_cause": "PostgREST PGRST102 'All object keys must match' rejects the operator_messages bulk insert whenever the turn's message array mixes tool-role objects (which carry tool_name) with user/assistant objects (which did not) -- silently swallowed by the call site's .catch()/console.warn",
+  "live_evidence": {
+    "operator_threads_rows": 40,
+    "operator_messages_rows_before_fix": 0,
+    "postgrest_error_reproduced": "PGRST102: All object keys must match",
+    "http_status": 400
+  },
+  "fix": "services/gateway/src/services/operator-threads.ts: tool_name: null added to user/assistant message objects in recordOperatorTurn()",
+  "verification": {
+    "node_check": "n/a (TypeScript module)",
+    "tsc_noemit": "pass",
+    "test_suites": "2/2 passing, 40/40 tests (vtid-04022-operator-threads.test.ts, vtid-03960-operator-thread-menu.test.ts)",
+    "mutation_verified": true,
+    "mutation_result": "reverting the fix fails the exact assertion the real bug broke (recorded:false vs expected true)",
+    "fake_hardened": "installFakeRest's operator_messages POST handler now emulates real PostgREST's same-object-keys bulk-insert constraint"
+  },
+  "not_done": [
+    "not re-verified against a live staging turn post-deploy",
+    "no audit of other PostgREST bulk-insert call sites for the same shape"
+  ]
+}
