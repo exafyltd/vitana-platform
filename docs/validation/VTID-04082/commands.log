@@ -1,0 +1,52 @@
+# VTID-04082 — commands run, verbatim (trimmed of unrelated noise)
+
+## Reproduce the original defect (pre-fix, via `git stash`)
+
+$ git stash push -- services/gateway/scripts/regen-screens-catalog.mjs
+$ VITANA_V1_ROOT=/tmp/t7-fixture node services/gateway/scripts/regen-screens-catalog.mjs --check
+evalmachine.<anonymous>:5
+    icon: RocketIcon,
+          ^
+ReferenceError: RocketIcon is not defined
+    at evalmachine.<anonymous>:5:11
+    at Script.runInContext (node:vm:149:12)
+    at Script.runInNewContext (node:vm:154:17)
+    at Object.runInNewContext (node:vm:310:38)
+    at loadAdm (file:///home/user/vitana-platform/services/gateway/scripts/regen-screens-catalog.mjs:233:23)
+    at main (file:///home/user/vitana-platform/services/gateway/scripts/regen-screens-catalog.mjs:317:15)
+$ git stash pop
+
+## Syntax + type checks
+
+$ node --check services/gateway/scripts/regen-screens-catalog.mjs
+(exit 0, no output)
+
+$ cd services/gateway && node_modules/.bin/tsc --noEmit
+(exit 0, no output)
+
+## Fixed script against the real sibling vitana-v1 checkout
+
+$ VITANA_V1_ROOT=/home/user/vitana-v1 node services/gateway/scripts/regen-screens-catalog.mjs --check
+✗ out of sync (spec changed=true, navigation-config.js changed=true). Run without --check to regenerate.
+(exit 1 — expected: no ReferenceError, no duplicate screen_ids rejection.
+Committed spec predates this fix / BackOffice's newer navigation entries.
+REGEN-SCREENS-CATALOG.yml auto-regenerates + auto-PRs + auto-merges this as
+a pure data sync once this fix reaches main; see that workflow's own header.)
+
+## Regression test
+
+$ cd services/gateway && npx jest test/scripts/regen-screens-catalog.test.ts
+PASS test/scripts/regen-screens-catalog.test.ts
+  regen-screens-catalog.mjs — vm sandbox identifier resolution (T7)
+    ✓ does not throw ReferenceError for an icon identifier outside any fixed list (829 ms)
+    ✓ still parses the well-known lucide icon names the fixed list used to enumerate (745 ms)
+    ✓ reports real screen-id collisions from the actual admin-navigation.ts, instead of masking them behind a crash (767 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+
+## Local VALIDATOR-CHECK preflight
+
+$ node scripts/ci/validate-pr-locally.cjs --title-file /tmp/pr-title.txt --body-file /tmp/pr-body.md --base main
+(see PR description for the exact title/body validated; result recorded at
+push time — this tool mirrors VALIDATOR-CHECK.yml's validate-pr job 1:1.)
