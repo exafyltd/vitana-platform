@@ -11,6 +11,20 @@ stopped using tools`) confirmed a tool-call-compliance stall in that
 pipeline, not a defect in the task itself. Implemented directly instead of
 retrying the automated agent.
 
+OASIS_PROOF: on a fresh (non-idempotent) activation,
+`executeActivateRecommendation()` emits `autopilot.recommendation.activated`
+(`type: 'autopilot.recommendation.activated'`, `source: 'operator-chat'`,
+`vtid: response.vtid`, `payload: { recommendation_id, vtid, user_id,
+already_activated: false }`) — the identical event type
+`POST /recommendations/:id/activate`'s developer/admin branch already
+emits for a human click, mirrored here so both paths produce the same
+audit trail. An already-activated recommendation emits NO event (AC-11).
+Pinned by `test/vtid-04111-operator-activate-recommendation.test.ts`'s
+"calls the RPC, emits the OASIS event, and bridges for a
+manually-bridgeable source_type" test (asserts the exact event shape via
+the mocked `emitOasisEvent`) and "does not emit an OASIS event and does
+not attempt to bridge" (idempotent case).
+
 ## What "activate a recommendation" means
 
 The Command Hub's own Activate button already does this for a human click,
