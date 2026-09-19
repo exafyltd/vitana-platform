@@ -2854,3 +2854,73 @@ Never write to production Supabase outside the narrowly-scoped,
 already-approved migration mechanism; never take destructive AWS actions;
 never delete/stop any AWS resource for cost reasons (see above) — all
 three hold throughout.
+
+---
+
+## 2026-09-19, later same day — root cause found for the `vtid_ledger`/`dev_agent_memory` load failure (item 3 in the priority list above); fix identified, NOT yet applied
+
+**Root cause: DMS's schema converter mis-maps pgvector's `vector` type to a corrupted, too-short `varchar`.** Confirmed precisely, not guessed:
+
+| Table | Aurora's actual column type | Supabase's actual column type (source of truth) |
+|---|---|---|
+| `vtid_ledger.embedding` | `character varying(1532)` | `vector(1536)` |
+| `dev_agent_memory.embedding` | `character varying(1020)` | `vector(1024)` |
+
+Both Aurora lengths are **exactly 4 less** than the real pgvector
+dimension — not a coincidence, a DMS schema-conversion bug reading the
+`vector` type's `atttypmod` (dimension modifier) as if it were a plain
+varchar length modifier, off by the fixed 4-byte header pgvector's typmod
+encoding carries. A `vector(1536)` value's actual text representation
+(`[0.0123,-0.456,...]` × 1536 entries) is on the order of 15,000-20,000+
+characters — nowhere near fitting in `varchar(1532)`, so any row with a
+real (non-null) embedding fails the whole table's load at COPY-commit
+time with no useful DMS-side error message (`FullLoadRows` sent, `0 rows
+skipped`, then "Command failed to load data... check target database
+logs" — the actual Postgres error, plausibly `value too long for type
+character varying(1532)`, lands in Aurora's own Postgres log, which this
+session cannot read directly — no VPC network path).
+
+**Confirmed isolated to exactly these two tables** — `pgvector` (extension
+`vector` 0.8.0) is already installed on Aurora; a scan of every table for
+a varchar column named `embedding`/`embeddings` with a suspiciously
+vector-sized length found only these two. `products`/`knowledge_docs`
+(the OLDER "known-broken" pair from the previous DROP_AND_CREATE-mode run)
+don't even have an `embedding` column — confirming that was always a
+**separate, unrelated** defect, not the same root cause recurring. This
+run's 2 failures and that run's 2 failures are coincidentally the same
+count but genuinely different tables and different causes — do not
+conflate them in a future investigation.
+
+**Why this didn't fail on every prior reload of these two tables**: it
+only fails on a row whose `embedding` is actually populated (non-null).
+Whichever of these tables/rows had null embeddings in earlier reloads
+would have loaded fine; `vtid_ledger`/`dev_agent_memory` now evidently
+carry real embedding data (expected — `vtid_ledger.embedding` and
+`dev_agent_memory` are exactly the kind of semantic-search-backed tables
+CLAUDE.md's own "Always use pgvector for semantic memory" rule describes),
+so this is a defect that was always latent and only surfaced once real
+data reached it.
+
+**Fix identified, NOT applied — needs the same schema-ALTER approval this
+session's other DDL fixes today (the `tenant_role`/`memory_scope` enum
+conversions) already got from the platform owner, and none was available
+in this specific (autonomous, scheduled) continuation**:
+
+```sql
+ALTER TABLE public.vtid_ledger      ALTER COLUMN embedding TYPE vector(1536) USING NULL;
+ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING NULL;
+```
+
+Both are safe to run as written — both tables are currently **empty on
+Aurora** (the failed loads left them at 0 rows), so there is no existing
+data to cast and no risk from the `USING NULL` clause. After running
+both, re-run just these two tables' load (DMS supports `reload-tables`
+scoped to specific table names without a full-task reload) to get the
+real 1,963+ rows into `vtid_ledger` and whatever `dev_agent_memory` holds.
+**This should also be treated as a general lesson for any future DMS
+full-load onto Aurora**: any table with a `vector`-typed column should be
+checked for this exact varchar-corruption pattern before trusting a load
+result, since DMS's own reported success/failure counts don't surface it
+usefully — check `information_schema.columns` on the target for any
+varchar column whose length is suspiciously close to (specifically, 4
+less than) a known embedding dimension.
