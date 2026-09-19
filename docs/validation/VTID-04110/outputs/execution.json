@@ -7,6 +7,7 @@
     "scripts/ci/command-hub-ownership-guard.js",
     "services/gateway/test/vtid-04028-operator-turn-stream.test.ts",
     "services/gateway/test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts",
+    "services/gateway/test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts",
     "docs/validation/VTID-04110/acceptance.md",
     "docs/validation/VTID-04110/commands.log",
     "docs/validation/VTID-04110/outputs/execution.json"
@@ -15,8 +16,9 @@
     "node_check": "pass",
     "tsc_no_emit": "pass",
     "jest_targeted_suites": "2/2 suites, 25/25 tests passing",
-    "jest_wider_regression_sweep": "6/6 suites, 71/71 tests passing, 0 regressions",
-    "mutation_verified": true
+    "jest_wider_regression_sweep": "7/7 suites, 99/99 tests passing, 0 regressions (124/124 combined)",
+    "mutation_verified": true,
+    "live_ci_failure_fixed": "Gateway (Jest, ~7.5k tests) failed on first push (3 pre-existing tests broken by fixed-length source windows/literal regex); fixed and re-pushed"
   },
   "not_done": [
     "no live staging re-verification yet",

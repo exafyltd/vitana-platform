@@ -112,14 +112,34 @@ at least twice" — was removed and replaced with a dedicated
 no-`renderApp()` test, since that old assertion literally encoded the
 flicker defect as expected behavior).
 
+**Live CI run surfaced a real collateral break, fixed in the same PR.**
+The first pushed commit failed `Gateway (Jest, ~7.5k tests)` — 3 tests in
+the pre-existing `vtid-03906-08-operator-scroll-mic-fullscreen.test.ts`
+(untouched by the original diff) broke, all for the same reason: that
+suite pins several `renderOperatorOverlay()`/state-init blocks with
+fixed-length `SOURCE.slice(idx, idx + N)` windows and one literal-text
+regex, and this fix's additions (a `localStorage.setItem(...)` call inside
+`fullscreenBtn.onclick`, and turning the `isOperatorFullscreen: false,`
+literal into a self-invoking localStorage read) pushed the asserted text
+past three of those windows / off the literal pattern entirely — not a
+behavioral regression, a stale test-window/literal that needed widening to
+match the (now legitimately longer) source. Fixed: two windows widened
+(1400→1600, 200→400, both commented with why), and the literal-`false`
+assertion rewritten to assert the new IIFE pattern still defaults to
+`false` while reading `vitana.operatorFullscreen` — 28/28 tests in that
+suite passing afterward.
+
 Wider regression sweep (Command Hub `app.js` consumers that share state
-init / cache-bust / the ownership guard): `test/scripts/command-hub-ownership-guard.test.ts`,
+init / cache-bust / the ownership guard, plus the fixed suite above):
+`test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts`,
+`test/scripts/command-hub-ownership-guard.test.ts`,
 `test/vtid-04106-operator-chat-stick-to-bottom.test.ts`,
 `test/vtid-04031-operator-turn-cost.test.ts`,
 `test/vtid-04033-operator-execution-follow.test.ts`,
 `test/vtid-03949-operator-sessions-sidebar-rename.test.ts`,
-`test/vtid-03822-operator-chat-threads.test.ts` — 6/6 suites, 71/71 tests
-passing, 0 regressions.
+`test/vtid-03822-operator-chat-threads.test.ts` — 7/7 suites, 99/99 tests
+passing, 0 regressions (124/124 across all 9 targeted+wider suites
+combined).
 
 Mutation-verified: `git stash push --include-untracked` on the three
 source files only (`app.js`, `index.html`,
