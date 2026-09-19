@@ -84,6 +84,7 @@ import * as repo from './gemini-operator-repository';
 // executeExecuteTask() before anything else. See operator-execute-authz.ts.
 import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } from './operator-execute-authz';
 import { executeReviewExecution, executeApproveExecution, executeRejectExecution } from './operator-approval-tools';
+import { executeActivateRecommendation } from './operator-recommendation-tools';
 import { executeCancelExecution } from './operator-cancel-tool';
 
 // Environment config
@@ -339,6 +340,20 @@ export const GEMINI_TOOL_DEFINITIONS = {
           }
         },
         required: ['execution_id']
+      }
+    },
+    {
+      name: 'autopilot_activate_recommendation',
+      description: 'VTID-04111: Activate a specific Dev Autopilot recommendation by id — allocates its VTID (idempotent: a second call just returns the existing VTID) and, for a manually-bridgeable source_type, starts a real execution with the cooldown skipped. Only call it when the user explicitly asks to activate a SPECIFIC recommendation they name by id; never speculatively, never on a guess about which one they mean.',
+      parameters: {
+        type: 'object',
+        properties: {
+          recommendation_id: {
+            type: 'string',
+            description: "The recommendation's UUID (full UUID only)."
+          }
+        },
+        required: ['recommendation_id']
       }
     },
     {
@@ -3476,6 +3491,13 @@ export async function executeTool(
         );
         break;
 
+      case 'autopilot_activate_recommendation':
+        result = await executeActivateRecommendation(
+          args as { recommendation_id: string },
+          threadId
+        );
+        break;
+
       case 'autopilot_cancel_execution':
         result = await executeCancelExecution(
           args as { execution_id?: string; reason?: string },
@@ -3946,6 +3968,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_review_execution: Show a Dev Autopilot execution that is held for approval (the agent pushed its branch but did not open the PR yet): branch, PR title/body, changed files, --stat and a bounded diff. With no execution_id it lists everything waiting for a decision. Read-only.
 - autopilot_approve_execution: Approve a held execution — opens the real pull request on the pushed branch and hands it to CI. Takes execution_id.
 - autopilot_reject_execution: Reject a held execution — deletes the pushed branch and cancels it with the recorded reason. Takes execution_id and an optional reason.
+- autopilot_activate_recommendation: Activate a specific Dev Autopilot recommendation by id — allocates its VTID (idempotent) and, for a manually-bridgeable source_type, starts a real execution with the cooldown skipped. Takes recommendation_id.
 - autopilot_cancel_execution: Cancel a queued (cooling) or RUNNING execution — the agent is stopped, nothing is pushed or opened. With no execution_id it only lists what can be cancelled. Takes an optional execution_id and an optional reason.
 
 **When to use tools:**
@@ -3956,6 +3979,7 @@ function getOperatorSystemPrompt(): string {
 - Open-ended development requests that name NO VTID (e.g., "fix the CI failure reason so it names the checks", "add a retry to the push dispatcher") → call autopilot_run_task with the request as the user stated it
 - Questions about what is waiting for approval, or a request to see/review a held execution or its diff (e.g., "what is waiting for my approval?", "show me the diff of 4f7d5ea4") → call autopilot_review_execution
 - An explicit decision on a held execution the user names (e.g., "approve 4f7d5ea4", "reject 4f7d5ea4, wrong approach") → call autopilot_approve_execution or autopilot_reject_execution
+- An explicit request to activate a specific Dev Autopilot recommendation by id (e.g., "activate recommendation a1b2c3d4-...") → call autopilot_activate_recommendation
 - A request to stop/cancel/abort a queued or running execution (e.g., "cancel 9a4d2c7e", "stop that run, wrong file", "what is running that I can cancel?") → call autopilot_cancel_execution (with no id to list, with the id they name to cancel)
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
@@ -3967,6 +3991,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_run_task is for a code change the user asks to be made NOW without naming a VTID: pass their request verbatim in request (plus only the context they gave — never invent requirements) and list no files; the agent discovers them and the safety gate checks its real diff afterwards. It allocates the VTID itself, so do not call autopilot_create_task first for the same request and never pair it with autopilot_execute_task. A question about code is not a request to change it; a request to log/track a task for later is autopilot_create_task, not autopilot_run_task.
 - autopilot_cancel_execution stops an execution that is still cooling or running (not a held one — that is reject). Call it with no id whenever the user asks what is running or which execution they mean; call it WITH an id ONLY when the user explicitly asks to cancel/stop a specific execution they name (id or 8+ character prefix). Never cancel on your own judgement, never guess which execution they mean (list them and ask), and if the tool reports the execution is not cooling/running, or the id is ambiguous, report exactly that. A cancel is final for that execution — nothing is pushed or opened for it.
 - autopilot_review_execution / autopilot_approve_execution / autopilot_reject_execution act on executions the agent has already run and HELD (status awaiting_approval) — they never start work. Review is read-only and safe to call whenever the user asks what is waiting or wants to see a change. Approve opens a real pull request and reject deletes the pushed branch: call either ONLY when the user explicitly asks for that decision on a specific execution they name (id or 8+ character prefix), after they have seen the change or said they do not need to. Never approve or reject on your own judgement of the diff, never guess which execution they mean (list them and ask), and if the tool reports the execution is not awaiting_approval, or the id is ambiguous, report exactly that.
+- autopilot_activate_recommendation is different from all of the above: it acts on a RECOMMENDATION (not an execution), takes the full recommendation UUID (no prefix resolution), and allocates a VTID plus — for an eligible source_type — starts a real execution with the cooldown skipped. Call it ONLY when the user explicitly names the recommendation they want activated (by id, or after you have shown them exactly one recommendation and they confirm it); never guess which recommendation they mean and never activate more than one without being asked for each.
 - If the tool returns a rejection (governance, safety gate, kill switch, on-ramp disabled), report the exact reason honestly. Never claim an execution was queued unless the tool returned status "queued".
 - If you believe the tool is unavailable or disabled, call it anyway and report what it returns — do not tell the user it is unavailable based on an assumption.
 
