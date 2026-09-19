@@ -224,7 +224,10 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
   it('a fullscreen toggle button sits beside the close button, both inside overlay-header-actions', () => {
     const idx = SOURCE.indexOf("headerActions.className = 'overlay-header-actions';");
     expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 1200);
+    // VTID-04089 widened this from 1200: an aria-label line on closeBtn
+    // (a11y region 2) pushed headerActions.appendChild(closeBtn) past the
+    // old window.
+    const nearby = SOURCE.slice(idx, idx + 1400);
     expect(nearby).toContain("fullscreenBtn.className = 'overlay-fullscreen-toggle';");
     expect(nearby).toContain('headerActions.appendChild(fullscreenBtn);');
     expect(nearby).toContain("closeBtn.className = 'overlay-close';");
@@ -245,7 +248,7 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
     // (e.g. the task drawer), so scope the search to this popup's header.
     const anchorIdx = SOURCE.indexOf("headerActions.className = 'overlay-header-actions';");
     expect(anchorIdx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(anchorIdx, anchorIdx + 1200);
+    const nearby = SOURCE.slice(anchorIdx, anchorIdx + 1400);
     expect(nearby).toContain("closeBtn.innerHTML = '&times;';");
     expect(nearby).toContain('closeBtn.onclick = () => {');
     expect(nearby).toContain('state.isOperatorOpen = false;');

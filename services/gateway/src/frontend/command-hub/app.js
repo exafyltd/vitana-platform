@@ -155,6 +155,122 @@ const TARGET_ROLE_LABELS = {
 };
 
 // ===========================================================================
+// VTID-04091 (T10, accessibility region 4/4): modal/drawer focus management.
+//
+// Every overlay/drawer/modal in the Command Hub already closes on a
+// backdrop click and a close button, but none of them move keyboard focus
+// INTO the dialog when it opens, trap Tab inside it while it's open, or
+// close on Escape — so a keyboard-only or screen-reader user who opens one
+// is left focused on whatever they clicked (often nothing, since focus was
+// never programmatically set), can Tab straight out into background
+// content behind the dialog, and has no way to dismiss it without a mouse
+// (WCAG 2.4.3 Focus Order / 2.1.1 Keyboard).
+//
+// This app has no component "mount"/"unmount" lifecycle — renderApp()
+// tears down and rebuilds the whole DOM subtree for whatever is open on
+// every call, including the dialog itself, so a naive "attach a listener,
+// remove it on close" pattern has nothing to hook. Two consequences that
+// shaped this helper:
+//   1. Initial-focus placement is deferred one tick (setTimeout(fn, 0)):
+//      the caller appends the returned panel to the document SYNCHRONOUSLY
+//      right after this function returns, so the panel isn't in the DOM
+//      yet at the point this runs — .focus() on a detached node is a
+//      silent no-op in every browser.
+//   2. That same focus placement is guarded on `document.activeElement`
+//      being <body> (or null) rather than a "first render only" flag —
+//      every re-render while the dialog stays open destroys whatever
+//      element previously had focus inside it, and the browser reliably
+//      parks focus on <body> when a focused element is removed from the
+//      document. That is the one universal signal this architecture gives
+//      for "focus needs to be re-placed", without requiring a lifecycle
+//      hook this codebase doesn't have. If focus is anywhere else, this
+//      never touches it — it can't steal focus from something the user is
+//      actively using.
+//   3. Both the Escape handler and the Tab-cycle trap are attached
+//      directly to the panel element itself, never `document` — the panel
+//      node is discarded (and its listener along with it, nothing external
+//      references it) the moment the dialog closes or a re-render replaces
+//      it, so there is no listener to leak or double-fire across renders.
+// ===========================================================================
+const MODAL_FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function attachModalA11y(panel, opts) {
+    opts = opts || {};
+    if (!panel.hasAttribute('tabindex')) {
+        panel.tabIndex = -1;
+    }
+
+    function visibleFocusables() {
+        return Array.prototype.slice.call(panel.querySelectorAll(MODAL_FOCUSABLE_SELECTOR))
+            .filter(function (el) { return el.offsetParent !== null; });
+    }
+
+    setTimeout(function () {
+        if (!panel.isConnected) return; // closed again before this ran
+        if (document.activeElement === document.body || document.activeElement == null) {
+            var list = visibleFocusables();
+            // preventScroll: several of these panels are periodically
+            // rebuilt by background polling while open (dataset.scrollRetain
+            // is this codebase's own marker for exactly that) — calling
+            // focus without it scrolls the target into view, which would
+            // fight the scroll-retention guard on every poll tick. Moving
+            // DOM focus is still fully effective for a screen reader without it.
+            (list[0] || panel).focus({ preventScroll: true });
+        }
+    }, 0);
+
+    panel.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            if (opts.onClose) opts.onClose();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        var list = visibleFocusables();
+        if (list.length === 0) return;
+        var first = list[0];
+        var last = list[list.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus({ preventScroll: true });
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus({ preventScroll: true });
+        }
+    });
+}
+
+// ===========================================================================
+// VTID-04090 (T10, accessibility region 3/4): keyboard access for custom
+// clickable elements.
+//
+// A grep audit found ~70+ div/tr/span elements used as click targets (table
+// rows that open a detail drawer, cards, chips) with no keyboard equivalent
+// — a native <button>/<a> gets Enter/Space activation and tab-stop for
+// free; a div/tr/span with an onclick handler gets neither, so a
+// keyboard-only or screen-reader user cannot reach them at all (WCAG
+// 2.1.1 Keyboard). `gov-history-row` (line ~20114) already had the correct
+// hand-written pattern (tabIndex + role="button" + onkeydown mirroring
+// onclick) in two places; this helper is that same pattern, extracted once
+// so new call sites don't hand-roll it and drift.
+// ===========================================================================
+function makeClickable(el, handler, opts) {
+    opts = opts || {};
+    el.tabIndex = 0;
+    el.setAttribute('role', opts.role || 'button');
+    if (opts.label) {
+        el.setAttribute('aria-label', opts.label);
+    }
+    el.onclick = handler;
+    el.onkeydown = function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handler(e);
+        }
+    };
+}
+
+// ===========================================================================
 // Task Title Rules: "Area: Short description" format
 // ===========================================================================
 const SYSTEM_AREAS = ['ORB', 'Gateway', 'Command Hub', 'Pipeline', 'Operator',
@@ -2328,9 +2444,6 @@ async function triggerGlobalRefresh() {
             }
         } else if (moduleKey === 'operator') {
             // Tabs auto-fetch in their render functions; no explicit init needed
-        } else if (moduleKey === 'memory-garden') {
-            state.memoryGarden.loading = true;
-            await fetchMemoryGardenProgress();
         } else if (moduleKey === 'agents') {
             state.agents.fetched = false;
             await fetchAgents();
@@ -2865,10 +2978,10 @@ function createOasisEventRow(event) {
         row.className += ' event-row-grouped';
     }
 
-    row.onclick = function () {
+    makeClickable(row, function () {
         state.oasisEvents.selectedEvent = event;
         renderApp();
-    };
+    }, { label: 'View OASIS event details: ' + (event.topic || event.vtid || 'event') });
 
     // Severity indicator
     var severityCell = document.createElement('td');
@@ -3012,10 +3125,10 @@ function formatSurfaceLabel(surface) {
 function createCommandHubEventRow(event) {
     var row = document.createElement('tr');
     row.className = 'command-hub-event-row';
-    row.onclick = function () {
+    makeClickable(row, function () {
         state.commandHubEvents.selectedEvent = event;
         renderApp();
-    };
+    }, { label: 'View Command Hub event details: ' + (event.topic || event.vtid || 'event') });
 
     // Timestamp
     var tsCell = document.createElement('td');
@@ -5006,167 +5119,6 @@ async function fetchCommandHubEvents() {
 }
 
 /**
- * VTID-0600: Fetch VTIDs list from OASIS events
- * Groups events by VTID to show lifecycle overview
- */
-async function fetchVtidsList() {
-    console.log('[VTID-0600] Fetching VTIDs list...');
-    state.vtidsList.loading = true;
-    renderApp();
-
-    try {
-        const response = await fetch('/api/v1/oasis/events?limit=200');
-        if (!response.ok) {
-            throw new Error('VTIDs list fetch failed: ' + response.status);
-        }
-
-        const data = await response.json();
-        var events = Array.isArray(data) ? data : [];
-
-        // Group events by VTID
-        var vtidMap = {};
-        events.forEach(function (event) {
-            if (!event.vtid) return;
-
-            if (!vtidMap[event.vtid]) {
-                vtidMap[event.vtid] = {
-                    vtid: event.vtid,
-                    layer: extractLayer(event.vtid),
-                    status: 'PL', // default to PLANNER
-                    events: [],
-                    latestEvent: null,
-                    services: new Set()
-                };
-            }
-
-            vtidMap[event.vtid].events.push(event);
-            if (event.service) {
-                vtidMap[event.vtid].services.add(event.service);
-            }
-
-            // Update latest event
-            if (!vtidMap[event.vtid].latestEvent ||
-                new Date(event.created_at) > new Date(vtidMap[event.vtid].latestEvent.created_at)) {
-                vtidMap[event.vtid].latestEvent = event;
-            }
-
-            // Determine status from event topic/stage
-            var topic = (event.topic || '').toLowerCase();
-            var stage = (event.task_stage || '').toUpperCase();
-            if (stage === 'DEPLOY' || topic.includes('deploy')) {
-                vtidMap[event.vtid].status = 'DE';
-            } else if (stage === 'VALIDATOR' || topic.includes('validat')) {
-                if (vtidMap[event.vtid].status !== 'DE') {
-                    vtidMap[event.vtid].status = 'VA';
-                }
-            } else if (stage === 'WORKER' || topic.includes('work')) {
-                if (vtidMap[event.vtid].status !== 'DE' && vtidMap[event.vtid].status !== 'VA') {
-                    vtidMap[event.vtid].status = 'WO';
-                }
-            }
-        });
-
-        // Convert to array and sort by latest event
-        var vtidList = Object.values(vtidMap);
-        vtidList.forEach(function (v) {
-            v.services = Array.from(v.services);
-        });
-        vtidList.sort(function (a, b) {
-            var aTime = a.latestEvent ? new Date(a.latestEvent.created_at) : new Date(0);
-            var bTime = b.latestEvent ? new Date(b.latestEvent.created_at) : new Date(0);
-            return bTime - aTime;
-        });
-
-        console.log('[VTID-0600] VTIDs list generated:', vtidList.length);
-        state.vtidsList.items = vtidList;
-        state.vtidsList.error = null;
-        state.vtidsList.fetched = true;
-    } catch (error) {
-        console.error('[VTID-0600] Failed to fetch VTIDs list:', error);
-        state.vtidsList.error = error.message;
-        state.vtidsList.items = [];
-    } finally {
-        state.vtidsList.loading = false;
-        renderApp();
-    }
-}
-
-/**
- * VTID-0600: Extract layer from VTID (DEV, CICD, GOV, ADM, etc.)
- */
-function extractLayer(vtid) {
-    if (!vtid) return 'UNK';
-    var parts = vtid.split('-');
-    if (parts.length >= 2) {
-        // Check for known prefixes
-        var prefix = parts[0].toUpperCase();
-        if (prefix === 'VTID' && parts.length >= 2) {
-            // Try to infer from number range
-            var num = parseInt(parts[1], 10);
-            if (num >= 100 && num < 200) return 'GOV';
-            if (num >= 200 && num < 300) return 'DEV';
-            if (num >= 400 && num < 500) return 'GOV';
-            if (num >= 500 && num < 600) return 'DEV';
-            if (num >= 600 && num < 700) return 'ADM';
-            return 'DEV';
-        }
-        return prefix;
-    }
-    return 'UNK';
-}
-
-/**
- * DEV-COMHU-2025-0008: Fetch VTIDs from authoritative ledger API.
- * Uses GET /api/v1/vtid/list - the canonical source of truth for VTIDs.
- * Shows ledger-only VTIDs (0 events) immediately in UI.
- */
-const VTID_LEDGER_LIMIT = 50;
-
-async function fetchVtidLedger() {
-    console.log('[DEV-COMHU-2025-0008] Fetching VTID ledger...');
-    state.vtidLedger.loading = true;
-    state.vtidLedger.error = null;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/vtid/list?limit=' + VTID_LEDGER_LIMIT);
-        if (!response.ok) {
-            throw new Error('VTID ledger fetch failed: ' + response.status);
-        }
-
-        var data = await response.json();
-
-        // VTID-01001: Handle all response formats including { ok: true, data: [...] }
-        var items = [];
-        if (Array.isArray(data)) {
-            items = data;
-        } else if (data && Array.isArray(data.data)) {
-            // Standard API format: { ok: true, count: N, data: [...] }
-            items = data.data;
-        } else if (data && Array.isArray(data.items)) {
-            items = data.items;
-        } else if (data && Array.isArray(data.vtids)) {
-            items = data.vtids;
-        } else {
-            console.warn('[DEV-COMHU-2025-0008] Unexpected response format:', data);
-            items = [];
-        }
-
-        console.log('[DEV-COMHU-2025-0008] VTID ledger loaded:', items.length, 'VTIDs');
-        state.vtidLedger.items = items;
-        state.vtidLedger.error = null;
-        state.vtidLedger.fetched = true;
-    } catch (error) {
-        console.error('[DEV-COMHU-2025-0008] Failed to fetch VTID ledger:', error);
-        state.vtidLedger.error = error.message;
-        state.vtidLedger.items = [];
-    } finally {
-        state.vtidLedger.loading = false;
-        renderApp();
-    }
-}
-
-/**
  * VTID-01001: Fetch VTID projection for decision-grade visibility.
  * Uses GET /api/v1/vtid/projection - returns computed projection with:
  * - vtid, title, current_stage, status, attention_required, last_update, last_decision
@@ -5329,102 +5281,6 @@ async function fetchApprovals(silent) {
     if (silent) {
         updateApprovalsBadge();
     } else {
-        renderApp();
-    }
-}
-
-/**
- * VTID-0601: Approve an approval item (merge + optional deploy)
- * VTID-01019: Uses OASIS ACK binding - no optimistic UI
- * VTID-01151: Uses /api/v1/cicd/approvals/:id/approve
- */
-async function approveApprovalItem(approvalId) {
-    console.log('[VTID-01151] Approving item:', approvalId);
-    state.approvals.loading = true;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/approve', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' })
-        });
-        var data = await response.json();
-
-        if (data.ok) {
-            // ===========================================================
-            // VTID-01019: OASIS ACK Binding - No optimistic success UI
-            // Register pending action and wait for OASIS confirmation
-            // ===========================================================
-            var vtid = data.vtid || ('VTID-APPROVE-' + approvalId);
-            var prTitle = data.pr_title || ('PR #' + (data.pr_number || approvalId));
-
-            registerPendingAction({
-                id: data.event_id || 'approve-' + approvalId,
-                type: 'approval',
-                vtid: vtid,
-                description: 'Approve ' + prTitle + (data.deploy ? ' + deploy' : '')
-            });
-
-            // VTID-01019: Show LOADING toast instead of SUCCESS
-            showToast('Approval submitted - awaiting confirmation...', 'info');
-
-            // Add to ticker with "requested" status
-            state.tickerEvents.unshift({
-                id: Date.now(),
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'cicd',
-                topic: 'cicd.approval.requested',
-                content: 'Approval requested: ' + prTitle + ' - awaiting OASIS confirmation',
-                vtid: vtid
-            });
-
-            // VTID-01151: Refresh approvals list (also updates count)
-            state.approvals.fetched = false;
-            await fetchApprovals();
-        } else {
-            // VTID-01019: Immediate backend failure
-            showToast('Approval failed: ' + (data.error || 'Unknown error'), 'error');
-            state.approvals.loading = false;
-            renderApp();
-        }
-    } catch (err) {
-        // VTID-01019: Immediate network/backend error
-        showToast('Approval failed: ' + err.message, 'error');
-        state.approvals.loading = false;
-        renderApp();
-    }
-}
-
-/**
- * VTID-0601: Deny/reject an approval item
- * VTID-01151: Uses /api/v1/cicd/approvals/:id/deny
- */
-async function denyApprovalItem(approvalId, reason) {
-    console.log('[VTID-01151] Denying item:', approvalId);
-    state.approvals.loading = true;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/cicd/approvals/' + approvalId + '/deny', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ reason: reason || 'Denied by user' })
-        });
-        var data = await response.json();
-
-        if (data.ok) {
-            showToast('Approval denied.', 'info');
-            // VTID-01151: Refresh approvals list (also updates count)
-            state.approvals.fetched = false;
-            await fetchApprovals();
-        } else {
-            showToast('Rejection failed: ' + (data.error || 'Unknown error'), 'error');
-            state.approvals.loading = false;
-            renderApp();
-        }
-    } catch (err) {
-        showToast('Rejection failed: ' + err.message, 'error');
-        state.approvals.loading = false;
         renderApp();
     }
 }
@@ -6413,6 +6269,7 @@ function renderHeader() {
         hmHeader.innerHTML =
             '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
+        hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
             state.cicdHealthTooltipOpen = false;
             renderApp();
@@ -9130,6 +8987,7 @@ function renderTaskDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close task details');
     closeBtn.onclick = () => {
         state.selectedTask = null;
         state.selectedTaskDetail = null;
@@ -12164,141 +12022,6 @@ async function fetchGovernanceRules() {
     }
 }
 
-// --- Admin Dev Users (VTID-01172) ---
-
-/**
- * VTID-01172: Fetches dev users (exafy_admin=true) from the dev-access API.
- * Optionally filters by email query.
- */
-async function fetchAdminDevUsers() {
-    state.adminDevUsersLoading = true;
-    state.adminDevUsersError = null;
-    renderApp();
-
-    try {
-        var query = state.adminDevUsersSearchQuery || '';
-        var url = '/api/v1/dev-access/users';
-        if (query.trim()) {
-            url += '?query=' + encodeURIComponent(query.trim());
-        }
-
-        var response = await fetch(url, {
-            method: 'GET',
-            headers: buildContextHeaders()
-        });
-
-        var json = await response.json();
-
-        if (!response.ok || !json.ok) {
-            var errorMsg = json.error || json.message || 'Failed to fetch dev users';
-            if (response.status === 401) {
-                throw new Error('Unauthenticated - please log in');
-            } else if (response.status === 403) {
-                throw new Error('Access denied - requires exafy_admin');
-            }
-            throw new Error(errorMsg);
-        }
-
-        state.adminDevUsers = json.users || [];
-        console.log('[VTID-01172] Dev users loaded:', state.adminDevUsers.length);
-    } catch (error) {
-        console.error('[VTID-01172] Failed to fetch dev users:', error);
-        state.adminDevUsersError = error.message;
-        state.adminDevUsers = [];
-    } finally {
-        state.adminDevUsersLoading = false;
-        renderApp();
-    }
-}
-
-/**
- * VTID-01172: Grants dev access (exafy_admin=true) to a user by email.
- */
-async function grantDevAccess(email) {
-    if (!email || !email.trim()) {
-        showToast('Please enter an email address', 'error');
-        return;
-    }
-
-    state.adminDevUsersGrantLoading = true;
-    state.adminDevUsersGrantError = null;
-    renderApp();
-
-    try {
-        var response = await fetch('/api/v1/dev-access/grant', {
-            method: 'POST',
-            headers: buildContextHeaders(),
-            body: JSON.stringify({ email: email.trim() })
-        });
-
-        var json = await response.json();
-
-        if (!response.ok || !json.ok) {
-            var errorMsg = json.error || json.message || 'Failed to grant dev access';
-            if (response.status === 401) {
-                throw new Error('Unauthenticated - please log in');
-            } else if (response.status === 403) {
-                throw new Error('Access denied - requires exafy_admin');
-            } else if (response.status === 404) {
-                throw new Error('User not found: ' + email);
-            }
-            throw new Error(errorMsg);
-        }
-
-        showToast('Dev access granted to ' + email, 'success');
-        state.adminDevUsersGrantEmail = '';
-        // Refresh user list
-        await fetchAdminDevUsers();
-    } catch (error) {
-        console.error('[VTID-01172] Failed to grant dev access:', error);
-        state.adminDevUsersGrantError = error.message;
-        showToast(error.message, 'error');
-    } finally {
-        state.adminDevUsersGrantLoading = false;
-        renderApp();
-    }
-}
-
-/**
- * VTID-01172: Revokes dev access (exafy_admin=false) from a user by email.
- */
-async function revokeDevAccess(email) {
-    if (!email || !email.trim()) {
-        showToast('Invalid email', 'error');
-        return;
-    }
-
-    // Confirm revocation
-    if (!confirm('Revoke dev access from ' + email + '?')) {
-        return;
-    }
-
-    try {
-        var response = await fetch('/api/v1/dev-access/revoke', {
-            method: 'POST',
-            headers: buildContextHeaders(),
-            body: JSON.stringify({ email: email.trim() })
-        });
-
-        var json = await response.json();
-
-        if (!response.ok || !json.ok) {
-            var errorMsg = json.error || json.message || 'Failed to revoke dev access';
-            if (response.status === 400 && json.error === 'SELF_REVOKE_FORBIDDEN') {
-                throw new Error('Cannot revoke your own dev access');
-            }
-            throw new Error(errorMsg);
-        }
-
-        showToast('Dev access revoked from ' + email, 'success');
-        // Refresh user list
-        await fetchAdminDevUsers();
-    } catch (error) {
-        console.error('[VTID-01172] Failed to revoke dev access:', error);
-        showToast(error.message, 'error');
-    }
-}
-
 // ===========================================================================
 // VTID-01195: Command Hub Admin Screens v2 — Wired to Real Data
 // ===========================================================================
@@ -12564,10 +12287,10 @@ function renderAdminUsersView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminUsersSelectedId === user.user_id) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminUsersSelectedId = user.user_id;
                 renderApp();
-            };
+            }, { label: 'View user details: ' + (user.email || user.user_id) });
             var role = user.active_role || 'none';
             var tenant = user.tenant_name || '—';
             var status = user.status || 'Inactive';
@@ -12610,7 +12333,7 @@ function renderAdminUsersView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedUser.email || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close user details" onclick="state.adminUsersSelectedId = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>User Summary</h4>' +
@@ -12708,10 +12431,10 @@ function renderAdminPermissionsView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminPermissionsSelectedKey === roleItem.role) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminPermissionsSelectedKey = roleItem.role;
                 fetchAdminRoleUsers(roleItem.role);
-            };
+            }, { label: 'View role details: ' + roleItem.role });
             var scope = ROLE_SCOPES[roleItem.role] || 'Tenant';
             row.innerHTML = '<td><span class="admin-role-badge admin-role-' + roleItem.role + '">' + roleItem.role + '</span></td>' +
                 '<td>' + roleItem.user_count + '</td>' +
@@ -12750,7 +12473,7 @@ function renderAdminPermissionsView() {
         rightPanel.innerHTML = '<div class="admin-detail-panel">' +
             '<div class="admin-detail-header">' +
             '<h3><span class="admin-role-badge admin-role-' + role + '">' + role + '</span></h3>' +
-            '<button class="admin-detail-close-btn" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
+            '<button class="admin-detail-close-btn" aria-label="Close role details" onclick="state.adminPermissionsSelectedKey = null; renderApp();">&times;</button>' +
             '</div>' +
             '<div class="admin-detail-section">' +
             '<h4>Role Details</h4>' +
@@ -12841,10 +12564,10 @@ function renderAdminTenantsView() {
             var row = document.createElement('tr');
             row.className = 'admin-list-row clickable-row';
             if (state.adminTenantsSelectedId === tenant.id) row.classList.add('selected');
-            row.onclick = function () {
+            makeClickable(row, function () {
                 state.adminTenantsSelectedId = tenant.id;
                 fetchAdminTenantDetail(tenant.id);
-            };
+            }, { label: 'View tenant details: ' + (tenant.name || tenant.id) });
             var status = tenant.status || 'Empty';
             row.innerHTML = '<td class="admin-cell-tenant">' + (tenant.name || '—') + '</td>' +
                 '<td>' + (tenant.user_count || 0) + '</td>' +
@@ -12886,7 +12609,7 @@ function renderAdminTenantsView() {
             rightPanel.innerHTML = '<div class="admin-detail-panel">' +
                 '<div class="admin-detail-header">' +
                 '<h3>' + (selectedTenant.name || '—') + '</h3>' +
-                '<button class="admin-detail-close-btn" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
+                '<button class="admin-detail-close-btn" aria-label="Close tenant details" onclick="state.adminTenantsSelectedId = null; state.adminTenantDetail = null; renderApp();">&times;</button>' +
                 '</div>' +
                 '<div class="admin-detail-section">' +
                 '<h4>Tenant Details</h4>' +
@@ -13500,6 +13223,10 @@ function renderAdminBillingCodesView() {
         '  <button id="vtid-03107-generate" class="primary-btn" style="padding:0.5rem 1rem;background:#10b981;color:#0f172a;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Generate</button>' +
         '</div>' +
         '<p style="margin:0.5rem 0 0;font-size:11px;color:#64748b;">Codes are unique-per-user (max_uses=1). For shared marketing codes, edit redemption_codes directly via SQL.</p>';
+    formCard.querySelectorAll('label').forEach(function (lbl) {
+        var ctrl = lbl.parentElement && lbl.parentElement.querySelector('input, select');
+        if (ctrl && ctrl.id) lbl.setAttribute('for', ctrl.id);
+    });
     container.appendChild(formCard);
 
     formCard.querySelector('#vtid-03107-generate').addEventListener('click', async function () {
@@ -14071,11 +13798,13 @@ function renderAdminMarketplaceShopCreateForm() {
         }
         row.innerHTML = labelHtml + fieldHtml
             + (spec.help ? '<small class="admin-detail-note">' + escapeHtml(spec.help) + '</small>' : '');
+        row.querySelector('label').setAttribute('for', id);
         return row;
     }
 
     // Network selector — populated from registry
     var netSel = document.createElement('select');
+    netSel.id = 'mp-network-select';
     netSel.className = 'admin-filter-select';
     var netOpts = '';
     for (var i = 0; i < providers.length; i++) {
@@ -14091,6 +13820,7 @@ function renderAdminMarketplaceShopCreateForm() {
     var netRow = document.createElement('div');
     netRow.style.marginBottom = '0.75rem';
     netRow.innerHTML = '<label style="display:block;font-size:0.8rem;margin-bottom:0.25rem;">Network</label>';
+    netRow.querySelector('label').setAttribute('for', netSel.id);
     netRow.appendChild(netSel);
     wrap.appendChild(netRow);
 
@@ -19381,10 +19111,10 @@ function renderGovernanceRulesView() {
     filteredRules.forEach(rule => {
         const row = document.createElement('tr');
         row.className = 'governance-rule-row';
-        row.onclick = () => {
+        makeClickable(row, () => {
             state.selectedGovernanceRule = rule;
             renderApp();
-        };
+        }, { label: 'View governance rule details: ' + rule.id });
 
         // Rule ID
         const idCell = document.createElement('td');
@@ -19474,6 +19204,7 @@ function renderGovernanceRuleDetailDrawer() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance rule details');
     closeBtn.onclick = () => {
         state.selectedGovernanceRule = null;
         renderApp();
@@ -19607,6 +19338,13 @@ function renderGovernanceRuleDetailDrawer() {
     content.appendChild(updatedSection);
 
     drawer.appendChild(content);
+
+    attachModalA11y(drawer, {
+        onClose: function () {
+            state.selectedGovernanceRule = null;
+            renderApp();
+        }
+    });
 
     return drawer;
 }
@@ -21663,6 +21401,7 @@ function renderOasisEventDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close event details');
     closeBtn.onclick = function () {
         state.oasisEvents.selectedEvent = null;
         state.oasisEvents.orbTranscript = null;
@@ -21864,6 +21603,15 @@ function renderOasisEventDrawer() {
     }
 
     drawer.appendChild(content);
+
+    attachModalA11y(drawer, {
+        onClose: function () {
+            state.oasisEvents.selectedEvent = null;
+            state.oasisEvents.orbTranscript = null;
+            state.oasisEvents.orbTranscriptError = null;
+            renderApp();
+        }
+    });
 
     return drawer;
 }
@@ -22315,9 +22063,9 @@ function renderOasisLedgerTableWithDrilldown(items) {
             }
 
             // Click to show drilldown
-            row.onclick = function () {
+            makeClickable(row, function () {
                 fetchOasisVtidDetail(item.vtid);
-            };
+            }, { label: 'View VTID details: ' + item.vtid });
 
             // VTID column
             var vtidCell = document.createElement('td');
@@ -22443,9 +22191,9 @@ function renderOasisVtidLedgerView() {
             if (oasisVtidDetail.selectedVtid === item.vtid) {
                 row.classList.add('selected');
             }
-            row.onclick = function () {
+            makeClickable(row, function () {
                 fetchOasisVtidDetail(item.vtid);
-            };
+            }, { label: 'View VTID details: ' + item.vtid });
 
             // VTID
             var vtidCell = document.createElement('td');
@@ -22540,6 +22288,7 @@ function renderOasisVtidLedgerDrawer() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'drawer-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close VTID details');
     closeBtn.onclick = function () {
         oasisVtidDetail.selectedVtid = null;
         oasisVtidDetail.data = null;
@@ -22636,2427 +22385,18 @@ function renderOasisVtidLedgerDrawer() {
     }
 
     drawer.appendChild(content);
+
+    attachModalA11y(drawer, {
+        onClose: function () {
+            oasisVtidDetail.selectedVtid = null;
+            oasisVtidDetail.data = null;
+            oasisVtidDetail.events = [];
+            oasisVtidDetail.error = null;
+            renderApp();
+        }
+    });
+
     return drawer;
-}
-
-// =============================================================================
-// VTID-01086: Memory Garden UI Deepening
-// =============================================================================
-
-/**
- * VTID-01086: Memory Garden category icons mapping
- */
-const MEMORY_GARDEN_ICONS = {
-    personal_identity: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
-    health_wellness: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
-    lifestyle_routines: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>',
-    network_relationships: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>',
-    learning_knowledge: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/></svg>',
-    business_projects: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-6 0h-4V4h4v2z"/></svg>',
-    finance_assets: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>',
-    location_environment: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>',
-    digital_footprint: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>',
-    values_aspirations: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>',
-    autopilot_context: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6zm2 2v2h8v-2H6zm10 0v6h2V8h-2zm-10 4v2h5v-2H6z"/></svg>',
-    future_plans: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 10.9c-.61 0-1.1.49-1.1 1.1s.49 1.1 1.1 1.1c.61 0 1.1-.49 1.1-1.1s-.49-1.1-1.1-1.1zM12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.19 12.19L6 18l3.81-8.19L18 6l-3.81 8.19z"/></svg>',
-    uncategorized: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>'
-};
-
-/**
- * VTID-01086: Longevity messaging (deterministic, no AI)
- */
-const LONGEVITY_MESSAGES = {
-    sleep_declining: 'Sleep drives recovery and longevity. Poor sleep quality accelerates aging and impairs immune function.',
-    sleep_stable: 'Maintaining consistent sleep patterns supports cellular repair and memory consolidation.',
-    sleep_improving: 'Improved sleep quality enhances cognitive function and metabolic health.',
-    stress_high: 'Stress management reduces inflammation and cortisol, protecting cardiovascular health.',
-    stress_moderate: 'Moderate stress levels allow for recovery. Consider building stress resilience practices.',
-    stress_low: 'Low stress levels support immune function and mental clarity.',
-    movement_low: 'Daily movement improves metabolic health and reduces risk of chronic disease.',
-    movement_moderate: 'Regular movement supports cardiovascular health and bone density.',
-    movement_high: 'Active lifestyle correlates with increased lifespan and cognitive health.'
-};
-
-/**
- * VTID-01086: Fetch Memory Garden progress from API
- */
-async function fetchMemoryGardenProgress() {
-    if (state.memoryGarden.loading) return;
-
-    state.memoryGarden.loading = true;
-    state.memoryGarden.error = null;
-    renderApp();
-
-    // Default fallback data matching production Memory Garden categories
-    var fallbackData = {
-        ok: true,
-        totals: { memories: 0 },
-        categories: {
-            personal_identity: { count: 0, progress: 0, label: 'Personal Identity', description: 'Building your core identity profile' },
-            health_wellness: { count: 0, progress: 0, label: 'Health & Wellness', description: 'Tracking your vitality and well-being' },
-            lifestyle_routines: { count: 0, progress: 0, label: 'Lifestyle & Routines', description: 'Capturing your daily patterns' },
-            business_projects: { count: 0, progress: 0, label: 'Business & Projects', description: 'Mapping your professional journey' },
-            network_relationships: { count: 0, progress: 0, label: 'Network & Relationships', description: 'Understanding your social ecosystem' },
-            learning_knowledge: { count: 0, progress: 0, label: 'Learning & Knowledge', description: 'Growing your knowledge base' },
-            finance_assets: { count: 0, progress: 0, label: 'Finance & Assets', description: 'Building financial clarity' },
-            location_environment: { count: 0, progress: 0, label: 'Location & Environment', description: 'Mapping your physical world' },
-            digital_footprint: { count: 0, progress: 0, label: 'Digital Footprint', description: 'Managing your digital presence' },
-            values_aspirations: { count: 0, progress: 0, label: 'Values & Aspirations', description: 'Defining your compass' },
-            autopilot_context: { count: 0, progress: 0, label: 'Autopilot & Context', description: 'Configuring your AI companion' },
-            future_plans: { count: 0, progress: 0, label: 'Future Plans', description: 'Designing your evolution' },
-            uncategorized: { count: 0, progress: 0, label: 'Uncategorized', description: 'Memories awaiting categorization' }
-        }
-    };
-
-    try {
-        const token = state.authToken;
-        if (!token) {
-            console.warn('[VTID-01086] Not authenticated, using fallback data');
-            state.memoryGarden.progress = fallbackData;
-            state.memoryGarden.fetched = true;
-            state.memoryGarden.loading = false;
-            renderApp();
-            return;
-        }
-
-        // Add timeout to prevent hanging
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const response = await fetch('/api/v1/memory/garden/progress', {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || 'Failed to fetch progress');
-        }
-
-        const data = await response.json();
-
-        // Merge with fallback to ensure all categories have descriptions
-        if (data.categories) {
-            Object.keys(fallbackData.categories).forEach(function (key) {
-                if (data.categories[key]) {
-                    data.categories[key].description = data.categories[key].description || fallbackData.categories[key].description;
-                } else {
-                    data.categories[key] = fallbackData.categories[key];
-                }
-            });
-        } else {
-            data.categories = fallbackData.categories;
-        }
-
-        state.memoryGarden.progress = data;
-        state.memoryGarden.fetched = true;
-        state.memoryGarden.loading = false;
-        state.memoryGarden.error = null;
-
-        console.log('[VTID-01086] Memory Garden progress fetched:', data.totals);
-    } catch (err) {
-        console.error('[VTID-01086] Error fetching progress:', err);
-        // Use fallback data on error so UI still renders
-        state.memoryGarden.progress = fallbackData;
-        state.memoryGarden.fetched = true;
-        state.memoryGarden.loading = false;
-        state.memoryGarden.error = null; // Don't show error, just use fallback
-        console.log('[VTID-01086] Using fallback data due to error');
-    }
-
-    renderApp();
-}
-
-/**
- * VTID-01086: Fetch longevity summary for the Longevity Focus panel
- */
-async function fetchLongevitySummary() {
-    // Prevent duplicate fetches
-    if (state.memoryGarden.longevityLoading || state.memoryGarden.longevityFetched) return;
-
-    state.memoryGarden.longevityLoading = true;
-    state.memoryGarden.longevityError = null;
-
-    // Default fallback data
-    var fallbackLongevity = {
-        sleep: { trend: 'stable', value: 7.2, unit: 'hrs' },
-        stress: { trend: 'moderate', value: 42, unit: 'score' },
-        movement: { trend: 'moderate', value: 6500, unit: 'steps' },
-        recommendation: {
-            type: 'community',
-            title: 'Morning Wellness Circle',
-            description: 'Join others focused on healthy morning routines'
-        }
-    };
-
-    try {
-        const token = state.authToken;
-        if (!token) {
-            console.warn('[VTID-01086] Not authenticated, using longevity fallback');
-            state.memoryGarden.longevity = fallbackLongevity;
-            state.memoryGarden.longevityLoading = false;
-            state.memoryGarden.longevityFetched = true;
-            renderApp();
-            return;
-        }
-
-        // Add timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-        const response = await fetch('/api/v1/memory/retrieve', {
-            method: 'POST',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                intent: 'longevity',
-                mode: 'summary',
-                include: ['garden', 'longevity', 'community', 'diary']
-            }),
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        // Use fallback for any error status
-        if (!response.ok) {
-            console.warn('[VTID-01086] Longevity endpoint returned ' + response.status + ', using fallback');
-            state.memoryGarden.longevity = fallbackLongevity;
-            state.memoryGarden.longevityLoading = false;
-            state.memoryGarden.longevityFetched = true;
-            renderApp();
-            return;
-        }
-
-        const data = await response.json();
-        state.memoryGarden.longevity = data;
-        state.memoryGarden.longevityLoading = false;
-        state.memoryGarden.longevityFetched = true;
-        state.memoryGarden.longevityError = null;
-
-        console.log('[VTID-01086] Longevity summary fetched');
-    } catch (err) {
-        console.warn('[VTID-01086] Longevity fetch failed, using fallback:', err.message);
-        state.memoryGarden.longevity = fallbackLongevity;
-        state.memoryGarden.longevityLoading = false;
-        state.memoryGarden.longevityFetched = true;
-        state.memoryGarden.longevityError = null;
-    }
-
-    renderApp();
-}
-
-/**
- * VTID-01086: Refresh Memory Garden (progress + longevity)
- */
-async function refreshMemoryGarden() {
-    // Emit UI refreshed OASIS event (via gateway)
-    console.log('[VTID-01086] Refreshing Memory Garden');
-
-    // Reset fetched flags to force refetch
-    state.memoryGarden.fetched = false;
-    state.memoryGarden.longevity = null;
-
-    // Fetch both in parallel
-    await Promise.all([
-        fetchMemoryGardenProgress(),
-        fetchLongevitySummary()
-    ]);
-}
-
-/**
- * VTID-01225: Fetch actual memory items for a specific garden category
- * Calls GET /api/v1/memory/context/trusted with category filter
- */
-async function fetchCategoryMemories(categoryKey) {
-    if (state.memoryGarden.categoryMemoriesLoading) return;
-
-    state.memoryGarden.categoryMemoriesLoading = true;
-    state.memoryGarden.categoryMemoriesError = null;
-    state.memoryGarden.categoryMemories = [];
-    renderApp();
-
-    // Map garden categories back to source category keys for the API
-    var categoryApiMap = {
-        personal_identity: 'notes,personal',
-        health_wellness: 'health',
-        lifestyle_routines: 'preferences',
-        network_relationships: 'relationships,community,events_meetups',
-        learning_knowledge: 'notes',
-        business_projects: 'tasks',
-        finance_assets: 'products_services',
-        location_environment: 'notes',
-        digital_footprint: 'notes',
-        values_aspirations: 'goals',
-        autopilot_context: 'conversation',
-        future_plans: 'goals',
-        uncategorized: 'conversation,notes'
-    };
-
-    var apiCategories = categoryApiMap[categoryKey] || categoryKey;
-
-    try {
-        var token = state.authToken;
-        if (!token) {
-            state.memoryGarden.categoryMemoriesLoading = false;
-            state.memoryGarden.categoryMemoriesError = 'Not authenticated';
-            renderApp();
-            return;
-        }
-
-        var controller = new AbortController();
-        var timeoutId = setTimeout(function () { controller.abort(); }, 8000);
-
-        var response = await fetch(
-            '/api/v1/memory/context/trusted?categories=' + encodeURIComponent(apiCategories) +
-            '&min_confidence=10&limit=50&include_low_confidence=true',
-            {
-                method: 'GET',
-                headers: {
-                    'Authorization': 'Bearer ' + token,
-                    'Content-Type': 'application/json'
-                },
-                signal: controller.signal
-            }
-        );
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            // Fallback: try the basic context endpoint
-            var fallbackResponse = await fetch(
-                '/api/v1/memory/context?categories=' + encodeURIComponent(apiCategories) + '&limit=50',
-                {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': 'Bearer ' + token,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (fallbackResponse.ok) {
-                var fallbackData = await fallbackResponse.json();
-                state.memoryGarden.categoryMemories = fallbackData.items || [];
-            } else {
-                throw new Error('Failed to fetch memories');
-            }
-        } else {
-            var data = await response.json();
-            state.memoryGarden.categoryMemories = data.items || [];
-        }
-
-        console.log('[VTID-01225] Fetched ' + state.memoryGarden.categoryMemories.length + ' memories for ' + categoryKey);
-    } catch (err) {
-        console.error('[VTID-01225] Error fetching category memories:', err);
-        state.memoryGarden.categoryMemoriesError = err.message || 'Failed to load memories';
-    }
-
-    state.memoryGarden.categoryMemoriesLoading = false;
-    renderApp();
-}
-
-/**
- * VTID-01225: Fetch structured facts from Memory Garden summary
- */
-async function fetchMemoryFacts() {
-    if (state.memoryGarden.factsLoading || state.memoryGarden.factsFetched) return;
-
-    state.memoryGarden.factsLoading = true;
-
-    try {
-        var token = state.authToken;
-        if (!token) {
-            state.memoryGarden.factsLoading = false;
-            return;
-        }
-
-        var controller = new AbortController();
-        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
-
-        var response = await fetch('/api/v1/memory/garden/summary', {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-            var data = await response.json();
-            state.memoryGarden.facts = data;
-            console.log('[VTID-01225] Memory facts fetched');
-        }
-    } catch (err) {
-        console.warn('[VTID-01225] Facts fetch failed:', err.message);
-    }
-
-    state.memoryGarden.factsLoading = false;
-    state.memoryGarden.factsFetched = true;
-    renderApp();
-}
-
-/**
- * VTID-01225: Fetch relationship graph (nodes + edges)
- */
-async function fetchRelationshipGraph() {
-    if (state.memoryGarden.relationshipsLoading || state.memoryGarden.relationshipsFetched) return;
-
-    state.memoryGarden.relationshipsLoading = true;
-
-    try {
-        var token = state.authToken;
-        if (!token) {
-            state.memoryGarden.relationshipsLoading = false;
-            return;
-        }
-
-        var controller = new AbortController();
-        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
-
-        var response = await fetch('/api/v1/relationships/graph?limit=50', {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-            var data = await response.json();
-            state.memoryGarden.relationships = data;
-            console.log('[VTID-01225] Relationship graph fetched: ' + (data.nodes?.length || 0) + ' nodes, ' + (data.edges?.length || 0) + ' edges');
-        }
-    } catch (err) {
-        console.warn('[VTID-01225] Relationships fetch failed:', err.message);
-    }
-
-    state.memoryGarden.relationshipsLoading = false;
-    state.memoryGarden.relationshipsFetched = true;
-    renderApp();
-}
-
-/**
- * VTID-01225: Fetch behavioral signals
- */
-async function fetchBehavioralSignals() {
-    if (state.memoryGarden.signalsLoading || state.memoryGarden.signalsFetched) return;
-
-    state.memoryGarden.signalsLoading = true;
-
-    try {
-        var token = state.authToken;
-        if (!token) {
-            state.memoryGarden.signalsLoading = false;
-            return;
-        }
-
-        var controller = new AbortController();
-        var timeoutId = setTimeout(function () { controller.abort(); }, 5000);
-
-        var response = await fetch('/api/v1/relationships/signals?min_confidence=20', {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-            var data = await response.json();
-            state.memoryGarden.signals = data.signals || [];
-            console.log('[VTID-01225] Behavioral signals fetched: ' + state.memoryGarden.signals.length);
-        }
-    } catch (err) {
-        console.warn('[VTID-01225] Signals fetch failed:', err.message);
-    }
-
-    state.memoryGarden.signalsLoading = false;
-    state.memoryGarden.signalsFetched = true;
-    renderApp();
-}
-
-/**
- * VTID-01086: Render the Memory Garden view
- */
-function renderMemoryGardenView() {
-    var container = document.createElement('div');
-    container.className = 'memory-garden-container';
-
-    // Auto-fetch if not yet fetched and not loading
-    if (!state.memoryGarden.fetched && !state.memoryGarden.loading) {
-        fetchMemoryGardenProgress();
-    }
-    if (!state.memoryGarden.longevityFetched && !state.memoryGarden.longevityLoading) {
-        fetchLongevitySummary();
-    }
-    // VTID-01225: Auto-fetch unified intelligence data
-    if (!state.memoryGarden.factsFetched && !state.memoryGarden.factsLoading) {
-        fetchMemoryFacts();
-    }
-    if (!state.memoryGarden.relationshipsFetched && !state.memoryGarden.relationshipsLoading) {
-        fetchRelationshipGraph();
-    }
-    if (!state.memoryGarden.signalsFetched && !state.memoryGarden.signalsLoading) {
-        fetchBehavioralSignals();
-    }
-
-    // Header with title and actions
-    var header = document.createElement('div');
-    header.className = 'memory-garden-header';
-
-    var titleSection = document.createElement('div');
-    titleSection.className = 'memory-garden-title-section';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Memory Garden';
-    titleSection.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    var totalMemories = state.memoryGarden.progress?.totals?.memories || 0;
-    subtitle.textContent = 'Your personal memory vault • ' + totalMemories + ' memories stored';
-    titleSection.appendChild(subtitle);
-
-    header.appendChild(titleSection);
-
-    // Quick actions
-    var actions = document.createElement('div');
-    actions.className = 'memory-garden-actions';
-
-    // Add Diary Entry button
-    var addDiaryBtn = document.createElement('button');
-    addDiaryBtn.className = 'btn btn-primary';
-    addDiaryBtn.textContent = '+ Add Diary Entry';
-    addDiaryBtn.onclick = function () {
-        state.memoryGarden.showDiaryModal = true;
-        renderApp();
-    };
-    actions.appendChild(addDiaryBtn);
-
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
-
-    header.appendChild(actions);
-    container.appendChild(header);
-
-    // Loading state
-    if (state.memoryGarden.loading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'memory-garden-loading';
-        loadingDiv.textContent = 'Loading Memory Garden...';
-        container.appendChild(loadingDiv);
-        return container;
-    }
-
-    // Error state
-    if (state.memoryGarden.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'memory-garden-error';
-        errorDiv.textContent = 'Error: ' + state.memoryGarden.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // VTID-01086: memory_get_garden_progress RPC does not exist live —
-    // every fetch falls into the backend's _placeholder branch, returning
-    // an ok:true, all-zero response indistinguishable from a genuinely
-    // empty Memory Garden. Without this banner an admin sees "0 memories
-    // stored" for every single user with no indication the data is fake.
-    if (state.memoryGarden.progress?._placeholder) {
-        var placeholderBanner = document.createElement('div');
-        placeholderBanner.className = 'admin-not-wired-banner';
-        placeholderBanner.innerHTML = '<span class="admin-not-wired-icon">⚠️</span> Memory Garden data unavailable — the memory_get_garden_progress database function is not deployed. The counts below are placeholder zeros, not this user\'s real data.';
-        container.appendChild(placeholderBanner);
-    }
-
-    // Main content area
-    var mainContent = document.createElement('div');
-    mainContent.className = 'memory-garden-main';
-
-    // Longevity Focus Today panel (first row)
-    mainContent.appendChild(renderLongevityFocusPanel());
-
-    // VTID-01225: Unified Intelligence Summary (facts + relationships + signals)
-    mainContent.appendChild(renderUnifiedIntelligencePanel());
-
-    // Category cards grid
-    var grid = document.createElement('div');
-    grid.className = 'memory-garden-grid';
-
-    var categories = state.memoryGarden.progress?.categories || {};
-    var categoryOrder = [
-        'personal_identity', 'health_wellness', 'lifestyle_routines', 'network_relationships',
-        'learning_knowledge', 'business_projects', 'finance_assets', 'location_environment',
-        'digital_footprint', 'values_aspirations', 'autopilot_context', 'future_plans', 'uncategorized'
-    ];
-
-    categoryOrder.forEach(function (key) {
-        var cat = categories[key];
-        if (cat) {
-            grid.appendChild(renderMemoryGardenCard(key, cat));
-        }
-    });
-
-    mainContent.appendChild(grid);
-    container.appendChild(mainContent);
-
-    // Diary entry modal
-    if (state.memoryGarden.showDiaryModal) {
-        container.appendChild(renderDiaryEntryModal());
-    }
-
-    // Category detail modal
-    if (state.memoryGarden.showCategoryModal) {
-        container.appendChild(renderCategoryDetailModal());
-    }
-
-    return container;
-}
-
-/**
- * VTID-01086: Render the Longevity Focus Today panel
- */
-function renderLongevityFocusPanel() {
-    var panel = document.createElement('div');
-    panel.className = 'longevity-focus-panel';
-
-    var panelHeader = document.createElement('div');
-    panelHeader.className = 'longevity-panel-header';
-
-    var panelTitle = document.createElement('h3');
-    panelTitle.textContent = 'Longevity Focus Today';
-    panelHeader.appendChild(panelTitle);
-
-    panel.appendChild(panelHeader);
-
-    // Loading state
-    if (state.memoryGarden.longevityLoading) {
-        var loading = document.createElement('div');
-        loading.className = 'longevity-loading';
-        loading.textContent = 'Loading longevity data...';
-        panel.appendChild(loading);
-        return panel;
-    }
-
-    var data = state.memoryGarden.longevity;
-    if (!data) {
-        var noData = document.createElement('div');
-        noData.className = 'longevity-no-data';
-        noData.textContent = 'No longevity data available yet. Add health memories to get started.';
-        panel.appendChild(noData);
-        return panel;
-    }
-
-    // Signals container
-    var signals = document.createElement('div');
-    signals.className = 'longevity-signals';
-
-    // Sleep signal
-    if (data.sleep) {
-        signals.appendChild(renderLongevitySignal('Sleep', data.sleep.trend, data.sleep.value, data.sleep.unit));
-    }
-
-    // Stress signal
-    if (data.stress) {
-        signals.appendChild(renderLongevitySignal('Stress', data.stress.trend, data.stress.value, data.stress.unit));
-    }
-
-    // Movement signal
-    if (data.movement) {
-        signals.appendChild(renderLongevitySignal('Movement', data.movement.trend, data.movement.value, data.movement.unit));
-    }
-
-    panel.appendChild(signals);
-
-    // Community recommendation
-    if (data.recommendation) {
-        var recBox = document.createElement('div');
-        recBox.className = 'longevity-recommendation';
-
-        var recTitle = document.createElement('div');
-        recTitle.className = 'rec-title';
-        recTitle.textContent = 'Recommended: ' + data.recommendation.title;
-        recBox.appendChild(recTitle);
-
-        var recDesc = document.createElement('div');
-        recDesc.className = 'rec-description';
-        recDesc.textContent = data.recommendation.description;
-        recBox.appendChild(recDesc);
-
-        panel.appendChild(recBox);
-    }
-
-    // "Why this matters" section
-    var whyMatters = document.createElement('div');
-    whyMatters.className = 'longevity-why-matters';
-
-    var whyTitle = document.createElement('div');
-    whyTitle.className = 'why-title';
-    whyTitle.textContent = 'Why this matters';
-    whyMatters.appendChild(whyTitle);
-
-    // Pick the most relevant message based on trends
-    var message = '';
-    if (data.sleep?.trend === 'declining') {
-        message = LONGEVITY_MESSAGES.sleep_declining;
-    } else if (data.stress?.trend === 'high') {
-        message = LONGEVITY_MESSAGES.stress_high;
-    } else if (data.movement?.trend === 'low') {
-        message = LONGEVITY_MESSAGES.movement_low;
-    } else if (data.sleep?.trend === 'improving') {
-        message = LONGEVITY_MESSAGES.sleep_improving;
-    } else {
-        message = LONGEVITY_MESSAGES.sleep_stable;
-    }
-
-    var whyText = document.createElement('div');
-    whyText.className = 'why-text';
-    whyText.textContent = message;
-    whyMatters.appendChild(whyText);
-
-    panel.appendChild(whyMatters);
-
-    return panel;
-}
-
-/**
- * VTID-01086: Render a longevity signal (sleep/stress/movement)
- */
-function renderLongevitySignal(label, trend, value, unit) {
-    var signal = document.createElement('div');
-    signal.className = 'longevity-signal';
-
-    var labelEl = document.createElement('div');
-    labelEl.className = 'signal-label';
-    labelEl.textContent = label;
-    signal.appendChild(labelEl);
-
-    var valueEl = document.createElement('div');
-    valueEl.className = 'signal-value';
-    valueEl.textContent = value + ' ' + unit;
-    signal.appendChild(valueEl);
-
-    var trendEl = document.createElement('div');
-    trendEl.className = 'signal-trend trend-' + trend;
-
-    var trendIcon = '';
-    if (trend === 'improving' || trend === 'high') {
-        trendIcon = '↑';
-    } else if (trend === 'declining' || trend === 'low') {
-        trendIcon = '↓';
-    } else {
-        trendIcon = '→';
-    }
-    trendEl.textContent = trendIcon + ' ' + trend;
-    signal.appendChild(trendEl);
-
-    return signal;
-}
-
-/**
- * VTID-01086: Render a Memory Garden category card
- */
-function renderMemoryGardenCard(key, category) {
-    var card = document.createElement('div');
-    card.className = 'memory-garden-card';
-    card.dataset.category = key;
-
-    // Click handler to open category detail modal
-    card.onclick = function () {
-        state.memoryGarden.selectedCategory = key;
-        state.memoryGarden.selectedCategoryData = category;
-        state.memoryGarden.showCategoryModal = true;
-        renderApp();
-    };
-
-    // Icon
-    var iconContainer = document.createElement('div');
-    iconContainer.className = 'card-icon';
-    iconContainer.innerHTML = MEMORY_GARDEN_ICONS[key] || MEMORY_GARDEN_ICONS.uncategorized;
-    card.appendChild(iconContainer);
-
-    // Content wrapper for flex layout
-    var content = document.createElement('div');
-    content.className = 'card-content';
-
-    // Label
-    var labelEl = document.createElement('div');
-    labelEl.className = 'card-label';
-    labelEl.textContent = category.label || key.replace(/_/g, ' ');
-    content.appendChild(labelEl);
-
-    // Count and progress on same line
-    var statsRow = document.createElement('div');
-    statsRow.className = 'card-stats-row';
-
-    var count = category.count || 0;
-    var progress = category.progress || 0;
-    statsRow.textContent = count + ' memories · ' + Math.round(progress * 100) + '%';
-    content.appendChild(statsRow);
-
-    // Description
-    if (category.description) {
-        var descEl = document.createElement('div');
-        descEl.className = 'card-description';
-        descEl.textContent = category.description;
-        content.appendChild(descEl);
-    }
-
-    card.appendChild(content);
-    return card;
-}
-
-/**
- * VTID-01086: Render diary entry modal
- */
-function renderDiaryEntryModal() {
-    var overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.onclick = function (e) {
-        if (e.target === overlay) {
-            state.memoryGarden.showDiaryModal = false;
-            renderApp();
-        }
-    };
-
-    var modal = document.createElement('div');
-    modal.className = 'modal diary-entry-modal';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'modal-header';
-
-    var title = document.createElement('h3');
-    title.textContent = 'Add Diary Entry';
-    header.appendChild(title);
-
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'modal-close-btn';
-    closeBtn.textContent = '×';
-    closeBtn.onclick = function () {
-        state.memoryGarden.showDiaryModal = false;
-        renderApp();
-    };
-    header.appendChild(closeBtn);
-
-    modal.appendChild(header);
-
-    // Body
-    var body = document.createElement('div');
-    body.className = 'modal-body';
-
-    var textarea = document.createElement('textarea');
-    textarea.className = 'diary-textarea';
-    textarea.placeholder = 'What would you like to remember? Share a thought, experience, or insight...';
-    textarea.rows = 6;
-    textarea.id = 'diary-entry-text';
-    body.appendChild(textarea);
-
-    var hint = document.createElement('div');
-    hint.className = 'diary-hint';
-    hint.textContent = 'Your entry will be automatically categorized and added to your Memory Garden.';
-    body.appendChild(hint);
-
-    modal.appendChild(body);
-
-    // Footer
-    var footer = document.createElement('div');
-    footer.className = 'modal-footer';
-
-    var cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-secondary';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = function () {
-        state.memoryGarden.showDiaryModal = false;
-        renderApp();
-    };
-    footer.appendChild(cancelBtn);
-
-    var saveBtn = document.createElement('button');
-    saveBtn.className = 'btn btn-primary';
-    saveBtn.textContent = 'Save Entry';
-    saveBtn.onclick = async function () {
-        var content = document.getElementById('diary-entry-text').value.trim();
-        if (!content) {
-            alert('Please enter some content');
-            return;
-        }
-
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving...';
-
-        try {
-            // VTID-MEMORY-BRIDGE: Map garden category to API category_key
-            var gardenToApiCategory = {
-                personal_identity: 'personal',
-                health_wellness: 'health',
-                lifestyle_routines: 'preferences',
-                network_relationships: 'relationships',
-                learning_knowledge: 'notes',
-                business_projects: 'tasks',
-                finance_assets: 'products_services',
-                location_environment: 'notes',
-                digital_footprint: 'notes',
-                values_aspirations: 'goals',
-                autopilot_context: 'conversation',
-                future_plans: 'goals',
-                uncategorized: 'notes'
-            };
-            var apiCategoryKey = state.memoryGarden.selectedCategory
-                ? gardenToApiCategory[state.memoryGarden.selectedCategory] || undefined
-                : undefined;
-
-            var writeBody = {
-                source: 'diary',
-                content: content,
-                importance: 50
-            };
-            if (apiCategoryKey) {
-                writeBody.category_key = apiCategoryKey;
-            }
-
-            var response = await fetch('/api/v1/memory/write', {
-                method: 'POST',
-                headers: {
-                    'Authorization': 'Bearer ' + state.authToken,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(writeBody)
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to save diary entry');
-            }
-
-            // Close modal and refresh
-            state.memoryGarden.showDiaryModal = false;
-            state.memoryGarden.fetched = false;
-            fetchMemoryGardenProgress();
-
-            // Show toast notification
-            addToast('Diary entry saved successfully', 'success');
-        } catch (err) {
-            console.error('[VTID-01086] Error saving diary entry:', err);
-            alert('Failed to save entry: ' + err.message);
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save Entry';
-        }
-    };
-    footer.appendChild(saveBtn);
-
-    modal.appendChild(footer);
-    overlay.appendChild(modal);
-
-    return overlay;
-}
-
-/**
- * VTID-01214: Render category detail modal with memories list
- * Matches production Memory Garden category modal design
- */
-function renderCategoryDetailModal() {
-    var overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.onclick = function (e) {
-        if (e.target === overlay) {
-            state.memoryGarden.showCategoryModal = false;
-            state.memoryGarden.selectedCategory = null;
-            state.memoryGarden.selectedCategoryData = null;
-            // VTID-01225: Reset category memories so fresh data loads next time
-            state.memoryGarden.categoryMemories = [];
-            state.memoryGarden.categoryMemoriesError = null;
-            renderApp();
-        }
-    };
-
-    var modal = document.createElement('div');
-    modal.className = 'modal category-detail-modal';
-
-    var categoryKey = state.memoryGarden.selectedCategory;
-    var categoryData = state.memoryGarden.selectedCategoryData || {};
-
-    // Header with gradient matching the category
-    var header = document.createElement('div');
-    header.className = 'modal-header';
-
-    // Icon
-    var iconContainer = document.createElement('div');
-    iconContainer.className = 'modal-header-icon';
-    iconContainer.innerHTML = MEMORY_GARDEN_ICONS[categoryKey] || MEMORY_GARDEN_ICONS.uncategorized;
-    header.appendChild(iconContainer);
-
-    // Title and count
-    var headerText = document.createElement('div');
-    headerText.className = 'modal-header-text';
-
-    var title = document.createElement('h3');
-    title.textContent = categoryData.label || categoryKey.replace(/_/g, ' ');
-    headerText.appendChild(title);
-
-    var count = document.createElement('div');
-    count.className = 'memory-count';
-    var memoryCount = categoryData.count || 0;
-    count.textContent = memoryCount + ' ' + (memoryCount === 1 ? 'memory' : 'memories');
-    headerText.appendChild(count);
-
-    header.appendChild(headerText);
-
-    // Add Memory button
-    var addBtn = document.createElement('button');
-    addBtn.className = 'btn btn-primary';
-    addBtn.textContent = '+ Add Memory';
-    addBtn.onclick = function () {
-        state.memoryGarden.showCategoryModal = false;
-        state.memoryGarden.showDiaryModal = true;
-        renderApp();
-    };
-    header.appendChild(addBtn);
-
-    // Close button
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'modal-close-btn';
-    closeBtn.textContent = '×';
-    closeBtn.onclick = function () {
-        state.memoryGarden.showCategoryModal = false;
-        state.memoryGarden.selectedCategory = null;
-        state.memoryGarden.selectedCategoryData = null;
-        // VTID-01225: Reset category memories
-        state.memoryGarden.categoryMemories = [];
-        state.memoryGarden.categoryMemoriesError = null;
-        renderApp();
-    };
-    header.appendChild(closeBtn);
-
-    modal.appendChild(header);
-
-    // Body
-    var body = document.createElement('div');
-    body.className = 'modal-body';
-
-    // Subcategory tabs (placeholder - would come from API)
-    var tabs = document.createElement('div');
-    tabs.className = 'subcategory-tabs';
-
-    var allTab = document.createElement('button');
-    allTab.className = 'subcategory-tab active';
-    allTab.textContent = 'All (' + memoryCount + ')';
-    tabs.appendChild(allTab);
-
-    // Add category-specific tabs based on the category
-    var subcategories = getCategorySubcategories(categoryKey);
-    subcategories.forEach(function (sub) {
-        var tab = document.createElement('button');
-        tab.className = 'subcategory-tab';
-        tab.textContent = sub.label + ' (0)';
-        tabs.appendChild(tab);
-    });
-
-    body.appendChild(tabs);
-
-    // Memories list
-    var memoriesList = document.createElement('div');
-    memoriesList.className = 'memories-list';
-
-    // VTID-01225: Auto-fetch real memories when modal opens
-    if (!state.memoryGarden.categoryMemoriesLoading &&
-        state.memoryGarden.categoryMemories.length === 0 &&
-        !state.memoryGarden.categoryMemoriesError &&
-        memoryCount > 0) {
-        fetchCategoryMemories(categoryKey);
-    }
-
-    if (state.memoryGarden.categoryMemoriesLoading) {
-        var loadingState = document.createElement('div');
-        loadingState.className = 'memories-loading';
-        loadingState.textContent = 'Loading memories...';
-        memoriesList.appendChild(loadingState);
-    } else if (state.memoryGarden.categoryMemoriesError) {
-        var errorState = document.createElement('div');
-        errorState.className = 'memories-error';
-        errorState.textContent = 'Error: ' + state.memoryGarden.categoryMemoriesError;
-        memoriesList.appendChild(errorState);
-    } else if (state.memoryGarden.categoryMemories.length === 0) {
-        var emptyState = document.createElement('div');
-        emptyState.className = 'empty-memories';
-        emptyState.innerHTML = '<p>No memories yet in this category.</p><p>Click "Add Memory" or start a conversation to build your garden.</p>';
-        memoriesList.appendChild(emptyState);
-    } else {
-        // VTID-01225: Render REAL memory items from API
-        state.memoryGarden.categoryMemories.forEach(function (mem) {
-            var memItem = document.createElement('div');
-            memItem.className = 'memory-item';
-
-            var memContent = document.createElement('div');
-            memContent.className = 'memory-item-content';
-            memContent.textContent = mem.content || '(no content)';
-            memItem.appendChild(memContent);
-
-            var memMeta = document.createElement('div');
-            memMeta.className = 'memory-item-meta';
-
-            var parts = [];
-            if (mem.source) parts.push(mem.source);
-            if (mem.importance) parts.push('importance: ' + mem.importance);
-            if (mem.confidence_score !== undefined && mem.confidence_score !== null) {
-                parts.push('confidence: ' + mem.confidence_score + '%');
-            }
-            if (mem.occurred_at) {
-                try {
-                    parts.push(new Date(mem.occurred_at).toLocaleDateString());
-                } catch (e) { /* skip */ }
-            }
-            memMeta.textContent = parts.join(' · ');
-            memItem.appendChild(memMeta);
-
-            // Show content_json details if available
-            if (mem.content_json && typeof mem.content_json === 'object') {
-                var jsonKeys = Object.keys(mem.content_json).filter(function (k) {
-                    return k !== 'entity_type' && k !== 'cognee_origin' && k !== 'session_id';
-                });
-                if (jsonKeys.length > 0) {
-                    var details = document.createElement('div');
-                    details.className = 'memory-item-details';
-                    jsonKeys.slice(0, 5).forEach(function (k) {
-                        var val = mem.content_json[k];
-                        if (val !== null && val !== undefined && val !== '') {
-                            var tag = document.createElement('span');
-                            tag.className = 'memory-detail-tag';
-                            tag.textContent = k + ': ' + (typeof val === 'object' ? JSON.stringify(val) : String(val));
-                            details.appendChild(tag);
-                        }
-                    });
-                    memItem.appendChild(details);
-                }
-            }
-
-            memoriesList.appendChild(memItem);
-        });
-    }
-
-    body.appendChild(memoriesList);
-    modal.appendChild(body);
-
-    overlay.appendChild(modal);
-    return overlay;
-}
-
-/**
- * Get subcategory tabs for a category
- */
-function getCategorySubcategories(categoryKey) {
-    var subcategoryMap = {
-        personal_identity: [
-            { key: 'name', label: 'Name' },
-            { key: 'languages', label: 'Languages' },
-            { key: 'personality', label: 'Personality' },
-            { key: 'strengths', label: 'Strengths' },
-            { key: 'life_vision', label: 'Life Vision' },
-            { key: 'values', label: 'Values' },
-            { key: 'goals', label: 'Goals' },
-            { key: 'decision_style', label: 'Decision Style' },
-            { key: 'roles', label: 'Roles' }
-        ],
-        health_wellness: [
-            { key: 'physical', label: 'Physical' },
-            { key: 'mental', label: 'Mental' },
-            { key: 'sleep', label: 'Sleep' },
-            { key: 'nutrition', label: 'Nutrition' },
-            { key: 'exercise', label: 'Exercise' }
-        ],
-        lifestyle_routines: [
-            { key: 'morning', label: 'Morning' },
-            { key: 'evening', label: 'Evening' },
-            { key: 'work', label: 'Work' },
-            { key: 'leisure', label: 'Leisure' }
-        ],
-        network_relationships: [
-            { key: 'family', label: 'Family' },
-            { key: 'friends', label: 'Friends' },
-            { key: 'colleagues', label: 'Colleagues' },
-            { key: 'mentors', label: 'Mentors' }
-        ],
-        learning_knowledge: [
-            { key: 'skills', label: 'Skills' },
-            { key: 'interests', label: 'Interests' },
-            { key: 'books', label: 'Books' },
-            { key: 'courses', label: 'Courses' }
-        ],
-        business_projects: [
-            { key: 'current', label: 'Current' },
-            { key: 'past', label: 'Past' },
-            { key: 'ideas', label: 'Ideas' }
-        ],
-        finance_assets: [
-            { key: 'income', label: 'Income' },
-            { key: 'expenses', label: 'Expenses' },
-            { key: 'investments', label: 'Investments' },
-            { key: 'goals', label: 'Goals' }
-        ],
-        location_environment: [
-            { key: 'home', label: 'Home' },
-            { key: 'work', label: 'Work' },
-            { key: 'favorite', label: 'Favorite Places' }
-        ],
-        digital_footprint: [
-            { key: 'accounts', label: 'Accounts' },
-            { key: 'devices', label: 'Devices' },
-            { key: 'preferences', label: 'Preferences' }
-        ],
-        values_aspirations: [
-            { key: 'core', label: 'Core Values' },
-            { key: 'beliefs', label: 'Beliefs' },
-            { key: 'dreams', label: 'Dreams' }
-        ],
-        autopilot_context: [
-            { key: 'preferences', label: 'Preferences' },
-            { key: 'triggers', label: 'Triggers' },
-            { key: 'automations', label: 'Automations' }
-        ],
-        future_plans: [
-            { key: 'short', label: 'Short-term' },
-            { key: 'medium', label: 'Medium-term' },
-            { key: 'long', label: 'Long-term' }
-        ],
-        uncategorized: []
-    };
-
-    return subcategoryMap[categoryKey] || [];
-}
-
-// ============================================================================
-// VTID-01225: UNIFIED INTELLIGENCE PANEL
-// Shows structured facts, relationship connections, and behavioral signals
-// ============================================================================
-
-/**
- * VTID-01225: Render the unified intelligence summary panel
- * Displays facts, relationship connections, and signals at a glance
- */
-function renderUnifiedIntelligencePanel() {
-    var panel = document.createElement('div');
-    panel.className = 'unified-intelligence-panel';
-
-    var panelHeader = document.createElement('div');
-    panelHeader.className = 'intelligence-panel-header';
-
-    var panelTitle = document.createElement('h3');
-    panelTitle.textContent = 'Intelligence Overview';
-    panelHeader.appendChild(panelTitle);
-
-    var panelSubtitle = document.createElement('span');
-    panelSubtitle.className = 'intelligence-panel-subtitle';
-    panelSubtitle.textContent = 'Facts, relationships & signals extracted from your conversations';
-    panelHeader.appendChild(panelSubtitle);
-
-    panel.appendChild(panelHeader);
-
-    // Three-column layout: Facts | Relationships | Signals
-    var columns = document.createElement('div');
-    columns.className = 'intelligence-columns';
-
-    // Column 1: Key Facts
-    var factsCol = document.createElement('div');
-    factsCol.className = 'intelligence-column facts-column';
-
-    var factsTitle = document.createElement('div');
-    factsTitle.className = 'column-title';
-    factsTitle.textContent = 'Key Facts';
-    factsCol.appendChild(factsTitle);
-
-    if (state.memoryGarden.factsLoading) {
-        var loading = document.createElement('div');
-        loading.className = 'column-loading';
-        loading.textContent = 'Loading...';
-        factsCol.appendChild(loading);
-    } else {
-        var factsData = state.memoryGarden.facts;
-        var factItems = [];
-
-        if (factsData) {
-            // Extract facts from garden summary
-            if (factsData.habits && factsData.habits.length > 0) {
-                factsData.habits.forEach(function (h) {
-                    factItems.push({ label: 'Habit', value: h.title || h.name || JSON.stringify(h), type: 'habit' });
-                });
-            }
-            if (factsData.health_signals && factsData.health_signals.length > 0) {
-                factsData.health_signals.forEach(function (s) {
-                    factItems.push({ label: 'Health', value: s.title || s.name || JSON.stringify(s), type: 'health' });
-                });
-            }
-            if (factsData.values && factsData.values.length > 0) {
-                factsData.values.forEach(function (v) {
-                    factItems.push({ label: 'Value', value: v.title || v.name || JSON.stringify(v), type: 'value' });
-                });
-            }
-            if (factsData.goals && factsData.goals.length > 0) {
-                factsData.goals.forEach(function (g) {
-                    factItems.push({ label: 'Goal', value: g.title || g.name || JSON.stringify(g), type: 'goal' });
-                });
-            }
-            if (factsData.patterns && factsData.patterns.length > 0) {
-                factsData.patterns.forEach(function (p) {
-                    factItems.push({ label: 'Pattern', value: p.title || p.name || JSON.stringify(p), type: 'pattern' });
-                });
-            }
-        }
-
-        if (factItems.length === 0) {
-            var emptyFacts = document.createElement('div');
-            emptyFacts.className = 'column-empty';
-            emptyFacts.textContent = 'No facts extracted yet. Start a conversation to build your knowledge base.';
-            factsCol.appendChild(emptyFacts);
-        } else {
-            factItems.slice(0, 8).forEach(function (fact) {
-                var item = document.createElement('div');
-                item.className = 'fact-item fact-type-' + fact.type;
-                item.innerHTML = '<span class="fact-label">' + fact.label + '</span>' +
-                    '<span class="fact-value">' + escapeHtmlSafe(String(fact.value)) + '</span>';
-                factsCol.appendChild(item);
-            });
-            if (factItems.length > 8) {
-                var more = document.createElement('div');
-                more.className = 'column-more';
-                more.textContent = '+ ' + (factItems.length - 8) + ' more facts';
-                factsCol.appendChild(more);
-            }
-        }
-    }
-
-    columns.appendChild(factsCol);
-
-    // Column 2: Relationship Connections
-    var relCol = document.createElement('div');
-    relCol.className = 'intelligence-column relationships-column';
-
-    var relTitle = document.createElement('div');
-    relTitle.className = 'column-title';
-    relTitle.textContent = 'Connections';
-    relCol.appendChild(relTitle);
-
-    if (state.memoryGarden.relationshipsLoading) {
-        var relLoading = document.createElement('div');
-        relLoading.className = 'column-loading';
-        relLoading.textContent = 'Loading...';
-        relCol.appendChild(relLoading);
-    } else {
-        var relData = state.memoryGarden.relationships;
-        var nodes = (relData && relData.nodes) ? relData.nodes : [];
-        var edges = (relData && relData.edges) ? relData.edges : [];
-
-        if (nodes.length === 0) {
-            var emptyRel = document.createElement('div');
-            emptyRel.className = 'column-empty';
-            emptyRel.textContent = 'No relationships mapped yet. Mention people, places, or groups in conversations.';
-            relCol.appendChild(emptyRel);
-        } else {
-            // Stats bar
-            var relStats = document.createElement('div');
-            relStats.className = 'rel-stats';
-            relStats.innerHTML = '<span class="rel-stat">' + nodes.length + ' entities</span>' +
-                '<span class="rel-stat">' + edges.length + ' connections</span>';
-            relCol.appendChild(relStats);
-
-            // Show nodes grouped by type
-            var nodesByType = {};
-            nodes.forEach(function (n) {
-                var type = n.node_type || 'other';
-                if (!nodesByType[type]) nodesByType[type] = [];
-                nodesByType[type].push(n);
-            });
-
-            var typeIcons = { person: 'person', group: 'group', event: 'event', location: 'location', service: 'service', product: 'product', live_room: 'live' };
-
-            Object.keys(nodesByType).slice(0, 5).forEach(function (type) {
-                var typeNodes = nodesByType[type];
-                var typeRow = document.createElement('div');
-                typeRow.className = 'rel-type-row';
-                typeRow.innerHTML = '<span class="rel-type-label">' + type + ' (' + typeNodes.length + ')</span>' +
-                    '<span class="rel-type-items">' +
-                    typeNodes.slice(0, 4).map(function (n) {
-                        return '<span class="rel-node-tag">' + escapeHtmlSafe(n.title || n.name || 'Unknown') + '</span>';
-                    }).join('') +
-                    (typeNodes.length > 4 ? '<span class="rel-node-more">+' + (typeNodes.length - 4) + '</span>' : '') +
-                    '</span>';
-                relCol.appendChild(typeRow);
-            });
-        }
-    }
-
-    columns.appendChild(relCol);
-
-    // Column 3: Behavioral Signals
-    var sigCol = document.createElement('div');
-    sigCol.className = 'intelligence-column signals-column';
-
-    var sigTitle = document.createElement('div');
-    sigTitle.className = 'column-title';
-    sigTitle.textContent = 'Signals';
-    sigCol.appendChild(sigTitle);
-
-    if (state.memoryGarden.signalsLoading) {
-        var sigLoading = document.createElement('div');
-        sigLoading.className = 'column-loading';
-        sigLoading.textContent = 'Loading...';
-        sigCol.appendChild(sigLoading);
-    } else {
-        var signals = state.memoryGarden.signals || [];
-
-        if (signals.length === 0) {
-            var emptySig = document.createElement('div');
-            emptySig.className = 'column-empty';
-            emptySig.textContent = 'No behavioral signals detected yet. Signals emerge from conversation patterns.';
-            sigCol.appendChild(emptySig);
-        } else {
-            signals.slice(0, 8).forEach(function (sig) {
-                var sigItem = document.createElement('div');
-                sigItem.className = 'signal-item';
-
-                var confidenceClass = sig.confidence >= 70 ? 'high' : sig.confidence >= 40 ? 'medium' : 'low';
-                sigItem.innerHTML = '<span class="signal-key">' + escapeHtmlSafe(sig.signal_key) + '</span>' +
-                    '<span class="signal-confidence confidence-' + confidenceClass + '">' + sig.confidence + '%</span>';
-                sigCol.appendChild(sigItem);
-            });
-            if (signals.length > 8) {
-                var moreSig = document.createElement('div');
-                moreSig.className = 'column-more';
-                moreSig.textContent = '+ ' + (signals.length - 8) + ' more signals';
-                sigCol.appendChild(moreSig);
-            }
-        }
-    }
-
-    columns.appendChild(sigCol);
-
-    panel.appendChild(columns);
-    return panel;
-}
-
-/**
- * VTID-01225: Safe HTML escaping (standalone, doesn't depend on DOM)
- */
-function escapeHtmlSafe(text) {
-    if (!text) return '';
-    return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-// ============================================================================
-// INTELLIGENCE & MEMORY DEV SCREENS
-// Vitana AI Assistant Intelligence Hub - Knowledge Graph, Embeddings, Recall, Inspector
-// ============================================================================
-
-/**
- * Intelligence & Memory: Knowledge Graph View
- * Visualizes entity relationships, concepts, and memory connections
- */
-function renderKnowledgeGraphView() {
-    var container = document.createElement('div');
-    container.className = 'intelligence-container knowledge-graph-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'intelligence-header';
-
-    var titleSection = document.createElement('div');
-    titleSection.className = 'intelligence-title-section';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Knowledge Graph';
-    titleSection.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Entity relationships and concept connections powering the AI Assistant';
-    titleSection.appendChild(subtitle);
-
-    header.appendChild(titleSection);
-    container.appendChild(header);
-
-    // Stats bar
-    var statsBar = document.createElement('div');
-    statsBar.className = 'intelligence-stats-bar';
-
-    var stats = state.intelligence.knowledgeGraph.stats || {
-        nodes: 0,
-        edges: 0,
-        entities: 0,
-        concepts: 0,
-        memories: 0
-    };
-
-    var statItems = [
-        { label: 'Total Nodes', value: stats.nodes || 0, icon: 'node' },
-        { label: 'Connections', value: stats.edges || 0, icon: 'edge' },
-        { label: 'Entities', value: stats.entities || 0, icon: 'entity' },
-        { label: 'Concepts', value: stats.concepts || 0, icon: 'concept' },
-        { label: 'Memories', value: stats.memories || 0, icon: 'memory' }
-    ];
-
-    statItems.forEach(function (stat) {
-        var statCard = document.createElement('div');
-        statCard.className = 'stat-card';
-        statCard.innerHTML = '<div class="stat-icon stat-icon-' + stat.icon + '">' + getKnowledgeGraphIcon(stat.icon) + '</div>' +
-            '<div class="stat-content"><div class="stat-value">' + stat.value.toLocaleString() + '</div>' +
-            '<div class="stat-label">' + stat.label + '</div></div>';
-        statsBar.appendChild(statCard);
-    });
-
-    container.appendChild(statsBar);
-
-    // Toolbar
-    var toolbar = document.createElement('div');
-    toolbar.className = 'intelligence-toolbar';
-
-    var searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.className = 'search-field';
-    searchInput.placeholder = 'Search nodes...';
-    searchInput.value = state.intelligence.knowledgeGraph.searchQuery;
-    searchInput.oninput = function (e) {
-        state.intelligence.knowledgeGraph.searchQuery = e.target.value;
-        renderApp();
-    };
-    toolbar.appendChild(searchInput);
-
-    var filterSelect = document.createElement('select');
-    filterSelect.className = 'filter-select';
-    var filterOptions = [
-        { value: 'all', label: 'All Types' },
-        { value: 'entity', label: 'Entities' },
-        { value: 'concept', label: 'Concepts' },
-        { value: 'memory', label: 'Memories' }
-    ];
-    filterOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        option.selected = state.intelligence.knowledgeGraph.filterType === opt.value;
-        filterSelect.appendChild(option);
-    });
-    filterSelect.onchange = function (e) {
-        state.intelligence.knowledgeGraph.filterType = e.target.value;
-        renderApp();
-    };
-    toolbar.appendChild(filterSelect);
-
-    container.appendChild(toolbar);
-
-    // Main content - split layout
-    var mainContent = document.createElement('div');
-    mainContent.className = 'knowledge-graph-main';
-
-    // Left: Graph visualization placeholder
-    var graphPanel = document.createElement('div');
-    graphPanel.className = 'knowledge-graph-panel';
-
-    var graphPlaceholder = document.createElement('div');
-    graphPlaceholder.className = 'graph-visualization-placeholder';
-    graphPlaceholder.innerHTML = '<div class="graph-placeholder-content">' +
-        '<div class="graph-icon">' + getKnowledgeGraphIcon('graph') + '</div>' +
-        '<div class="graph-placeholder-title">Knowledge Graph Visualization</div>' +
-        '<div class="graph-placeholder-desc">Interactive graph visualization will render here.<br>Connect to vector database to populate nodes.</div>' +
-        '<button class="btn btn-primary" onclick="alert(\'Knowledge graph sync coming soon\')">Sync from Vector DB</button>' +
-        '</div>';
-    graphPanel.appendChild(graphPlaceholder);
-
-    mainContent.appendChild(graphPanel);
-
-    // Right: Node detail panel
-    var detailPanel = document.createElement('div');
-    detailPanel.className = 'knowledge-graph-detail';
-
-    var detailTitle = document.createElement('h3');
-    detailTitle.textContent = 'Node Details';
-    detailPanel.appendChild(detailTitle);
-
-    var selectedNode = state.intelligence.knowledgeGraph.selectedNode;
-    if (selectedNode) {
-        var nodeDetail = document.createElement('div');
-        nodeDetail.className = 'node-detail-content';
-        nodeDetail.innerHTML = '<div class="node-detail-field"><span class="field-label">ID:</span> ' + selectedNode.id + '</div>' +
-            '<div class="node-detail-field"><span class="field-label">Type:</span> ' + selectedNode.type + '</div>' +
-            '<div class="node-detail-field"><span class="field-label">Label:</span> ' + selectedNode.label + '</div>' +
-            '<div class="node-detail-field"><span class="field-label">Connections:</span> ' + (selectedNode.connections || 0) + '</div>';
-        detailPanel.appendChild(nodeDetail);
-    } else {
-        var noSelection = document.createElement('div');
-        noSelection.className = 'no-selection-message';
-        noSelection.textContent = 'Select a node to view details';
-        detailPanel.appendChild(noSelection);
-    }
-
-    // Recent nodes list
-    var recentTitle = document.createElement('h4');
-    recentTitle.textContent = 'Recent Nodes';
-    recentTitle.className = 'detail-section-title';
-    detailPanel.appendChild(recentTitle);
-
-    var recentList = document.createElement('div');
-    recentList.className = 'recent-nodes-list';
-
-    // Mock recent nodes for UI scaffolding
-    var mockRecentNodes = [
-        { id: 'usr_001', type: 'entity', label: 'User Profile' },
-        { id: 'mem_142', type: 'memory', label: 'Health Routine' },
-        { id: 'con_089', type: 'concept', label: 'Sleep Quality' }
-    ];
-
-    mockRecentNodes.forEach(function (node) {
-        var nodeItem = document.createElement('div');
-        nodeItem.className = 'recent-node-item node-type-' + node.type;
-        nodeItem.innerHTML = '<span class="node-type-badge">' + node.type.charAt(0).toUpperCase() + '</span>' +
-            '<span class="node-label">' + node.label + '</span>';
-        nodeItem.onclick = function () {
-            state.intelligence.knowledgeGraph.selectedNode = node;
-            renderApp();
-        };
-        recentList.appendChild(nodeItem);
-    });
-
-    detailPanel.appendChild(recentList);
-
-    // Load More button for nodes
-    if (state.intelligence.knowledgeGraph.hasMore) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-
-        var loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'load-more-btn' + (state.intelligence.knowledgeGraph.loadingMore ? ' loading' : '');
-        loadMoreBtn.disabled = state.intelligence.knowledgeGraph.loadingMore;
-        loadMoreBtn.textContent = state.intelligence.knowledgeGraph.loadingMore ? 'Loading...' : 'Load More Nodes';
-        loadMoreBtn.onclick = function () {
-            state.intelligence.knowledgeGraph.loadingMore = true;
-            renderApp();
-            // Mock loading more nodes
-            setTimeout(function () {
-                state.intelligence.knowledgeGraph.offset += state.intelligence.knowledgeGraph.limit;
-                state.intelligence.knowledgeGraph.loadingMore = false;
-                // In real implementation: fetch more nodes and append
-                state.intelligence.knowledgeGraph.hasMore = false; // Mock: no more data
-                renderApp();
-            }, 800);
-        };
-        loadMoreContainer.appendChild(loadMoreBtn);
-        detailPanel.appendChild(loadMoreContainer);
-    }
-
-    mainContent.appendChild(detailPanel);
-
-    container.appendChild(mainContent);
-
-    return container;
-}
-
-/**
- * Intelligence & Memory: Embeddings View
- * Manage vector collections and semantic search
- */
-function renderEmbeddingsView() {
-    var container = document.createElement('div');
-    container.className = 'intelligence-container embeddings-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'intelligence-header';
-
-    var titleSection = document.createElement('div');
-    titleSection.className = 'intelligence-title-section';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Embeddings';
-    titleSection.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Vector collections powering semantic search and memory retrieval';
-    titleSection.appendChild(subtitle);
-
-    header.appendChild(titleSection);
-
-    // Actions
-    var actions = document.createElement('div');
-    actions.className = 'intelligence-actions';
-
-    var syncBtn = document.createElement('button');
-    syncBtn.className = 'btn btn-secondary';
-    syncBtn.textContent = 'Sync Collections';
-    syncBtn.onclick = function () {
-        showToast('Syncing collections...', 'info');
-    };
-    actions.appendChild(syncBtn);
-
-    header.appendChild(actions);
-    container.appendChild(header);
-
-    // Stats bar
-    var statsBar = document.createElement('div');
-    statsBar.className = 'intelligence-stats-bar';
-
-    var embeddingStats = state.intelligence.embeddings.stats || {
-        collections: 0,
-        totalVectors: 0,
-        dimensions: 1536,
-        avgQueryTime: 0
-    };
-
-    var statItems = [
-        { label: 'Collections', value: embeddingStats.collections || 3 },
-        { label: 'Total Vectors', value: embeddingStats.totalVectors || 12458 },
-        { label: 'Dimensions', value: embeddingStats.dimensions || 1536 },
-        { label: 'Avg Query (ms)', value: embeddingStats.avgQueryTime || 45 }
-    ];
-
-    statItems.forEach(function (stat) {
-        var statCard = document.createElement('div');
-        statCard.className = 'stat-card';
-        statCard.innerHTML = '<div class="stat-value">' + stat.value.toLocaleString() + '</div>' +
-            '<div class="stat-label">' + stat.label + '</div>';
-        statsBar.appendChild(statCard);
-    });
-
-    container.appendChild(statsBar);
-
-    // Main content - Collections grid + Search panel
-    var mainContent = document.createElement('div');
-    mainContent.className = 'embeddings-main';
-
-    // Left: Collections
-    var collectionsPanel = document.createElement('div');
-    collectionsPanel.className = 'embeddings-collections-panel';
-
-    var collectionsTitle = document.createElement('h3');
-    collectionsTitle.textContent = 'Vector Collections';
-    collectionsPanel.appendChild(collectionsTitle);
-
-    var collectionsGrid = document.createElement('div');
-    collectionsGrid.className = 'collections-grid';
-
-    // Mock collections for UI scaffolding
-    var mockCollections = [
-        { id: 'memories', name: 'User Memories', vectors: 8234, status: 'active', model: 'text-embedding-3-small' },
-        { id: 'knowledge', name: 'Knowledge Base', vectors: 3156, status: 'active', model: 'text-embedding-3-small' },
-        { id: 'conversations', name: 'Conversations', vectors: 1068, status: 'indexing', model: 'text-embedding-3-small' }
-    ];
-
-    mockCollections.forEach(function (col) {
-        var colCard = document.createElement('div');
-        colCard.className = 'collection-card' + (state.intelligence.embeddings.selectedCollection === col.id ? ' selected' : '');
-        colCard.innerHTML = '<div class="collection-header">' +
-            '<span class="collection-name">' + col.name + '</span>' +
-            '<span class="collection-status status-' + col.status + '">' + col.status + '</span>' +
-            '</div>' +
-            '<div class="collection-stats">' +
-            '<div class="collection-stat"><span class="stat-num">' + col.vectors.toLocaleString() + '</span> vectors</div>' +
-            '<div class="collection-model">' + col.model + '</div>' +
-            '</div>';
-        colCard.onclick = function () {
-            state.intelligence.embeddings.selectedCollection = col.id;
-            renderApp();
-        };
-        collectionsGrid.appendChild(colCard);
-    });
-
-    collectionsPanel.appendChild(collectionsGrid);
-    mainContent.appendChild(collectionsPanel);
-
-    // Right: Semantic Search Test
-    var searchPanel = document.createElement('div');
-    searchPanel.className = 'embeddings-search-panel';
-
-    var searchTitle = document.createElement('h3');
-    searchTitle.textContent = 'Semantic Search Test';
-    searchPanel.appendChild(searchTitle);
-
-    var searchForm = document.createElement('div');
-    searchForm.className = 'search-form';
-
-    var searchInput = document.createElement('textarea');
-    searchInput.className = 'search-textarea';
-    searchInput.placeholder = 'Enter text to find similar vectors...';
-    searchInput.rows = 3;
-    searchInput.value = state.intelligence.embeddings.searchQuery;
-    searchInput.oninput = function (e) {
-        state.intelligence.embeddings.searchQuery = e.target.value;
-    };
-    searchForm.appendChild(searchInput);
-
-    var searchBtn = document.createElement('button');
-    searchBtn.className = 'btn btn-primary';
-    searchBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Searching...' : 'Search Vectors';
-    searchBtn.disabled = state.intelligence.embeddings.searchLoading;
-    searchBtn.onclick = function () {
-        if (!state.intelligence.embeddings.searchQuery.trim()) {
-            showToast('Enter a search query', 'warning');
-            return;
-        }
-        // Mock search results
-        state.intelligence.embeddings.searchLoading = true;
-        renderApp();
-        setTimeout(function () {
-            state.intelligence.embeddings.searchResults = [
-                { id: 'vec_001', score: 0.94, text: 'User prefers morning workouts around 6am', collection: 'memories' },
-                { id: 'vec_002', score: 0.89, text: 'Sleep quality improves with consistent schedule', collection: 'knowledge' },
-                { id: 'vec_003', score: 0.85, text: 'Discussed exercise routines last week', collection: 'conversations' }
-            ];
-            state.intelligence.embeddings.searchLoading = false;
-            renderApp();
-        }, 800);
-    };
-    searchForm.appendChild(searchBtn);
-
-    searchPanel.appendChild(searchForm);
-
-    // Search results
-    var resultsContainer = document.createElement('div');
-    resultsContainer.className = 'search-results-container';
-
-    var results = state.intelligence.embeddings.searchResults || [];
-    if (results.length > 0) {
-        var resultsTitle = document.createElement('h4');
-        resultsTitle.textContent = 'Results (' + results.length + ')';
-        resultsContainer.appendChild(resultsTitle);
-
-        results.forEach(function (result) {
-            var resultCard = document.createElement('div');
-            resultCard.className = 'search-result-card';
-            resultCard.innerHTML = '<div class="result-header">' +
-                '<span class="result-score">' + (result.score * 100).toFixed(0) + '% match</span>' +
-                '<span class="result-collection">' + result.collection + '</span>' +
-                '</div>' +
-                '<div class="result-text">' + result.text + '</div>';
-            resultsContainer.appendChild(resultCard);
-        });
-
-        // Load More button for search results
-        if (state.intelligence.embeddings.searchHasMore) {
-            var loadMoreContainer = document.createElement('div');
-            loadMoreContainer.className = 'load-more-container';
-
-            var loadMoreBtn = document.createElement('button');
-            loadMoreBtn.className = 'load-more-btn' + (state.intelligence.embeddings.searchLoading ? ' loading' : '');
-            loadMoreBtn.disabled = state.intelligence.embeddings.searchLoading;
-            loadMoreBtn.textContent = state.intelligence.embeddings.searchLoading ? 'Loading...' : 'Load More Results';
-            loadMoreBtn.onclick = function () {
-                state.intelligence.embeddings.searchLoading = true;
-                renderApp();
-                // Mock loading more results
-                setTimeout(function () {
-                    state.intelligence.embeddings.searchOffset += state.intelligence.embeddings.searchLimit;
-                    state.intelligence.embeddings.searchLoading = false;
-                    state.intelligence.embeddings.searchHasMore = false; // Mock: no more
-                    renderApp();
-                }, 800);
-            };
-            loadMoreContainer.appendChild(loadMoreBtn);
-            resultsContainer.appendChild(loadMoreContainer);
-        }
-    } else if (!state.intelligence.embeddings.searchLoading) {
-        var noResults = document.createElement('div');
-        noResults.className = 'no-results-message';
-        noResults.textContent = 'Enter a query to test semantic search';
-        resultsContainer.appendChild(noResults);
-    }
-
-    searchPanel.appendChild(resultsContainer);
-    mainContent.appendChild(searchPanel);
-
-    container.appendChild(mainContent);
-
-    return container;
-}
-
-/**
- * Intelligence & Memory: Recall View
- * Test and debug memory retrieval across all sources
- */
-function renderRecallView() {
-    var container = document.createElement('div');
-    container.className = 'intelligence-container recall-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'intelligence-header';
-
-    var titleSection = document.createElement('div');
-    titleSection.className = 'intelligence-title-section';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Recall';
-    titleSection.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Test memory retrieval and debug recall accuracy';
-    titleSection.appendChild(subtitle);
-
-    header.appendChild(titleSection);
-    container.appendChild(header);
-
-    // Main content - Query panel + Results
-    var mainContent = document.createElement('div');
-    mainContent.className = 'recall-main';
-
-    // Query panel
-    var queryPanel = document.createElement('div');
-    queryPanel.className = 'recall-query-panel';
-
-    var queryTitle = document.createElement('h3');
-    queryTitle.textContent = 'Test Query';
-    queryPanel.appendChild(queryTitle);
-
-    var queryInput = document.createElement('textarea');
-    queryInput.className = 'recall-query-input';
-    queryInput.placeholder = 'Enter a natural language query to test recall...\n\nExample: "What are my exercise habits?"';
-    queryInput.rows = 4;
-    queryInput.value = state.intelligence.recall.testQuery;
-    queryInput.oninput = function (e) {
-        state.intelligence.recall.testQuery = e.target.value;
-    };
-    queryPanel.appendChild(queryInput);
-
-    // Filters row
-    var filtersRow = document.createElement('div');
-    filtersRow.className = 'recall-filters';
-
-    var sourceFilter = document.createElement('select');
-    sourceFilter.className = 'filter-select';
-    var sourceOptions = [
-        { value: 'all', label: 'All Sources' },
-        { value: 'memories', label: 'Memories' },
-        { value: 'knowledge', label: 'Knowledge Base' },
-        { value: 'conversations', label: 'Conversations' }
-    ];
-    sourceOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        option.selected = state.intelligence.recall.filters.source === opt.value;
-        sourceFilter.appendChild(option);
-    });
-    sourceFilter.onchange = function (e) {
-        state.intelligence.recall.filters.source = e.target.value;
-        renderApp();
-    };
-    filtersRow.appendChild(sourceFilter);
-
-    var minScoreLabel = document.createElement('label');
-    minScoreLabel.className = 'min-score-label';
-    minScoreLabel.textContent = 'Min Score: ';
-    var minScoreInput = document.createElement('input');
-    minScoreInput.type = 'range';
-    minScoreInput.className = 'min-score-slider';
-    minScoreInput.min = '0';
-    minScoreInput.max = '100';
-    minScoreInput.value = state.intelligence.recall.filters.minScore;
-    var minScoreValue = document.createElement('span');
-    minScoreValue.className = 'min-score-value';
-    minScoreValue.textContent = state.intelligence.recall.filters.minScore + '%';
-    minScoreInput.oninput = function (e) {
-        state.intelligence.recall.filters.minScore = parseInt(e.target.value);
-        minScoreValue.textContent = e.target.value + '%';
-    };
-    minScoreLabel.appendChild(minScoreInput);
-    minScoreLabel.appendChild(minScoreValue);
-    filtersRow.appendChild(minScoreLabel);
-
-    queryPanel.appendChild(filtersRow);
-
-    // Run query button
-    var runBtn = document.createElement('button');
-    runBtn.className = 'btn btn-primary btn-lg';
-    runBtn.textContent = state.intelligence.recall.loading ? 'Running Recall...' : 'Run Recall Query';
-    runBtn.disabled = state.intelligence.recall.loading;
-    runBtn.onclick = function () {
-        if (!state.intelligence.recall.testQuery.trim()) {
-            showToast('Enter a query to test', 'warning');
-            return;
-        }
-        state.intelligence.recall.loading = true;
-        renderApp();
-        // Mock recall results
-        setTimeout(function () {
-            state.intelligence.recall.results = [
-                { id: 'rec_001', source: 'memories', score: 0.92, text: 'Morning jogs at 6:30am, 3 times per week', metadata: { category: 'health_wellness', timestamp: '2024-01-15' } },
-                { id: 'rec_002', source: 'memories', score: 0.88, text: 'Prefers outdoor activities over gym workouts', metadata: { category: 'lifestyle_routines', timestamp: '2024-01-10' } },
-                { id: 'rec_003', source: 'knowledge', score: 0.81, text: 'Cardiovascular exercise benefits include improved heart health', metadata: { source: 'health_kb', timestamp: '2023-12-01' } },
-                { id: 'rec_004', source: 'conversations', score: 0.76, text: 'Discussed starting a new workout routine', metadata: { session: 'conv_234', timestamp: '2024-01-18' } }
-            ];
-            state.intelligence.recall.loading = false;
-            // Add to history
-            state.intelligence.recall.history.unshift({
-                query: state.intelligence.recall.testQuery,
-                resultCount: state.intelligence.recall.results.length,
-                timestamp: new Date().toISOString()
-            });
-            if (state.intelligence.recall.history.length > 10) {
-                state.intelligence.recall.history = state.intelligence.recall.history.slice(0, 10);
-            }
-            renderApp();
-        }, 1000);
-    };
-    queryPanel.appendChild(runBtn);
-
-    mainContent.appendChild(queryPanel);
-
-    // Results panel
-    var resultsPanel = document.createElement('div');
-    resultsPanel.className = 'recall-results-panel';
-
-    var resultsTitle = document.createElement('h3');
-    resultsTitle.textContent = 'Recall Results';
-    resultsPanel.appendChild(resultsTitle);
-
-    var results = state.intelligence.recall.results || [];
-    if (state.intelligence.recall.loading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'recall-loading';
-        loadingDiv.innerHTML = '<div class="loading-spinner"></div><div>Running recall query...</div>';
-        resultsPanel.appendChild(loadingDiv);
-    } else if (results.length > 0) {
-        var resultsList = document.createElement('div');
-        resultsList.className = 'recall-results-list';
-
-        results.forEach(function (result, idx) {
-            var resultCard = document.createElement('div');
-            resultCard.className = 'recall-result-card' + (state.intelligence.recall.selectedResult === result.id ? ' selected' : '');
-
-            var scoreBar = document.createElement('div');
-            scoreBar.className = 'result-score-bar';
-            scoreBar.innerHTML = '<div class="score-fill" style="width: ' + (result.score * 100) + '%"></div>';
-
-            var resultHeader = document.createElement('div');
-            resultHeader.className = 'result-header';
-            resultHeader.innerHTML = '<span class="result-rank">#' + (idx + 1) + '</span>' +
-                '<span class="result-score-text">' + (result.score * 100).toFixed(0) + '% match</span>' +
-                '<span class="result-source source-' + result.source + '">' + result.source + '</span>';
-
-            var resultText = document.createElement('div');
-            resultText.className = 'result-text';
-            resultText.textContent = result.text;
-
-            var resultMeta = document.createElement('div');
-            resultMeta.className = 'result-metadata';
-            if (result.metadata) {
-                Object.keys(result.metadata).forEach(function (key) {
-                    resultMeta.innerHTML += '<span class="meta-item"><span class="meta-key">' + key + ':</span> ' + result.metadata[key] + '</span>';
-                });
-            }
-
-            resultCard.appendChild(scoreBar);
-            resultCard.appendChild(resultHeader);
-            resultCard.appendChild(resultText);
-            resultCard.appendChild(resultMeta);
-
-            resultCard.onclick = function () {
-                state.intelligence.recall.selectedResult = result.id;
-                renderApp();
-            };
-
-            resultsList.appendChild(resultCard);
-        });
-
-        resultsPanel.appendChild(resultsList);
-
-        // Load More button for recall results
-        if (state.intelligence.recall.hasMore && results.length >= state.intelligence.recall.limit) {
-            var loadMoreContainer = document.createElement('div');
-            loadMoreContainer.className = 'load-more-container';
-
-            var loadMoreBtn = document.createElement('button');
-            loadMoreBtn.className = 'load-more-btn' + (state.intelligence.recall.loadingMore ? ' loading' : '');
-            loadMoreBtn.disabled = state.intelligence.recall.loadingMore;
-            loadMoreBtn.textContent = state.intelligence.recall.loadingMore ? 'Loading...' : 'Load More Results';
-            loadMoreBtn.onclick = function () {
-                state.intelligence.recall.loadingMore = true;
-                renderApp();
-                // Mock loading more results
-                setTimeout(function () {
-                    state.intelligence.recall.offset += state.intelligence.recall.limit;
-                    state.intelligence.recall.loadingMore = false;
-                    // In real implementation: fetch more results and append
-                    state.intelligence.recall.hasMore = false; // Mock: no more data
-                    renderApp();
-                }, 800);
-            };
-            loadMoreContainer.appendChild(loadMoreBtn);
-            resultsPanel.appendChild(loadMoreContainer);
-        }
-    } else {
-        var emptyState = document.createElement('div');
-        emptyState.className = 'recall-empty-state';
-        emptyState.innerHTML = '<div class="empty-icon">' + getKnowledgeGraphIcon('search') + '</div>' +
-            '<div class="empty-title">No results yet</div>' +
-            '<div class="empty-desc">Enter a query and click "Run Recall Query" to test memory retrieval</div>';
-        resultsPanel.appendChild(emptyState);
-    }
-
-    mainContent.appendChild(resultsPanel);
-
-    // History sidebar
-    var historyPanel = document.createElement('div');
-    historyPanel.className = 'recall-history-panel';
-
-    var historyTitle = document.createElement('h3');
-    historyTitle.textContent = 'Query History';
-    historyPanel.appendChild(historyTitle);
-
-    var history = state.intelligence.recall.history || [];
-    if (history.length > 0) {
-        var historyList = document.createElement('div');
-        historyList.className = 'history-list';
-
-        history.forEach(function (item) {
-            var historyItem = document.createElement('div');
-            historyItem.className = 'history-item';
-            historyItem.innerHTML = '<div class="history-query">' + item.query.substring(0, 50) + (item.query.length > 50 ? '...' : '') + '</div>' +
-                '<div class="history-meta">' + item.resultCount + ' results</div>';
-            historyItem.onclick = function () {
-                state.intelligence.recall.testQuery = item.query;
-                renderApp();
-            };
-            historyList.appendChild(historyItem);
-        });
-
-        historyPanel.appendChild(historyList);
-    } else {
-        var noHistory = document.createElement('div');
-        noHistory.className = 'no-history';
-        noHistory.textContent = 'No query history yet';
-        historyPanel.appendChild(noHistory);
-    }
-
-    mainContent.appendChild(historyPanel);
-
-    container.appendChild(mainContent);
-
-    return container;
-}
-
-/**
- * Intelligence & Memory: Inspector View
- * Debug AI sessions, tool calls, and reasoning traces
- */
-function renderInspectorView() {
-    var container = document.createElement('div');
-    container.className = 'intelligence-container inspector-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'intelligence-header';
-
-    var titleSection = document.createElement('div');
-    titleSection.className = 'intelligence-title-section';
-
-    var title = document.createElement('h2');
-    title.textContent = 'Inspector';
-    titleSection.appendChild(title);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Debug AI sessions, tool calls, and reasoning traces across all surfaces';
-    titleSection.appendChild(subtitle);
-
-    header.appendChild(titleSection);
-    container.appendChild(header);
-
-    // Filters bar
-    var filtersBar = document.createElement('div');
-    filtersBar.className = 'inspector-filters-bar';
-
-    // Surface filter
-    var surfaceFilter = document.createElement('select');
-    surfaceFilter.className = 'filter-select';
-    var surfaceOptions = [
-        { value: 'all', label: 'All Surfaces' },
-        { value: 'operator', label: 'Operator Console' },
-        { value: 'orb', label: 'ORB' },
-        { value: 'api', label: 'Direct API' }
-    ];
-    surfaceOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        option.selected = state.intelligence.inspector.filters.surface === opt.value;
-        surfaceFilter.appendChild(option);
-    });
-    surfaceFilter.onchange = function (e) {
-        state.intelligence.inspector.filters.surface = e.target.value;
-        renderApp();
-    };
-    filtersBar.appendChild(surfaceFilter);
-
-    // Status filter
-    var statusFilter = document.createElement('select');
-    statusFilter.className = 'filter-select';
-    var statusOptions = [
-        { value: 'all', label: 'All Status' },
-        { value: 'success', label: 'Success' },
-        { value: 'error', label: 'Error' },
-        { value: 'pending', label: 'Pending' }
-    ];
-    statusOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        option.selected = state.intelligence.inspector.filters.status === opt.value;
-        statusFilter.appendChild(option);
-    });
-    statusFilter.onchange = function (e) {
-        state.intelligence.inspector.filters.status = e.target.value;
-        renderApp();
-    };
-    filtersBar.appendChild(statusFilter);
-
-    // Time range filter
-    var timeFilter = document.createElement('select');
-    timeFilter.className = 'filter-select';
-    var timeOptions = [
-        { value: '1h', label: 'Last Hour' },
-        { value: '24h', label: 'Last 24 Hours' },
-        { value: '7d', label: 'Last 7 Days' },
-        { value: '30d', label: 'Last 30 Days' }
-    ];
-    timeOptions.forEach(function (opt) {
-        var option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        option.selected = state.intelligence.inspector.filters.dateRange === opt.value;
-        timeFilter.appendChild(option);
-    });
-    timeFilter.onchange = function (e) {
-        state.intelligence.inspector.filters.dateRange = e.target.value;
-        renderApp();
-    };
-    filtersBar.appendChild(timeFilter);
-
-    container.appendChild(filtersBar);
-
-    // Main content - Sessions list + Detail
-    var mainContent = document.createElement('div');
-    mainContent.className = 'inspector-main';
-
-    // Sessions list
-    var sessionsPanel = document.createElement('div');
-    sessionsPanel.className = 'inspector-sessions-panel';
-
-    var sessionsTitle = document.createElement('h3');
-    sessionsTitle.textContent = 'AI Sessions';
-    sessionsPanel.appendChild(sessionsTitle);
-
-    // Mock sessions for UI scaffolding
-    var mockSessions = [
-        { id: 'sess_001', surface: 'operator', status: 'success', query: 'What is the status of VTID-01208?', toolCalls: 2, duration: 1250, timestamp: '2024-01-23T14:32:00Z' },
-        { id: 'sess_002', surface: 'orb', status: 'success', query: 'Tell me about my sleep patterns', toolCalls: 3, duration: 2100, timestamp: '2024-01-23T14:28:00Z' },
-        { id: 'sess_003', surface: 'operator', status: 'error', query: 'Deploy gateway to production', toolCalls: 1, duration: 450, timestamp: '2024-01-23T14:15:00Z', error: 'Governance blocked: L2 violation' },
-        { id: 'sess_004', surface: 'api', status: 'success', query: 'Search knowledge base for API docs', toolCalls: 1, duration: 890, timestamp: '2024-01-23T13:55:00Z' }
-    ];
-
-    var sessionsList = document.createElement('div');
-    sessionsList.className = 'sessions-list';
-
-    mockSessions.forEach(function (session) {
-        var sessionCard = document.createElement('div');
-        sessionCard.className = 'session-card' + (state.intelligence.inspector.selectedSession === session.id ? ' selected' : '');
-
-        var sessionHeader = document.createElement('div');
-        sessionHeader.className = 'session-header';
-        sessionHeader.innerHTML = '<span class="session-surface surface-' + session.surface + '">' + session.surface + '</span>' +
-            '<span class="session-status status-' + session.status + '">' + session.status + '</span>' +
-            '<span class="session-time">' + formatRelativeTime(session.timestamp) + '</span>';
-
-        var sessionQuery = document.createElement('div');
-        sessionQuery.className = 'session-query';
-        sessionQuery.textContent = session.query;
-
-        var sessionMeta = document.createElement('div');
-        sessionMeta.className = 'session-meta';
-        sessionMeta.innerHTML = '<span class="meta-item">' + session.toolCalls + ' tool calls</span>' +
-            '<span class="meta-item">' + session.duration + 'ms</span>';
-
-        if (session.error) {
-            var errorDiv = document.createElement('div');
-            errorDiv.className = 'session-error';
-            errorDiv.textContent = session.error;
-            sessionCard.appendChild(errorDiv);
-        }
-
-        sessionCard.appendChild(sessionHeader);
-        sessionCard.appendChild(sessionQuery);
-        sessionCard.appendChild(sessionMeta);
-
-        sessionCard.onclick = function () {
-            state.intelligence.inspector.selectedSession = session.id;
-            renderApp();
-        };
-
-        sessionsList.appendChild(sessionCard);
-    });
-
-    sessionsPanel.appendChild(sessionsList);
-
-    // Load More button for sessions
-    if (state.intelligence.inspector.hasMore) {
-        var loadMoreContainer = document.createElement('div');
-        loadMoreContainer.className = 'load-more-container';
-
-        var loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'load-more-btn' + (state.intelligence.inspector.loadingMore ? ' loading' : '');
-        loadMoreBtn.disabled = state.intelligence.inspector.loadingMore;
-        loadMoreBtn.textContent = state.intelligence.inspector.loadingMore ? 'Loading...' : 'Load More Sessions';
-        loadMoreBtn.onclick = function () {
-            state.intelligence.inspector.loadingMore = true;
-            renderApp();
-            // Mock loading more sessions
-            setTimeout(function () {
-                state.intelligence.inspector.offset += state.intelligence.inspector.limit;
-                state.intelligence.inspector.loadingMore = false;
-                // In real implementation: fetch more sessions and append
-                state.intelligence.inspector.hasMore = false; // Mock: no more data
-                renderApp();
-            }, 800);
-        };
-        loadMoreContainer.appendChild(loadMoreBtn);
-        sessionsPanel.appendChild(loadMoreContainer);
-    }
-
-    mainContent.appendChild(sessionsPanel);
-
-    // Detail panel
-    var detailPanel = document.createElement('div');
-    detailPanel.className = 'inspector-detail-panel';
-
-    var selectedId = state.intelligence.inspector.selectedSession;
-    var selectedSession = mockSessions.find(function (s) { return s.id === selectedId; });
-
-    if (selectedSession) {
-        var detailTitle = document.createElement('h3');
-        detailTitle.textContent = 'Session Details';
-        detailPanel.appendChild(detailTitle);
-
-        // Session info
-        var sessionInfo = document.createElement('div');
-        sessionInfo.className = 'session-info';
-        sessionInfo.innerHTML = '<div class="info-row"><span class="info-label">Session ID:</span> ' + selectedSession.id + '</div>' +
-            '<div class="info-row"><span class="info-label">Surface:</span> ' + selectedSession.surface + '</div>' +
-            '<div class="info-row"><span class="info-label">Status:</span> <span class="status-badge status-' + selectedSession.status + '">' + selectedSession.status + '</span></div>' +
-            '<div class="info-row"><span class="info-label">Duration:</span> ' + selectedSession.duration + 'ms</div>' +
-            '<div class="info-row"><span class="info-label">Timestamp:</span> ' + new Date(selectedSession.timestamp).toLocaleString() + '</div>';
-        detailPanel.appendChild(sessionInfo);
-
-        // Query
-        var querySection = document.createElement('div');
-        querySection.className = 'detail-section';
-        querySection.innerHTML = '<h4>User Query</h4><div class="query-box">' + selectedSession.query + '</div>';
-        detailPanel.appendChild(querySection);
-
-        // Tool calls
-        var toolsSection = document.createElement('div');
-        toolsSection.className = 'detail-section';
-
-        var toolsTitle = document.createElement('h4');
-        toolsTitle.textContent = 'Tool Calls (' + selectedSession.toolCalls + ')';
-        toolsSection.appendChild(toolsTitle);
-
-        // Mock tool calls
-        var mockToolCalls = [
-            { name: 'autopilot_get_status', args: { vtid: 'VTID-01208' }, result: { status: 'completed', title: 'LLM Telemetry' }, duration: 320 },
-            { name: 'knowledge_search', args: { query: 'VTID-01208 details' }, result: { found: true, matches: 3 }, duration: 180 }
-        ];
-
-        var toolsList = document.createElement('div');
-        toolsList.className = 'tools-list';
-
-        mockToolCalls.forEach(function (tool, idx) {
-            var toolCard = document.createElement('div');
-            toolCard.className = 'tool-card';
-
-            var toolHeader = document.createElement('div');
-            toolHeader.className = 'tool-header';
-            toolHeader.innerHTML = '<span class="tool-name">' + tool.name + '</span>' +
-                '<span class="tool-duration">' + tool.duration + 'ms</span>';
-
-            var expanded = state.intelligence.inspector.expandedTools[selectedSession.id + '_' + idx];
-
-            var toggleBtn = document.createElement('button');
-            toggleBtn.className = 'tool-toggle-btn';
-            toggleBtn.textContent = expanded ? 'Collapse' : 'Expand';
-            toggleBtn.onclick = function (e) {
-                e.stopPropagation();
-                var key = selectedSession.id + '_' + idx;
-                state.intelligence.inspector.expandedTools[key] = !state.intelligence.inspector.expandedTools[key];
-                renderApp();
-            };
-            toolHeader.appendChild(toggleBtn);
-
-            toolCard.appendChild(toolHeader);
-
-            if (expanded) {
-                var toolDetails = document.createElement('div');
-                toolDetails.className = 'tool-details';
-                toolDetails.innerHTML = '<div class="tool-args"><strong>Arguments:</strong><pre>' + JSON.stringify(tool.args, null, 2) + '</pre></div>' +
-                    '<div class="tool-result"><strong>Result:</strong><pre>' + JSON.stringify(tool.result, null, 2) + '</pre></div>';
-                toolCard.appendChild(toolDetails);
-            }
-
-            toolsList.appendChild(toolCard);
-        });
-
-        toolsSection.appendChild(toolsList);
-        detailPanel.appendChild(toolsSection);
-
-    } else {
-        var noSelection = document.createElement('div');
-        noSelection.className = 'no-selection-state';
-        noSelection.innerHTML = '<div class="empty-icon">' + getKnowledgeGraphIcon('inspect') + '</div>' +
-            '<div class="empty-title">Select a session</div>' +
-            '<div class="empty-desc">Click on a session to view tool calls and reasoning traces</div>';
-        detailPanel.appendChild(noSelection);
-    }
-
-    mainContent.appendChild(detailPanel);
-
-    container.appendChild(mainContent);
-
-    return container;
-}
-
-/**
- * Helper: Get SVG icons for Knowledge Graph and Intelligence screens
- */
-function getKnowledgeGraphIcon(type) {
-    var icons = {
-        node: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>',
-        edge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>',
-        entity: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>',
-        concept: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
-        memory: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 6h-8l-2-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V6h5.17l2 2H20v10z"/></svg>',
-        graph: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="12" cy="12" r="3"/><line x1="6" y1="6" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="6" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="18" x2="12" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>',
-        search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-        inspect: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>'
-    };
-    return icons[type] || icons.node;
 }
 
 /**
@@ -25367,6 +22707,7 @@ function renderHeartbeatOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close heartbeat details');
     closeBtn.onclick = () => {
         state.isHeartbeatOpen = false;
         renderApp();
@@ -25461,6 +22802,13 @@ function renderHeartbeatOverlay() {
 
     panel.appendChild(content);
     backdrop.appendChild(panel);
+
+    attachModalA11y(panel, {
+        onClose: function () {
+            state.isHeartbeatOpen = false;
+            renderApp();
+        }
+    });
 
     return backdrop;
 }
@@ -25647,6 +22995,7 @@ function renderOperatorOverlay() {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'overlay-close';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close Operator Console');
     closeBtn.onclick = () => {
         state.isOperatorOpen = false;
         // VTID-01209: Stop active executions polling when closing
@@ -25930,7 +23279,7 @@ function renderOperatorChat() {
         state.chatAttachments.forEach((att, index) => {
             const chip = document.createElement('span');
             chip.className = `attachment-chip attachment-${att.kind}`;
-            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}">&times;</span>`;
+            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}" aria-label="Remove attachment ${att.name}">&times;</span>`;
             chip.querySelector('.attachment-remove').onclick = () => {
                 state.chatAttachments.splice(index, 1);
                 renderApp();
@@ -27148,6 +24497,7 @@ function renderPublishModal() {
 
     const closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close publish dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = () => {
         console.log('[VTID-0523-B] Publish cancelled: clicked close');
@@ -27545,6 +24895,14 @@ function renderPublishModal() {
     modal.appendChild(footer);
 
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showPublishModal = false;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -27629,6 +24987,7 @@ function renderAutopilotRecommendationsModal() {
     var closeBtn = document.createElement('button');
     closeBtn.className = 'modal-close-btn';
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close recommendations');
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
     closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
@@ -27765,6 +25124,14 @@ function renderAutopilotRecommendationsModal() {
     modal.appendChild(footer);
 
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showAutopilotRecommendationsModal = false;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -28097,6 +25464,7 @@ function renderGovernanceBlockedModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close governance blocked dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.onclick = function () {
         state.showGovernanceBlockedModal = false;
@@ -28237,6 +25605,15 @@ function renderGovernanceBlockedModal() {
 
     modal.appendChild(footer);
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            state.showGovernanceBlockedModal = false;
+            state.governanceBlockedData = null;
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -28296,6 +25673,7 @@ function renderExecutionApprovalModal() {
 
     var closeBtn = document.createElement('button');
     closeBtn.innerHTML = '&times;';
+    closeBtn.setAttribute('aria-label', 'Close execution approval dialog');
     closeBtn.style.cssText = 'background: none; border: none; color: #888; font-size: 28px; cursor: pointer; padding: 0; line-height: 1;';
     closeBtn.disabled = state.executionApprovalLoading;
     closeBtn.onclick = function () {
@@ -28485,6 +25863,17 @@ function renderExecutionApprovalModal() {
 
     modal.appendChild(footer);
     overlay.appendChild(modal);
+
+    attachModalA11y(modal, {
+        onClose: function () {
+            if (state.executionApprovalLoading) return;
+            state.showExecutionApprovalModal = false;
+            state.executionApprovalVtid = null;
+            state.executionApprovalReason = '';
+            renderApp();
+        }
+    });
+
     return overlay;
 }
 
@@ -28511,6 +25900,13 @@ function renderBundleFingerprintFooter() {
 function renderToastContainer() {
     const container = document.createElement('div');
     container.className = 'toast-container';
+    // VTID-04088 (T10 a11y region 1): toasts are pushed via re-render, not a
+    // DOM mutation a screen reader would otherwise notice — without a live
+    // region a sighted user sees the message and a screen-reader user gets
+    // nothing. 'polite' (not 'assertive') so an error toast doesn't cut off
+    // whatever the user is already being told.
+    container.setAttribute('role', 'status');
+    container.setAttribute('aria-live', 'polite');
 
     state.toasts.forEach(toast => {
         const toastEl = document.createElement('div');
@@ -28524,6 +25920,7 @@ function renderToastContainer() {
         const closeBtn = document.createElement('button');
         closeBtn.className = 'toast__close';
         closeBtn.innerHTML = '&times;';
+        closeBtn.setAttribute('aria-label', 'Dismiss notification');
         closeBtn.onclick = () => {
             state.toasts = state.toasts.filter(t => t.id !== toast.id);
             renderApp();
@@ -28538,49 +25935,6 @@ function renderToastContainer() {
 
 // --- VTID-0509: Operator Console API Functions ---
 
-/**
- * Toggle heartbeat session between Live and Standby
- */
-async function toggleHeartbeatSession() {
-    const newStatus = state.operatorHeartbeatActive ? 'standby' : 'live';
-    console.log(`[Operator] Toggling heartbeat to: ${newStatus}`);
-
-    try {
-        const response = await fetch('/api/v1/operator/heartbeat/session', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ status: newStatus })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Session update failed: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('[Operator] Session updated:', result);
-
-        state.operatorHeartbeatActive = newStatus === 'live';
-
-        if (state.operatorHeartbeatActive) {
-            // Fetch heartbeat snapshot
-            await fetchHeartbeatSnapshot();
-            // Start SSE stream
-            startOperatorSse();
-            // Open operator console on ticker tab
-            state.operatorActiveTab = 'ticker';
-            state.isOperatorOpen = true;
-        } else {
-            // Stop SSE stream
-            stopOperatorSse();
-        }
-
-        renderApp();
-
-    } catch (error) {
-        console.error('[Operator] Session toggle error:', error);
-        alert('Failed to update heartbeat session: ' + error.message);
-    }
-}
 
 /**
  * Fetch heartbeat snapshot from API
@@ -28910,16 +26264,6 @@ function startOperatorSse() {
     state.operatorSseSource = eventSource;
 }
 
-/**
- * Stop SSE stream
- */
-function stopOperatorSse() {
-    if (state.operatorSseSource) {
-        console.log('[Operator] Stopping SSE stream...');
-        state.operatorSseSource.close();
-        state.operatorSseSource = null;
-    }
-}
 
 /**
  * VTID-0526-D: Telemetry auto-refresh interval ID
@@ -29079,35 +26423,6 @@ async function startOperatorLiveTicker() {
     }
 }
 
-/**
- * Fetch operator history from API
- */
-async function fetchOperatorHistory() {
-    console.log('[Operator] Fetching history...');
-    state.historyLoading = true;
-    state.historyError = null;
-    renderApp();
-
-    try {
-        const response = await fetch('/api/v1/operator/history?limit=50');
-        if (!response.ok) {
-            throw new Error(`History fetch failed: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('[Operator] History loaded:', result);
-
-        state.historyEvents = result.data || [];
-        state.historyError = null;
-
-    } catch (error) {
-        console.error('[Operator] History error:', error);
-        state.historyError = error.message;
-    } finally {
-        state.historyLoading = false;
-        renderApp();
-    }
-}
 
 /**
  * Upload file for operator chat
@@ -29152,6 +26467,75 @@ async function uploadOperatorFile(file, kind) {
 
 let cicdHealthPollInterval = null;
 
+// VTID-04087: last-resort copy of the health-endpoint list, used only when
+// GET /api/v1/admin/health-registry (services/gateway/src/constants/
+// service-health-registry.ts) can't be reached. That route is now the
+// canonical source — keep this list in sync when adding/removing a check,
+// but a routine change belongs there first, not here.
+var FALLBACK_HEALTH_ENDPOINTS = [
+    { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
+    { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
+    { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
+    { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
+    { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
+    { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
+    { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
+    { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
+    { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
+    { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
+    { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
+    { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
+    { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
+    { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
+    { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
+    { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
+    { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
+    { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
+    { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
+    { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
+    { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
+    { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
+    { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
+    { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
+    { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
+    { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
+    { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
+    { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
+    { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
+    { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
+    { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
+    { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
+    { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
+    { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
+    { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
+    { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
+    { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
+    { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
+    { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
+    { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
+    { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
+    { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
+    { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
+    { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
+    { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
+    { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
+    { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
+    { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
+    { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
+    { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
+    { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
+    { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
+    { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
+    { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
+    // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
+    // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
+    // measures mobile screen load time against production and reports
+    // here. 'down' means either a screen failed to load or the
+    // scheduled job itself hasn't reported in 3h+; 'degraded' means
+    // it's reporting but slow (p75 over budget).
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+];
+
 /**
  * Fetches CI/CD health status from the backend API.
  * Updates state.cicdHealth with the response.
@@ -29162,70 +26546,24 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    var healthEndpoints = [
-        { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
-        { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
-        { name: 'Auth',                 url: '/api/v1/auth/health',                      group: 'Core Infrastructure' },
-        { name: 'CI/CD',                url: '/api/v1/cicd/health',                      group: 'Core Infrastructure' },
-        { name: 'Execute Runner',       url: '/api/v1/execute/health',                   group: 'Core Infrastructure' },
-        { name: 'Operator',             url: '/api/v1/operator/health',                  group: 'Core Infrastructure' },
-        { name: 'Operator Deploys',     url: '/api/v1/operator/deployments/health',      group: 'Core Infrastructure' },
-        { name: 'Telemetry',            url: '/api/v1/telemetry/health',                 group: 'Core Infrastructure' },
-        { name: 'Events',               url: '/events/health',                           group: 'Core Infrastructure' },
-        { name: 'Command Hub UI',       url: '/command-hub/health',                      group: 'Core Infrastructure' },
-        { name: 'Assistant',            url: '/api/v1/assistant/health',                 group: 'AI & Assistant' },
-        { name: 'Knowledge Hub',        url: '/api/v1/assistant/knowledge/health',       group: 'AI & Assistant' },
-        { name: 'ORB Live',             url: '/api/v1/orb/health',                       group: 'AI & Assistant' },
-        { name: 'Voice Lab',            url: '/api/v1/voice-lab/health',                 group: 'AI & Assistant' },
-        { name: 'Conversation',         url: '/api/v1/conversation/health',              group: 'AI & Assistant' },
-        { name: 'Conversation Tools',   url: '/api/v1/conversation/tool-health',         group: 'AI & Assistant' },
-        { name: 'Autopilot',            url: '/api/v1/autopilot/health',                 group: 'Autopilot' },
-        { name: 'Autopilot Pipeline',   url: '/api/v1/autopilot/pipeline/health',        group: 'Autopilot' },
-        { name: 'Autopilot Prompts',    url: '/api/v1/autopilot/prompts/health',         group: 'Autopilot' },
-        { name: 'Recommendations',      url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
-        { name: 'Automations',          url: '/api/v1/automations/health',               group: 'Automation & Scheduling' },
-        { name: 'Rec. Inbox',           url: '/api/v1/recommendations/health',           group: 'Automation & Scheduling' },
-        { name: 'Memory',               url: '/api/v1/memory/health',                    group: 'Automation & Scheduling' },
-        { name: 'Semantic Memory',      url: '/api/v1/memory/semantic/health',           group: 'Automation & Scheduling' },
-        { name: 'Diary',                url: '/api/v1/diary/health',                     group: 'Automation & Scheduling' },
-        { name: 'Health Capacity',      url: '/api/v1/capacity/health',                  group: 'Automation & Scheduling' },
-        { name: 'Scheduler',            url: '/api/v1/scheduler/health',                 group: 'Automation & Scheduling' },
-        { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health',   group: 'Automation & Scheduling' },
-        { name: 'Email Intake',         url: '/api/v1/intake/email/health',              group: 'Automation & Scheduling' },
-        { name: 'Community',            url: '/api/v1/community/health',                 group: 'Community & Social' },
-        { name: 'Relationships',        url: '/api/v1/relationships/health',             group: 'Community & Social' },
-        { name: 'Matchmaking',          url: '/api/v1/match/health',                     group: 'Community & Social' },
-        { name: 'Personalization',      url: '/api/v1/personalization/health',           group: 'Community & Social' },
-        { name: 'Live Rooms',           url: '/api/v1/live/health',                      group: 'Community & Social' },
-        { name: 'Social Context',       url: '/api/v1/social/health',                    group: 'Community & Social' },
-        { name: 'Social Connect',       url: '/api/v1/social-accounts/health',           group: 'Community & Social' },
-        { name: 'Social Alignment',     url: '/api/v1/alignment/health',                 group: 'Community & Social' },
-        { name: 'Topics',               url: '/api/v1/topics/health',                    group: 'Community & Social' },
-        { name: 'Domain Routing',       url: '/api/v1/routing/health',                   group: 'Domain & Context' },
-        { name: 'Locations',            url: '/api/v1/locations/health',                 group: 'Domain & Context' },
-        { name: 'Offers',               url: '/api/v1/offers/health',                    group: 'Domain & Context' },
-        { name: 'Feedback',             url: '/api/v1/feedback/health',                  group: 'Domain & Context' },
-        { name: 'Voice Feedback',       url: '/api/v1/voice-feedback/health',            group: 'Domain & Context' },
-        { name: 'Situational',          url: '/api/v1/situational/health',               group: 'Domain & Context' },
-        { name: 'Availability',         url: '/api/v1/availability/health',              group: 'Domain & Context' },
-        { name: 'Env. Mobility',        url: '/api/v1/context/mobility/health',          group: 'Domain & Context' },
-        { name: 'User Preferences',     url: '/api/v1/user-preferences/health',          group: 'Domain & Context' },
-        { name: 'Taste Alignment',      url: '/api/v1/taste-alignment/health',           group: 'Domain & Context' },
-        { name: 'Overload Detection',   url: '/api/v1/overload/health',                  group: 'Domain & Context' },
-        { name: 'Risk Mitigation',      url: '/api/v1/mitigation/health',                group: 'Domain & Context' },
-        { name: 'Opportunities',        url: '/api/v1/opportunities/health',             group: 'Domain & Context' },
-        { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
-        { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
-        { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
-        // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
-        // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
-        // measures mobile screen load time against production and reports
-        // here. 'down' means either a screen failed to load or the
-        // scheduled job itself hasn't reported in 3h+; 'degraded' means
-        // it's reporting but slow (p75 over budget).
-        { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
-    ];
-
+    // VTID-04087: fetch the endpoint list from the gateway's own registry
+    // (GET /api/v1/admin/health-registry) so a new health check can be
+    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+    // is only the last-resort copy used when that fetch fails (offline,
+    // route down, malformed response) — keep it in sync when adding/removing
+    // a check, but the registry route is the canonical source now.
+    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    try {
+        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+        if (registryResp.ok) {
+            var registryBody = await registryResp.json();
+            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                healthEndpoints = registryBody.endpoints;
+            }
+        }
+    } catch (registryError) {
+        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+    }
     try {
         // VTID-01982: send the operator's bearer token so health probes against
         // routers gated by requireAuth/requireExafyAdmin (diary, automations,
@@ -33403,7 +30741,7 @@ function renderOperatorTaskQueueView() {
         if (state.selectedTask && state.selectedTask.vtid === task.vtid) {
             row.className += ' selected';
         }
-        row.onclick = function () {
+        makeClickable(row, function () {
             state.selectedTask = task;
             state.selectedTaskDetail = null;
             state.selectedTaskDetailLoading = true;
@@ -33411,7 +30749,7 @@ function renderOperatorTaskQueueView() {
             state.executionStatusLoading = false;
             renderApp();
             fetchVtidDetail(task.vtid);
-        };
+        }, { label: 'View task details: ' + (task.vtid || task.title || 'task') });
         row.style.cursor = 'pointer';
 
         var vtidTd = document.createElement('td');
@@ -35374,6 +32712,7 @@ function openAiAssistantDrawer(provider) {
     var closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Close AI assistant settings');
     closeBtn.className = 'ai-drawer__close';
     closeBtn.addEventListener('click', function () { root.remove(); });
     header.appendChild(closeBtn);
@@ -35410,6 +32749,10 @@ function openAiAssistantDrawer(provider) {
     });
     document.body.appendChild(root);
 
+    attachModalA11y(panel, {
+        onClose: function () { root.remove(); }
+    });
+
     var headers = typeof buildContextHeaders === 'function' ? buildContextHeaders() : {};
 
     // Catalog fetch
@@ -35423,8 +32766,9 @@ function openAiAssistantDrawer(provider) {
             target.innerHTML = '';
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Display name</label>';
+            row1.innerHTML = '<label for="ai-drawer-catalog-name-' + provider + '">Display name</label>';
             var nameInput = document.createElement('input');
+            nameInput.id = 'ai-drawer-catalog-name-' + provider;
             nameInput.type = 'text';
             nameInput.value = entry.display_name || '';
             row1.appendChild(nameInput);
@@ -35432,8 +32776,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Enabled</label>';
+            row2.innerHTML = '<label for="ai-drawer-catalog-enabled-' + provider + '">Enabled</label>';
             var enabledToggle = document.createElement('input');
+            enabledToggle.id = 'ai-drawer-catalog-enabled-' + provider;
             enabledToggle.type = 'checkbox';
             enabledToggle.checked = !!entry.enabled;
             row2.appendChild(enabledToggle);
@@ -35472,8 +32817,9 @@ function openAiAssistantDrawer(provider) {
 
             var row1 = document.createElement('div');
             row1.className = 'ai-drawer__row';
-            row1.innerHTML = '<label>Allowed</label>';
+            row1.innerHTML = '<label for="ai-drawer-policy-allowed-' + provider + '">Allowed</label>';
             var allowedToggle = document.createElement('input');
+            allowedToggle.id = 'ai-drawer-policy-allowed-' + provider;
             allowedToggle.type = 'checkbox';
             allowedToggle.checked = policy ? !!policy.allowed : false;
             row1.appendChild(allowedToggle);
@@ -35481,8 +32827,9 @@ function openAiAssistantDrawer(provider) {
 
             var row2 = document.createElement('div');
             row2.className = 'ai-drawer__row';
-            row2.innerHTML = '<label>Allowed models (comma separated)</label>';
+            row2.innerHTML = '<label for="ai-drawer-policy-models-' + provider + '">Allowed models (comma separated)</label>';
             var modelsInput = document.createElement('input');
+            modelsInput.id = 'ai-drawer-policy-models-' + provider;
             modelsInput.type = 'text';
             modelsInput.value = (policy && policy.allowed_models ? policy.allowed_models.join(', ') : '');
             modelsInput.style.width = '100%';
@@ -35491,8 +32838,9 @@ function openAiAssistantDrawer(provider) {
 
             var row3 = document.createElement('div');
             row3.className = 'ai-drawer__row';
-            row3.innerHTML = '<label>Cost cap USD / month</label>';
+            row3.innerHTML = '<label for="ai-drawer-policy-costcap-' + provider + '">Cost cap USD / month</label>';
             var capInput = document.createElement('input');
+            capInput.id = 'ai-drawer-policy-costcap-' + provider;
             capInput.type = 'number';
             capInput.value = policy && policy.cost_cap_usd_month != null ? String(policy.cost_cap_usd_month) : '50';
             row3.appendChild(capInput);
@@ -36971,7 +34319,7 @@ function renderTestRunsTable(runs) {
     runs.forEach(function (run) {
         var row = document.createElement('tr');
         row.style.cursor = 'pointer';
-        row.onclick = function () { openTestRunDrawer(run.id); };
+        makeClickable(row, function () { openTestRunDrawer(run.id); }, { label: 'View test run details: ' + run.id });
         var projs = (run.projects || []).join(', ');
         if (projs.length > 40) projs = projs.slice(0, 37) + '...';
         row.innerHTML =
@@ -43854,97 +41202,6 @@ function renderExecutionDiffPanel(execId) {
     return panel;
 }
 
-function ensureLineageLoaded(execId) {
-    if (!state.devAutopilot.lineages[execId]) {
-        state.devAutopilot.lineages[execId] = { loading: true, lineage: [] };
-    }
-    var slot = state.devAutopilot.lineages[execId];
-    if (slot.fetching || (slot.lineage && slot.lineage.length > 0)) return;
-    slot.fetching = true;
-
-    devAutopilotApi('/executions/' + execId + '/lineage', 'GET').then(function (data) {
-        slot.fetching = false;
-        slot.loading = false;
-        if (data.ok) {
-            slot.root_id = data.root_id;
-            slot.lineage = data.lineage || [];
-            slot.error = null;
-        } else {
-            slot.error = data.error || 'lineage fetch failed';
-        }
-        renderApp();
-    }).catch(function (err) {
-        slot.fetching = false;
-        slot.loading = false;
-        slot.error = err.message || String(err);
-        renderApp();
-    });
-}
-
-// VTID-03897: open (or reuse) a live SSE tail for one execution's step feed.
-// A one-shot GET .../steps primes the panel immediately (so slow SSE
-// handshakes don't leave it blank), then the EventSource appends live
-// `step` events as they arrive and self-closes on a `terminal` event.
-function ensureStepsStreamOpened(execId) {
-    if (!state.devAutopilot.steps[execId]) {
-        state.devAutopilot.steps[execId] = { loading: true, steps: [], error: null, es: null };
-    }
-    var slot = state.devAutopilot.steps[execId];
-    if (slot.es) return; // already streaming
-
-    devAutopilotApi('/executions/' + execId + '/steps', 'GET').then(function (data) {
-        if (data.ok) {
-            slot.steps = data.steps || [];
-            slot.error = null;
-        } else {
-            slot.error = data.error || 'steps fetch failed';
-        }
-        slot.loading = false;
-        renderApp();
-    }).catch(function (err) {
-        slot.loading = false;
-        slot.error = err.message || String(err);
-        renderApp();
-    });
-
-    // The browser's native EventSource cannot set an Authorization header,
-    // so this one stream route also accepts the bearer token as a query
-    // param (server-side: requireDevRoleForStream in dev-autopilot.ts).
-    var url = '/api/v1/dev-autopilot/executions/' + execId + '/stream?access_token=' + encodeURIComponent(state.authToken || '');
-    var es = new EventSource(url);
-    slot.es = es;
-    slot.streamError = false;
-
-    es.addEventListener('step', function (evt) {
-        try {
-            var step = JSON.parse(evt.data);
-            slot.steps = (slot.steps || []).concat([step]);
-            slot.loading = false;
-            renderApp();
-        } catch (_e) { /* ignore malformed frame */ }
-    });
-
-    es.addEventListener('terminal', function () {
-        closeStepsStream(execId);
-        renderApp();
-    });
-
-    es.onerror = function () {
-        if (slot.es === es) slot.streamError = true;
-    };
-}
-
-// Closes the live stream (if any) for one execution. Called when the
-// developer collapses the Steps panel — an execution the operator isn't
-// watching shouldn't hold an open connection indefinitely.
-function closeStepsStream(execId) {
-    var slot = state.devAutopilot.steps[execId];
-    if (slot && slot.es) {
-        slot.es.close();
-        slot.es = null;
-    }
-}
-
 // -----------------------------------------------------------------------------
 // Renderers
 // -----------------------------------------------------------------------------
@@ -44130,144 +41387,6 @@ function renderDevAutopilotActions(findingId) {
     }
 
     return wrap;
-}
-
-function renderDevAutopilotLineageView(execId) {
-    var slot = state.devAutopilot.lineages[execId] || {};
-    var box = document.createElement('div');
-    box.style.cssText = 'margin-top: 10px; padding: 10px; background: rgba(168,85,247,0.04); border: 1px solid rgba(168,85,247,0.2); border-radius: 4px;';
-
-    if (slot.loading || slot.fetching) {
-        box.textContent = 'Loading lineage…';
-        box.style.color = 'var(--text-secondary, #888)';
-        return box;
-    }
-    if (slot.error) {
-        box.style.color = '#ef4444';
-        box.textContent = 'Lineage error: ' + slot.error;
-        return box;
-    }
-    if (!slot.lineage || slot.lineage.length === 0) {
-        box.textContent = 'No lineage data.';
-        return box;
-    }
-
-    var heading = document.createElement('div');
-    heading.style.cssText = 'font-size: 11px; color: #a855f7; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.05em;';
-    heading.textContent = 'Self-heal lineage (' + slot.lineage.length + ')';
-    box.appendChild(heading);
-
-    slot.lineage.forEach(function (row, idx) {
-        var line = document.createElement('div');
-        line.style.cssText = 'font-size: 12px; padding: 4px 0; display: flex; gap: 8px; align-items: center;';
-        var prefix = idx === 0 ? '┌' : (idx === slot.lineage.length - 1 ? '└' : '├');
-        var prefixEl = document.createElement('span');
-        prefixEl.style.cssText = 'font-family: monospace; color: #a855f7;';
-        prefixEl.textContent = prefix + '─ d' + (row.auto_fix_depth || 0);
-        line.appendChild(prefixEl);
-        var idEl = document.createElement('span');
-        idEl.style.cssText = 'font-family: monospace; color: var(--text-secondary, #888);';
-        idEl.textContent = row.id.slice(0, 8);
-        line.appendChild(idEl);
-        var statusEl = document.createElement('span');
-        statusEl.textContent = row.status;
-        line.appendChild(statusEl);
-        if (row.pr_url) {
-            var prLink = document.createElement('a');
-            prLink.href = row.pr_url;
-            prLink.target = '_blank';
-            prLink.rel = 'noopener';
-            prLink.style.cssText = 'color: #3b82f6; text-decoration: none;';
-            prLink.textContent = 'PR↗';
-            line.appendChild(prLink);
-        }
-        if (row.id === execId) {
-            var hereEl = document.createElement('span');
-            hereEl.style.cssText = 'color: #22c55e; font-weight: 600;';
-            hereEl.textContent = '← here';
-            line.appendChild(hereEl);
-        }
-        box.appendChild(line);
-    });
-
-    return box;
-}
-
-// VTID-03896/03897: renders the live step-by-step OASIS event tail for one
-// execution — the per-step Command Hub equivalent of watching Claude Code
-// run turn-by-turn, instead of only seeing a single status badge change
-// hours apart. Steps arrive oldest-first (both the priming GET and the SSE
-// appends preserve that order), so the list below simply reads top-to-bottom.
-function renderDevAutopilotStepsView(execId) {
-    var slot = state.devAutopilot.steps[execId] || {};
-    var box = document.createElement('div');
-    box.className = 'dev-autopilot-steps-panel';
-
-    if (slot.loading) {
-        box.textContent = 'Loading steps…';
-        box.classList.add('dev-autopilot-steps-panel--muted');
-        return box;
-    }
-    if (slot.error) {
-        box.classList.add('dev-autopilot-steps-panel--error');
-        box.textContent = 'Steps error: ' + slot.error;
-        return box;
-    }
-
-    var heading = document.createElement('div');
-    heading.className = 'dev-autopilot-steps-heading';
-    var headingText = document.createElement('span');
-    headingText.textContent = 'Live step feed (' + (slot.steps ? slot.steps.length : 0) + ')';
-    heading.appendChild(headingText);
-    if (slot.es) {
-        var liveDot = document.createElement('span');
-        liveDot.className = 'dev-autopilot-steps-live-dot';
-        liveDot.title = 'Streaming live';
-        heading.appendChild(liveDot);
-    } else if (slot.streamError) {
-        var errDot = document.createElement('span');
-        errDot.className = 'dev-autopilot-steps-stream-note';
-        errDot.textContent = '(stream reconnecting…)';
-        heading.appendChild(errDot);
-    }
-    box.appendChild(heading);
-
-    if (!slot.steps || slot.steps.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'dev-autopilot-steps-empty';
-        empty.textContent = 'No step events yet.';
-        box.appendChild(empty);
-        return box;
-    }
-
-    var STEP_STATUS_CLASS = { error: 'dev-autopilot-step-topic--error', warning: 'dev-autopilot-step-topic--warning', success: 'dev-autopilot-step-topic--success' };
-    slot.steps.forEach(function (step) {
-        var line = document.createElement('div');
-        line.className = 'dev-autopilot-step-line';
-
-        var timeEl = document.createElement('span');
-        timeEl.className = 'dev-autopilot-step-time';
-        try {
-            timeEl.textContent = new Date(step.created_at).toLocaleTimeString();
-        } catch (_e) {
-            timeEl.textContent = String(step.created_at || '?');
-        }
-        line.appendChild(timeEl);
-
-        var topicEl = document.createElement('span');
-        topicEl.className = 'dev-autopilot-step-topic ' + (STEP_STATUS_CLASS[step.status] || '');
-        topicEl.textContent = (step.topic || '?').replace('dev_autopilot.execution.', '');
-        line.appendChild(topicEl);
-
-        var msgEl = document.createElement('span');
-        msgEl.className = 'dev-autopilot-step-message';
-        msgEl.textContent = step.message || '';
-        line.appendChild(msgEl);
-
-        box.appendChild(line);
-    });
-
-    return box;
 }
 
 // Visible "agent is generating…" progress card. Backend Managed Agent
@@ -50068,11 +47187,11 @@ function renderAutopilotRegistryView() {
         }
 
         // Click row to see details
-        row.onclick = function () {
+        makeClickable(row, function () {
             state.autopilot.selectedAutomation = a;
             state.autopilot.drawerOpen = true;
             renderApp();
-        };
+        }, { label: 'View automation details: ' + (a.name || a.id) });
 
         tbody.appendChild(row);
     });
@@ -53561,7 +50680,7 @@ function renderFeedbackInboxView() {
             tr.style.cssText = 'border-bottom:1px solid var(--color-border-subtle);font-size:.85rem;cursor:pointer;';
             tr.onmouseover = function () { tr.style.background = 'var(--color-surface-secondary)'; };
             tr.onmouseout = function () { tr.style.background = ''; };
-            tr.onclick = function () { openFeedbackTicketDrawer(t.id); };
+            makeClickable(tr, function () { openFeedbackTicketDrawer(t.id); }, { label: 'View feedback ticket: ' + (t.ticket_number || t.id) });
             var num = document.createElement('td');
             num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
             num.textContent = t.ticket_number || '-';
