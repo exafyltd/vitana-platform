@@ -2524,6 +2524,54 @@ migration) — flagging as a real open question, not glossing over it: if
 it's still running post-cutover pointed at Supabase, it needs to be
 repointed at Aurora or retired.
 
+**Correction while re-checking this (2026-09-19): 2 of the 13 excluded
+tables are excluded for a DIFFERENT reason than the other 11, and this
+matters for the final-run decision.** Reading `vitana-fullload-only`'s
+own table-mapping rule NAMES directly (not just the exclude list):
+`products` and `knowledge_docs` are ruled `exclude-*-known-broken`; the
+other 11 are ruled `exclude-done-*`. "known-broken" reads as "this
+table's full-load previously failed for some reason and was excluded to
+let the rest of the task succeed" — not "a separate mechanism keeps this
+table in sync," which is what "done" implies and what the row-count
+spot-check above actually confirmed for `products` (750 rows, non-zero,
+plausible) and `knowledge_docs` (297 rows, non-zero, plausible). Those
+counts don't distinguish the two explanations — a table can be
+non-zero and still stale if nothing has kept it in sync since a prior,
+different load. **Not resolved here** — whatever made these two
+"known-broken" (a column type DMS couldn't infer, a constraint conflict,
+something else) was not investigated in this pass; before the final
+cutover run, confirm whether `products`/`knowledge_docs` need to switch
+from "stay excluded" to "fix and include," since leaving them excluded
+under the wrong assumption means Aurora serves stale product/knowledge
+data indefinitely post-cutover with no separate sync process to catch it
+up.
+
+**Root cause of the 2-table DROP_AND_CREATE conflict — script drafted,
+not yet run.** `scripts/aws/aurora-cutover-rehearsal-task.sh` (dry-run by
+default, `--apply` to create) clones `vitana-fullload-only` byte-for-byte
+(same source/target endpoints, same 16 table-mapping rules) with exactly
+one field changed: `FullLoadSettings.TargetTablePrepMode`
+`DROP_AND_CREATE` → `TRUNCATE_BEFORE_LOAD`. `TRUNCATE_BEFORE_LOAD` never
+drops the target table — it empties existing rows and reloads — so it
+cannot hit Postgres error `2BP01` ("cannot drop table because other
+objects depend on it," the RLS-policy dependency conflict that currently
+kills `conversation_messages`/`reminders`), and more importantly it
+cannot re-strip RLS from any OTHER table on a future re-run once
+`aurora-restore-rls-parity.sql` has been applied — `DROP_AND_CREATE`
+rebuilds every included table from DMS's own column-only inferred DDL,
+which would wipe RLS off all 605 tables again, not just the two that
+currently fail outright. `TRUNCATE_BEFORE_LOAD` requires the target table
+to already exist with the right structure, which holds here — every
+included table was already created by a prior `vitana-fullload-only` run.
+**Not executed** — creating (and especially starting) this task truncates
+and reloads every included table on the live Aurora database; per the
+credential-scoping precedent established earlier in this file, a new kind
+of AWS-mutating action needs its own explicit go-ahead, not an inference
+from the earlier RLS-DDL approval. The script's dry-run output (the exact
+`aws dms create-replication-task` command) has been verified to build
+correctly and both embedded JSON blobs (table mappings, task settings)
+parse as valid JSON.
+
 **RLS-restoration DDL is now a committed, ready-to-run script (2026-09-19)
 — `scripts/aws/aurora-restore-rls-parity.sql`.** 1,664 statements (605
 `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + 1,119 `CREATE POLICY`,
@@ -2557,14 +2605,20 @@ from the top).
 **Still open, in priority order:** (a) get an explicit answer on which
 Aurora credential to use for the RLS DDL — this is now the single most
 time-critical item, not the harness permission (that's cleared); (b)
-execute the 1,664-statement script once (a) is answered; (c) root-cause
-the 2-table DROP_AND_CREATE conflict properly and pick
-`TRUNCATE_BEFORE_LOAD` vs. a manual fix; (d) identify what mechanism keeps
-the 13 excluded tables in sync and decide whether it needs repointing at
-Aurora post-cutover; (e) a rehearsal full-load run timed with RLS intact;
-(f) post-restore identity/RLS parity verification (B4) before any
-connection-string flip; (g) regenerate the restore-grants script
-immediately before the real window if any time has passed since
-2026-09-18. Never write to production Supabase outside this
+execute the 1,664-statement script once (a) is answered; (c) get
+authorization to create + start
+`scripts/aws/aurora-cutover-rehearsal-task.sh --apply` (drafted, dry-run
+verified, not yet run — this both root-causes and fixes the 2-table
+DROP_AND_CREATE conflict at once, since `TRUNCATE_BEFORE_LOAD` sidesteps
+it structurally rather than diagnosing DMS's inferred-DDL behavior
+further); (d) resolve the `products`/`knowledge_docs` "known-broken" vs.
+"exclude-done" distinction found above before deciding those two stay
+excluded on the final run; (e) identify what mechanism keeps the other 11
+excluded tables in sync and decide whether it needs repointing at Aurora
+post-cutover; (f) run the rehearsal task (once created) and get a real
+timing measurement with RLS intact; (g) post-restore identity/RLS parity
+verification (B4) before any connection-string flip; (h) regenerate the
+restore-grants script immediately before the real window if any time has
+passed since 2026-09-18. Never write to production Supabase outside this
 narrowly-scoped, already-approved migration mechanism; never take
 destructive AWS actions — both hold throughout.
