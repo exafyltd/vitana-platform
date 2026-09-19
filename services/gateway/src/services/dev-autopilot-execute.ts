@@ -53,6 +53,7 @@ import { applyPrContract } from './dev-autopilot-pr-contract';
 import {
   isExecutableSourceType,
   executableSourceTypesPostgrestIn,
+  isManuallyBridgeableSourceType,
 } from './autopilot-executable-source-types';
 // VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
@@ -160,6 +161,17 @@ export interface ApprovalInput {
    *  is recorded as `approved`, not `auto_exec`. Never changes what is
    *  written to `approved_by`. */
   interactive?: boolean;
+  /** VTID-04108: widen the source_type check below from
+   *  isExecutableSourceType() to isManuallyBridgeableSourceType()
+   *  (adds community/health) for THIS call only. Only
+   *  bridgeActivationToExecution() (the human-triggered
+   *  POST /:id/activate path) sets this. Never set it from an
+   *  autonomous polling loop (autoApproveTick()) - that loop's own
+   *  source_type query is intentionally a separate, narrower constant
+   *  (executableSourceTypesPostgrestIn()) so widening what a human can
+   *  manually activate never also widens what gets auto-approved with no
+   *  human in the loop. */
+  allowManualSourceTypes?: boolean;
 }
 
 export interface ApprovalResult {
@@ -460,8 +472,12 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // Accept any source_type from the shared executor allowlist
   // (autopilot-executable-source-types.ts). Reject anything else
   // (community, system, or future scanner shapes that haven't been
-  // code-reviewed into the allowlist).
-  if (!isExecutableSourceType(rec.source_type)) {
+  // code-reviewed into the allowlist) - UNLESS this call explicitly
+  // opted into the wider, manual-only allowlist (VTID-04108).
+  const sourceTypeOk = input.allowManualSourceTypes
+    ? isManuallyBridgeableSourceType(rec.source_type)
+    : isExecutableSourceType(rec.source_type);
+  if (!sourceTypeOk) {
     return { ok: false, error: `not an executable source_type (source_type=${rec.source_type})` };
   }
   // VTID-02639 defense-in-depth: refuse to re-approve a finding that has
@@ -766,9 +782,11 @@ export async function bridgeActivationToExecution(
   const s = getSupabase();
   if (!s) return { ok: false, error: 'Supabase not configured' };
 
-  // 1. Verify this source_type is in the executor allowlist (the
-  //    activate route only bridges allowlisted recs — community / system
-  //    rows don't go through the executor).
+  // 1. Verify this source_type is in the MANUAL activation allowlist
+  //    (VTID-04108) — wider than the executor's own autonomous-polling
+  //    allowlist (isExecutableSourceType), since this function is only
+  //    ever reached via a human clicking Activate on one named
+  //    recommendation, never via autoApproveTick's autonomous loop.
   const recR = await supa<Array<{ id: string; source_type: string; status: string }>>(
     s,
     `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=id,source_type,status&limit=1`,
@@ -777,7 +795,7 @@ export async function bridgeActivationToExecution(
     return { ok: false, error: 'finding lookup failed' };
   }
   const rec = recR.data[0];
-  if (!isExecutableSourceType(rec.source_type)) {
+  if (!isManuallyBridgeableSourceType(rec.source_type)) {
     return { ok: false, skipped: `source_type=${rec.source_type} not bridgeable` };
   }
 
@@ -813,7 +831,14 @@ export async function bridgeActivationToExecution(
   // 4. Approve. approveAutoExecute creates the execution row with
   //    execute_after = now + cooldown_minutes; we immediately patch
   //    execute_after back to now so the next tick claims it.
-  const approval = await approveAutoExecute({ finding_id: findingId, approved_by: approvedBy || undefined });
+  const approval = await approveAutoExecute({
+    finding_id: findingId,
+    approved_by: approvedBy || undefined,
+    // VTID-04108: this is the one caller allowed to activate
+    // community/health recommendations — see isManuallyBridgeableSourceType's
+    // own doc comment for why this must never be set from an autonomous path.
+    allowManualSourceTypes: true,
+  });
   if (!approval.ok || !approval.execution) {
     // VTID-02669: surface decision.violations[] so the caller (and the UI)
     // can show exactly which gate rule blocked. Previously this swallowed
@@ -837,7 +862,11 @@ export async function bridgeActivationToExecution(
     source: 'dev-autopilot',
     status: 'info',
     message: `Operator activation bridged finding ${findingId.slice(0, 8)} → execution ${execId.slice(0, 8)} (cooldown skipped)`,
-    payload: { execution_id: execId, finding_id: findingId, approved_by: approvedBy, source: 'operator_activate' },
+    // VTID-04108: source_type added so this event doubles as the durable,
+    // queryable activation-audit trail for community/health activations
+    // (oasis_events, not the mismatched autopilot_actions table — see
+    // this VTID's acceptance doc).
+    payload: { execution_id: execId, finding_id: findingId, approved_by: approvedBy, source: 'operator_activate', source_type: rec.source_type },
   });
 
   return { ok: true, execution_id: execId };
