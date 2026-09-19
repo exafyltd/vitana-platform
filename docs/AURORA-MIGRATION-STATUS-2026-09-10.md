@@ -2524,14 +2524,47 @@ migration) — flagging as a real open question, not glossing over it: if
 it's still running post-cutover pointed at Supabase, it needs to be
 repointed at Aurora or retired.
 
-**Still open, in priority order:** (a) get the RLS-DDL execution unblocked
-— this is now the single most time-critical item; (b) root-cause the
-2-table DROP_AND_CREATE conflict properly and pick `TRUNCATE_BEFORE_LOAD`
-vs. a manual fix; (c) identify what mechanism keeps the 13 excluded tables
-in sync and decide whether it needs repointing at Aurora post-cutover; (d)
-a rehearsal full-load run timed with RLS intact; (e) post-restore
-identity/RLS parity verification (B4) before any connection-string flip;
-(f) regenerate the restore-grants script immediately before the real
-window if any time has passed since 2026-09-18. Never write to production
-Supabase outside this narrowly-scoped, already-approved migration
-mechanism; never take destructive AWS actions — both hold throughout.
+**RLS-restoration DDL is now a committed, ready-to-run script (2026-09-19)
+— `scripts/aws/aurora-restore-rls-parity.sql`.** 1,664 statements (605
+`ALTER TABLE ... ENABLE ROW LEVEL SECURITY` + 1,119 `CREATE POLICY`,
+generated verbatim from Supabase's live `pg_class`/`pg_policies`), matching
+the 605/608-table, 1,119-policy gap this file already documents above.
+**The harness-permission blocker described earlier in this file is
+resolved** — the platform owner authorized execution twice in-session
+("You got permission, go ahead"). What is NOT yet resolved is which Aurora
+credential can actually run it: `vitana/aurora/prod/claude-readonly` (the
+credential this session has via RDS Data API) failed with a genuine
+Postgres privilege error, `must be owner of table access_audit_log;
+SQLState: 42501` — `ENABLE ROW LEVEL SECURITY`/`CREATE POLICY` both require
+table ownership or superuser, and a read-only-named credential apparently
+lacks that even though the harness itself now permits the write attempt.
+Two untried, more-privileged Secrets Manager candidates were named to the
+platform owner (`vitana/aurora/prod/database-url`,
+`vitana/aurora/prod/master-password`, both referenced by
+`scripts/db-i18n/seed-aurora.sh`) but this session did not probe or use
+either without an explicit answer — the harness's own credential-scoping
+guard treats "try a different secret than the one already named" as a
+new, separate escalation, not implied by the original approval. **Do not
+run this DDL against any credential until the platform owner names the
+correct one** — the script itself is complete, reviewed for dependency
+completeness (all referenced roles and `auth.*` shim functions confirmed
+present on Aurora already), and safe to re-run for the `ALTER TABLE`
+half (idempotent) but NOT for `CREATE POLICY` (fails "already exists" on
+a partial re-run, so a failed attempt partway through needs the deferred/
+already-applied statements reconciled before retrying, not a blind re-run
+from the top).
+
+**Still open, in priority order:** (a) get an explicit answer on which
+Aurora credential to use for the RLS DDL — this is now the single most
+time-critical item, not the harness permission (that's cleared); (b)
+execute the 1,664-statement script once (a) is answered; (c) root-cause
+the 2-table DROP_AND_CREATE conflict properly and pick
+`TRUNCATE_BEFORE_LOAD` vs. a manual fix; (d) identify what mechanism keeps
+the 13 excluded tables in sync and decide whether it needs repointing at
+Aurora post-cutover; (e) a rehearsal full-load run timed with RLS intact;
+(f) post-restore identity/RLS parity verification (B4) before any
+connection-string flip; (g) regenerate the restore-grants script
+immediately before the real window if any time has passed since
+2026-09-18. Never write to production Supabase outside this
+narrowly-scoped, already-approved migration mechanism; never take
+destructive AWS actions — both hold throughout.
