@@ -118,7 +118,10 @@ describe('VTID-04033 Command Hub wiring', () => {
 
   it('sendChatMessage stamps followExecIds on the reply and follows each execution the turn queued', () => {
     const send = asyncFnBody('sendChatMessage');
-    expect(send).toContain('followExecIds: extractFollowedExecutionIds(result.toolResults)');
+    // VTID-04104: computed once into turnFollowExecIds and reused so it can
+    // also be persisted onto the history entry (see the sibling suite).
+    expect(send).toContain('var turnFollowExecIds = extractFollowedExecutionIds(result.toolResults);');
+    expect(send).toContain('followExecIds: turnFollowExecIds');
     expect(send).toContain('followOperatorExecution(execId, tr ? OPERATOR_EXEC_FOLLOW_TOOLS[tr.name] : null);');
   });
 
