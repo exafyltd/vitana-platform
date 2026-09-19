@@ -2924,3 +2924,81 @@ result, since DMS's own reported success/failure counts don't surface it
 usefully — check `information_schema.columns` on the target for any
 varchar column whose length is suspiciously close to (specifically, 4
 less than) a known embedding dimension.
+
+---
+
+## 2026-09-19, later still — the "16 Auth files need a separate URL" split is unnecessary; one `SUPABASE_URL` repoint covers all ~601 gateway call sites
+
+Follow-up to priority item 5 above (the note that "a single `SUPABASE_URL`
+pointed at the proxy might work for all 601 files ... worth confirming").
+Confirmed by reading the actual construction pattern of every Auth-heavy
+call site, not just grepping for the env var name.
+
+**What was checked:** every file matching `.auth.(admin|signInWith|signUp|
+getUser|refreshSession|verifyOtp|resetPasswordForEmail|updateUser)` under
+`services/gateway/src` (15 files: `auth.ts`, `admin-users.ts`, `dev-auth.ts`,
+`tenant-role-auth.ts`, `admin-signups.ts`/`admin-signups-repository.ts`,
+`admin-tenants.ts`, `admin-moderation.ts`, `dev-access.ts`,
+`autopilot-prompts.ts`, `voice-feedback.ts`, `relationships.ts`,
+`memory.ts`, `offers.ts`, `health.ts`) — plus a JWT-library grep
+(`jsonwebtoken`/`jose`, 13 files, mostly unrelated infra like
+`aurora-client.ts`/`cognito-auth-client.ts`, not genuine Supabase Auth
+call sites).
+
+**Finding: there is no second URL anywhere.** Every real Auth call site
+resolves to exactly one of three constructors, and all three read the
+identical `process.env.SUPABASE_URL`:
+
+1. **`getSupabase()`** (`lib/supabase.ts`) — the module-singleton
+   service-role client used for `.auth.admin.*` (e.g.
+   `admin-users.ts`'s ban/unban, `admin-signups-repository.ts`'s invite
+   flows) and for plain `.from()`/`.rpc()` reads. One `SUPABASE_URL`,
+   one `SUPABASE_SERVICE_ROLE`/`SUPABASE_SERVICE_ROLE_KEY`.
+2. **`createUserSupabaseClient(token)`** (`lib/supabase-user.ts`) — a
+   per-request, RLS-enforcing client built with the ANON key plus a
+   caller-supplied `Authorization: Bearer <token>` header, used wherever
+   a route needs `.auth.getUser()` to validate an incoming user JWT
+   (`admin-users.ts:54`, and the same pattern in `auth-supabase-jwt.ts`'s
+   27+ importers). Reads the SAME `process.env.SUPABASE_URL` +
+   `SUPABASE_ANON_KEY` — a second factory function, not a second URL.
+3. **Raw `fetch(`${process.env.SUPABASE_URL}/auth/v1/...`)`** —
+   `auth.ts`'s `POST /auth/login` (non-Cognito branch, line 168) calls
+   GoTrue's REST API directly rather than through the JS SDK, for the
+   password-grant token exchange. Same env var again, just used as a
+   string interpolation instead of a `createClient()` argument.
+
+**Why this matters for the proxy plan:** the PostgREST-Aurora proxy
+(`services/postgrest-aurora-proxy/`) already passes `/auth/v1/*` straight
+through to real Supabase GoTrue, unconditionally, header-for-header — it
+is a pure reverse proxy on that path, so it does not care whether the
+caller used the JS SDK's `.auth.*` methods or a raw `fetch()`, and it does
+not care whether the bearer/apikey header carries an anon key, a service
+role key, or a per-user JWT. All three of the patterns above are equally
+served by the passthrough. Meanwhile every `.from()`/`.rpc()` call (the
+~590 pure-REST files) hits `/rest/v1/*`, which the proxy's local
+PostgREST-on-Aurora sidecar serves.
+
+**Conclusion: no split is needed.** The previously-assumed "repoint ~590
+files at the Aurora proxy, keep ~16 Auth files on the real Supabase URL"
+plan is more complex than the code requires. A single
+`SUPABASE_URL=<postgrest-aurora-proxy-internal-url>` change, applied once
+at the ECS task-definition level, transparently serves every one of the
+~601 call sites in this repo — the ~16 "Auth-heavy" files need no special
+casing, no second env var, and no code change at all. This does not by
+itself remove the need to smoke-test a real login/`.auth.getUser()` round
+trip through the deployed proxy before flipping it in a live task
+definition (network-path passthrough correctness is still an assumption
+until observed), but it removes the extra engineering work item from the
+plan.
+
+**Still pending, unaffected by this finding:**
+- An AWS operator running `scripts/aws/setup-postgrest-aurora-proxy-staging.sh
+  provision --apply` (blocked from this session — `ecr:CreateRepository`/
+  `ecr:GetAuthorizationToken`/`ecs:CreateService` are all denied to this
+  session's AWS identity, confirmed live 2026-09-19).
+- A real smoke test of the deployed proxy (login through the passthrough,
+  a `.from()` read, an RLS-sensitive read confirming tenant isolation)
+  before repointing any gateway `SUPABASE_URL` for real.
+- The two `vtid_ledger`/`dev_agent_memory` pgvector-schema fixes above,
+  and the Storage/Edge-Functions migration legs, both independent of this
+  finding.

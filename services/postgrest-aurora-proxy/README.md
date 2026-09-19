@@ -160,6 +160,19 @@ proxy is now the actual near-term target, not a stale artifact):
   (or a manual dispatch) builds and rolls the real proxy image — no
   bootstrap-tenant-style gate is needed here, since Aurora's data is
   already correct and can serve real reads from the first deploy.
+- **No env-var split needed for the eventual gateway repoint.** Checked
+  every gateway call site that does real Supabase Auth work (`.auth.admin.*`,
+  `.auth.signInWith*`, `.auth.getUser()`, a raw `fetch('${SUPABASE_URL}/auth/v1/...')`)
+  — all of them resolve through `getSupabase()`, `createUserSupabaseClient()`,
+  or a direct fetch, and all three read the SAME `process.env.SUPABASE_URL`.
+  There is no separate `SUPABASE_AUTH_URL` anywhere in the gateway. Since
+  this proxy's `/auth/v1/*` passthrough is unconditional and header-agnostic,
+  one `SUPABASE_URL` repoint transparently serves every one of the ~601
+  Supabase call sites in the gateway — the Auth-heavy files need no special
+  casing. Full detail: `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s
+  2026-09-19 "one SUPABASE_URL repoint" addendum. Still needs a real smoke
+  test (login + a `.from()` read + an RLS-sensitive read) against the
+  deployed proxy before this is anything more than a structural argument.
 
 The sections below (from "What's blocking a live deploy right now" through
 "Remaining steps once vitana_admin access is available") are the
