@@ -3,7 +3,26 @@
 Built 2026-08-12, in response to the explicit direction: get Aurora serving
 **staging** first (tested, then a separate approval gate for production).
 
-## Correction notice, 2026-08-29 — read this before "Why this exists" below
+## Second correction notice, 2026-09-19 — this file's ORIGINAL framing is restored
+
+The 2026-08-29 correction notice directly below this one said the
+"Option A, keep Supabase Auth forever" framing this file was originally
+written with had been superseded by Option B (Cognito/self-issued-JWT,
+full Supabase shutdown incl. Auth). **That has now been reversed again.**
+In a live session on 2026-09-19, the platform owner was shown that Option
+B is a multi-week programme that cannot land by the 20 September 2026
+deadline, and — given that tradeoff explicitly — overrode the 2026-08-25
+"shut down Auth too" directive: *"keep Supabase for auth, free tier,
+forever."* That is Option A, which is exactly what this file's original
+design (below the 08-29 notice) describes: PostgREST in front of Aurora,
+Supabase Auth (GoTrue) kept as the permanent identity source. The 08-29
+notice's "keep Supabase Auth, forever premise is dead" line is itself now
+the dead one. Full detail: `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s
+Phase 1 section. This is the second reversal on this exact question — do
+not build toward Cognito/self-issued-JWT auth without fresh, explicit
+re-confirmation from the platform owner.
+
+## Correction notice, 2026-08-29 (superseded 2026-09-19, see above) — read this before "Why this exists" below
 
 This file's own framing — **"Option A instead, staging-scoped"**, "keep
 Supabase Auth (GoTrue) as the identity source per the standing 'Supabase
