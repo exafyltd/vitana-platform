@@ -41,7 +41,7 @@ above in the same file). No new topic taxonomy, no schema change — these
 are ordinary `production.*` lifecycle events, following the exact pattern
 `/operator/publish` and `/operator/revert` already use.
 
-## AC-1 — `GET /deployments/live-status` reports drift only for gateway targets, never frontend
+AC-1 — `GET /deployments/live-status` reports drift only for gateway targets, never frontend
 The pure drift computation must be `true` only when both a resolved
 (live/build-info) commit and a logged (`software_versions`) commit exist,
 disagree on their first 12 chars, and the target is a gateway row — never
@@ -51,21 +51,21 @@ TEST: `test/services/deployment-live-status.test.ts` — `computeCommitDrift`
 describe block (4 tests) and `buildLiveStatusTargetResult`'s drift-related
 tests.
 
-## AC-2 — `POST /deployments/redeploy` accepts only `vitana-community-app-awsdr`, never gateway or staging
+AC-2 — `POST /deployments/redeploy` accepts only `vitana-community-app-awsdr`, never gateway or staging
 Gateway has no arbitrary-commit rebuild `deploy_mode`; staging community-app
 has no `commit_sha` workflow_dispatch input. Both must be refused with
 `error:"invalid_service"`.
 TEST: `test/services/deployment-live-status.test.ts` — `validateRedeployRequest`
 describe block, "refuses gateway" and "refuses staging community-app too".
 
-## AC-3 — the redeploy validator rejects a malformed commit or missing reason before any workflow dispatch is attempted
+AC-3 — the redeploy validator rejects a malformed commit or missing reason before any workflow dispatch is attempted
 A commit that is not a 7-40 char hex string (too short, non-hex, a pasted
 URL) or an empty/whitespace-only reason must be refused with a named error
 code, never silently accepted.
 TEST: `test/services/deployment-live-status.test.ts` — "refuses a malformed
 commit" and "refuses an empty or whitespace-only reason".
 
-## AC-4 — the live-status endpoint degrades a single target's failure without failing the whole response
+AC-4 — the live-status endpoint degrades a single target's failure without failing the whole response
 A build-info resolution failure (e.g. ECS/HTTP unreachable) for one target
 must populate `resolve_error` on that target only, leave `drift:false`, and
 must not throw — the endpoint still returns `ok:true` with the other
@@ -73,7 +73,7 @@ targets populated.
 TEST: `test/services/deployment-live-status.test.ts` — "reports build-info
 resolution failures without crashing".
 
-## AC-5 — the pre-existing `GET /deployments` route is unaffected
+AC-5 — the pre-existing `GET /deployments` route is unaffected
 Adding the two new routes and the two new OASIS event types must not change
 the existing deployment-log route's behavior.
 TEST: `test/operator-deployments.test.ts` (8 pre-existing tests, re-run
