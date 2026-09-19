@@ -2482,13 +2482,56 @@ the actual window** — it is a live snapshot, not a static file, and other
 concurrent work on this shared Supabase project could add/remove grants
 before 2026-09-20.
 
+**Table completeness check (2026-09-19) — the final DMS run's `include %`
+mapping already covers everything that matters; only 23 tables need it,
+and they're expected drift, not a mechanism gap.** Diffed the full live
+Supabase table list (608) against Aurora's (590) directly: **23 genuinely
+missing** — `erp_*` (5, BackOffice/ERP, VTID-03840-series), `partner_*`
+(7, Commerce Partner Onboarding), `operator_messages`/`operator_threads`
+(Operator Console threads, VTID-04022), `catalog_vertical_fields`/
+`catalog_verticals`, `data_sharing_consent_events`/`data_sharing_consents`,
+`dev_agent_memory`, `patient_profiles`, `service_bot_accounts` — every one
+of these is a table CREATED after `vitana-fullload-only`'s 2026-09-12
+run (confirmed against this file's own CHANGE LOG dates for each VTID),
+not a table the load skipped. Because the DMS task mapping is `include %`
+minus an explicit exclude list (below) and none of these 23 are on it,
+**the final cutover run picks them up automatically** — no mapping change
+needed. Also found 5 extra Aurora-only tables: 4 are DMS's own control
+tables (`awsdms_apply_exceptions`/`awsdms_status`/`awsdms_suspended_tables`/
+`awsdms_validation_failures_v1`, harmless, expected) and one real anomaly,
+`dev_autopilot_prompt_learnings` — exists in Aurora, does not exist in
+Supabase; not investigated further here (low priority, doesn't block the
+cutover, flagging so it isn't lost).
+
+**The 13 tables `vitana-fullload-only` explicitly excludes are correctly
+populated already, confirmed by direct row-count spot-check, not
+assumed** (`memory_audit_log` partition parent, `products`, `knowledge_docs`,
+`ai_memory`, `memory_items`, `memory_facts`, `mem_episodes`, `user_intents`,
+`memory_embeddings`, `community_listings`, `calendar_events`, `mem_facts`,
+`feedback_tickets`) — the old CDC task's mapping comments called several
+of these "exclude-done-X", implying a separate load handled them; spot-checked
+7 of the 13 directly in Aurora via Data API against Supabase's own counts:
+`memory_items` 3,022, `memory_facts` 10,856, `products` 750, `knowledge_docs`
+297, `calendar_events` 1,443, `feedback_tickets` 134 (all real, non-zero,
+never re-verified against Supabase's exact counts but plausible), and
+`community_listings` 0/0 in BOTH databases (confirmed genuinely empty in
+Supabase too, not a gap). **These 13 tables must stay excluded on the final
+run** — since they're separately maintained, an `include %` load would
+overwrite whatever mechanism keeps them in sync, likely with a stale
+Supabase-side snapshot at freeze time. Whatever that separate mechanism is
+was not identified in this pass (not found in any tracked DMS task or
+migration) — flagging as a real open question, not glossing over it: if
+it's still running post-cutover pointed at Supabase, it needs to be
+repointed at Aurora or retired.
+
 **Still open, in priority order:** (a) get the RLS-DDL execution unblocked
 — this is now the single most time-critical item; (b) root-cause the
 2-table DROP_AND_CREATE conflict properly and pick `TRUNCATE_BEFORE_LOAD`
-vs. a manual fix; (c) a rehearsal full-load run timed with RLS intact; (d)
-post-restore identity/RLS parity verification (B4) before any
-connection-string flip; (e) regenerate the restore-grants script
-immediately before the real window if any time has passed since
-2026-09-18. Never write to production Supabase outside this narrowly-scoped,
-already-approved migration mechanism; never take destructive AWS actions
-— both hold throughout.
+vs. a manual fix; (c) identify what mechanism keeps the 13 excluded tables
+in sync and decide whether it needs repointing at Aurora post-cutover; (d)
+a rehearsal full-load run timed with RLS intact; (e) post-restore
+identity/RLS parity verification (B4) before any connection-string flip;
+(f) regenerate the restore-grants script immediately before the real
+window if any time has passed since 2026-09-18. Never write to production
+Supabase outside this narrowly-scoped, already-approved migration
+mechanism; never take destructive AWS actions — both hold throughout.
