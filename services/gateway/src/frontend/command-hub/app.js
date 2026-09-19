@@ -3691,7 +3691,13 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
-    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
+    // VTID-04110: persisted across reloads — the popup previously always
+    // opened small, forcing a manual expand click every single session
+    // before a long streamed agent transcript could be read without
+    // scrolling inside a cramped box.
+    isOperatorFullscreen: (function () {
+        try { return localStorage.getItem('vitana.operatorFullscreen') === 'true'; } catch (e) { return false; }
+    })(), // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -23010,6 +23016,8 @@ function renderOperatorOverlay() {
     fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
     fullscreenBtn.onclick = () => {
         state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        // VTID-04110: remember the choice so it survives a page reload.
+        try { localStorage.setItem('vitana.operatorFullscreen', String(state.isOperatorFullscreen)); } catch (e) { /* ignore */ }
         renderApp();
     };
     headerActions.appendChild(fullscreenBtn);
@@ -23479,13 +23487,38 @@ function parseSseFrames(buffer) {
     return { frames: frames, rest: rest };
 }
 
+// VTID-04110: incremental update for the live tool-call transcript instead
+// of the full-app renderApp() this used to call on every SSE frame. A long
+// agent turn emits a tool.call/tool.result pair per tool invocation (a
+// multi-step run can be a dozen or more) plus a model.turn frame per model
+// call — each one used to tear down and rebuild the ENTIRE Command Hub DOM
+// (sidebar, header, the whole overlay), which is what produced the visible
+// flicker on every step. Mirrors the incremental-update pattern this file
+// already uses for polling (VTID-01151's updateApprovalsBadge) — mutate
+// only the one DOM node that actually changed.
+function updateOperatorLiveTranscriptDom() {
+    var existing = document.querySelector('.chat-tool-activity--live');
+    if (!existing) {
+        // Not mounted yet (first frame of the turn) — do one real render so
+        // the container exists; every later frame in this turn takes the
+        // fast, non-rebuilding path below.
+        renderApp();
+        return;
+    }
+    existing.replaceWith(renderOperatorLiveTranscript());
+    var messagesEl = document.querySelector('.chat-messages');
+    if (messagesEl && state.chatStickToBottom) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
 function applyOperatorTurnFrame(frame) {
     var d = frame.data || {};
     if (frame.event === 'tool.call') {
         state.chatLiveTranscript[d.index] = {
             index: d.index, name: d.name, args: d.args, status: 'running', started_at: Date.now()
         };
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'tool.result') {
         var entry = state.chatLiveTranscript[d.index] || { index: d.index, name: d.name };
         entry.status = d.ok ? 'ok' : 'failed';
@@ -23493,10 +23526,10 @@ function applyOperatorTurnFrame(frame) {
         entry.error = d.error;
         entry.excerpt = d.excerpt;
         state.chatLiveTranscript[d.index] = entry;
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'model.turn') {
         state.chatLiveModelTurns.push(d);
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     }
 }
 

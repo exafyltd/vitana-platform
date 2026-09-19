@@ -1,0 +1,40 @@
+VTID-04110 — commands run, in order
+
+1. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0
+
+2. npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   (from services/gateway, fix applied)
+   -> 2 suites, 25 tests, all passing
+
+3. git stash push --include-untracked -- \
+     services/gateway/src/frontend/command-hub/app.js \
+     services/gateway/src/frontend/command-hub/index.html \
+     scripts/ci/command-hub-ownership-guard.js
+   npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   -> 2 suites, 9 of 25 tests FAILING (mutation verification — confirms
+      the test suite actually exercises the fix; the flicker test failed
+      on the literal renderApp(); calls the fix removes)
+
+4. git stash pop
+   -> fix restored
+
+5. npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   -> 2 suites, 25 tests, all passing again
+
+6. npx tsc --noEmit (from services/gateway)
+   -> exit 0, no output
+
+7. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0 (re-confirmed after stash pop)
+
+8. npx jest test/scripts/command-hub-ownership-guard.test.ts \
+       test/vtid-04106-operator-chat-stick-to-bottom.test.ts \
+       test/vtid-04031-operator-turn-cost.test.ts \
+       test/vtid-04033-operator-execution-follow.test.ts \
+       test/vtid-03949-operator-sessions-sidebar-rename.test.ts \
+       test/vtid-03822-operator-chat-threads.test.ts --silent
+   -> 6 suites, 71 tests, all passing (wider Command Hub regression sweep)
