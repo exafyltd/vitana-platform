@@ -98,7 +98,20 @@ function installFakeRest(state: { threads: Record<string, any>; messages: any[];
       if (method === 'PATCH') { Object.assign(state.threads[id], body); return json(204); }
     }
     if (path.startsWith('operator_messages')) {
-      if (method === 'POST') { state.messages.push(...body); return json(201); }
+      if (method === 'POST') {
+        // VTID-04095: real PostgREST rejects a bulk-insert array whose
+        // objects don't all share the exact same key set (PGRST102 "All
+        // object keys must match") — mirror that here so a regression
+        // can't silently pass against a too-lenient fake again.
+        if (Array.isArray(body) && body.length > 1) {
+          const keysets = body.map((o: any) => Object.keys(o).sort().join(','));
+          if (new Set(keysets).size > 1) {
+            return json(400, { code: 'PGRST102', message: 'All object keys must match' });
+          }
+        }
+        state.messages.push(...body);
+        return json(201);
+      }
       if (method === 'GET') {
         const rows = state.messages.filter((m) => m.thread_id === id).map((m, i) => ({ ...m, created_at: new Date(1_758_000_000_000 + i * 1000).toISOString() }));
         return json(200, rows.slice().reverse().slice(0, 30));
