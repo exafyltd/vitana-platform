@@ -59,6 +59,7 @@ import { RECALL_CANDIDATES, diversifyRecallHits, renderDevMemoryBlock } from './
 import { runReadonlySql, isSqlReadonlyEnabled, SQL_DEFAULT_ROWS, SQL_MAX_ROWS, SQL_DEFAULT_TIMEOUT_MS, SQL_MAX_TIMEOUT_MS } from './operator-sql-readonly';
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES, listEcsTasks, ALLOWED_ECS_TASK_FAMILIES, TASKS_DEFAULT_LIMIT, TASKS_MAX_LIMIT } from './aws-ecs-readonly';
+import { runRepowise, isRepowiseCommand, runGraphify, isGraphifyCommand, resolveCodeintelRepoDir, ALLOWED_CODEINTEL_REPOS } from './codeintel-readonly';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -704,6 +705,56 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
           }
         },
         required: ['target']
+      }
+    },
+    // VTID-04116: Operator Console codebase intelligence — RepoWise. Closes
+    // the gap the VTID-04002 gap analysis flagged: CLAUDE.md's mandatory
+    // codebase-intelligence workflow had nothing installed anywhere to
+    // satisfy it. Read-only, bounded, inert until the CLI + a built index
+    // ship in the gateway image (see codeintel-readonly.ts's header).
+    {
+      name: 'dev_repowise',
+      description: `Query RepoWise's precomputed codebase index (architecture, call graph, code health, git-history hotspots, test coverage, decisions — the tool CLAUDE.md's "Mandatory Codebase Intelligence Workflow" names first). command "ask"/"search"/"why" take a free-text question or search term; "context"/"risk" take a file or symbol path; "health"/"status" take none. Read-only; never edits anything. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'One of: ask, search, context, risk, health, why, status.'
+          },
+          argument: {
+            type: 'string',
+            description: 'The question, search term, or file/symbol path — required for ask/search/context/risk/why, omitted for health/status.'
+          },
+          repo: {
+            type: 'string',
+            description: `Which repo's index to query: ${Object.keys(ALLOWED_CODEINTEL_REPOS).join(' or ')}. Defaults to exafyltd/vitana-platform.`
+          }
+        },
+        required: ['command']
+      }
+    },
+    // VTID-04116: Operator Console codebase intelligence — Graphify.
+    {
+      name: 'dev_graphify',
+      description: `Query Graphify's precomputed knowledge graph of the codebase (call/import/inheritance edges, community structure, god nodes, rationale comments — CLAUDE.md's other named codebase-intelligence tool). command "query"/"explain" take a free-text question or component name; "path" takes two node names separated by a space (e.g. "UserService DatabasePool") for the shortest dependency path between them. Read-only; never edits anything. Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          command: {
+            type: 'string',
+            description: 'One of: query, path, explain.'
+          },
+          argument: {
+            type: 'string',
+            description: 'The question/component name for query/explain, or "<source node> <target node>" for path.'
+          },
+          repo: {
+            type: 'string',
+            description: `Which repo's graph to query: ${Object.keys(ALLOWED_CODEINTEL_REPOS).join(' or ')}. Defaults to exafyltd/vitana-platform.`
+          }
+        },
+        required: ['command']
       }
     },
     // VTID-04023: Operator Console read-only SQL — one bounded SELECT over a
@@ -2899,6 +2950,64 @@ async function executeDevEcsTasks(
   }
 }
 
+/**
+ * VTID-04116: dev_repowise — read-only RepoWise CLI bridge. Same kill-switch
+ * shape as the AWS readonly tools (OPERATOR_CODEINTEL_ENABLED); a missing
+ * binary/index reports not_configured rather than failing silently.
+ */
+async function executeDevRepowise(
+  args: { command: string; argument?: string; repo?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEINTEL_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codeintel_disabled: OPERATOR_CODEINTEL_ENABLED is not "true"' };
+  }
+  const command = String(args.command || '').trim();
+  if (!isRepowiseCommand(command)) {
+    return { ok: false, error: 'command must be one of: ask, search, context, risk, health, why, status' };
+  }
+  const repoDir = resolveCodeintelRepoDir(args.repo);
+  if (!repoDir) {
+    return { ok: false, error: `repo must be one of: ${Object.keys(ALLOWED_CODEINTEL_REPOS).join(', ')}` };
+  }
+  try {
+    const result = await runRepowise(command, args.argument, repoDir);
+    console.log(`[VTID-04116] dev_repowise thread=${threadId} command=${command} repo=${args.repo || 'exafyltd/vitana-platform'} ok=${result.ok}${result.truncated ? ' (truncated)' : ''}`);
+    if (!result.ok) return { ok: false, error: result.error || 'repowise call failed' };
+    return { ok: true, data: result as any };
+  } catch (err: any) {
+    return { ok: false, error: `repowise call failed: ${err.message}` };
+  }
+}
+
+/**
+ * VTID-04116: dev_graphify — read-only Graphify CLI bridge. Same posture.
+ */
+async function executeDevGraphify(
+  args: { command: string; argument?: string; repo?: string },
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEINTEL_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codeintel_disabled: OPERATOR_CODEINTEL_ENABLED is not "true"' };
+  }
+  const command = String(args.command || '').trim();
+  if (!isGraphifyCommand(command)) {
+    return { ok: false, error: 'command must be one of: query, path, explain' };
+  }
+  const repoDir = resolveCodeintelRepoDir(args.repo);
+  if (!repoDir) {
+    return { ok: false, error: `repo must be one of: ${Object.keys(ALLOWED_CODEINTEL_REPOS).join(', ')}` };
+  }
+  try {
+    const result = await runGraphify(command, args.argument, repoDir);
+    console.log(`[VTID-04116] dev_graphify thread=${threadId} command=${command} repo=${args.repo || 'exafyltd/vitana-platform'} ok=${result.ok}${result.truncated ? ' (truncated)' : ''}`);
+    if (!result.ok) return { ok: false, error: result.error || 'graphify call failed' };
+    return { ok: true, data: result as any };
+  } catch (err: any) {
+    return { ok: false, error: `graphify call failed: ${err.message}` };
+  }
+}
+
 // VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
 const DEV_DB_QUERY_ALLOWED_TABLES = [
   'vtid_ledger',
@@ -3607,6 +3716,21 @@ export async function executeTool(
       case 'dev_ecs_tasks':
         result = await executeDevEcsTasks(
           args as { target: string; desired_status?: string; limit?: number },
+          threadId
+        );
+        break;
+
+      // VTID-04116: Operator Console codebase intelligence
+      case 'dev_repowise':
+        result = await executeDevRepowise(
+          args as { command: string; argument?: string; repo?: string },
+          threadId
+        );
+        break;
+
+      case 'dev_graphify':
+        result = await executeDevGraphify(
+          args as { command: string; argument?: string; repo?: string },
           threadId
         );
         break;
