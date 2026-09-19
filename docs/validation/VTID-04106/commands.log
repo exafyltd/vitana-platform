@@ -1,0 +1,33 @@
+VTID-04106 — commands run, in order
+
+1. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0
+
+2. npx jest test/vtid-04106-operator-chat-stick-to-bottom.test.ts --silent
+   (from services/gateway, fix applied)
+   -> 1 suite, 6 tests, all passing
+
+3. git stash push --include-untracked -- \
+     services/gateway/src/frontend/command-hub/app.js \
+     services/gateway/src/frontend/command-hub/index.html \
+     scripts/ci/command-hub-ownership-guard.js
+   npx jest test/vtid-04106-operator-chat-stick-to-bottom.test.ts --silent
+   -> 1 suite, 6 tests, all FAILING (mutation verification — confirms the
+      test suite actually exercises the fix)
+
+4. git stash pop
+   -> fix restored
+
+5. npx jest test/vtid-04106-operator-chat-stick-to-bottom.test.ts \
+       test/vtid-04104-operator-follow-persist.test.ts \
+       test/vtid-03947-message-copy-timestamp.test.ts --silent
+   -> 3 suites, 21 tests, all passing
+
+6. npx tsc --noEmit (from services/gateway)
+   -> exit 0, no output
+
+7. git fetch origin main
+   git checkout -b claude/vtid-04106-operator-chat-stick-bottom origin/main
+   -> fresh branch from main (VTID-04104's PR #3452 had already merged as
+      2e25db90); working-tree diff carried over unchanged since content was
+      identical between the prior claude/ branch tip and origin/main

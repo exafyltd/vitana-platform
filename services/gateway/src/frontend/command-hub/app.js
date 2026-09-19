@@ -3707,6 +3707,7 @@ const state = {
     chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
     chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
     operatorExecFollow: {}, // VTID-04033: { [execution_id]: { es, steps, terminal, streamError, error, tool } } — executions the console follows after queueing them
+    chatStickToBottom: true, // VTID-04106: true while the user hasn't manually scrolled away from the bottom, or just sent a message — see the .chat-messages scroll listener in renderOperatorChat() and the VTID-0539 anchor logic in _renderAppCore()
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
     chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
@@ -5807,8 +5808,17 @@ function _renderAppCore() {
         requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
-                if (savedChatScroll.wasNearBottom) {
-                    // User was at/near bottom - scroll to show new messages
+                // VTID-04106: wasNearBottom alone is stale for a render this
+                // user's OWN send() just triggered — it reads the scroll
+                // position from BEFORE that action, so a user who scrolled up
+                // to read old history and then hit send stayed stuck up there
+                // (the explicit VTID-0526-D force-scroll calls raced against
+                // this same rAF and against renders fired by concurrent SSE
+                // follow-step events, and could lose). state.chatStickToBottom
+                // is the authoritative, action-based signal instead — set on
+                // send, cleared only by the user's own scroll-away.
+                if (savedChatScroll.wasNearBottom || state.chatStickToBottom) {
+                    // User was at/near bottom, or just sent a message - scroll to show it
                     newMessagesContainer.scrollTop = newMessagesContainer.scrollHeight;
                 } else {
                     // User had scrolled up - preserve their position relative to content
@@ -23148,6 +23158,16 @@ function renderOperatorChat() {
     const messages = document.createElement('div');
     messages.className = 'chat-messages';
 
+    // VTID-04106: keep state.chatStickToBottom in sync with the user's own
+    // manual scroll actions — same 80px threshold as the VTID-0539 anchor's
+    // wasNearBottom check, so a user who scrolls up to read older history
+    // stays pinned there across background re-renders, and scrolling back
+    // down re-arms auto-scroll without needing to send a message first.
+    messages.addEventListener('scroll', function () {
+        var distanceFromBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
+        state.chatStickToBottom = distanceFromBottom <= 80;
+    });
+
     if (state.chatMessages.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'chat-empty-state';
@@ -23810,6 +23830,12 @@ async function sendChatMessage() {
     const messageText = state.chatInputValue.trim();
 
     if (!messageText) return;
+
+    // VTID-04106: re-arm auto-scroll on every send, regardless of where the
+    // user was scrolled beforehand — see the VTID-0539 anchor check in
+    // _renderAppCore() and the .chat-messages scroll listener above that
+    // otherwise leaves this false while reading older history.
+    state.chatStickToBottom = true;
 
     // VTID-01041: Handle pending title capture (user is responding to "What should be the title?" prompt)
     if (state.pendingTitleVtid) {
