@@ -78,7 +78,13 @@ describe('VTID-03650 — sendGuidedTopicNarrationAudioBridge definition', () => 
 
 describe('VTID-03650 — call sites fire BEFORE the live model turn, on every transport', () => {
   it('SSE session-start path calls the bridge right after the greeting bridge, before connectToLiveAPI', () => {
-    const greetingIdx = orbLive.indexOf('await sendGreetingAudioBridge(session);');
+    // VTID-04100 wrapped this call in withBootstrapTimeout(...) so an
+    // unbounded third-party TTS call can no longer stall the pre-connect
+    // critical path (the VTID-03802 hang). The ORDERING invariant this test
+    // exists for is unchanged and still asserted below — greeting bridge,
+    // then guided-topic bridge, then connect — so locate the call itself
+    // rather than one particular spelling of awaiting it.
+    const greetingIdx = orbLive.indexOf('sendGreetingAudioBridge(session)');
     const bridgeIdx = orbLive.indexOf('sendGuidedTopicNarrationAudioBridge(session);');
     const connectIdx = orbLive.indexOf('const liveApiPromise = connectToLiveAPI(');
     expect(greetingIdx).toBeGreaterThan(-1);

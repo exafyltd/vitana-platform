@@ -162,6 +162,11 @@
   })();
 
   console.log('[VTOrb] Auto-detect: token=' + (_autoToken ? 'YES(' + _autoToken.substring(0, 20) + '...)' : 'NONE') + ', lang=' + _autoLang + ', gw=' + _autoGw);
+  // VTID-04099 — ceiling on the pre-session continuity hydrate (see its use
+  // site). Sized to cover a normal gateway round trip and to be invisible
+  // against the multi-second connect it precedes.
+  var ORB_CONTINUITY_TIMEOUT_MS = 400;
+
 
   var _cfg = {
     gw: _autoGw,       // Gateway URL — auto-detected, overridden by init()
@@ -1970,9 +1975,28 @@
     if (_cfg.token && (!_s._transcriptHistory || _s._transcriptHistory.length === 0) && !_s.conversationId) {
       try {
         var contHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
-        var contResp = await fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
-          method: 'GET', headers: contHeaders, cache: 'no-store'
-        });
+        // VTID-04099: bounded. This block's own catch comment already says
+        // "continuity is an optimization — never block session start", but the
+        // await did exactly that: every authenticated tap paid a full gateway
+        // round trip BEFORE /live/session/start was even issued, serially, on
+        // the critical path between the user's tap and the first audible word.
+        // On a slow mobile connection that is seconds, and the failure mode is
+        // invisible because a slow response still eventually succeeds. Timing
+        // out here lands in exactly the same state the catch branch already
+        // produces (no hydrated continuity), so the worst case is a session
+        // that opens without its prior transcript rather than one that opens
+        // late.
+        var contCtl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var contTimer = contCtl ? setTimeout(function () { try { contCtl.abort(); } catch (e) {} }, ORB_CONTINUITY_TIMEOUT_MS) : null;
+        var contResp;
+        try {
+          contResp = await fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+            method: 'GET', headers: contHeaders, cache: 'no-store',
+            signal: contCtl ? contCtl.signal : undefined
+          });
+        } finally {
+          if (contTimer) clearTimeout(contTimer);
+        }
         if (contResp && contResp.ok) {
           var contData = await contResp.json();
           var c = contData && contData.continuity;
