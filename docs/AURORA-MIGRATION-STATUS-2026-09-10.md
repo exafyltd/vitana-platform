@@ -3002,3 +3002,99 @@ plan.
 - The two `vtid_ledger`/`dev_agent_memory` pgvector-schema fixes above,
   and the Storage/Edge-Functions migration legs, both independent of this
   finding.
+
+---
+
+## 2026-09-19, still later — the finding above was scoped to the GATEWAY only; `exafyltd/vitana-v1` (the frontend) talks to Supabase directly too, at larger scale, through a different single choke point
+
+Follow-up investigation, prompted by re-reading the stale autonomous-continuation
+trigger's CDC/Supavisor priority (below) and asking whether it's still relevant
+under Option A. Answering that required first establishing who else, besides
+the gateway, writes to the data store — and the frontend does, substantially.
+
+**What was checked:** `exafyltd/vitana-v1/src` — every `.from('...')` call site
+(649 occurrences across 208 files) and every import of the generated Supabase
+client.
+
+**Finding: the frontend bypasses the gateway entirely for both Auth and REST.**
+`src/integrations/supabase/client.ts` — a file headed `// This file is
+automatically generated. Do not edit it directly.` (a Lovable-tooling
+artifact) — hardcodes both `SUPABASE_URL` (`https://inmkhvwdcuyhnxkgfvsb
+.supabase.co`) and the anon key as literal string constants and constructs
+one `createClient()` instance from them. **282 files** import `{ supabase }`
+from this one module — every hook, every page, every component that reads or
+writes community/profile/wallet/etc. data does so directly against Supabase's
+own PostgREST + GoTrue, never through `VITE_GATEWAY_URL`.
+
+**The `VITE_SUPABASE_URL` env var this repo's own CLAUDE.md documents
+("Supabase connection") is not read by this client at all.** Confirmed by
+grep: `VITE_SUPABASE_URL` appears in `.env`, `index.html`, three i18n
+tooling scripts, and this file's own docs — never inside `src/integrations/
+supabase/client.ts` or anywhere the runtime app actually resolves its
+Supabase connection from. The env var exists, is documented as authoritative,
+and is quietly dead — the literal-string constants are what the app actually
+uses, every environment, every build.
+
+**Why this matters for the migration, concretely:**
+
+1. **"One `SUPABASE_URL` repoint" (the finding two sections above) covers
+   only the ~601 gateway call sites.** It says nothing about the frontend's
+   649 call sites across 282 importing files — those are a second,
+   independent surface that would keep writing directly to Supabase Postgres
+   after a gateway-only repoint, producing exactly the split-brain outcome
+   Option A's DMS/CDC discussion (below) already worries about: the gateway
+   would serve Aurora, the mobile/web app would serve (and write to) real
+   Supabase, and the two would silently diverge from the moment of cutover.
+2. **The frontend's repoint is a different mechanism, not the same one.**
+   The gateway's is a runtime env var on a live ECS task definition — no
+   redeploy needed, takes effect on the next request. The frontend's is a
+   **hardcoded string literal in a generated file**, baked into the static
+   bundle at `npm run build` time — repointing it needs an edit to
+   `client.ts` (or fixing the generator to honor `VITE_SUPABASE_URL` for
+   real) plus a full frontend rebuild + redeploy through the normal
+   staging→PUBLISH pipeline (`exafyltd/vitana-v1` CLAUDE.md's Deployment
+   section). It is not a flag flip.
+3. **The proxy's target reachability requirement changes.** The gateway
+   only ever needs to reach the PostgREST-Aurora proxy from inside the VPC
+   (Cloud Map private DNS, no ALB — the whole point of the simplified plan
+   above). The frontend runs in the user's browser, outside the VPC
+   entirely — it needs a **publicly reachable** URL (an ALB rule or
+   CloudFront distribution in front of the proxy), which reintroduces
+   exactly the ALB host-header-priority risk this repo's own CLAUDE.md
+   §1b flags and which the Cloud-Map-only plan was specifically designed
+   to avoid for the gateway's leg. The frontend's leg cannot avoid it the
+   same way.
+4. **The `apikey` header the frontend sends is a Supabase-specific
+   convention, not a raw-PostgREST one — worth confirming, not assumed
+   fixed.** Supabase's own API gateway enforces an `apikey` header
+   independently of the JWT; the vendored open-source `postgrest/postgrest`
+   image behind this proxy does not know about that header at all and will
+   simply ignore it. This is very likely a non-issue (nginx passes the
+   header through unexamined; PostgREST proper only cares about
+   `Authorization: Bearer <jwt>`), but it has not been verified against a
+   live PostgREST instance and belongs in the eventual smoke test's
+   checklist, not assumed away here.
+
+**Not a blocker for anything currently in flight** — PR #3461 is docs/
+scaffolding only and does not touch either the gateway's or the frontend's
+`SUPABASE_URL`. This is scope information for whoever plans the actual
+repoint step: it is at minimum a two-repo, two-mechanism change (gateway
+env var + frontend rebuild), not the one-line flip the earlier finding's
+framing could be misread as implying in isolation.
+
+**On the stale trigger's CDC/Supavisor priority, now answerable:** the
+"Supabase's Supavisor pooler cannot proxy logical replication" blocker
+(VTID-03912, referenced by the recurring autonomous-continuation routine)
+was a real, still-technically-true limitation, but its *relevance* has
+changed under Option A. It mattered when the plan was continuous
+CDC-sync of an ongoing dual-write period; under the current plan (one-shot
+DMS full-load reload immediately before cutover, then both the gateway
+AND the frontend repoint to the Aurora-backed proxy at once, then Supabase
+drops to free-tier Auth-only), there is no window that needs continuous
+replication **as long as both repoints happen together** — a gateway-only
+repoint (or frontend-only) would recreate exactly the need for CDC this
+finding is flagging, since one side would still be live-writing Supabase
+while the other reads Aurora. Whether a single atomic two-repo cutover is
+operationally achievable (frontend deploys take a build+staging+PUBLISH
+cycle; the gateway's is instant) is the next real design question, not
+answered here.

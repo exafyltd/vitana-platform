@@ -141,9 +141,9 @@ proxy is now the actual near-term target, not a stale artifact):
   live account before handing it to the operator.
 - **New, simpler plan than the original ALB-based one below**: reuse the
   `vitana.internal` Cloud Map private-DNS namespace already created for
-  erp-bridge, instead of an ALB target group + host-header rule. The
-  gateway only ever needs to reach this proxy from inside the VPC (no
-  browser ever calls it directly), so plain internal HTTP at
+  erp-bridge, instead of an ALB target group + host-header rule. **This
+  covers the GATEWAY's leg only** — the gateway only ever needs to reach
+  this proxy from inside the VPC — so plain internal HTTP at
   `http://postgrest-aurora.vitana.internal:8080` is simpler and sidesteps
   CLAUDE.md §1b's documented ALB-priority trap entirely — same posture
   erp-bridge already uses successfully. The ECS app-tier security group
@@ -160,7 +160,7 @@ proxy is now the actual near-term target, not a stale artifact):
   (or a manual dispatch) builds and rolls the real proxy image — no
   bootstrap-tenant-style gate is needed here, since Aurora's data is
   already correct and can serve real reads from the first deploy.
-- **No env-var split needed for the eventual gateway repoint.** Checked
+- **No env-var split needed WITHIN the gateway's own repoint.** Checked
   every gateway call site that does real Supabase Auth work (`.auth.admin.*`,
   `.auth.signInWith*`, `.auth.getUser()`, a raw `fetch('${SUPABASE_URL}/auth/v1/...')`)
   — all of them resolve through `getSupabase()`, `createUserSupabaseClient()`,
@@ -169,10 +169,17 @@ proxy is now the actual near-term target, not a stale artifact):
   this proxy's `/auth/v1/*` passthrough is unconditional and header-agnostic,
   one `SUPABASE_URL` repoint transparently serves every one of the ~601
   Supabase call sites in the gateway — the Auth-heavy files need no special
-  casing. Full detail: `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s
-  2026-09-19 "one SUPABASE_URL repoint" addendum. Still needs a real smoke
-  test (login + a `.from()` read + an RLS-sensitive read) against the
-  deployed proxy before this is anything more than a structural argument.
+  casing. **This does NOT cover the frontend** (`exafyltd/vitana-v1`) — it
+  talks to Supabase directly (649 call sites, 282 importing files, via a
+  hardcoded-URL generated `client.ts`), a second, independent surface that
+  needs its own repoint (a rebuild+redeploy, not an env var) plus public
+  (not just VPC-internal) reachability for the proxy. Full detail, including
+  why both repoints likely need to happen together to avoid a split-brain
+  window: `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s two 2026-09-19
+  addenda ("one SUPABASE_URL repoint" and its "still later" follow-up).
+  Still needs a real smoke test (login + a `.from()` read + an
+  RLS-sensitive read) against the deployed proxy before any of this is
+  more than a structural argument.
 
 The sections below (from "What's blocking a live deploy right now" through
 "Remaining steps once vitana_admin access is available") are the
