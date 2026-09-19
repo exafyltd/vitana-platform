@@ -69,7 +69,14 @@ describe('VTID-03906: Operator chat scroll-jump + flicker fix', () => {
 
   it('the scroll-restore block still reads savedChatScroll to preserve position', () => {
     const idx = SOURCE.indexOf("if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {");
-    const nearby = SOURCE.slice(idx, idx + 900);
+    expect(idx).toBeGreaterThan(-1);
+    // VTID-04106: was a fixed idx+900 byte slice — the exact VTID-04028
+    // failure mode this repo's own tests have already been burned by
+    // (a magic byte window silently excluding real content once a comment
+    // grows) — scoped to the block's own end marker instead.
+    const end = SOURCE.indexOf('// VTID-01002: Restore scroll positions after DOM rebuild', idx);
+    expect(end).toBeGreaterThan(idx);
+    const nearby = SOURCE.slice(idx, end);
     expect(nearby).toContain('savedChatScroll');
     expect(nearby).toContain('newMessagesContainer.scrollTop');
   });
