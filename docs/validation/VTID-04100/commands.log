@@ -1,0 +1,43 @@
+# VTID-04100 — enabling the greeting bridge in production.
+
+## Scope check performed BEFORE proposing any production deploy
+# CLAUDE.md IF-THEN 26: a pinned prod deploy ships a full repository snapshot,
+# not a diff, so every commit in the range must be this session's own or
+# separately approved. The platform owner's constraint was explicit: ship the
+# ORB voice work and Command Hub work, ship NOTHING touching user roles.
+
+git diff --name-only bead5658..01566abe | wc -l        -> 134 files
+git diff --name-only bead5658..01566abe \
+  | grep -iE "role|member|profile|visib|tenant|directory|connect-people"
+  -> NONE
+
+git show --name-only --format= 2e25db9   (VTID-04104, landed after)
+  -> Command Hub app.js/index.html, 3 tests, docs/validation only
+
+# vitana-v1 range (prod is 2 commits behind):
+git show --name-only --format= a064917  -> NewsFeedItemCard.tsx,
+                                            VitanaRecommendationCard.tsx
+git show --name-only --format= 412943c  -> index.html, useOrbVoiceWidget.ts,
+                                            + its test
+  -> no role file in either.
+
+## Separately established, and reported rather than acted on
+# The role-switcher UI is ALREADY in the live production bundle, shipped
+# before any of this session's work:
+curl https://vitanaland.com/assets/index-CTdixey-.js | grep -c "Rolle wechseln"  -> 2
+                                                       grep -c "switchRole"      -> 3
+                                                       grep -c "Mein Unternehmen" -> 1
+# Whether it RENDERS for a community user depends on the runtime permission
+# gate (get_my_permitted_roles), which was not exercised here. Flagged to the
+# owner as a pre-existing condition, not changed by this VTID.
+
+## Change
+# .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml — add
+# FEATURE_ORB_GREETING_TTS_BRIDGE_ENV to the strip-then-add pin block at
+# "staging+prod", with the reversal rationale recorded inline.
+
+npx jest test/orb/live/upstream/vtid-04100-prod-greeting-bridge-flag-pinned.test.ts \
+         test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts \
+         test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts
+  -> 3 suites, 11 tests, 0 failures
+python3 -c "import yaml; yaml.safe_load(open(...))"   -> YAML valid
