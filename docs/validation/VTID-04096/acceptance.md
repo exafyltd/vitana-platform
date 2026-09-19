@@ -106,6 +106,10 @@ AC-12 Full gateway suite green with the change in place.
 
 ## OASIS_PROOF
 
+OASIS_PROOF: the diag stages and fields below are emitted by this commit; the
+`tool_catalog_trimmed` stage does not exist before it, so its appearance in
+`oasis_events` on staging is the proof that the guard is live.
+
 VTID-04097 replaces the bridge-only `vertex_tool_catalog_trimmed` diag with a
 provider-neutral `tool_catalog_trimmed` stage carrying `provider`, and keeps
 emitting `vertex_tool_catalog_trimmed` for the bridge so VTID-04026's existing
