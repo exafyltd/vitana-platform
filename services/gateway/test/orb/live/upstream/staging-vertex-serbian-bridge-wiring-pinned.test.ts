@@ -79,7 +79,13 @@ describe('VTID-04000: staging wires the Vertex Serbian bridge (WIF), uncondition
     expect(jqBlock).not.toMatch(/if \$SEC_GCP_SA/);
     expect(jqBlock).toContain('"GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION"');
     expect(jqBlock).toContain('"VERTEX_SERBIAN_BRIDGE_ENABLED"');
-    expect(jqBlock).toContain('"GCP_SERVICE_ACCOUNT_JSON") | not) ]');
+    // Presence in the strip list only — NOT positionally last. VTID-04118
+    // appended OPERATOR_CODEINTEL_ENABLED/CODEINTEL_PLATFORM_REPO_DIR/
+    // CODEINTEL_V1_REPO_DIR after this name in the same array; this
+    // assertion's job is confirming GCP_SERVICE_ACCOUNT_JSON gets stripped
+    // before being re-added (so a stale value can't survive a deploy), not
+    // pinning where in the list that happens.
+    expect(jqBlock).toContain('"GCP_SERVICE_ACCOUNT_JSON"');
     expect(jqBlock).toContain('{name:"AURORA_CA_BUNDLE_PATH"');
   });
 
