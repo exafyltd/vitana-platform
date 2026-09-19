@@ -1,0 +1,29 @@
+VTID-04117 — commands run this session, verbatim summary (not an autopilot
+executor run — a Claude Code session working interactively, per the
+platform owner's "do that" in-conversation instruction).
+
+$ cd services/gateway && npx tsc --noEmit -p .
+-> clean except one PRE-EXISTING, unrelated error:
+   src/services/aws-cloudwatch-logs-readonly.ts(24,62): error TS2307:
+   Cannot find module '@aws-sdk/client-cloudwatch-logs' — a sandbox
+   node_modules gap on a dependency already declared in package.json
+   (unrelated file, last touched in #3406, confirmed via `git status
+   --porcelain` showing it untouched by this change).
+-> installed locally (--no-save, no lockfile change) to unblock test runs:
+   `npm install --no-save --no-audit --no-fund @aws-sdk/client-cloudwatch-logs@^3.1135.0`
+
+$ npx jest test/services/deployment-live-status.test.ts
+-> PASS. 18/18 new tests passing (LIVE_STATUS_TARGETS shape, computeCommitDrift,
+   buildLiveStatusTargetResult, validateRedeployRequest, COMMIT_SHA_RE).
+
+$ npx jest test/operator-deployments.test.ts test/vtid-04035-operator-ecs-tasks.test.ts test/services/deployment-live-status.test.ts
+-> PASS. 3 suites, 38/38 tests passing — the pre-existing `GET /deployments`
+   route suite (8 tests) and the pre-existing ECS-tasks operator-console-tool
+   suite are unaffected by this change.
+
+Not run: the full ~15k-test gateway suite (out of scope for a session-scale
+change touching one new file + two new routes on an existing router; the
+targeted suites above cover every touched code path). No live AWS/Supabase
+call was made from this session for this VTID — everything above is local
+unit-test/type-check verification, matching acceptance.md's CURL_PROOF note
+that live verification happens post-deploy on staging.

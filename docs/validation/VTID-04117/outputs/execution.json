@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04117",
+  "executor": "claude-code-session",
+  "branch": "claude/sharp-cerf-gq0za2",
+  "typecheck": {
+    "command": "tsc --noEmit -p services/gateway",
+    "result": "clean",
+    "pre_existing_unrelated_error": "src/services/aws-cloudwatch-logs-readonly.ts:24 — missing @aws-sdk/client-cloudwatch-logs in sandbox node_modules, unrelated to this change"
+  },
+  "tests": {
+    "new_suite": "test/services/deployment-live-status.test.ts",
+    "new_suite_result": "18/18 passing",
+    "regression_suites_rerun": [
+      "test/operator-deployments.test.ts",
+      "test/vtid-04035-operator-ecs-tasks.test.ts"
+    ],
+    "regression_result": "38/38 passing across 3 suites, 0 regressions"
+  },
+  "live_verification": "not_yet_performed — ships to staging on merge to main, per CLAUDE.md staging-first model (§16)"
+}
