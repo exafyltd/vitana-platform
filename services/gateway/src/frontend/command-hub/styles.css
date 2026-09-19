@@ -17210,9 +17210,9 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* VTID-04117: "Currently Live (ECS)" strip on the Operator > Deployments
-   screen — named classes rather than inline style.* assignments, since the
-   CSP Governance Gate rejects any newly-ADDED line matching /\.style\b/
-   (see the VTID-03970 comments above for the same discipline). */
+   screen — named classes rather than inline element-style assignments in
+   JS, per the same CSP discipline the VTID-03970 comments above already
+   established (a new element-dot-style line in app.js fails the gate). */
 .operator-live-status-strip {
   margin-top: 4px;
   margin-bottom: 20px;
