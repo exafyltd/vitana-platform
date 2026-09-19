@@ -110,14 +110,16 @@ describe('VTID-03947: every state.chatMessages push carries a raw ts epoch for r
   });
 
   it('switchOperatorThread() and initOperatorChatSession() restore ts from the saved thread history', () => {
-    const switchIdx = SOURCE.indexOf('function switchOperatorThread(threadId) {');
-    expect(switchIdx).toBeGreaterThan(-1);
-    const switchBody = SOURCE.slice(switchIdx, switchIdx + 900);
+    // VTID-04104: was a fixed-byte-offset slice (900 / 1500 chars) — the
+    // exact VTID-04028 failure mode this file's own comment above already
+    // names, reproduced here when VTID-04104 added a doc comment + a
+    // closeAllOperatorExecutionFollows()/reattachFollowedExecutions() call
+    // ahead of the `ts: msg.ts` line and pushed it past the fixed window.
+    // Scoped to the actual function body instead, like functionBody() above.
+    const switchBody = functionBody(SOURCE, 'function switchOperatorThread(threadId) {');
     expect(switchBody).toContain('ts: msg.ts');
 
-    const initIdx = SOURCE.indexOf('function initOperatorChatSession() {');
-    expect(initIdx).toBeGreaterThan(-1);
-    const initBody = SOURCE.slice(initIdx, initIdx + 1500);
+    const initBody = functionBody(SOURCE, 'function initOperatorChatSession() {');
     expect(initBody).toContain('ts: msg.ts');
   });
 });

@@ -19,7 +19,7 @@
 
 import { Router, Request, Response } from 'express';
 import { VITANA_ENV, supabaseHost, cloudRunRevision, cloudRunService } from '../env';
-import { featureFlagSetting, isFeatureLive } from '../services/feature-flags';
+import { featureFlagSetting, isFeatureLive, featureFlagHasInvalidValue } from '../services/feature-flags';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getOrbSessionStateHealth } from '../services/orb/orb-session-state';
@@ -41,8 +41,14 @@ const KNOWN_FEATURE_FLAGS = [
   'ORB_FAST_START',
   'ORB_GREETING_PREBUFFER',
   'ORB_GREETING_TTS_BRIDGE',
+  // VTID-04098: these two are read by isFeatureLive() but were missing from
+  // this inventory, which its own comment says is "only useful for drift
+  // detection if it is exhaustive". ORB_NOVA_PREWARM is the one that matters
+  // most here — it is the Nova connection prewarm, and it is off in prod.
+  'ORB_NOVA_PREWARM',
   'ORB_SAFE_FAST_GREETING',
   'ORB_WS_TRANSPORT',
+  'REALTIME_RELAY_CHAT_MESSAGES',
   'VOICE_RANKING_SHADOW',
 ] as const;
 
@@ -144,6 +150,11 @@ router.get(
         setting,
         live: isFeatureLive(name),
         misconfigured_for_env: setting === 'staging-only' && VITANA_ENV === 'production',
+        // VTID-04098: an env var set to something the helper does not
+        // recognise (e.g. "production") resolves to off. Distinguish that from
+        // a deliberate 'off' — the two look identical in `setting` and the
+        // difference is "someone thinks this is on".
+        invalid_value: featureFlagHasInvalidValue(name),
       };
     });
 

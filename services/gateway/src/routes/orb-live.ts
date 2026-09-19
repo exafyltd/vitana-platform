@@ -127,7 +127,7 @@ import {
 // that is what closed the bridge with 1007 on the first generation request.
 import {
   enforceToolCatalogBudget,
-  resolveVertexToolCatalogByteBudget,
+  resolveToolCatalogByteBudgetFor,
 } from '../orb/live/tools/vertex-tool-catalog-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
@@ -1603,6 +1603,11 @@ import {
 // take 5-8+s to first greeting audio; this fills the silence).
 import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
 import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
+// VTID-04100: the bridge phrase is deterministic per (lang, rendered text).
+import {
+  getCachedGreetingBridgeAudio,
+  putCachedGreetingBridgeAudio,
+} from '../services/tts/greeting-bridge-cache';
 
 /**
  * VTID-03502: should a closed Nova stream fall back to Vertex?
@@ -2217,6 +2222,11 @@ const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 // promise resolves well under this cap, so behavior is unchanged. Env-tunable
 // for staging without a redeploy.
 const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+
+// VTID-04100 — hard ceiling on how long the pre-connect greeting bridge may
+// hold the session before the real upstream connect starts. Sized above a
+// normal Polly synthesis (~0.3-0.8s) and far below the connect it precedes.
+const GREETING_BRIDGE_MAX_WAIT_MS = Number(process.env.ORB_GREETING_BRIDGE_MAX_WAIT_MS || 1500);
 
 // BOOTSTRAP-ORB-CONNECT-HANG: the native WebSocket session-start path
 // (handleWsClientMessage) builds its bootstrap context (language pref,
@@ -8074,9 +8084,17 @@ async function connectToLiveAPI(
       // cascade are untouched — they carry the full catalog exactly as
       // before; this block is gated on the resolved provider, never on the
       // language, so it cannot widen past the bridge.
-      if (session.upstreamProvider === 'vertex') {
+      // VTID-04097 — the guard is now per-provider, not Vertex-only. Nova
+      // Sonic accepts the full 290-declaration catalog, so this was left as a
+      // bridge-only correctness fix; measured on staging 2026-09-19 it is also
+      // worth p90 -4.4s on Nova (see the budget module's own header for the
+      // A/B). `resolveToolCatalogByteBudgetFor` returns 0 for any provider
+      // without a configured budget, so the cascade is untouched and adding a
+      // provider stays opt-in.
+      {
         try {
-          const toolBudget = resolveVertexToolCatalogByteBudget();
+          const { budgetBytes: toolBudget, envVar: toolBudgetEnvVar } =
+            resolveToolCatalogByteBudgetFor(session.upstreamProvider);
           const toolsIn = (setupMessage.setup as any)?.tools;
           if (toolBudget > 0 && Array.isArray(toolsIn)) {
             const toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
@@ -8099,21 +8117,32 @@ async function connectToLiveAPI(
               // OASIS, not just CloudWatch: VTID-04021's handoff could not
               // confirm the instruction guard was even firing because its
               // diagnostics are console-only. This one is queryable.
-              emitDiag(session, 'vertex_tool_catalog_trimmed', {
+              // VTID-04097: provider-neutral stage now that Nova trims too,
+              // carrying `provider` so the two are separable in a query.
+              // `vertex_tool_catalog_trimmed` is still emitted for the bridge
+              // so VTID-04026's saved queries keep resolving.
+              const _budgetDiag = {
                 budget_bytes: toolResult.budgetBytes,
                 declarations_before: toolResult.declarationsBefore,
                 declarations_after: toolResult.declarationsAfter,
                 bytes_before: toolResult.bytesBefore,
                 bytes_after: toolResult.bytesAfter,
                 dropped_count: toolResult.dropped.length,
+              };
+              emitDiag(session, 'tool_catalog_trimmed', {
+                provider: session.upstreamProvider,
+                ..._budgetDiag,
               });
+              if (session.upstreamProvider === 'vertex') {
+                emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
+              }
             } else {
               console.log(
                 `[voice.tool_catalog.budget_ok] session=${session.sessionId} declarations=${toolResult.declarationsBefore} bytes=${toolResult.bytesBefore} budget=${toolBudget}`,
               );
             }
-          } else if (toolBudget <= 0) {
-            console.log(`[voice.tool_catalog.budget_disabled] session=${session.sessionId} (${'VERTEX_TOOL_CATALOG_BYTE_BUDGET'}=0)`);
+          } else if (toolBudget <= 0 && toolBudgetEnvVar) {
+            console.log(`[voice.tool_catalog.budget_disabled] session=${session.sessionId} provider=${session.upstreamProvider} (${toolBudgetEnvVar}=0)`);
           }
         } catch (e) {
           // Never let the guard break the handshake — fail open with a log,
@@ -11120,7 +11149,14 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
     const lang = session.lang || 'en';
     const timezone = session.clientContext?.timezone || 'UTC';
     const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
-    const bridgeAudio = await synthesizeGreetingBridgeAudioPcm(text, lang);
+    // VTID-04100: the phrase is deterministic for (lang, text) and the text
+    // embeds the date, so the key rotates daily on its own. Without this every
+    // session re-synthesized the identical phrase through Polly — a per-session
+    // bill and a per-session delay on the one path whose entire job is to be
+    // instant.
+    const cached = getCachedGreetingBridgeAudio(lang, text);
+    const bridgeAudio = cached ?? (await synthesizeGreetingBridgeAudioPcm(text, lang));
+    if (bridgeAudio && !cached) putCachedGreetingBridgeAudio(lang, text, bridgeAudio);
     if (!bridgeAudio) {
       emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
       return;
@@ -11136,7 +11172,7 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
       chunk_number: session.audioOutChunks++,
       source: 'greeting_bridge',
     })}\n\n`);
-    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
+    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length, cache: cached ? 'hit' : 'miss' });
   } catch (err) {
     console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
   }
@@ -15823,7 +15859,25 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
   // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
   // can be disabled instantly if that tradeoff is ever wrong.
-  await sendGreetingAudioBridge(session);
+  //
+  // VTID-04100 — the await is now BOUNDED. Awaiting it unbounded is what made
+  // VTID-03802 a production outage: `synthesizeGreetingBridgeAudioPcm` used to
+  // fall through to a decommissioned Google TTS host and hang here, before
+  // `connectToLiveAPI` was ever called and before a single diagnostic was
+  // emitted, so the session never connected ("just connecting all the time")
+  // until an unrelated 90-145s idle watchdog closed it. Removing the Google
+  // branch fixed that particular hang; it did not make an unbounded await of a
+  // third-party API on the pre-connect critical path safe. The ordering
+  // guarantee this await exists for is preserved in the normal case (a cache
+  // hit is ~0ms, a Polly miss ~0.3-0.8s, against a connect that takes seconds),
+  // and on timeout we proceed to connect rather than strand the session — a
+  // lost bridge phrase beats a session that never starts.
+  await withBootstrapTimeout(
+    sendGreetingAudioBridge(session),
+    undefined,
+    'greeting-audio-bridge',
+    GREETING_BRIDGE_MAX_WAIT_MS,
+  );
   // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
   // could serve it) — also before the real upstream connect, same ordering
   // rationale as the greeting bridge above.

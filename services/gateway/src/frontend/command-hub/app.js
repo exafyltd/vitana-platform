@@ -781,14 +781,21 @@ function switchOperatorThread(threadId) {
     state.operatorConversationId = thread.conversationId;
     var history = getOperatorThreadHistory(thread.id);
     state.operatorChatHistory = history;
+    // VTID-04033/04104: closing the OLD thread's follows first — they belong
+    // to a conversation no longer on screen — before restoring the NEW
+    // thread's own followExecIds (carried through from persisted history,
+    // see sendChatMessage()'s assistantHistoryEntry) and reattaching them.
+    closeAllOperatorExecutionFollows();
     state.chatMessages = history.map(function (msg) {
         return {
             type: msg.role === 'user' ? 'user' : 'system',
             content: msg.content,
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            ts: msg.ts
+            ts: msg.ts,
+            followExecIds: msg.followExecIds
         };
     });
+    reattachFollowedExecutions(state.chatMessages);
     renderApp();
 }
 
@@ -1228,9 +1235,14 @@ function initOperatorChatSession() {
                 type: msg.role === 'user' ? 'user' : 'system',
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                ts: msg.ts
+                ts: msg.ts,
+                followExecIds: msg.followExecIds
             };
         });
+        // VTID-04104: a page reload landing on a thread with a still-running
+        // (or recently finished) execution must not render it as dead —
+        // reattach the live follow the same way switchOperatorThread() does.
+        reattachFollowedExecutions(state.chatMessages);
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
 }
@@ -3679,7 +3691,13 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
-    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
+    // VTID-04110: persisted across reloads — the popup previously always
+    // opened small, forcing a manual expand click every single session
+    // before a long streamed agent transcript could be read without
+    // scrolling inside a cramped box.
+    isOperatorFullscreen: (function () {
+        try { return localStorage.getItem('vitana.operatorFullscreen') === 'true'; } catch (e) { return false; }
+    })(), // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -3695,6 +3713,7 @@ const state = {
     chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
     chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
     operatorExecFollow: {}, // VTID-04033: { [execution_id]: { es, steps, terminal, streamError, error, tool } } — executions the console follows after queueing them
+    chatStickToBottom: true, // VTID-04106: true while the user hasn't manually scrolled away from the bottom, or just sent a message — see the .chat-messages scroll listener in renderOperatorChat() and the VTID-0539 anchor logic in _renderAppCore()
     chatIsTyping: false, // VTID-0526-D: Guard against scroll/render during typing
     chatDictationActive: false, // VTID-03907: voice dictation (Web Speech API) recording state
     // VTID-01027: Session Memory State
@@ -5795,8 +5814,17 @@ function _renderAppCore() {
         requestAnimationFrame(function () {
             var newMessagesContainer = document.querySelector('.chat-messages');
             if (newMessagesContainer && savedChatScroll) {
-                if (savedChatScroll.wasNearBottom) {
-                    // User was at/near bottom - scroll to show new messages
+                // VTID-04106: wasNearBottom alone is stale for a render this
+                // user's OWN send() just triggered — it reads the scroll
+                // position from BEFORE that action, so a user who scrolled up
+                // to read old history and then hit send stayed stuck up there
+                // (the explicit VTID-0526-D force-scroll calls raced against
+                // this same rAF and against renders fired by concurrent SSE
+                // follow-step events, and could lose). state.chatStickToBottom
+                // is the authoritative, action-based signal instead — set on
+                // send, cleared only by the user's own scroll-away.
+                if (savedChatScroll.wasNearBottom || state.chatStickToBottom) {
+                    // User was at/near bottom, or just sent a message - scroll to show it
                     newMessagesContainer.scrollTop = newMessagesContainer.scrollHeight;
                 } else {
                     // User had scrolled up - preserve their position relative to content
@@ -22988,6 +23016,8 @@ function renderOperatorOverlay() {
     fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
     fullscreenBtn.onclick = () => {
         state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        // VTID-04110: remember the choice so it survives a page reload.
+        try { localStorage.setItem('vitana.operatorFullscreen', String(state.isOperatorFullscreen)); } catch (e) { /* ignore */ }
         renderApp();
     };
     headerActions.appendChild(fullscreenBtn);
@@ -23135,6 +23165,16 @@ function renderOperatorChat() {
     // Messages area
     const messages = document.createElement('div');
     messages.className = 'chat-messages';
+
+    // VTID-04106: keep state.chatStickToBottom in sync with the user's own
+    // manual scroll actions — same 80px threshold as the VTID-0539 anchor's
+    // wasNearBottom check, so a user who scrolls up to read older history
+    // stays pinned there across background re-renders, and scrolling back
+    // down re-arms auto-scroll without needing to send a message first.
+    messages.addEventListener('scroll', function () {
+        var distanceFromBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
+        state.chatStickToBottom = distanceFromBottom <= 80;
+    });
 
     if (state.chatMessages.length === 0) {
         const empty = document.createElement('div');
@@ -23447,13 +23487,38 @@ function parseSseFrames(buffer) {
     return { frames: frames, rest: rest };
 }
 
+// VTID-04110: incremental update for the live tool-call transcript instead
+// of the full-app renderApp() this used to call on every SSE frame. A long
+// agent turn emits a tool.call/tool.result pair per tool invocation (a
+// multi-step run can be a dozen or more) plus a model.turn frame per model
+// call — each one used to tear down and rebuild the ENTIRE Command Hub DOM
+// (sidebar, header, the whole overlay), which is what produced the visible
+// flicker on every step. Mirrors the incremental-update pattern this file
+// already uses for polling (VTID-01151's updateApprovalsBadge) — mutate
+// only the one DOM node that actually changed.
+function updateOperatorLiveTranscriptDom() {
+    var existing = document.querySelector('.chat-tool-activity--live');
+    if (!existing) {
+        // Not mounted yet (first frame of the turn) — do one real render so
+        // the container exists; every later frame in this turn takes the
+        // fast, non-rebuilding path below.
+        renderApp();
+        return;
+    }
+    existing.replaceWith(renderOperatorLiveTranscript());
+    var messagesEl = document.querySelector('.chat-messages');
+    if (messagesEl && state.chatStickToBottom) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
 function applyOperatorTurnFrame(frame) {
     var d = frame.data || {};
     if (frame.event === 'tool.call') {
         state.chatLiveTranscript[d.index] = {
             index: d.index, name: d.name, args: d.args, status: 'running', started_at: Date.now()
         };
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'tool.result') {
         var entry = state.chatLiveTranscript[d.index] || { index: d.index, name: d.name };
         entry.status = d.ok ? 'ok' : 'failed';
@@ -23461,10 +23526,10 @@ function applyOperatorTurnFrame(frame) {
         entry.error = d.error;
         entry.excerpt = d.excerpt;
         state.chatLiveTranscript[d.index] = entry;
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'model.turn') {
         state.chatLiveModelTurns.push(d);
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     }
 }
 
@@ -23666,6 +23731,25 @@ function closeAllOperatorExecutionFollows() {
     state.operatorExecFollow = {};
 }
 
+/**
+ * VTID-04104: re-open the live SSE follow for every execution a restored
+ * chat history references, after switchOperatorThread() or the page-load
+ * bootstrap rebuild state.chatMessages from persisted history. The stream
+ * (GET /executions/:id/stream) replays an execution's full step history
+ * from the start on every fresh connect and emits `terminal` immediately if
+ * it already finished, so this is safe to call unconditionally — a still-
+ * running execution resumes its live ticker/turn list, an already-finished
+ * one just shows its final status instead of nothing at all.
+ */
+function reattachFollowedExecutions(chatMessages) {
+    (chatMessages || []).forEach(function (msg) {
+        if (!msg || !Array.isArray(msg.followExecIds)) return;
+        msg.followExecIds.forEach(function (execId) {
+            followOperatorExecution(execId);
+        });
+    });
+}
+
 function describeFollowedStep(step) {
     if (!step) return '';
     var topic = String(step.topic || '').replace('dev_autopilot.execution.', '').replace('dev_autopilot.agent.', 'agent.');
@@ -23779,6 +23863,12 @@ async function sendChatMessage() {
     const messageText = state.chatInputValue.trim();
 
     if (!messageText) return;
+
+    // VTID-04106: re-arm auto-scroll on every send, regardless of where the
+    // user was scrolled beforehand — see the VTID-0539 anchor check in
+    // _renderAppCore() and the .chat-messages scroll listener above that
+    // otherwise leaves this false while reading older history.
+    state.chatStickToBottom = true;
 
     // VTID-01041: Handle pending title capture (user is responding to "What should be the title?" prompt)
     if (state.pendingTitleVtid) {
@@ -23952,11 +24042,21 @@ async function sendChatMessage() {
             }
         }
 
-        // VTID-01027: Add assistant response to session history
+        // VTID-01027: Add assistant response to session history.
+        // VTID-04104: followExecIds must be persisted here too, not only on
+        // the in-memory chatMessages entry below — operatorChatHistory is
+        // what actually survives a thread switch or page reload
+        // (saveOperatorThreadHistory/getOperatorThreadHistory), and without
+        // this field the restore path (switchOperatorThread, the page-load
+        // bootstrap) can never re-attach the live follow panel for a turn
+        // that queued an execution, even though the execution itself keeps
+        // running on the backend the whole time.
+        var turnFollowExecIds = extractFollowedExecutionIds(result.toolResults);
         var assistantHistoryEntry = {
             role: 'assistant',
             content: replyContent,
-            ts: Date.now()
+            ts: Date.now(),
+            followExecIds: turnFollowExecIds
         };
         state.operatorChatHistory.push(assistantHistoryEntry);
         saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
@@ -23972,11 +24072,11 @@ async function sendChatMessage() {
             createdTask: result.createdTask,
             toolResults: result.toolResults,
             meta: result.meta,
-            followExecIds: extractFollowedExecutionIds(result.toolResults)
+            followExecIds: turnFollowExecIds
         });
 
         // VTID-04033: follow every execution this turn queued or approved.
-        (state.chatMessages[state.chatMessages.length - 1].followExecIds || []).forEach(function (execId) {
+        turnFollowExecIds.forEach(function (execId) {
             var tr = (result.toolResults || []).filter(function (t) { return t && t.response && t.response.execution_id === execId; })[0];
             followOperatorExecution(execId, tr ? OPERATOR_EXEC_FOLLOW_TOOLS[tr.name] : null);
         });

@@ -50,6 +50,58 @@ export const VERTEX_TOOL_CATALOG_BYTE_BUDGET_DEFAULT = 48 * 1024;
 export const VERTEX_TOOL_CATALOG_BYTE_BUDGET_ENV = 'VERTEX_TOOL_CATALOG_BYTE_BUDGET';
 
 /**
+ * VTID-04097 — the same budget, for Nova Sonic.
+ *
+ * VTID-04026 applied this guard to the Vertex bridge only, because there the
+ * oversized catalog was a CORRECTNESS bug: Gemini Live rejected the first
+ * generation request outright (`1007 "Request contains an invalid argument"`)
+ * on ~80% of authenticated sessions. Nova Sonic accepts the full 290
+ * declarations without complaint, so it was left alone — "Nova Sonic and the
+ * cascade are untouched", as `orb-live.ts`'s own comment recorded.
+ *
+ * Accepting it is not the same as being unaffected by it. Measured on staging
+ * 2026-09-19, authenticated `de`, 10 trials per arm, SSE, the ONLY difference
+ * being the ORB surface (and therefore the catalog the setup envelope
+ * declares — the same isolation knob VTID-04026 used):
+ *
+ *   full community catalog   290 decls / 221.5 KB → first model audio
+ *                                                   p50 3033 ms, p90 7502 ms
+ *   admin catalog            134 decls /  44.5 KB → p50 2513 ms, p90 3081 ms
+ *
+ * The median moves ~0.5 s; the TAIL moves 4.4 s. That tail is the reported
+ * complaint ("6, 7, 8, sometimes more than 10 seconds"), so on Nova this is a
+ * LATENCY guard rather than a validity one — which is why it gets its own env
+ * var and its own default instead of silently inheriting the bridge's.
+ *
+ * WHY 64 KB AND NOT THE BRIDGE'S 48 KB. The bridge's budget is sized by what
+ * Gemini Live will ACCEPT; Nova's is sized by what the product cannot lose.
+ * Measured against the real authenticated community catalog: the 35 tools in
+ * {@link VERTEX_BRIDGE_PRIORITY_TOOLS} that the catalog actually contains come
+ * to **58.3 KB on their own** — more than 48 KB. At a 48 KB budget the packer
+ * therefore drops eight of its own priority entries (`log_water`, `log_sleep`,
+ * `log_exercise`, `log_meditation`, `get_vitana_index`, `get_pillar_subscores`,
+ * `resolve_recipient`, `explain_feature`) — i.e. a voice session silently
+ * loses daily logging and the Vitana Index. That is a product regression, not
+ * a latency win. 64 KB keeps every priority tool (41 of 290 declarations,
+ * 65.5 KB) and still removes ~70% of the bytes.
+ *
+ * Worth knowing, NOT changed here: the Vertex bridge runs at 48 KB and so
+ * drops those same eight tools on Serbian sessions today. That is
+ * pre-existing VTID-04026 behaviour and raising it risks reintroducing the
+ * 1007 closes that budget exists to prevent, so it is left alone and flagged.
+ *
+ * `0` disables the guard and restores the full catalog, so rollback is one
+ * task-definition change and no deploy.
+ *
+ * TRADE-OFF, stated plainly: a domain tool OUTSIDE the priority list can be
+ * dropped from a session that would previously have had it. Raise the budget
+ * if a specific tool turns out to matter more than the tail latency does.
+ */
+export const NOVA_TOOL_CATALOG_BYTE_BUDGET_DEFAULT = 64 * 1024;
+
+export const NOVA_TOOL_CATALOG_BYTE_BUDGET_ENV = 'NOVA_TOOL_CATALOG_BYTE_BUDGET';
+
+/**
  * Kept first, in this order, when the catalog must be trimmed. Names not
  * present in a given catalog are simply skipped (the anonymous catalog has
  * two of these; the admin/backoffice surfaces have their own allowlists).
@@ -157,6 +209,31 @@ export function resolveVertexToolCatalogByteBudget(
   const n = Number(raw);
   if (!Number.isFinite(n)) return VERTEX_TOOL_CATALOG_BYTE_BUDGET_DEFAULT;
   return n <= 0 ? 0 : Math.floor(n);
+}
+
+/**
+ * VTID-04097 — resolve the byte budget for whichever upstream is serving this
+ * session. Returns 0 ("no guard") for any provider without one, so adding a
+ * provider here is opt-in and the cascade keeps its full catalog exactly as
+ * before. Pure; reads only the env map it is handed.
+ */
+export function resolveToolCatalogByteBudgetFor(
+  provider: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): { budgetBytes: number; envVar: string | null } {
+  if (provider === 'vertex') {
+    return { budgetBytes: resolveVertexToolCatalogByteBudget(env), envVar: VERTEX_TOOL_CATALOG_BYTE_BUDGET_ENV };
+  }
+  if (provider === 'nova_sonic') {
+    const raw = (env[NOVA_TOOL_CATALOG_BYTE_BUDGET_ENV] || '').trim();
+    if (raw === '') return { budgetBytes: NOVA_TOOL_CATALOG_BYTE_BUDGET_DEFAULT, envVar: NOVA_TOOL_CATALOG_BYTE_BUDGET_ENV };
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return { budgetBytes: NOVA_TOOL_CATALOG_BYTE_BUDGET_DEFAULT, envVar: NOVA_TOOL_CATALOG_BYTE_BUDGET_ENV };
+    }
+    return { budgetBytes: n <= 0 ? 0 : Math.floor(n), envVar: NOVA_TOOL_CATALOG_BYTE_BUDGET_ENV };
+  }
+  return { budgetBytes: 0, envVar: null };
 }
 
 /**

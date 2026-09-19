@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-04110",
+  "title": "Operator Console: streamed agentic turns flicker the whole app on every frame, and the console never fills the screen (fullscreen choice not persisted)",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/vtid-04028-operator-turn-stream.test.ts",
+    "services/gateway/test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts",
+    "services/gateway/test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts",
+    "docs/validation/VTID-04110/acceptance.md",
+    "docs/validation/VTID-04110/commands.log",
+    "docs/validation/VTID-04110/outputs/execution.json"
+  ],
+  "verification": {
+    "node_check": "pass",
+    "tsc_no_emit": "pass",
+    "jest_targeted_suites": "2/2 suites, 25/25 tests passing",
+    "jest_wider_regression_sweep": "7/7 suites, 99/99 tests passing, 0 regressions (124/124 combined)",
+    "mutation_verified": true,
+    "live_ci_failure_fixed": "Gateway (Jest, ~7.5k tests) failed on first push (3 pre-existing tests broken by fixed-length source windows/literal regex); fixed and re-pushed"
+  },
+  "not_done": [
+    "no live staging re-verification yet",
+    "no Playwright screenshot pass (re-render-scope and persistence-timing fix only — rendered output is pixel-identical either way; also requires an authenticated exafy_admin session this session doesn't have standing access to)"
+  ]
+}

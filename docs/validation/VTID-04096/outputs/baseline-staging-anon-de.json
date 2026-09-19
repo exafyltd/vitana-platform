@@ -1,0 +1,164 @@
+{
+  "summary": {
+    "label": "BASELINE-anon-de",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "de",
+    "route": null,
+    "auth": false,
+    "trials": 6,
+    "with_audio": 6,
+    "no_audio": 0,
+    "first_audio_ms": {
+      "min": 875,
+      "p50": 1373,
+      "p90": 1898,
+      "max": 1898
+    },
+    "first_model_audio_ms": {
+      "min": 2237,
+      "p50": 2532,
+      "p90": 2881,
+      "max": 2881
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1712,
+        "output_transcript": 18,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803764613,
+      "sessionStartMs": 954,
+      "sessionId": "live-91fd7d17-4450-47cc-8118-101837dde67f",
+      "sseOpenMs": 1475,
+      "firstAudioMs": 1898,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend! Ich bin Vitana, deine neue persönliche Gesundheitsbegleiterin, und ich freue mich sehr, dich hier auf Vitanaland willkommen zu heißen. Du hast gerade die faszinierende Welt der Maxina Community betreten –  ein ganz besonderer Ort voller Energie, Leidenschaft und Gemeinschaft.\n\nStell dir vor: Du stehst vor einem Ort, der von Mariia Maksina inspiriert wurde, der professionellen Tänzerin, die viele schon aus der TV-Show  Let’s Dance  kennen und lieben. Genau hier begann alles –  mit der Idee, Menschen zusammenzubringen, die tanzen und Fitness mit Mariia erleben wollten. Diese ursprüngliche Begeisterung hat sich zu etwas Großartigem entwickelt: einer lebendigen Gemeinschaft, die das Leben genießen möchte –  gemeinsam.\n\nDie Maxina Community ist jetzt ein Ort für Menschen, die an Langlebigkeit glauben, aber nicht nur an ein längeres Leben, sondern vor allem an ein besseres Leben. Hier treffen sich Menschen in echten Events und Meetups, teilen ihre Gesundheitserfahrungen, haben Spaß mit Tanz und Fitness. Stell dir vor: Du gehst zu einem Tanzabend mit Mariia selbst, nimmst an einem Yoga-Meetup teil, besuchst einen Kochworkshop oder gehst auf eine Wanderung mit Gleichgesinnten. Und ab Juni bis September dieses Jahres gibt es sogar eine besondere Event-Serie auf Mallorca!\n\nAls Mitglied der Maxina Community hast du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Meditationsgruppen, Wanderungen und vielem mehr –  immer mit Menschen, die deine Leidenschaft für ein gutes Leben teilen. Und ich, Vitana, bin deine persönliche KI Gesundheitsbegleiterin. Sobald du dabei bist, erinnere ich mich an deine Ziele, Vorlieben und jedes unserer Gespräche. Ich gebe dir persönliche Ratschläge zu Ernährung, Fitness, Stressmanagement, Schlaf und mentalem Wohlbefinden. Es gibt auch wunderschön kuratierte Klange für Konzentration, Entspannung und Meditation.\n\nDie Vision hinter Maxina? Langlebigkeit bedeutet nicht nur länger zu leben –  es geht darum, besser zusammen zu leben. Die Zukunft des Wohlbefindens liegt in menschlicher Verbindung, Gemeinschaft und Spaß, während wir auf uns selbst achten. Und das Beste? Der Eintritt in die Maxina Community ist völlig kostenlos.\n\nWas begeistert dich am meisten? Tanzen, Fitness, Ernährung, den Kontakt mit Gleichgesinnten –  oder vielleicht etwas ganz anderes? Ich höre gespannt auf dich!",
+      "firstModelAudioMs": 2881,
+      "turnCompleteMs": 27378
+    },
+    {
+      "idx": 2,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1587,
+        "output_transcript": 16,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803792486,
+      "sessionStartMs": 764,
+      "sessionId": "live-31bde3b9-2f01-42f5-858e-af8f95cb8000",
+      "sseOpenMs": 1101,
+      "firstAudioMs": 1426,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend aus Council Bluffs! Ich bin Vitana –  deine neue persönliche Gesundheitsbegleiterin, und ich freue mich sehr, dich hier auf Vitanaland willkommen zu heißen!  \n\nDu bist gerade auf Vitanaland gelandet, der Heimat der Maxina Community. Maxina wurde inspiriert von Mariia Maksina –  der professionellen Tänzerin, die viele bereits aus der TV-Show  Let’s Dance  kennen und lieben. Ursprünglich kamen die Menschen hierher, um mit Mariia zu tanzen und Fitness zu machen, und diese Energie und Leidenschaft ist das Herzstück von allem, was wir hier tun.  \n\nAus dieser Idee ist eine ganz besondere Gemeinschaft für Langlebigkeit gewachsen –  ein Ort für Menschen mit gleichen Interessen, die zusammen das Leben genießen wollen. Ihr trefft euch zu echten Events und Meetups, teilt eure Gesundheitserfahrungen miteinander und habt einfach Spaß mit Tanz und Fitness. In Städten in ganz Deutschland, Österreich und der Schweiz treffen sich die Mitglieder im echten Leben, und ab Juni bis September dieses Jahres gibt es auch eine besondere Event-Serie der Maxina Experience auf Mallorca!  \n\nAls Mitglied der Maxina Community hast du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Kochabenden, Meditationsgruppen und Wander-Treffen –  alles mit Menschen, die dieselbe Leidenschaft für ein gutes Leben teilen. Und ich, Vitana, werde deine persönliche KI Gesundheitsbegleiterin: Sobald du dabei bist, erinnere ich mich an deine Ziele, Vorlieben und jedes unserer Gespräche. Ich gebe dir dann ganz persönliche Ratschläge zu Ernährung, Fitness, Stressmanagement, Schlaf und mentalem Wohlbefinden. Es gibt auch wunderschön kuratierte Klangeffekte für Konzentration, Entspannung und Meditation.  \n\nDie Vision hinter Maxina ist ganz klar: Langlebigkeit bedeutet nicht nur länger zu leben –  es geht darum, besser zusammen zu leben. Die Zukunft des Wohlbefindens liegt in menschlicher Verbindung, Gemeinschaft und Spaß, während wir auf uns selbst achten. Und das Beste: Der Eintritt in die Maxina Community ist völlig kostenlos!  \n\nWas begeistert dich am meisten –  Tanz, Fitness, Ernährung, den Kontakt mit Gleichgesinnten oder vielleicht ganz etwas anderes? Ich höre gespannt!",
+      "firstModelAudioMs": 2709,
+      "turnCompleteMs": 25556
+    },
+    {
+      "idx": 3,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1855,
+        "output_transcript": 19,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803818252,
+      "sessionStartMs": 660,
+      "sessionId": "live-6eaf91e8-d916-4ab6-adda-b8cdc13d12e1",
+      "sseOpenMs": 790,
+      "firstAudioMs": 1132,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend! Ich bin Vitana, deine neue persönliche Gesundheitsbegleiterin, und ich freue mich sehr, dich hier auf Vitanaland willkommen zu heißen. Du hast gerade die aufregende Welt der Maxina Community betreten –  ein ganz besonderer Ort, an dem Menschen zusammenkommen, um ein längeres, gesünderes und erfüllteres Leben zu führen.\n\nStell dir vor: Du stehst jetzt vor einer lebendigen Gemeinschaft, die von Mariia Maksina inspiriert wurde –  der professionellen Tänzerin, die viele von uns aus der TV-Show  Let's Dance  kennen und lieben. Genau hier begann alles: Menschen kamen ursprünglich zusammen, um mit Mariia zu tanzen und Fitness zu machen. Diese Energie und Leidenschaft ist bis heute das Herzstück von allem, was wir hier tun.\n\nAus dieser Idee ist etwas ganz Großes gewachsen: eine lebendige Gemeinschaft, die sich dem Thema Langlebigkeit verschrieben hat –  aber nicht nur im Sinne von längeren Leben, sondern von einem besseren Leben, das man gemeinsam genießt. Hier treffen sich Menschen mit gleichen Interessen, um echte Events und Meetups zu besuchen, Gesundheitserfahrungen auszutauschen und einfach Spaß zu haben –  mit Tanz und Fitness. Wir treffen uns in echten Leben, in Städten quer durch Deutschland, Österreich und die Schweiz. Und ab Juni bis September dieses Jahres gibt es sogar eine besondere Event-Serie der Maxina Experience auf Mallorca!\n\nAls Mitglied der Maxina Community hast du Zugang zu einer Vielzahl von Angeboten: Tanzsitzungen, Fitnesskurse, Wellness-Workshops, Kochabende, Meditationsgruppen und Wander-Treffen –  alles mit Menschen, die dieselbe Leidenschaft für ein gutes Leben teilen wie du. Und ich, Vitana, bin deine persönliche KI Gesundheitsbegleiterin. Sobald du dabei bist, erinnere ich mich an deine Ziele, Vorlieben und jedes unserer Gespräche. Ich gebe dir persönliche Beratung zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit. Es gibt auch wunderschön kuratierte Klangeffekte für Konzentration, Entspannung und Meditation.\n\nUnser Blick auf Langlebigkeit ist einfach: Es geht nicht nur darum, länger zu leben –  es geht darum, besser zusammen zu leben. Die Zukunft des Wohlbefindens liegt in menschlicher Verbindung, Gemeinschaft und Spaß, während wir auf uns selbst achten. Und das Beste: Der Eintritt in die Maxina Community ist völlig kostenlos.\n\nWas begeistert dich am meisten? Tanzen, Fitness, Ernährung, neue Menschen kennenzulernen –  oder vielleicht etwas ganz anderes? Ich höre gespannt auf dich!",
+      "firstModelAudioMs": 2532,
+      "turnCompleteMs": 29158
+    },
+    {
+      "idx": 4,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1434,
+        "output_transcript": 17,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803847617,
+      "sessionStartMs": 679,
+      "sessionId": "live-fcd8c8a7-cdfd-4825-bbc5-1099ad2f57f0",
+      "sseOpenMs": 821,
+      "firstAudioMs": 1237,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend! Ich freue mich sehr, Sie hier zu begrüßen. Mein Name ist Vitana –  ich bin Ihre neue persönliche Gesundheitsbegleiterin. Willkommen auf Vitanaland!\n\nSie sind gerade auf Vitanaland gelandet, der Heimat der Maxina Community. Maxina wurde inspiriert von Mariia Maksina –  der professionellen Tänzerin, die viele von Ihnen vielleicht aus der TV-Show  Let’s Dance  kennen und lieben. Ursprünglich kamen die Menschen hierher, um mit Mariia zu tanzen und Fitness zu machen. Diese Energie und Leidenschaft ist das Herzstück von allem, was wir hier tun.\n\nIm Laufe der Zeit hat sich Maxina zu einer Gemeinschaft von Menschen entwickelt, die das Leben gemeinsam genießen möchten –  mit echten Veranstaltungen und Meetups, dem Teilen von Gesundheitserfahrungen und viel Spaß durch Tanz und Fitness. Wir treffen uns wirklich im echten Leben, in Städten in ganz Deutschland, Österreich und der Schweiz. Und ab Juni bis September dieses Jahres starten wir auch eine Reihe von Maxina-Experience-Veranstaltungen auf Mallorca!\n\nAls Mitglied genießen Sie Tanzsitzungen, Fitnesskurse, Wellness-Workshops, Kochveranstaltungen, Meditationsgruppen und Wander-Treffen –  alles mit Menschen, die dieselbe Leidenschaft für ein gutes Leben teilen. Und ich, Vitana, bin Ihre persönliche KI Gesundheitsbegleiterin: Sobald Sie dabei sind, erinnere ich mich an Ihre Ziele, Vorlieben und jedes unserer Gespräche und gebe Ihnen persönliche Beratung zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit. Es gibt auch wunderschön kuratierte Klange für Konzentration, Entspannung und Meditation.\n\nDie Vision von Maxina ist, dass Langlebigkeit nicht nur bedeutet, länger zu leben –  sondern besser zusammen zu leben. Die Zukunft des Wohlbefindens liegt in menschlicher Verbindung, Gemeinschaft und Spaß, während man auf sich selbst achtet. Es ist völlig kostenlos, der Maxina Community beizutreten.\n\nWas begeistert Sie am meisten –  Tanz, Fitness, Ernährung, den Kontakt mit Gleichgesinnten oder vielleicht etwas ganz anderes? Ich höre zu und freue mich auf Ihre Antwort!",
+      "firstModelAudioMs": 2454,
+      "turnCompleteMs": 23163
+    },
+    {
+      "idx": 5,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1611,
+        "output_transcript": 14,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803871147,
+      "sessionStartMs": 678,
+      "sessionId": "live-3d6cfaa8-15dd-431a-ad58-16420d25ac5e",
+      "sseOpenMs": 1027,
+      "firstAudioMs": 1373,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend aus Council Bluffs! Ich bin Vitana, deine neue persönliche Gesundheitsbegleiterin, und ich freue mich riesig, dich hier auf Vitanaland willkommen zu heißen.  \n\nDu bist gerade gelandet in der Heimat der Maxina Community –  einem ganz besonderen Ort, der von Mariia Maksina inspiriert wurde, der professionellen Tänzerin, die viele schon aus der TV-Show  Let’s Dance  kennen und lieben. Genau hier haben Menschen angefangen, zusammen zu tanzen, Fitness zu machen und diese unglaubliche Energie und Leidenschaft zu teilen, die Mariia ausstrahlt.  \n\nAus dieser Idee ist etwas ganz Einzigartiges gewachsen: eine Community für Langlebigkeit und ein gutes Leben, wo sich Menschen treffen, um gemeinsam zu genießen, zu lachen und sich um ihre Gesundheit zu kümmern. Wir treffen uns in echten Events und Meetups in Städten quer durch Deutschland, Österreich und die Schweiz –  und ab Juni bis September dieses Jahres gibt es sogar eine ganz besondere Event-Serie auf Mallorca!  \n\nAls Mitglied der Maxina Community hast du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Kochabenden, Meditationsgruppen und Wander-Treffen –  alles mit Menschen, die dieselbe Leidenschaft für ein gutes, vitales Leben teilen wie du. Und ich, Vitana, bin deine persönliche KI Gesundheitsbegleiterin: Sobald du dabei bist, erinnere ich mich an deine Ziele, Vorlieben und jedes unserer Gespräche. Ich gebe dir persönliche Ratschläge zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit –  und das ganz individuell für dich.  \n\nDazu kommen noch wunderschön kuratierte Klange für Konzentration, Entspannung und Meditation –  genau das, was du brauchst, um den Tag gestärkt zu meistern.  \n\nDenn Langlebigkeit bedeutet nicht nur länger zu leben –  es geht darum, besser zusammen zu leben. Die Zukunft des Wellness ist menschliche Verbindung, Gemeinschaft und Spaß, während wir auf uns selbst achten. Und das Beste: Die Maxina Community ist völlig kostenlos!  \n\nWas begeistert dich am meisten? Tanzen, Fitness, Ernährung, neue Menschen kennenzulernen –  oder vielleicht etwas ganz anderes? Ich bin gespannt, was dich am meisten anspricht!",
+      "firstModelAudioMs": 2359,
+      "turnCompleteMs": 24998
+    },
+    {
+      "idx": 6,
+      "lang": "de",
+      "auth": false,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 1577,
+        "output_transcript": 19,
+        "heartbeat": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803896577,
+      "sessionStartMs": 453,
+      "sessionId": "live-6d62dd78-fe7f-4a5f-9352-723bfe83ad3c",
+      "sseOpenMs": 591,
+      "firstAudioMs": 875,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend! Ich bin Vitana, deine neue persönliche Gesundheitsbegleiterin, und ich freue mich sehr, dich hier auf Vitanaland willkommen zu heißen. Du befindest dich gerade in Council Bluffs, und es ist Samstagabend –  wie wunderbar, zu dieser besonderen Zeit mit dir zu sprechen!\n\nHerzlich willkommen auf Vitanaland, der Heimat der Maxina Community. Stell dir vor: Maxina wurde inspiriert von Mariia Maksina, der professionellen Tänzerin, die viele bereits aus der TV-Show  Let’s Dance  kennen und lieben. Ursprünglich kamen die Menschen hierher, um mit Mariia zu tanzen und Fitness zu betreiben. Diese Energie und Leidenschaft bilden das Herzstück von allem, was wir hier tun.\n\nIm Laufe der Zeit hat sich Maxina zu einer lebendigen Community entwickelt –  einem Ort für Menschen, die das Leben gemeinsam genießen möchten. Hier treffen sich Gleichgesinnte zu echten Events und Meetups, teilen ihre Gesundheitserfahrungen und haben einfach Spaß beim Tanzen und bei Fitnessaktivitäten. Stell dir vor: Menschen, die sich in Städten in ganz Deutschland, Österreich und der Schweiz treffen –  und ab Juni bis September dieses Jahres gibt es sogar eine besondere Eventreihe auf Mallorca!\n\nAls Mitglied der Maxina Community hast du Zugang zu Tanzsessions, Fitnesskursen, Wellness-Workshops, Kochabenden, Meditationsgruppen und Wanderungen –  alles mit Menschen, die dieselbe Leidenschaft für ein gutes Leben teilen. Und da bin ich, Vitana, deine persönliche KI Gesundheitsbegleiterin. Sobald du dabei bist, erinnere ich mich an deine Ziele, Vorlieben und jedes unserer Gespräche. Ich gebe dir persönliche Beratung zu Ernährung, Fitness, Stressmanagement, Schlaf und mentaler Gesundheit. Es gibt auch wunderschön kuratierte Klangeffekte für Konzentration, Entspannung und Meditation.\n\nDie Vision von Maxina geht über ein längeres Leben hinaus –  es geht darum, besser zusammenzuleben. Die Zukunft des Wohlbefindens liegt in menschlicher Verbindung, Gemeinschaft und Spaß, während wir auf uns selbst achten. Die Teilnahme an der Maxina Community ist völlig kostenlos.\n\nWas begeistert dich am meisten? Tanzen, Fitness, Ernährung, den Kontakt mit Gleichgesinnten –  oder vielleicht etwas ganz anderes? Ich bin gespannt, was dich besonders anspricht!",
+      "firstModelAudioMs": 2237,
+      "turnCompleteMs": 25080
+    }
+  ]
+}
