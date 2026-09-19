@@ -97,6 +97,46 @@ jobs:
       DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # VTID-04118 — full history, not the default shallow clone, so the
+          # codeintel staging step below can give RepoWise real git-tier
+          # data for this repo (bug-fix/churn history, not just a snapshot).
+          fetch-depth: 0
+
+      - name: Checkout vitana-v1 (read-only, for codeintel indexing)
+        id: checkout_v1
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          # Same secret name and same-repo/GITHUB_TOKEN fallback already
+          # established by REGEN-SCREENS-CATALOG.yml for cross-repo reads —
+          # reused here rather than inventing a second secret for the same
+          # purpose. GITHUB_TOKEN alone cannot read a private sibling repo,
+          # so without VITANA_V1_READ_TOKEN this step fails and the next
+          # step's placeholder-directory fallback keeps the build going.
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0
+          path: services/gateway/codeintel-src/vitana-v1
+
+      - name: Stage codeintel source (VTID-04118 — RepoWise/Graphify image indexing)
+        run: |
+          set -e
+          mkdir -p services/gateway/codeintel-src/platform
+          # rsync this checkout (incl. .git) into the Docker build context,
+          # excluding node_modules/build output and the staging dir itself
+          # so it doesn't try to copy into its own destination.
+          rsync -a --exclude='node_modules' --exclude='services/gateway/codeintel-src' \
+            --exclude='services/gateway/dist' --exclude='**/dist/**' \
+            ./ services/gateway/codeintel-src/platform/
+          if [ -d services/gateway/codeintel-src/vitana-v1/.git ]; then
+            echo "vitana-v1 checked out — de-bloating node_modules before it enters the Docker build context"
+            find services/gateway/codeintel-src/vitana-v1 -maxdepth 4 -type d -name node_modules -prune -exec rm -rf {} +
+          else
+            echo "vitana-v1 checkout unavailable (VITANA_V1_READ_TOKEN missing/failed) — leaving an empty placeholder so the Dockerfile COPY never fails"
+            mkdir -p services/gateway/codeintel-src/vitana-v1
+          fi
 
       - name: Resolve commit metadata + refresh BUILD_INFO
         id: commit
@@ -802,7 +842,9 @@ jobs:
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
-                                                "GCP_SERVICE_ACCOUNT_JSON") | not) ]
+                                                "GCP_SERVICE_ACCOUNT_JSON",
+                                                "OPERATOR_CODEINTEL_ENABLED",
+                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -848,7 +890,10 @@ jobs:
                           {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
-                          {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG} ] )
+                          {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
+                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                          {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
+                          {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
