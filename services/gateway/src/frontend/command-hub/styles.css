@@ -17208,3 +17208,37 @@ border-bottom: 1px solid var(--color-border, #333);
   font-size: 12px;
   margin: 8px 0 12px;
 }
+
+/* VTID-04117: "Currently Live (ECS)" strip on the Operator > Deployments
+   screen — named classes rather than inline style.* assignments, since the
+   CSP Governance Gate rejects any newly-ADDED line matching /\.style\b/
+   (see the VTID-03970 comments above for the same discipline). */
+.operator-live-status-strip {
+  margin-top: 4px;
+  margin-bottom: 20px;
+}
+.operator-live-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.operator-live-status-card--ok {
+  border-left-color: #22c55e;
+}
+.operator-live-status-card--drift {
+  border-left-color: #ef4444;
+}
+.operator-live-status-body {
+  font-size: 12px;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.operator-live-status-drift-badge {
+  margin-top: 4px;
+  display: inline-block;
+}
+.operator-live-status-note {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 6px;
+}

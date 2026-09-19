@@ -31577,8 +31577,7 @@ function redeployCommunityAppCommit(commit) {
  */
 function renderOperatorLiveStatusStrip() {
     var wrap = document.createElement('div');
-    wrap.style.marginTop = '4px';
-    wrap.style.marginBottom = '20px';
+    wrap.className = 'operator-live-status-strip';
 
     var stripHeader = document.createElement('div');
     stripHeader.className = 'section-title';
@@ -31602,14 +31601,11 @@ function renderOperatorLiveStatusStrip() {
     }
 
     var grid = document.createElement('div');
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(240px, 1fr))';
-    grid.style.gap = '10px';
+    grid.className = 'operator-live-status-grid';
 
     state.operatorLiveStatus.targets.forEach(function (t) {
         var card = document.createElement('div');
-        card.className = 'attention-item';
-        card.style.borderLeftColor = t.drift ? '#ef4444' : '#22c55e';
+        card.className = 'attention-item ' + (t.drift ? 'operator-live-status-card--drift' : 'operator-live-status-card--ok');
 
         var top = document.createElement('div');
         top.className = 'attention-item-top';
@@ -31620,9 +31616,7 @@ function renderOperatorLiveStatusStrip() {
         card.appendChild(top);
 
         var body = document.createElement('div');
-        body.style.fontSize = '12px';
-        body.style.marginTop = '4px';
-        body.style.lineHeight = '1.5';
+        body.className = 'operator-live-status-body';
 
         if (t.ecs) {
             body.appendChild(document.createTextNode(
@@ -31652,9 +31646,7 @@ function renderOperatorLiveStatusStrip() {
 
         if (t.drift) {
             var driftBadge = document.createElement('span');
-            driftBadge.className = 'status-badge status-error';
-            driftBadge.style.marginTop = '4px';
-            driftBadge.style.display = 'inline-block';
+            driftBadge.className = 'status-badge status-error operator-live-status-drift-badge';
             driftBadge.textContent = 'DRIFT: live commit ≠ last logged deploy';
             card.appendChild(driftBadge);
         }
@@ -31665,9 +31657,7 @@ function renderOperatorLiveStatusStrip() {
     wrap.appendChild(grid);
 
     var note = document.createElement('div');
-    note.style.fontSize = '11px';
-    note.style.opacity = '0.7';
-    note.style.marginTop = '6px';
+    note.className = 'operator-live-status-note';
     note.textContent = 'Frontend (community-app) has no build-info endpoint to resolve a live commit here — verify a frontend deploy by sampling the served JS chunk hash (see CLAUDE.md).';
     wrap.appendChild(note);
 
