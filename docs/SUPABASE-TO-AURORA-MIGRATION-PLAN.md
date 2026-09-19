@@ -262,19 +262,23 @@ Two consequences for this migration:
 > reversal on this exact question.
 >
 > **Cost clarification, same 2026-09-19 session: AWS cost is NOT a
-> driver here at all.** The platform owner stated explicitly: *"Any cost
-> on AWS is ok, costs on Supabase are not ok."* Aurora, the DMS replication
-> instance, ECS, and every other AWS resource in this migration may run
-> in parallel with Supabase **indefinitely** at no urgency — there is no
-> AWS-side reason to rush, delete, or "clean up" any AWS resource as part
-> of hitting this deadline. **Do not delete, stop, or otherwise tear down
-> any AWS resource (the DMS instance included) to save cost** — it was
-> briefly, mistakenly treated as the cost driver earlier the same session
-> before this correction, and the platform owner explicitly said not to
-> delete anything on AWS. The only cost this migration is actually solving
-> for is the Supabase subscription/compute-add-on bill, and only once
-> Supabase's real load (post-migration: Auth only) is light enough for the
-> free tier.
+> driver here at all — the whole reason this migration targets AWS is a
+> 12-month AWS credit grant covering this account at no cost.** The
+> platform owner stated explicitly: *"we are talking about migration to
+> AWS because AWS we have credits for 12 months and no costs at all... this
+> means costs on AWS is no problem at all. Costs on Supabase is what we
+> want to cut."* Aurora, the DMS replication instance, ECS, and every other
+> AWS resource in this migration may run in parallel with Supabase
+> **indefinitely, for the full 12-month credit window** at no cost concern
+> — there is no AWS-side reason to rush, delete, or "clean up" any AWS
+> resource as part of hitting the Supabase deadline. **Do not delete,
+> stop, or otherwise tear down any AWS resource (the DMS instance
+> included) to save cost** — it was briefly, mistakenly treated as the
+> cost driver earlier the same session before this correction, and the
+> platform owner explicitly said not to delete anything on AWS. The ONLY
+> cost this migration is solving for is the Supabase subscription/
+> compute-add-on bill, cut by downgrading Supabase to free tier once its
+> real load (post-migration: Auth only) is light enough to run on it.
 >
 > **Historical note, superseded by the above.** DECIDED 2026-08-25 was
 > Option B. The platform owner's then-standing directive — full migration
