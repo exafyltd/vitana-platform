@@ -76,6 +76,16 @@
             "statusMessage": "Installing gateway dependencies..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-codeintel-setup.sh\"",
+            "timeout": 300,
+            "statusMessage": "Installing/refreshing RepoWise + Graphify (CLAUDE.md codebase intelligence workflow)..."
+          }
+        ]
       }
     ],
     "SessionEnd": [
