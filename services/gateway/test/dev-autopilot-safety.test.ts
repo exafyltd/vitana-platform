@@ -179,6 +179,84 @@ describe('evaluateSafetyGate', () => {
     expect(d.violations.map(v => v.code)).toContain('max_auto_fix_depth_reached');
   });
 
+  describe('VTID-04132: is_open_ended skips scope + tests_missing pre-flight', () => {
+    it('does NOT reject tests_missing when is_open_ended is true, even with only a source file', () => {
+      // Real reproduced case: operator-execution-onramp.ts's open-ended
+      // request text said "Add a unit test in services/gateway/test/
+      // confirming ..." — no literal file path, so extractFilePaths()
+      // never found a test file. The agent discovers/writes it later and
+      // agent-scope.ts checks the real diff post-hoc.
+      const d = evaluateSafetyGate(
+        okPlan({ files_to_modify: ['services/gateway/src/services/llm-router.ts'] }),
+        okCtx({ is_open_ended: true }),
+      );
+      expect(d.ok).toBe(true);
+      expect(d.violations.map(v => v.code)).not.toContain('tests_missing');
+    });
+
+    it('does NOT reject file_outside_allow_scope when is_open_ended is true', () => {
+      const d = evaluateSafetyGate(
+        okPlan({ files_to_modify: ['services/agents-new/x.ts'] }),
+        okCtx({ is_open_ended: true }),
+      );
+      expect(d.ok).toBe(true);
+      expect(d.violations.map(v => v.code)).not.toContain('file_outside_allow_scope');
+    });
+
+    it('does NOT reject file_in_deny_scope when is_open_ended is true', () => {
+      const d = evaluateSafetyGate(
+        okPlan({ files_to_modify: ['services/gateway/src/routes/auth.ts'] }),
+        okCtx({ is_open_ended: true }),
+      );
+      expect(d.ok).toBe(true);
+      expect(d.violations.map(v => v.code)).not.toContain('file_in_deny_scope');
+    });
+
+    it('still rejects kill_switch, risk_class, daily_budget, and max_auto_fix_depth when is_open_ended is true', () => {
+      expect(
+        evaluateSafetyGate(
+          okPlan({ files_to_modify: ['anything/goes.ts'] }),
+          okCtx({ is_open_ended: true, config: { ...DEFAULT_CONFIG, kill_switch: true } }),
+        ).violations.map(v => v.code),
+      ).toContain('kill_switch_engaged');
+
+      expect(
+        evaluateSafetyGate(
+          okPlan({ risk_class: 'high', files_to_modify: ['anything/goes.ts'] }),
+          okCtx({ is_open_ended: true }),
+        ).violations.map(v => v.code),
+      ).toContain('risk_class_too_high');
+
+      expect(
+        evaluateSafetyGate(
+          okPlan({ files_to_modify: ['anything/goes.ts'] }),
+          okCtx({ is_open_ended: true, approved_today: 10 }),
+        ).violations.map(v => v.code),
+      ).toContain('daily_budget_exhausted');
+
+      expect(
+        evaluateSafetyGate(
+          okPlan({ files_to_modify: ['anything/goes.ts'] }),
+          okCtx({ is_open_ended: true, auto_fix_depth: 2 }),
+        ).violations.map(v => v.code),
+      ).toContain('max_auto_fix_depth_reached');
+    });
+
+    it('regression: scope and tests_missing still apply when is_open_ended is false or omitted', () => {
+      const withFalse = evaluateSafetyGate(
+        okPlan({ files_to_modify: ['services/gateway/src/services/foo.ts'] }),
+        okCtx({ is_open_ended: false }),
+      );
+      expect(withFalse.violations.map(v => v.code)).toContain('tests_missing');
+
+      const omitted = evaluateSafetyGate(
+        okPlan({ files_to_modify: ['services/agents-new/x.ts'] }),
+        okCtx(),
+      );
+      expect(omitted.violations.map(v => v.code)).toContain('file_outside_allow_scope');
+    });
+  });
+
   it('aggregates multiple violations when several rules fail', () => {
     const d = evaluateSafetyGate(
       okPlan({
