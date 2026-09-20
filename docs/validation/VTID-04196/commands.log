@@ -1,0 +1,35 @@
+# VTID-04196 — commands run by this session
+
+$ node node_modules/.bin/jest test/vtid-04196-operator-chat-message-cap.test.ts --silent
+PASS test/vtid-04196-operator-chat-message-cap.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+
+$ node node_modules/.bin/tsc --noEmit
+(clean, zero output)
+
+$ node node_modules/.bin/jest \
+    test/operator-chat-oasis.test.ts \
+    test/operator-planner.test.ts \
+    test/task-extractor.test.ts \
+    test/vtid-03818-allocation-title.test.ts \
+    test/vtid-03820-operator-execution-onramp.test.ts \
+    test/vtid-03822-operator-chat-threads.test.ts \
+    test/vtid-03839-onramp-approved-by-uuid.test.ts \
+    test/vtid-03843-selfheal-child-inherits-onramp-override.test.ts \
+    test/vtid-03851-execute-task-requires-auth.test.ts \
+    test/vtid-03926-operator-chat-userrole.test.ts \
+    test/vtid-03928-operator-cross-session-memory.test.ts \
+    test/vtid-03949-operator-sessions-sidebar-rename.test.ts \
+    test/vtid-04005-onramp-vtid-self-allocate.test.ts \
+    test/vtid-04007-open-ended-intake.test.ts \
+    test/vtid-04028-operator-turn-stream.test.ts \
+    test/vtid-04030-operator-approval-tools.test.ts \
+    test/vtid-04034-operator-cancel-tool.test.ts \
+    test/vtid-04111-operator-activate-recommendation.test.ts \
+    test/vtid-04172-operator-simulated-tool-call-retry.test.ts \
+    test/worker-orchestrator-autonomous-ownership.test.ts \
+    --silent
+Test Suites: 20 passed, 20 total
+Tests:       255 passed, 255 total
+0 regressions.

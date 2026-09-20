@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { MESSAGE_MAX_CHARS } from '../services/operator-threads';
 
 // ==================== Chat Role and Mode ====================
 
@@ -23,7 +24,17 @@ export type OperatorChatMode = 'chat' | 'task' | 'control';
  * - context: VTID-01027 - Array of previous messages for context
  */
 export const OperatorChatMessageSchema = z.object({
-  message: z.string().min(1, "Message is required"),
+  // VTID-04196: capped at input — previously unbounded, so an oversized
+  // message reached the LLM call in full and was only ever clipped
+  // afterwards, on the way into `operator_messages` storage
+  // (operator-threads.ts's own clipMessage() at the same MESSAGE_MAX_CHARS).
+  // That let the stored copy silently diverge from what was actually sent
+  // to the model. Reusing the same constant here means a message that
+  // passes validation never needs clipping downstream.
+  message: z.string().min(1, "Message is required").max(
+    MESSAGE_MAX_CHARS,
+    `Message must be ${MESSAGE_MAX_CHARS} characters or fewer`
+  ),
   attachments: z.array(z.object({
     oasis_ref: z.string(),
     kind: z.enum(['image', 'video', 'file'])

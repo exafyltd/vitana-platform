@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04196",
+  "source": "claude-code-session",
+  "files": [
+    { "path": "services/gateway/src/types/operator-chat.ts", "action": "modify" },
+    { "path": "services/gateway/test/vtid-04196-operator-chat-message-cap.test.ts", "action": "create" },
+    { "path": "docs/validation/VTID-04196/**", "action": "create" }
+  ],
+  "generated_at": "2026-09-20T21:05:00.000Z",
+  "generated_by": "claude-code-session"
+}
