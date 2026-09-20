@@ -15665,6 +15665,85 @@ router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedR
   }
 });
 
+/**
+ * VTID-04198 — client-side audio-playback block report.
+ *
+ * WHY THIS ROUTE EXISTS
+ * ---------------------
+ * On 2026-09-19 an iPhone (iOS 16.6, Appilix wrapper) reported "Vitana talking
+ * but no audio, zero". Session `58373903` had streamed **315 audio chunks /
+ * 643 speech tokens** — a complete, healthy German greeting. Every
+ * server-side diagnostic for that session says success. The audio was
+ * discarded inside the widget, because the iOS AudioContext never left
+ * `suspended`, and `_announceAudioBlocked()` reported that only to a
+ * `console.error` on a phone with no console attached.
+ *
+ * So the single most user-visible ORB failure was the one failure mode with
+ * NO server-side signal at all — unmeasurable, un-alertable, and impossible
+ * to confirm after the fact. This route closes that hole.
+ *
+ * Deliberately **works for anonymous callers**, unlike its `audio-ready`
+ * sibling (which early-returns `anonymous_no_ack` because it writes
+ * user-keyed `orb_session_state`). The reported failure is PRE-LOGIN; a
+ * telemetry route that ignores anonymous sessions would have been blind to
+ * the exact incident that motivated it. This one only emits an OASIS event
+ * keyed by session_id, so it needs no user.
+ *
+ * Fails soft and always answers 200 — the client is already in a degraded
+ * state and must never be handed an error to handle on top of it.
+ */
+router.post('/session/:id/audio-blocked', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const sessionId = String(req.params.id || '');
+  if (!sessionId) return res.status(400).json({ ok: false, error: 'missing_session_id' });
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const rawState = typeof body.state === 'string' ? body.state : 'blocked';
+    // Allowlist rather than echo: `state` reaches an OASIS topic suffix, and
+    // arbitrary client text must not be able to mint new topics.
+    const state = (['blocked', 'recovered', 'abandoned'] as const).includes(
+      rawState as 'blocked' | 'recovered' | 'abandoned',
+    )
+      ? (rawState as 'blocked' | 'recovered' | 'abandoned')
+      : 'blocked';
+
+    const str = (v: unknown, max = 120): string | null =>
+      typeof v === 'string' && v.length > 0 ? v.slice(0, max) : null;
+    const num = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+    void emitOasisEvent({
+      vtid: 'VTID-04198',
+      type: state === 'blocked' ? 'orb.live.audio_blocked' : `orb.live.audio_blocked.${state}`,
+      source: 'orb-live',
+      status: state === 'blocked' ? 'error' : 'info',
+      message:
+        state === 'blocked'
+          ? `client could not play audio for session ${sessionId} (playback context never resumed)`
+          : `client audio block ${state} for session ${sessionId}`,
+      payload: {
+        session_id: sessionId,
+        state,
+        reason: str(body.reason, 64),
+        elapsed_ms: num(body.elapsed_ms),
+        ctx_state: str(body.ctx_state, 32),
+        queued_chunks: num(body.queued_chunks),
+        unlocked_by_gesture: body.unlocked_by_gesture === true,
+        audio_ever_heard: body.audio_ever_heard === true,
+        lang: str(body.lang, 16),
+        user_id: req.identity?.user_id ?? null,
+        anonymous: !req.identity?.user_id,
+        user_agent: str(req.headers['user-agent'], 240),
+      },
+      actor_id: req.identity?.user_id,
+      surface: 'orb',
+    }).catch(() => {});
+
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+  }
+});
+
 router.get('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.identity?.user_id;
   if (!userId) return res.json({ ok: true, continuity: null });
