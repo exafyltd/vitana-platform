@@ -1,0 +1,55 @@
+VTID-04214 — commands run, in order
+
+1. Continuing the standing "fix the fail and restart" instruction: this
+   task's underlying goal was VTID-04163 (task-backlog item 1, "Cap
+   autopilot_run_task request size"), which terminalized `failed` via the
+   Dev Autopilot agent executor with the shape VTID-04213 diagnoses
+   (100+ read/search turns, zero edits). Implementing directly instead
+   of re-queuing, since the agent could not converge on it and VTID-04213
+   fixes the general loop behavior, not this specific missing feature.
+
+2. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-run-task-request-cap"}'
+   -> 200 {"ok":true,"vtid":"VTID-04214", ...}
+
+3. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04214 \
+     -d '{"title":"Operator: cap autopilot_run_task request length",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+4. git fetch origin main; git checkout -B
+   claude/vtid-04214-run-task-request-cap origin/main.
+
+5. grep -rln "autopilot_run_task" services/gateway/src --include="*.ts"
+   -> located executeRunTask in gemini-operator.ts (not exported).
+
+6. Read the sibling VTID-04201 PR's test file (git show on its remote
+   branch) to match its established pattern: export a pure constant +
+   helper for direct testing rather than mocking the whole authz/
+   governance/Supabase chain.
+
+7. Edited services/gateway/src/services/gemini-operator.ts: added
+   MAX_RUN_TASK_REQUEST_CHARS (exported), describeRunTaskRequestTooLong()
+   (exported, pure), and one new early-return branch in executeRunTask
+   right after the auth check and before the pre-existing length-floor
+   check.
+
+8. Wrote services/gateway/test/vtid-04214-run-task-request-cap.test.ts:
+   2 direct unit tests on the exported constant/helper + 4 source-order
+   characterization tests confirming the check's position relative to
+   the auth check, evaluateGovernance(), and triggerOperatorExecution().
+
+9. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04214-run-task-request-cap.test.ts --silent
+   -> 1 suite, 6 tests, all passing on the first run.
+
+10. node node_modules/.bin/tsc --noEmit -> exit 0, no output.
+
+11. node node_modules/.bin/jest \
+        test/vtid-04214-run-task-request-cap.test.ts \
+        test/vtid-04007-open-ended-intake.test.ts \
+        test/vtid-04132-onramp-open-ended-safety-gate.test.ts --silent
+    -> 3 suites, 23 tests, all passing, 0 regressions.
+
+12. Wrote docs/validation/VTID-04214/{acceptance.md,commands.log,outputs/execution.json}.
+    Verified the acceptance-mapping gate locally before pushing.

@@ -1,0 +1,39 @@
+{
+  "vtid": "VTID-04214",
+  "title": "Operator: cap autopilot_run_task request length",
+  "type": "feature",
+  "background": {
+    "original_task": "VTID-04163 (queued Command Hub batch, item 1: Cap autopilot_run_task request size)",
+    "original_outcome": "terminalized failed via Dev Autopilot agent executor — agent hit the 120-turn cap without calling finish, zero edit calls made",
+    "implemented_here": "directly by this session, per standing instruction to fix a failed task's underlying goal"
+  },
+  "fix": {
+    "source_files_changed": [
+      "services/gateway/src/services/gemini-operator.ts"
+    ],
+    "test_files_changed": [
+      "services/gateway/test/vtid-04214-run-task-request-cap.test.ts"
+    ],
+    "mechanism": "MAX_RUN_TASK_REQUEST_CHARS (50000, exported) + describeRunTaskRequestTooLong() (exported, pure) + one new early-return branch in executeRunTask after the auth check, before governance/VTID allocation"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 6,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04214-run-task-request-cap.test.ts",
+      "tests_total": 6,
+      "tests_passing": 6
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-04214-run-task-request-cap.test.ts",
+        "services/gateway/test/vtid-04007-open-ended-intake.test.ts",
+        "services/gateway/test/vtid-04132-onramp-open-ended-safety-gate.test.ts"
+      ],
+      "suites_total": 3,
+      "tests_total": 23,
+      "failures": 0
+    }
+  },
+  "live_verification": "not applicable — behind the existing authz gate, no separate deploy/flag to observe live beyond normal staging rollout"
+}

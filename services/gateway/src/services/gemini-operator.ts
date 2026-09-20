@@ -1626,6 +1626,19 @@ async function executeExecuteTask(
  * list have to be named up front.
  */
 const INTAKE_TELEMETRY_VTID = 'VTID-DEV-AUTOPILOT';
+/**
+ * VTID-04214: an unbounded `request` string was accepted straight through
+ * to VTID allocation/governance/the agent executor's prompt — a caller (or
+ * a copy-paste accident) pasting an entire file or log dump in as the
+ * "request" would silently become the whole task prompt with no limit at
+ * all. Refused before any VTID allocation or governance check, same
+ * ordering `executeRunTask` already uses for its length-floor check below.
+ */
+export const MAX_RUN_TASK_REQUEST_CHARS = 50_000;
+
+export function describeRunTaskRequestTooLong(length: number): string {
+  return `autopilot_run_task's request is too long (${length} chars, max ${MAX_RUN_TASK_REQUEST_CHARS}) — nothing was queued. Summarize the request instead of pasting a whole file or log.`;
+}
 
 async function executeRunTask(
   args: { request: string; title?: string },
@@ -1645,6 +1658,9 @@ async function executeRunTask(
       details: { reason: `auth_${authz.reason}`, tool: 'autopilot_run_task' },
     });
     return { ok: false, error: describeExecuteTaskRefusal(authz.reason).replace('autopilot_execute_task', 'autopilot_run_task') };
+  }
+  if (request.length > MAX_RUN_TASK_REQUEST_CHARS) {
+    return { ok: false, error: describeRunTaskRequestTooLong(request.length) };
   }
   if (request.length < 12) {
     return { ok: false, error: 'autopilot_run_task needs the request in the user\'s own words (at least a sentence) — nothing was queued.' };
