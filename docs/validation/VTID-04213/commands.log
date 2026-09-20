@@ -1,0 +1,80 @@
+VTID-04213 — commands run, in order
+
+1. Per the standing instruction to fix failures in the queued 30-task
+   Command Hub batch, queried vtid_ledger via Supabase MCP (read-only,
+   production project inmkhvwdcuyhnxkgfvsb):
+
+   select vtid, status, spec_status, is_terminal, terminal_outcome, title
+   from vtid_ledger where vtid ~ '^VTID-041[6-9][0-9]$' order by vtid;
+
+   -> 11 VTIDs terminalized failed with identical
+      terminal_outcome='failed', all "Operator: ..." titled tasks from
+      the queued batch.
+
+2. select id, status, ... from dev_autopilot_executions where
+   metadata::text ilike '%VTID-0416%' ... -> found the operator-onramp
+   agent executions behind each failed VTID.
+
+3. select vtid, status, terminal_outcome, updated_at, metadata from
+   vtid_ledger where vtid in (...) -> every failed row's metadata carries
+   execution_failure_error: "agent hit the 120-turn cap without calling
+   finish".
+
+4. Checked whether VTID-04194 (already merged as PR #3476, 21:04:13 UTC)
+   already covers this: read the merged agent-loop.ts — its wrap-up fix
+   only fires once hasEdited is true. Confirmed via
+   dev_autopilot_executions.metadata->>'claimed_at' that the 4 sampled
+   failures were claimed AFTER the executor image rebuild that shipped
+   VTID-04194 (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml run 16, completed
+   21:07:12 UTC) — so this is a live, distinct defect.
+
+5. select (metadata->>'tool') as tool, count(*) from oasis_events where
+   vtid = 'VTID-04163' and topic like '%agent.tool%' group by tool ->
+   read_file 69, search_text 46, find_files 5, ZERO write/edit calls.
+
+6. Repeated for 10 more VTIDs (04160/61/62/66/67/68/69/70/71/77) ->
+   same shape: 100-130+ read/search/find calls, 9/10 with zero edit
+   calls (VTID-04161 made 3 edit_file calls but still failed — a
+   separate, already-covered late-edit case).
+
+7. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"agent-loop-exploration-budget"}'
+   -> 200 {"ok":true,"vtid":"VTID-04213", ...}
+
+8. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04213 \
+     -d '{"title":"Operator: exploration-budget nudge for stuck agent runs",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+9. git fetch origin main; git checkout -B
+   claude/vtid-04213-agent-loop-exploration-budget origin/main.
+
+10. Edited services/gateway/src/services/autopilot-agent/agent-loop.ts:
+    added explorationBudgetTurns option, buildExplorationBudgetPrompt(),
+    and the third if/else-if arm in the post-tool-calls prompt-selection
+    block.
+
+11. Edited services/gateway/test/autopilot-agent-loop.test.ts: added the
+    "VTID-04213 exploration budget" describe block (6 tests).
+
+12. cd services/gateway && node node_modules/.bin/jest \
+        test/autopilot-agent-loop.test.ts --silent
+    -> first run: 24/25 passing, 1 failure — my own initial assertion
+       used turnsRemaining=8 for a maxTurns=10/turn=1 case; the real
+       value is 9. Fixed the test's expected value.
+
+13. Re-ran: node node_modules/.bin/jest test/autopilot-agent-loop.test.ts --silent
+    -> 25/25 passing.
+
+14. node node_modules/.bin/tsc --noEmit -> exit 0, no output.
+
+15. node node_modules/.bin/jest \
+        test/autopilot-agent-loop.test.ts \
+        test/vtid-04032-cancel-running-execution.test.ts --silent
+    -> 2 suites, 41 tests, all passing, 0 regressions (every file that
+       calls runAgentLoop, found via grep -rln).
+
+16. Wrote docs/validation/VTID-04213/{acceptance.md,commands.log,outputs/execution.json}.
+    Verified the acceptance-mapping gate locally (the same python check
+    VALIDATOR-CHECK.yml runs) against the AC block before pushing, per
+    the VTID-04203 CI failure earlier this session.

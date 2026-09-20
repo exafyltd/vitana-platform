@@ -1,0 +1,44 @@
+{
+  "vtid": "VTID-04213",
+  "title": "Operator: exploration-budget nudge for stuck agent runs",
+  "type": "bugfix",
+  "investigation": {
+    "trigger": "standing instruction: when a queued Command Hub operator-console task execution fails, diagnose and fix it",
+    "found_via": "read-only Supabase queries against vtid_ledger / dev_autopilot_executions / oasis_events (production, inmkhvwdcuyhnxkgfvsb)",
+    "failed_vtids": [
+      "VTID-04160", "VTID-04161", "VTID-04162", "VTID-04163", "VTID-04166",
+      "VTID-04167", "VTID-04168", "VTID-04169", "VTID-04170", "VTID-04171", "VTID-04177"
+    ],
+    "shared_error": "agent hit the 120-turn cap without calling finish",
+    "confirmed_not_stale_image": "sampled executions claimed 21:28-22:00 UTC, after the VTID-04194 executor-image rebuild completed at 21:07:12 UTC",
+    "tool_call_shape": "100-130+ read_file/search_text/find_files calls per run; 9 of 10 sampled made zero write_file/edit_file/delete_file calls"
+  },
+  "fix": {
+    "source_files_changed": [
+      "services/gateway/src/services/autopilot-agent/agent-loop.ts"
+    ],
+    "test_files_changed": [
+      "services/gateway/test/autopilot-agent-loop.test.ts"
+    ],
+    "mechanism": "new explorationBudgetTurns option + buildExplorationBudgetPrompt(); once N turns elapse with no successful mutating tool call, the continuation prompt switches from CONTINUE_PROMPT to an explicit converge-or-explain nudge"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 6,
+    "own_suite": {
+      "file": "services/gateway/test/autopilot-agent-loop.test.ts",
+      "tests_total": 25,
+      "tests_passing": 25
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/autopilot-agent-loop.test.ts",
+        "services/gateway/test/vtid-04032-cancel-running-execution.test.ts"
+      ],
+      "suites_total": 2,
+      "tests_total": 41,
+      "failures": 0
+    }
+  },
+  "live_verification": "not applicable from this session — requires an executor image rebuild (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml workflow_dispatch) and a fresh dispatched execution to observe; not performed here"
+}

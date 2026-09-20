@@ -50,6 +50,12 @@ export interface AgentLoopOptions {
    * turns remain before `maxTurns`. Defaults to `WRAP_UP_MARGIN_TURNS`.
    */
   wrapUpMarginTurns?: number;
+  /**
+   * VTID-04213: once this many turns have elapsed with NO edit yet landed,
+   * switch the continuation prompt to one that tells the model to stop
+   * searching and commit to an edit. Defaults to `EXPLORATION_BUDGET_TURNS`.
+   */
+  explorationBudgetTurns?: number;
 }
 
 export interface AgentLoopResult {
@@ -99,6 +105,41 @@ export function buildWrapUpPrompt(turnsRemaining: number): string {
     'Do NOT start new exploration or open new files. Run only the check(s) needed to verify the files you already changed,',
     'fix anything they report, and call finish(summary, pr_title, pr_body) now — a smaller, verified change beats running',
     'out of turns with an uncommitted edit.',
+  ].join(' ');
+}
+
+/**
+ * VTID-04213: the OTHER half of the failure VTID-04194 left uncovered — a
+ * run that never lands ANY edit at all, not one that lands an edit too
+ * close to the cap. Measured live across the 10 failed executions in the
+ * 30-task Command Hub batch queued 2026-09-20 (VTID-04160/61/62/63/66/67/
+ * 68/69/70/71/77, all `agent hit the N-turn cap without calling finish`,
+ * all claimed AFTER VTID-04194's own executor-image rebuild — so this is
+ * genuinely a different defect, not a stale-image artifact): every one
+ * spent 100-130+ turns almost entirely on `read_file`/`search_text`/
+ * `find_files`, and 9 of the 10 made ZERO `write_file`/`edit_file`/
+ * `delete_file` calls in the whole run — pure exploration exhaustion for
+ * tasks (e.g. "cap a request size", "cap a title length") that should
+ * have converged on one file in a handful of turns. `buildWrapUpPrompt`
+ * cannot help here — its trigger (`hasEdited`) is never true.
+ *
+ * Once `explorationBudgetTurns` elapses with no edit yet landed, the
+ * continuation prompt switches to this one: stop broadening the search,
+ * make the best edit available now from what has already been read, or
+ * — if the location genuinely cannot be found — say so and call `finish`
+ * with that explanation instead of silently exhausting the turn cap.
+ * This does not force an edit (a model that is genuinely still narrowing
+ * down a real ambiguity should not be cut off mid-thought), it only
+ * removes the standing invitation to keep exploring indefinitely.
+ */
+const EXPLORATION_BUDGET_TURNS = 40;
+
+export function buildExplorationBudgetPrompt(turnsUsed: number, turnsRemaining: number): string {
+  return [
+    `You have used ${turnsUsed} turn(s) exploring the repository and have not made any file edit yet, with ${turnsRemaining} turn(s) left.`,
+    'Stop broadening the search. Based on what you have already read, make your best edit now with write_file/edit_file.',
+    'If you genuinely cannot identify the right location after this much exploration, stop searching and call',
+    'finish(summary, pr_title, pr_body) explaining exactly what you could not resolve — do not keep searching indefinitely.',
   ].join(' ');
 }
 
@@ -173,6 +214,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   const deadline = started + (o.deadlineMs ?? 20 * 60_000);
   const historyCharBudget = o.historyCharBudget ?? HISTORY_CHAR_BUDGET;
   const wrapUpMarginTurns = o.wrapUpMarginTurns ?? WRAP_UP_MARGIN_TURNS;
+  const explorationBudgetTurns = o.explorationBudgetTurns ?? EXPLORATION_BUDGET_TURNS;
   const history: LLMRouterMessage[] = [...(o.history ?? [])];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let prompt = o.prompt;
@@ -249,6 +291,9 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     if (hasEdited && turnsRemaining <= wrapUpMarginTurns) {
       step({ turn: turns, kind: 'nudge', detail: `wrap-up: ${turnsRemaining} turn(s) remain after an edit — forcing finish` });
       prompt = buildWrapUpPrompt(turnsRemaining);
+    } else if (!hasEdited && turns >= explorationBudgetTurns) {
+      step({ turn: turns, kind: 'nudge', detail: `exploration budget: ${turns} turn(s) used with no edit yet — forcing convergence` });
+      prompt = buildExplorationBudgetPrompt(turns, turnsRemaining);
     } else {
       prompt = CONTINUE_PROMPT;
     }

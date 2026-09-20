@@ -2,7 +2,7 @@
  * VTID-04006: the provider-neutral tool loop.
  */
 
-import { runAgentLoop, trimHistoryForBudget, buildWrapUpPrompt, CONTINUE_PROMPT, NUDGE_PROMPT } from '../src/services/autopilot-agent/agent-loop';
+import { runAgentLoop, trimHistoryForBudget, buildWrapUpPrompt, buildExplorationBudgetPrompt, CONTINUE_PROMPT, NUDGE_PROMPT } from '../src/services/autopilot-agent/agent-loop';
 import type { LLMRouterMessage, LLMRouterResult } from '../src/services/llm-router';
 import type { ToolOutcome } from '../src/services/autopilot-agent/agent-tools';
 
@@ -171,6 +171,100 @@ describe('VTID-04194 wrap-up margin', () => {
     expect(r.finished?.pr_title).toBe('t');
     // The prompt driving the run_check/finish turns was the wrap-up prompt, not the open-ended continue prompt.
     expect(callLlm.mock.calls[6][0]).toMatch(/Do NOT start new exploration/);
+  });
+});
+
+describe('VTID-04213 exploration budget', () => {
+  it('switches to the exploration-budget prompt once turns used reach the budget with no edit yet', async () => {
+    // explorationBudgetTurns=3: turns 1-2 are plain reads (no edit), turn 3
+    // is another read. The prompt AFTER turn 3 (turns=3 >= budget 3) must
+    // switch, even though no edit has ever happened.
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'a.ts' } }] },
+      { toolCalls: [{ id: 'c2', name: 'search_text', arguments: { pattern: 'x' } }] },
+      { toolCalls: [{ id: 'c3', name: 'read_file', arguments: { path: 'b.ts' } }] },
+      { toolCalls: [{ id: 'c4', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    const r = await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 10, explorationBudgetTurns: 3 });
+    expect(r.ok).toBe(true);
+    // After turn 1 and turn 2, still under budget — normal continue prompt.
+    expect(callLlm.mock.calls[1][0]).toBe(CONTINUE_PROMPT);
+    expect(callLlm.mock.calls[2][0]).toBe(CONTINUE_PROMPT);
+    // After turn 3 (turns=3 >= budget 3), switches to the convergence prompt.
+    expect(callLlm.mock.calls[3][0]).toBe(buildExplorationBudgetPrompt(3, 7));
+    expect(callLlm.mock.calls[3][0]).toMatch(/Stop broadening the search/);
+  });
+
+  it('never fires once an edit has landed — the wrap-up path takes over instead', async () => {
+    // explorationBudgetTurns=1 would trigger on turn 1 if no edit had
+    // happened, but turn 1 IS a successful edit, so hasEdited gates it out
+    // regardless of how small the exploration budget is.
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'edit_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 100, explorationBudgetTurns: 1 });
+    expect(callLlm.mock.calls[1][0]).toBe(CONTINUE_PROMPT);
+  });
+
+  it('does not count a FAILED edit_file call as "an edit has happened" for exploration-budget purposes', async () => {
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'edit_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'scope violation', isError: true });
+    // explorationBudgetTurns=1: the failed edit on turn 1 must not suppress
+    // the exploration-budget prompt on the next turn.
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 10, explorationBudgetTurns: 1 });
+    expect(callLlm.mock.calls[1][0]).toBe(buildExplorationBudgetPrompt(1, 9));
+  });
+
+  it('honors a custom explorationBudgetTurns instead of the default 40', async () => {
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'a.ts' } }] },
+      { toolCalls: [{ id: 'c2', name: 'read_file', arguments: { path: 'b.ts' } }] },
+      { toolCalls: [{ id: 'c3', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    // Default budget (40) would never fire in a 3-turn run; pin that the
+    // OPTION is actually read by using a budget of 2.
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 10, explorationBudgetTurns: 2 });
+    expect(callLlm.mock.calls[2][0]).toBe(buildExplorationBudgetPrompt(2, 8));
+  });
+
+  it('the exploration-budget prompt tells the model to converge or explain, not just to keep going', () => {
+    const p = buildExplorationBudgetPrompt(40, 20);
+    expect(p).toMatch(/40 turn\(s\) exploring/);
+    expect(p).toMatch(/20 turn\(s\) left/);
+    expect(p).toMatch(/Stop broadening the search/);
+    expect(p).toMatch(/finish\(summary, pr_title, pr_body\)/);
+  });
+
+  it('regression: the 10-failed-execution shape — pure exploration with no edit now converges instead of hitting the turn cap silently', async () => {
+    // Mirrors the live failure (VTID-04160/61/62/63/66/67/68/69/70/71/77):
+    // dozens of read_file/search_text calls, zero edits. With the
+    // exploration budget in place, the model gets an explicit convergence
+    // nudge well before the hard cap instead of being told to just
+    // "continue" indefinitely.
+    const seq: Array<{ toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> = [];
+    for (let i = 0; i < 5; i++) seq.push({ toolCalls: [{ id: `s${i}`, name: 'search_text', arguments: { pattern: 'x' } }] });
+    seq.push({ toolCalls: [{ id: 'e1', name: 'edit_file', arguments: { path: 'operator.ts' } }] }); // turn 6, after the nudge fires on turn 4 (budget=4)
+    seq.push({ toolCalls: [{ id: 'f1', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] });
+    const callLlm = llm(seq);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    const r = await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 20, explorationBudgetTurns: 4 });
+    expect(r.ok).toBe(true);
+    expect(r.finished?.pr_title).toBe('t');
+    // The prompt driving turn 5 (after 4 unproductive search turns) was the
+    // exploration-budget nudge, not the open-ended continue prompt.
+    expect(callLlm.mock.calls[4][0]).toMatch(/Stop broadening the search/);
   });
 });
 
