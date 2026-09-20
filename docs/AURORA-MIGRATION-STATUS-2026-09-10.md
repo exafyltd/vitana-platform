@@ -3246,3 +3246,37 @@ re-verified this session — the reload above only re-ran because of the
 pgvector attempt, not because other columns were suspected of a problem).
 Next step: get approval for the `text`-widen step above, run it, reload,
 then cast back to `vector`.
+
+---
+
+### 2026-09-20 — `products`/`knowledge_docs` "known-broken" question RESOLVED, no fix needed
+
+The 2026-09-19 addendum flagged an open question: whether `products`/
+`knowledge_docs`, ruled `exclude-*-known-broken` by the OLD `vitana-
+fullload-only` task (under `DROP_AND_CREATE` prep mode), needed to move
+from "stay excluded" to "fix and include" before final cutover. A later
+same-day addendum already noted these two loaded fine in the NEW
+`vitana-fullload-rehearsal-v2` task's full-load pass (592/594 tables, the 2
+errors were `vtid_ledger`/`dev_agent_memory`, not these) — this entry
+confirms that finding with a direct row-count comparison rather than
+inference, closing the question for good.
+
+Checked live, same session as the pgvector work above (the `reload-target`
+run for Step 1 reloaded the WHOLE task, these two tables included):
+
+```
+Aurora:   products=750, knowledge_docs=297
+Supabase: products=754, knowledge_docs=297
+```
+
+`knowledge_docs` matches exactly. `products` is 4 rows behind — ordinary
+live-write drift under Option A's no-CDC design, the same category already
+documented for `oasis_events`/`memberships`/`reminders`/`api_test_logs`,
+not a load failure. **Conclusion: neither table needs special handling on
+the final pre-cutover reload.** Whatever made the OLD task call these
+"known-broken" does not reproduce under the current task's
+`TRUNCATE_BEFORE_LOAD` prep mode — consistent with the broader finding that
+`DROP_AND_CREATE` (which destroys RLS/triggers/constraints, per the
+2026-09-19 RLS-parity work) was the more disruptive mode all along.
+`docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md`'s Step 2 updated to reflect
+this — no action item remains there.

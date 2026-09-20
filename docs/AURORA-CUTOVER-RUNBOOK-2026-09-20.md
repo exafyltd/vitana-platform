@@ -119,14 +119,24 @@ aws rds-data execute-statement --region eu-central-1 \
 post-cutover — flag this explicitly as a known gap rather than blocking
 the whole cutover on it.
 
-### Step 2 — Resolve `products`/`knowledge_docs` "known-broken" vs. "exclude-done"
+### Step 2 — `products`/`knowledge_docs` — RESOLVED 2026-09-20, no action needed
 
-Not yet investigated (see status doc's 2026-09-19 correction). Before the
-final run, confirm via `information_schema.columns` on both Supabase and
-Aurora whether these two need to move from "stay excluded" to "fix and
-include" on the final DMS run. If there's no time to resolve this, leave
-them excluded (current behavior) and flag as a known post-cutover gap —
-same posture as the pgvector tables above.
+**Closed out this session.** Confirmed live: both tables loaded
+successfully in the most recent full reload (the same `reload-target` run
+executed for Step 1 above reloaded these too, since it reloads the task's
+entire table mapping). Row counts, Aurora vs. Supabase, checked directly:
+
+| Table | Aurora | Supabase | Delta |
+|---|---|---|---|
+| `products` | 750 | 754 | 4 (ordinary live-write drift under Option A — no CDC, same category as `oasis_events`/`memberships`/`reminders`) |
+| `knowledge_docs` | 297 | 297 | 0 |
+
+The "known-broken" classification from earlier full-load attempts (under
+the old `DROP_AND_CREATE` prep mode) no longer applies — whatever caused it
+before does not reproduce under `TRUNCATE_BEFORE_LOAD`. No schema fix, no
+special handling, no exclusion needed. The freeze-window final reload
+(Step 6 below) will pick up any further drift the same way it does for
+every other table — nothing distinct about these two any more.
 
 ### Step 3 — Provision the PostgREST-Aurora proxy (owner/admin action)
 
