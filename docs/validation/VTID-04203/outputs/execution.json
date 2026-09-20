@@ -1,0 +1,42 @@
+{
+  "vtid": "VTID-04203",
+  "title": "Operator: thread auth TTL expiry test (fake timers)",
+  "type": "test-only",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/services/operator-execute-authz.ts (THREAD_AUTH_TTL_MS, a private 30-minute setTimeout backstop)",
+    "finding": "every existing test read the marker back synchronously in the same tick it was set; none exercised the TTL's own expiry over elapsed time or proved clearThreadAuth actually cancels the pending timer"
+  },
+  "fix": {
+    "source_files_changed": [],
+    "test_files_changed": [
+      "services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts"
+    ],
+    "mechanism": "additive test only, using jest.useFakeTimers()/advanceTimersByTime(); no runtime behavior changed"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 3,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts",
+      "tests_total": 3,
+      "tests_passing": 3
+    },
+    "regression_sweep": {
+      "files_requested": [
+        "services/gateway/test/vtid-03851-execute-task-requires-auth.test.ts",
+        "services/gateway/test/vtid-04030-operator-approval-tools.test.ts",
+        "services/gateway/test/vtid-04034-operator-cancel-tool.test.ts",
+        "services/gateway/test/vtid-04111-operator-activate-recommendation.test.ts",
+        "services/gateway/test/vtid-04202-reject-execution-reason-required.test.ts",
+        "services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts"
+      ],
+      "files_resolved_on_this_branch": 5,
+      "note": "vtid-04202-reject-execution-reason-required.test.ts lives only on its own not-yet-merged branch, not present on main at this branch's base — expected",
+      "suites_total": 5,
+      "tests_total": 60,
+      "failures": 0
+    }
+  },
+  "live_verification": "not applicable — test-only change, no runtime behavior difference to observe live"
+}

@@ -1,0 +1,62 @@
+VTID-04203 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Thread auth
+   TTL expiry test with fake timers" from the previously-generated task
+   backlog (/tmp/console-tasks.json).
+
+2. Read services/gateway/src/services/operator-execute-authz.ts in full:
+   confirmed THREAD_AUTH_TTL_MS = 30 * 60 * 1000, stored per-thread via a
+   setTimeout that deletes the map entry, unref'd; the module's own header
+   comment documents this as "a memory backstop, never as the
+   authorization boundary."
+
+3. grep -rln "operator-execute-authz" services/gateway/test/ -> found 4
+   existing test files (vtid-03851, vtid-04030, vtid-04034, vtid-04111,
+   plus the not-yet-merged vtid-04202), all of them exercising the pure
+   set/get/clear round-trip synchronously in the same tick — none used
+   jest.useFakeTimers()/advanceTimersByTime() to prove the TTL itself
+   actually expires the marker over elapsed time, or that clearThreadAuth
+   actually cancels the pending timer rather than just deleting the map
+   entry. Confirmed this is a genuinely uncovered case, not a duplicate.
+
+4. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-thread-auth-ttl-test"}'
+   -> 200 {"ok":true,"vtid":"VTID-04203", ...}
+
+5. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04203 \
+     -d '{"title":"Operator: thread auth TTL expiry test (fake timers)",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+6. git fetch origin main; git checkout -B
+   claude/vtid-04203-thread-auth-ttl-expiry-test origin/main (clean
+   working tree confirmed before writing — test-only, no source edit made
+   before this point, so no branch-mixing risk this time).
+
+7. Wrote test/vtid-04203-thread-auth-ttl-expiry.test.ts (3 tests):
+   immediate-presence-then-TTL-expiry, clearThreadAuth cancels the pending
+   timer (advancing past the TTL afterward does nothing), and a re-set for
+   the same thread resets the TTL window rather than the original timer
+   evicting the newly-set marker early.
+
+8. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04203-thread-auth-ttl-expiry.test.ts --silent
+   -> 1 suite, 3 tests, all passing.
+
+9. node node_modules/.bin/tsc --noEmit
+   -> exit 0, no output.
+
+10. node node_modules/.bin/jest \
+        test/vtid-03851-execute-task-requires-auth.test.ts \
+        test/vtid-04030-operator-approval-tools.test.ts \
+        test/vtid-04034-operator-cancel-tool.test.ts \
+        test/vtid-04111-operator-activate-recommendation.test.ts \
+        test/vtid-04202-reject-execution-reason-required.test.ts \
+        test/vtid-04203-thread-auth-ttl-expiry.test.ts --silent
+    -> jest resolved only 5 of the 6 named paths (vtid-04202 lives only on
+       its own not-yet-merged branch, not present on main at this branch's
+       base — expected, confirmed via --listTests); 5 suites, 60 tests,
+       all passing, 0 regressions.
+
+11. Wrote docs/validation/VTID-04203/{acceptance.md,commands.log,outputs/execution.json}.
