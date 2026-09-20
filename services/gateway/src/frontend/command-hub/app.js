@@ -4938,7 +4938,20 @@ async function fetchOasisEvents(filters, append, recursionDepth) {
             if (filters.surface) queryParams += '&surface=' + encodeURIComponent(filters.surface);
         }
 
-        const response = await fetch('/api/v1/oasis/events?' + queryParams);
+        // VTID-04152: this was the one fetch in this function with no
+        // AbortController/timeout wrapper at all (every sibling probe in this
+        // file goes through fetchWT(), the helper right above
+        // fetchOverviewDashboard). A connection that never settles — half-open
+        // socket, proxy that accepts and then answers nothing — left this
+        // promise pending forever, so the `finally` below never ran and
+        // state.oasisEvents.loading stayed true for the life of the tab: the
+        // `if (state.oasisEvents.loading) return;` guard above then silently
+        // dropped every later call (auto-fetch on screen entry, global refresh,
+        // Load More) and renderOasisEventsView kept showing "Loading OASIS
+        // events..." with the Load More button disabled. Routed through the
+        // file's existing fetchWT() helper (8s default) so a hang now surfaces
+        // as an ordinary, retryable fetch error instead of a permanent one.
+        const response = await fetchWT('/api/v1/oasis/events?' + queryParams);
         if (!response.ok) {
             throw new Error('OASIS events fetch failed: ' + response.status);
         }
