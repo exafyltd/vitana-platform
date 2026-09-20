@@ -64,34 +64,23 @@ attempt one.
 
 ## Acceptance Criteria
 
-- **AC-1**: `runAgentLoop` tracks a successful `write_file`/`edit_file`/
-  `delete_file` call and, once turns remaining hit the default margin (8),
-  switches the next prompt from `CONTINUE_PROMPT` to the wrap-up prompt.
-  **TEST:** `services/gateway/test/autopilot-agent-loop.test.ts` — "forces
-  the wrap-up prompt once an edit has landed and turns remaining hit the
-  margin"
-- **AC-2**: Before any edit has happened, the loop never forces wrap-up,
-  even with almost no turns left — it keeps sending `CONTINUE_PROMPT`.
-  **TEST:** "never forces wrap-up before any edit has happened, even with
-  almost no turns left"
-- **AC-3**: A FAILED `edit_file` call (`isError: true`) does not count as
-  "an edit has happened."
-  **TEST:** "does not count a FAILED edit_file call as \"an edit has
-  happened\""
-- **AC-4**: `wrapUpMarginTurns` is a real, honored option, not just a
-  restated default.
-  **TEST:** "honors a custom wrapUpMarginTurns instead of the default 8"
-- **AC-5**: The wrap-up prompt text is actionable — names the exact turn
-  count remaining, forbids new exploration, and names `finish(...)`
-  explicitly.
-  **TEST:** "the wrap-up prompt names the tool and stays actionable, not
-  just a warning"
-- **AC-6**: Regression pinning the real VTID-04138 shape — several
-  unproductive turns, then a late edit, with the margin firing in time for
-  the model to run a check and reach `finish()` before the cap, instead of
-  dying with an uncommitted edit.
-  **TEST:** "regression: VTID-04138 shape — a late edit now gets real turns
-  to verify and finish instead of dying at the cap"
+AC-1 — `runAgentLoop` tracks a successful `write_file`/`edit_file`/`delete_file` call and, once turns remaining hit the default margin (8), switches the next prompt from `CONTINUE_PROMPT` to the wrap-up prompt.
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "forces the wrap-up prompt once an edit has landed and turns remaining hit the margin" (`npx jest services/gateway/test/autopilot-agent-loop.test.ts`).
+
+AC-2 — Before any edit has happened, the loop never forces wrap-up, even with almost no turns left — it keeps sending `CONTINUE_PROMPT`.
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "never forces wrap-up before any edit has happened, even with almost no turns left".
+
+AC-3 — A FAILED `edit_file` call (`isError: true`) does not count as "an edit has happened."
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "does not count a FAILED edit_file call as an edit has happened".
+
+AC-4 — `wrapUpMarginTurns` is a real, honored option, not just a restated default.
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "honors a custom wrapUpMarginTurns instead of the default 8".
+
+AC-5 — The wrap-up prompt text is actionable: names the exact turn count remaining, forbids new exploration, and names `finish(...)` explicitly.
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "the wrap-up prompt names the tool and stays actionable, not just a warning".
+
+AC-6 — Regression pinning the real VTID-04138 shape: several unproductive turns, then a late edit, with the margin firing in time for the model to run a check and reach `finish()` before the cap, instead of dying with an uncommitted edit.
+TEST: services/gateway/test/autopilot-agent-loop.test.ts — "regression: VTID-04138 shape — a late edit now gets real turns to verify and finish instead of dying at the cap".
 
 ## Verification
 
