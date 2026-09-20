@@ -1156,9 +1156,14 @@ function renderOperatorSessionsSidebar() {
     const sortByRecent = function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); };
 
     if (activeThreads.length === 0) {
+        // VTID-04142: an explicit, plain empty state ("No conversations yet")
+        // so a brand-new operator with no threads yet reads a message instead
+        // of an apparently-blank session list. Also the archived-only case:
+        // activeThreads is the count that matters here, and archived rows are
+        // added below the empty state, so the list is never blank.
         const empty = document.createElement('div');
         empty.className = 'chat-sessions-empty';
-        empty.textContent = 'No conversations yet.';
+        empty.textContent = 'No conversations yet';
         list.appendChild(empty);
     } else {
         activeThreads.slice().sort(sortByRecent).forEach(function (thread) {
