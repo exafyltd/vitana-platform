@@ -292,9 +292,23 @@ export async function executeRejectExecution(
   }
   const s = deps.s === undefined ? getSupabase() : deps.s;
   if (!s) return { ok: false, error: 'Supabase not configured — cannot reject.' };
+
+  // VTID-04165: a rejection is recorded against the execution, so an explicit
+  // but empty reason ("", "   ") is refused BEFORE the row is touched — the
+  // model was asked why and dropped it. An omitted reason stays allowed: the
+  // user simply gave none (reason stays optional in the tool schema).
+  const rawReason = typeof args?.reason === 'string' ? args.reason : undefined;
+  if (rawReason !== undefined && rawReason.trim() === '') {
+    console.warn(`${LOG_PREFIX} reject REFUSED thread=${threadId}: empty reason`);
+    return {
+      ok: false,
+      error: 'autopilot_reject_execution needs an actual reason: the reason given was empty (or whitespace-only), so the execution was NOT rejected and nothing was changed. Give the actual reason the user stated for rejecting it.',
+    };
+  }
+
   const resolved = await resolveExecutionId(s, typeof args?.execution_id === 'string' ? args.execution_id : '');
   if (!resolved.ok) return { ok: false, error: resolved.error };
-  const reason = typeof args?.reason === 'string' && args.reason.trim() ? args.reason.trim().slice(0, 500) : undefined;
+  const reason = rawReason === undefined ? undefined : rawReason.trim().slice(0, 500);
 
   const r = await (deps.reject ?? ((id, actor, why) => rejectExecution(id, actor, why, { s })))(resolved.id, authz.actor, reason);
   if (!r.ok) {
