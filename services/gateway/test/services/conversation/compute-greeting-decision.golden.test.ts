@@ -445,32 +445,47 @@ describe('computeGreetingDecision — recency bucket axis (legacy ladder)', () =
     });
   }
 
-  test('legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression)', () => {
-    // Base ctx() defaults to lang='de'. Before VTID-03556 this branch ignored
-    // ctx.lang entirely and always emitted the English literal, so a
-    // German-locale user got an English apology opener after a failed
-    // session (e.g. a Nova Sonic "Premature close" reconnect).
+  // VTID-04124 — these four tests used to pin the per-language apology
+  // LITERALS ('Entschuldige' / 'Sorry about that' / 'Désolé') that VTID-03556
+  // introduced. That map is gone: it was a `Record<lang, string>` of finished
+  // spoken sentences, which CLAUDE.md NEVER-rule 41 forbids outright, and
+  // `Say exactly: "<sentence>"` + prohibitions is the template KIND VTID-03797
+  // proved trips Bedrock's guardrail.
+  //
+  // VTID-03556's own concern — "a German-locale user got an English apology
+  // opener" — is satisfied MORE strongly now, not dropped: there is no English
+  // literal left to leak into a German session, because there is no literal at
+  // all. The assertions below pin that stronger property.
+  test('legacy apology branch hands over an INTENT, never a finished sentence (VTID-03556 + VTID-04124)', () => {
     const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true }));
-    expect(d.directive).toContain('Entschuldige');
+    expect(d.directive).toContain('Compose that phrase yourself');
+    expect(d.directive).toContain("in the user's own language");
+    // The exact regression VTID-03556 fixed: no English recovery line can
+    // reach a German session, because none exists anywhere in this branch.
     expect(d.directive).not.toContain('Sorry about that');
+    expect(d.directive).not.toContain('Entschuldige');
+    expect(d.directive).not.toContain('Désolé');
+    // VTID-03797's shape check: no verbatim-reproduction instruction.
+    expect(d.directive).not.toMatch(/Say exactly|Sag genau|Dis exactement/);
     expect(d).toMatchSnapshot();
   });
 
-  test('legacy apology branch: wasFailure + reconnect (lang=en)', () => {
-    const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true, lang: 'en', greetLang: 'en' }));
-    expect(d.directive).toContain('Sorry about that');
-    expect(d).toMatchSnapshot();
+  test('legacy apology branch is language-neutral — no per-language table left to drift', () => {
+    const de = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true }));
+    const en = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true, lang: 'en', greetLang: 'en' }));
+    const fr = computeGreetingDecision(ctx({ bucket: 'recent', wasFailure: true, lang: 'fr', greetLang: 'fr' }));
+    // One string for every language (the VTID-03797 / VTID-03644 anti-drift
+    // property): `recent` and `reconnect` differ only in their bucket lead-in,
+    // and the apology branch replaces that entirely, so all three match.
+    expect(en.directive).toBe(de.directive);
+    expect(fr.directive).toBe(de.directive);
   });
 
-  test('legacy apology branch: wasFailure + recent (lang=fr)', () => {
-    const d = computeGreetingDecision(ctx({ bucket: 'recent', wasFailure: true, lang: 'fr', greetLang: 'fr' }));
-    expect(d.directive).toContain('Désolé');
-    expect(d).toMatchSnapshot();
-  });
-
-  test('legacy apology branch falls back to English for an unknown lang', () => {
+  test('an unknown lang has no English fallback to get wrong any more', () => {
     const d = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true, lang: 'xx', greetLang: 'xx' }));
-    expect(d.directive).toContain('Sorry about that');
+    const de = computeGreetingDecision(ctx({ bucket: 'reconnect', wasFailure: true }));
+    expect(d.directive).toBe(de.directive);
+    expect(d.directive).not.toContain('Sorry about that');
   });
 });
 
