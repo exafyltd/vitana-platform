@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04085",
+  "task": "Command Hub symbol index generator (T8)",
+  "files_changed": [
+    "services/gateway/scripts/generate-command-hub-symbol-index.mjs",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts"
+  ],
+  "index_summary": {
+    "total_functions": 856,
+    "files_indexed": 11,
+    "app_js_functions": 692
+  },
+  "verification": {
+    "node_check": "pass",
+    "tsc_noemit": "pass",
+    "npm_run_build": "pass",
+    "jest": "8/8 passing"
+  }
+}
