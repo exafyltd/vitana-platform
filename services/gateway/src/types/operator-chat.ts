@@ -22,8 +22,16 @@ export type OperatorChatMode = 'chat' | 'task' | 'control';
  * - conversation_id: VTID-01027 - Stable UUID for session continuity
  * - context: VTID-01027 - Array of previous messages for context
  */
+// VTID-04191: cap the turn's message length at 20,000 characters so an
+// oversized body is refused by the route's normal 400 validation response
+// before it reaches any model call or persistence.
+export const OPERATOR_CHAT_MESSAGE_MAX_LENGTH = 20_000;
+
 export const OperatorChatMessageSchema = z.object({
-  message: z.string().min(1, "Message is required"),
+  message: z
+    .string()
+    .min(1, "Message is required")
+    .max(OPERATOR_CHAT_MESSAGE_MAX_LENGTH, `Message must be at most ${OPERATOR_CHAT_MESSAGE_MAX_LENGTH} characters`),
   attachments: z.array(z.object({
     oasis_ref: z.string(),
     kind: z.enum(['image', 'video', 'file'])

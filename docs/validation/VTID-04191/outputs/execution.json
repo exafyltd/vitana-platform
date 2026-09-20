@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04191",
+  "execution_id": "b2ede338-476f-4964-bca8-cecbf5147cfb",
+  "finding_id": "cf810bf2-a3d7-4711-a357-195febfe584e",
+  "plan_version": 1,
+  "branch": "dev-autopilot/b2ede338",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/types/operator-chat.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/console-task-27-chat-message-length-cap.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:37:44.817Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
