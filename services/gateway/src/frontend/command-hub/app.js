@@ -48303,6 +48303,12 @@ function renderAutopilotLiveView() {
             var pill = document.createElement('span');
             pill.textContent = exec.status;
             pill.style.cssText = 'background:' + statusColor + '20;color:' + statusColor + ';border:1px solid ' + statusColor + '60;padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;text-transform:uppercase;min-width:80px;text-align:center;';
+            // VTID-04148: the pill is the only text a screen reader gets for
+            // an execution's state, and it changes (queued → running →
+            // completed/failed) purely via re-render — without a live region
+            // the transition is silent. 'polite' so a state change never cuts
+            // off what the user is already hearing.
+            pill.setAttribute('aria-live', 'polite');
             card.appendChild(pill);
 
             // Task label (from upstream finding if available, else exec id)
