@@ -1,0 +1,62 @@
+VTID-04204 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Execution
+   status counts over 24h" from the previously-generated task backlog
+   (/tmp/console-tasks.json).
+
+2. ls services/gateway/src/services/ | grep -i dev-autopilot -> surveyed
+   existing dev-autopilot-*.ts files for a home for a pure aggregation
+   helper; none was a clean fit (dev-autopilot-outcomes.ts is specifically
+   about the decision/outcome substrate table, dev-autopilot-execute.ts is
+   already large) — decided on a small, new, dedicated file rather than
+   growing an existing large module for an unrelated pure function.
+
+3. Read this repo's own CLAUDE.md CHANGE LOG entries for VTID-04029/
+   VTID-04033 to confirm the real, current status vocabulary used by
+   dev_autopilot_executions.status (cooling/running/awaiting_approval/ci,
+   plus the widened terminal set completed/failed/cancelled/reverted/
+   rejected/archived) before deciding NOT to hardcode that set locally —
+   this repo's own VTID-03644/VTID-03696 entries record real incidents
+   from exactly that kind of duplicated small enum drifting from its
+   source of truth.
+
+4. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"dev-autopilot-execution-status-counts"}'
+   -> 200 {"ok":true,"vtid":"VTID-04204", ...}
+
+5. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04204 \
+     -d '{"title":"Operator: pure 24h execution status count aggregator",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+6. git fetch origin main; git checkout -B
+   claude/vtid-04204-execution-status-counts-24h origin/main (clean
+   working tree confirmed before writing).
+
+7. Wrote services/gateway/src/services/dev-autopilot-execution-stats.ts:
+   `ExecutionStatusRecord` interface and `summarizeExecutionStatusCounts()`
+   — dynamic status-keyed counts within a configurable window (default 24h)
+   before a configurable "now" (default Date.now()); skips malformed
+   records and non-array input rather than throwing.
+
+8. Wrote test/vtid-04204-execution-status-counts-24h.test.ts (8 tests):
+   24h exclusion boundary, multi-status representation, empty-input
+   `{}`, mixed newer terminal statuses (reverted/rejected/archived),
+   default nowMs/windowMs, a malformed record skipped, a non-array input,
+   a custom windowMs.
+
+9. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04204-execution-status-counts-24h.test.ts --silent
+   -> 1 suite, 8 tests, all passing.
+
+10. node node_modules/.bin/tsc --noEmit
+    -> exit 0, no output.
+
+11. grep -rn "summarizeExecutionStatusCounts|dev-autopilot-execution-stats"
+        services/gateway/src --include="*.ts" | grep -v
+        "dev-autopilot-execution-stats.ts"
+    -> no hits — confirmed zero existing callers/collisions, so no
+       regression sweep beyond tsc is needed.
+
+12. Wrote docs/validation/VTID-04204/{acceptance.md,commands.log,outputs/execution.json}.

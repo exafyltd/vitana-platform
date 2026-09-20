@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04204",
+  "title": "Operator: pure 24h execution status count aggregator",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "new pure function summarizing dev_autopilot_executions status counts over a 24h window, intended for later wiring into an Operator Console tool",
+    "design_decision": "dynamic status-keyed output rather than a hardcoded fixed status enum with zero-fill, to avoid drifting from the real dev_autopilot_executions CHECK constraint's value set (which this repo's own CLAUDE.md CHANGE LOG shows has grown over time) — the same duplicated-enum anti-pattern VTID-03644/VTID-03696 already paid for once each"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/services/dev-autopilot-execution-stats.ts"
+    ],
+    "new_exports": [
+      "ExecutionStatusRecord",
+      "summarizeExecutionStatusCounts"
+    ],
+    "mechanism": "pure function, no DB access, no existing callers"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 8,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04204-execution-status-counts-24h.test.ts",
+      "tests_total": 8,
+      "tests_passing": 8
+    },
+    "regression_sweep": "not applicable — new file, zero existing callers or naming collisions, confirmed via grep across services/gateway/src"
+  },
+  "live_verification": "not applicable — pure function with no DB access and no tool wiring yet; nothing to observe live"
+}
