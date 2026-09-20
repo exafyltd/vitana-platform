@@ -1,0 +1,95 @@
+VTID-04209 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Badge
+   distinguishing authenticated vs anonymous operator turns" from the
+   previously-generated task backlog (/tmp/console-tasks.json).
+
+2. Read services/gateway/src/routes/operator.ts's runOperatorChatTurn():
+   confirmed callerIdentity/geminiUserRole are already resolved from the
+   real JWT (optionalAuth, VTID-03851/VTID-03926) and used for dev_* tool
+   gating, but never surfaced on the reply's meta; confirmed
+   processWithGemini()'s own meta shape (provider/model/usage/cost_*,
+   VTID-04031) carries nothing like it either — no existing field to
+   reuse, so the smallest possible new field was the right call per the
+   task's own instruction.
+
+3. Confirmed both POST /chat and POST /chat/stream share the same
+   runOperatorChatTurn() function and its `response` object (`return {
+   status: 200, body: response }`), so a change to response.meta covers
+   both routes with one edit.
+
+4. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-auth-state-badge"}'
+   -> 200 {"ok":true,"vtid":"VTID-04209", ...}
+
+5. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04209 \
+     -d '{"title":"Operator: badge distinguishing authenticated vs anon turns",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+6. git fetch origin main; git checkout -B claude/vtid-04209-auth-state-badge
+   origin/main — picked up two newly-merged Command Hub PRs (VTID-04136,
+   VTID-04142) already on main since the last branch was cut; noted as
+   expected, not reverted.
+
+7. Edited services/gateway/src/routes/operator.ts: response.meta now
+   merges `authenticated: geminiUserRole === 'admin'` — the SAME
+   already-verified value this route already computes, never a new trust
+   boundary.
+
+8. Read scripts/ci/command-hub-ownership-guard.js again (it hard-gates
+   Command Hub frontend PRs) — added VTID-04209 to ALLOWED_VTID_PATTERN
+   and a changelog-style comment entry, same as VTID-04205's own process.
+
+9. Edited services/gateway/src/frontend/command-hub/app.js's
+   renderOperatorChat(): a new message-auth-badge block, gated on
+   `typeof msg.meta.authenticated === 'boolean'` (independent of the
+   VTID-04031 cost badge's msg.meta.provider gate, so a tool-less turn
+   still shows the auth state), rendering "admin"/"anon" with a
+   descriptive title.
+
+10. node --check services/gateway/src/frontend/command-hub/app.js
+    -> exit 0 (syntax OK). Confirmed the new title string's literal
+    em-dash is consistent with 773 other literal em-dash occurrences
+    already in this file's comments AND string literals (e.g. line 957's
+    showToast call) — no escape-sequence fix needed here, unlike the
+    earlier VTID-04205 case where the em-dash sat inside a function whose
+    OWN sibling literals used \uXXXX escapes specifically.
+
+11. Edited services/gateway/src/frontend/command-hub/styles.css: added
+    .message-auth-badge / --admin / --anon rules next to the existing
+    .message-cost-badge rule, reusing --color-text-secondary and
+    --color-operator (both pre-existing tokens) rather than inventing new
+    colors.
+
+12. Edited services/gateway/src/frontend/command-hub/index.html: bumped
+    both cache-bust query strings to
+    20260920-vtid-04209-auth-state-badge.
+
+13. Wrote test/vtid-04209-operator-auth-state-badge.test.ts (11 tests):
+    5 backend (real /chat route via supertest, mocking only
+    optionalAuth/processWithGemini/Supabase — mirrors VTID-03926's exact
+    pattern), 4 frontend (source-level, fnBody pattern from
+    VTID-04031/VTID-04205), 2 ownership-guard (real
+    evaluateMarkerAuthorization()).
+
+14. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04209-operator-auth-state-badge.test.ts --silent
+    -> 1 suite, 11 tests, all passing on the first run.
+
+15. node node_modules/.bin/tsc --noEmit
+    -> exit 0, no output.
+
+16. node node_modules/.bin/jest \
+        test/vtid-03926-operator-chat-userrole.test.ts \
+        test/vtid-04031-operator-turn-cost.test.ts \
+        test/scripts/command-hub-ownership-guard.test.ts \
+        test/operator-chat-oasis.test.ts \
+        test/vtid-04028-operator-turn-stream.test.ts \
+        test/vtid-04102-operator-truncated-reply.test.ts \
+        test/vtid-04172-operator-simulated-tool-call-retry.test.ts \
+        test/vtid-04209-operator-auth-state-badge.test.ts --silent
+    -> 8 suites, 76 tests, all passing, 0 regressions.
+
+17. Wrote docs/validation/VTID-04209/{acceptance.md,commands.log,outputs/execution.json}.

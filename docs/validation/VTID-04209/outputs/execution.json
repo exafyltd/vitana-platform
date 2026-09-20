@@ -1,0 +1,46 @@
+{
+  "vtid": "VTID-04209",
+  "title": "Operator: badge distinguishing authenticated vs anon turns",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/routes/operator.ts::runOperatorChatTurn() reply meta + Command Hub app.js renderOperatorChat()",
+    "finding": "callerIdentity/geminiUserRole were already resolved from the real JWT for dev_* tool gating but never surfaced on the reply, so an authenticated admin turn and an anonymous turn looked identical in the console"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/routes/operator.ts",
+      "services/gateway/src/frontend/command-hub/app.js",
+      "services/gateway/src/frontend/command-hub/styles.css",
+      "services/gateway/src/frontend/command-hub/index.html",
+      "scripts/ci/command-hub-ownership-guard.js"
+    ],
+    "new_field": "response.meta.authenticated (boolean), derived from the existing geminiUserRole === 'admin' check",
+    "mechanism": "display-only; shared by /chat and /chat/stream via the common runOperatorChatTurn(); never trusts the client-supplied x-operator-role header; touches no authorization decision"
+  },
+  "verification": {
+    "node_check_app_js": "clean",
+    "tsc_noemit": "clean",
+    "new_tests_added": 11,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04209-operator-auth-state-badge.test.ts",
+      "tests_total": 11,
+      "tests_passing": 11
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-03926-operator-chat-userrole.test.ts",
+        "services/gateway/test/vtid-04031-operator-turn-cost.test.ts",
+        "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+        "services/gateway/test/operator-chat-oasis.test.ts",
+        "services/gateway/test/vtid-04028-operator-turn-stream.test.ts",
+        "services/gateway/test/vtid-04102-operator-truncated-reply.test.ts",
+        "services/gateway/test/vtid-04172-operator-simulated-tool-call-retry.test.ts",
+        "services/gateway/test/vtid-04209-operator-auth-state-badge.test.ts"
+      ],
+      "suites_total": 8,
+      "tests_total": 76,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — no deployed staging build carries this unmerged change; the change is a small additive badge with no layout restructuring, verified at the source level per this repo's established pattern for this class of change"
+}

@@ -518,7 +518,11 @@ async function runOperatorChatTurn(
       reply: geminiResult.reply,
       attachments: attachments,
       oasis_ref: `OASIS-CHAT-${requestId.slice(0, 8).toUpperCase()}`,
-      meta: geminiResult.meta || {},
+      // VTID-04209: `authenticated` is display-only, derived from the SAME
+      // already-verified callerIdentity/geminiUserRole this route resolves
+      // above from the real JWT (optionalAuth) — never from anything the
+      // model could influence, and it feeds no authorization decision.
+      meta: { ...(geminiResult.meta || {}), authenticated: geminiUserRole === 'admin' },
       // VTID-0531: Extended fields
       threadId,
       messageId: assistantMessageId,  // ID of the assistant response event

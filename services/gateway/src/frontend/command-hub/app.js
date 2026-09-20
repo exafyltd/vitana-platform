@@ -23268,6 +23268,21 @@ function renderOperatorChat() {
             time.title = msg.timestamp || '';
             meta.appendChild(time);
 
+            // VTID-04209: subtle badge distinguishing a reply produced under a
+            // verified exafy_admin session from one produced anonymously — the
+            // gateway sets meta.authenticated from the SAME already-verified
+            // identity the /chat route resolves from the real JWT (optionalAuth),
+            // never from anything the model itself could influence.
+            if (!isSent && msg.meta && typeof msg.meta.authenticated === 'boolean') {
+                var authBadge = document.createElement('span');
+                authBadge.className = 'message-auth-badge ' + (msg.meta.authenticated ? 'message-auth-badge--admin' : 'message-auth-badge--anon');
+                authBadge.textContent = msg.meta.authenticated ? 'admin' : 'anon';
+                authBadge.title = msg.meta.authenticated
+                    ? 'This turn ran under a verified exafy_admin session.'
+                    : 'This turn ran anonymously — no verified admin session.';
+                meta.appendChild(authBadge);
+            }
+
             // VTID-04031: cost / model badge — provider, model, turn duration,
             // tokens and the estimated cost the gateway computed for this turn.
             if (!isSent && msg.meta && msg.meta.provider) {

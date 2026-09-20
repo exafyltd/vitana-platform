@@ -2123,6 +2123,28 @@ body {
   align-self: flex-end;
 }
 
+/* VTID-04209: subtle badge distinguishing an authenticated (admin) reply
+   from an anonymous one, on a reply's meta row. */
+.message-auth-badge {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.message-auth-badge--admin {
+  color: var(--color-text-secondary);
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.message-auth-badge--anon {
+  color: var(--color-operator);
+  background: rgba(245, 158, 11, 0.12);
+}
+
 /* VTID-04031: cost / model badge on a reply's meta row */
 .message-cost-badge {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
