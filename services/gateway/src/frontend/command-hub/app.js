@@ -28710,6 +28710,13 @@ function renderOverviewSystemView() {
     var healthyCount = sortedHealth.filter(function (s) { return s.status === 'healthy' || s.status === 'ok' || s.healthy; }).length;
     var healthHeaderEl = document.createElement('div');
     healthHeaderEl.className = 'overview-panel-title-row';
+    // VTID-04147: this row is the panel's status region — the "N/M healthy"
+    // badge (and the refreshing tag) change on their own as each health poll
+    // completes, with no user action and no focus move. Without a live region
+    // a sighted user sees the count change and a screen-reader user is told
+    // nothing. 'polite' so a change waits for the user's current utterance
+    // instead of interrupting it (same convention as renderToastContainer).
+    healthHeaderEl.setAttribute('aria-live', 'polite');
     var hdrSuffix = state.serviceHealth.loading ? ' <span class="overview-refreshing-tag">(refreshing\u2026)</span>' : '';
     healthHeaderEl.innerHTML = '<span class="overview-panel-title">Service Health</span>' +
         '<span class="overview-count-badge overview-count-badge-' + (healthyCount === sortedHealth.length ? 'green' : 'amber') + '">' +
