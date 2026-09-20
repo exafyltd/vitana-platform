@@ -2,7 +2,7 @@
  * VTID-04006: the provider-neutral tool loop.
  */
 
-import { runAgentLoop, trimHistoryForBudget, CONTINUE_PROMPT, NUDGE_PROMPT } from '../src/services/autopilot-agent/agent-loop';
+import { runAgentLoop, trimHistoryForBudget, buildWrapUpPrompt, CONTINUE_PROMPT, NUDGE_PROMPT } from '../src/services/autopilot-agent/agent-loop';
 import type { LLMRouterMessage, LLMRouterResult } from '../src/services/llm-router';
 import type { ToolOutcome } from '../src/services/autopilot-agent/agent-tools';
 
@@ -83,6 +83,94 @@ describe('VTID-04006 runAgentLoop', () => {
     const r = await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute: async (_n, a) => ({ result: 'ok', finished: a as any }), callLlm });
     expect(r.fallbackUsed).toBe(true);
     expect(r.provider).toBe('bedrock');
+  });
+});
+
+describe('VTID-04194 wrap-up margin', () => {
+  it('forces the wrap-up prompt once an edit has landed and turns remaining hit the margin', async () => {
+    // maxTurns=10, default wrapUpMarginTurns=8: an edit on turn 1 leaves
+    // turnsRemaining=9 (>8, no wrap-up yet); the NEXT turn (turn 2) leaves
+    // turnsRemaining=8 (<=8, wrap-up fires).
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'edit_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'read_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c3', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    const r = await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 10 });
+    expect(r.ok).toBe(true);
+    // Prompt after the edit (turnsRemaining=9) is still the normal continue prompt.
+    expect(callLlm.mock.calls[1][0]).toBe(CONTINUE_PROMPT);
+    // Prompt after the SECOND turn (turnsRemaining=8) switches to wrap-up.
+    expect(callLlm.mock.calls[2][0]).toBe(buildWrapUpPrompt(8));
+    expect(callLlm.mock.calls[2][0]).toMatch(/only 8 turn\(s\) remain/);
+  });
+
+  it('never forces wrap-up before any edit has happened, even with almost no turns left', async () => {
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'read_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    // maxTurns=2: after turn 1 turnsRemaining=1 (deep inside any margin), but
+    // no edit_file/write_file/delete_file call has succeeded yet.
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 2 });
+    expect(callLlm.mock.calls[1][0]).toBe(CONTINUE_PROMPT);
+  });
+
+  it('does not count a FAILED edit_file call as "an edit has happened"', async () => {
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'edit_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'scope violation', isError: true });
+    // maxTurns=9 puts turnsRemaining at 8 after turn 1 — inside the default
+    // margin IF the (failed) edit counted, but it must not.
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 9 });
+    expect(callLlm.mock.calls[1][0]).toBe(CONTINUE_PROMPT);
+  });
+
+  it('honors a custom wrapUpMarginTurns instead of the default 8', async () => {
+    const callLlm = llm([
+      { toolCalls: [{ id: 'c1', name: 'write_file', arguments: { path: 'app.js' } }] },
+      { toolCalls: [{ id: 'c2', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] },
+    ]);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    // maxTurns=2 -> turnsRemaining=1 after turn 1; with a margin of 1 this
+    // must trigger even though the default margin (8) would trivially too —
+    // pin the OPTION is actually read, not just the default.
+    await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 2, wrapUpMarginTurns: 1 });
+    expect(callLlm.mock.calls[1][0]).toBe(buildWrapUpPrompt(1));
+  });
+
+  it('the wrap-up prompt names the tool and stays actionable, not just a warning', () => {
+    const p = buildWrapUpPrompt(3);
+    expect(p).toMatch(/3 turn\(s\) remain/);
+    expect(p).toMatch(/finish\(summary, pr_title, pr_body\)/);
+    expect(p).toMatch(/Do NOT start new exploration/);
+  });
+
+  it('regression: VTID-04138 shape — a late edit now gets real turns to verify and finish instead of dying at the cap', async () => {
+    // Mirrors the live failure: many unproductive read/search turns, THEN an
+    // edit, with enough turns left (thanks to the margin firing early) for
+    // the model to run a check and call finish before the cap.
+    const seq: Array<{ toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> }> = [];
+    for (let i = 0; i < 5; i++) seq.push({ toolCalls: [{ id: `s${i}`, name: 'search_text', arguments: { pattern: 'x' } }] });
+    seq.push({ toolCalls: [{ id: 'e1', name: 'edit_file', arguments: { path: 'app.js' } }] }); // turn 6, maxTurns=10 -> turnsRemaining=4 (< default margin 8)
+    seq.push({ toolCalls: [{ id: 'chk', name: 'run_check', arguments: { kind: 'tsc' } }] });
+    seq.push({ toolCalls: [{ id: 'f1', name: 'finish', arguments: { summary: 's', pr_title: 't', pr_body: 'b' } }] });
+    const callLlm = llm(seq);
+    const execute = jest.fn(async (name: string, args: Record<string, unknown>) =>
+      name === 'finish' ? { result: 'ok', finished: args as any } : { result: 'ok' });
+    const r = await runAgentLoop({ systemPrompt: 's', prompt: 'p', tools: TOOLS, execute, callLlm, maxTurns: 10, wrapUpMarginTurns: 8 });
+    expect(r.ok).toBe(true);
+    expect(r.finished?.pr_title).toBe('t');
+    // The prompt driving the run_check/finish turns was the wrap-up prompt, not the open-ended continue prompt.
+    expect(callLlm.mock.calls[6][0]).toMatch(/Do NOT start new exploration/);
   });
 });
 

@@ -15,11 +15,11 @@
  * Relative-time formatting deliberately reuses the existing
  * formatRelativeTime() helper (already used for version-history/event-feed
  * timestamps elsewhere in this file) instead of adding a third
- * near-duplicate of it — this file already carries two same-named
+ * near-duplicate of it — this file carried two same-named
  * formatRelativeTime() declarations from an earlier, incompletely-fixed
  * duplication (see the 'fix-duplicate-formatRelativeTime' VTID marker in
- * scripts/ci/command-hub-ownership-guard.js), so a new helper would have
- * made that worse, not better.
+ * scripts/ci/command-hub-ownership-guard.js); VTID-04136 has since removed
+ * the dead, shadowed declaration, so one helper remains.
  */
 
 import * as fs from 'fs';

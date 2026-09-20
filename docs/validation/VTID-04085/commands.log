@@ -1,0 +1,57 @@
+# VTID-04085 — commands run, verbatim (trimmed of unrelated noise)
+
+$ node --check services/gateway/scripts/generate-command-hub-symbol-index.mjs
+(exit 0)
+
+$ time node services/gateway/scripts/generate-command-hub-symbol-index.mjs
+✓ regenerated specs/command-hub-symbol-index.json
+  856 functions across 11 files
+real 0m0.265s
+
+$ node -e "... per-file counts ..."
+app.js 692
+orb-widget.js 91
+command-hub-staging.js 16
+intelligence-panels.js 0
+orb-voice-bench.js 19
+watcher.js 11
+intent-engine.js 8
+intelligence-cockpit-nav.js 7
+intent-moderation.js 5
+voice-budget.js 7
+navigation-config.js 0
+
+$ node -e "... spot-check known nested/top-level functions ..."
+installAuthFetchInterceptor {"kind":"iife","startLine":46,"endLine":141,"lineCount":96}
+getActiveRole                {"kind":"function","startLine":54,"endLine":57,"lineCount":4}
+getRefreshToken              {"kind":"function","startLine":58,"endLine":62,"lineCount":5}
+performRefresh                {"kind":"function","startLine":64,"endLine":109,"lineCount":46}
+renderMemoryGardenView       {"kind":"function","startLine":23099,"endLine":23231,"lineCount":133}
+(all nested inside the 46-141 IIFE range as expected; renderMemoryGardenView
+top-level and far away, as expected)
+
+## First design attempt — caught its own bug before shipping
+
+The first scanner jumped past a matched function's WHOLE body once its end
+line was computed, to avoid re-scanning it. That silently skipped every
+function declared INSIDE that body. Found by comparing against a naive
+unique-name grep of `function name(` across the whole file (no string/
+comment awareness, so it over-counts from comments/strings, but never
+UNDER-counts real top-level+nested declarations): the body-skipping
+scanner returned fewer names (534 for app.js) than the naive one (849
+unique names) — the wrong direction, since a context-aware scanner should
+only ever REMOVE false positives (comment/string matches), never real
+declarations. Redesigned to separate "find declaration start positions"
+(never skipped) from "compute one declaration's end line" (an independent
+nested scan). Re-ran: 692 for app.js, confirmed nested functions
+(getActiveRole etc.) now present.
+
+## Full verification
+
+$ cd services/gateway && node_modules/.bin/tsc --noEmit
+(exit 0)
+$ npm run build
+(exit 0)
+$ npx jest test/scripts/generate-command-hub-symbol-index.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
