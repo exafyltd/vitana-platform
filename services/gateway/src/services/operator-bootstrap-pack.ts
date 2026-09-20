@@ -58,10 +58,26 @@ export function isBootstrapPackEnabled(env: NodeJS.ProcessEnv = process.env): bo
   return env.OPERATOR_BOOTSTRAP_PACK_ENABLED === 'true';
 }
 
+// VTID-04197: OPERATOR_BOOTSTRAP_BUILD_INFO_URLS being unset (or set but
+// unparseable) previously degraded silently — the pack's own "Live
+// build-info" section renders one "(no build-info targets configured …)"
+// line, but nothing surfaces server-side, so the gap was invisible outside
+// reading a live prompt dump. Warned once per process, matching the
+// established pattern in operator-threads.ts's missingTableWarned.
+let buildInfoUnconfiguredWarned = false;
+/** Test-only: allow the warning to fire again within one process. */
+export function resetBuildInfoUnconfiguredWarning(): void { buildInfoUnconfiguredWarned = false; }
+
 /** `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS="staging=https://…/build-info,prod=https://…/build-info"` */
 export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Array<{ label: string; url: string }> {
   const raw = (env.OPERATOR_BOOTSTRAP_BUILD_INFO_URLS || '').trim();
-  if (!raw) return [];
+  if (!raw) {
+    if (!buildInfoUnconfiguredWarned) {
+      buildInfoUnconfiguredWarned = true;
+      console.warn('[Operator Bootstrap Pack] OPERATOR_BOOTSTRAP_BUILD_INFO_URLS is unset — the bootstrap pack has no live build-info targets. Set it (e.g. "staging=https://.../api/v1/admin/build-info,prod=https://.../api/v1/admin/build-info") or this warning is the only signal, since the pack itself only renders one silent line for the model.');
+    }
+    return [];
+  }
   const out: Array<{ label: string; url: string }> = [];
   for (const part of raw.split(',')) {
     const i = part.indexOf('=');
@@ -69,6 +85,10 @@ export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Arr
     const label = part.slice(0, i).trim();
     const url = part.slice(i + 1).trim();
     if (label && /^https:\/\//.test(url)) out.push({ label, url });
+  }
+  if (out.length === 0 && !buildInfoUnconfiguredWarned) {
+    buildInfoUnconfiguredWarned = true;
+    console.warn(`[Operator Bootstrap Pack] OPERATOR_BOOTSTRAP_BUILD_INFO_URLS is set but no entry parsed to a valid "label=https://…" pair (raw: "${raw.slice(0, 200)}") — the bootstrap pack has no live build-info targets.`);
   }
   return out;
 }

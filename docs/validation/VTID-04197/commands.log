@@ -1,0 +1,19 @@
+# VTID-04197 — commands run by this session
+
+$ node node_modules/.bin/jest test/vtid-04197-bootstrap-build-info-warning.test.ts --silent
+PASS test/vtid-04197-bootstrap-build-info-warning.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+
+$ node node_modules/.bin/tsc --noEmit
+(clean, zero output)
+
+$ node node_modules/.bin/jest \
+    test/vtid-04018-operator-bootstrap-pack.test.ts \
+    test/vtid-04024-bootstrap-pack-open-prs.test.ts \
+    test/vtid-04031-operator-turn-cost.test.ts \
+    test/vtid-04197-bootstrap-build-info-warning.test.ts \
+    --silent
+Test Suites: 4 passed, 4 total
+Tests:       42 passed, 42 total
+0 regressions.
