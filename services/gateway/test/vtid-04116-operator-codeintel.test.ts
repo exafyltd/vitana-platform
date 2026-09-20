@@ -62,7 +62,12 @@ describe('VTID-04116 runRepowise / runGraphify (execFile boundary)', () => {
     const result = await runRepowise('ask', 'why does X do Y', '/app');
     expect(result.ok).toBe(true);
     expect(result.output).toBe('some real repowise output');
-    expect(execFileMock).toHaveBeenCalledWith('repowise', ['ask', 'why does X do Y', '--no-prose'], expect.any(Object), expect.any(Function));
+    // VTID-04125: `--no-prose` is not a real option on any of the 7
+    // allowlisted subcommands (confirmed live against `repowise --help`
+    // for ask/search/context/risk/health/why/status — it exists only on
+    // `init`) — appending it made every real invocation fail outright
+    // with a CLI usage error, so it must never be on this argv again.
+    expect(execFileMock).toHaveBeenCalledWith('repowise', ['ask', 'why does X do Y'], expect.any(Object), expect.any(Function));
   });
 
   it('graphify path requires two space-separated node names', async () => {

@@ -88,7 +88,14 @@ export function isRepowiseCommand(v: string): v is RepowiseCommand {
 export async function runRepowise(command: RepowiseCommand, argument: string | undefined, repoDir: string): Promise<CodeintelResult> {
   const args: string[] = [command];
   if (argument && argument.trim()) args.push(argument.trim());
-  args.push('--no-prose');
+  // VTID-04125: `--no-prose` was unconditionally appended here, but it is
+  // not a real option on ANY of the 7 allowlisted subcommands (confirmed
+  // live: `repowise ask/search/context/risk/health/why/status --help`
+  // lists none of them with a `--no-prose` flag — it exists only on
+  // `init`, which the session-start hook already uses it on separately).
+  // Every real `dev_repowise` invocation was therefore failing outright
+  // with a CLI usage error ("No such option") before this fix, regardless
+  // of whether an LLM provider was configured for prose synthesis.
   return runBinary('repowise', args, repoDir);
 }
 

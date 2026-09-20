@@ -23,6 +23,25 @@
 #   - `repowise hook install` wires the git post-commit auto-sync hook so
 #     the index stays current across commits within one session, not just
 #     at session start.
+#
+# VTID-04125 addition:
+#   - RepoWise's own LLM synthesis (`get_answer`, `full_upgrade`) has no
+#     Bedrock provider at all (confirmed live: REPOWISE_PROVIDER=bedrock
+#     throws `ValueError: Unknown provider`) — it needs one of its own
+#     supported providers instead (anthropic/openai/openrouter/gemini/
+#     deepseek/kimi/...). DeepSeek is the one this platform already
+#     provisions a key for elsewhere (CLAUDE.md §2b/§8), so: if this
+#     session's environment happens to carry DEEPSEEK_API_KEY, point
+#     RepoWise at it explicitly. Never fabricated, never written to a
+#     tracked file — this only reads an env var that may or may not be
+#     present; when absent, RepoWise behaves exactly as it did before
+#     (index/query/context/risk/health/why keep working without prose
+#     synthesis; init/update below are structural and unaffected either
+#     way). Same "unconfigured → skip, never fail loudly" contract as the
+#     Bedrock branch above (CLAUDE.md IF-THEN 31's posture).
+if [ -n "${DEEPSEEK_API_KEY:-}" ] && [ -z "${REPOWISE_PROVIDER:-}" ]; then
+  export REPOWISE_PROVIDER=deepseek
+fi
 set -uo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
