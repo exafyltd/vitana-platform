@@ -25,6 +25,10 @@
  * and concurrent builds coalesce, so a cold cache costs one round of
  * fetches, not one per request. `OPERATOR_BOOTSTRAP_PACK_ENABLED=true`
  * gates the whole thing (default off — deploying this changes nothing).
+ * VTID-04173: when `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS` is unset, the
+ * build-info section still renders its "(no build-info targets …)" line and
+ * one process-wide warning names the missing env var — a misconfigured
+ * deployment is discoverable in the logs instead of degrading silently.
  * Not a replacement for dev_read_file / dev_search_codebase: the pack is
  * orientation, the tools are the detail.
  */
@@ -57,6 +61,34 @@ const FRONTEND_REPO = 'exafyltd/vitana-v1';
 export function isBootstrapPackEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.OPERATOR_BOOTSTRAP_PACK_ENABLED === 'true';
 }
+
+// ---------------------------------------------------------------------------
+// VTID-04173: make a missing build-info configuration discoverable
+// ---------------------------------------------------------------------------
+
+export const MISSING_BUILD_INFO_ENV_NAME = 'OPERATOR_BOOTSTRAP_BUILD_INFO_URLS';
+
+export const MISSING_BUILD_INFO_ENV_WARNING =
+  `[VTID-04173] ${MISSING_BUILD_INFO_ENV_NAME} is unset or empty — the session bootstrap pack omits live build-info for every gateway it reports on. ` +
+  `Set it (e.g. "${MISSING_BUILD_INFO_ENV_NAME}='staging=https://…/api/v1/admin/build-info,prod=https://…/api/v1/admin/build-info'") to restore that section.`;
+
+/** Process-wide, not per turn: the first build-info section with nothing to
+ *  fetch warns; every later one (cache rebuild, another turn, another role)
+ *  stays quiet. */
+let warnedMissingBuildInfoEnv = false;
+
+/** VTID-04173: returns true exactly once per process when the env var is
+ *  unset/blank; silent (returns false) when the var is set. */
+export function warnMissingBuildInfoEnvOnce(env: NodeJS.ProcessEnv = process.env): boolean {
+  if ((env[MISSING_BUILD_INFO_ENV_NAME] || '').trim()) return false;
+  if (warnedMissingBuildInfoEnv) return false;
+  warnedMissingBuildInfoEnv = true;
+  console.warn(MISSING_BUILD_INFO_ENV_WARNING);
+  return true;
+}
+
+/** Test hook — the process-wide flag is intentionally not resettable in prod. */
+export function resetMissingBuildInfoEnvWarning(): void { warnedMissingBuildInfoEnv = false; }
 
 /** `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS="staging=https://…/build-info,prod=https://…/build-info"` */
 export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Array<{ label: string; url: string }> {
@@ -297,6 +329,9 @@ export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackS
     section('Database tables (DATABASE_SCHEMA.md index)', SOURCE_TIMEOUT_MS, async () => extractSchemaTableIndex(await deps.readRepoFile('DATABASE_SCHEMA.md'))),
     section('Live build-info', SOURCE_TIMEOUT_MS, async () => {
       const targets = parseBuildInfoTargets(env);
+      // VTID-04173: an unconfigured deployment degrades silently otherwise —
+      // warn once per process, naming the env var, then render as before.
+      if (targets.length === 0) warnMissingBuildInfoEnvOnce(env);
       const results = await Promise.all(targets.map(async (t) => {
         try { const r = await withTimeout(deps.fetchBuildInfo(t.url), SOURCE_TIMEOUT_MS - 200, t.label); return { label: t.label, ok: true, ...r }; }
         catch (err) { return { label: t.label, ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 120) }; }
