@@ -1,0 +1,44 @@
+{
+  "vtid": "VTID-04201",
+  "title": "Operator: cap run_task title argument length",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/services/gemini-operator.ts::executeRunTask()'s handling of autopilot_run_task's optional `title` argument",
+    "finding": "args.title flowed unbounded from the tool boundary into deriveVtidTitleFromPlan()/allocateAndRegisterVtid() (operator-execution-onramp.ts), which already truncates the final candidate to 140 chars before it reaches vtid_ledger — so the stored value was never at risk, but the tool-argument boundary itself had no cap or log line, two frames upstream of that slice"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/services/gemini-operator.ts"
+    ],
+    "new_exports": [
+      "OPERATOR_RUN_TASK_TITLE_MAX_CHARS",
+      "capOperatorRunTaskTitle"
+    ],
+    "mechanism": "soft cap (truncate, not refuse) at 200 chars, applied at the executeRunTask() call site before triggerOperatorExecution(); logs once via console.info only when truncation actually occurs; empty/whitespace/non-string resolves to undefined exactly as the prior inline check did"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 7,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04201-operator-run-task-title-cap.test.ts",
+      "tests_total": 7,
+      "tests_passing": 7
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/operator-simulated-tool-call-detector.test.ts",
+        "services/gateway/test/vtid-04007-open-ended-intake.test.ts",
+        "services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts",
+        "services/gateway/test/vtid-04022-operator-threads.test.ts",
+        "services/gateway/test/vtid-04033-operator-execution-follow.test.ts",
+        "services/gateway/test/vtid-04132-onramp-open-ended-safety-gate.test.ts",
+        "services/gateway/test/vtid-04172-operator-simulated-tool-call-retry.test.ts",
+        "services/gateway/test/vtid-04201-operator-run-task-title-cap.test.ts"
+      ],
+      "suites_total": 8,
+      "tests_total": 78,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — autopilot_run_task is gated behind OPERATOR_EXECUTION_ONRAMP_ENABLED and OPERATOR_VTID_SELF_ALLOCATE_ENABLED (both default-off) and this session has no live Operator Console access; the next real signal is a real call with an over-length title logging the truncation line on staging"
+}

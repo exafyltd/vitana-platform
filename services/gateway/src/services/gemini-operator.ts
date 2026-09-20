@@ -1627,6 +1627,26 @@ async function executeExecuteTask(
  */
 const INTAKE_TELEMETRY_VTID = 'VTID-DEV-AUTOPILOT';
 
+/** VTID-04201: soft cap on autopilot_run_task's optional `title` argument.
+ *  Unlike the request-size guard (VTID-04196-style hard refusal), this is a
+ *  soft cap — a too-long title is truncated, not rejected, since it is only
+ *  used to derive a VTID/PR title downstream (`deriveVtidTitleFromPlan`)
+ *  and truncating it there loses nothing the request itself doesn't already
+ *  carry. Applied before the value is passed to `triggerOperatorExecution`,
+ *  i.e. before it reaches any downstream title derivation. */
+export const OPERATOR_RUN_TASK_TITLE_MAX_CHARS = 200;
+
+export function capOperatorRunTaskTitle(title: string | undefined): string | undefined {
+  if (typeof title !== 'string') return undefined;
+  const trimmed = title.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.length <= OPERATOR_RUN_TASK_TITLE_MAX_CHARS) return trimmed;
+  console.info(
+    `[VTID-04201] autopilot_run_task title truncated from ${trimmed.length} to ${OPERATOR_RUN_TASK_TITLE_MAX_CHARS} chars`
+  );
+  return trimmed.slice(0, OPERATOR_RUN_TASK_TITLE_MAX_CHARS);
+}
+
 async function executeRunTask(
   args: { request: string; title?: string },
   threadId: string
@@ -1688,7 +1708,7 @@ async function executeRunTask(
 
   const result = await triggerOperatorExecution({
     planMarkdown: request,
-    title: typeof args.title === 'string' && args.title.trim() ? args.title.trim() : undefined,
+    title: capOperatorRunTaskTitle(args.title),
     filesReferenced: [],
     openEnded: true,
     requestedBy: `operator-chat:${threadId}`,

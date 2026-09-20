@@ -1,0 +1,74 @@
+VTID-04201 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Cap the title
+   argument length" from the previously-generated task backlog
+   (/tmp/console-tasks.json).
+
+2. grep -n "autopilot_run_task" services/gateway/src/services/tool-registry.ts
+   -> located the tool's parameters_schema: optional `title: string`,
+   "derived from the request when omitted".
+
+3. grep -n "autopilot_run_task" services/gateway/src/services/gemini-operator.ts
+   -> located executeRunTask(), which builds
+   `title: typeof args.title === 'string' && args.title.trim() ?
+   args.title.trim() : undefined` and passes it into
+   triggerOperatorExecution({ ..., title, ... }).
+
+4. Read services/gateway/src/services/operator-execution-onramp.ts in
+   full for the title's downstream path: triggerOperatorExecution() ->
+   allocateAndRegisterVtid({ title: deriveVtidTitleFromPlan(planMarkdown,
+   input.title), ... }). deriveVtidTitleFromPlan() already truncates its
+   final candidate to 140 chars (.slice(0, 140)) before it reaches the
+   vtid_ledger PATCH — confirmed the ledger row itself was never at risk
+   of an unbounded value, but the caller-supplied argument had no cap or
+   log at the tool boundary itself, two frames upstream of that slice.
+
+5. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-run-task-title-cap"}'
+   -> 200 {"ok":true,"vtid":"VTID-04201", ...}
+
+6. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04201 \
+     -d '{"title":"Operator: cap run_task title argument length",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+7. git fetch origin main; git checkout -B
+   claude/vtid-04201-operator-run-task-title-cap origin/main (clean
+   working tree confirmed before editing).
+
+8. Edited services/gateway/src/services/gemini-operator.ts: added
+   `OPERATOR_RUN_TASK_TITLE_MAX_CHARS = 200` and
+   `capOperatorRunTaskTitle()` (exported, pure — trims, returns undefined
+   for empty/non-string, truncates and logs once via console.info when
+   over the cap, otherwise passes through unchanged) directly above
+   executeRunTask(); replaced the inline
+   `typeof args.title === 'string' && args.title.trim() ? ... : undefined`
+   expression at the triggerOperatorExecution() call site with
+   `capOperatorRunTaskTitle(args.title)`.
+
+9. cd services/gateway && node node_modules/.bin/tsc --noEmit
+   -> exit 0, no output.
+
+10. Wrote test/vtid-04201-operator-run-task-title-cap.test.ts (7 tests):
+    over-cap truncation to exactly 200, at-cap unchanged, under-cap
+    unchanged after trim, logs once on truncation, does not log otherwise,
+    undefined for omitted/empty/whitespace-only, undefined for a
+    non-string value at the type boundary.
+
+11. node node_modules/.bin/jest
+        test/vtid-04201-operator-run-task-title-cap.test.ts --silent
+    -> 1 suite, 7 tests, all passing.
+
+12. node node_modules/.bin/jest \
+        test/operator-simulated-tool-call-detector.test.ts \
+        test/vtid-04007-open-ended-intake.test.ts \
+        test/vtid-04018-operator-bootstrap-pack.test.ts \
+        test/vtid-04022-operator-threads.test.ts \
+        test/vtid-04033-operator-execution-follow.test.ts \
+        test/vtid-04132-onramp-open-ended-safety-gate.test.ts \
+        test/vtid-04172-operator-simulated-tool-call-retry.test.ts \
+        test/vtid-04201-operator-run-task-title-cap.test.ts --silent
+    -> 8 suites, 78 tests, all passing, 0 regressions.
+
+13. Wrote docs/validation/VTID-04201/{acceptance.md,commands.log,outputs/execution.json}.
