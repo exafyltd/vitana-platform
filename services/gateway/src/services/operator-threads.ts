@@ -127,6 +127,51 @@ export function shouldSummarize(turns: number, summaryTurns: number, every: numb
   return turns > 0 && turns % every === 0 && turns > summaryTurns;
 }
 
+const DAY_MS = 86_400_000;
+
+/** UTC-midnight epoch ms for the calendar day of an instant. */
+function utcDayStart(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * VTID-04174 (console task 11): how many distinct operator turns happened on
+ * the current UTC day.
+ *
+ * The caller passes the `created_at`s it read from `operator_messages` (one
+ * entry per turn) or `operator_threads`, and passes an empty list when the
+ * tables are absent or `OPERATOR_THREADS_ENABLED` is off. The helper is pure —
+ * it reads no env and touches no network — so "the feature/tables are
+ * unavailable" degrades to 0 rather than throwing: absent (null/undefined)
+ * input, an empty array, unparseable entries and non-finite values all
+ * contribute nothing. Timestamps outside the UTC day of `now` are ignored, and
+ * repeated instants collapse to one turn (hence "distinct").
+ */
+export function countOperatorTurnsToday(
+  timestamps: ReadonlyArray<string | number | Date | null | undefined> | null | undefined,
+  now: Date = new Date(),
+): number {
+  const list = Array.isArray(timestamps) ? timestamps : [];
+  if (list.length === 0) return 0;
+  const dayStart = utcDayStart(now);
+  if (!Number.isFinite(dayStart)) return 0;
+  const dayEnd = dayStart + DAY_MS;
+  const seen = new Set<number>();
+  for (const ts of list) {
+    const ms = ts instanceof Date
+      ? ts.getTime()
+      : typeof ts === 'number'
+        ? ts
+        : typeof ts === 'string'
+          ? Date.parse(ts)
+          : NaN;
+    if (!Number.isFinite(ms)) continue;
+    if (ms < dayStart || ms >= dayEnd) continue;
+    seen.add(ms);
+  }
+  return seen.size;
+}
+
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
