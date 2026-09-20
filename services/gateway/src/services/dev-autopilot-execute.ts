@@ -592,6 +592,14 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // scope overrides (e.g. npm-audit-scanner-v1 → allow package.json).
   // See dev-autopilot-safety.ts:applyScannerOverrides for the full list.
   const scannerForSafety = (rec.spec_snapshot as { scanner?: string } | null)?.scanner;
+  // VTID-04132: an open-ended operator-onramp plan (spec_snapshot.intake ===
+  // 'open_ended', stamped by operator-execution-onramp.ts's triggerOperatorExecution)
+  // has no authoritative file list yet — the agent discovers files and the
+  // safety gate's scope/tests_missing rules are re-checked post-hoc against
+  // its real diff (agent-scope.ts). Evaluating those two rules pre-flight
+  // against extractFilePaths()'s incidental scan of raw prose rejected real
+  // requests before the agent ever ran (confirmed live 2026-09-20).
+  const isOpenEndedPlan = (rec.spec_snapshot as { intake?: string } | null)?.intake === 'open_ended';
   const safetyCtx: SafetyContext = {
     config: {
       kill_switch: cfg.kill_switch,
@@ -605,6 +613,7 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     auto_fix_depth: 0,
     is_feedback_lane: isFeedbackLane,
     scanner: scannerForSafety,
+    is_open_ended: isOpenEndedPlan,
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
