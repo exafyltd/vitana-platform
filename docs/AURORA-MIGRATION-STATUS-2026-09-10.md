@@ -3280,3 +3280,17 @@ the final pre-cutover reload.** Whatever made the OLD task call these
 2026-09-19 RLS-parity work) was the more disruptive mode all along.
 `docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md`'s Step 2 updated to reflect
 this — no action item remains there.
+
+**Same-session bonus confirmation: RLS parity survived the full
+`reload-target` run.** The Step 1 pgvector work required a whole-task
+reload (592-594 tables via `TRUNCATE_BEFORE_LOAD`, not the old
+`DROP_AND_CREATE` that destroyed RLS in the 2026-09-19 incident). Checked
+directly afterward, since this was the first real test of "is
+`TRUNCATE_BEFORE_LOAD` actually RLS-safe on a full reload, not just in
+theory": `pg_tables` reports **607 tables with `rowsecurity=true`**,
+`pg_policies` reports **1,059 policies** — consistent with (one table
+better than) the 2026-09-19 baseline of 606/1,059, not degraded. This is
+good news for the freeze-window final reload (Step 6 of the runbook): a
+full `reload-target` run during the freeze will NOT need a second
+RLS-restoration pass the way the earlier `DROP_AND_CREATE`-based reload
+did.
