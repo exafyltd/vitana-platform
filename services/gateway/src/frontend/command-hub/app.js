@@ -3691,7 +3691,13 @@ const state = {
     // Global Overlays (VTID-0508 / VTID-0509)
     isHeartbeatOpen: false,
     isOperatorOpen: false,
-    isOperatorFullscreen: false, // VTID-03905: Operator popup fullscreen toggle
+    // VTID-04110: persisted across reloads — the popup previously always
+    // opened small, forcing a manual expand click every single session
+    // before a long streamed agent transcript could be read without
+    // scrolling inside a cramped box.
+    isOperatorFullscreen: (function () {
+        try { return localStorage.getItem('vitana.operatorFullscreen') === 'true'; } catch (e) { return false; }
+    })(), // VTID-03905: Operator popup fullscreen toggle
     operatorActiveTab: 'ticker', // 'chat', 'ticker', 'history'
 
     // VTID-0509: Operator Console State
@@ -6482,25 +6488,12 @@ function renderHeader() {
  * - Shows SWV label
  * - Hover/tooltip shows VTID + timestamp
  */
-// Lovable-style relative time: "just now", "2m ago", "1h ago", "3d ago", "May 12".
-function formatRelativeTime(isoString) {
-    if (!isoString) return '';
-    const then = new Date(isoString).getTime();
-    if (Number.isNaN(then)) return '';
-    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
-    if (seconds < 45) return 'just now';
-    if (seconds < 90) return '1m ago';
-    const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return minutes + 'm ago';
-    if (minutes < 90) return '1h ago';
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return hours + 'h ago';
-    if (hours < 36) return '1d ago';
-    const days = Math.round(hours / 24);
-    if (days < 14) return days + 'd ago';
-    // Older than two weeks — switch to date.
-    return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+// VTID-04136: the relative-time formatter lives in exactly one place —
+// formatRelativeTime() further down this file (see its own doc comment). A
+// second, same-named declaration used to sit here and silently shadowed it:
+// both are top-level function declarations in this plain script, so the later
+// one wins for every call site regardless of position. Behaviour is unchanged
+// because the surviving implementation is the one that was actually running.
 
 // Set up a 10s polling tick that keeps the CLOCK dropdown fresh while open
 // AND refreshes the relative timestamps without re-hitting the API.
@@ -10178,11 +10171,6 @@ function formatElapsedTime(ms) {
     return hours + 'h ' + mins + 'm elapsed';
 }
 
-/**
- * VTID-01209: Format timestamp as relative time.
- * @param {string} timestamp - ISO timestamp
- * @returns {string}
- */
 function formatDuration(ms) {
     if (!ms || ms < 0) return '-';
     var seconds = Math.floor(ms / 1000);
@@ -10195,6 +10183,14 @@ function formatDuration(ms) {
     return hours + 'h ' + remainMin + 'm';
 }
 
+/**
+ * VTID-01209: Format timestamp as relative time.
+ * VTID-04136: the file's single formatRelativeTime() — it is a top-level
+ * function declaration, so a second same-named declaration anywhere in this
+ * script would silently shadow it for every call site.
+ * @param {string|number} timestamp - ISO timestamp or epoch ms
+ * @returns {string}
+ */
 function formatRelativeTime(timestamp) {
     if (!timestamp) return '';
     var diff = Date.now() - new Date(timestamp).getTime();
@@ -19392,19 +19388,6 @@ function formatRelativeDate(dateStr) {
     }
 }
 
-/**
- * Helper: Escape HTML to prevent XSS.
- */
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
 // --- VTID-0406: Governance Evaluations Viewer (OASIS Integration) ---
 
 /**
@@ -23010,6 +22993,8 @@ function renderOperatorOverlay() {
     fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
     fullscreenBtn.onclick = () => {
         state.isOperatorFullscreen = !state.isOperatorFullscreen;
+        // VTID-04110: remember the choice so it survives a page reload.
+        try { localStorage.setItem('vitana.operatorFullscreen', String(state.isOperatorFullscreen)); } catch (e) { /* ignore */ }
         renderApp();
     };
     headerActions.appendChild(fullscreenBtn);
@@ -23479,13 +23464,38 @@ function parseSseFrames(buffer) {
     return { frames: frames, rest: rest };
 }
 
+// VTID-04110: incremental update for the live tool-call transcript instead
+// of the full-app renderApp() this used to call on every SSE frame. A long
+// agent turn emits a tool.call/tool.result pair per tool invocation (a
+// multi-step run can be a dozen or more) plus a model.turn frame per model
+// call — each one used to tear down and rebuild the ENTIRE Command Hub DOM
+// (sidebar, header, the whole overlay), which is what produced the visible
+// flicker on every step. Mirrors the incremental-update pattern this file
+// already uses for polling (VTID-01151's updateApprovalsBadge) — mutate
+// only the one DOM node that actually changed.
+function updateOperatorLiveTranscriptDom() {
+    var existing = document.querySelector('.chat-tool-activity--live');
+    if (!existing) {
+        // Not mounted yet (first frame of the turn) — do one real render so
+        // the container exists; every later frame in this turn takes the
+        // fast, non-rebuilding path below.
+        renderApp();
+        return;
+    }
+    existing.replaceWith(renderOperatorLiveTranscript());
+    var messagesEl = document.querySelector('.chat-messages');
+    if (messagesEl && state.chatStickToBottom) {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+}
+
 function applyOperatorTurnFrame(frame) {
     var d = frame.data || {};
     if (frame.event === 'tool.call') {
         state.chatLiveTranscript[d.index] = {
             index: d.index, name: d.name, args: d.args, status: 'running', started_at: Date.now()
         };
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'tool.result') {
         var entry = state.chatLiveTranscript[d.index] || { index: d.index, name: d.name };
         entry.status = d.ok ? 'ok' : 'failed';
@@ -23493,10 +23503,10 @@ function applyOperatorTurnFrame(frame) {
         entry.error = d.error;
         entry.excerpt = d.excerpt;
         state.chatLiveTranscript[d.index] = entry;
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     } else if (frame.event === 'model.turn') {
         state.chatLiveModelTurns.push(d);
-        renderApp();
+        updateOperatorLiveTranscriptDom();
     }
 }
 
@@ -38325,12 +38335,6 @@ function renderManualMarkdown(md) {
         if (end !== -1) body = body.slice(end + 5);
     }
 
-    const escapeHtml = function (s) {
-        return String(s).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    };
-
     const inline = function (text) {
         var s = escapeHtml(text);
         s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -49762,11 +49766,6 @@ function renderVoiceToolsCatalogView() {
     var listWrap = document.createElement('div');
     listWrap.innerHTML = '<div class="placeholder-content">Loading tools…</div>';
     container.appendChild(listWrap);
-
-    function escapeHtml(s) {
-        if (s == null) return '';
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     function statusPill(status) {
         // Reuse the existing .status-live family where possible; otherwise render

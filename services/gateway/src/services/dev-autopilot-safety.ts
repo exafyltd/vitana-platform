@@ -14,6 +14,11 @@
  *   - Daily budget not yet exhausted
  *   - auto_fix_depth < max_auto_fix_depth (prevents self-heal loops)
  *
+ * VTID-04132: the scope and test-coverage rules above are SKIPPED when
+ * `ctx.is_open_ended` is set (an operator-execution-onramp.ts open-ended
+ * agent plan) — see SafetyContext.is_open_ended for why; they are enforced
+ * instead, post-hoc, against the agent's real diff.
+ *
  * The gate is deliberately pure: it receives a snapshot of config + context and
  * emits a decision. Callers persist the decision + violations; the gate does
  * not mutate DB state or emit events.
@@ -75,6 +80,28 @@ export interface SafetyContext {
    * findings produced test-only PRs that fail CI 100% of the time.
    */
   scanner?: string;
+
+  /**
+   * VTID-04132: when this context represents an OPEN-ENDED agent-executor
+   * plan (operator-execution-onramp.ts's `autopilot_run_task`, spec_snapshot
+   * .intake === 'open_ended'), rules 3 (scope) and 4 (tests_missing) are
+   * SKIPPED here and enforced instead, post-hoc, against the agent's real
+   * diff (`agent-scope.ts`'s `checkChangedFilesScope`/`hasTestCoverage`,
+   * VTID-04006) — exactly as operator-execution-onramp.ts's own module doc
+   * has always said they would be. Before this flag existed, that promise
+   * was never honoured: `plan.files_to_modify` for an open-ended request is
+   * derived by `extractFilePaths()` scanning the raw, unstructured prose the
+   * user/model wrote — a request that says "add a unit test in
+   * services/gateway/test/ confirming X" (a real, reproduced case) names no
+   * literal file path, so the pre-flight gate rejected it as tests_missing
+   * before the agent ever ran, even though the agent — which discovers
+   * files and would have written a concrete test file — was never given the
+   * chance. All three real Operator Console failures traced on 2026-09-20
+   * (two attempts at one task, one at another) had this exact shape. Kill
+   * switch, risk_class, daily_budget and max_auto_fix_depth are NOT
+   * file-list-dependent and still apply pre-flight, unchanged.
+   */
+  is_open_ended?: boolean;
 }
 
 export interface SafetyPlan {
@@ -261,47 +288,59 @@ export function evaluateSafetyGate(plan: SafetyPlan, ctx: SafetyContext): Safety
   }
 
   // 3. Scope — allow + deny, with per-scanner overrides (see SafetyContext.scanner doc)
-  const { effectiveAllow, effectiveDeny } = applyScannerOverrides(
-    ctx.config.allow_scope,
-    ctx.config.deny_scope,
-    ctx.scanner,
-  );
-  const filesOutsideAllow: string[] = [];
-  const filesInDeny: string[] = [];
-  for (const f of plan.files_to_modify) {
-    if (!matchesAnyGlob(f, effectiveAllow)) {
-      filesOutsideAllow.push(f);
+  // VTID-04132: skipped for an open-ended agent plan — files_to_modify here
+  // is only what extractFilePaths() happened to find in unstructured prose,
+  // not an authoritative list. agent-scope.ts's checkChangedFilesScope()
+  // enforces the same allow/deny globs post-hoc against the real diff.
+  if (!ctx.is_open_ended) {
+    const { effectiveAllow, effectiveDeny } = applyScannerOverrides(
+      ctx.config.allow_scope,
+      ctx.config.deny_scope,
+      ctx.scanner,
+    );
+    const filesOutsideAllow: string[] = [];
+    const filesInDeny: string[] = [];
+    for (const f of plan.files_to_modify) {
+      if (!matchesAnyGlob(f, effectiveAllow)) {
+        filesOutsideAllow.push(f);
+      }
+      if (matchesAnyGlob(f, effectiveDeny)) {
+        filesInDeny.push(f);
+      }
     }
-    if (matchesAnyGlob(f, effectiveDeny)) {
-      filesInDeny.push(f);
+    if (filesOutsideAllow.length > 0) {
+      violations.push({
+        code: 'file_outside_allow_scope',
+        message: `Plan touches ${filesOutsideAllow.length} file(s) outside the allow-scope.`,
+        detail: { files: filesOutsideAllow },
+      });
     }
-  }
-  if (filesOutsideAllow.length > 0) {
-    violations.push({
-      code: 'file_outside_allow_scope',
-      message: `Plan touches ${filesOutsideAllow.length} file(s) outside the allow-scope.`,
-      detail: { files: filesOutsideAllow },
-    });
-  }
-  if (filesInDeny.length > 0) {
-    violations.push({
-      code: 'file_in_deny_scope',
-      message: `Plan touches ${filesInDeny.length} file(s) in the deny-scope.`,
-      detail: { files: filesInDeny },
-    });
+    if (filesInDeny.length > 0) {
+      violations.push({
+        code: 'file_in_deny_scope',
+        message: `Plan touches ${filesInDeny.length} file(s) in the deny-scope.`,
+        detail: { files: filesInDeny },
+      });
+    }
   }
 
-  // 4. Test coverage — required when there's any non-deletion edit
-  const deletions = new Set(plan.files_to_delete || []);
-  const nonDeletionEdits = plan.files_to_modify.filter(f => !deletions.has(f));
-  const hasNonDeletionEdits = nonDeletionEdits.length > 0;
-  if (hasNonDeletionEdits) {
-    const hasTestFile = plan.files_to_modify.some(isTestFile);
-    if (!hasTestFile) {
-      violations.push({
-        code: 'tests_missing',
-        message: 'Plan must add or modify at least one test file when making non-deletion edits.',
-      });
+  // 4. Test coverage — required when there's any non-deletion edit.
+  // VTID-04132: skipped for an open-ended agent plan for the same reason —
+  // agent-scope.ts's hasTestCoverage() enforces this post-hoc against the
+  // agent's real diff, which can (and does) add the concrete test file the
+  // raw prose never named.
+  if (!ctx.is_open_ended) {
+    const deletions = new Set(plan.files_to_delete || []);
+    const nonDeletionEdits = plan.files_to_modify.filter(f => !deletions.has(f));
+    const hasNonDeletionEdits = nonDeletionEdits.length > 0;
+    if (hasNonDeletionEdits) {
+      const hasTestFile = plan.files_to_modify.some(isTestFile);
+      if (!hasTestFile) {
+        violations.push({
+          code: 'tests_missing',
+          message: 'Plan must add or modify at least one test file when making non-deletion edits.',
+        });
+      }
     }
   }
 

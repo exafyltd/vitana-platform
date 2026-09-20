@@ -1,0 +1,46 @@
+VTID-04194 — commands run this session (Claude Code, not the Dev Autopilot executor)
+
+1. Self-allocated VTID via governed gateway API:
+   curl -sS -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate \
+     -H "Content-Type: application/json" \
+     -d '{"source":"claude-code","layer":"gateway_backend","module":"autopilot-agent"}'
+   -> {"ok":true,"vtid":"VTID-04194","num":4194,"id":"9970cf4c-e9e6-4e28-adfc-a18cad580b47"}
+
+2. Registered title + in_progress/approved via Supabase MCP execute_sql
+   (UPDATE vtid_ledger ... WHERE vtid = 'VTID-04194').
+
+3. Root-caused VTID-04138's failure via a read-only Supabase query against
+   `oasis_events` (topic = 'dev_autopilot.agent.tool' /
+   'dev_autopilot.agent.llm', filtered by metadata->>'execution_id' =
+   'd5c52526-8a39-42cf-91bf-b6bf3da44b29') — the full 120-turn trace showing
+   119 turns of search_text/read_file against app.js, one edit_file call on
+   turn 120, then the loop's own "hit the 120-turn cap" failure.
+
+4. Read services/gateway/src/services/autopilot-agent/agent-check-guard.ts
+   and agent-loop.ts to confirm neither existing guard (MAX_CONSECUTIVE_NUDGES,
+   RepeatedCheckGuard) covers this shape.
+
+5. Edited services/gateway/src/services/autopilot-agent/agent-loop.ts:
+   - Added MUTATING_TOOLS set, WRAP_UP_MARGIN_TURNS default, buildWrapUpPrompt().
+   - Added wrapUpMarginTurns option to AgentLoopOptions.
+   - Tracked `hasEdited` inside runAgentLoop from successful mutating tool
+     results.
+   - Switched the post-tool-results continuation prompt to the wrap-up
+     prompt once hasEdited && turnsRemaining <= wrapUpMarginTurns.
+
+6. Added 6 new tests to services/gateway/test/autopilot-agent-loop.test.ts
+   (describe block "VTID-04194 wrap-up margin").
+
+7. cd services/gateway && npx tsc --noEmit -p .
+   -> clean, no output.
+
+8. cd services/gateway && npx jest test/autopilot-agent-loop.test.ts
+   -> PASS, 19/19 tests (13 pre-existing + 6 new).
+
+9. cd services/gateway && npx jest test/
+   -> PASS, 1008/1009 suites (1 pre-existing skip), 16,747/16,782 tests
+      passing (29 skipped, 6 todo — both pre-existing), 0 failures.
+
+10. git fetch origin main; rebuilt this branch on the current origin/main
+    tip (91d8dfc3) via git stash / checkout -b / stash pop, since origin/main
+    had advanced (two Dev Autopilot auto-merges) since this work started.

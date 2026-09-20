@@ -682,8 +682,21 @@ function tryNewDayOverviewRung(
 // Replaced with an INTENT (English, per the rule — the model composes fresh
 // wording in the user's own language every time; there is no menu left to
 // recite from).
+/**
+ * VTID-04124 — stated as what TO do, with no stack of prohibitions.
+ *
+ * The behavioural meaning is unchanged and every clause it used to carry is
+ * still here, expressed positively: "propose the move yourself" already
+ * means "do not ask the user's preference", and "choosing fresh wording
+ * every time" already means "do not reuse a previous session's phrasing".
+ * What is gone is the negative-imperative pile-up ("never ask …", "There is
+ * no approved phrasing to reproduce and nothing to recite — do not reuse
+ * wording …"), which is the shape Bedrock's guardrail scores as
+ * injection-like. See buildLegacyGreetingPrompt's header for the live
+ * measurement.
+ */
 const SHORT_GAP_OPENER_INTENT =
-  "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time.";
+  "Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.";
 
 /**
  * VTID-03724 — an explicit, deliberate guided-topic tap (a My Journey session
@@ -985,10 +998,16 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   }
 
   // Rung 6 — safe_fast_pending_context (generic short opener; always fires).
+  //
+  // VTID-04124 — same prohibition-stack rewrite as the short-gap legacy
+  // branches (see buildLegacyGreetingPrompt's header for the measurement).
+  // This rung is BELOW the n>=5 threshold in that 30-day production sample,
+  // so it is fixed on shape-class grounds, NOT on a measured rate of its own
+  // — leaving a known-bad template shape standing next to its fixed siblings
+  // is how VTID-03674 let the class survive its own fix.
   const safePrompt =
-    `Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} ` +
-    `Do NOT say "Hello" or the user's name. ` +
-    `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+    `Open with EXACTLY ONE short spoken phrase, as audio. INTENT: ${SHORT_GAP_OPENER_INTENT} ` +
+    `Go straight to the substance in a single clause — the user already knows who you are.`;
   return {
     wakeOpener: 'safe_fast_pending_context',
     directive: safePrompt,
@@ -1232,11 +1251,76 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
 // of four choices. Replaced with a single English INTENT (composed in the
 // user's own language per the system instruction's language directive) —
 // there is no per-language pool left to pick from.
+// VTID-04124 — restated positively, same prohibition-stack rewrite as the
+// short-gap branches below (measurement in buildLegacyGreetingPrompt's
+// header). Every clause survives as a positive instruction: "propose the next
+// move yourself" carries the old "never ask the user's preference"; "one
+// simple clause" carries "NEVER use two-part sentences with dashes"; "go
+// straight to the substance" carries "Do NOT say Hello / your name / do not
+// introduce yourself"; "fresh wording every session" carries the anti-repeat
+// rule. This tail is reached only by an ANONYMOUS RECONNECT, which is below
+// the measurement threshold — fixed on shape-class grounds, not a measured
+// rate of its own.
 const LEGACY_DEFAULT_OPENER_INTENT =
-  'Open with ONE single short spoken phrase that LEADS — propose the next move yourself, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise compose your own short opener yourself, in your own words — there is no approved phrasing to reproduce and nothing to pick from a list. NEVER ask "How can I help?" or "What would you like?". Vary your wording across sessions; never repeat the exact phrasing from a previous session.';
+  'Open with ONE single short spoken phrase that LEADS — propose the next move yourself. Keep it to one simple clause and go straight to the substance; the user already knows who you are. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise compose your own short opener yourself, in your own words. Choose fresh wording every session.';
 
-/** The legacy default greeting prompt (orb-live L8382–8491): anonymous intro,
- *  or the recency-bucket-aware authenticated menu. Verbatim transcription. */
+/**
+ * The legacy default greeting prompt (orb-live L8382–8491): anonymous intro,
+ * or the recency-bucket-aware authenticated menu.
+ *
+ * VTID-04124 — WHY THE SHORT-GAP BRANCHES NO LONGER STACK PROHIBITIONS.
+ *
+ * Measured live over 30 days, production origin only (`vtid.live.session.start`
+ * where `origin='https://vitanaland.com'`), authenticated sessions, joined to
+ * the real Bedrock content-filter close (`stage='upstream_error'` AND
+ * `diagnostic ILIKE '%content filters%'` — NOT `code='nova_validation'`, which
+ * also carries an unrelated 55-second idle-timeout and had inflated every
+ * earlier estimate of this rate):
+ *
+ *   rung / band                              sessions  blocked   rate
+ *   legacy_default, prompt_len 550-700          14       11     78.6%
+ *   legacy_default, every other length          21        0      0.0%
+ *   newday_overview (the ~20 KB directive)     137       13      9.5%
+ *
+ * Two findings that kill the theories three earlier VTIDs were built on:
+ *
+ *  - SIZE IS NOT THE DRIVER. The LONGEST directive in the system
+ *    (newday_overview, up to 21,856 chars) has the LOWEST block rate, while a
+ *    ~660-char one blocks four times in five. So neither the instruction
+ *    budget nor VTID-04096's reduced directive can be the cause.
+ *  - IT IS NOT THE USER'S DATA EITHER. The contrast above is WITHIN one
+ *    function and, for the heaviest-hit user, within one account: the same
+ *    person's newday_overview sessions pass while their short-gap sessions do
+ *    not. Staging, running the same commit with the same code, sits at 0.3%
+ *    (1/330) because it rarely reaches these branches.
+ *
+ * What the 550-700 band uniquely contained was a pile-up of negative
+ * imperatives — "Do NOT greet. Do NOT say "Hello" or the user's name … EXACTLY
+ * ONE … NEVER use two-part sentences", on top of the three more the shared
+ * INTENT carried. That is the same template KIND VTID-03797 already proved
+ * causal for guided-topic sessions (blocked 93/93 until the prohibition stack
+ * was removed): Bedrock's guardrail scores it as injection-like. The sibling
+ * branches in this very function ("Open with "Good morning, [Name]." … follow
+ * the OPENING SHAPE MATRIX"), which carry almost no prohibitions, are 0/21.
+ *
+ * REVERSE CAUSALITY WAS TESTED AND DOES NOT EXPLAIN IT. A block makes the user
+ * retry immediately, and an immediate retry is exactly what lands a session in
+ * the `reconnect`/`recent` bucket — so the arrow could have pointed the other
+ * way. Splitting the same 14 sessions on whether the SAME user had a
+ * content-filter block in the preceding 30 minutes:
+ *
+ *   preceded by a block:      7 sessions,  7 blocked  (100%)
+ *   not preceded by a block:  7 sessions,  4 blocked  (57.1%)
+ *
+ * The template is block-prone on its own (57% against a 0% sibling baseline),
+ * and the retry loop then amplifies it to certainty. Both effects are real;
+ * only the second is a consequence of the first.
+ *
+ * Every clause is preserved, stated positively (see SHORT_GAP_OPENER_INTENT).
+ * n=14 is small — the honest claim is a strong effect on a narrow, low-volume
+ * band, not a precise rate. The signal to watch is this band's rate falling
+ * toward its 0/21 siblings.
+ */
 function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
   let prompt = LEGACY_DEFAULT_OPENER_INTENT;
 
@@ -1263,35 +1347,44 @@ function buildLegacyGreetingPrompt(ctx: GreetingDecisionContext): string {
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
 
     if (ctx.wasFailure && (ctx.bucket === 'reconnect' || ctx.bucket === 'recent')) {
-      // VTID-03556: this "legacy tail apology branch" fires after a failed
-      // previous session (wasFailure is set when the prior session's stop
-      // event shows turn_count=0/audio_out=0 — the Nova Sonic "Premature
-      // close" signature, CLAUDE.md §2e). It used to hardcode an English
-      // literal for the model to "say exactly", bypassing every other
-      // branch's per-`ctx.lang` localization — a German-locale user got an
-      // English apology opener. Localized the same way as `greetingPrompts`
-      // above; each string is already in the user's language.
-      const apologyPrompts: Record<string, string> = {
-        en: 'Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user\'s name.',
-        de: 'Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.',
-        fr: 'Dis exactement : "Désolé pour ça. Comment puis-je t\'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.',
-        es: 'Di exactamente: "Perdona por eso. ¿En qué puedo ayudarte?" SOLO una frase corta. NO digas "Hola" ni el nombre.',
-        ar: 'قل بالضبط: "آسف بخصوص ذلك. كيف يمكنني مساعدتك؟" عبارة واحدة قصيرة فقط. لا تقل "مرحبا" أو اسم المستخدم.',
-        zh: '请准确说："抱歉刚才的问题。我能帮你什么？"只说这一句简短的话。不要说"你好"或用户的名字。',
-        ru: 'Скажи точно: "Извини за это. Чем могу помочь?" ТОЛЬКО одна короткая фраза. НЕ говори "Здравствуйте" или имя пользователя.',
-        sr: 'Реци тачно: "Извини због тога. Како могу да ти помогнем?" САМО једна кратка реченица. НЕ говори "Здраво" или име корисника.',
-      };
-      prompt = `${apologyPrompts[ctx.lang] || apologyPrompts.en}${screenHint}`;
+      // VTID-03556 / VTID-04124: this "legacy tail apology branch" fires
+      // after a failed previous session (wasFailure is set when the prior
+      // session's stop event shows turn_count=0/audio_out=0 — the Nova Sonic
+      // "Premature close" signature, CLAUDE.md §2e).
+      //
+      // VTID-03556 localized it into a per-language map of finished spoken
+      // sentences. VTID-04124 removes that map for two independent reasons:
+      //
+      //  1. CLAUDE.md NEVER-rule 41 forbids hardcoding a sentence Vitana
+      //     speaks — "not a greeting, not a recovery line, not a per-language
+      //     variant". A `Record<lang, string>` of recovery lines is the exact
+      //     shape the rule names, and it was invisible to every cadence and
+      //     anti-repeat mechanism in the greeting brain.
+      //  2. `Say exactly: "<sentence>"` wrapped in prohibitions is the
+      //     template KIND VTID-03797 identified as the trigger for Bedrock's
+      //     guardrail — the reason guided-topic sessions were blocked 93/93.
+      //     This branch is not itself in the measured block band (its prompts
+      //     are 147-203 chars and that band shows 0/21 blocked), so it is
+      //     fixed on shape-class and rule-41 grounds, NOT on a measured rate.
+      //
+      // The recovery wording is now composed by the model in the user's own
+      // language, so there is no per-language table left to drift (the defect
+      // VTID-03644 hit with five diverging copies of a language map).
+      const apologyIntent =
+        'The previous session ended before you managed to say anything, so the user is starting over. ' +
+        "Open with ONE short spoken phrase in the user's own language: briefly acknowledge the hiccup, then hand the floor straight back to them. " +
+        'Compose that phrase yourself, in your own words.';
+      prompt = `${apologyIntent}${screenHint}`;
     } else {
       switch (ctx.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${ctx.timeAgo}. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: ${SHORT_GAP_OPENER_INTENT}${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${ctx.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${ctx.timeAgo}. Continue casually, the way you would with someone you are already mid-conversation with — ONE short spoken phrase, a single clause, straight to the substance. INTENT: ${SHORT_GAP_OPENER_INTENT}${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${ctx.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: ${SHORT_GAP_OPENER_INTENT} NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${ctx.timeAgo}. Continue naturally — ONE short spoken phrase, a single clause, straight to the substance. INTENT: ${SHORT_GAP_OPENER_INTENT}${screenHint}`;
           break;
         case 'today':
           prompt = `The user was here ${ctx.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;

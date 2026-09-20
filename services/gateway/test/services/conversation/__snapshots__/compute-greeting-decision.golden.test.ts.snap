@@ -497,9 +497,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 600,
+    "prompt_len": 482,
   },
-  "directive": "You were just talking to the user ~recent. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were just talking to the user ~recent. Continue casually, the way you would with someone you are already mid-conversation with — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -512,9 +512,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 598,
+    "prompt_len": 451,
   },
-  "directive": "You were JUST talking to the user ~reconnect. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user ~reconnect. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -527,9 +527,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 556,
+    "prompt_len": 399,
   },
-  "directive": "The user was here ~same_day. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "The user was here ~same_day. Continue naturally — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -583,43 +583,13 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 }
 `;
 
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + recent (lang=fr) 1`] = `
-{
-  "diag": {
-    "lang": "fr",
-    "prompt_len": 120,
-  },
-  "directive": "Dis exactement : "Désolé pour ça. Comment puis-je t'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.",
-  "effects": {
-    "armWatchdog": true,
-    "markGreetingSent": true,
-  },
-  "wakeOpener": "legacy_default",
-}
-`;
-
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression) 1`] = `
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch hands over an INTENT, never a finished sentence (VTID-03556 + VTID-04124) 1`] = `
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 147,
+    "prompt_len": 278,
   },
-  "directive": "Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.",
-  "effects": {
-    "armWatchdog": true,
-    "markGreetingSent": true,
-  },
-  "wakeOpener": "legacy_default",
-}
-`;
-
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=en) 1`] = `
-{
-  "diag": {
-    "lang": "en",
-    "prompt_len": 110,
-  },
-  "directive": "Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.",
+  "directive": "The previous session ended before you managed to say anything, so the user is starting over. Open with ONE short spoken phrase in the user's own language: briefly acknowledge the hiccup, then hand the floor straight back to them. Compose that phrase yourself, in your own words.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -647,9 +617,9 @@ exports[`computeGreetingDecision — rung golden snapshots legacy default: authe
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 601,
+    "prompt_len": 454,
   },
-  "directive": "You were JUST talking to the user earlier today. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user earlier today. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -853,10 +823,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 6: safe_fast_pen
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 584,
+    "prompt_len": 419,
     "wake_opener": "safe_fast_pending_context",
   },
-  "directive": "Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. Do NOT say "Hello" or the user's name. Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.",
+  "directive": "Open with EXACTLY ONE short spoken phrase, as audio. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time. Go straight to the substance in a single clause — the user already knows who you are.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

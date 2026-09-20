@@ -1,0 +1,165 @@
+# AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY — build the nginx sidecar from
+# services/postgrest-aurora-proxy/, push to ECR, roll the AWS STAGING ECS
+# service (VTID-04101, Option A of docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md).
+#
+# This proxy fronts Aurora with PostgREST (a real `postgrest/postgrest`
+# sidecar container, official image, no build needed for it) so the gateway's
+# ~590 pure-REST Supabase call sites can be repointed at Aurora without a
+# rewrite, while /auth/v1/* passes straight through to real Supabase GoTrue —
+# Auth stays on Supabase permanently under the platform owner's 2026-09-19
+# override (Option A). See services/postgrest-aurora-proxy/README.md.
+#
+# Staging-first (CLAUDE.md §16): auto-deploys on push to main when the
+# service tree changes. There is deliberately NO prod twin — production is a
+# later, owner-approved step once staging is smoke-tested.
+#
+# The ECR repo `vitana/postgrest-aurora-proxy`, the ECS service
+# `vitana-postgrest-aurora-proxy`, and the Cloud Map DNS entry do NOT exist
+# yet — they cannot be provisioned from a Claude Code session (confirmed live
+# 2026-09-19: AccessDenied on ecr:CreateRepository, ecr:GetAuthorizationToken,
+# ecs:CreateService) and need an operator with AWS admin rights — see
+# scripts/aws/setup-postgrest-aurora-proxy-staging.sh "Provisioning". Until
+# then the preflight step below fails loudly by design; it never silently
+# deploys somewhere else.
+#
+# Required repository secrets (same static staging keys the gateway staging
+# and erp-bridge staging workflows use):
+#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
+# Required Secrets Manager entries (eu-central-1), both pre-existing:
+#   vitana/aurora/prod/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/gateway/staging/supabase-jwt-secret      -> PGRST_JWT_SECRET
+
+name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/postgrest-aurora-proxy/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS staging postgrest-aurora-proxy deploy'
+        required: true
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the proxy image'
+        required: false
+        default: 'vitana/postgrest-aurora-proxy'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name (staging only)'
+        required: false
+        default: 'vitana-postgrest-aurora-proxy'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-deploy-postgrest-aurora-proxy
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_AWS_REGION: ${{ inputs.aws_region || 'eu-central-1' }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository || 'vitana/postgrest-aurora-proxy' }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster || 'Vitana-ECS-Cluster' }}
+      ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-postgrest-aurora-proxy' }}
+      PROXY_CONTAINER: 'proxy'
+      DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: |
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — staging-only target, ECR repo, ECS service, secrets
+        run: |
+          set -e
+          case "${{ env.ECS_SERVICE }}" in
+            *awsdr*|*prod*) echo "::error::Refusing: '${{ env.ECS_SERVICE }}' looks like a production service. This workflow deploys STAGING only."; exit 1 ;;
+          esac
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found — run scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision --apply first."; exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
+          fi
+          for NAME in vitana/aurora/prod/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "::error::Secret '$NAME' missing in Secrets Manager. Refusing to register a task definition that cannot start."; exit 1
+            fi
+          done
+
+      - name: Build and push proxy image (nginx sidecar only — postgrest uses the official upstream image)
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/postgrest-aurora-proxy
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register task-definition revision + roll the service
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/prod/postgrest-authenticator-uri --query ARN --output text)
+          SEC_JWT=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/supabase-jwt-secret --query ARN --output text)
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg NAME "${{ env.PROXY_CONTAINER }}" --arg SEC_DB "$SEC_DB_URI" --arg SEC_JWT "$SEC_JWT" '
+                (.containerDefinitions[] | select(.name == $NAME) | .image) = $IMG
+                | (.containerDefinitions[] | select(.name != $NAME) | .secrets) =
+                    ( [ .secrets[]? | select(.name | IN("PGRST_DB_URI","PGRST_JWT_SECRET") | not) ]
+                      + [ {name:"PGRST_DB_URI", valueFrom:$SEC_DB}, {name:"PGRST_JWT_SECRET", valueFrom:$SEC_JWT} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — the rolled task reports the pinned proxy image
+        run: |
+          set -e
+          RUNNING=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text)
+          IMG=$(aws ecs describe-task-definition --task-definition "$RUNNING" --query "taskDefinition.containerDefinitions[?name=='${{ env.PROXY_CONTAINER }}'].image | [0]" --output text)
+          echo "PRIMARY deployment proxy image: $IMG"
+          [ "$IMG" = "${{ steps.build.outputs.image }}" ] || { echo "::error::PRIMARY deployment is not the image just built"; exit 1; }
+          echo "- Reason: ${{ env.DEPLOY_REASON }}"
+          echo "- No gateway SUPABASE_URL was touched by this workflow — that repoint is a separate, deliberate, later step."

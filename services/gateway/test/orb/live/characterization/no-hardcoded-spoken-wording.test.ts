@@ -124,7 +124,14 @@ describe('VTID-03630 — the short-gap opener no longer hands the model a VERBAT
 
   it('compute-greeting-decision.ts hands the short-gap rungs an INTENT instead', () => {
     expect(greetingDecision).toMatch(/const SHORT_GAP_OPENER_INTENT =/);
-    expect(greetingDecision).toContain('There is no approved phrasing to reproduce');
+    // VTID-04124 — this used to pin the literal 'There is no approved phrasing
+    // to reproduce', one clause of the prohibition stack that measured 78.6%
+    // content-filter blocks in production and is now stated positively. The
+    // invariant VTID-03630 actually exists for is that the model COMPOSES the
+    // opener rather than reciting a supplied one, so assert THAT, not the
+    // particular wording that happened to carry it.
+    expect(greetingDecision).toContain('Compose this sentence yourself');
+    expect(greetingDecision).toContain('in your own words');
   });
 
   it('voice-wake-brief.ts never instructs the model to use a menu VERBATIM', () => {

@@ -1,0 +1,59 @@
+Input (synthetic ECS task definition fixture):
+
+{"containerDefinitions":[{"environment":[{"name":"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV","value":"staging+prod"},{"name":"OTHER","value":"x"}]}]}
+
+Command (the exact edited jq expression from AWS-PROD-DEPLOY-GATEWAY.yml):
+
+jq '
+  .containerDefinitions[0].environment |=
+    ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV") | not) ]
+      + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
+          {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
+          {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
+          {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )'
+
+Output:
+
+{
+  "containerDefinitions": [
+    {
+      "environment": [
+        {
+          "name": "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "OTHER",
+          "value": "x"
+        },
+        {
+          "name": "FEATURE_ORB_FAST_START_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "FEATURE_ORB_BRAIN_CACHE_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "FEATURE_LATENCY_TELEMETRY_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+          "value": "staging+prod"
+        }
+      ]
+    }
+  ]
+}
+
+Result: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV (and OTHER, an unrelated
+existing var used here to prove the expression does not disturb arbitrary
+untouched entries) both pass through byte-for-byte, exactly where they
+started in the input array, while the other four flags are correctly
+upserted (moved to the end, value enforced). This confirms the edited
+expression no longer touches FEATURE_ORB_GREETING_TTS_BRIDGE_ENV at all —
+whatever value a prior deploy (e.g. VTID-04127's env_overrides dispatch,
+which set it to "off" on the live task definition) leaves on it now
+survives this step untouched, on every future prod deploy, instead of
+being silently reset to "staging+prod".

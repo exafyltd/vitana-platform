@@ -1,7 +1,8 @@
 # Supabase → Aurora Migration Plan
 
-**VTID-03494** · Status: **DECIDED — Option B, execution in progress** · 2026-08-04
-(decision recorded 2026-08-25, VTID-03702 umbrella)
+**VTID-03494** · Status: **DECIDED — Option A, execution in progress** · 2026-08-04
+(decision recorded 2026-08-25 as Option B, **overridden 2026-09-19 back to
+Option A — see the note directly below the headline finding and in Phase 1**)
 
 Written at explicit user direction ("Aurora is the target — plan it"). This
 document did **not**, at the time it was written, authorize execution — but
@@ -229,21 +230,72 @@ Two consequences for this migration:
 
 ## Phase 1 — Decide the target architecture
 
-> **DECIDED 2026-08-25: Option B.** The platform owner's standing directive
-> — full migration off Supabase, **including the Auth server**, ending in
-> Supabase being fully disconnected and downgraded to its free plan by
-> 20 September 2026 — rules out Option A by construction: self-hosting the
-> Supabase stack (even on AWS/Aurora) is still running Supabase, not
-> shutting it down, and does not touch GoTrue/Auth at all. Only Option B
-> (gateway → real Postgres, auth → a replacement identity source, realtime
-> → owned WebSockets, storage → S3, edge functions → Lambda/ECS) satisfies
-> "shut down Supabase." This session's B1/B2/B5/B6/B7 work (repository
-> seams talking to Postgres directly rather than through a self-hosted
-> Supabase stack; Storage/Realtime/edge-functions inventoried for
-> replacement, not for a lift-and-shift) has been executing consistent with
-> Option B throughout — this note makes that consistency explicit rather
-> than leaving a future reader to infer it. The three options below are
-> kept as-written for the historical record of what was weighed.
+> **OVERRIDDEN 2026-09-19: back to Option A.** The 2026-08-25 "Option B"
+> decision below is **superseded**. In a live session on 2026-09-19, the
+> platform owner was told explicitly that the "cutover" work done to date
+> (RLS-parity restore, DMS rehearsal task) is data-replica-only and does
+> not move traffic — i.e. that Option B (full Supabase shutdown incl.
+> Auth, via Cognito/self-issued JWT) is a multi-week programme, not
+> achievable by the 20 September 2026 deadline — and, given that tradeoff
+> as an explicit choice, **overrode the prior "shut down Auth too"
+> directive**: *"keep Supabase for auth, free tier, forever."* That is
+> **Option A**, not Option B. Auth (GoTrue) stays on Supabase permanently,
+> on the free plan; everything else (data via PostgREST-on-Aurora, storage
+> to S3, edge functions off Supabase) still migrates to AWS/Aurora, driven
+> by the same underlying goal as before — **stopping duplicate
+> infrastructure cost**, not a hard "Supabase fully gone" milestone. This
+> document's own comparison below already noted Option A is "roughly an
+> order of magnitude less code churn" than B — the override is also the
+> technically cheaper, faster path, which is why it can land in a
+> timeframe that actually matters for the cost deadline. Concretely:
+> finish and deploy `services/postgrest-aurora-proxy/` (nearly complete —
+> see its own README), repoint the gateway's ~590 pure-REST Supabase call
+> sites at it while the ~16 genuine identity/Auth-API files keep talking
+> to real Supabase Auth directly, migrate Edge Functions and flip
+> `STORAGE_PROVIDER=s3`, then once verified: downgrade the Supabase
+> project itself (its paid compute add-on / Pro plan — the actual
+> "extra computer and subscription" the platform owner asked about) to
+> free tier, since Auth-only load is light enough to fit it. GoTrue/Auth
+> is explicitly **not** replaced by Cognito or any self-issued-JWT service
+> under this override — do not build toward that without a fresh, explicit
+> re-confirmation from the platform owner, since this is now the second
+> reversal on this exact question.
+>
+> **Cost clarification, same 2026-09-19 session: AWS cost is NOT a
+> driver here at all — the whole reason this migration targets AWS is a
+> 12-month AWS credit grant covering this account at no cost.** The
+> platform owner stated explicitly: *"we are talking about migration to
+> AWS because AWS we have credits for 12 months and no costs at all... this
+> means costs on AWS is no problem at all. Costs on Supabase is what we
+> want to cut."* Aurora, the DMS replication instance, ECS, and every other
+> AWS resource in this migration may run in parallel with Supabase
+> **indefinitely, for the full 12-month credit window** at no cost concern
+> — there is no AWS-side reason to rush, delete, or "clean up" any AWS
+> resource as part of hitting the Supabase deadline. **Do not delete,
+> stop, or otherwise tear down any AWS resource (the DMS instance
+> included) to save cost** — it was briefly, mistakenly treated as the
+> cost driver earlier the same session before this correction, and the
+> platform owner explicitly said not to delete anything on AWS. The ONLY
+> cost this migration is solving for is the Supabase subscription/
+> compute-add-on bill, cut by downgrading Supabase to free tier once its
+> real load (post-migration: Auth only) is light enough to run on it.
+>
+> **Historical note, superseded by the above.** DECIDED 2026-08-25 was
+> Option B. The platform owner's then-standing directive — full migration
+> off Supabase, including the Auth server, ending in Supabase fully
+> disconnected and downgraded to its free plan by 20 September 2026 — was
+> read as ruling out Option A by construction: self-hosting the Supabase
+> stack (even on AWS/Aurora) is still running Supabase, not shutting it
+> down, and does not touch GoTrue/Auth at all. This session's
+> B1/B2/B5/B6/B7 work (repository seams talking to Postgres directly
+> rather than through a self-hosted Supabase stack; Storage/Realtime/edge-
+> functions inventoried for replacement, not for a lift-and-shift) executed
+> consistent with Option B at the time — none of it is wasted under Option
+> A, since Option A also needs Postgres-direct data access
+> (PostgREST-on-Aurora is exactly that) plus the same Storage/edge-function
+> replacement; only the Auth-replacement piece (Cognito/self-issued-JWT)
+> is now explicitly out of scope. The three options below are kept
+> as-written for the historical record of what was weighed.
 
 Three genuinely different end-states were considered; below is that original
 analysis, unedited.

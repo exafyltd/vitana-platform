@@ -35,11 +35,25 @@ Thumbs.db
 
 __pycache__/
 
-# RepoWise codebase-intelligence index (local, machine-specific — see .mcp.json note)
-.repowise/
-.mcp.json
+# RepoWise codebase-intelligence index (local, machine-specific, rebuilt every
+# session by .claude/hooks/session-start-codeintel-setup.sh) — decisions.yaml
+# is the one exception (VTID-04121), carved out by `repowise decision export`
+# itself below, since it's the durable architectural-decision record meant to
+# survive a container recycle via git, unlike the rest of the index.
 .vscode/mcp.json
 .vscode/extensions.json
 
 # Graphify codebase knowledge graph (local, regenerated via `graphify extract`/`graphify update`)
 graphify-out/
+
+# .mcp.json is intentionally COMMITTED (VTID-04121) — it declares the
+# `repowise` MCP server (get_overview/get_context/get_symbol/search_codebase/
+# get_why/get_risk/get_change_risk/get_health/get_dead_code/get_answer) for
+# every future Claude Code session on this repo. It was gitignored here
+# before VTID-04121, which meant it only ever existed in whichever ephemeral
+# container happened to create it and never reached a real session again.
+
+# repowise: the decisions manifest is meant to be committed
+!/.repowise/
+/.repowise/*
+!/.repowise/decisions.yaml
