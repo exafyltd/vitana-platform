@@ -19393,19 +19393,6 @@ function formatRelativeDate(dateStr) {
     }
 }
 
-/**
- * Helper: Escape HTML to prevent XSS.
- */
-function escapeHtml(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
 // --- VTID-0406: Governance Evaluations Viewer (OASIS Integration) ---
 
 /**
@@ -38353,12 +38340,6 @@ function renderManualMarkdown(md) {
         if (end !== -1) body = body.slice(end + 5);
     }
 
-    const escapeHtml = function (s) {
-        return String(s).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    };
-
     const inline = function (text) {
         var s = escapeHtml(text);
         s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -49790,11 +49771,6 @@ function renderVoiceToolsCatalogView() {
     var listWrap = document.createElement('div');
     listWrap.innerHTML = '<div class="placeholder-content">Loading tools…</div>';
     container.appendChild(listWrap);
-
-    function escapeHtml(s) {
-        if (s == null) return '';
-        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
 
     function statusPill(status) {
         // Reuse the existing .status-live family where possible; otherwise render
