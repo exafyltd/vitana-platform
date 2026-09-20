@@ -40,6 +40,11 @@ import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
 // cleared on EVERY /chat request — threadId is client-supplied).
 import { setThreadAuth, clearThreadAuth } from '../services/operator-execute-authz';
+// VTID-04172: catches a real, observed failure mode — the model narrates a
+// tool call as fenced JSON instead of actually invoking it — and retries
+// once with a stronger instruction rather than silently returning the
+// hallucinated call as if it were real.
+import { detectSimulatedToolCallReply } from '../services/operator-simulated-tool-call-detector';
 import {
   ingestOperatorEvent,
   getTasksSummary,
@@ -378,7 +383,7 @@ async function runOperatorChatTurn(
     // — a missing table / Supabase error yields null and the turn proceeds
     // exactly as before.
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
-    const geminiResult = await processWithGemini({
+    let geminiResult = await processWithGemini({
       text: message,
       threadId,
       attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -397,6 +402,45 @@ async function runOperatorChatTurn(
       // VTID-04028: live tool transcript for the stream route (undefined for /chat)
       onEvent: opts.onEvent,
     });
+
+    // VTID-04172: the model can narrate a tool call as fenced JSON instead
+    // of actually invoking it (observed live: DeepSeek talked itself out of
+    // calling autopilot_run_task mid-generation and wrote its intended
+    // arguments as markdown instead). Detect it and retry ONCE with an
+    // explicit reminder that real tool-calling is available and must be
+    // used — never a second silent hallucination, and never more than one
+    // retry (a genuinely confused model gets the honest simulated reply
+    // back rather than looping).
+    const executedToolNames = (geminiResult.toolResults || []).map((tr) => tr.name);
+    const simulatedCall = detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
+    if (simulatedCall.detected) {
+      console.warn(
+        `[VTID-04172] simulated tool call detected on thread ${threadId} (${simulatedCall.toolName}): ${simulatedCall.reason} — retrying once`,
+      );
+      const retryText =
+        `${message}\n\n` +
+        `[System reminder: your previous reply for this exact request described a ` +
+        `${simulatedCall.toolName} call as JSON text instead of actually invoking the ` +
+        `${simulatedCall.toolName} tool via real function-calling. You DO have real ` +
+        `tool-calling available right now — call ${simulatedCall.toolName} for real this ` +
+        `time, do not narrate or describe the call in your reply text.]`;
+      try {
+        const retryResult = await processWithGemini({
+          text: retryText,
+          threadId,
+          attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
+          context: { vtid: validatedVtid || 'VTID-0536', request_id: requestId, mode: mode },
+          conversationHistory: context || [],
+          conversationId: conversation_id,
+          userRole: geminiUserRole,
+          threadSummary,
+          onEvent: opts.onEvent,
+        });
+        geminiResult = retryResult;
+      } catch (retryErr: any) {
+        console.warn(`[VTID-04172] retry itself threw, keeping the original (simulated) reply: ${retryErr?.message}`);
+      }
+    }
 
     // VTID-04025: durable facts from this turn (decisions, gotchas,
     // preferences …) → dev_agent_memory, extracted by the memory stage.
