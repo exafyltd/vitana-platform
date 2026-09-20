@@ -1,0 +1,65 @@
+VTID-04125 — commands run and their real output, this session
+
+1. Confirmed RepoWise has no Bedrock provider (why DeepSeek is the fix):
+   $ REPOWISE_PROVIDER=bedrock repowise ask "test"
+   -> ValueError: Unknown provider: 'bedrock'
+   (RepoWise's real provider catalog: gemini, anthropic, openai,
+   openrouter, deepseek, kimi, edenai, ollama, litellm, claude_cli,
+   codex_cli, opencode — confirmed against repowise/server/provider_config.py)
+
+2. Confirmed --no-prose does not exist on any of the 7 allowlisted
+   repowise subcommands:
+   $ repowise ask --help
+   ... Options: --scope, --path, --repo, --no-workspace, --format, --full, --help
+   (no --no-prose)
+   $ repowise search --help / context --help / risk --help / health --help /
+     why --help / status --help
+   -> same: each lists --no-workspace, none lists --no-prose.
+   $ repowise --help
+   -> --no-prose does not appear as a global option either; it exists only
+      on `repowise init`.
+
+3. Reproduced the bug end-to-end, before the fix:
+   $ cd services/gateway && grep -n "no-prose" src/services/codeintel-readonly.ts
+   -> args.push('--no-prose');  (unconditional, on every runRepowise() call)
+   $ repowise ask "why does X do Y" --no-prose
+   -> Error: No such option: --no-prose Did you mean --no-workspace?
+
+4. Confirmed the fix, live, end to end:
+   $ cd /home/user/vitana-platform && repowise status
+   -> runs cleanly (table output), no --no-prose in argv
+   $ export DEEPSEEK_API_KEY="test-invalid-key-for-plumbing-check"
+   $ export REPOWISE_PROVIDER=deepseek
+   $ repowise ask "what is the gateway entry point"
+   -> get_answer LLM call failed (provider=deepseek, model=deepseek-v4-flash,
+      budget=60.0s, timed_out=False): [deepseek] Error code: 401 -
+      {'error': {'message': 'Authentication Fails, Your api key: ****heck is
+      invalid', 'type': 'authentication_error', ...}}
+      Synthesis is unavailable (synthesis-failed). ... retrieval results
+      still returned (confidence: low, retrieval: weak, citations listed).
+   This proves: (a) --no-prose is gone and the command runs, (b)
+   REPOWISE_PROVIDER=deepseek is honored and a real outbound call reaches
+   api.deepseek.com, (c) a real auth failure degrades gracefully to
+   retrieval-only output rather than crashing — a funded key would
+   synthesize a real prose answer through the identical path.
+
+5. Type-check + full build:
+   $ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+   -> 0 errors (exit 0)
+   $ cd services/gateway && npm run build
+   -> tsc && copy-frontend && copy-data all completed cleanly, dist/
+      produced. (A transient TS2307 on aws-cloudwatch-logs-readonly.ts's
+      pre-existing, unrelated @aws-sdk/client-cloudwatch-logs import was
+      observed once, before this sandbox's node_modules had fully
+      resolved that dependency; not a file this PR touches, and a
+      second `npm run build` run immediately after came back clean.)
+
+6. Unit tests:
+   $ cd services/gateway && npx jest test/vtid-04116-operator-codeintel.test.ts
+   -> Test Suites: 1 passed, 1 total
+      Tests:       12 passed, 12 total
+      (including the corrected argv assertion for AC-2)
+
+7. Hook syntax:
+   $ bash -n .claude/hooks/session-start-codeintel-setup.sh
+   -> syntax OK (both exafyltd/vitana-platform and exafyltd/vitana-v1 copies)

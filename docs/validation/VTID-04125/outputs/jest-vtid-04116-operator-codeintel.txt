@@ -1,0 +1,20 @@
+    ✓ accepts only the documented graphify subcommands (1 ms)
+    ✓ resolves only the two documented repos, defaulting to vitana-platform (1 ms)
+  VTID-04116 runRepowise / runGraphify (execFile boundary)
+    ✓ reports not_configured when the binary is not installed (ENOENT), never throws (2 ms)
+    ✓ passes the free-text argument through to an allowlisted repowise subcommand, bounded (1 ms)
+    ✓ graphify path requires two space-separated node names (1 ms)
+    ✓ graphify path splits into source/target argv, never a shell string (1 ms)
+    ✓ graphify query/explain refuse an empty argument before touching execFile
+  VTID-04116 dev_repowise / dev_graphify tool wiring
+    ✓ refuses both tools when OPERATOR_CODEINTEL_ENABLED is not "true" (52 ms)
+    ✓ rejects an unknown command before calling the CLI, once enabled (3 ms)
+    ✓ rejects an unlisted repo before calling the CLI (2 ms)
+    ✓ returns a real CLI result end to end once enabled and configured (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        0.944 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04116-operator-codeintel.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
