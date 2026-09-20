@@ -103,18 +103,28 @@ describe('orb-widget page-level gesture audio unlock (VTID-03469)', () => {
   it('surfaces blocked audio instead of silently dropping the queue', () => {
     const processQueueBody = extractFunctionBody(source, 'function _processQueue()');
 
-    // The 3s-expiry branch must announce, not just clear the queue and return.
-    const dropIdx = processQueueBody.indexOf('_s.audioQueue.length = 0;');
-    const announceIdx = processQueueBody.indexOf('_announceAudioBlocked()');
-    expect(dropIdx).toBeGreaterThanOrEqual(0);
-    expect(announceIdx).toBeGreaterThan(dropIdx);
+    // The 3s-expiry branch must announce rather than fail silently.
+    //
+    // VTID-04199 UPDATE — this assertion used to REQUIRE `_s.audioQueue.length
+    // = 0;` here and check that the announcement came after it. That pinned
+    // the wrong half of VTID-03469's own fix: emptying the queue is what made
+    // the tap-to-hear prompt a dead end, because the tap calls _processQueue()
+    // against a queue whose greeting had already been discarded. The
+    // announcement is still mandatory (the honest-UI half of VTID-03469, which
+    // this suite exists to protect); the queue wipe is now forbidden, and
+    // orb-widget-ios-audio-blocked.test.ts pins the held-queue behaviour that
+    // replaced it.
+    expect(processQueueBody).toMatch(/_announceAudioBlocked\(/);
+    expect(processQueueBody).not.toMatch(/_s\.audioQueue\.length = 0\s*;/);
 
-    // A successful resume must take the prompt back down.
+    // A successful resume must still take the prompt back down.
     expect(processQueueBody).toMatch(/_clearAudioBlocked\(\)/);
   });
 
   it('offers a tap that repairs playback and drains the pipeline', () => {
-    const announceBody = extractFunctionBody(source, 'function _announceAudioBlocked()');
+    // VTID-04198 gave this a `detail` parameter (the give-up reason, forwarded
+    // to the gateway beacon). Behaviour asserted below is unchanged.
+    const announceBody = extractFunctionBody(source, 'function _announceAudioBlocked(detail)');
     expect(announceBody).toMatch(/_s\._audioBlocked = true/);
     expect(announceBody).toMatch(/_unlockPlaybackCtxFromGesture\(\)/);
     expect(announceBody).toMatch(/_processQueue\(\)/);
