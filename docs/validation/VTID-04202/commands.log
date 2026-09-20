@@ -1,0 +1,68 @@
+VTID-04202 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Non-empty
+   reason on execution approve/reject" from the previously-generated task
+   backlog (/tmp/console-tasks.json).
+
+2. grep -rn "autopilot_reject_execution" services/gateway/src --include="*.ts" | grep -v test
+   -> located the tool registration (tool-registry.ts) and its handler,
+   executeRejectExecution(), in operator-approval-tools.ts.
+
+3. Read tool-registry.ts's autopilot_reject_execution schema: `reason` is
+   correctly optional (`required: ['execution_id']`) — confirmed omitting
+   it entirely is a legitimate, intended call shape, not a gap to close.
+
+4. Read executeRejectExecution() in full: the existing line
+   `typeof args?.reason === 'string' && args.reason.trim() ? ... :
+   undefined` folds an explicitly-passed empty/whitespace string into the
+   same `undefined` branch as "reason omitted entirely" — no distinct
+   signal for a caller that passed a hollow string.
+
+5. Read the existing test file (vtid-04030-operator-approval-tools.test.ts)
+   to confirm the "omitted reason still rejects, records reason: null"
+   behavior is already pinned there and must not regress.
+
+6. Edited operator-approval-tools.ts's executeRejectExecution(): added a
+   refusal — before touching Supabase / resolveExecutionId() — when
+   `args.reason` is a string that trims to empty; an omitted/undefined
+   `reason` is untouched by the new check.
+
+7. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-reject-execution-reason"}'
+   -> 200 {"ok":true,"vtid":"VTID-04202", ...}
+
+8. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04202 \
+     -d '{"title":"Operator: refuse empty reason on reject_execution",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+9. Discovered the source edit had been made on an already-pushed branch
+   (claude/vtid-04201-operator-run-task-title-cap, PR #3489 already open)
+   before the VTID was allocated. Fixed by: `git stash`; `git fetch origin
+   main`; `git checkout -B claude/vtid-04202-reject-execution-reason-required
+   origin/main`; `git stash pop` — moved the uncommitted edit onto a fresh
+   branch off main with no trace left on the vtid-04201 branch (confirmed
+   clean afterward).
+
+10. Wrote test/vtid-04202-reject-execution-reason-required.test.ts (4
+    tests): empty-string refusal (reject() never called), whitespace-only
+    refusal, omitted-reason regression (still rejects, reason: null), and
+    a real non-empty reason still rejecting exactly as before.
+
+11. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04202-reject-execution-reason-required.test.ts --silent
+    -> 1 suite, 4 tests, all passing.
+
+12. node node_modules/.bin/tsc --noEmit
+    -> exit 0, no output.
+
+13. node node_modules/.bin/jest \
+        test/vtid-04030-operator-approval-tools.test.ts \
+        test/vtid-04033-operator-execution-follow.test.ts \
+        test/vtid-04034-operator-cancel-tool.test.ts \
+        test/vtid-04111-operator-activate-recommendation.test.ts \
+        test/vtid-04202-reject-execution-reason-required.test.ts --silent
+    -> 5 suites, 57 tests, all passing, 0 regressions.
+
+14. Wrote docs/validation/VTID-04202/{acceptance.md,commands.log,outputs/execution.json}.

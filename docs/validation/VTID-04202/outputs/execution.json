@@ -1,0 +1,37 @@
+{
+  "vtid": "VTID-04202",
+  "title": "Operator: refuse empty reason on reject_execution",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/services/operator-approval-tools.ts::executeRejectExecution()",
+    "finding": "an explicitly-passed empty-string or whitespace-only `reason` was silently folded into the same undefined branch as an omitted reason, with no signal that the caller's string carried no actual content; `reason` itself is correctly optional per the tool's own schema and stays that way"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/services/operator-approval-tools.ts"
+    ],
+    "mechanism": "refuses before touching Supabase or resolveExecutionId() when args.reason is a string that trims to empty; an omitted/undefined reason is unaffected"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 4,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04202-reject-execution-reason-required.test.ts",
+      "tests_total": 4,
+      "tests_passing": 4
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-04030-operator-approval-tools.test.ts",
+        "services/gateway/test/vtid-04033-operator-execution-follow.test.ts",
+        "services/gateway/test/vtid-04034-operator-cancel-tool.test.ts",
+        "services/gateway/test/vtid-04111-operator-activate-recommendation.test.ts",
+        "services/gateway/test/vtid-04202-reject-execution-reason-required.test.ts"
+      ],
+      "suites_total": 5,
+      "tests_total": 57,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — autopilot_reject_execution requires an authenticated exafy_admin thread and a real awaiting_approval execution; this session has no live Operator Console access. The next real signal is a real call with an explicit empty reason being refused on staging."
+}

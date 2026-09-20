@@ -290,6 +290,14 @@ export async function executeRejectExecution(
     console.warn(`${LOG_PREFIX} reject REFUSED thread=${threadId}`);
     return { ok: false, error: authz.error };
   }
+  // VTID-04202: `reason` is optional (omitting it entirely is fine — the
+  // schema allows that), but an EXPLICITLY-passed empty/whitespace-only
+  // string is refused before touching Supabase or the execution row — it
+  // is never what the user meant to say, and letting it through silently
+  // recorded `reason: null` exactly as if none had been given at all.
+  if (typeof args?.reason === 'string' && args.reason.trim().length === 0) {
+    return { ok: false, error: 'autopilot_reject_execution needs an actual reason when `reason` is provided — pass a real explanation, or omit the argument to reject without recording one.' };
+  }
   const s = deps.s === undefined ? getSupabase() : deps.s;
   if (!s) return { ok: false, error: 'Supabase not configured — cannot reject.' };
   const resolved = await resolveExecutionId(s, typeof args?.execution_id === 'string' ? args.execution_id : '');
