@@ -39,6 +39,12 @@ export interface AgentLoopOptions {
   now?: () => number;
   /** VTID-04032: polled at every turn and tool boundary; true stops the loop with `cancelled: true`. */
   isCancelled?: () => boolean;
+  /**
+   * VTID-04112: character budget for the history RESENT to the model each
+   * turn (the stored `history` returned to the caller is never trimmed —
+   * only the copy handed to `callLlm`). Defaults to `HISTORY_CHAR_BUDGET`.
+   */
+  historyCharBudget?: number;
 }
 
 export interface AgentLoopResult {
@@ -61,8 +67,68 @@ export const NUDGE_PROMPT = 'You answered with text only. This runner acts only 
 const MAX_CONSECUTIVE_NUDGES = 3;
 const TOOL_RESULT_MAX_CHARS = 30_000;
 
+/**
+ * VTID-04112: `TOOL_RESULT_MAX_CHARS` bounds any ONE tool result, but
+ * nothing previously bounded the CUMULATIVE transcript resent on every
+ * turn — it grew without limit for the life of the run. Measured live: a
+ * single execution (VTID-04109) reached 6.87M cumulative input tokens over
+ * 81 turns before dying with three consecutive EMPTY completions (no text,
+ * no tool call) at $1.14 cost. DeepSeek's visible answer shares its output
+ * budget with its own internal reasoning; once the resent context is large
+ * enough, reasoning alone can exhaust that budget and the API returns an
+ * empty completion — which this loop cannot tell apart from the model
+ * genuinely choosing to answer with prose, so it silently burns through
+ * the 3-strike nudge budget and dies with a misleading "model stopped
+ * using tools" error on every run long enough to reach this point (26 of
+ * 43 executions failed this way or by exhausting a turn cap in the 3 days
+ * before this fix, per `dev_autopilot_outcomes`). See `trimHistoryForBudget`.
+ */
+const HISTORY_CHAR_BUDGET = 120_000;
+/** Replaces an older tool result's body once the budget above is exceeded. */
+const HISTORY_TRIM_NOTICE = '[tool result trimmed to bound context size — this tool ran earlier in the session]';
+
 function clip(s: string): string {
   return s.length > TOOL_RESULT_MAX_CHARS ? `${s.slice(0, TOOL_RESULT_MAX_CHARS)}\n…[truncated]` : s;
+}
+
+function historyChars(history: LLMRouterMessage[]): number {
+  let n = 0;
+  for (const m of history) {
+    if ('content' in m && typeof m.content === 'string') n += m.content.length;
+    if ('toolResults' in m && m.toolResults) {
+      for (const r of m.toolResults) n += r.result.length;
+    }
+  }
+  return n;
+}
+
+/**
+ * VTID-04112: bound the history resent to the model each turn. Shrinks the
+ * OLDEST tool results first (they are the dominant contributor — each can
+ * be up to `TOOL_RESULT_MAX_CHARS`, and a long run accumulates many), never
+ * touches the single most recent message (the model needs its own last
+ * action intact to continue coherently), and is a pure function — the
+ * caller's stored `history` (returned to the operator/executor for the PR
+ * evidence trail) is never mutated, only the copy handed to the LLM call.
+ */
+export function trimHistoryForBudget(
+  history: LLMRouterMessage[],
+  maxChars: number = HISTORY_CHAR_BUDGET,
+): LLMRouterMessage[] {
+  if (historyChars(history) <= maxChars) return history;
+  const out = history.map((m) => ({ ...m }));
+  for (let i = 0; i < out.length - 1 && historyChars(out) > maxChars; i++) {
+    const m = out[i];
+    if ('toolResults' in m && m.toolResults) {
+      out[i] = {
+        ...m,
+        toolResults: m.toolResults.map((r) =>
+          r.result.length > HISTORY_TRIM_NOTICE.length ? { ...r, result: HISTORY_TRIM_NOTICE } : r,
+        ),
+      };
+    }
+  }
+  return out;
 }
 
 export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -70,6 +136,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   const started = now();
   const maxTurns = o.maxTurns ?? 60;
   const deadline = started + (o.deadlineMs ?? 20 * 60_000);
+  const historyCharBudget = o.historyCharBudget ?? HISTORY_CHAR_BUDGET;
   const history: LLMRouterMessage[] = [...(o.history ?? [])];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let prompt = o.prompt;
@@ -95,7 +162,9 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     turns += 1;
     const t0 = now();
     // Snapshot: the callee must never see later turns appended to its input.
-    const r = await o.callLlm(prompt, [...history], o.systemPrompt);
+    // VTID-04112: trimmed for the CALL only — `history` itself (returned to
+    // the caller) keeps every result in full.
+    const r = await o.callLlm(prompt, trimHistoryForBudget([...history], historyCharBudget), o.systemPrompt);
     const ms = now() - t0;
     if (r.usage) { usage.inputTokens += r.usage.inputTokens ?? 0; usage.outputTokens += r.usage.outputTokens ?? 0; }
     if (r.provider) provider = String(r.provider);

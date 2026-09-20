@@ -1,0 +1,99 @@
+VTID-04086 — T11: dead CSS removal in styles.css
+
+1. Built services/gateway/scripts/find-dead-css-classes.mjs:
+   - collectCssClassNames(css) — comment-stripped regex scan of every `.class` token
+   - findDynamicClassAffixes(jsSources) — 4 patterns for runtime string-concatenation
+     class-name construction ('foo-' + x, x + '-foo', `foo-${`, `}-foo`)
+   - findDeadClassCandidates(cssClasses, corpus, dynamicAffixes) — zero-occurrence
+     classes not matching a dynamic affix
+   - parseTopLevel(css) — comment/string-aware top-level CSS parser (raw / rule / atrule
+     entities, recursing into @-rule bodies)
+   - serialize(entities) — reconstructs CSS text from the parsed entity list
+   - stripDeadRules(entities, deadSet) — removes a rule only when its ENTIRE
+     comma-separated selector list is simple (SIMPLE_CLASS_SELECTOR_RE) and
+     every class is in the dead set; drops an @-rule block once fully empty
+   - main() — report-only by default; --fix writes; --check exits 1 on drift
+
+2. Ran against the real repo:
+   $ node services/gateway/scripts/find-dead-css-classes.mjs
+     -> 3XXX classes referenced, ~633 dead candidates (before dynamic-affix
+        exclusion), 550 rules removable
+
+   $ node services/gateway/scripts/find-dead-css-classes.mjs --fix
+     -> wrote styles.css (removed 550 rule(s))
+     -> file: 20,337 -> ~18,105 lines
+
+   $ node services/gateway/scripts/find-dead-css-classes.mjs --check
+     -> "in sync (no removable dead rules found)"
+     -> exit 0
+
+3. Manual spot-check of 5 removed classes against full-repo grep, all
+   confirmed zero occurrence in any command-hub *.js/*.html file:
+   header-bar, header-title, multimodal-controls, mm-btn, header-button
+
+4. Round-trip parse+serialize losslessness check (zero removals) against
+   the original file: byte-identical except ~7 lines of cosmetic
+   multi-space-before-'{' selector alignment collapsing to single-space —
+   accepted, does not change CSS semantics.
+
+5. Pre-existing brace-count quirk check: original file naive brace count
+   delta and post-fix file naive brace count delta are identical (both
+   off by one, from a `content:` string) — confirms the tool did not
+   introduce any imbalance.
+
+6. Wrote services/gateway/test/scripts/find-dead-css-classes.test.ts
+   (CLI-shell-out pattern via execFileSync against mkdtempSync fixtures,
+   matching the established pattern from
+   test/scripts/regen-screens-catalog.test.ts and
+   test/scripts/generate-command-hub-symbol-index.test.ts — this repo's
+   CJS-based ts-jest cannot import a raw ESM .mjs module, statically or
+   dynamically).
+
+   $ npx jest test/scripts/find-dead-css-classes.test.ts
+     Test Suites: 1 passed, 1 total
+     Tests:       10 passed, 10 total
+
+7. Type check:
+   $ npx tsc --noEmit
+     (clean, no output)
+
+8. Build:
+   $ npm run build
+     tsc && copy-frontend && copy-data — all succeeded
+
+9. Broader regression sweep — command-hub and scripts suites:
+   $ npx jest test/command-hub/ test/scripts/
+     Test Suites: 19 passed, 19 total
+     Tests:       291 passed, 291 total
+
+10. Regression sweep — every other suite in the repo that reads
+    styles.css content in its own assertions:
+    $ npx jest test/vtid-03823-tasks-board-hygiene.test.ts
+      test/vtid-04031-operator-turn-cost.test.ts
+      test/vtid-03819-related-task-chip.test.ts
+      test/vtid-03960-operator-thread-menu.test.ts
+      test/command-hub-backup-file-denylist.test.ts
+      test/vtid-04033-operator-execution-follow.test.ts
+      test/vtid-04032-cancel-running-execution.test.ts
+      test/vtid-03822-operator-chat-threads.test.ts
+      test/vtid-03852-llm-provider-badge.test.ts
+      test/vtid-03949-operator-sessions-sidebar-rename.test.ts
+      test/scripts/validator-path-guard.test.ts
+      test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+      test/vtid-04028-operator-turn-stream.test.ts
+      test/routes/command-hub-static-cache-headers.test.ts
+    Test Suites: 14 passed, 14 total
+    Tests:       242 passed, 242 total
+
+11. Bumped index.html cache-bust on both styles.css and app.js tags
+    (per CLAUDE.md IF-THEN 25 and this repo's own convention — every
+    test asserting the cache-bust extracts app.js's ?v= and requires
+    styles.css to carry the identical value) to
+    20260918-vtid-04086-dead-css-removed.
+
+12. VTID allocation:
+    $ SELECT * FROM allocate_global_vtid('claude-code', 'gateway',
+        'command-hub-dev-tooling');
+      -> {"vtid":"VTID-04086", "num":4086, "id":"594ca54b-..."}
+    $ UPDATE vtid_ledger SET title=..., summary=..., status='in_progress',
+        spec_status='approved' WHERE vtid = 'VTID-04086';

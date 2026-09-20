@@ -1,0 +1,93 @@
+# VTID-04096/04097/04098/04099/04100 — what was actually run, in order.
+# Session: Claude Code, 2026-09-19. All measurement against STAGING
+# (preview-aws-gateway.vitanaland.com). Nothing was run against production.
+
+## 1. Read the live state rather than the workflow files
+aws sts get-caller-identity --region eu-central-1
+  -> arn:aws:iam::472838866351:user/claude-code-aws-agent   (correct account)
+aws ecs describe-task-definition --task-definition vitana-gateway-awsdr --region eu-central-1
+  -> rev 108. FEATURE_LATENCY_TELEMETRY_ENV = "production"
+              FEATURE_ORB_SAFE_FAST_GREETING_ENV = "production"
+     Neither value is accepted by feature-flags.ts -> both resolve to OFF.
+     Also: NOVA_SONIC_REGION = eu-north-1 while the gateway runs in eu-central-1;
+           ORB_CONTEXT_READY_GATE_TIMEOUT_MS = 300 on both stacks.
+aws ecs describe-task-definition --task-definition vitana-gateway --region eu-central-1
+  -> rev 451 (staging).
+
+## 2. Production telemetry (read-only SQL against oasis_events)
+   Per-cohort p50/p90 of vtid.live.session.start -> model_start_speaking,
+   split by auth state (presence of orb.live.context.bootstrap), provider
+   (nova-specific diag stages vs vertex_tool_catalog_trimmed /
+   session_resumption_armed), language and wake_opener.
+   Results are tabulated in acceptance.md.
+
+   NOTE ON A CORRECTED STEP: an earlier pass inferred "vertex" from the ABSENCE
+   of a provider field on orb.live.diag. That is wrong — only nova-specific
+   stages carry `provider` at all — and it mislabelled es/fr/ru cascade sessions
+   as vertex. The tables in acceptance.md come from the corrected query, which
+   resolves the provider from positive markers only.
+
+## 3. Measured the real tool catalog (jest harness, local)
+   buildLiveApiTools('authenticated', '/community', 'community', null)
+     -> 290 declarations, 226,852 bytes (221.5 KB)
+   buildLiveApiTools('authenticated', '/admin', 'admin', 'admin')
+     -> 134 declarations, 45,542 bytes (44.5 KB)
+   Priority set present in the real catalog -> 35/35 tools, 59,683 bytes (58.3 KB)
+     at 48 KB budget: 28/290 decls, missing priority = resolve_recipient,
+       log_water, log_sleep, log_exercise, log_meditation,
+       get_pillar_subscores, get_vitana_index, explain_feature
+     at 64 KB budget: 41/290 decls, 65,521 bytes, missing priority = NONE
+   -> this is why the Nova default is 64 KB and not the bridge's 48 KB.
+
+## 4. Baseline on staging, BEFORE any change
+node scripts/orb/measure-orb-first-audio.mjs --trials=6 --lang=de
+  -> first ANY audio p50 1,373 ms (activation chime); first MODEL audio p50 2,532 ms
+     outputs/baseline-staging-anon-de.json
+node scripts/orb/measure-orb-first-audio.mjs --trials=6 --lang=de --auth
+  -> first ANY audio p50 1,436 ms; first MODEL audio p50 3,687 ms, p90 8,138 ms
+     outputs/baseline-staging-auth-de.json
+
+## 5. Controlled A/B — only the declared tool catalog changes
+node scripts/orb/measure-orb-first-audio.mjs --trials=10 --lang=de --auth --gap=2000
+  -> A, full community catalog (290 decls / 221.5 KB):
+     first MODEL audio p50 3,033 ms  p90 7,502 ms  max 7,502 ms
+     outputs/ab-A-full-catalog-290tools.json
+node scripts/orb/measure-orb-first-audio.mjs --trials=10 --lang=de --auth --route=/admin --gap=2000
+  -> B, admin catalog (134 decls / 44.5 KB):
+     first MODEL audio p50 2,513 ms  p90 3,081 ms  max 3,081 ms
+     outputs/ab-B-admin-catalog-134tools.json
+  => median -520 ms, p90 -4,421 ms. The catalog is a TAIL-latency defect.
+
+## 6. Build + test
+cd services/gateway && npx tsc --noEmit -p .
+  -> clean. (One pre-existing unrelated error for a missing
+     @aws-sdk/client-cloudwatch-logs package, installed locally with
+     --no-save to get a clean signal; package.json and the lockfile are
+     untouched by this PR.)
+npx jest
+  -> 995 suites, 16,614 tests, 0 failures, 44 snapshots.
+     outputs/full-suite.txt
+
+## 7. Deliberate test updates (not worked around)
+   Three pre-existing source-locator assertions broke because this change moved
+   the thing they were matching on. Each was updated to assert its REAL
+   invariant, with a comment saying why:
+   - vertex-tool-catalog-budget.test.ts: asserted the block is gated on
+     `=== 'vertex'`. Now asserts it keys on the resolved PROVIDER and never on
+     language — which is the invariant that test exists to protect.
+   - staging-nova-prewarm-flag-pinned.test.ts / staging-ws-transport-flag-pinned.test.ts:
+     asserted the flag NAME is absent from the prod workflow. The prod workflow
+     now documents why those two are deliberately unpinned, so they assert the
+     absence of the jq PIN instead.
+   - guided-topic-audio-bridge.characterization.test.ts: located
+     `await sendGreetingAudioBridge(session);`. VTID-04100 wrapped that call in
+     withBootstrapTimeout, so it now locates the call and still asserts the
+     ordering (greeting bridge -> guided-topic bridge -> connect).
+
+## 8. vitana-v1 (VTID-04099)
+npx tsc --noEmit            -> clean
+npx vitest run              -> 138 files, 753 tests, 0 failures
+npm run build               -> built in 50.23s
+npx eslint src/hooks/useOrbVoiceWidget.ts   (HEAD vs origin/main, rule-by-rule)
+  -> identical: 7 findings on both. This PR adds zero lint findings.
+     `npm run lint` fails repo-wide with 1,345 pre-existing errors.

@@ -1,0 +1,101 @@
+VTID-04132 — commands run, in order
+
+1. Platform owner reported every Operator Console task failing and
+   demanded the operator be run directly, 20-50 times, with real results.
+   Investigated real production data instead of the pasted chat transcript.
+
+2. Supabase MCP execute_sql against oasis_events (project
+   inmkhvwdcuyhnxkgfvsb), scoped to the last 6 hours, filtering on
+   message/metadata ilike '%tests_missing%': found 5 rows — 3 real
+   autopilot_run_task tool-call attempts (topic assistant.turn) that all
+   failed with the identical tests_missing error, plus the model's own
+   operator.chat.message narration for two of them.
+
+3. Compared the REAL tool-call args (assistant.turn.metadata.args.request)
+   against what the user had pasted into chat (which was the model's own
+   narrated *intended* retry, not what it actually sent) — found they
+   differ: the real second attempt's request text says "Add a unit test in
+   services/gateway/test/ confirming..." with no literal file path, while
+   the pasted narration claimed an explicit path
+   (services/gateway/test/llm-router.deepseek-finish-reason.test.ts) that
+   was never actually in the real tool-call arguments.
+
+4. Read services/gateway/src/services/dev-autopilot-planning.ts's
+   extractFilePaths() and empirically verified it correctly extracts every
+   literal path present in prose (via a throwaway jest test against the
+   real request text) — ruling it out as the bug.
+
+5. Read services/gateway/src/services/operator-execution-onramp.ts in
+   full: its own module doc for `openEnded` already states "Scope, deny
+   globs and the test-coverage rule are enforced on the agent's real diff
+   after it finishes ... just post-hoc" — but triggerOperatorExecution()
+   unconditionally calls approveAutoExecute({finding_id, interactive:true})
+   for both open-ended and plan-based requests, with no is_open_ended
+   distinction anywhere in the call.
+
+6. Read services/gateway/src/services/dev-autopilot-execute.ts lines
+   530-650: confirmed approveAutoExecute() derives files_to_modify via
+   extractFilePaths(plan.plan_markdown) — the raw prose — and passes it
+   straight into evaluateSafetyGate(), with no awareness of open-ended
+   intake.
+
+7. Read services/gateway/src/services/dev-autopilot-safety.ts's
+   evaluateSafetyGate() in full: confirmed rule 3 (scope) and rule 4
+   (tests_missing) are the two rules keyed on plan.files_to_modify; the
+   other four (kill_switch, risk_class, daily_budget, max_auto_fix_depth)
+   are file-list-independent.
+
+8. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-onramp-safety-gate"}'
+   -> 200 {"ok":true,"vtid":"VTID-04132","num":4132,"id":"44e57504-..."}
+
+9. Supabase MCP execute_sql: UPDATE vtid_ledger SET title/summary,
+   status='in_progress', spec_status='approved' for VTID-04132.
+
+10. git fetch origin main; created branch
+    claude/vtid-04132-onramp-openended-safety-gate from origin/main
+    (076aea1c..1c2d228e — the prior VTID-04112 PR had already merged).
+
+11. Edited dev-autopilot-safety.ts: added SafetyContext.is_open_ended
+    (doc'd), gated rule 3 (scope) and rule 4 (tests_missing) behind
+    `if (!ctx.is_open_ended)`, updated the module-level rules docstring.
+
+12. Edited dev-autopilot-execute.ts: derived
+    isOpenEndedPlan = rec.spec_snapshot?.intake === 'open_ended' and
+    passed is_open_ended: isOpenEndedPlan into safetyCtx.
+
+13. cd services/gateway && npx tsc --noEmit
+    -> exit 0, no output.
+
+14. Wrote 5 new tests into test/dev-autopilot-safety.test.ts, describe
+    block "VTID-04132: is_open_ended skips scope + tests_missing
+    pre-flight".
+
+15. Wrote a new dedicated file
+    test/vtid-04132-onramp-open-ended-safety-gate.test.ts (3 tests) that
+    exercises the real, unmocked approveAutoExecute() against mocked
+    Supabase REST responses — reproducing the exact real plan text
+    ("Add a unit test in services/gateway/test/ confirming...") under
+    intake='open_ended' (must pass), intake='plan' (must still reject),
+    and intake absent (must still reject).
+
+16. npx jest test/dev-autopilot-safety.test.ts \
+        test/vtid-04132-onramp-open-ended-safety-gate.test.ts --silent
+    -> 2 suites, 26 tests, all passing.
+
+17. npx jest test/vtid-03839-onramp-approved-by-uuid.test.ts \
+        test/vtid-03820-onramp-staging-flag-pinned.test.ts \
+        test/vtid-03820-operator-execution-onramp.test.ts \
+        test/vtid-04007-open-ended-intake.test.ts \
+        test/vtid-04005-onramp-vtid-self-allocate.test.ts \
+        test/dev-autopilot-runexec-pr-flood-guard.test.ts \
+        test/dev-autopilot-finding-completion.test.ts \
+        test/routes/dev-autopilot.test.ts \
+        test/vtid-04108-manual-activation-source-types.test.ts \
+        test/vtid-04108-manual-activation-call-sites.test.ts \
+        test/dev-autopilot-planning.test.ts --silent
+    -> 11 suites, 236 tests, all passing, 0 regressions.
+
+18. npx jest --silent (full gateway suite)
+    -> 1006/1007 suites (1 pre-existing skip), 16,725/16,760 tests
+       passing, 0 failures.

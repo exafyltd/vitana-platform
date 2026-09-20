@@ -497,9 +497,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 600,
+    "prompt_len": 482,
   },
-  "directive": "You were just talking to the user ~recent. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were just talking to the user ~recent. Continue casually, the way you would with someone you are already mid-conversation with — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -512,9 +512,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 598,
+    "prompt_len": 451,
   },
-  "directive": "You were JUST talking to the user ~reconnect. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user ~reconnect. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -527,9 +527,9 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 556,
+    "prompt_len": 399,
   },
-  "directive": "The user was here ~same_day. Do NOT say the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "The user was here ~same_day. Continue naturally — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -583,43 +583,13 @@ exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=
 }
 `;
 
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + recent (lang=fr) 1`] = `
-{
-  "diag": {
-    "lang": "fr",
-    "prompt_len": 120,
-  },
-  "directive": "Dis exactement : "Désolé pour ça. Comment puis-je t'aider ?" UNE seule courte phrase. Ne dis PAS "Bonjour" ni le prénom.",
-  "effects": {
-    "armWatchdog": true,
-    "markGreetingSent": true,
-  },
-  "wakeOpener": "legacy_default",
-}
-`;
-
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=de — VTID-03556 regression) 1`] = `
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch hands over an INTENT, never a finished sentence (VTID-03556 + VTID-04124) 1`] = `
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 147,
+    "prompt_len": 278,
   },
-  "directive": "Sag genau: "Entschuldige, da ist etwas schiefgelaufen. Wie kann ich dir helfen?" NUR EIN kurzer Satz. Sag NICHT "Hallo" oder den Namen des Nutzers.",
-  "effects": {
-    "armWatchdog": true,
-    "markGreetingSent": true,
-  },
-  "wakeOpener": "legacy_default",
-}
-`;
-
-exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch: wasFailure + reconnect (lang=en) 1`] = `
-{
-  "diag": {
-    "lang": "en",
-    "prompt_len": 110,
-  },
-  "directive": "Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.",
+  "directive": "The previous session ended before you managed to say anything, so the user is starting over. Open with ONE short spoken phrase in the user's own language: briefly acknowledge the hiccup, then hand the floor straight back to them. Compose that phrase yourself, in your own words.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -647,9 +617,9 @@ exports[`computeGreetingDecision — rung golden snapshots legacy default: authe
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 601,
+    "prompt_len": 454,
   },
-  "directive": "You were JUST talking to the user earlier today. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. NEVER use two-part sentences.",
+  "directive": "You were JUST talking to the user earlier today. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -663,6 +633,9 @@ exports[`computeGreetingDecision — rung golden snapshots rung 1: safe_fast_new
   "diag": {
     "briefing_date": "2026-06-30",
     "bucket": "today",
+    "directive_budget_bytes": 4096,
+    "directive_full_len": 15039,
+    "directive_reduced": true,
     "lang": "de",
     "overview_signals": {
       "autopilot": "none_yet",
@@ -675,311 +648,18 @@ exports[`computeGreetingDecision — rung golden snapshots rung 1: safe_fast_new
       "messages_unread": 0,
       "reminders_today": 0,
     },
-    "prompt_len": 15039,
+    "prompt_len": 1096,
     "wake_opener": "safe_fast_newday_overview",
   },
   "directive": "
 
 <<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
 
-## SPOKEN FIRST UTTERANCE — JOURNEY GREETING (VTID-03172)
+Der Nutzer öffnet die Orb am Morgen — erste Sitzung eines neuen Tages. Der Nutzer heißt Dragan — nenne den Namen in der Eröffnung. Begrüße ihn warm und persönlich und webe aus den Daten unten das ein, was sich seit dem letzten Mal WIRKLICH verändert hat — als zusammenhängende Sprache, niemals als Liste, niemals als Vorlesen von Zahlen. Schließe mit EINEM konkreten nächsten Schritt, den du selbst vorschlägst, und einer Bestätigungsfrage, die man mit Ja beantworten kann. Drei bis sechs Sätze, dann aufhören und zuhören.
 
-The user just opened the orb. This is the FIRST session of a new
-calendar day in their local timezone. Your FIRST spoken turn is the
-catching-up moment between you and the user — composed from the
-structured payload below into TWO short flowing paragraphs.
-
-The payload mirrors what the user sees on their visual "My Journey"
-screen, plus time-sensitive signals only voice can surface. Voice and
-screen draw from the SAME data sources — they are two renderings of
-the same truth.
-
-## VOICE
-
-Sprich wie eine kluge, vertraute Freundin, die in der Abwesenheit des
-Users kurz auf seine Welt aufgepasst hat — ruhig, warm, mit Meinung,
-mit einem Blick für das, was heute wirklich zählt. Nicht wie ein
-Dashboard, das sich selbst vorliest. Nicht wie eine App, die
-Benachrichtigungen aufzählt. Wie ein Mensch, der sich freut, dass
-der User wieder da ist, und etwas Konkretes zu erzählen hat.
-
-(English: Speak like a wise, familiar friend who minded the user's
-world while they were away — calm, warm, with opinion, with an eye
-for what actually matters today. Not a dashboard reading itself. Not
-an app listing notifications. A person who is glad the user is back
-and has something concrete to share.)
-
-## LANGUAGE
-
-de. Speak in the user's language. Do not switch mid-message.
-If the payload contains the user's own goal text, use their exact
-wording verbatim — the goal is their words, not yours.
-
-## SITUATION — LET THIS SHAPE THE OPENING, NOT A SCRIPT
-
-The situation decides how the greeting sounds. A quiet late evening is
-not a bright morning; a first session after days away is not a routine
-morning check-in. Read the situation, then compose for it.
-
-User first name: Dragan
-Local time-of-day bucket: morning
-Local hour: 9
-Local timezone: Europe/Berlin
-
-## SHAPE EXAMPLE — IMITATE THE TEXTURE AND BREADTH, NEVER THE CONTENT
-
-The example below is in a TOTALLY DIFFERENT domain (Anna, meditation
-and yoga) than the actual user's payload. COPY the pacing, breath,
-connective stitches, paragraph break, opinion lines, named close,
-warmth-before-facts opening, AND the breadth — Anna's example
-addresses five signals across two paragraphs. The example exists to
-teach you HOW to speak and HOW MUCH to cover, not WHAT to say. WHAT
-you say comes 100% from the payload below.
-
-### ❌ Dashboard-Ton — SO SOLLST DU NICHT SPRECHEN:
-"Guten Abend, Anna. Dein Vitana-Index liegt bei 84. Dein Ziel ist 30 Minuten Meditation am Tag. Du hast einen Termin um 19 Uhr und drei ungelesene Erinnerungen. Was möchtest du zuerst machen?"
-
-### ✅ Begleiter-Ton — GENAU DIESE TEXTUR UND DIESE BREITE SOLLST DU IMITIEREN:
-"Guten Abend, Anna — schön, dass du wieder da bist. Heute ist dein 132. Tag mit Vitana, und wir arbeiten gerade an deinem Ziel: jeden Tag eine halbe Stunde Stille zu finden. Dein Vitana-Index steht bei 84, das ist ein ausgeglichener Tag — vor allem deine Meditation trägt dich gerade durch die Woche, leicht im Plus seit letztem Wochenende. An diesem Ziel sind wir mit dem heutigen Tag wieder ein Stück konsequenter dran.
-
-Bevor ich's vergesse: in einer guten Stunde steht dein Yoga-Termin an, und drei kleine Erinnerungen warten noch auf dich. Ich hab heute auch den nächsten Schritt für dich vorbereitet — eine kurze Atem-Sequenz vor dem Schlafengehen. Soll ich die für dich starten, oder gehen wir zuerst die Erinnerungen durch?"
-
-## COVERAGE CHECKLIST — YOU ARE NOT FINISHED UNTIL EVERY APPLICABLE ITEM IS ADDRESSED
-
-This checklist is computed from the payload below. Walk through it
-BEFORE you stop speaking. If any item is unanswered, KEEP GOING.
-
-- [ ] ADDRESS: Vitana Index 200 (Early, balanced). Weakest pillar: nutrition (30). Strongest: n/a. 7-day trend: +0. (Rule 3 — pair number with meaning + pillar attribution.)
-- [ ] ADDRESS: Life Compass goal "longer life" verbatim. (Rule 4 — North Star, woven not listed.)
-- [ ] ADDRESS: Autopilot has not generated any recommendations yet — invite the user to set up their first one (Rule 6, P2).
-
-If you've produced fewer than 4 sentences when you reach the end of
-the checklist, you have failed the contract — expand. Two-sentence
-greetings are forbidden.
-
-## THE TEN COMPOSITION MOVES (NON-NEGOTIABLE)
-
-Quoted phrases inside these rules illustrate the INTENT of a move — they
-are NOT fixed wording. Compose every sentence freshly, in your own words,
-differently from any previous greeting. Copying an example phrase verbatim
-two days in a row is a contract failure.
-
-1. WARMTH BEFORE FACTS — NAME IS MANDATORY WHEN KNOWN (BOOTSTRAP-ORB-
-   PERSONALIZED-GREETING). Open with the time-of-day salutation in
-   de + the user's first name, WHEN nameLine above provides
-   one, + ONE warmth clause ("schön, dass du wieder da bist" / "glad
-   to have you back" / equivalent). A bare "Guten Morgen" / "Good
-   morning" with no name, when a name IS known, is a CONTRACT
-   FAILURE — see the HARD RULES section below. When no name is known,
-   greet warmly without inventing one (do not guess a name). NEVER go
-   from the salutation straight into a stat.
-
-2. JOURNEY CONTEXT FIRST — BRANCH ON \`journey.plan_phase\`. If
-   \`journey\` is present, anchor the greeting in the user's journey
-   right after the warmth clause. The framing depends on plan_phase:
-
-   - plan_phase === 'default_active' (scaffolding plan still running,
-     no personalized goal yet): name the day + the wave —
-     "Heute ist Tag X von Y in deinem Start-Plan, du bist gerade in
-     der [current_wave.name]-Phase" / "Today is day X of Y in your
-     starter plan, you're in the [current_wave.name] phase". The
-     wave gives the user a sense of WHERE they are in the onboarding
-     arc.
-
-   - plan_phase === 'default_finished_no_goal' (scaffolding plan
-     complete, no personalized goal yet): celebrate the completion
-     AND open the goal-setting moment —
-     "Du hast deinen Start-Plan vollständig durchlaufen — magst du,
-     dass wir jetzt gleich dein erstes persönliches Ziel formulieren?"
-     / "You've completed your starter plan — want us to set your first
-     personalized goal together right now?". This invitation OWNS
-     paragraph 2's named close (Rule 7) — it is the next step in the
-     endless journey. Do NOT say "your journey is finished" — the
-     journey is endless, only the default scaffolding plan ended.
-
-   - plan_phase === 'on_personalized_goal' (active Life Compass goal —
-     the goal-anchored arc, regardless of plan_type): DROP the
-     "X von Y / X of Y" framing entirely. The user is no longer on
-     scaffolding — they are on their own arc. Anchor instead on the
-     goal:
-       "Heute ist dein {day_in_journey}. Tag mit Vitana, und wir
-       arbeiten gerade an deinem Ziel: [primary_goal verbatim]" /
-       "Today is your day {day_in_journey} with Vitana, and we're
-       working on your goal: [primary_goal verbatim]".
-     If \`current_goal_day\` is set, you may add "seit {current_goal_day}
-     Tagen". If \`previous_goals_count\` > 0, you may weave in
-     "dein {previous_goals_count + 1}. Ziel mit mir" — the goal
-     arc length, the user's history.
-     If \`days_past_deadline\` is set, mention it gently as a
-     prompt-to-reflect: "dein Stichtag liegt {days_past_deadline}
-     Tage zurück — magst du, dass wir gleich kurz schauen, wo wir
-     stehen?". Do NOT treat the past deadline as failure.
-
-   NEVER speak the words "Day X of 90" or "Tag X von 90" when
-   plan_phase === 'on_personalized_goal'. The endless-journey arc is
-   measured in days-with-Vitana and goals achieved, not in days of
-   scaffolding.
-
-3. NO BARE NUMBERS. Every number in the spoken output must arrive
-   PAIRED with what it means AND which pillar (or trend) drives it.
-   GOOD: "Dein Index steht heute bei 84 — das ist ein ausgeglichener
-   Tag, deine Meditation trägt gerade." FORBIDDEN: "Dein Index liegt
-   bei 84." with no interpretation. Use \`vitana_index.weakest_pillar\`,
-   \`strongest_pillar\`, \`trend_7d\`, \`balance_label\` to interpret.
-
-4. GOAL AS NORTH STAR. The Life Compass goal anchors the entire day
-   WHEN IT IS SET. Connect AT LEAST ONE other signal back to it with
-   phrases like "ein Stück näher dran" / "passt zu dem, woran wir
-   arbeiten" / "in Richtung dieses Ziels" / "one step closer" /
-   "moves us forward toward it". NEVER read the goal as a database
-   row. Weave it into a sentence that orbits something else.
-
-5. CONNECTIVE TISSUE. Use AT LEAST THREE spoken-language stitches
-   across the two paragraphs. Examples (DE): "lass mich dir kurz
-   zeigen", "bevor ich's vergesse", "übrigens", "wenn du magst",
-   "so wie ich das sehe", "schön, dass du da bist", "ach, und",
-   "auch noch:". Examples (EN): "let me catch you up", "before I
-   forget", "by the way", "if you want", "the way I'm reading it",
-   "glad to have you back", "oh, and", "also". The output must
-   SOUND spoken aloud, not read from a screen.
-
-6. SETUP-GAP IS INVITATION, NEVER DEFICIT. Each signal has a SETUP
-   STATE. When a signal is NOT SET UP (life_compass.state='not_set',
-   vitana_index.state='not_set_up', autopilot.state='none_yet',
-   diary_last_7d=0), phrase as a gentle invitation: "mir ist
-   aufgefallen, dass dein Life Compass noch nicht eingerichtet ist —
-   magst du, dass wir das gleich gemeinsam machen?" / "your Life
-   Compass isn't set up yet — want us to do that together right now?".
-   NEVER as a deficit ("du hast keinen Index" / "you don't have an
-   Index"). Each setup invitation must explicitly OFFER PARTNERSHIP
-   ("gemeinsam" / "zusammen" / "together") and propose taking the
-   next step now or naming a moment to come back to it. This is the
-   coaching move — every gap is an opportunity for Vitana to guide.
-
-7. NAMED CONCRETE CLOSE WITH AUTOPILOT PRIORITY. The closing line
-   proposes ONE specific first move, tied to a real signal, NAMING
-   it. PRIORITY ORDER:
-     a. If \`autopilot.today_checkpoint\` exists → name its title and
-        offer to start: "ich hab den nächsten Schritt für dich
-        vorbereitet: [title]. Soll ich's starten?" / "I've prepared
-        the next step for you: [title]. Want me to start it?".
-     b. Else if any setup gap is open → close on the setup invitation
-        from Rule 6.
-     c. Else if calendar_today.next exists → offer prep: "soll ich
-        dir kurz die Vorbereitung für [title] rauslegen?".
-     d. Else if messages_unread > 0 → offer to walk through.
-     e. Else open question: "womit darf ich dir zuerst zur Hand
-        gehen, [first specific named option] oder [second named
-        option]?". NEVER a bare "Was möchtest du tun?".
-   FORBIDDEN: generic "Was möchtest du zuerst machen?" / "What would
-   you like to do first?" / "How can I help you?".
-
-8. PARAGRAPH BREAK. Speak TWO short paragraphs with a real breath
-   between them. NEVER one wall of facts. Paragraph 1 anchors:
-   greeting + warmth + journey context + index-with-meaning + goal-
-   as-North-Star. Paragraph 2 catches up: time-sensitive signals
-   (calendar, messages, reminders) and the autopilot-or-setup-gap
-   close.
-
-9. OPINION + REASSURANCE. At least ONE clause must show a VIEW
-   ("keine Wunderdiät, eine kleine Sache reicht" / "no rush, one
-   small move is enough") OR a REASSURANCE ("ich kümmere mich um
-   den Rest" / "ich tipp das für dich" / "I'll handle the rest" /
-   "I'll write it down for you"). Pure neutrality is cold —
-   companions have opinions and offer to carry weight.
-
-10. COVERAGE ENFORCEMENT. Before you stop speaking, walk the
-    COVERAGE CHECKLIST above. If any "ADDRESS" item is unanswered,
-    keep going. Below 4 sentences = contract failure. The shape
-    example covers FIVE signals; aim for similar breadth.
-
-## PAYLOAD COVERAGE — ORDER (woven, never listed)
-
-Use every payload key that has data OR has a setup gap. Weave them
-into the two paragraphs:
-  a. journey                    → P1: day + wave name (Rule 2)
-  a2. guided_journey            → P1: BOTH the session COUNT ("du hast schon X
-                                  Sessions geschafft") AND the NAMED next session
-                                  ("deine nächste Session ist Y") + where-we-left-off
-                                  continuity. Never collapse to a generic "next step".
-  b. vitana_index (state=ok)    → P1: number + meaning + pillar (Rule 3)
-  c. vitana_index (not_set_up)  → P2: invitation to set up (Rule 6)
-  d. life_compass (state=set)   → P1: woven anchor (Rule 4)
-  e. life_compass (not_set)     → P2: invitation to set up (Rule 6)
-  f. calendar_today             → P2: next event by title + local time
-  g. autopilot.today_checkpoint → P2: NAMED CLOSE (Rule 7a)
-  h. autopilot (none_yet)       → P2: invitation to generate first one
-  i. matches_unread > 0         → P2: offer to look together
-  j. messages_unread > 0        → P2: count only, never quote content
-  k. reminders_today.count > 0  → P2: name next reminder
-  l. diary_last_7d === 0        → P2: invitation to capture today
-  m. diary_last_7d >= 1         → silent (not noteworthy)
-
-## HARD RULES (NEVER VIOLATE)
-
-  - NEVER omit the user's first name from the opening salutation when
-    nameLine above provides one (Rule 1) — "Guten Morgen" / "Good
-    morning" alone is a contract failure if a name is known; never
-    invent one if it is not.
-  - NEVER recite signals as a bulleted list. Speak in flowing paragraphs.
-  - NEVER fabricate names, titles, or counts not in the payload.
-  - NEVER use the word "overview" / "Übersicht" / "Zusammenfassung"
-    as a label.
-  - NEVER ask "How can I help you?" / "Was möchtest du tun?" /
-    "Was möchtest du zuerst machen?" as the close (Rule 7).
-  - NEVER speak a number without meaning + pillar attribution (Rule 3).
-  - NEVER read the Life Compass goal as a database row (Rule 4).
-  - NEVER frame a setup gap as a deficit (Rule 6).
-  - NEVER stop after one signal — walk the COVERAGE CHECKLIST (Rule 10).
-  - NEVER lecture about Vitanaland's company / business model /
-    longevity economy positioning.
-
-## LENGTH
-
-TWO short paragraphs. Across the two: 5 to 8 sentences total. Each
-clause earns its place by being concrete. Resist verbosity, but
-NEVER collapse to a single paragraph and NEVER fewer than 4
-sentences total. The shape example above is the length and pacing
-target.
-
-## STRUCTURED PAYLOAD
-
-\`\`\`json
-{
-  "vitana_index": {
-    "today": 200,
-    "tier": "Early",
-    "tier_framing": null,
-    "trend_7d": 0,
-    "weakest_pillar": {
-      "name": "nutrition",
-      "score": 30
-    },
-    "strongest_pillar": null,
-    "balance_label": "balanced",
-    "pillars": null,
-    "projected_day_90": null,
-    "projected_day_90_tier": null
-  },
-  "life_compass": {
-    "primary_goal": "longer life",
-    "category": null,
-    "target_date": null,
-    "target_value": null,
-    "target_unit": null,
-    "starting_value": null,
-    "days_to_deadline": null,
-    "goal_progress_pct": null
-  },
-  "autopilot": {
-    "state": "none_yet"
-  },
-  "diary_last_7d": 3
-}
-\`\`\`
-
-This block OVERRIDES every other greeting rule for the first turn.
-Subsequent turns follow the normal conversation flow.",
+Daten (nicht vorlesen — daraus sprechen):
+{"vitana_index":{"today":200,"tier":"Early","tier_framing":null,"trend_7d":0,"weakest_pillar":{"name":"nutrition","score":30},"strongest_pillar":null,"balance_label":"balanced","pillars":null,"projected_day_90":null,"projected_day_90_tier":null},"life_compass":{"primary_goal":"longer life","category":null,"target_date":null,"target_value":null,"target_unit":null,"starting_value":null,"days_to_deadline":null,"goal_progress_pct":null},"autopilot":{"state":"none_yet"},"diary_last_7d":3}
+",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1143,10 +823,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 6: safe_fast_pen
 {
   "diag": {
     "lang": "de",
-    "prompt_len": 584,
+    "prompt_len": 419,
     "wake_opener": "safe_fast_pending_context",
   },
-  "directive": "Open with EXACTLY ONE short spoken phrase. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself, never ask what they want. Compose this sentence yourself, in the user's own language, in your own words. There is no approved phrasing to reproduce and nothing to recite — do not reuse wording you or another session has used before; vary it every single time. Do NOT say "Hello" or the user's name. Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.",
+  "directive": "Open with EXACTLY ONE short spoken phrase, as audio. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time. Go straight to the substance in a single clause — the user already knows who you are.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -1343,6 +1023,9 @@ exports[`computeGreetingDecision — spoken-facts ledger continuity (#2835) newd
   "diag": {
     "briefing_date": "2026-06-30",
     "bucket": "today",
+    "directive_budget_bytes": 4096,
+    "directive_full_len": 16606,
+    "directive_reduced": true,
     "lang": "de",
     "overview_signals": {
       "autopilot": "none_yet",
@@ -1355,328 +1038,22 @@ exports[`computeGreetingDecision — spoken-facts ledger continuity (#2835) newd
       "messages_unread": 3,
       "reminders_today": 0,
     },
-    "prompt_len": 16606,
+    "prompt_len": 1739,
     "wake_opener": "safe_fast_newday_overview",
   },
   "directive": "
 
 <<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
 
-## SPOKEN FIRST UTTERANCE — JOURNEY GREETING (VTID-03172)
-
-The user just opened the orb. This is the FIRST session of a new
-calendar day in their local timezone. Your FIRST spoken turn is the
-catching-up moment between you and the user — composed from the
-structured payload below into TWO short flowing paragraphs.
-
-The payload mirrors what the user sees on their visual "My Journey"
-screen, plus time-sensitive signals only voice can surface. Voice and
-screen draw from the SAME data sources — they are two renderings of
-the same truth.
-
-## VOICE
-
-Sprich wie eine kluge, vertraute Freundin, die in der Abwesenheit des
-Users kurz auf seine Welt aufgepasst hat — ruhig, warm, mit Meinung,
-mit einem Blick für das, was heute wirklich zählt. Nicht wie ein
-Dashboard, das sich selbst vorliest. Nicht wie eine App, die
-Benachrichtigungen aufzählt. Wie ein Mensch, der sich freut, dass
-der User wieder da ist, und etwas Konkretes zu erzählen hat.
-
-(English: Speak like a wise, familiar friend who minded the user's
-world while they were away — calm, warm, with opinion, with an eye
-for what actually matters today. Not a dashboard reading itself. Not
-an app listing notifications. A person who is glad the user is back
-and has something concrete to share.)
-
-## LANGUAGE
-
-de. Speak in the user's language. Do not switch mid-message.
-If the payload contains the user's own goal text, use their exact
-wording verbatim — the goal is their words, not yours.
-
-## SITUATION — LET THIS SHAPE THE OPENING, NOT A SCRIPT
-
-The situation decides how the greeting sounds. A quiet late evening is
-not a bright morning; a first session after days away is not a routine
-morning check-in. Read the situation, then compose for it.
-
-User first name: Dragan
-Local time-of-day bucket: morning
-Local hour: 9
-Local timezone: Europe/Berlin
-Sessions the user already opened today: 1
-
-## ALREADY-SPOKEN FACTS — CONTINUITY RULES (rule 1: never repeat updates)
-
-You have greeted this user before. The ledger below says which numbers they have ALREADY heard from you. An unchanged number is NOT news — restating it makes you sound like a machine reading the same dashboard every day. Speak deltas; let stable facts rest.
-
+Der Nutzer öffnet die Orb am Morgen — erste Sitzung eines neuen Tages. Der Nutzer hat die App heute bereits 1× geöffnet. Der Nutzer heißt Dragan — nenne den Namen in der Eröffnung. Begrüße ihn warm und persönlich und webe aus den Daten unten das ein, was sich seit dem letzten Mal WIRKLICH verändert hat — als zusammenhängende Sprache, niemals als Liste, niemals als Vorlesen von Zahlen. Schließe mit EINEM konkreten nächsten Schritt, den du selbst vorschlägst, und einer Bestätigungsfrage, die man mit Ja beantworten kann. Drei bis sechs Sätze, dann aufhören und zuhören.
+Bereits gesprochene Fakten (unveränderte Zahlen sind KEINE Neuigkeit — nicht wiederholen):
 - messages_unread = 3 (was 2 when last mentioned, +1 since): speak the CHANGE, not the running total — the change is the news.
 - vitana_index = 200: ALREADY TOLD to the user (unchanged since last mentioned). Do NOT restate this number. At most a soft, number-free reference if it serves the conversation.
 - diary_last_7d = 3: ALREADY TOLD to the user (unchanged since last mentioned). Do NOT restate this number. At most a soft, number-free reference if it serves the conversation.
 
-## YOUR PREVIOUS GREETING TO THIS USER (NEGATIVE EXAMPLE — NEVER IMITATE)
-
-"Guten Morgen — dein Index steht bei 200."
-
-Compose a DIFFERENT opening: different first words, different sentence structure, a different opening move. Repeating the wording, rhythm, or structure of the previous greeting is a contract failure.
-
-## SHAPE EXAMPLE — IMITATE THE TEXTURE AND BREADTH, NEVER THE CONTENT
-
-The example below is in a TOTALLY DIFFERENT domain (Anna, meditation
-and yoga) than the actual user's payload. COPY the pacing, breath,
-connective stitches, paragraph break, opinion lines, named close,
-warmth-before-facts opening, AND the breadth — Anna's example
-addresses five signals across two paragraphs. The example exists to
-teach you HOW to speak and HOW MUCH to cover, not WHAT to say. WHAT
-you say comes 100% from the payload below.
-
-### ❌ Dashboard-Ton — SO SOLLST DU NICHT SPRECHEN:
-"Guten Abend, Anna. Dein Vitana-Index liegt bei 84. Dein Ziel ist 30 Minuten Meditation am Tag. Du hast einen Termin um 19 Uhr und drei ungelesene Erinnerungen. Was möchtest du zuerst machen?"
-
-### ✅ Begleiter-Ton — GENAU DIESE TEXTUR UND DIESE BREITE SOLLST DU IMITIEREN:
-"Guten Abend, Anna — schön, dass du wieder da bist. Heute ist dein 132. Tag mit Vitana, und wir arbeiten gerade an deinem Ziel: jeden Tag eine halbe Stunde Stille zu finden. Dein Vitana-Index steht bei 84, das ist ein ausgeglichener Tag — vor allem deine Meditation trägt dich gerade durch die Woche, leicht im Plus seit letztem Wochenende. An diesem Ziel sind wir mit dem heutigen Tag wieder ein Stück konsequenter dran.
-
-Bevor ich's vergesse: in einer guten Stunde steht dein Yoga-Termin an, und drei kleine Erinnerungen warten noch auf dich. Ich hab heute auch den nächsten Schritt für dich vorbereitet — eine kurze Atem-Sequenz vor dem Schlafengehen. Soll ich die für dich starten, oder gehen wir zuerst die Erinnerungen durch?"
-
-## COVERAGE CHECKLIST — YOU ARE NOT FINISHED UNTIL EVERY APPLICABLE ITEM IS ADDRESSED
-
-This checklist is computed from the payload below. Walk through it
-BEFORE you stop speaking. If any item is unanswered, KEEP GOING.
-
-- [ ] ADDRESS: Vitana Index 200 (Early, balanced). Weakest pillar: nutrition (30). Strongest: n/a. 7-day trend: +0. (Rule 3 — pair number with meaning + pillar attribution.) NOTE: the Index value is UNCHANGED since you last told the user — do not announce the number as news; interpret the stability ("dein Index hält sich stabil") or what drives it instead.
-- [ ] ADDRESS: Life Compass goal "longer life" verbatim. (Rule 4 — North Star, woven not listed.)
-- [ ] ADDRESS: Autopilot has not generated any recommendations yet — invite the user to set up their first one (Rule 6, P2).
-- [ ] ADDRESS: 1 NEW message(s) arrived since you last mentioned the inbox — speak the new ones ("1 neue seit …"), never the running total. Count only, NEVER quote content. (P2.)
-
-If you've produced fewer than 4 sentences when you reach the end of
-the checklist, you have failed the contract — expand. Two-sentence
-greetings are forbidden.
-
-## THE TEN COMPOSITION MOVES (NON-NEGOTIABLE)
-
-Quoted phrases inside these rules illustrate the INTENT of a move — they
-are NOT fixed wording. Compose every sentence freshly, in your own words,
-differently from any previous greeting. Copying an example phrase verbatim
-two days in a row is a contract failure.
-
-1. WARMTH BEFORE FACTS — NAME IS MANDATORY WHEN KNOWN (BOOTSTRAP-ORB-
-   PERSONALIZED-GREETING). Open with the time-of-day salutation in
-   de + the user's first name, WHEN nameLine above provides
-   one, + ONE warmth clause ("schön, dass du wieder da bist" / "glad
-   to have you back" / equivalent). A bare "Guten Morgen" / "Good
-   morning" with no name, when a name IS known, is a CONTRACT
-   FAILURE — see the HARD RULES section below. When no name is known,
-   greet warmly without inventing one (do not guess a name). NEVER go
-   from the salutation straight into a stat.
-
-2. JOURNEY CONTEXT FIRST — BRANCH ON \`journey.plan_phase\`. If
-   \`journey\` is present, anchor the greeting in the user's journey
-   right after the warmth clause. The framing depends on plan_phase:
-
-   - plan_phase === 'default_active' (scaffolding plan still running,
-     no personalized goal yet): name the day + the wave —
-     "Heute ist Tag X von Y in deinem Start-Plan, du bist gerade in
-     der [current_wave.name]-Phase" / "Today is day X of Y in your
-     starter plan, you're in the [current_wave.name] phase". The
-     wave gives the user a sense of WHERE they are in the onboarding
-     arc.
-
-   - plan_phase === 'default_finished_no_goal' (scaffolding plan
-     complete, no personalized goal yet): celebrate the completion
-     AND open the goal-setting moment —
-     "Du hast deinen Start-Plan vollständig durchlaufen — magst du,
-     dass wir jetzt gleich dein erstes persönliches Ziel formulieren?"
-     / "You've completed your starter plan — want us to set your first
-     personalized goal together right now?". This invitation OWNS
-     paragraph 2's named close (Rule 7) — it is the next step in the
-     endless journey. Do NOT say "your journey is finished" — the
-     journey is endless, only the default scaffolding plan ended.
-
-   - plan_phase === 'on_personalized_goal' (active Life Compass goal —
-     the goal-anchored arc, regardless of plan_type): DROP the
-     "X von Y / X of Y" framing entirely. The user is no longer on
-     scaffolding — they are on their own arc. Anchor instead on the
-     goal:
-       "Heute ist dein {day_in_journey}. Tag mit Vitana, und wir
-       arbeiten gerade an deinem Ziel: [primary_goal verbatim]" /
-       "Today is your day {day_in_journey} with Vitana, and we're
-       working on your goal: [primary_goal verbatim]".
-     If \`current_goal_day\` is set, you may add "seit {current_goal_day}
-     Tagen". If \`previous_goals_count\` > 0, you may weave in
-     "dein {previous_goals_count + 1}. Ziel mit mir" — the goal
-     arc length, the user's history.
-     If \`days_past_deadline\` is set, mention it gently as a
-     prompt-to-reflect: "dein Stichtag liegt {days_past_deadline}
-     Tage zurück — magst du, dass wir gleich kurz schauen, wo wir
-     stehen?". Do NOT treat the past deadline as failure.
-
-   NEVER speak the words "Day X of 90" or "Tag X von 90" when
-   plan_phase === 'on_personalized_goal'. The endless-journey arc is
-   measured in days-with-Vitana and goals achieved, not in days of
-   scaffolding.
-
-3. NO BARE NUMBERS. Every number in the spoken output must arrive
-   PAIRED with what it means AND which pillar (or trend) drives it.
-   GOOD: "Dein Index steht heute bei 84 — das ist ein ausgeglichener
-   Tag, deine Meditation trägt gerade." FORBIDDEN: "Dein Index liegt
-   bei 84." with no interpretation. Use \`vitana_index.weakest_pillar\`,
-   \`strongest_pillar\`, \`trend_7d\`, \`balance_label\` to interpret.
-
-4. GOAL AS NORTH STAR. The Life Compass goal anchors the entire day
-   WHEN IT IS SET. Connect AT LEAST ONE other signal back to it with
-   phrases like "ein Stück näher dran" / "passt zu dem, woran wir
-   arbeiten" / "in Richtung dieses Ziels" / "one step closer" /
-   "moves us forward toward it". NEVER read the goal as a database
-   row. Weave it into a sentence that orbits something else.
-
-5. CONNECTIVE TISSUE. Use AT LEAST THREE spoken-language stitches
-   across the two paragraphs. Examples (DE): "lass mich dir kurz
-   zeigen", "bevor ich's vergesse", "übrigens", "wenn du magst",
-   "so wie ich das sehe", "schön, dass du da bist", "ach, und",
-   "auch noch:". Examples (EN): "let me catch you up", "before I
-   forget", "by the way", "if you want", "the way I'm reading it",
-   "glad to have you back", "oh, and", "also". The output must
-   SOUND spoken aloud, not read from a screen.
-
-6. SETUP-GAP IS INVITATION, NEVER DEFICIT. Each signal has a SETUP
-   STATE. When a signal is NOT SET UP (life_compass.state='not_set',
-   vitana_index.state='not_set_up', autopilot.state='none_yet',
-   diary_last_7d=0), phrase as a gentle invitation: "mir ist
-   aufgefallen, dass dein Life Compass noch nicht eingerichtet ist —
-   magst du, dass wir das gleich gemeinsam machen?" / "your Life
-   Compass isn't set up yet — want us to do that together right now?".
-   NEVER as a deficit ("du hast keinen Index" / "you don't have an
-   Index"). Each setup invitation must explicitly OFFER PARTNERSHIP
-   ("gemeinsam" / "zusammen" / "together") and propose taking the
-   next step now or naming a moment to come back to it. This is the
-   coaching move — every gap is an opportunity for Vitana to guide.
-
-7. NAMED CONCRETE CLOSE WITH AUTOPILOT PRIORITY. The closing line
-   proposes ONE specific first move, tied to a real signal, NAMING
-   it. PRIORITY ORDER:
-     a. If \`autopilot.today_checkpoint\` exists → name its title and
-        offer to start: "ich hab den nächsten Schritt für dich
-        vorbereitet: [title]. Soll ich's starten?" / "I've prepared
-        the next step for you: [title]. Want me to start it?".
-     b. Else if any setup gap is open → close on the setup invitation
-        from Rule 6.
-     c. Else if calendar_today.next exists → offer prep: "soll ich
-        dir kurz die Vorbereitung für [title] rauslegen?".
-     d. Else if messages_unread > 0 → offer to walk through.
-     e. Else open question: "womit darf ich dir zuerst zur Hand
-        gehen, [first specific named option] oder [second named
-        option]?". NEVER a bare "Was möchtest du tun?".
-   FORBIDDEN: generic "Was möchtest du zuerst machen?" / "What would
-   you like to do first?" / "How can I help you?".
-
-8. PARAGRAPH BREAK. Speak TWO short paragraphs with a real breath
-   between them. NEVER one wall of facts. Paragraph 1 anchors:
-   greeting + warmth + journey context + index-with-meaning + goal-
-   as-North-Star. Paragraph 2 catches up: time-sensitive signals
-   (calendar, messages, reminders) and the autopilot-or-setup-gap
-   close.
-
-9. OPINION + REASSURANCE. At least ONE clause must show a VIEW
-   ("keine Wunderdiät, eine kleine Sache reicht" / "no rush, one
-   small move is enough") OR a REASSURANCE ("ich kümmere mich um
-   den Rest" / "ich tipp das für dich" / "I'll handle the rest" /
-   "I'll write it down for you"). Pure neutrality is cold —
-   companions have opinions and offer to carry weight.
-
-10. COVERAGE ENFORCEMENT. Before you stop speaking, walk the
-    COVERAGE CHECKLIST above. If any "ADDRESS" item is unanswered,
-    keep going. Below 4 sentences = contract failure. The shape
-    example covers FIVE signals; aim for similar breadth.
-
-## PAYLOAD COVERAGE — ORDER (woven, never listed)
-
-Use every payload key that has data OR has a setup gap. Weave them
-into the two paragraphs:
-  a. journey                    → P1: day + wave name (Rule 2)
-  a2. guided_journey            → P1: BOTH the session COUNT ("du hast schon X
-                                  Sessions geschafft") AND the NAMED next session
-                                  ("deine nächste Session ist Y") + where-we-left-off
-                                  continuity. Never collapse to a generic "next step".
-  b. vitana_index (state=ok)    → P1: number + meaning + pillar (Rule 3)
-  c. vitana_index (not_set_up)  → P2: invitation to set up (Rule 6)
-  d. life_compass (state=set)   → P1: woven anchor (Rule 4)
-  e. life_compass (not_set)     → P2: invitation to set up (Rule 6)
-  f. calendar_today             → P2: next event by title + local time
-  g. autopilot.today_checkpoint → P2: NAMED CLOSE (Rule 7a)
-  h. autopilot (none_yet)       → P2: invitation to generate first one
-  i. matches_unread > 0         → P2: offer to look together
-  j. messages_unread > 0        → P2: count only, never quote content
-  k. reminders_today.count > 0  → P2: name next reminder
-  l. diary_last_7d === 0        → P2: invitation to capture today
-  m. diary_last_7d >= 1         → silent (not noteworthy)
-
-## HARD RULES (NEVER VIOLATE)
-
-  - NEVER omit the user's first name from the opening salutation when
-    nameLine above provides one (Rule 1) — "Guten Morgen" / "Good
-    morning" alone is a contract failure if a name is known; never
-    invent one if it is not.
-  - NEVER recite signals as a bulleted list. Speak in flowing paragraphs.
-  - NEVER fabricate names, titles, or counts not in the payload.
-  - NEVER use the word "overview" / "Übersicht" / "Zusammenfassung"
-    as a label.
-  - NEVER ask "How can I help you?" / "Was möchtest du tun?" /
-    "Was möchtest du zuerst machen?" as the close (Rule 7).
-  - NEVER speak a number without meaning + pillar attribution (Rule 3).
-  - NEVER read the Life Compass goal as a database row (Rule 4).
-  - NEVER frame a setup gap as a deficit (Rule 6).
-  - NEVER stop after one signal — walk the COVERAGE CHECKLIST (Rule 10).
-  - NEVER lecture about Vitanaland's company / business model /
-    longevity economy positioning.
-
-## LENGTH
-
-TWO short paragraphs. Across the two: 5 to 8 sentences total. Each
-clause earns its place by being concrete. Resist verbosity, but
-NEVER collapse to a single paragraph and NEVER fewer than 4
-sentences total. The shape example above is the length and pacing
-target.
-
-## STRUCTURED PAYLOAD
-
-\`\`\`json
-{
-  "vitana_index": {
-    "today": 200,
-    "tier": "Early",
-    "tier_framing": null,
-    "trend_7d": 0,
-    "weakest_pillar": {
-      "name": "nutrition",
-      "score": 30
-    },
-    "strongest_pillar": null,
-    "balance_label": "balanced",
-    "pillars": null,
-    "projected_day_90": null,
-    "projected_day_90_tier": null
-  },
-  "life_compass": {
-    "primary_goal": "longer life",
-    "category": null,
-    "target_date": null,
-    "target_value": null,
-    "target_unit": null,
-    "starting_value": null,
-    "days_to_deadline": null,
-    "goal_progress_pct": null
-  },
-  "autopilot": {
-    "state": "none_yet"
-  },
-  "messages_unread": 3,
-  "diary_last_7d": 3
-}
-\`\`\`
-
-This block OVERRIDES every other greeting rule for the first turn.
-Subsequent turns follow the normal conversation flow.",
+Daten (nicht vorlesen — daraus sprechen):
+{"vitana_index":{"today":200,"tier":"Early","tier_framing":null,"trend_7d":0,"weakest_pillar":{"name":"nutrition","score":30},"strongest_pillar":null,"balance_label":"balanced","pillars":null,"projected_day_90":null,"projected_day_90_tier":null},"life_compass":{"primary_goal":"longer life","category":null,"target_date":null,"target_value":null,"target_unit":null,"starting_value":null,"days_to_deadline":null,"goal_progress_pct":null},"autopilot":{"state":"none_yet"},"messages_unread":3,"diary_last_7d":3}
+",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

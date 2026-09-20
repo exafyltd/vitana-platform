@@ -1,0 +1,71 @@
+$ curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+{"git_commit":"bb72576d...", ...}  # staging serving the VTID-04095 fix at the time this turn ran
+
+User pasted "The task, in 3 parts — Part 1 (backend) — reactivate: ..."
+into the Operator Console (Chat tab) on preview-aws-gateway staging.
+Command Hub rendered: "No response received", meta line:
+  deepseek · deepseek-flash · 21.2s · 18.9k↑ 4.1k↓ · $0.0053
+
+$ # Supabase MCP execute_sql against project inmkhvwdcuyhnxkgfvsb (read-only investigation)
+select t.id as thread_id, t.title, t.updated_at from operator_threads t order by t.updated_at desc limit 3;
+-> {"thread_id":"9295ba36-f8a9-4905-9fc9-db247068abb3","title":"The task, in 3 parts —", ...}
+
+select role, tool_name, left(content,2000), length(content), created_at
+from operator_messages where thread_id = '9295ba36-...' order by created_at asc;
+-> user message (1211 chars) + assistant message with content_len:0, both at 08:07:15.102431+00
+   (confirms VTID-04095's fix: the bulk insert itself succeeded; the empty
+   content is the REAL model output, not a recording bug)
+
+select topic, status, message, metadata, created_at from oasis_events
+where created_at between '2026-09-19 08:06:50' and '2026-09-19 08:07:40'
+order by created_at asc;
+-> llm.call.started (operator/deepseek/deepseek-flash, trace_id d9e928a9-...)
+-> llm.call.completed (19777ms, input_tokens:18874, output_tokens:4096,
+   cost_estimate_usd:0.005289, fallback_used:false)
+-> operator.chat.message (role:assistant, message:"", metadata.tool_calls:0,
+   same threadId, same trace correlates to the call above)
+
+$ grep -rn "maxTokens" services/gateway/src/services/gemini-operator.ts
+4090:    maxTokens: 4096,   # the plan call — the one that ran the turn above
+4159:      maxTokens: 4096, # the tool-results call
+
+$ grep -n "max_tokens ?? 8000" services/gateway/src/services/llm-router.ts
+727:      max_tokens: maxTokens ?? 8000,   # deepseekAdapter's own default
+
+Root cause confirmed: output_tokens (4096) exactly equals the hardcoded
+cap passed by gemini-operator.ts, half the adapter's own default (8000),
+on a turn whose system prompt is large (bootstrap pack + codebase overview
++ memory context + tool catalog) and whose task explicitly asked for
+multi-step planning.
+
+Fix applied (see acceptance.md). Then:
+
+$ cd services/gateway && npx jest test/vtid-04102-operator-truncated-reply.test.ts --silent
+PASS test/vtid-04102-operator-truncated-reply.test.ts
+  VTID-04102: truncated-empty operator reply falls through to the real fallback
+    ✓ an ok:true response with no text and no tool calls (max_tokens truncation shape) does not surface as an empty reply
+    ✓ a normal non-empty reply is unaffected
+    ✓ the plan call requests an 8000-token budget, not the old 4096 cap
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+
+$ cd /home/user/vitana-platform && git stash push -- services/gateway/src/services/gemini-operator.ts
+$ cd services/gateway && npx jest test/vtid-04102-operator-truncated-reply.test.ts --silent
+FAIL test/vtid-04102-operator-truncated-reply.test.ts
+  ✕ an ok:true response with no text and no tool calls (max_tokens truncation shape) does not surface as an empty reply
+    Expected: not ""   Received: ""
+  ✓ a normal non-empty reply is unaffected
+  ✕ the plan call requests an 8000-token budget, not the old 4096 cap
+    - Expected maxTokens: 8000  + Received maxTokens: 4096
+Tests: 2 failed, 1 passed, 3 total
+# mutation-verified: reproduces the exact live symptom (empty reply)
+
+$ cd /home/user/vitana-platform && git stash pop
+# fix restored
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, no output)
+
+$ npx jest test/vtid-04102-operator-truncated-reply.test.ts test/vtid-04028-operator-turn-stream.test.ts test/vtid-03926-operator-chat-userrole.test.ts test/operator-chat-oasis.test.ts --silent
+Test Suites: 4 passed, 4 total
+Tests:       37 passed, 37 total

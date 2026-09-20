@@ -2,6 +2,7 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
+  "enableAllProjectMcpServers": true,
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [
@@ -17,7 +18,29 @@
       "mcp__github__actions_list",
       "mcp__github__list_pull_requests",
       "mcp__Supabase__get_advisors",
-      "mcp__github__get_check_run"
+      "mcp__github__get_check_run",
+      "mcp__Supabase",
+      "mcp__Supabase__execute_sql",
+      "mcp__Supabase__apply_migration",
+      "mcp__Supabase__list_tables",
+      "mcp__Supabase__list_migrations",
+      "mcp__Supabase__list_extensions",
+      "mcp__Supabase__generate_typescript_types",
+      "mcp__Supabase__get_project",
+      "mcp__Supabase__get_project_url",
+      "mcp__Supabase__get_publishable_keys",
+      "mcp__Supabase__list_organizations",
+      "mcp__Supabase__get_organization",
+      "mcp__Supabase__list_branches",
+      "mcp__Supabase__list_edge_functions",
+      "mcp__Supabase__get_edge_function",
+      "mcp__Supabase__deploy_edge_function",
+      "mcp__Supabase__search_docs"
+    ],
+    "ask": [
+      "mcp__Supabase__create_project",
+      "mcp__Supabase__pause_project",
+      "mcp__Supabase__restore_project"
     ]
   },
   "hooks": {
@@ -54,6 +77,16 @@
             "statusMessage": "Installing gateway dependencies..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-codeintel-setup.sh\"",
+            "timeout": 300,
+            "statusMessage": "Installing/refreshing RepoWise + Graphify (CLAUDE.md codebase intelligence workflow)..."
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -64,6 +97,28 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/scripts/watcher/session-hook.sh\" end",
             "timeout": 10,
             "statusMessage": "Watcher: reconciling session end..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/root/.local/bin/graphify hook-guard search",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/root/.local/bin/graphify hook-guard read",
+            "timeout": 10
           }
         ]
       }

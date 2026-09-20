@@ -132,11 +132,19 @@ describe('VTID-03646 A — the briefing no longer requires a first name', () => 
     expect(d.wakeOpener).toBe('newday_overview');
     expect(d.register).toBe('daily_briefing');
     // The builder's own unknown-name branch, not a fabricated name.
-    expect(d.directive).toContain('do not invent one');
-    // The name LINE specifically must not leak a placeholder as the name
-    // (the payload JSON below it has legitimate nulls of its own).
-    expect(d.directive).toMatch(/User first name: \(unknown/);
-    expect(d.directive).not.toMatch(/User first name: (null|undefined)/);
+    //
+    // VTID-04096: this rung now emits a COMPACT directive when the full block
+    // is over the greeting-directive byte budget, and the compact builder
+    // states the rule in the SESSION's language rather than always in English
+    // ("Der Name ist nicht bekannt — erfinde keinen."). The invariant this
+    // test protects is unchanged — there must be an explicit do-not-invent-a-
+    // name instruction, and no placeholder may ever be presented as the name —
+    // so it is asserted in a language-aware way instead of against the English
+    // wording of one of the two builders.
+    expect(d.directive).toMatch(/do not invent one|erfinde keinen/i);
+    // No fabricated or placeholder name, whichever builder produced it.
+    expect(d.directive).not.toMatch(/(User first name|Der Nutzer heißt):? (null|undefined)/i);
+    expect(d.directive).not.toMatch(/Der Nutzer heißt (null|undefined)/i);
   });
 
   test('a name, when present, is still used', () => {

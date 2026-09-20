@@ -630,3 +630,83 @@ function compactPayloadForPrompt(p: OverviewPayload): Record<string, unknown> {
   if (p.last_session_date_user_tz) out.last_session_date_user_tz = p.last_session_date_user_tz;
   return out;
 }
+
+/**
+ * VTID-04096 — the SAME new-day briefing, as a compact directive.
+ *
+ * WHY THIS EXISTS. {@link buildNewDayOverviewBlock} renders ~19 KB and is sent
+ * as the greeting TURN text — not as part of the system instruction — so a
+ * real-time speech model has to read all of it before it can emit its first
+ * audio token. Measured in production `oasis_events` over 30 days, by the rung
+ * that actually fired (p50 `greeting_sent` -> `model_start_speaking`):
+ *
+ *   newday_overview             19,177 chars  ->  5,805 ms   (n=42)
+ *   safe_fast_newday_overview   18,581 chars  ->  5,970 ms   (n=6)
+ *   safe_fast_proactive            551 chars  ->  1,545 ms   (n=42)
+ *   day_close                      614 chars  ->  1,229 ms   (n=2)
+ *
+ * Roughly 90% of that 19 KB is STATIC instruction — a worked shape example,
+ * a coverage checklist, the ten composition moves, the hard rules — re-sent
+ * verbatim on every session of every user. Only the payload is situational.
+ *
+ * WHAT IS KEPT. The facts: the compacted payload JSON, the already-spoken
+ * ledger so unchanged numbers are not repeated as news, the name rule, and the
+ * length rule. What is dropped is the tuition: the model is told what to
+ * achieve, not shown an essay on how to achieve it.
+ *
+ * WHAT IS NOT DONE HERE. This states INTENT in English and never a sentence
+ * Vitana speaks (Part 1 NEVER rule 41) — the wording is still composed fresh
+ * at runtime, exactly as before. The override marker is preserved, because the
+ * wake-brief override path is recognised by that sentinel; dropping it would
+ * silently demote the rung rather than shrink it.
+ *
+ * HONEST CAVEAT: the production correlation above is strong (n=48 large vs
+ * n=44 small), but a single staging session with a 17,264-char directive
+ * answered in 1,158 ms, so directive size is clearly not the ONLY term. This
+ * is a bounded, reversible change (`ORB_GREETING_DIRECTIVE_BYTE_BUDGET=0`
+ * restores the full block with no deploy) whose effect is to be MEASURED after
+ * it ships, not assumed.
+ */
+export function buildNewDayOverviewOpenerLine(args: BuildOverviewBlockArgs): string {
+  const langCode = (args.lang || 'en').toLowerCase();
+  const isDe = langCode.startsWith('de');
+  const tod = timeOfDay(args.localHour);
+
+  const compact = compactPayloadForPrompt(args.payload);
+  const payloadJson = JSON.stringify(compact);
+
+  const nameClause = args.firstName
+    ? isDe
+      ? `Der Nutzer heißt ${args.firstName} — nenne den Namen in der Eröffnung.`
+      : `The user's name is ${args.firstName} — use it in your opening.`
+    : isDe
+      ? 'Der Name ist nicht bekannt — erfinde keinen.'
+      : "The user's name is unknown — do not invent one.";
+
+  // Continuity matters more than any other dropped section: repeating a
+  // number the user already heard is the specific failure the full block's
+  // "rule 1" exists for. Kept, but as bare lines rather than prose, and
+  // bounded so a long ledger cannot re-inflate the directive.
+  const continuityLines = buildFactContinuityLines(args.factDeltas ?? {}).slice(0, 8);
+  const continuityClause = continuityLines.length
+    ? (isDe
+        ? '\nBereits gesprochene Fakten (unveränderte Zahlen sind KEINE Neuigkeit — nicht wiederholen):\n'
+        : '\nAlready-spoken facts (an unchanged number is NOT news — do not restate it):\n') +
+      continuityLines.join('\n')
+    : '';
+
+  const sessionsClause =
+    typeof args.sessionsToday === 'number' && args.sessionsToday > 0
+      ? isDe
+        ? ` Der Nutzer hat die App heute bereits ${args.sessionsToday}× geöffnet.`
+        : ` The user has already opened the app ${args.sessionsToday}x today.`
+      : '';
+
+  const head = isDe
+    ? `Der Nutzer öffnet die Orb ${tod === 'morning' ? 'am Morgen' : tod === 'afternoon' ? 'am Nachmittag' : 'am Abend'} — erste Sitzung eines neuen Tages.${sessionsClause} ${nameClause} Begrüße ihn warm und persönlich und webe aus den Daten unten das ein, was sich seit dem letzten Mal WIRKLICH verändert hat — als zusammenhängende Sprache, niemals als Liste, niemals als Vorlesen von Zahlen. Schließe mit EINEM konkreten nächsten Schritt, den du selbst vorschlägst, und einer Bestätigungsfrage, die man mit Ja beantworten kann. Drei bis sechs Sätze, dann aufhören und zuhören.`
+    : `The user is opening the orb in the ${tod} — the first session of a new day.${sessionsClause} ${nameClause} Greet them warmly and personally, and weave in what has GENUINELY changed since last time from the data below — as connected speech, never as a list, never as read-aloud numbers. Close with ONE concrete next step that you propose yourself, and a confirmation question they can answer with yes. Three to six sentences, then stop and listen.`;
+
+  const dataLabel = isDe ? 'Daten (nicht vorlesen — daraus sprechen)' : 'Data (do not read aloud — speak from it)';
+
+  return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}\n\n${head}${continuityClause}\n\n${dataLabel}:\n${payloadJson}\n`;
+}

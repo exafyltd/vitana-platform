@@ -1,0 +1,89 @@
+VTID-04108 — commands run, in order
+
+1. Live Supabase investigation (read-only, via Supabase MCP against project
+   inmkhvwdcuyhnxkgfvsb):
+   - select column_name, data_type, is_nullable, column_default from
+     information_schema.columns where table_name = 'autopilot_actions';
+   - select conname, pg_get_constraintdef(oid) from pg_constraint where
+     conrelid = 'public.autopilot_actions'::regclass;
+     -> confirmed category/priority CHECK constraints and the user_id FK
+        with ON DELETE CASCADE, ruling out autopilot_actions as the audit
+        target.
+   - select count(*), count(distinct user_id) from autopilot_actions;
+     -> 0 rows, confirming it is unpopulated (a not-yet-launched feature),
+        not evidence it's safe to repurpose.
+   - select source_type, status, count(*) from autopilot_recommendations
+     group by 1,2;
+     -> 305 community + 2 health rows at status='new' — the real blast
+        radius a direct allowlist widening would expose to autoApproveTick.
+   - select kill_switch, auto_approve_enabled, auto_approve_scanners,
+     auto_approve_risk_classes from dev_autopilot_config limit 5;
+     -> auto_approve_enabled currently false, but this is DB config an
+        operator can flip with no code review — confirms the allowlist
+        widening needed to stay code-side and separate.
+
+2. Read services/gateway/src/routes/autopilot-recommendations.ts
+   (POST /:id/activate handler, ~L1343-1650) and
+   services/gateway/src/services/dev-autopilot-execute.ts
+   (bridgeActivationToExecution, approveAutoExecute, autoApproveTick) to
+   map every source_type gate and every approveAutoExecute call site.
+
+3. cd /home/user/vitana-platform
+   git fetch origin main
+   git checkout -b claude/vtid-04108-activation-bridge-part1 origin/main
+
+4. Self-allocated VTID-04108 via allocate_global_vtid('claude-code',
+   'gateway', 'autopilot-recommendation-activation-bridge-part1'); UPDATE
+   vtid_ledger set title/summary/status='in_progress'/spec_status='approved'.
+
+5. Edited:
+   - services/gateway/src/services/autopilot-executable-source-types.ts
+     (new MANUALLY_BRIDGEABLE_SOURCE_TYPES / isManuallyBridgeableSourceType)
+   - services/gateway/src/services/dev-autopilot-execute.ts
+     (ApprovalInput.allowManualSourceTypes; approveAutoExecute branch;
+     bridgeActivationToExecution's own gate + approveAutoExecute call +
+     OASIS payload)
+   - services/gateway/src/routes/autopilot-recommendations.ts
+     (route-level check widened to isManuallyBridgeableSourceType)
+
+6. cd services/gateway && npx tsc --noEmit
+   -> exit 0, no output
+
+7. npx jest test/autopilot-executable-source-types.test.ts
+       test/autopilot-source-type-filter-call-sites.test.ts
+       test/dev-autopilot-finding-completion.test.ts
+       test/dev-autopilot-runexec-pr-flood-guard.test.ts
+       test/routes/autopilot-recommendations.test.ts
+       test/self-healing-injector-autopilot-bridge.test.ts
+       test/self-healing-test-path-derivation.test.ts
+       test/vtid-03839-onramp-approved-by-uuid.test.ts
+       test/vtid-03844-outcomes-record-operator-onramp.test.ts --silent
+   -> 9 suites, 121 tests, all passing unmodified (baseline before adding
+      new tests)
+
+8. Wrote test/vtid-04108-manual-activation-source-types.test.ts and
+   test/vtid-04108-manual-activation-call-sites.test.ts.
+   npx jest test/vtid-04108-manual-activation-source-types.test.ts
+       test/vtid-04108-manual-activation-call-sites.test.ts --silent
+   -> initial run: 3 failures in the call-sites file caused by a
+      non-greedy-regex bug in the local extractFunctionBody helper
+      (matched the inline Promise<{...}> return-type object literal's
+      brace instead of the function body's own opening brace); fixed with
+      a `(?=\s*\n)` lookahead; re-run: 2 suites, 17 tests, all passing.
+
+9. Mutation verification:
+   git stash push --include-untracked -- \
+     services/gateway/src/routes/autopilot-recommendations.ts \
+     services/gateway/src/services/autopilot-executable-source-types.ts \
+     services/gateway/src/services/dev-autopilot-execute.ts
+   npx jest test/vtid-04108-manual-activation-source-types.test.ts \
+       test/vtid-04108-manual-activation-call-sites.test.ts --silent
+   -> 12/17 tests FAIL (the module/predicate/flag don't exist pre-fix)
+   git stash pop
+   -> fix restored
+
+10. npx jest <all 9 pre-existing suites + the 2 new suites> --silent
+    -> 11 suites, 138 tests, all passing
+
+11. npx tsc --noEmit (final check)
+    -> exit 0

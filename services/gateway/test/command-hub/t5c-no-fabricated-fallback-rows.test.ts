@@ -124,27 +124,13 @@ describe('Command Hub — no fabricated fallback rows (VTID-04065)', () => {
     });
   });
 
-  describe('out-of-scope Memory Garden / Intelligence block is untouched', () => {
-    it('renderEmbeddingsView still carries its gated mock rows', () => {
-      const body = functionBody(src, 'renderEmbeddingsView');
-      expect(body).toContain("{ id: 'memories', name: 'User Memories', vectors: 8234, status: 'active'");
-      expect(body).toContain("{ id: 'knowledge', name: 'Knowledge Base', vectors: 3156, status: 'active'");
-    });
-
-    it('the other gated render functions are still defined', () => {
-      for (const name of [
-        'renderMemoryGardenView',
-        'renderMemoryGardenCard',
-        'renderLongevityFocusPanel',
-        'renderUnifiedIntelligencePanel',
-        'renderKnowledgeGraphView',
-        'renderRecallView',
-        'renderInspectorView',
-      ]) {
-        expect(src).toMatch(new RegExp('function\\s+' + name + '\\s*\\('));
-      }
-    });
-  });
+  // The Memory Garden / Intelligence panel block (including
+  // renderEmbeddingsView's own hardcoded mock rows) was explicitly out of
+  // scope for VTID-04065, pending the separate T1b product decision. T1b
+  // has since resolved (VTID-04093): the whole block was confirmed a
+  // fabricated-mock-data duplicate of the real, backend-wired
+  // renderMemoryOpsView (VTID-02636, already mounted live) and deleted —
+  // see t2-no-zero-caller-functions.test.ts for the removal assertions.
 
   describe('cache-bust bump in index.html', () => {
     it('bumped both styles.css and app.js in sync for this change', () => {

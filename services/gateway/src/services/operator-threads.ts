@@ -176,10 +176,15 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
         },
       });
     if (!write.ok) return { recorded: false, turns: 0 };
+    // VTID-04095: every object in a PostgREST bulk-insert array must carry the
+    // exact same key set (PGRST102 "All object keys must match") — a
+    // tool-role message with `tool_name` alongside user/assistant messages
+    // without it fails the whole insert outright. `tool_name: null` on the
+    // non-tool rows keeps every object's keys identical.
     const messages: Array<Record<string, unknown>> = [
-      { thread_id: input.threadId, role: 'user', content: clipMessage(input.userText), meta: input.meta || {} },
+      { thread_id: input.threadId, role: 'user', tool_name: null, content: clipMessage(input.userText), meta: input.meta || {} },
       ...(input.tools || []).map((t) => ({ thread_id: input.threadId, role: 'tool', tool_name: t.name, content: clipMessage(t.result, 2_000), meta: {} })),
-      { thread_id: input.threadId, role: 'assistant', content: clipMessage(input.reply), meta: input.meta || {} },
+      { thread_id: input.threadId, role: 'assistant', tool_name: null, content: clipMessage(input.reply), meta: input.meta || {} },
     ];
     const ins = await rest(s, 'operator_messages', { method: 'POST', body: messages });
     if (!ins.ok) console.warn(`${LOG_PREFIX} message insert failed (${ins.status}): ${ins.error}`);

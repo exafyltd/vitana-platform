@@ -204,26 +204,12 @@ describe('Command Hub — GCP static screens gated (VTID-04064)', () => {
       expect(src).toContain('"vertex" here is a legacy value name for the gateway-proxied transport');
     });
 
-    it('does not touch the explicitly gated Memory Garden / Intelligence panel block', () => {
-      for (const fn of [
-        'renderMemoryGardenView',
-        'renderMemoryGardenCard',
-        'renderLongevityFocusPanel',
-        'renderLongevitySignal',
-        'renderDiaryEntryModal',
-        'renderCategoryDetailModal',
-        'getCategorySubcategories',
-        'renderUnifiedIntelligencePanel',
-        'escapeHtmlSafe',
-        'renderKnowledgeGraphView',
-        'getKnowledgeGraphIcon',
-        'renderRecallView',
-        'renderInspectorView',
-        'renderEmbeddingsView',
-      ]) {
-        expect(src).toContain('function ' + fn + '(');
-      }
-    });
+    // The Memory Garden / Intelligence panel block was required to stay
+    // untouched by VTID-04064, pending the separate T1b product decision.
+    // T1b has since resolved (VTID-04093): the block was confirmed a
+    // fabricated-mock-data duplicate of the real, backend-wired
+    // renderMemoryOpsView (VTID-02636, already mounted live) and deleted —
+    // see t2-no-zero-caller-functions.test.ts for the removal assertions.
   });
 
   describe('cache-bust bump in index.html', () => {

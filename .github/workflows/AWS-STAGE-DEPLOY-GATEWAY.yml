@@ -97,6 +97,46 @@ jobs:
       DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # VTID-04118 — full history, not the default shallow clone, so the
+          # codeintel staging step below can give RepoWise real git-tier
+          # data for this repo (bug-fix/churn history, not just a snapshot).
+          fetch-depth: 0
+
+      - name: Checkout vitana-v1 (read-only, for codeintel indexing)
+        id: checkout_v1
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          # Same secret name and same-repo/GITHUB_TOKEN fallback already
+          # established by REGEN-SCREENS-CATALOG.yml for cross-repo reads —
+          # reused here rather than inventing a second secret for the same
+          # purpose. GITHUB_TOKEN alone cannot read a private sibling repo,
+          # so without VITANA_V1_READ_TOKEN this step fails and the next
+          # step's placeholder-directory fallback keeps the build going.
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0
+          path: services/gateway/codeintel-src/vitana-v1
+
+      - name: Stage codeintel source (VTID-04118 — RepoWise/Graphify image indexing)
+        run: |
+          set -e
+          mkdir -p services/gateway/codeintel-src/platform
+          # rsync this checkout (incl. .git) into the Docker build context,
+          # excluding node_modules/build output and the staging dir itself
+          # so it doesn't try to copy into its own destination.
+          rsync -a --exclude='node_modules' --exclude='services/gateway/codeintel-src' \
+            --exclude='services/gateway/dist' --exclude='**/dist/**' \
+            ./ services/gateway/codeintel-src/platform/
+          if [ -d services/gateway/codeintel-src/vitana-v1/.git ]; then
+            echo "vitana-v1 checked out — de-bloating node_modules before it enters the Docker build context"
+            find services/gateway/codeintel-src/vitana-v1 -maxdepth 4 -type d -name node_modules -prune -exec rm -rf {} +
+          else
+            echo "vitana-v1 checkout unavailable (VITANA_V1_READ_TOKEN missing/failed) — leaving an empty placeholder so the Dockerfile COPY never fails"
+            mkdir -p services/gateway/codeintel-src/vitana-v1
+          fi
 
       - name: Resolve commit metadata + refresh BUILD_INFO
         id: commit
@@ -202,13 +242,31 @@ jobs:
         # exactly one variable change + one dispatch. Never AWS access keys
         # here — Nova auth is the task role via the SDK default chain.
         #
-        # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
-        # is upserted to "off" below (2026-07-28, disabled) -- rejected on
-        # product grounds (voice mismatch: the Cloud TTS bridge phrase is
-        # never the same voice as the live upstream). See STAGE-DEPLOY.yml
-        # for the full rationale. Explicitly set to "off" (not removed) so
-        # it cannot silently drift back to a stale "staging-only" value
-        # left on the task definition from before.
+        # BOOTSTRAP-NOVA-SONIC-VOICE / VTID-04100:
+        # FEATURE_ORB_GREETING_TTS_BRIDGE_ENV was upserted to "off" on
+        # 2026-07-28, rejected on PRODUCT grounds, not technical ones: the
+        # bridge phrase is synthesized by a different engine from the live
+        # upstream, so the user hears one voice say the filler and another
+        # voice continue. That objection has NOT gone away — the bridge is
+        # Polly now rather than Cloud TTS, and Polly is still not a Nova
+        # Sonic voice.
+        #
+        # It is set to "staging-only" here so the trade can be HEARD and
+        # decided on evidence, because the measured cost of not having it is
+        # large: on staging 2026-09-19, authenticated `de`, first MODEL audio
+        # was p50 ~2.5-3.0s and p90 up to 7.5s, while a bridge frame lands in
+        # the time it takes to write one SSE event. VTID-04100 also made the
+        # bridge cached and its pre-connect await bounded, so the mechanism no
+        # longer costs a Polly round trip per session and can no longer stall
+        # a connect the way VTID-03802 did.
+        #
+        # PROD IS DELIBERATELY NOT CHANGED. Reversing a recorded product
+        # decision for every real user is the platform owner's call, not a
+        # side effect of a latency VTID. Listen on preview-aws first; if the
+        # voice change is acceptable, promote by pinning the same value on
+        # AWS-PROD-DEPLOY-GATEWAY.yml. If it is not, set this back to "off"
+        # and the measured win has to come from the directive and tool-catalog
+        # budgets (VTID-04096/04097) alone.
         #
         # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
         # upserted to "staging-only" below. Checked live in this repo: it
@@ -784,7 +842,9 @@ jobs:
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
-                                                "GCP_SERVICE_ACCOUNT_JSON") | not) ]
+                                                "GCP_SERVICE_ACCOUNT_JSON",
+                                                "OPERATOR_CODEINTEL_ENABLED",
+                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -793,7 +853,7 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
@@ -830,7 +890,10 @@ jobs:
                           {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
-                          {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG} ] )
+                          {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
+                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                          {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
+                          {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",

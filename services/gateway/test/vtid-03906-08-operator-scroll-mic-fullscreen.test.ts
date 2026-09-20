@@ -69,7 +69,14 @@ describe('VTID-03906: Operator chat scroll-jump + flicker fix', () => {
 
   it('the scroll-restore block still reads savedChatScroll to preserve position', () => {
     const idx = SOURCE.indexOf("if (state.isOperatorOpen && state.operatorActiveTab === 'chat') {");
-    const nearby = SOURCE.slice(idx, idx + 900);
+    expect(idx).toBeGreaterThan(-1);
+    // VTID-04106: was a fixed idx+900 byte slice — the exact VTID-04028
+    // failure mode this repo's own tests have already been burned by
+    // (a magic byte window silently excluding real content once a comment
+    // grows) — scoped to the block's own end marker instead.
+    const end = SOURCE.indexOf('// VTID-01002: Restore scroll positions after DOM rebuild', idx);
+    expect(end).toBeGreaterThan(idx);
+    const nearby = SOURCE.slice(idx, end);
     expect(nearby).toContain('savedChatScroll');
     expect(nearby).toContain('newMessagesContainer.scrollTop');
   });
@@ -224,7 +231,10 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
   it('a fullscreen toggle button sits beside the close button, both inside overlay-header-actions', () => {
     const idx = SOURCE.indexOf("headerActions.className = 'overlay-header-actions';");
     expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 1200);
+    // VTID-04089 widened this from 1200; VTID-04110 widened it again from
+    // 1400 — the fullscreenBtn.onclick body grew by a localStorage.setItem
+    // call, pushing headerActions.appendChild(closeBtn) past the old window.
+    const nearby = SOURCE.slice(idx, idx + 1600);
     expect(nearby).toContain("fullscreenBtn.className = 'overlay-fullscreen-toggle';");
     expect(nearby).toContain('headerActions.appendChild(fullscreenBtn);');
     expect(nearby).toContain("closeBtn.className = 'overlay-close';");
@@ -234,7 +244,9 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
   it('the fullscreen button toggles state.isOperatorFullscreen and re-renders', () => {
     const idx = SOURCE.indexOf("fullscreenBtn.onclick = () => {");
     expect(idx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(idx, idx + 200);
+    // Widened from 200 by VTID-04110, which added a localStorage.setItem
+    // persistence call inside this onclick body.
+    const nearby = SOURCE.slice(idx, idx + 400);
     expect(nearby).toContain('state.isOperatorFullscreen = !state.isOperatorFullscreen;');
     expect(nearby).toContain('renderApp();');
   });
@@ -245,7 +257,8 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
     // (e.g. the task drawer), so scope the search to this popup's header.
     const anchorIdx = SOURCE.indexOf("headerActions.className = 'overlay-header-actions';");
     expect(anchorIdx).toBeGreaterThan(-1);
-    const nearby = SOURCE.slice(anchorIdx, anchorIdx + 1200);
+    // Widened alongside the sibling window above (VTID-04110).
+    const nearby = SOURCE.slice(anchorIdx, anchorIdx + 1600);
     expect(nearby).toContain("closeBtn.innerHTML = '&times;';");
     expect(nearby).toContain('closeBtn.onclick = () => {');
     expect(nearby).toContain('state.isOperatorOpen = false;');
@@ -254,8 +267,18 @@ describe('VTID-03908: Operator popup fullscreen toggle', () => {
     expect(nearby.slice(closeBtnBlockStart, closeBtnBlockEnd)).not.toContain('state.isOperatorFullscreen');
   });
 
-  it('state initializes isOperatorFullscreen to false', () => {
-    expect(SOURCE).toMatch(/isOperatorFullscreen:\s*false,/);
+  it('state initializes isOperatorFullscreen from persisted localStorage, defaulting to false (VTID-04110)', () => {
+    // VTID-04110: the hardcoded `isOperatorFullscreen: false,` this test
+    // originally pinned was replaced with a self-invoking read of
+    // localStorage so the choice survives a page reload — still defaulting
+    // to false (the old behavior) when nothing is stored or the read
+    // throws. Full coverage of the persistence mechanism lives in
+    // vtid-04110-operator-console-flicker-fullscreen-persist.test.ts.
+    const idx = SOURCE.indexOf('isOperatorFullscreen: (function () {');
+    expect(idx).toBeGreaterThan(-1);
+    const nearby = SOURCE.slice(idx, idx + 250);
+    expect(nearby).toContain("localStorage.getItem('vitana.operatorFullscreen') === 'true'");
+    expect(nearby).toContain('return false;');
   });
 
   it('.operator-overlay--fullscreen CSS modifier exists', () => {

@@ -305,10 +305,31 @@ describe('VTID-04028 Command Hub client', () => {
     expect(apply).toContain("frame.event === 'tool.call'");
     expect(apply).toContain("frame.event === 'tool.result'");
     expect(apply).toContain('state.chatLiveTranscript[d.index]');
-    expect(apply.match(/renderApp\(\);/g)?.length).toBeGreaterThanOrEqual(2);
     expect(APP_JS).toContain('chatLiveTranscript: [],');
     expect(APP_JS).toContain('if (state.chatSending) {\n        messages.appendChild(renderOperatorLiveTranscript());');
     expect(fnBody('renderOperatorLiveTranscript')).toContain("chat-tool-activity-line--' + (entry.status || 'running')");
+  });
+
+  // VTID-04110: applyOperatorTurnFrame used to call the full-app renderApp()
+  // (a root DOM teardown/rebuild) on every tool.call/tool.result/model.turn
+  // frame, which is what produced the reported flicker on long streamed
+  // agent turns. It now goes through updateOperatorLiveTranscriptDom(),
+  // which mutates only the one live-transcript node — matching the
+  // incremental-update pattern this file already uses for polling
+  // (VTID-01151's updateApprovalsBadge) — and falls back to a real
+  // renderApp() only when that node isn't mounted yet (the first frame).
+  it('does NOT call the full-app renderApp() per streamed frame — uses the incremental live-transcript update instead', () => {
+    const apply = fnBody('applyOperatorTurnFrame');
+    expect(apply).not.toContain('renderApp();');
+    expect((apply.match(/updateOperatorLiveTranscriptDom\(\);/g) || []).length).toBe(3);
+
+    const update = fnBody('updateOperatorLiveTranscriptDom');
+    expect(update).toContain("document.querySelector('.chat-tool-activity--live')");
+    expect(update).toContain('existing.replaceWith(renderOperatorLiveTranscript());');
+    expect(update).toContain('if (!existing) {');
+    expect(update).toContain('renderApp();');
+    expect(update).toContain("document.querySelector('.chat-messages')");
+    expect(update).toContain('state.chatStickToBottom');
   });
 
   it('parses SSE frames by blank line, ignores heartbeat comments, tolerates non-JSON data', () => {
