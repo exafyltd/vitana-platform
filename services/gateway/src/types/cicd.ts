@@ -220,6 +220,14 @@ export type CicdEventType =
   | 'orb.session.continuity.cleared'
   // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake ack
   | 'orb.session.audio_ready.acked'
+  // VTID-04198 — the client could not PLAY audio the gateway successfully
+  // streamed (iOS AudioContext never left 'suspended'). Server-side
+  // diagnostics show a healthy session in this case, so without these the
+  // user's silence has no signal anywhere. `.recovered` = the tap-to-hear
+  // prompt worked; `.abandoned` = the overlay was torn down still blocked.
+  | 'orb.live.audio_blocked'
+  | 'orb.live.audio_blocked.recovered'
+  | 'orb.live.audio_blocked.abandoned'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events

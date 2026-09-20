@@ -60,6 +60,25 @@
     return (rate > 0) ? rate : 24000;
   }
 
+  // VTID-04199 — suspended-playback-context retry budget.
+  //
+  // _RESUME_GIVE_UP_MS is unchanged from VTID-03469's original 3s, now named.
+  // It is generous against the real unlock path (a gesture unlock resolves in
+  // single-digit ms) and deliberately short against the user's patience.
+  //
+  // _RESUME_RETRY_TICK_MS drives the re-entry watchdog. 250ms is ~12 attempts
+  // inside the budget: often enough that a context which becomes resumable
+  // part-way through is picked up promptly, rare enough to be free.
+  //
+  // _AUDIO_QUEUE_HOLD_CHUNKS bounds the audio held while blocked. The reported
+  // iPhone session streamed 315 chunks for one greeting, so 400 holds a whole
+  // greeting with headroom while capping the worst case at well under a
+  // megabyte of base64 — a bound chosen from measured production traffic
+  // rather than a guess.
+  var _RESUME_GIVE_UP_MS = 3000;
+  var _RESUME_RETRY_TICK_MS = 250;
+  var _AUDIO_QUEUE_HOLD_CHUNKS = 400;
+
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
 
@@ -284,6 +303,20 @@
     _audioUnlockedByGesture: false,
     _audioBlocked: false,
     _audioBlockedTapHandler: null,
+
+    // VTID-04199: re-entry timer for the suspended-context retry loop. Without
+    // it, _processQueue's only re-entry paths are (a) resume()'s own
+    // .then/.catch and (b) the arrival of another chunk. On iOS a resume()
+    // issued with no user activation can stay PENDING — never resolving, never
+    // rejecting — so with (a) dead and the greeting finished streaming, (b)
+    // never fires either and the retry loop simply stops: no playback, and
+    // never even the 3s give-up that would have announced the problem. The
+    // overlay then sits on "Vitana spricht..." in silence forever, which is
+    // exactly how the iPhone pre-login report presented.
+    _resumeWatchdogTimer: null,
+    // VTID-04198: one beacon per session per state change, so a flapping
+    // context cannot spam the gateway.
+    _audioBlockedBeaconSent: false,
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -862,14 +895,59 @@
     });
   }
 
+  /**
+   * VTID-04198 — report a client-side audio-playback block to the gateway.
+   *
+   * This failure was structurally invisible in `oasis_events`: the server
+   * streams a complete, healthy greeting (315 audio chunks measured on the
+   * reported iPhone session 58373903, 2026-09-19 10:28 UTC) and every
+   * server-side diagnostic says the session succeeded, while the user hears
+   * nothing at all. Every other ORB failure mode emits SOMETHING; this one
+   * emitted only a `console.error` on a phone nobody has a console attached
+   * to, so it could not be measured, alerted on, or even confirmed after the
+   * fact without physically holding the device.
+   *
+   * Deliberately fire-and-forget and never awaited — this runs on a path that
+   * is already degraded, and a telemetry failure must not make it worse.
+   * `keepalive` so the report survives the user closing the overlay (the most
+   * likely next action when nothing plays), mirroring `_signalAudioReady`.
+   */
+  function _beaconAudioBlocked(state, detail) {
+    try {
+      if (!_s.sessionId) return; // pre-session: nothing to correlate against
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      var body = {
+        state: state, // 'blocked' | 'recovered'
+        ctx_state: (_s.playbackCtx && _s.playbackCtx.state) || 'none',
+        queued_chunks: _s.audioQueue ? _s.audioQueue.length : 0,
+        unlocked_by_gesture: !!_s._audioUnlockedByGesture,
+        audio_ever_heard: !!_s._audioEverHeardThisOpen,
+        lang: _cfg.lang || null,
+      };
+      if (detail && typeof detail === 'object') {
+        for (var k in detail) { if (Object.prototype.hasOwnProperty.call(detail, k)) body[k] = detail[k]; }
+      }
+      fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-blocked', {
+        method: 'POST', headers: headers, cache: 'no-store', keepalive: true,
+        body: JSON.stringify(body),
+      }).catch(function () { /* best-effort telemetry */ });
+    } catch (e) { /* best-effort telemetry */ }
+  }
+
   // VTID-03469: the context never unlocked and we are throwing chunks away.
   // Replace the false "Vitana spricht..." with the truth plus the single
   // gesture that repairs it. Any tap re-enters _unlockPlaybackCtxFromGesture
   // via the page-level listener above; this extra one-shot handler exists to
   // drain the pipeline and restore the UI in the same turn.
-  function _announceAudioBlocked() {
+  function _announceAudioBlocked(detail) {
     if (_s._audioBlocked) return;
     _s._audioBlocked = true;
+    // VTID-04198: make it visible server-side. One beacon per block.
+    if (!_s._audioBlockedBeaconSent) {
+      _s._audioBlockedBeaconSent = true;
+      _beaconAudioBlocked('blocked', detail);
+    }
     _setOrbState('paused');
     _setStatus(_caption('tapToHear'));
     _updateUI();
@@ -893,6 +971,19 @@
   function _clearAudioBlocked(skipUi) {
     if (!_s._audioBlocked) return;
     _s._audioBlocked = false;
+    // VTID-04198: pair every 'blocked' with its outcome, so the gateway can
+    // tell "the tap-to-hear prompt rescued the session" apart from "the user
+    // gave up and closed it" — the same block event otherwise looks identical
+    // in both cases, and only the second one is a lost user.
+    //
+    // `skipUi` is the teardown caller (_sessionStop), never a real recovery:
+    // reporting that as 'recovered' would systematically over-count rescues
+    // by exactly the population this beacon exists to measure — the users who
+    // closed the overlay because nothing played.
+    if (_s._audioBlockedBeaconSent) {
+      _s._audioBlockedBeaconSent = false;
+      _beaconAudioBlocked(skipUi ? 'abandoned' : 'recovered', null);
+    }
     var h = _s._audioBlockedTapHandler;
     if (h) {
       try { document.removeEventListener('pointerdown', h, true); } catch (e) { /* ignore */ }
@@ -1763,7 +1854,15 @@
     // DEV-COMHU-0501: stamp the moment of the most recent inbound audio frame
     // (transport-agnostic — every provider funnels playback through here).
     _s.lastAudioReceivedAt = Date.now();
-    _s.audioQueue.push({ data: base64Data, mime: mimeType });
+    // VTID-04199: bound the queue at the push site. While playback is blocked
+    // the queue is now HELD rather than discarded (see _processQueue's give-up
+    // branch), so without a cap a long reply on a device that never unlocks
+    // would grow it without limit. Keeping the EARLIEST chunks and dropping
+    // later arrivals is deliberate: the held audio exists so the recovery tap
+    // can play the greeting from its first word.
+    if (_s.audioQueue.length < _AUDIO_QUEUE_HOLD_CHUNKS) {
+      _s.audioQueue.push({ data: base64Data, mime: mimeType });
+    }
     _processQueue();
   }
 
@@ -1783,18 +1882,42 @@
     if (ctx.state === 'suspended') {
       if (!_s._resumeRetryStartedAt) _s._resumeRetryStartedAt = Date.now();
       var elapsed = Date.now() - _s._resumeRetryStartedAt;
-      if (elapsed > 3000) {
-        console.error('[VTOrb] AudioContext failed to resume after 3s — audio will not play. State:', ctx.state);
+      if (elapsed > _RESUME_GIVE_UP_MS) {
+        console.error('[VTOrb] AudioContext failed to resume after ' + _RESUME_GIVE_UP_MS + 'ms — audio will not play. State:', ctx.state);
         _s._resumeRetryStartedAt = 0;
-        // Drop queued audio rather than leaving UI in a stuck state.
-        _s.audioQueue.length = 0;
-        // VTID-03469: dropping chunks used to be entirely invisible — the
-        // overlay carried on showing "Vitana spricht..." (set on audio_out
-        // ARRIVAL, see the audio case in the message handler) while nothing
-        // was rendered. Say what actually happened and give the user the one
-        // gesture that fixes it.
-        _announceAudioBlocked();
+        // Stop the retry tick: from here the one-shot tap handler installed by
+        // _announceAudioBlocked owns recovery, so an endless background
+        // resume() loop would burn cycles without adding a way out.
+        if (_s._resumeWatchdogTimer) {
+          clearTimeout(_s._resumeWatchdogTimer);
+          _s._resumeWatchdogTimer = null;
+        }
+        // VTID-04199: the queue is deliberately NOT discarded here any more.
+        //
+        // It used to be (`_s.audioQueue.length = 0`), which quietly defeated
+        // the very recovery VTID-03469 added alongside it: _announceAudioBlocked
+        // tells the user "tap to hear", their tap unlocks the context and calls
+        // _processQueue() — against a queue that had already been emptied. So
+        // the prompt was honest about the problem and incapable of fixing it;
+        // tapping produced the same silence, because the greeting it was
+        // offering to play no longer existed. Holding the audio instead is what
+        // makes that tap actually deliver the greeting.
+        //
+        // Unbounded growth is handled at the push site in _playAudio, which
+        // keeps the OPENING chunks and drops later arrivals — on recovery the
+        // user should hear the greeting from its first word, not from whatever
+        // point in the middle a trailing-window buffer happened to retain.
+        _announceAudioBlocked({ reason: 'resume_timeout', elapsed_ms: elapsed });
         return;
+      }
+      // VTID-04199: drive the retry from our OWN timer rather than relying on
+      // resume() settling or on another chunk arriving. See the
+      // _resumeWatchdogTimer declaration for why both of those can stop.
+      if (!_s._resumeWatchdogTimer) {
+        _s._resumeWatchdogTimer = setTimeout(function () {
+          _s._resumeWatchdogTimer = null;
+          _processQueue();
+        }, _RESUME_RETRY_TICK_MS);
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
@@ -1805,10 +1928,18 @@
         setTimeout(_processQueue, 0);
       }).catch(function (e) {
         console.warn('[VTOrb] AudioContext resume rejected (elapsed=' + elapsed + 'ms):', e && e.message);
-        // Retry via the existing setTimeout cadence.
+        // Retry via the existing setTimeout cadence. The VTID-04199 watchdog
+        // above also covers this, but a rejected resume is a definite signal
+        // we can act on sooner than the next tick.
         setTimeout(_processQueue, 50);
       });
       return;
+    }
+    // Context is running: the retry loop is done. Cancel any pending tick so
+    // it cannot re-enter and restart a resume cycle behind healthy playback.
+    if (_s._resumeWatchdogTimer) {
+      clearTimeout(_s._resumeWatchdogTimer);
+      _s._resumeWatchdogTimer = null;
     }
     _s._resumeRetryStartedAt = 0;
 
@@ -2543,6 +2674,14 @@
     // VTID-03469: drop the tap-to-unblock listener with the session. skipUi
     // because the overlay is being torn down — _show() paints the next state.
     _clearAudioBlocked(true);
+    // VTID-04199: cancel the retry tick with the session. It closes over
+    // _processQueue, which recreates a closed playbackCtx — a tick surviving
+    // teardown would resurrect an AudioContext for a session that is gone.
+    if (_s._resumeWatchdogTimer) {
+      clearTimeout(_s._resumeWatchdogTimer);
+      _s._resumeWatchdogTimer = null;
+    }
+    _s._resumeRetryStartedAt = 0;
 
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
