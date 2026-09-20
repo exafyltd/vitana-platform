@@ -1,0 +1,2090 @@
+<!--
+VTID-04121 — this is a COMMITTED, POINT-IN-TIME SNAPSHOT of Graphify's
+community structure, not the live source of truth. `graphify-out/` itself
+is gitignored and rebuilt (with real Bedrock community labeling, see
+.claude/hooks/session-start-codeintel-setup.sh) at the start of every
+Claude Code session — this file exists so the map survives a container
+recycle and is reviewable in a diff, the same reason CLAUDE.md keeps a
+CHANGE LOG instead of relying only on git history.
+
+To refresh: `graphify label . --backend bedrock --model
+eu.anthropic.claude-sonnet-4-6` (needs AWS credentials — ambient in a
+Claude Code Remote session), then re-run this extraction:
+`sed -n '1,2071p' graphify-out/GRAPH_REPORT.md > docs/codeintel/COMMUNITIES.md`
+(header excluded/re-added by hand). Stale is expected between refreshes —
+check "Built from commit" below against `git rev-parse HEAD` before trusting
+it for anything more than orientation.
+-->
+
+# Graph Report - vitana-platform  (2026-09-20)
+
+## Corpus Check
+- cluster-only mode — file stats not available
+
+## Summary
+- 46681 nodes · 85024 edges · 2151 communities (1868 shown, 283 thin omitted)
+- Extraction: 94% EXTRACTED · 6% INFERRED · 0% AMBIGUOUS · INFERRED: 5175 edges (avg confidence: 0.9)
+- Token cost: 163,568 input · 20,420 output
+
+## Graph Freshness
+- Built from commit: `8ab15815`
+- Run `git rev-parse HEAD` and compare to check if the graph is stale.
+- Run `graphify update .` after code changes (no API cost).
+
+## Community Hubs (Navigation)
+- AI Agent Tool Dispatch
+- SPA Routing and Auth Gateway
+- Supabase Setup and Locale Repository
+- Vitana Bot Chat Integration
+- Static Asset and Seed Scripts
+- Gateway Locale Acceptance Reports
+- Admin Auth and User Management
+- CORS and Gateway Middleware
+- AI Bridge Command Mapping
+- Pipeline Readiness Wave Planning
+- Voice Session Protocol
+- Mem0 Memory Service and Import Rules
+- Admin Audit and Analytics Tools
+- Admin Intent and Approvals Engine
+- Wallet Ledger and Token Finance
+- LLM Migration Acceptance Reports
+- Autonomy Pulse Frontend
+- Admin Route Testing Middleware
+- Operator Console Read Access
+- CI/CD PR Automation Tools
+- Tenant Admin API Routes
+- Canonical Data Schema and Classification
+- Voice Diary and Eval Scripts
+- Stripe Payments and Wallet Routes
+- API Connector Client
+- Nova Sonic Voice Config
+- Gemini Context and Memory Generation
+- DeepSeek Execution Observability
+- LiveKit Tool Failure Handling
+- Auth Roles and Backoffice Access
+- Dev Autopilot Planning Routes
+- Paywall and Billing Entitlements
+- Agent Executor and Cancel Flow
+- Memory Broker and Agent Profile
+- Golden Workflow Verification Scripts
+- Command Hub UI Components
+- Monetization and OASIS Sink
+- Decision Pillar Momentum Sources
+- Agent Executor Prompt Building
+- Dev Autopilot Worker Configuration
+- Social Memory and Person Context
+- ORB Fast Start Design Plan
+- Action Spec Catalog and Validation
+- Marketplace Guide Tools
+- System Instruction Change Control
+- ORB Communication Architecture Audit
+- ORB Guided Topic and Greeting Fixes
+- TTS Provider and i18n Content
+- Conversation Flow Architecture
+- Operator Popup UI Fixes
+- ORB Status Localization and Fixes
+- KB Skills Demo Integration
+- Operator Console Task Management
+- Signal Detection Engine Routes
+- Autopilot Controller and Run State
+- OASIS Events Latency Fixes
+- Mem0 Cloud Configuration
+- Google Dependency Audit and Versioning
+- Self-Healing Autonomy Routes
+- Operator Console Chat UI
+- Environmental Mobility Context Engine
+- Operator Session Outcome Writing
+- Service Analysis and Route Detection
+- LiveKit Client Session Handling
+- Positive Trajectory Reinforcement Engine
+- App Feature Screen Catalog
+- Assistant Decision Context Compilation
+- Automation Executor and Notifications
+- Voice Feature Discovery Events
+- Journey Guide and Conversation Flow
+- Boundary Consent Engine Routes
+- LiveKit Track Publication Management
+- Feedback Correction and Trust Routes
+- Taste Alignment Service
+- Teacher Content Resolver
+- Dev Autopilot Code Scanner
+- Dev Hub Screen Catalog
+- LiveKit Room Participant Tracks
+- Context Fingerprint Generators
+- Supabase Timeout and Autopilot Routes
+- Command Hub Frontend State Fixes
+- Commerce Operations Platform Guardrails
+- Longitudinal Adaptation Engine
+- Predictive Risk Forecasting Engine
+- Operator Mic and Accessibility Fixes
+- Claude and GitHub API Clients
+- Visual Interactive Test Runner
+- Batch Simulation Reference Docs
+- Autopilot Event Loop State
+- Infinite Scroll List Layout Spec
+- Command Hub Observability Gaps
+- Situational Awareness Engine
+- Intent Routing and Claude Text Client
+- LiveKit Agent Runtime Architecture
+- OAuth Auth Server Router
+- Edge Functions Inventory Audit
+- Task Dedup and Embedding Ledger
+- Health Capacity Awareness Engine
+- User Preference Modeling Service
+- Wake Timeline and Reliability Cohort
+- Account Visibility Controls
+- Tenant KPI Health Worker
+- Community Marketplace Admin
+- Journey Checklist Publishing
+- Voice Dataset Emitter Bootstrap
+- Conversation Flow Multi-Tenant Hub
+- Admin Role Screens
+- Learning Style Engine
+- Diary Memory Tools
+- Knowledge Base Taxonomy
+- Agent Executor Hardening
+- Specialist Context Bootstrap
+- Semantic Memory Search
+- Diary Entry Management
+- CI Self-Healing Bridge
+- Dev Autopilot CI Evidence
+- Financial Monetization Engine
+- Social Context Engine
+- ORB Voice Self-Healing
+- Memory Intelligence Automations
+- AI Personality Assistant
+- Dev Autopilot Impact Scan
+- Discovery Tools Engine
+- Vertex Serbian Voice Bridge
+- Voice Lab Sessions
+- LiveKit Agent Config
+- Nova Voice Cascade Config
+- Intent Classifier Draft Composer
+- Aurora Database Reconciliation
+- Orchestrator Config Tests
+- Admin i18n Tenant Ops
+- Workflow Engine Store
+- Decision Policy Resolver
+- Availability Readiness Engine
+- Catalog Ingest Search
+- ML Package Trainer Jobs
+- Execution Watcher Normalizer
+- Business Opportunity Handlers
+- Health Probe Healing Orchestrator
+- Command Hub Overview Fixes
+- Gateway Events OASIS Proxy
+- Context Fusion Engine
+- Safety Guardrail Rules
+- Autopilot Operator On-Ramp
+- Regression Test Scripts
+- Shorts Tags Media Hub
+- User Context Profiler
+- Platform Coding Conventions
+- Production Tables Operator Build
+- Vertex Serbian Session Handoff
+- Login Briefing Opener
+- Test Harness Servers
+- Marketplace Voice Assistant
+- Governance Controller Engine
+- Journey Continuity Orb
+- Global UI Overlays
+- AI Integrations Tenant Admin
+- Domain Routing Service
+- Adaptation Proactive Guidance
+- Identity Intent Detection
+- Voice Recurrence Sentinel
+- Conversational Flow Spec
+- Vitana Work Gateway Client
+- LLM Router Package
+- Document Cache Tests
+- Media Track Processor
+- Autopilot Verification Results
+- Prisma Repository Layer
+- Platform Architecture Reference
+- Goal Plan i18n Translation
+- Vitana Pillars Engine
+- Changelog Lesson Distiller
+- Serbian i18n Community Analyzer
+- Phase 2B Execution Summary
+- Qdrant Memory Migration
+- Universal Cart Context
+- Feature Discovery Awareness
+- Community Marketplace Repository
+- Compatibility Resolver Engine
+- Overload Detection Engine
+- Worker Runner Gateway Client
+- Intent Detection Engine
+- Orb Greeting Continuity Policy
+- Live Ticker Formatting Fix
+- Navigation Map Flows
+- Intent Kind Library
+- ERP Bridge Security Review
+- Command Hub Wiring Spec
+- Universal Screen Pattern
+- Governance Rules Spec
+- Continuity Decision Provider
+- Emotional Cognitive Engine
+- Business Hub Tools
+- Audit Sink Token Verifier
+- Governance Rules Reference
+- Vault Secret Store TOTP
+- Maxina Journey Curriculum
+- Discover Search Hidden Breakdown
+- Next Action Composer Deduplication
+- Pillar Weighter Ranking Strategy
+- Node Project Dev Dependencies
+- Auth Merge Governance Rules
+- Journey Awareness Extensions
+- Auth Merge Guardrails
+- Policy Resolver Cache
+- Discover Feed Ranking
+- Context Assembly Engine
+- Events Tickets Tools
+- Worker Orchestrator Service
+- DB Additive Migration Rules
+- WebRTC Connection Checks
+- Android Mobile Test Flows
+- Mobile Simulator Doctor
+- LLM Router Crew AI
+- Database Migration Rules
+- Memory Facts Service
+- Concept Mastery Decision
+- Operator Bootstrap Pack
+- Journey Foundation Steps
+- Groups Events Tools
+- Gateway Backend Service
+- TTS Backend Cache
+- Storage Inventory Audit
+- RAG Memory Architecture
+- Journey Greeting Pillars
+- Business Hub AI Guidance
+- New Day Overview Aggregator
+- Awareness Watchdogs
+- LLM Bedrock Provider
+- Mobile Device Testing
+- Cognee Entity Extractor
+- Milestone Service Checks
+- Sharing Growth Wallet
+- Nav Catalog DB
+- Navigator Consult Tools
+- Phase 2B Execution Summary
+- Backend SDK Dependencies
+- Self Healing Test Plan
+- Mobile PWA Architecture
+- Mobile Navigation Catalog
+- Pillar Scoring Agent
+- Marketplace Discovery Tools
+- Memory Intelligence Architecture
+- Curriculum Facts Provider
+- Autopilot Connect Automations
+- Phase 2C CI Execution
+- Titan Embedding Service
+- CI CD Route Services
+- LiveKit Orb Tests
+- Shopping Agent Cart
+- Voice Failure Taxonomy
+- Realtime Subscription Inventory
+- Phase 2C Execution Summary
+- AWS SDK Dependencies
+- Extraction Dedup Manager
+- Scheduled Notifications Repository
+- Conductor Job Orchestrator
+- Mesh Write Backend Auth
+- AWS Production Build Log
+- Self Healing Test Layers
+- PR Validation Governance Gate
+- BackOffice Command Orchestrator
+- Voice Tools Expansion Plan
+- Protobuf Writer
+- Situational Awareness Tools
+- Conversation Focus Picker
+- Reminders Clock Tools
+- Community Member Ranker
+- iOS Simulator Preflight
+- Wake Decision Snapshot
+- Live Rooms Frontend Integration
+- Aurora Migration Inventory
+- Operator Execution Onramp
+- TTS Voice Config
+- Mobile UI Layout Structure
+- Execution Pipeline Fix Plan
+- Live Rooms Frontend Spec
+- Shared LLM Telemetry
+- ERP Capabilities Access
+- Calendar Service Routes
+- Express Project Dependencies
+- In Memory Test Repository
+- Execution Pipeline Fix Spec
+- Autopilot Routine Extraction
+- Operator Console Gap Analysis
+- Task 4A Completion
+- Smoke Test Specs
+- Android Run Scripts
+- OpenClaw Bridge Package
+- Agent Architecture Docs
+- WebRTC Peer Connection
+- Budget Credential Delegation
+- Cart Checkout Tools
+- Test Contract Commands
+- Database Schema Changelog
+- Migration Backlog Routine
+- SSE Event Ticker
+- Autopilot Architecture
+- LiveKit Voice Test View
+- Social Auth Callback Flow
+- Automation Run Executor
+- Assistant Role Registry
+- VCAOP MCP Package
+- Worker Runner Manifest
+- Daily.co Video Integration Spec
+- Memory Hit Ranking
+- Greeting Pool Acceptance
+- Daily.co Integration Raw Spec
+- Feedback Settings Tools
+- Memory Indexer Client
+- VCAOP Package Config
+- AWS Production Handover
+- Claude Operational Protocol
+- CI CD Execution Summary
+- Platform Claude Config
+- Classification Routing Rules
+- CI CD Execution Summary
+- Specialist Observability Tests
+- Worker Task Eligibility
+- Memory Social Context
+- Staging Deployment Guide
+- Memory Indexer API
+- Titan Image Generation
+- Horizontal Lists QA
+- Wallet CTO Report
+- Assistant Decision Context
+- Marketplace Sync Providers
+- Cross Turn State Engine
+- Messaging Depth Tools
+- Specialists Repository
+- VAEA Worker Manifest
+- Aurora Migration Status
+- Auth Identity Docs
+- GitHub Service Bootstrap
+- Voice Language Test Suite
+- Auth Login Parallelization
+- Phase 2 Execution Summary
+- Voice Pipeline Spec Package
+- Frontend React Hooks
+- VTID System Governance
+- Phase 2 Execution Summary
+- Recipient Resolution Tests
+- Billing Repository
+- Health Wellness Handlers
+- Intent Cover Generation
+- Amazon Marketplace Sync
+- Health Depth Tools
+- Observability Dev Tools
+- P0 Gap Tools
+- Response Framing Config
+- Heartbeat OASIS Bridge
+- Attestation Service
+- Database Autopilot Backlog
+- MCP Gateway Manifest
+- Health Module Actions
+- Canary Readiness Report
+- WebSocket State Simulation
+- Opportunity Surfacing Engine
+- Voice Healing Summary
+- ORB Widget Tests
+- VAEA Package Config
+- Awin Marketplace Sync
+- Journey Catalog Design
+- Area Guess Bug Fix
+- Auth Read Optimization
+- Community Module Actions
+- Command Hub Reconnection Report
+- Database Monitoring Screens Spec
+- Autopilot Worker Package
+- Finetune Status Monitor
+- Vertex Tool Catalog Budget
+- Wallet Payments Tools
+- Life Stage Awareness Engine
+- Social Alignment Engine
+- VTID Lifecycle Tools
+- OASIS Event Analyzers
+- Database Monitoring Screens Spec
+- Fish Audio TTS Fallback
+- Autopilot Connect People
+- VTID Evidence Phase
+- Gateway Telemetry CI Fix
+- CI CD Control Plane Rules
+- OASIS Ledger Mapping Spec
+- WebRTC Integration Guide
+- OASIS Ledger Mapping Spec
+- STT Fallback Stubs
+- OAuth2 Connector Flow
+- Entity Resolution Bridge
+- Reminders Repository
+- Command Store Approval
+- Self Healing Spec Service
+- DevHub Feed Endpoint
+- Worker Orchestrator
+- Admitad Marketplace Sync
+- Autopilot Recommendation Engine
+- Gateway CI Test Spec
+- Backend SSE Diagnostic
+- Autopilot Recommendation Engine Raw
+- Gateway CI Test Spec
+- Intelligence Panel UI
+- Overload Detection Routes
+- Autonomy Pulse Metrics
+- Opportunity Surfacing Routes
+- Tenant Specialist Management
+- Risk Mitigation Engine
+- DB Internationalization Repository
+- Product Plans & Pricing
+- Phase 1 W3 Acceptance
+- Telemetry Schema Migration
+- VTID Ledger Screen
+- LLM Provider Adapters
+- Autopilot Action Catalog
+- Auth Portal Flows
+- Backoffice Command Policy
+- Pillar Momentum Decisions
+- Autonomy Trace Aggregation
+- Admin Scanner Registry
+- Engagement Events Repository
+- Calendar Management Tools
+- Conflict Pair Resolver
+- LLM Router Shadow
+- Health Signal Testing
+- Narration Audio Cache
+- KB Integration Crew
+- Awin Conversion Credits
+- Autopilot Automation Docs
+- Guided Journey Routes
+- CI/CD Agent Behavior
+- Live Room Session Fix
+- MCP Gateway Connectors
+- Wallet Module Actions
+- KB Integration Agents
+- Live Room Fix Summary
+- Incomplete Screens Tracker
+- Python LLM Router
+- Context Quality Scoring
+- Capabilities Registry
+- Session Summaries Service
+- Engagement Event Handlers
+- Dev Autopilot Scanner Tools
+- Codebase Analyzer
+- Platform Development Guide
+- Database Schema Docs
+- Cloud Run Cleanup Inventory
+- Conversation Defects Fix
+- Orb Recovery Plan
+- Phase Acceptance Criteria
+- VTID Task Management
+- Worker Agent Connector Spec
+- Deployment Instructions
+- Autopilot Capabilities Docs
+- Cloud Run Deployment Inventory
+- Mobile PWA Rules
+- Worker Connector Spec
+- Gateway Service Manifest
+- Backlog Cleanup Tools
+- Instruction Manual Seed
+- Client Context Envelope
+- VTID Execution Routes
+- Product Analytics Routes
+- Autopilot Prompts Service
+- Awareness Registry Config
+- Aurora I18n Repository
+- Conversation Invariants
+- Intent Match Enrichment
+- Superlatives Tools
+- Spec Quality Agent
+- Eval Golden Corpus
+- Contract Validator Service
+- Repository Canon ADR
+- Browser Timezone VTID
+- Aurora Connectivity Diagnostics
+- E2E Test Package
+- Database Failure Analyzer
+- Canonical Identity Spec
+- Repo Canon Governance ADR
+- Knowledge Graph Index
+- Governance Analysis Summary
+- Governance Controller
+- Self Healing Dashboard
+- Condition Matcher Agent
+- Dev Autopilot Synthesis
+- CJ Product Sync
+- Subscriptions Billing Tools
+- Tenant Specialists Repository
+- Guided Topic Fix
+- Dead CSS Class Removal
+- Cognito Auth Routes
+- Voice Plugin Factory
+- KB Export Service
+- External API Modules
+- VTID Ledger Writer Specs
+- Match Journey Context
+- Admin Marketplace Repository
+- Goal Completion Inquiry
+- Match Activity Planning
+- Assistant Speech Registry
+- Backoffice Voice Tools
+- CICD Lock Manager
+- Anticipatory Guidance Engine
+- Social Alignment Engine
+- Feedback Tickets Repository
+- Matchmaker Agent
+- Feed Goals Tools
+- Voice Architecture Investigator
+- Anticipatory Guidance Types
+- Memory Write Backend
+- Environment Deployment Guards
+- Cognee Integration Design
+- Auth Identity Enforcement
+- AWS Cutover Readiness
+- KB Access Mode Decision
+- Matchmaking Redesign Spec
+- Orb Recovery Patches
+- Greeting Bridge TTS
+- CICD Health Indicator Hub
+- Vitana Work Package
+- Autonomy Cognee Integration
+- Discover Module Actions
+- Sharing Module Actions
+- VTID Spec Validator Rules
+- CICD Health Indicator Spec
+- CrewAI GCP Manifest
+- Short Reply Intent Classifier
+- Verification Engine Server
+- Metrics Collector
+- Chat Groups Repository
+- Admin Autopilot Repository
+- Business Marketplace Repository
+- Live Rooms Commerce Repository
+- Wallet Payments Repository
+- Testing QA Tools
+- Analytics Rollup
+- Shopify Sync Service
+- Preflight Governance Runner
+- Opportunity Surfacing Types
+- Schema Array Properties
+- Spec Classification Schema
+- Governance Spec Validator Rules
+- Email Intake Worker
+- Dead Callsite Audit
+- Route Guard Registry
+- CloudWatch Logs Tool
+- OASIS Projector Migration
+- Phase 2 CI Webhook Progress
+- KB Document Ingestion
+- Room Session State Machine
+- Platform Development Guide
+- Per-Action Grammar Spec
+- Phase 2 Webhook Progress
+- Conductor Manifest
+- Context Bootstrap Greeting
+- STT Observability Tests
+- LLM Router Core
+- Validator Core Manifest
+- Backlog Drain Planner
+- Merchant Products Portal
+- Awareness Prompt Utilities
+- Autopilot Controller Tools
+- Voice Message Guard
+- Task Discovery Validator
+- Failure Analyzer Service
+- Voice Budget Watch
+- VTID Acceptance Fixes
+- Nova Session Prewarm
+- Tenant Invitation Fix
+- Longevity News Fetcher
+- Mobile Screen Inventory
+- Role Screen Matrix
+- Telemetry Standardization Spec
+- Health Tracking Integration
+- Knowledge Base Overview
+- Vitana Orchestrator Manifest
+- Admin Staging Repository
+- VAEA Repository
+- DB i18n Seed
+- Admin Awareness Worker Repository
+- OASIS Context Reader
+- Live Rooms Tools
+- User Model Synthesis
+- Schema Constraint Properties
+- Autopilot Spec Schema
+- Telemetry Standardization Spec
+- Settlement Ledger
+- Decision Policy Phase B
+- Vitana Index Zones
+- Internal Testing Guide
+- List Scrolling Pagination Fix
+- Governance Screen Views
+- Translator Repair Utilities
+- Desktop Navigation Inventory
+- AI Worker Runner Dependencies
+- Second Brain Rules & Instructions
+- API Inventory & Coverage
+- API Monitoring & Risk Register
+- Dev Hub README & Architecture
+- Vitana Index Zones Guide
+- Screen Registry Business Hub
+- API Specs & SDK Generation
+- List Scrolling Pagination Fix
+- Backend Frontend Integration Overview
+- STT Recovery Regression Tests
+- Backend Dev Dependencies
+- Postgrest Command Store
+- Knowledge Base Router & Store
+- Autopilot Prompts Routes
+- Supervisor Summary Builder
+- Voice Feedback Routes
+- Business Marketplace Handlers
+- Guidance Signal Bundles
+- Social Connect Repository
+- Live Room Access & Roles
+- OASIS Projector Dependencies
+- API Specs & SDK Generation
+- OG Proxy Worker
+- Commerce Consent Health Tables
+- Community Groups Repository
+- Aurora RPC Parity Inventory
+- Maxina Health Platform Docs
+- Vitana Index Data Sources
+- GCP Phase 1 Deployment State
+- GCP Full Cutover Spec
+- Auth Role Setup & E2E Tests
+- Self Healing Automation Audit
+- Worker Runner Agent Registry
+- OG Match Edge Functions
+- ORB Tools Lift Scanner
+- Voice Command Grammar & Disambiguation
+- Maxina Platform Knowledge Base
+- Vitana Index Data Sources KB
+- Build & Dev Scripts
+- WebRTC Publisher Connection
+- Consent Gate Repository
+- Risk Mitigation Engine
+- Awareness Context Tests
+- Shopify Marketplace Sync
+- Matchmaker Agent Repository
+- Autopilot Event Loop Tests
+- Autopilot Prompts Service Tests
+- Gateway TypeScript Config
+- Perplexity & Supabase MCP Connectors
+- Skills Index & Actions
+- Vitana Roles & Tenant Auth
+- Feedback Cleanup Report
+- Vitanaland Navigation Guide
+- Business Hub Earnings & Payouts
+- Supabase to Aurora Migration Plan
+- Guided Topic Circuit Breaker Fixes
+- Live Room Bug Fixes Verification
+- Daily Rooms & Graduation Recommender
+- Vitana Work TypeScript Config
+- Autopilot Action Catalog
+- AI Module Actions Catalog
+- Vitanaland Navigation KB
+- Business Hub Earnings KB
+- Task 4B Phase 2 Summary
+- Live Room Fixes Verification
+- Vitana Index Calculation
+- Database Schema Overview
+- MAXINA ORB Visual Layers
+- UI Navigation Rules
+- Frontend Backend Spec Summary
+- Rate Limiter Implementation
+- Autopilot Worker TypeScript Config
+- ORB WebSocket Test Script
+- Nova Language Verification Script
+- Governance Controls UI
+- Journey Stage Context Compiler
+- Architecture Investigator Service
+- My Journey & Awareness Extensions
+- Ops Self Healing Probes
+- Watcher Lessons & Feedback
+- Admin Signups Repository
+- Live Rooms Commerce Handlers
+- Data Export Consent Service
+- Intent Notifier & Match Events
+- Journey Foundation Answer Tools
+- VAEA TypeScript Config
+- VCAOP MCP TypeScript Config
+- VCAOP TypeScript Config
+- Worker Runner TypeScript Config
+- VTID Spec Schema
+- VTID Spec Problem Statement
+- VTID Spec Metadata Properties
+- Task 4B Phase 2 Summary
+- Cache Worker Request Handling
+- Golden Workflows Governance Doc
+- Phase C Pluggable Fusion Brief
+- Memory Garden Categories
+- Business Hub Service Listings
+- Phase 1 Week 1 Acceptance Criteria
+- Video Commerce Drawer Spec
+- CI Event Status Mapping
+- Onboarding UI Verification Tests
+- Cognee Extractor Manifest
+- Financial Longevity Value Layers
+- Memory Garden Categories
+- Business Hub Service Listings
+- Tenant Screen Availability
+- Autonomous Execution Governance
+- Video Commerce Backend Architecture
+- Business Hub Earning Paths
+- Home Dashboard Feature Overview
+- Daily.co Video Integration Spec
+- Journey Context Rendering
+- ORB Voice Benchmark
+- Journey Stage Fetcher
+- Awareness Config Test Suite
+- Autopilot Validator Tests
+- Morning Overview Session Summary
+- Rakuten Product Sync
+- Nightly Consolidator Repository
+- Operator Action Contract
+- Room Session Manager
+- Tenant Knowledge Base Repository
+- Calendar Types and Schema
+- Supabase Query Builder
+- MCP Gateway TypeScript Config
+- TypeScript Surface Extractor
+- Unified Knowledge Tree Phases
+- Aurora Migration Scope
+- Aurora Phase 0 Reconciliation
+- Autonomous Execution Review
+- Health Wellness Autopilot Policies
+- AWS Staging Validation Plan
+- Ethical AI Privacy Docs
+- Self-Contained CI Pipeline
+- Blue Zones Longevity Lessons
+- Biomarker Tracking Guide
+- Vitana Index Improvement Guide
+- Financial Value Layers
+- Responsible Recommendations Framework
+- Wallet Rewards Program
+- Profile Bio and Interests
+- Creator Flow Revenue Display
+- Pull Request Template
+- ORB Agent Manifest
+- Voice Tools Manifest Reconciler
+- AI Intelligence API Endpoints
+- External Service Integrations
+- Autonomous Execution Review Raw
+- Health Wellness Autopilot Policies
+- Apple App Review Crypto Response
+- Horizontal List UI Patterns
+- UI Patterns Enforcement Guide
+- Blue Zones Longevity Lessons
+- Biomarker Tracking Guide
+- Vitana Index Improvement Guide
+- Responsible Recommendations Framework
+- Wallet Rewards Program
+- Profile Bio and Interests
+- Execution Pipeline Analysis
+- Creator Flow Revenue Display
+- Financial Longevity Model
+- GitHub Actions Deploy Workflows
+- Platform Core Domains Wiki
+- OASIS Governance Evolution Phases
+- Match Journey Telemetry Events
+- Life Stage Awareness Routes
+- Positive Trajectory Reinforcement Tests
+- Specialist Connections Repository
+- Platform Operations Repository
+- ORB Session State Health
+- Database Migration Tools
+- Health Log Tool
+- Calendar Prep Analyzer
+- Community Superlatives Profiles
+- Wallet API Architecture
+- Life Stage Awareness Tests
+- MCP Gateway Integration
+- MCP Gateway Integration
+- Ledger Writer Event Processor
+- OASIS Projector TypeScript Config
+- PHI Redactor Health Actions
+- OpenClaw Bridge TypeScript Config
+- Insurance Quotes Settlement Ledger
+- Execution Pipeline Analysis Spec
+- Onboarding Verification Tests
+- Conversation Flow Control Screen
+- Longevity First Philosophy
+- Community Amplification System
+- ORB Vitana Index Guidance
+- Client Session Management
+- Profile Photo Setup
+- Merchant Onboarding Runbook
+- Phase 1 W3 Acceptance Reports
+- Wake Timeline Validation
+- Self-Healing System Spec
+- Guided Journey Implementation Handoff
+- Test Coverage Plan
+- Spec Generation Fix
+- Command Hub Backup Denylist
+- Lambda Auth Migration
+- Vitana Orchestrator README
+- Tenant Capability Matrix
+- Seven Dimensions of Longevity
+- Community Amplification System
+- ORB Longevity Guidance
+- Client Session Management
+- Profile Photo Setup
+- Self-Healing System Spec
+- Database Migration Rules
+- AI Agent Architecture
+- Cognee KB Integration
+- Discover Marketplace Features
+- Memory Garden System
+- Multi-Tenant Portal Branding
+- Command Hub Governance
+- Live Room Video Features
+- Active Cloud Services
+- Vitana Orchestrator Validators
+- Entity Signal Extraction
+- Maxina Longevity Manifesto
+- App Screen Navigation Flows
+- CI CD Naming Governance
+- Silent Stall Watchdog Tests
+- Vitana Orchestrator Docs
+- Policy Scan Payload Schema
+- Migration Safety Checks
+- Stripe Webhook Payments
+- Autopilot Health Scanner
+- Guided Topic Narration
+- Conversation Flow Engine
+- Autopilot Opener Candidates
+- Checklist Service Repository
+- System Health Analyzer
+- Autopilot Prompts Tests
+- LiveKit Eval Tests
+- Playwright MCP Connector
+- MCP Gateway TypeScript Config
+- Acceptance Identity Schema
+- Preventive Medicine Principles
+- Maxina Cross-Module Experience
+- Business Hub Sell and Earn
+- Phase 1 W3-C0 Acceptance
+- Journey Conversation Spec
+- Intelligence Cockpit Nav
+- Watcher Agent Plan
+- CI Visual Frontend Verification
+- Feedback Cleanup Script
+- Checklist Translation Generator
+- Memory Module Actions
+- Main App Page Routes
+- Preventive Medicine Principles
+- Maxina Cross-Module Experience
+- Business Hub Sell and Earn
+- API Gateway Conventions
+- Command Hub Architecture
+- Design System Patterns
+- Self-Healing Pipeline Overview
+- Spec Governance Rules
+- AI Skills Integration
+- Action Catalog Spec
+- Additive Migration Rules
+- Platform Schema Governance
+- Workforce Manifest Config
+- ORB Widget Regression Tests
+- Gateway Connectors Registry
+- Auto Logger Health Route
+- Tenant Health Index Route
+- Tenant Product Analytics Route
+- Real Life Invite Provider
+- Community Groups Automation
+- Opportunity Surfacing Engine
+- Diary Health Extractor
+- Repair Pattern Store
+- Backend Integration Schema
+- CICD Concurrency Config
+- Aurora Dead RPC Audit
+- Aurora Phase 0 Reconciliation
+- Payments Wallet Autopilot
+- AWS Cutover Runbook
+- Voice Quality Handoff
+- Vitana Index Scoring
+- Social Longevity Model
+- First Login Onboarding
+- User Roles Overview
+- ORB Assistant Capabilities
+- Wallet Balance and Funds
+- Profile QR Code Usage
+- Stripe Connect Integration Spec
+- Onboarding Local Verification
+- iOS Crash Fixes
+- Vitana Work README
+- KB i18n Sync Script
+- ORB First Audio Measurement
+- Messaging RPC Operations
+- Dev Hub Auth Fix
+- Payments and Wallet Automations
+- Headless Navigation Execution Rules
+- Emoji Icon Mapping
+- Vitana Index Score
+- Social Longevity Model
+- Ethical AI and Privacy
+- Longevity Onboarding Flow
+- User Roles and Permissions
+- ORB Assistant Capabilities
+- Wallet Balance and Funds
+- Profile QR Code Usage
+- iOS Live Room Fixes
+- Stripe Connect Raw Specs
+- Backend Deployment Pattern
+- Apple Compliance Virtual Currency
+- Autopilot Automation Registry
+- Intelligent Matchmaking System
+- Recommendation Engine Pipeline
+- SSE Streaming Connection Issues
+- Repository Canonical Structure ADR
+- Google Gemini Integration
+- Memory Garden Feature
+- Mobile Navigation Patterns
+- Dual Supabase Auth Architecture
+- Vitana Index Calculation
+- Project Tech Stack
+- Autopilot Capability Classification
+- Frontend Performance Issues
+- LLM Provider Configuration
+- Admin and Developer Tools
+- Phase Gate Status Report
+- Greeting Audio Bridge Cache
+- Voice Config Route Tests
+- VTID Pipeline Terminalization
+- ORB Session State Health
+- Auto Logger and SSE Service
+- Awin Affiliate Sync
+- Feedback Execution Bridge
+- User Preference Facts
+- Self Healing Metrics
+- Component Screen Spec
+- Oasis Spec Schema
+- Voice Provider Configuration
+- Nova Sonic Audio Provider
+- Python Feature Extractor
+- Voice Pipeline TypeScript Config
+- Aurora Auth Migration Assessment
+- Aurora Phase Zero Findings
+- Community Groups Automations
+- Sharing and Growth Automations
+- Business Hub Marketplace Automations
+- Platform Schema Inventory
+- Five Health Pillars
+- Wellness Earning Model
+- Talking to the ORB
+- ORB Voice and Language Settings
+- ORB Troubleshooting Guide
+- Match Preferences Settings
+- Credits System
+- Subscription Plans
+- Nova Sonic Production Cutover
+- Vertex Serbian Bridge Fix
+- VTID Branching Guidelines
+- Package Dependencies Config
+- In-Memory Event Store
+- Mobile Bundle Budget Routine
+- Mobile API Latency Routine
+- Mobile Screen Latency Rollup
+- Mobile Synthetic Load Probe
+- ERP Bridge Staging Setup
+- Command Hub Ownership Guard
+- Checklist Seed Generator
+- Community Module Actions
+- Live Rooms Commerce Automations
+- Platform Schema Inventory
+- VTID Branching Guidelines
+- Five Health Pillars
+- Wellness Earning Model
+- Talking to the ORB
+- ORB Voice Settings
+- ORB Troubleshooting Guide
+- Match Preferences Settings
+- Credits System
+- Autopilot System Overview
+- Canonical Identity Resolution
+- Cloud Run Service Migration
+- Auth Flow Architecture
+- Dual JWT Auth Bridge
+- Gemini Live Voice Service
+- Longevity Health Philosophy
+- Multi-Repo Full-Stack Architecture
+- Role-Based Screen Access
+- Autopilot Product Overview
+- Command Hub Operator UI
+- CrewAI Agent Integration
+- MAXINA AI Mission
+- Supabase Tenant Infrastructure
+- Platform Repo Structure
+- API Gateway Inventory
+- Autonomous Architecture Review
+- Autopilot Database Architecture
+- Role Screen Matrix
+- Platform Deployment Guide
+- vitana-v1 Project Config
+- WebRTC Integration Guide
+- Memory Indexer Manifest
+- Claude Task Executor
+- Feature Auto-Promoter
+- Backlog Row Converter
+- Desktop Nav Seed Generator
+- Command Hub Staging Deploy
+- Health Dashboard Watcher
+- Admin Intent Engine Repository
+- Risk Mitigation Routes
+- Screen Load Health Monitor
+- Specialist Persona Admin
+- Tenant Specialists Router
+- Unread Messages Announcer
+- Social Connection Autopilot
+- Autopilot Voice Next Actions
+- Candidate Model Provider
+- Life Stage Awareness Engine
+- Daily Video Room Client
+- Awareness Extensions Repository
+- Opener MVP Repository
+- Dance Intent Helper
+- Intent Embedding Worker
+- Supplement Attribute Inference
+- Test Contract Repair Context
+- Live Verification Test Scripts
+- Assessments Tool Actions
+- CI/CD Agent Tool Actions
+- JSON Schema Definitions
+- AI Commerce Mesh Phase 0
+- VTID Build Plan Layers
+- Aurora Data Integrity Verification
+- Live Rooms Commerce Automations
+- Autopilot Automations Registry
+- CI/CD Deploy Pipeline Docs
+- OASIS Ledger Integrity Handoff
+- Strength and Aging Science
+- Sleep and Recovery Science
+- Habit Optimization Framework
+- Longevity Community Sessions
+- Longevity Journey Progression
+- Memory Garden Recall Search
+- Memory Privacy Controls
+- User Data Export
+- Mental Wellness Tracking
+- Matchmaking Match Types
+- Discover Ordering Checkout
+- Wallet Overview
+- User Profile Setup
+- Public Profile Sharing
+- Nova Sonic Canary Runbook
+- Cognito Auth Migration
+- ORB Multi-Agent Execution
+- Voice Reconnect Loop Fix
+- Operator Prompt Acceptance Criteria
+- Reminders Service Phasing
+- ORB Widget E2E Tests
+- Onboarding Flow Verification
+- iOS Live Room Audio Fix
+- GitHub MCP Connector
+- Agents Heartbeat Routine
+- Autopilot Rec Quality Routine
+- Frontend Health Monitor Routine
+- Draft PR Babysitter Routine
+- OASIS Event Anomaly Routine
+- ORB Audio Smoke Routine
+- Self-Healing Triage Routine
+- Supabase IO Audit Routine
+- Vitana Index Health Routine
+- Voice Lab Triage Routine
+- API Dependency Graph
+- Community Groups Automations
+- Sharing Growth Automations
+- Autopilot Registry Overview
+- Autopilot Capabilities by Module
+- Risk Classification Safety Rules
+- Capability Screen Mapping Appendix
+- Gemini Live Communication Architecture
+- Deployment Pipeline Docs
+- Strength and Longevity Science
+- Sleep and Recovery Science
+- Habit Optimization Framework
+- Longevity Community Sessions
+- User Longevity Journey
+- Memory Garden Search and Recall
+- Memory Privacy Controls
+- Data Export and Portability
+- Mental Wellness Tracking
+- Matchmaking Match Types
+- Marketplace Ordering and Checkout
+- Wallet and Value Layers
+- Subscription Plans Management
+- User Profile Setup
+- Public Profile Sharing
+- iOS Live Room Fixes
+- ORB Visual States
+- Async Pipeline Error Handling
+- Frontend Deployment Governance
+- CDN vs Cloud Run Migration
+- Supabase Platform Consolidation
+- Screen Registry and UI Patterns
+- Cognee Knowledge Integration
+- D1 Documentation and Screen Registry
+- VTID Governance and Numbering
+- AI Model Configuration
+- Silent Stall Detection Tests
+- Silero VAD Parameter Tests
+- Turn Response Event Emitter
+- Synthetic Voice Tool Routing
+- ORB Latency Probe
+- ORB Widget Greeting Regression
+- DoctorBox Webhook Connector
+- Google OAuth Connector
+- Terra Health Data Connector
+- Voice Self-Healing Panel
+- Active Provider Resolver
+- Social Alignment Routes
+- Acceptance Gate Logic
+- Feedback Completion Reconciler
+- Checklist Publish Repository
+- Intent Trust Gate
+- LiveKit Session Health
+- Conversation Focus Tests
+- MCP Context7 Connector
+- Gateway Context7 Connector
+- Linear MCP Connector
+- MCP Testsprite Connector
+- Gateway Testsprite Connector
+- Admin Ops Skills
+- Community Skills
+- Compliance Skills
+- Marketplace Skills
+- Onboarding Skills
+- Topics Skills
+- PostgREST Aurora Proxy
+- Mesh Read Backend
+- Service Path Map
+- Signal and Product Schema
+- Events and Live Room Automations
+- Engagement Loop Automations
+- Feedback Cleanup Runbook
+- Metabolic Health Science
+- Mental Resilience Science
+- Longevity Onboarding Program
+- Intelligent Longevity Matchmaking
+- Vitality Network Building
+- Vitana Index Scoring
+- Longevity Economy Finance
+- Infinite Memory Role
+- Experience Selection Onboarding
+- ORB Assistant Overview
+- ORB Memory System
+- Adding Memory Garden Entries
+- Diary Entries Feature
+- Memory Timeline View
+- Passive User Learning
+- Health Dashboard Overview
+- Hydration Tracking
+- Biomarkers and Lab Results
+- Health Services Hub
+- Personalized Health Plans
+- Conditions and Health Risks
+- Community Group Browsing
+- Go Live Streaming
+- Discover Marketplace Overview
+- Direct Messaging
+- Media and Voice Messages
+- VTN Tokens and Staking
+- Business Hub Overview
+- Knowledge Base Authoring Guide
+- Staging Acceptance Evidence
+- Supabase Security Fixes
+- Missing Tables Triage
+- Guided Lesson Replay Bug
+- Data Model and Policy
+- Stripe Connect Integration
+- Mirror Preflight Tool
+- Memory Facts Embeddings Backfill
+- Agent Aurora Access Grants
+- Voice Tools Plan Seed
+- Vitana V1 App Overview
+- Module Summaries Overview
+- Module-Level Command Grammar
+- Events and Live Rooms Automations
+- Engagement Loop Automations
+- Capability to API Mapping
+- Virtual Currency Architecture
+- Dev Tools and Infrastructure
+- Metabolic Health Longevity
+- Mental Wellness Longevity
+- Longevity Onboarding Program
+- Intelligent Longevity Matchmaking
+- Vitality Network Building
+- Vitana Index Scoring
+- Longevity Economy Finance
+- Infinite Memory Personalization
+- Choosing Your Experience
+- ORB Assistant Overview
+- ORB Memory and Recall
+- Adding Memory Garden Entries
+- Diary Entries and Journaling
+- Memory Timeline View
+- How ORB Learns Facts
+- Health Dashboard Overview
+- Hydration Tracking
+- Biomarkers and Lab Results
+- Health Services Hub
+- Personalized Health Plans
+- Conditions and Health Risks
+- Browsing Community Groups
+- Go Live Streaming
+- Discover Overview
+- Sending Messages
+- Media and Voice Messages
+- Tokens and Staking
+- Business Hub Overview
+- Knowledge Base Authoring Guide
+- Mobile Longevity Reorientation Plan
+- Patient Role Screens
+- Professional Role Screens
+- Staff Role Screens
+- Stripe Connect Code Pack
+- Daily.co Integration
+- Command Hub Wiring Docs
+- Memory Rules Configuration
+- ORB Agent Package Config
+- Connector Interface Methods
+- Vital Wearable Connector
+- Mitigation Service Client
+- Adaptation Applier Repository
+- Awareness Context Repository
+- Presence Pacer Repository
+- Intent Compass Lens
+- Intent Tier Gate
+- ORB Index Coach Text
+- Overlay Pointer Events Tests
+- Operator Execution Follow Tests
+- Dev Dependencies Config
+- Autopilot Skill Manifest
+- Vitana Analytics Skill
+- Vitana Automations Skill
+- Vitana Integrations Skill
+- Vitana Live Rooms Skill
+- Vitana LLM Routing Skill
+- Vitana Messaging Skill
+- Vitana Monetization Skill
+- Vitana Notifications Skill
+- Vitana Voice Skill
+- Vitana Wallet Skill
+- Self-Healing Autonomous Recovery
+- VCAOP Build Runbook
+- Autonomy Contract Rules
+- Crash Awareness Protocol
+- Autopilot Feature State Tables
+- Awin Product Activation Runbook
+- Account Creation Guide
+- Memory Garden Overview
+- Home Dashboard Context Tab
+- Matches Tab Features
+- Exercise Tracking
+- Sleep Tracking
+- Wearable Device Integration
+- Joining Community Groups
+- Creating Community Groups
+- Events and Meetups
+- Community Media Hub
+- Joining Live Rooms
+- Creating Live Rooms
+- Live Room Highlights
+- Matchmaking Algorithm
+- Daily Matches
+- Match Explanation Transparency
+- AI Discovery Picks
+- Supplements and Wellness Products
+- Doctors and Coaches
+- Deals and Offers
+- Group Conversations
+- Journey Conversation Governance Spec
+- Damage Prevention and Rollback
+- Creator Onboarding API
+- Supabase Security Audit
+- Vitana Assistant Plan Reconciliation
+- Guided Topic Bug Fix
+- Staging Environment Config
+- Marketplace Comparison Tools
+- Mobile Performance Testing
+- iOS Audio and Permission Fixes
+- Placeholder Doc 00
+- Placeholder Doc 01
+- Placeholder Doc 02
+- Placeholder Doc 03
+- Placeholder Doc 04
+- Placeholder Doc 05
+- Placeholder Doc 06
+- Placeholder Doc 07
+- Placeholder Doc 08
+- Placeholder Doc 09
+- Placeholder Doc 10
+- Placeholder Doc 11
+- Placeholder Doc 12
+- Placeholder Doc 13
+- Placeholder Doc 14
+- Placeholder Doc 15
+- Placeholder Doc 16
+- Placeholder Doc 17
+- Placeholder Doc 18
+- Placeholder Doc 19
+- Placeholder Doc 20
+- Glossary Terms
+- Route Manifest Generation
+- Memory Facts Backfill
+- False Terminalizations Correction
+- Knowledge Base Sync
+- Admin and Tenant RPC Operations
+- Memory and Intelligence Architecture
+- Universal Grammar Rules
+- Health Module Actions
+- Capability Classification Levels
+- Group Detail Screen
+- Account Creation
+- Memory Garden
+- Dashboard Context Tab Docs
+- Matches Tab Docs
+- Exercise Tracking Docs
+- Sleep Tracking Docs
+- Wearable Devices Docs
+- Joining Groups Docs
+- Creating Groups Docs
+- Events and Meetups Docs
+- Community Media Hub Docs
+- Joining Live Rooms Docs
+- Creating Live Rooms Docs
+- Live Room Highlights Docs
+- Matchmaking Algorithm Docs
+- Daily Matches Docs
+- Match Explanation Docs
+- AI Picks Docs
+- Supplements and Wellness Docs
+- Doctors and Coaches Docs
+- Deals and Offers Docs
+- Group Conversations Docs
+- Blast Radius Rollback Docs
+- Creator API Docs
+- Live Rooms Architecture Overview
+- Live Room Fix Reports Summary
+- Wallet CTO Report Summary
+- Tool Catalogue Tests
+- ORB Greeting Tests
+- Security Scan Worker Payloads
+- Accessibility Validation Worker
+- Service Duplication Analysis
+- Autopilot Backlog Scripts
+- ORB Alert Clip Rendering
+- Intent Engine UI
+- Auth Screen Assistant Guidance
+- Confirm Maxina Screen Guidance
+- Intro Screen Assistant Guidance
+- Landing Page Guidance
+- Legacy Profile Guidance
+- Not Found Page Guidance
+- Home Actions Guidance
+- Home AI Feed Guidance
+- Home Context Guidance
+- Home Matches Guidance
+- Challenges Screen Guidance
+- Events Screen Guidance
+- Feed Screen Guidance
+- Group Detail Guidance
+- Groups Screen Guidance
+- Media Hub Guidance
+- My Business Guidance
+- Cart Screen Guidance
+- Deals Offers Guidance
+- Doctors Coaches Guidance
+- Orders Screen Guidance
+- Product Detail Guidance
+- Provider Profile Guidance
+- Supplements Screen Guidance
+- Wellness Services Guidance
+- Health Conditions Guidance
+- Health Education Guidance
+- Health Pillars Guidance
+- Health Plans Guidance
+- Health Services Guidance
+- Archived Inbox Guidance
+- Inbox Inspiration Guidance
+- Inbox Reminders Guidance
+- AI Companion Guidance
+- AI Daily Summary Guidance
+- AI Insights Guidance
+- AI Recommendations Guidance
+- Wallet Balance Guidance
+- Wallet Rewards Guidance
+- Wallet Subscriptions Guidance
+- Campaign Detail Guidance
+- Campaigns Screen Guidance
+- Data Consent Guidance
+- Distribution Screen Guidance
+- Memory Permissions Guidance
+- Memory Recall Guidance
+- Timeline Screen Guidance
+- Billing Screen Guidance
+- Connected Apps Guidance
+- Notifications Screen Guidance
+- Preferences Screen Guidance
+- Privacy Screen Guidance
+- Support Screen Guidance
+- Tenant Role Guidance
+- Assistant Chat Guidance
+- Calendar Screen Guidance
+- Profile Edit Guidance
+- Public Profile Guidance
+- Search Screen Guidance
+- Calendar Popup Guidance
+- Event Drawer Guidance
+- Master Action Guidance
+- Meetup Drawer Guidance
+- Presence Debug Guidance
+- Profile Preview Guidance
+- Wallet Popup Guidance
+- WebSocket Facade Interface
+- Backoffice Access Control
+- Situational Awareness Router
+- Compliance Scanning Repository
+- Monetization Value Profiling
+- Guidance Text Generation
+- AI Suggestions Engine
+- Morning Brief Generator
+- Missing Test Scanner
+- Voice Feedback Repository
+- Voice Quality Provider Analytics
+- Supabase Query Chain
+- Pipeline Integrity Validation
+- OASIS Service Manifest
+- OASIS Operator Manifest
+- Project Build Scripts
+- Document Management Skill
+- Knowledge Base Skill
+- Scheduling Skill
+- VTN Wallet Skill
+- Dev Dependencies Config
+- AI Agent Schema
+- Service Endpoint Schema
+- Claude Build Kickoff Docs
+- VCAOP Final Report
+- VCAOP Test Instructions
+- Voice Clock Feature
+- Boundary Consent Engine
+- Lovable Auth Adapter Docs
+- Lovable Auth Analysis
+- VTID Deployment Recovery
+- Autopilot How It Works
+- Community Longevity Science
+- Vitanaland Welcome Guide
+- Home Dashboard Overview
+- Daily Priorities Feature
+- Actions Tab Feature
+- AI Feed Tab
+- Nutrition Tracking
+- Community Section Overview
+- Community Rankings Leaderboards
+- Live Rooms Feature
+- Live Room Summaries
+- Matchmaking Accept Dismiss
+- Messaging Inbox
+- OASIS Ledger Integrity
+- ORB Auth Contract
+- Security Incident Notifications
+- Deep Diagnosis Engine
+- Lane Definitions Roadmap
+- ORB Recovery Program
+- VTID Diagnostic Report
+- Staging Enablement VTID
+- Stripe Connect Handoff
+- Stripe Integration Verification
+- Index Improvement Plan Tests
+- AI Subscription Phase 1
+- IAM Roles RLS Runbook
+- AWS Staging Validation
+- AWS Provider Keys Verification
+- Vertex Serbian Bridge Test
+- Lovable Auth Adapter
+- Lovable Auth Analysis
+- Background Automation Autopilot
+- Tenant Specific Behavior
+- Frontend Canonical Source
+- Deployment Recovery Plan
+- Live Rooms UI Screen
+- Media Hub UI Screen
+- Feed UI Screen
+- Challenges UI Screen
+- Groups UI Screen
+- Matchmaking UI Screen
+- Events Meetups UI Screen
+- Autopilot How It Works
+- Community Longevity Science
+- Vitanaland Welcome Guide
+- Home Dashboard Overview
+- Daily Priorities Feature
+- Actions Tab Feature
+- AI Feed Tab
+- Nutrition Tracking
+- Community Section Overview
+- Community Rankings Leaderboards
+- Live Rooms Feature
+- Live Room Summaries
+- Matchmaking Accept Dismiss
+- Messaging Inbox
+- ORB Mobile Visual Spec
+- ORB Visual Parity
+- VTID Field Reference
+- Deep Diagnosis Engine
+- Stripe Connect Handoff
+- Stripe Integration Verification
+- Wiki Ingest Log
+- Cognee Extractor Package
+- STT Provider Policy
+- Runtime Configuration
+- STT Fallback Adapter Tests
+- STT Build Provider Tests
+- Memory Check Worker
+- Deploy Watcher Manifest
+- ORB Widget Watchdog
+- Voice Lab Agent Config
+- Frontend Canonical Source
+- Voice Budget Dashboard
+- Session Failure Classifier
+- System Health Monitoring
+- Dismissal Tool Repository
+- Morning Brief Scheduler
+- Pattern Extractor Repository
+- Journey Index Award
+- Journey Stage Fetcher
+- ORB Session State
+- GCP Labels Test
+- LiveKit Test Coverage
+- GitHub MCP Connector
+- Jest Test Configuration
+- Vitana Diary Skill
+- Vitana Stripe Skill
+- Health Consent Layer
+- Backend Dependencies
+- Jest Test Configuration
+- Build & Dev Scripts
+- Spec Field Reference
+- JSON Schema Definition
+- Automated Health Check Plan
+- Partner Org Access & Schema
+- Supplier Catalog Self-Service
+- Community & Matchmaking Features
+- ORB Greeting Policy Recovery
+- Self-Healing Pipeline Design
+- Greeting Policy Reconciliation
+- AWS Deploy Gateway Fix
+- GitHub Actions Size Fix
+- Partner Onboarding API Fix
+- Partner Onboarding Migration
+- Vertex Serbian Bridge Fix
+- Vertex Bridge Partial Fix
+- Vertex Voice Bridge Activation
+- Voice Quality Track B Runbook
+- Prisma Ledger Schema Changes
+- Watcher Session Hooks
+- CI Visual Verification
+- Android Doctor Script
+- LiveKit Infrastructure Setup
+- VCAOP Data Model Schema
+- AWS Staging Post-Wiring Findings
+- AWS Staging Final Validation
+- AWS Production Verify Script
+- Campaign Distribution Module
+- CJ Dropshipping Module
+- Utilities & Messaging Module
+- Wallet RPC Operations
+- Profile & Social RPCs
+- Utility RPC Operations
+- Platform Operations Autopilot
+- Autopilot Dependency Graph
+- Community Matchmaking Features
+- UI Design Guidelines
+- Dev Dashboard & Settings
+- Community Overview Screen
+- Longevity Entry Animation
+- Vitana Index Visibility
+- Floating Input Bar
+- Canonical VTID Spec Template
+- Self-Healing Pipeline Design
+- Backend Execution Pipeline Issues
+- CI/CD Pipeline Issues
+- Implementation Reference Index
+- Prisma Ledger Schema Changes
+- Cloud Run Service Config
+- Conductor Package Config
+- Memory Indexer Package Config
+- Turn Handling Session Tests
+- Shared Service Manifest
+- Migration Naming & Transactions
+- Backend Service Analyzer
+- RLS Policy Validator
+- Deploy Watcher Service
+- PII Filter Policy
+- Maxina Login Screen Docs
+- Home Screen Docs
+- Community Screen Docs
+- Live Rooms Screen Docs
+- Discover Screen Docs
+- Biomarkers Screen Docs
+- Health Screen Docs
+- Inbox Screen Docs
+- AI Screen Docs
+- Wallet Screen Docs
+- Sharing Screen Docs
+- Diary Screen Docs
+- Memory Screen Docs
+- Settings Screen Docs
+- ORB Overlay Screen Docs
+- Match Journey Fetcher
+- Settings Audit Repository
+- Active Usage Repository
+- Conversation Focus Repository
+- Feature Introductions Repository
+- Initiative Registry Repository
+- Pillar Momentum Fetcher
+- Widget Circuit Breaker Tests
+- Test Setup and Mocks
+- Staging Nova Instruction Tests
+- CSP Validator Path Guard
+- App Build Path Constants
+- Staging Operator Flag Pinning
+- Operator Follow Persist Feature
+- Operator Chat Scroll Behavior
+- Linear MCP Issue Management
+- Playwright MCP Config
+- Backend Server Dependencies
+- Autopilot Heartbeat Tasks
+- Vaea Config Schema
+- Canonical Spec Governance Template
+- Backend Execution Pipeline Issues
+- CI/CD Pipeline Issues
+- Audio Video Format Config
+- Codebase Intelligence Workflow
+- Video Shop Attribution Schema
+- AWS DR Cutover Runbook
+- RPC Functions Registry
+- Failing Routines Analysis
+- Frontend Canonical Source Governance
+- AI Spec Generation Pipeline
+- Unified Awareness Layer
+- VTID-03607 Acceptance Criteria
+- Production Evidence Queries
+- Aurora TLS Fix Acceptance
+- ORB Voice End Conversation
+- Staging Execution ECS Fix
+- Operator Title Mangling Fix
+- Commerce Partner Onboarding
+- Greeting Audio Bridge Production
+- VTID API Endpoints
+- Agent Behavior Requirements
+- Worker Runner Concurrency
+- iOS Audio Fixes Applied
+- Agent Heartbeat Package
+- AWS Staging DNS Validation
+- AWS Gateway Deployment Validation
+- Aurora Seed Script
+- Session Hook Script
+- Admin Tenant Management API
+- AI Voice React Hooks
+- Wallet Module Actions
+- Autopilot Orchestration Diagrams
+- WebSocket State Quick Reference
+- Key RPC Functions
+- User Settings Sections
+- Frontend Canonical Source Governance
+- Vitana Community Guide
+- iOS Audio Root Causes
+- iOS Audio Fixes Applied
+- Implementation Phase Plan
+- UI Wireframe Appendix
+- Experience Gravity Changes
+- Navigation Reorder Design
+- UI Overlay Rules
+- Screen Registry Template
+- Spec Generation Pipeline
+- Backend Dev Change Flow
+- Canonical Repos and URLs
+- Frontend Dev Change Flow
+- Agent Behavior Requirements
+- Python AI Packages
+- Agent Registry Config
+- Intent Moderation Admin
+- Autopilot Concept Guide
+- Credits and Tokens Guide
+- Did You Know Guide
+- Five Pillars Guide
+- Daily Journey Loop Guide
+- Life Compass Guide
+- Marketplace Economy Guide
+- Maxina Community Guide
+- Media Profile Content Guide
+- Memory Concept Guide
+- Mission Operating Principle
+- ORB Concept Guide
+- Permissions Guide
+- Privacy Data Monetization Guide
+- Vitana ID Guide
+- Vitana Index Guide
+- Voice Command Manual
+- Business Hub Guide
+- Match Opportunities Guide
+- Marketplace Autopilot Guide
+- Services and Clients Guide
+- AI Credential Encryption
+- Screen Manifest Types
+- Content Moderation Media Repository
+- Pause Check Repository Tests
+- Interaction Style Fetcher Repository
+- Notification Categories Repository
+- Pillar Momentum Fetcher Repository
+- Oasis Pipeline Repository
+- GCP Static Screens Gate Tests
+- Orb Widget Host Callbacks
+- Hardcoded Wording Lint Tests
+- B2 Walls Boundary Tests
+- Compatibility Resolver Boundary Tests
+- Supabase Query Builder
+- Supabase Query Builder
+- Pending API Claimed Tasks
+- Operator Prompt Lists Tool
+- Manual Activation Call Sites
+- Fullscreen Persist Flicker Tests
+- Oasis Projector Service Docs
+- LiveKit Vertex Extraction Metadata
+- VTID System Rules
+- Cloud Run Service Mappings
+- Cloud Run ERP Bridge Config
+- VAEA Cloud Run Deployment
+- Auth Adapter Component Design
+- RLS Policy Patterns
+- Memory Domain Design
+- Personalization Domain VTIDs
+- LiveKit Session Heartbeat Bootstrap
+- Bootstrap Context Cap Patch
+- Self-Healing Dashboard Layout
+- Creator Payments Components
+- ORB Recovery Execution Log
+- Communication State Machine
+- Autonomous Execution Decisions Log
+- ORB Recovery Observability E2E
+- VTID-03572 Aurora i18n Seeder
+- VTID-03823 Tasks Board Hygiene
+- VTID-03831 Governance Design Gate
+- VTID-03834 ERP Capability Grants
+- VTID-03846 Bedrock Profile Table
+- VTID-03852 Operator Onramp Transparency
+- VTID-03887 BackOffice Approver View
+- VTID-03958 Canary User Replacement
+- VTID-03961 Deploy Mode Gateway
+- VTID-03984 Fish API Key Wiring
+- VTID-03990 Acceptance Report
+- VTID-03995 Role Switching Patients
+- CI Executor Fix Run Log
+- OASIS Event DEV-CICDL-0034
+- Role Config UI Access
+- Playwright Role Config
+- AWS Polly Voice Verification
+- DYK Tour Progress Routine
+- Knowledge Docs Freshness Routine
+- Push Pipeline Probe Routine
+- Spec Memory Quarantine Routine
+- AWS S3 Mirror Setup
+- Vertex Serbian Bridge Setup
+- Snapshot Comparison Script
+- Command Hub Golden Fingerprint
+- Service Deployment Script
+- Publish To Prod Script
+- Scale Idle To Zero Script
+- Health Biomarkers Hooks
+- Auth Adapter Component Design
+- Sharing Module Campaign Actions
+- Frontend Media Controls Implementation
+- Media Services Layer
+- Error Handling Recovery
+- RLS Policy Patterns
+- Memory Domain Design
+- Personalization Domain VTIDs
+- Mobile PWA Longevity Rules
+- Success Criteria Milestones
+- Vitanaland Home Surface Layout
+- i18n German-First Rules
+- Floating Input Bar Specs
+- Bottom Navigation Bar Config
+- Self-Healing Dashboard Layout
+- Creator Payments Components
+- OASIS Event Specs
+- Canonical Repos And Services
+- CI/CD Implementation Reference
+- Tenant Dataset Constraints
+- Knowledge Extraction Rules
+- Python Package Dependencies
+- Agent Telemetry Heartbeat
+- Agent Operational Constraints
+- Voice Pipeline Dependencies
+- Voice Tools Catalog
+- Static Asset Path Tests
+- Health Registry Backend Tests
+- Chainable Mock Promises
+- Orb Widget Conversation Tests
+- Vertex Wake Opener Tests
+- Conversation Flow Rules
+- Memory Intelligence Handler Tests
+- Context Pack Diary Tests
+- Seed Migration Parser Tests
+- Fusion Audit Writer Tests
+- App Wall Policy Tests
+- Staging Executor Dispatch Tests
+- Token Prefix Doc Tests
+- Public MCP OAuth Gateway
+- MCP Gateway ADR
+- AI Planning Architecture ADR
+- Stack Conventions Context
+- Provider Switch Configuration
+- Spec Status Metadata
+- Deploy Watcher Service
+- Gateway Cloud Service
+- MCP Cloud Service
+- MCP Gateway Service
+- Oasis Cloud Service
+- Oasis Operator Service
+- Oasis Projector Service
+- Openclaw Bridge Service
+- Validators Cloud Service
+- Verification Engine Service
+- Worker Runner Service
+- Implementation Timeline
+- Adapter Architecture Options
+- Security Considerations
+- User Migration Strategy
+- Testing Strategy
+- Safe Database Extension Zones
+- Database Schema Changes
+- Acceptance Criteria Pipeline
+- App Routing Integration
+- Gateway Authentication Details
+- Security Access Control
+- Stripe Commerce Onboarding
+- Platform Service Status
+- Pending Human Actions
+- Checkout Bridge Acceptance
+- Gateway Deploy Acceptance
+- Reconnecting Cue Fix
+- Disconnect Alert Fix
+- ORB Voice Device Fix
+- Supplier Self-Service Acceptance
+- Concurrent Generation Fix
+- Staging Regression Fix
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Executor Strip List Repin
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Dev Autopilot Execution
+- Stripe Connect Approval
+- Screen Load Timing
+- OpenAPI Specifications
+- Fish Audio Secret Setup
+- Storage Bucket Setup
+- Impact Rule Migration Check
+- Scanner Migration Check
+- Cloud Project Config
+- Cloud Run Audit Script
+- Fish Voice Verification
+- Commerce React Hooks
+- Implementation Timeline
+- Adapter Architecture Options
+- Security Considerations
+- User Migration Strategy
+- Testing Strategy
+- Wallet Module Actions
+- AI Module Actions
+- Sharing Module Actions
+- Testing And Debugging
+- Future Improvements Roadmap
+- Performance Considerations
+- Security Architecture
+- Safe Database Extension Zones
+- Messages Section Structure
+- Longevity Mental Model
+- Structural Foundation Rules
+- Share System Rules
+- Live Rooms Rules
+- Database Schema Changes
+- Acceptance Criteria Pipeline
+- Stripe Integration Approval
+- App Routing and Billing
+- Auth and API Config
+- Security and Access Control
+- Creator Onboarding Flow
+- Gateway Dependencies
+- Runtime Instance Config
+- LLM Provider Config
+- TTS Provider Config
+- Vendor Script Management
+- Specs Router Setup
+- Calendar Prioritization
+- Specialists Repository Tests
+- Autopilot Source Filter Tests
+- Orb Widget Auth Tests
+- Orb Widget Recovery Tests
+- Orb Widget Gesture Tests
+- Orb Widget Topic Tests
+- Orb Widget Session Tests
+- Fake Supabase Test Helpers
+- Vertex Gateway Tests
+- LLM Provider Badge Tests
+- Perplexity MCP Research
+- Claude Skills Docs
+- VTID Task Tracking
+- Escalations Approval Queue
+- Execution Protocol Loop
+- Architecture Identity Layers
+- Stream Rotation Config
+- Preview Router Worker
+- Problem and Desired State
+- Authentication Flow Design
+- Gateway Integration Points
+- Autonomous Architecture Docs
+- Platform Core Identity
+- Signal Detection Domain
+- Real-time Memory Recall
+- Feature Scope Definition
+- Database Schema Changes
+- Deployment Steps
+- Cloud Monitoring Queries
+- Database Schema RPC
+- Partner Health Test Acceptance
+- AC-7 Streaming Console
+- Zero-Caller Guard Acceptance
+- Route Mount Acceptance
+- OASIS Event Logging
+- Agent Start Script
+- Storage S3 Migration
+- Aurora PostgREST Grants
+- EventBridge Cron Migration
+- EventBridge Daily Feature
+- EventBridge Push Dispatch
+- Narration Audio Cache
+- Operator Agent Task Grants
+- Operator SQL Secret Setup
+- Snapshot Capture Script
+- VTID Ensure Script
+- CrewAI GCP Readme
+- Problem and Desired State
+- Auth Flow Design Docs
+- Gateway Integration Docs
+- Autonomous Architecture Raw
+- Notification System Design
+- Platform Core Tenancy
+- Signal Detection Specs
+- AI Memory and Diary
+- Feature Scope Docs
+- Database Changes Docs
+- Deployment Prerequisites
+- OASIS Monitoring Docs
+- Schema and RPC Docs
+- CrewAI GCP Setup
+- OASIS Gateway Dependencies
+- Fake Supabase Builder
+- Promise Chain Helpers
+- Marketplace Prefs Error Tests
+- Aurora Schema Restore
+- Aurora Unblock Script
+- Repository Agents Scope
+- Session Gateway Setup
+- Vitana Ultimate Goal
+- Maxina Brand Manifesto
+- Alkalma Experience Docs
+- Earthlings Experience Docs
+- Commerce Partner Portal Acceptance
+- ORB Localization Acceptance
+- Shopify OAuth Connector Acceptance
+- SMART FHIR Connector Acceptance
+- VTID Evidence Pack
+- VTID Evidence Pack
+- VTID Evidence Pack
+- Evidence Pack README
+- Evidence Pack README
+- Evidence Pack README
+- Browser Screenshots Evidence
+- Agent Heap Memory Issue
+- Credential Security Compliance
+- OASIS Gateway Service
+- Claude Diagnostics Bootstrap
+- AWS GCP Parity Report
+- AWS GCP Parity Report
+- AWS GCP Parity Report
+- AWS GCP Parity Report
+- AWS GCP Parity Report
+- Command Hub Check
+- SQL Management API
+- GitHub Cleanup Script
+- Gateway Gemini Secret Fix
+- Report Generation Script
+- Cloud Scheduler Setup
+- Phase 1.5 Verification
+- Phase 2b Compliance Verify
+- Structure Verification Script
+- Memory Indexer CrewAI
+- Maxina Longevity Brand
+- Alkalma Experience Content
+- Earthlings Experience Content
+- Maxina Longevity Manifesto
+- Memory Indexer Service
+- Vitana Orchestrator Tests
+- Voice Tool Router INT4
+- Vitana Finetune Trainer
+- Package Setup Config
+- Navigation Configuration
+- Supabase MCP Test
+- Environment Setup Script
+- Aurora FK Repoint
+- CloudShell Diagnostics
+- DMS Source DNS Fix
+- Aurora Policy Unblock
+- Aurora Views Unblock
+- Human Approvals Log
+- Orb Agent Service
+- Vitana Python Package
+- Vitana Verification Engine
+
+## God Nodes (most connected - your core abstractions)
+1. `RunContext` - 555 edges
+2. `function_tool()` - 553 edges
+3. `summarize()` - 551 edges
+4. `emitOasisEvent()` - 544 edges
+5. `getSupabase()` - 509 edges
+6. `_dispatch()` - 416 edges
+7. `renderApp()` - 308 edges
+8. `gatewayApiCall()` - 290 edges
+9. `buildContextHeaders()` - 182 edges
+10. `CHANGE LOG` - 157 edges
+
+## Surprising Connections (you probably didn't know these)
+- `Investigation` --references--> `VertexLiveClient`  [INFERRED]
+  docs/validation/VTID-04000/acceptance.md → services/gateway/src/orb/live/upstream/vertex-live-client.ts
+- `Post-merge finding: pre-existing Vertex/LiveKit parity gap (not this VTID's regression)` --references--> `VertexLiveClient`  [INFERRED]
+  docs/validation/VTID-04000/acceptance.md → services/gateway/src/orb/live/upstream/vertex-live-client.ts
+- `CHANGE LOG` --references--> `CascadeEligibility`  [INFERRED]
+  CLAUDE.md → services/gateway/src/orb/live/upstream/cascaded-config.ts
+- `policy_render_block` --references--> `PolicyResolver`  [INFERRED]
+  DATABASE_SCHEMA.md → services/gateway/src/services/decision-contract/policy-resolver.ts
+- `Acceptance criteria` --references--> `PolicyResolver`  [INFERRED]
+  docs/decision-contract/phase-b-brief.md → services/gateway/src/services/decision-contract/policy-resolver.ts
+
+## Import Cycles
+- 3-file cycle: `services/gateway/src/services/dev-agent-memory.ts -> services/gateway/src/services/dev-autopilot-execute.ts -> services/gateway/src/services/operator-turn-memory.ts -> services/gateway/src/services/dev-agent-memory.ts`
