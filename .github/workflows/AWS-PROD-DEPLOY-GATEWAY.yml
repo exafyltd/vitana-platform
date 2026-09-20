@@ -563,29 +563,33 @@ jobs:
           # which is why every measurement in VTID-04096/04097 had to be taken
           # on staging. It emits one OASIS event per session establishment.
           #
-          # VTID-04100 — FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is now pinned ON
-          # for production, reversing the 2026-07-28 decision to disable it.
+          # VTID-04128 — FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is REMOVED from
+          # this unconditional pin. It reverses VTID-04100 (2026-09-19), which
+          # pinned it to "staging+prod" here on every single deploy — a
+          # standing, self-reasserting rule, not a one-time setting.
           #
-          # That decision was a PRODUCT one, not a technical one: the bridge
-          # phrase is synthesized by a different engine from the live upstream,
-          # so the user hears one voice say the filler and another voice
-          # continue. The platform owner reviewed that trade on 2026-09-19 and
-          # accepted the seam. It is recorded here rather than left implicit,
-          # because the next person to read this file will otherwise find a
-          # flag that contradicts its own history.
+          # That shape is exactly what caused a real production incident: the
+          # double-voice pre-login greeting (one voice speaks a filler phrase
+          # synthesized by a different engine, then the real upstream voice
+          # continues with different content) was fixed live via VTID-04120's
+          # `env_overrides` escape hatch — but that override applies to a
+          # SINGLE dispatch only. The very next unrelated prod deploy
+          # (VTID-04126, flipping an unrelated cascade-voice flag) re-ran this
+          # unconditional block, which silently re-pinned the flag back to
+          # "staging+prod" and reintroduced the exact bug that had just been
+          # fixed, with no one having asked for that and no code having
+          # changed. The platform owner rejected the double-voice seam a
+          # second time (VTID-04127) and asked why a fix that should be
+          # permanent kept reverting — this is that root cause, removed.
           #
-          # What it buys, measured on staging 2026-09-19 (authenticated `de`,
-          # pooled n=19): first AUDIBLE speech p50 1,398 ms / min 621 ms,
-          # against a first MODEL audio of p50 2,878 ms. The bridge is the only
-          # mechanism that puts a voice in front of the model's own latency —
-          # the catalog and directive budgets (VTID-04097/04096) move the tail,
-          # not the floor.
-          #
-          # Safe to enable now in a way it was not before: VTID-04100 gave the
-          # bridge a cache (so it is not a Polly round trip per session) and
-          # bounded its pre-connect await at 1.5s (so it cannot stall a connect
-          # the way the unbounded await did in VTID-03802). Rollback is this
-          # value back to "off" — one dispatch, no code change.
+          # This flag is now UNPINNED, matching every other genuinely-optional
+          # flag in this workflow (see the `if [ -n "$…INPUT" ]` pattern
+          # below): a deploy that does not explicitly ask to change it leaves
+          # whatever value is currently on the live task definition alone.
+          # "Off" (VTID-04127's current state) now actually stays off across
+          # future deploys, until someone deliberately turns it back on via
+          # an explicit env_overrides dispatch — never as an automatic side
+          # effect of an unrelated deploy again.
 
           # NOT pinned here, deliberately: FEATURE_ORB_NOVA_PREWARM_ENV and
           # FEATURE_ORB_GREETING_PREBUFFER_ENV. Both only take effect on the
@@ -595,12 +599,11 @@ jobs:
           # in prod today would change nothing and would look like a fix.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV","FEATURE_ORB_GREETING_TTS_BRIDGE_ENV") | not) ]
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV") | not) ]
                 + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                     {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
-                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"},
-                    {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging+prod"} ] )')
+                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )')
 
           # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
           # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
