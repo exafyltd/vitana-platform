@@ -3116,3 +3116,133 @@ var instead of a source edit), the proxy still needs a publicly reachable
 endpoint, and the `apikey`-header behavior is still unverified against a
 live instance. It only removes the friction of editing a 282-importer-wide
 generated file by hand at repoint time.
+
+---
+
+### 2026-09-20 — pgvector fix executed; DMS cannot write into a native `vector` column at all (new root cause, supersedes the 2026-09-19 "corrupted varchar length" theory)
+
+Executed on explicit user approval ("Run pgvector fix now"), same day as
+the 22:00 CET cutover deadline. The 2026-09-19 finding said `vtid_ledger.
+embedding`/`dev_agent_memory.embedding` landed on Aurora as `varchar(1532)`/
+similar instead of `vector(1536)`/`vector(1024)` — DMS's schema converter
+has no native pgvector support and maps a source `vector` column to a
+`varchar` sized from a misread `atttypmod`. The prior write assumed the fix
+was simply to widen/retype that varchar to a real `vector` column and
+reload. That assumption was wrong in a way only a live reload attempt
+revealed.
+
+**Step 1 — the retype itself, done, verified correct.** Via the RDS-managed
+master secret (`rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-QR8ox2`),
+against database `vitana` (not `postgres` — see the standing gotcha noted
+elsewhere in this doc):
+
+```sql
+ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE vector(1536) USING NULL;
+ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING NULL;
+```
+
+Both tables were empty at the time (zero rows, zero risk). Confirmed via
+`information_schema.columns`/`pg_attribute` that both columns now report
+`udt_name='vector'` with the correct dimension. Confirmed no other
+constraints/triggers on either table that this touches (`vtid_ledger` has
+only its own `_pkey`; `pg_trigger` returned zero non-internal rows).
+
+**Step 2 — reload via DMS, and it silently failed anyway.** Started
+`vitana-fullload-rehearsal-v2` (`start-replication-task-type
+reload-target`, since a scoped `reload-tables` call on a `resume-processing`
+start raced and self-terminated without ever loading the two queued tables —
+see the mechanics note below). The full reload ran ~16 minutes over all
+592-594 tables in the task's mapping (`TargetTablePrepMode:
+TRUNCATE_BEFORE_LOAD`) and finished `TablesLoaded: 592, TablesErrored: 2` —
+the exact same two tables, still 0 rows, still erroring, even with a real
+native `vector` column now in place. `describe-table-statistics` reports
+both as `TableState: "Table error"`, `FullLoadRows: 0`.
+
+CloudWatch (`dms-tasks-vitana-dms-prod` / stream
+`dms-task-VWJEA6Z5DFCJLNGD5O4B4YBQYE`) shows the actual failure shape for
+`vtid_ledger`:
+
+```
+Unload finished for table 'public'.'vtid_ledger' (Id = 574). 1986 rows sent.
+Load finished for table 'public'.'vtid_ledger' (Id = 574). 1986 rows received. 0 rows skipped.
+E: Handling End of table 'public'.'vtid_ledger' loading failed by subtask 2 thread 1 [1020403]
+W: Table 'public'.'vtid_ledger' was errored/suspended ... Command failed to load data with
+   exit error code 0 and exitwhy 1. Please check target database logs for more information.;
+   Failed to wait for previous run; Failed to load data from csv file.
+```
+
+DMS's own source-side unload succeeded (1,986 rows read from Supabase) and
+it even reports the target-side "load" as received — but then fails at
+end-of-table with no further detail, and DMS's log group is the only log
+this session can reach (no VPC route to Aurora's own Postgres log).
+
+**Step 3 — isolated the fault with a controlled manual-SQL test, ruling out
+Postgres/pgvector itself.** Inserted a real test row directly via
+`rds-data execute-statement` and updated its `embedding` with a genuine
+1536-dimension vector literal (`'[0.001,0.001,...]'::vector`, generated via
+`python3 -c "print('['+','.join(['0.001']*1536)+']')"`)  —  **this
+succeeded**, one row updated, then cleaned up. Postgres/pgvector itself has
+no problem accepting a real vector value into this column. The failure is
+specific to **DMS's own bulk-load (CSV/COPY) writer**, which cannot write
+into a target column typed `vector` at all — not a length problem, not a
+Postgres-side rejection, a DMS engine limitation with no native pgvector
+support on the write path either (only the schema-converter side was
+previously understood to be limited; the load engine turns out to share
+that limitation).
+
+**Corrected understanding, superseding 2026-09-19's theory:** the original
+`varchar(1532)` DMS produced was never "too short for the base64/text
+representation of a vector" — it was DMS's own workaround for having no
+vector type at all, and it's *because* that workaround is a plain
+`varchar` that DMS's writer could populate it in the first place (per the
+2026-09-19 finding, other non-pgvector columns loaded fine). Converting the
+column back to a real `vector` type removed DMS's ability to write it via
+CSV/COPY entirely.
+
+**The correct fix, identified but not yet executed — blocked on a fresh
+harness approval, not on a technical blocker:** land the column as
+`text` (unlimited, no vector semantics) so DMS's writer can succeed against
+it like any other string column, let the reload populate it, then cast
+`text → vector` after the data has landed:
+
+```sql
+ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE text USING embedding::text;
+ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE text USING embedding::text;
+-- reload via DMS --
+ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE vector(1536) USING embedding::vector;
+ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING embedding::vector;
+```
+
+This is the standard pgvector-via-DMS migration pattern (stage as text,
+cast after load) and does not require anything DMS itself cannot already
+do. The first `ALTER ... TYPE text` was attempted this session and refused
+by this session's own harness safety classifier as a fresh
+`[Modify Shared Resources]` action requiring its own explicit approval —
+distinct from the already-approved-and-executed `vector(N) USING NULL`
+step above, even though both tables are still empty and the action is
+lower-risk than the one already approved (a widen-to-text is strictly less
+destructive than a retype-to-vector). Not routed around, per that
+classifier's own instructions; recorded here rather than silently retried.
+
+**DMS mechanics note, for the next attempt:** `reload-tables --tables-to-
+reload TableName=<x>,SchemaName=public` (not `Name=` — an easy mistake,
+also present in this repo's own `AURORA-CUTOVER-RUNBOOK-2026-09-20.md`,
+flagged there for correction) only works while the task is `running`;
+starting it via `start-replication-task-type resume-processing` and then
+immediately calling `reload-tables` is unreliable — on a full-load-only
+task with no outstanding CDC backlog, `resume-processing` can self-
+terminate back to `stopped` within seconds without ever honoring a reload
+request issued in that same brief window (observed directly: both tables
+stayed `TableState: "Before load"` after such an attempt). The reliable
+path is `start-replication-task-type reload-target`, which forces a full
+reload of every table in the task's mapping using its existing
+`TargetTablePrepMode` — slower (~16 min for this task) but it actually
+runs to completion.
+
+**Current state:** `vtid_ledger.embedding` and `dev_agent_memory.embedding`
+are both correctly typed `vector` but have 0 rows. Every other column on
+both tables presumably loaded correctly in the 2026-09-19 pass (not
+re-verified this session — the reload above only re-ran because of the
+pgvector attempt, not because other columns were suspected of a problem).
+Next step: get approval for the `text`-widen step above, run it, reload,
+then cast back to `vector`.

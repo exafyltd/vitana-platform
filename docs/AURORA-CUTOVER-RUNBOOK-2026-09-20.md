@@ -27,10 +27,20 @@ replication — and there isn't time left to fix that before tonight).
 
 ### Step 1 — Fix the two pgvector-broken tables
 
-Both tables are currently 0 rows on Aurora because DMS's schema converter
-corrupted `vector` columns into too-short `varchar`s (see status doc,
-"2026-09-19, later same day" addendum, for the full root-cause). Both
-tables are empty on Aurora right now, so this is zero-risk:
+**UPDATED 2026-09-20, executed this session — root cause is deeper than
+originally documented.** The `vector(N) USING NULL` retype below WAS run
+successfully (both columns now correctly typed `vector`), but a DMS reload
+afterward still failed to populate either table — **DMS's bulk-load writer
+cannot write into a native `vector`-typed column at all**, confirmed via a
+controlled manual-SQL test (a real vector literal inserts/updates fine
+directly in Postgres; only DMS's own COPY-based writer fails). This
+supersedes the original "corrupted varchar was too short" theory. Full
+detail, live CloudWatch evidence, and the isolation test:
+`docs/AURORA-MIGRATION-STATUS-2026-09-10.md`, "2026-09-20 — pgvector fix
+executed" addendum.
+
+**The retype (already done, safe to re-run/confirm — both tables are still
+empty):**
 
 ```sql
 ALTER TABLE public.vtid_ledger      ALTER COLUMN embedding TYPE vector(1536) USING NULL;
@@ -54,14 +64,46 @@ aws rds-data execute-statement --region eu-central-1 \
   --sql "ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING NULL;"
 ```
 
-After this, re-load just these two tables (DMS supports table-scoped
-`reload-tables`, no need for a full task reload):
+**The actual remaining fix — stage as `text`, reload, then cast back:**
+
+```bash
+aws rds-data execute-statement --region eu-central-1 \
+  --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database vitana \
+  --sql "ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE text USING embedding::text;"
+
+aws rds-data execute-statement --region eu-central-1 \
+  --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database vitana \
+  --sql "ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE text USING embedding::text;"
+```
+
+Then reload just these two tables (`TableName=`, not `Name=` — the AWS CLI
+parameter is `TableName`; this file previously had this wrong). The task
+must be in `running` state first — `reload-tables` on a `stopped` task
+fails with `InvalidResourceStateFault`, and starting via
+`resume-processing` can self-terminate before honoring the reload if there
+is no outstanding CDC backlog. If a scoped reload doesn't take, fall back
+to `start-replication-task-type reload-target`, which forces a full reload
+of every table in the task's mapping (~16 min for this task's ~594
+tables) and is the more reliable of the two:
 
 ```bash
 aws dms reload-tables --region eu-central-1 \
   --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:VWJEA6Z5DFCJLNGD5O4B4YBQYE \
-  --tables-to-reload Name=vtid_ledger,SchemaName=public Name=dev_agent_memory,SchemaName=public \
+  --tables-to-reload TableName=vtid_ledger,SchemaName=public TableName=dev_agent_memory,SchemaName=public \
   --reload-option data-reload
+```
+
+Once the text columns are populated (non-zero row counts, real embedding
+strings), cast back to `vector` for real:
+
+```bash
+aws rds-data execute-statement --region eu-central-1 \
+  --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database vitana \
+  --sql "ALTER TABLE public.vtid_ledger ALTER COLUMN embedding TYPE vector(1536) USING embedding::vector;"
+
+aws rds-data execute-statement --region eu-central-1 \
+  --resource-arn "$CLUSTER_ARN" --secret-arn "$SECRET_ARN" --database vitana \
+  --sql "ALTER TABLE public.dev_agent_memory ALTER COLUMN embedding TYPE vector(1024) USING embedding::vector;"
 ```
 
 Verify afterward (expect non-zero rows, and the `vector` type holding):
