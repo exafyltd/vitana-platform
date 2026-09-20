@@ -46,6 +46,8 @@ import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import type { CicdEventType } from '../types/cicd';
 import { approveAutoExecute, getSupabase, supa, type SupaConfig } from './dev-autopilot-execute';
+// VTID-04164: per-thread flood guard on the operator execution on-ramp.
+import { checkOnRampRateLimit, describeOnRampRateLimit } from './operator-onramp-rate-limit';
 
 const VTID = 'VTID-03820';
 const ONRAMP_SOURCE_TYPE = 'operator_onramp';
@@ -226,6 +228,19 @@ export async function triggerOperatorExecution(
 ): Promise<TriggerOperatorExecutionResult> {
   if (!isOnRampEnabled()) {
     return { ok: false, error: 'operator_execution_onramp_disabled: OPERATOR_EXECUTION_ONRAMP_ENABLED is not "true"' };
+  }
+
+  // VTID-04164: flood guard FIRST — before the VTID allocation below, before
+  // any DB read, and before approveAutoExecute's safety gate. A runaway
+  // tool-calling loop on one Operator Console thread must not get as far as
+  // minting a VTID (VTID-04005 self-allocation) or being evaluated as a
+  // legitimate execution attempt. Keyed on `requestedBy`
+  // (`operator-chat:<threadId>`), which is the thread identity the tool
+  // handlers pass down — nothing else on this on-ramp reliably carries it.
+  // Refusals are returned as a normal result, never thrown.
+  const rate = checkOnRampRateLimit(input.requestedBy);
+  if (!rate.allowed) {
+    return { ok: false, error: describeOnRampRateLimit(rate) };
   }
 
   const s = getSupabase();
