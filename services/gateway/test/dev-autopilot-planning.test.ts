@@ -184,4 +184,24 @@ describe('extractFilePaths', () => {
     const paths = extractFilePaths(md);
     expect(paths).toEqual(['services/gateway/src/routes/media-hub.test.ts']);
   });
+
+  it('VTID-04200: falls through to the whole-document scan when the Files section exists but names no path', () => {
+    // Distinct from "returns an empty array for a plan with no paths": here
+    // the "## Files to modify" heading IS present (so the early-return
+    // branch is reachable), but every line under it is prose with no
+    // path-like string — paths.size stays 0, and the function's own comment
+    // documents that this should fall through to the fallback scan rather
+    // than returning empty. This was previously untested — a regression
+    // here would have silently reintroduced "plan has no files_referenced"
+    // for any plan whose Files section is present but not yet filled in.
+    const md = [
+      '## Files to modify',
+      'TBD — not yet identified.',
+      '',
+      '## Context',
+      'The fix touches services/gateway/src/services/foo.ts per the finding.',
+    ].join('\n');
+    const paths = extractFilePaths(md);
+    expect(paths).toEqual(['services/gateway/src/services/foo.ts']);
+  });
 });

@@ -1,0 +1,40 @@
+{
+  "vtid": "VTID-04200",
+  "title": "Operator: extractFilePaths empty-section fallback test",
+  "type": "test-only",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/services/dev-autopilot-planning.ts::extractFilePaths()",
+    "reason": "this function derives files_referenced for the Dev Autopilot safety gate the Operator Console's autopilot_run_task/autopilot_execute_task tools depend on; an earlier untested branch in this same function (prose-noise leakage) already caused a real production incident (VTID-04002 Test Run #1)",
+    "untested_branch_found": "the 'Files to modify' section present but empty (no path-like line) case, distinct from the already-tested 'section absent entirely' case",
+    "probe_result": "confirmed via a throwaway test that the shipped code already correctly falls through to the whole-document scan in this case — no source defect found"
+  },
+  "fix": {
+    "source_files_changed": [],
+    "test_files_changed": [
+      "services/gateway/test/dev-autopilot-planning.test.ts"
+    ],
+    "mechanism": "additive test only; no runtime behavior changed"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 1,
+    "own_suite": {
+      "file": "services/gateway/test/dev-autopilot-planning.test.ts",
+      "tests_total": 16,
+      "tests_passing": 16
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/dev-autopilot-planning.test.ts",
+        "services/gateway/test/dev-autopilot-safety.test.ts",
+        "services/gateway/test/vtid-03839-onramp-approved-by-uuid.test.ts",
+        "services/gateway/test/vtid-04132-onramp-open-ended-safety-gate.test.ts"
+      ],
+      "suites_total": 4,
+      "tests_total": 50,
+      "failures": 0
+    }
+  },
+  "live_verification": "not applicable — test-only change, no runtime behavior difference to observe live"
+}
