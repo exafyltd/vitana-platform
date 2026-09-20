@@ -3249,6 +3249,59 @@ then cast back to `vector`.
 
 ---
 
+### 2026-09-20, later — approved and executed, and hit a THIRD, deeper root cause: DMS silently truncates the text to a fixed length regardless of the live target column definition
+
+User approved the `text`-widen step ("go-ahead on ALTER TABLE ... TYPE
+text"). Executed both ALTERs successfully, ran a full `reload-target`
+(594/594 tables, 0 errors this time — a genuine improvement, the prior run
+had 2 errors), and confirmed the row counts matched Supabase exactly
+(`vtid_ledger` 1987/1987, 5/5 non-null embeddings; `dev_agent_memory`
+97/97 non-null). The `text` widen DID let DMS write *something* — real
+progress over the outright write failure against a `vector` column.
+
+**But the cast back to `vector` failed:** `ERROR: invalid input syntax for
+type vector` on every non-null row, both tables. Diagnosed by inspecting
+the actual stored text directly (`length()`, first/last char, scientific
+notation/NaN checks): every single embedding — regardless of source
+dimension (1536 vs 1024) — is stored at **exactly 3064 characters**, and
+does **not end with `]`**. The text is truncated mid-number, missing the
+closing bracket, with roughly 240-270 of the ~1536 required elements
+present. This is not a data-corruption or encoding issue — it is a hard,
+fixed-length cutoff applied uniformly regardless of the actual data.
+
+**Root cause, best understanding:** DMS is not respecting the LIVE target
+column definition (`text`, unbounded) when writing. It is almost certainly
+still using CACHED target-table metadata from when the column was
+`varchar(1532)` (the original schema-conversion artifact) — an
+ALTER TABLE run directly against Aurora, bypassing DMS's own schema
+management, does not invalidate whatever internal metadata cache DMS keeps
+for that table/column. The exact `3064` byte count (`1532 × 2`) is
+consistent with DMS internally accounting column length in UTF-16 code
+units for its LOB truncation logic, still bound to the pre-retype 1532
+figure. **This is a deeper problem than either the "vector type rejected
+by the writer" (Step 1) or the "corrupted varchar length" (2026-09-19)
+theories — DMS's own metadata cache for this table is stale in a way that
+a direct Postgres-side schema change cannot fix, regardless of what the
+live column type is.**
+
+**Not pursued further this session, deliberately — time-boxed against
+tonight's 22:00 CET freeze window and this is 2 of 594 tables, explicitly
+already treated as an acceptable post-cutover backfill item by this
+runbook.** The likely real fixes (not attempted): refresh/invalidate DMS's
+endpoint or table metadata for this table specifically (if such an action
+exists for a Postgres target endpoint), or drop and recreate the table
+mapping for just these two tables, or — simplest — after cutover, backfill
+`embedding` for these ~102 total rows directly from Supabase via a
+one-off script (read Supabase, write real vector literals to Aurora via
+`rds-data`, the exact mechanism already proven to work in the manual test
+earlier this session). **Current state:** both columns remain `text`,
+correctly populated with (truncated, unusable-as-vector) data; row counts
+match Supabase; no further action taken. Flagged clearly for whoever picks
+this up post-cutover — do not re-attempt the `vector` cast without first
+addressing the truncation.
+
+---
+
 ### 2026-09-20 — `products`/`knowledge_docs` "known-broken" question RESOLVED, no fix needed
 
 The 2026-09-19 addendum flagged an open question: whether `products`/
