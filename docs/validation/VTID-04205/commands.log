@@ -1,0 +1,94 @@
+VTID-04205 — commands run, in order
+
+1. Continuing the standing instruction to queue/ship real, tested
+   improvements to the Command Hub Operator Console. Picked "Tooltip
+   clarifying cost estimates are list-price" from the previously-generated
+   task backlog (/tmp/console-tasks.json).
+
+2. grep -n "cost_usd|cost badge|list.price" services/gateway/src/frontend/command-hub/app.js
+   -> located formatTurnCostBadge() (visible badge text) and
+   describeTurnCost() (the tooltip text, confirmed via
+   `badge.title = describeTurnCost(msg.meta);` at the render call site).
+
+3. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"command-hub-cost-badge-tooltip"}'
+   -> 200 {"ok":true,"vtid":"VTID-04205", ...}
+
+4. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04205 \
+     -d '{"title":"Command Hub: cost badge tooltip notes list-price estimate",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+5. git fetch origin main; git checkout -B
+   claude/vtid-04205-cost-badge-tooltip-estimate-note origin/main (clean
+   working tree confirmed before editing).
+
+6. Read scripts/ci/command-hub-ownership-guard.js in full BEFORE editing
+   app.js: confirmed this repo hard-gates every PR touching
+   services/gateway/src/frontend/command-hub/** behind either a
+   DEV-COMHU-* marker or a listed VTID in ALLOWED_VTID_PATTERN, checked
+   via branch name or PR title, enforced by evaluateMarkerAuthorization().
+   Without adding VTID-04205 to that pattern, this PR would fail CI
+   regardless of the fix's own correctness.
+
+7. Edited services/gateway/src/frontend/command-hub/app.js's
+   describeTurnCost(): wrapped the existing cost-line push in the
+   meta.usage block and appended one more conditional line — an estimate
+   note — only when meta.cost_priced !== false (an unpriced model's line
+   needs no such caveat).
+
+8. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0 (syntax OK).
+
+9. Discovered the initial edit used a literal UTF-8 em-dash character
+   rather than this file's own \uXXXX escape convention (visible via
+   `cat -A`/Python repr on the file) — fixed with a targeted Python
+   string replace to use `—` as a real escape sequence, matching
+   sibling usages (`↑`, `↓`, `·`) elsewhere in the same
+   function/file. Re-ran node --check: still OK.
+
+10. Edited scripts/ci/command-hub-ownership-guard.js: added a short
+    changelog-style comment entry (VTID-04205, app.js only, one line
+    describing the change) directly after the `// VTID-0302: Original
+    guard VTID` anchor line, matching this file's own convention of
+    inserting the newest entry there; prepended `VTID-04205|` to the
+    ALLOWED_VTID_PATTERN regex.
+
+11. Edited services/gateway/src/frontend/command-hub/index.html: bumped
+    both the app.js and styles.css cache-bust query strings to the shared
+    version `20260920-vtid-04205-cost-badge-tooltip-estimate`, per this
+    repo's own "always bump these version strings" rule — styles.css
+    itself has no content change, but both are conventionally bumped
+    together (confirmed against every prior sibling VTID's own test
+    assertion `expect(INDEX_HTML).toContain('styles.css?v=' + ver)`).
+
+12. Wrote test/vtid-04205-cost-badge-tooltip-estimate.test.ts (7 tests):
+    the note is appended after a priced cost line, it lives inside the
+    same meta.usage guard (never standalone), formatTurnCostBadge (the
+    visible badge) is untouched, a node --check syntax guard, the
+    cache-bust bump (at-or-after comparison, matching the sibling-test
+    convention), and two tests exercising the REAL, unmocked
+    evaluateMarkerAuthorization() from command-hub-ownership-guard.js
+    confirming VTID-04205 is now authorized by branch name and by PR
+    title.
+
+13. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04205-cost-badge-tooltip-estimate.test.ts --silent
+    -> 1 suite, 7 tests, all passing.
+
+14. node node_modules/.bin/tsc --noEmit
+    -> exit 0, no output.
+
+15. node node_modules/.bin/jest \
+        test/vtid-04031-operator-turn-cost.test.ts \
+        test/scripts/command-hub-ownership-guard.test.ts \
+        test/vtid-03947-message-copy-timestamp.test.ts \
+        test/vtid-04033-operator-execution-follow.test.ts \
+        test/vtid-04104-operator-follow-persist.test.ts \
+        test/vtid-04106-operator-chat-stick-to-bottom.test.ts \
+        test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+        test/vtid-04136-single-format-relative-time.test.ts \
+        test/vtid-04205-cost-badge-tooltip-estimate.test.ts --silent
+    -> 9 suites, 78 tests, all passing, 0 regressions.
+
+16. Wrote docs/validation/VTID-04205/{acceptance.md,commands.log,outputs/execution.json}.

@@ -23615,7 +23615,12 @@ function describeTurnCost(meta) {
     var lines = ['Provider: ' + (meta.provider || '?'), 'Model: ' + (meta.model || '?')];
     if (typeof meta.duration_ms === 'number') lines.push('Turn: ' + formatToolDuration(meta.duration_ms) + (typeof meta.tool_calls === 'number' ? ' (' + meta.tool_calls + ' tool call' + (meta.tool_calls === 1 ? '' : 's') + ')' : ''));
     if (meta.usage) lines.push('Tokens: ' + (meta.usage.input_tokens || 0) + ' in / ' + (meta.usage.output_tokens || 0) + ' out' + (typeof meta.model_calls === 'number' ? ' over ' + meta.model_calls + ' model call' + (meta.model_calls === 1 ? '' : 's') : ''));
-    if (meta.usage) lines.push(meta.cost_priced === false ? 'Cost: model not in the price table' : 'Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
+    if (meta.usage) {
+        lines.push(meta.cost_priced === false ? 'Cost: model not in the price table' : 'Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
+        // VTID-04205: the badge shows a dollar figure with no caveat -- without
+        // this note it reads as exact billing rather than a list-price estimate.
+        if (meta.cost_priced !== false) lines.push('(estimate \u2014 list prices, not exact billing)');
+    }
     return lines.join('\n');
 }
 

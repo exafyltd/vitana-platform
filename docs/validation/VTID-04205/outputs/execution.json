@@ -1,0 +1,44 @@
+{
+  "vtid": "VTID-04205",
+  "title": "Command Hub: cost badge tooltip notes list-price estimate",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/frontend/command-hub/app.js::describeTurnCost() — the cost/model badge's hover tooltip (badge.title)",
+    "finding": "the badge's dollar figure is a list-price estimate (documented in this repo's own CHANGE LOG for VTID-04031) but that caveat was never surfaced to the person looking at the badge"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/frontend/command-hub/app.js",
+      "services/gateway/src/frontend/command-hub/index.html",
+      "scripts/ci/command-hub-ownership-guard.js"
+    ],
+    "mechanism": "describeTurnCost() appends one conditional line noting the cost is a list-price estimate, only when a real cost was shown; formatTurnCostBadge() (visible badge) untouched; cache-bust bumped; command-hub-ownership-guard.js's ALLOWED_VTID_PATTERN updated to authorize this VTID, since that guard hard-gates all Command Hub frontend PRs"
+  },
+  "verification": {
+    "node_check_app_js": "clean",
+    "tsc_noemit": "clean",
+    "new_tests_added": 7,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04205-cost-badge-tooltip-estimate.test.ts",
+      "tests_total": 7,
+      "tests_passing": 7
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-04031-operator-turn-cost.test.ts",
+        "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+        "services/gateway/test/vtid-03947-message-copy-timestamp.test.ts",
+        "services/gateway/test/vtid-04033-operator-execution-follow.test.ts",
+        "services/gateway/test/vtid-04104-operator-follow-persist.test.ts",
+        "services/gateway/test/vtid-04106-operator-chat-stick-to-bottom.test.ts",
+        "services/gateway/test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts",
+        "services/gateway/test/vtid-04136-single-format-relative-time.test.ts",
+        "services/gateway/test/vtid-04205-cost-badge-tooltip-estimate.test.ts"
+      ],
+      "suites_total": 9,
+      "tests_total": 78,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — no deployed staging build carries this unmerged change to point a browser at; the change is a one-line addition to a native HTML title-attribute tooltip, verified at the source level per this repo's own established pattern for non-layout textual changes"
+}
