@@ -11,7 +11,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { MAX_FAILED_ATTEMPTS_WITHOUT_EDIT, RepeatedCheckGuard, checkGuardKey } from '../src/services/autopilot-agent/agent-check-guard';
+import { MAX_FAILED_ATTEMPTS_WITHOUT_EDIT, MAX_NAV_REPEATS_WITHOUT_EDIT, RepeatedCheckGuard, checkGuardKey, navGuardKey } from '../src/services/autopilot-agent/agent-check-guard';
 import { executeAgentTool, type AgentToolContext, type CheckKind } from '../src/services/autopilot-agent/agent-tools';
 import { applyPrContract, buildCommandsLog, type PrContractInput } from '../src/services/dev-autopilot-pr-contract';
 
@@ -47,6 +47,30 @@ describe('VTID-04016 RepeatedCheckGuard (pure)', () => {
     for (let i = 0; i < 5; i++) { g.record('git_status', undefined, false); g.record('git_diff', undefined, false); }
     expect(g.shouldRefuse('git_status')).toBeNull();
     expect(g.shouldRefuse('git_diff')).toBeNull();
+  });
+});
+
+describe('VTID-04163 repeated-navigation guard (pure)', () => {
+  it('allows the first call, refuses an exact repeat, and an edit resets it', () => {
+    const g = new RepeatedCheckGuard();
+    for (let i = 0; i < MAX_NAV_REPEATS_WITHOUT_EDIT; i++) {
+      expect(g.shouldRefuseNav('read_file', { path: 'x.ts' })).toBeNull();
+    }
+    const refusal = g.shouldRefuseNav('read_file', { path: 'x.ts' });
+    expect(refusal).toMatch(/already called it with these exact arguments/);
+    expect(refusal).toMatch(/Act on the content you already retrieved/);
+    expect(g.navRefusedCount()).toBe(1);
+    g.markEdited();
+    expect(g.shouldRefuseNav('read_file', { path: 'x.ts' })).toBeNull();
+  });
+
+  it('different arguments (or key order) are distinct calls; unguarded tools are never refused', () => {
+    const g = new RepeatedCheckGuard();
+    expect(g.shouldRefuseNav('read_file', { path: 'x.ts', start_line: 1 })).toBeNull();
+    expect(g.shouldRefuseNav('read_file', { path: 'x.ts', start_line: 40 })).toBeNull();
+    expect(g.shouldRefuseNav('read_file', { start_line: 1, path: 'x.ts' })).not.toBeNull(); // same key, different order
+    expect(navGuardKey('read_file', { a: 1, b: 2 })).toBe(navGuardKey('read_file', { b: 2, a: 1 }));
+    for (let i = 0; i < 5; i++) expect(g.shouldRefuseNav('write_file', { path: 'x.ts', content: 'x' })).toBeNull();
   });
 });
 
@@ -101,6 +125,31 @@ describe('VTID-04016 guard wired through executeAgentTool', () => {
     }
     expect(runs).toHaveLength(5);
   });
+
+  it('VTID-04163: an exact-repeat read_file is refused; a different range is not; an edit resets it', async () => {
+    const a = await executeAgentTool('read_file', { path: 'services/gateway/x.ts' }, ctx);
+    expect(a.isError).toBeFalsy();
+    const b = await executeAgentTool('read_file', { path: 'services/gateway/x.ts' }, ctx);
+    expect(b.isError).toBe(true);
+    expect(b.result).toMatch(/refused/);
+    const c = await executeAgentTool('read_file', { path: 'services/gateway/x.ts', start_line: 1, end_line: 1 }, ctx);
+    expect(c.isError).toBeFalsy(); // different args, not a repeat
+    await executeAgentTool('edit_file', { path: 'services/gateway/x.ts', old_string: 'x = 1', new_string: 'x = 2' }, ctx);
+    const d = await executeAgentTool('read_file', { path: 'services/gateway/x.ts' }, ctx);
+    expect(d.isError).toBeFalsy();
+  });
+
+  it('VTID-04163: search_text/list_dir/find_files are guarded too; write_file/finish are never guarded', async () => {
+    await executeAgentTool('search_text', { pattern: 'x', path: 'services/gateway' }, ctx);
+    expect((await executeAgentTool('search_text', { pattern: 'x', path: 'services/gateway' }, ctx)).result).toMatch(/refused/);
+    await executeAgentTool('list_dir', { path: 'services/gateway' }, ctx);
+    expect((await executeAgentTool('list_dir', { path: 'services/gateway' }, ctx)).result).toMatch(/refused/);
+    await executeAgentTool('find_files', { glob: '**/*.ts' }, ctx);
+    expect((await executeAgentTool('find_files', { glob: '**/*.ts' }, ctx)).result).toMatch(/refused/);
+    for (let i = 0; i < 3; i++) {
+      expect((await executeAgentTool('write_file', { path: 'services/gateway/z.ts', content: 'x' }, ctx)).isError).toBeFalsy();
+    }
+  });
 });
 
 describe('VTID-04016 commands.log describes the executor that ran', () => {
@@ -121,10 +170,10 @@ describe('VTID-04016 commands.log describes the executor that ran', () => {
   it('agent executor: clone, tool loop, guard, runner tsc + jest, fix rounds, push', () => {
     const log = buildCommandsLog({
       ...base, vtid: 'VTID-04016', executor: 'agent',
-      agentStats: { turns: 17, fixRounds: 1, checksRefused: 3, fallbackUsed: false, tscRun: true },
+      agentStats: { turns: 17, fixRounds: 1, checksRefused: 3, navRepeatsRefused: 2, fallbackUsed: false, tscRun: true },
     });
     expect(log).toContain('(agent executor, VTID-04006)');
-    expect(log).toContain('# agent turns=17 fix_rounds=1 checks_refused_by_guard=3 fallback_used=false');
+    expect(log).toContain('# agent turns=17 fix_rounds=1 checks_refused_by_guard=3 nav_repeats_refused_by_guard=2 fallback_used=false');
     expect(log).toContain('git clone --depth 1 --branch main');
     expect(log).toMatch(/tool loop on callViaRouter\('worker'\)/);
     expect(log).toMatch(/refuses a check that already failed since the last edit \(VTID-04016\)/);
@@ -135,13 +184,13 @@ describe('VTID-04016 commands.log describes the executor that ran', () => {
   });
 
   it('records a skipped runner tsc honestly', () => {
-    const log = buildCommandsLog({ ...base, vtid: 'VTID-04016', executor: 'agent', agentStats: { turns: 1, fixRounds: 0, checksRefused: 0, fallbackUsed: true, tscRun: false } });
+    const log = buildCommandsLog({ ...base, vtid: 'VTID-04016', executor: 'agent', agentStats: { turns: 1, fixRounds: 0, checksRefused: 0, navRepeatsRefused: 0, fallbackUsed: true, tscRun: false } });
     expect(log).toContain('# runner tsc skipped (AGENT_SKIP_TSC=true)');
     expect(log).toContain('fallback_used=true');
   });
 
   it('applyPrContract threads executor through to the evidence pack', () => {
-    const out = applyPrContract({ ...base, executor: 'agent', agentStats: { turns: 2, fixRounds: 0, checksRefused: 0, fallbackUsed: false, tscRun: true } });
+    const out = applyPrContract({ ...base, executor: 'agent', agentStats: { turns: 2, fixRounds: 0, checksRefused: 0, navRepeatsRefused: 0, fallbackUsed: false, tscRun: true } });
     const log = out.evidenceFiles.find((f) => f.path.endsWith('commands.log'))!.content;
     expect(log).toContain('(agent executor, VTID-04006)');
   });

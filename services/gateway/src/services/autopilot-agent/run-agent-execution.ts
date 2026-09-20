@@ -301,7 +301,7 @@ export async function runAgentExecutionSession(
       // VTID-04016: the evidence pack's commands.log describes the agent
       // path, not the single-shot flow it was written for.
       executor: 'agent',
-      agentStats: { turns: totalTurns, fixRounds, checksRefused: checkGuard.refusedCount(), fallbackUsed, tscRun: !AGENT_SKIP_TSC },
+      agentStats: { turns: totalTurns, fixRounds, checksRefused: checkGuard.refusedCount(), navRepeatsRefused: checkGuard.navRefusedCount(), fallbackUsed, tscRun: !AGENT_SKIP_TSC },
     });
     run.checks_refused = checkGuard.refusedCount();
     if (contract.skipped_reason) console.warn(`${LOG_PREFIX} [${short}] PR contract NOT applied: ${contract.skipped_reason}`);
