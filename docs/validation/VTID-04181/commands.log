@@ -1,0 +1,26 @@
+# VTID-04181 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-20T22:33:16.509Z
+# execution_id=d1990492-af8e-43fd-aa55-5331a74a4bb6 finding_id=e96739a3-b2e2-4fb2-be7f-8c56ce5d6552 plan_version=1
+# branch=dev-autopilot/d1990492 base=main
+# llm provider=deepseek model=deepseek-flash
+
+# agent turns=106 fix_rounds=0 checks_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/d1990492
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add scripts/ci/command-hub-ownership-guard.js   # modify
+$ git add services/gateway/src/frontend/command-hub/app.js   # modify
+$ git add services/gateway/src/frontend/command-hub/index.html   # modify
+$ git add services/gateway/test/console-task-17-cost-badge-tooltip.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04181/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/d1990492
+$ gh pr create --base main --head dev-autopilot/d1990492
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).
