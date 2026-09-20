@@ -15,6 +15,17 @@
  * with a tool error telling the model to edit first. Any mutation resets
  * the guard for every key. Passing checks are never counted; `git_diff` /
  * `git_status` are inspections, not checks, and are never guarded.
+ *
+ * VTID-04163: the same class of waste exists on the READ side. Batch
+ * VTIDs 04149-04162 (12 of 14 one-line CSS/JS/a11y tasks) all hit the
+ * 120-turn cap without ever calling `finish` — `oasis_events` shows the
+ * model re-issuing the exact same `read_file`/`search_text` call on the
+ * same path/pattern several times (e.g. VTID-04149 read
+ * `styles.css` at turns 2, 10, 12, 16 and 17, byte-identical args every
+ * time) instead of acting on the content it already retrieved. A pure
+ * navigation call with no edit in between is deterministic — an identical
+ * `(tool, args)` pair can only return an identical result — so a second
+ * exact repeat is pure cost, exactly like the run_check case above.
  */
 
 import type { CheckKind } from './agent-tools';
@@ -23,17 +34,33 @@ import type { CheckKind } from './agent-tools';
 export const MAX_FAILED_ATTEMPTS_WITHOUT_EDIT = 2;
 const UNGUARDED: ReadonlySet<CheckKind> = new Set<CheckKind>(['git_diff', 'git_status']);
 
+/** VTID-04163: identical navigation calls allowed since the last edit
+ *  before refusing the next exact repeat. */
+export const MAX_NAV_REPEATS_WITHOUT_EDIT = 1;
+const GUARDED_NAV_TOOLS: ReadonlySet<string> = new Set(['read_file', 'search_text', 'list_dir', 'find_files']);
+
 export function checkGuardKey(kind: CheckKind, target?: string): string {
   return `${kind} ${(target || '').trim()}`.trim();
 }
 
+/** Stable key for a navigation call: tool name + its arguments, sorted so
+ *  key order in the model's own JSON can't defeat the dedupe. */
+export function navGuardKey(tool: string, args: Record<string, unknown> | undefined): string {
+  const entries = Object.entries(args || {}).sort(([a], [b]) => a.localeCompare(b));
+  return `${tool} ${JSON.stringify(entries)}`;
+}
+
 export class RepeatedCheckGuard {
   private failed = new Map<string, number>();
+  private navSeen = new Map<string, number>();
   private refusals = 0;
+  private navRefusals = 0;
 
-  /** Call on every file mutation — the tree changed, so every check may change. */
+  /** Call on every file mutation — the tree changed, so every check (and
+   *  every navigation result) may change. */
   markEdited(): void {
     this.failed.clear();
+    this.navSeen.clear();
   }
 
   /** Call BEFORE running a check. A string means "refuse with this message". */
@@ -56,8 +83,33 @@ export class RepeatedCheckGuard {
     this.failed.set(key, (this.failed.get(key) || 0) + 1);
   }
 
+  /** Call BEFORE a navigation tool (read_file/search_text/list_dir/find_files)
+   *  runs. A string means "refuse with this message"; on success the call is
+   *  recorded immediately (unlike checks, a nav result needs no separate
+   *  pass/fail — same args + no edit ⇒ same output, so seeing it once is
+   *  enough to know a repeat is wasted). */
+  shouldRefuseNav(tool: string, args: Record<string, unknown> | undefined): string | null {
+    if (!GUARDED_NAV_TOOLS.has(tool)) return null;
+    const key = navGuardKey(tool, args);
+    const n = this.navSeen.get(key) || 0;
+    if (n >= MAX_NAV_REPEATS_WITHOUT_EDIT) {
+      this.navRefusals += 1;
+      return [
+        `${tool} refused: you already called it with these exact arguments since your last edit, so the result would be identical to what you already have.`,
+        `Act on the content you already retrieved, or change the arguments (a different path/pattern/range) to get new information. (VTID-04163 repeated-navigation guard)`,
+      ].join(' ');
+    }
+    this.navSeen.set(key, n + 1);
+    return null;
+  }
+
   /** How many runs this guard prevented — reported in the PR's evidence pack. */
   refusedCount(): number {
     return this.refusals;
+  }
+
+  /** How many navigation repeats this guard prevented. */
+  navRefusedCount(): number {
+    return this.navRefusals;
   }
 }
