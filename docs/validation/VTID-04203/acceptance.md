@@ -49,16 +49,19 @@ TEST: `services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts` —
 "getThreadAuth returns the marker immediately, and undefined once the TTL
 elapses".
 
-AC-2 (this exact expiry case was not previously covered, so per the task's
-own fallback clause the additional, genuinely distinct cases below were
-added rather than substituted):
-- "clearThreadAuth cancels the pending timer — advancing time past the TTL
-  afterward does nothing new" — proves the timer cancellation itself,
-  not just the map state.
-- "setThreadAuth called again for the same thread resets the TTL window
-  rather than stacking timers" — proves the re-set-resets-TTL behavior
-  the module's own `clearThreadAuth()`-at-top-of-`setThreadAuth()` line
-  exists for.
+AC-2: `clearThreadAuth()` actually cancels the pending expiry timer (not
+just the map entry) — advancing fake time past the TTL after a clear must
+not resurrect or otherwise disturb a since-cleared/re-set marker.
+TEST: `services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts` —
+"clearThreadAuth cancels the pending timer — advancing time past the TTL
+afterward does nothing new".
+
+AC-3: calling `setThreadAuth()` again for the same thread resets the TTL
+window rather than leaving the original timer to fire and evict the
+newly-set marker early.
+TEST: `services/gateway/test/vtid-04203-thread-auth-ttl-expiry.test.ts` —
+"setThreadAuth called again for the same thread resets the TTL window
+rather than stacking timers".
 
 ## Verification
 
