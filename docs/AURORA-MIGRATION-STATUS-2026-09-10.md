@@ -3098,3 +3098,21 @@ while the other reads Aurora. Whether a single atomic two-repo cutover is
 operationally achievable (frontend deploys take a build+staging+PUBLISH
 cycle; the gateway's is instant) is the next real design question, not
 answered here.
+
+---
+
+### 2026-09-20 — frontend repoint mechanism de-risked (not yet executed)
+
+Point 2 above ("the frontend's is a hardcoded string literal ... repointing
+it needs an edit to `client.ts`") is now half-solved. `exafyltd/vitana-v1`
+PR #1117 changes `src/integrations/supabase/client.ts` to read
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` from
+`import.meta.env` at build time, falling back to the previous hardcoded
+literals — confirmed byte-identical behavior today (`.env`'s values match
+the old literals exactly; `npm run build`'s output bundle still resolves
+to the same Supabase host). This does **not** change points 1, 3, or 4
+above — the frontend still needs its own rebuild+redeploy (now via an env
+var instead of a source edit), the proxy still needs a publicly reachable
+endpoint, and the `apikey`-header behavior is still unverified against a
+live instance. It only removes the friction of editing a 282-importer-wide
+generated file by hand at repoint time.
