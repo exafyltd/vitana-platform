@@ -284,6 +284,35 @@ image. The steps below are kept for historical record only.
 7. Only after that passes: the actual "run all tests, get approval" step
    the user asked for, before any production conversation.
 
+## Status update, 2026-09-20 — first live provisioning + deploy, two task-def bugs found and fixed
+
+`setup-postgrest-aurora-proxy-staging.sh provision --apply` was run for
+real for the first time (ECR repo + ECS service created), and the deploy
+workflow ran on the first push to `main` under this directory. Two
+container-health-check defects surfaced immediately, both fixed in the
+live task definition (revision 5) and in this repo (the setup script and
+`task-definition.template.json`, so a future re-provision doesn't
+reintroduce them):
+
+1. **`proxy`'s health check hit `/`, not `/alive`.** The real
+   `nginx.conf.template` deliberately returns `501` on `/` ("fail loudly
+   rather than silently 404 through to nowhere") — `wget` treats a 5xx as
+   a failure, so the health check could never pass against the real image,
+   only against the interim placeholder (where it failed for a different
+   reason: stock `nginx:1.27-alpine` doesn't listen on 8080 at all).
+   Fixed to check `/alive`, which the real config actually serves `200` on.
+2. **`postgrest`'s health check can never pass, on any image build.** The
+   official `postgrest/postgrest` Docker image ships with no `wget`,
+   `curl`, or any other HTTP client binary at all (confirmed via
+   PostgREST's own GitHub Discussion #3854: "The default PostgREST Docker
+   image does not contain curl or any other binary that would run a health
+   check inside the container.") — the container logs showed it
+   connecting to Aurora and loading the schema cache successfully every
+   time, while its Docker-level health check failed every time regardless.
+   Removed the `postgrest` container's `healthCheck` entirely; ECS treats
+   a container with no health check as healthy once `RUNNING`, so
+   task/service health now rests on `proxy`'s check alone.
+
 ## Explicitly out of scope for this build
 
 Realtime and Storage are not implemented — anything hitting those paths

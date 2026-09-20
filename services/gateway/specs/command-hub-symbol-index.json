@@ -1,0 +1,6628 @@
+{
+  "generated_by": "services/gateway/scripts/generate-command-hub-symbol-index.mjs",
+  "generated_at": "2026-09-20",
+  "note": "function name -> line range index for the Command Hub frontend *.js files, all nesting depths. Regenerate with the generator script; do not hand-edit.",
+  "total_functions": 825,
+  "files": {
+    "app.js": [
+      {
+        "name": "installAuthFetchInterceptor",
+        "kind": "iife",
+        "startLine": 46,
+        "bodyStartLine": 46,
+        "endLine": 141,
+        "lineCount": 96
+      },
+      {
+        "name": "getActiveRole",
+        "kind": "function",
+        "startLine": 54,
+        "bodyStartLine": 54,
+        "endLine": 57,
+        "lineCount": 4
+      },
+      {
+        "name": "getRefreshToken",
+        "kind": "function",
+        "startLine": 58,
+        "bodyStartLine": 58,
+        "endLine": 62,
+        "lineCount": 5
+      },
+      {
+        "name": "performRefresh",
+        "kind": "function",
+        "startLine": 64,
+        "bodyStartLine": 64,
+        "endLine": 109,
+        "lineCount": 46
+      },
+      {
+        "name": "isAuthEndpoint",
+        "kind": "function",
+        "startLine": 112,
+        "bodyStartLine": 112,
+        "endLine": 116,
+        "lineCount": 5
+      },
+      {
+        "name": "attachModalA11y",
+        "kind": "function",
+        "startLine": 197,
+        "bodyStartLine": 197,
+        "endLine": 241,
+        "lineCount": 45
+      },
+      {
+        "name": "visibleFocusables",
+        "kind": "function",
+        "startLine": 203,
+        "bodyStartLine": 203,
+        "endLine": 206,
+        "lineCount": 4
+      },
+      {
+        "name": "makeClickable",
+        "kind": "function",
+        "startLine": 257,
+        "bodyStartLine": 257,
+        "endLine": 271,
+        "lineCount": 15
+      },
+      {
+        "name": "validateTaskTitle",
+        "kind": "function",
+        "startLine": 279,
+        "bodyStartLine": 279,
+        "endLine": 292,
+        "lineCount": 14
+      },
+      {
+        "name": "navigateToRoleDefaultScreen",
+        "kind": "function",
+        "startLine": 330,
+        "bodyStartLine": 330,
+        "endLine": 367,
+        "lineCount": 38
+      },
+      {
+        "name": "deriveVtidStageStatus",
+        "kind": "function",
+        "startLine": 393,
+        "bodyStartLine": 393,
+        "endLine": 438,
+        "lineCount": 46
+      },
+      {
+        "name": "getTaskSpec",
+        "kind": "function",
+        "startLine": 446,
+        "bodyStartLine": 446,
+        "endLine": 454,
+        "lineCount": 9
+      },
+      {
+        "name": "saveTaskSpec",
+        "kind": "function",
+        "startLine": 459,
+        "bodyStartLine": 459,
+        "endLine": 468,
+        "lineCount": 10
+      },
+      {
+        "name": "getTaskStatusOverride",
+        "kind": "function",
+        "startLine": 474,
+        "bodyStartLine": 474,
+        "endLine": 482,
+        "lineCount": 9
+      },
+      {
+        "name": "clearTaskStatusOverride",
+        "kind": "function",
+        "startLine": 488,
+        "bodyStartLine": 488,
+        "endLine": 497,
+        "lineCount": 10
+      },
+      {
+        "name": "getTaskTitleOverride",
+        "kind": "function",
+        "startLine": 503,
+        "bodyStartLine": 503,
+        "endLine": 511,
+        "lineCount": 9
+      },
+      {
+        "name": "setTaskTitleOverride",
+        "kind": "function",
+        "startLine": 516,
+        "bodyStartLine": 516,
+        "endLine": 525,
+        "lineCount": 10
+      },
+      {
+        "name": "getEffectiveTaskTitle",
+        "kind": "function",
+        "startLine": 531,
+        "bodyStartLine": 531,
+        "endLine": 539,
+        "lineCount": 9
+      },
+      {
+        "name": "isPlaceholderTitle",
+        "kind": "function",
+        "startLine": 544,
+        "bodyStartLine": 544,
+        "endLine": 551,
+        "lineCount": 8
+      },
+      {
+        "name": "getOperatorChatHistory",
+        "kind": "function",
+        "startLine": 559,
+        "bodyStartLine": 559,
+        "endLine": 573,
+        "lineCount": 15
+      },
+      {
+        "name": "clearOperatorChatSession",
+        "kind": "function",
+        "startLine": 579,
+        "bodyStartLine": 579,
+        "endLine": 587,
+        "lineCount": 9
+      },
+      {
+        "name": "buildOperatorChatContext",
+        "kind": "function",
+        "startLine": 595,
+        "bodyStartLine": 595,
+        "endLine": 625,
+        "lineCount": 31
+      },
+      {
+        "name": "operatorThreadHistoryKey",
+        "kind": "function",
+        "startLine": 639,
+        "bodyStartLine": 639,
+        "endLine": 641,
+        "lineCount": 3
+      },
+      {
+        "name": "generateOperatorThreadId",
+        "kind": "function",
+        "startLine": 643,
+        "bodyStartLine": 643,
+        "endLine": 649,
+        "lineCount": 7
+      },
+      {
+        "name": "loadOperatorThreadsIndex",
+        "kind": "function",
+        "startLine": 651,
+        "bodyStartLine": 651,
+        "endLine": 662,
+        "lineCount": 12
+      },
+      {
+        "name": "saveOperatorThreadsIndex",
+        "kind": "function",
+        "startLine": 664,
+        "bodyStartLine": 664,
+        "endLine": 670,
+        "lineCount": 7
+      },
+      {
+        "name": "getOperatorThreadHistory",
+        "kind": "function",
+        "startLine": 672,
+        "bodyStartLine": 672,
+        "endLine": 683,
+        "lineCount": 12
+      },
+      {
+        "name": "saveOperatorThreadHistory",
+        "kind": "function",
+        "startLine": 685,
+        "bodyStartLine": 685,
+        "endLine": 691,
+        "lineCount": 7
+      },
+      {
+        "name": "deriveOperatorThreadTitle",
+        "kind": "function",
+        "startLine": 694,
+        "bodyStartLine": 694,
+        "endLine": 699,
+        "lineCount": 6
+      },
+      {
+        "name": "migrateOperatorHistoryToThreads",
+        "kind": "function",
+        "startLine": 706,
+        "bodyStartLine": 706,
+        "endLine": 730,
+        "lineCount": 25
+      },
+      {
+        "name": "touchActiveOperatorThread",
+        "kind": "function",
+        "startLine": 733,
+        "bodyStartLine": 733,
+        "endLine": 741,
+        "lineCount": 9
+      },
+      {
+        "name": "startNewOperatorThread",
+        "kind": "function",
+        "startLine": 750,
+        "bodyStartLine": 750,
+        "endLine": 772,
+        "lineCount": 23
+      },
+      {
+        "name": "switchOperatorThread",
+        "kind": "function",
+        "startLine": 775,
+        "bodyStartLine": 775,
+        "endLine": 800,
+        "lineCount": 26
+      },
+      {
+        "name": "startRenamingOperatorThread",
+        "kind": "function",
+        "startLine": 847,
+        "bodyStartLine": 847,
+        "endLine": 851,
+        "lineCount": 5
+      },
+      {
+        "name": "cancelRenamingOperatorThread",
+        "kind": "function",
+        "startLine": 853,
+        "bodyStartLine": 853,
+        "endLine": 857,
+        "lineCount": 5
+      },
+      {
+        "name": "commitRenamingOperatorThread",
+        "kind": "function",
+        "startLine": 863,
+        "bodyStartLine": 863,
+        "endLine": 875,
+        "lineCount": 13
+      },
+      {
+        "name": "deleteOperatorThread",
+        "kind": "function",
+        "startLine": 883,
+        "bodyStartLine": 883,
+        "endLine": 905,
+        "lineCount": 23
+      },
+      {
+        "name": "archiveOperatorThread",
+        "kind": "function",
+        "startLine": 913,
+        "bodyStartLine": 913,
+        "endLine": 932,
+        "lineCount": 20
+      },
+      {
+        "name": "unarchiveOperatorThread",
+        "kind": "function",
+        "startLine": 934,
+        "bodyStartLine": 934,
+        "endLine": 940,
+        "lineCount": 7
+      },
+      {
+        "name": "shareOperatorThread",
+        "kind": "function",
+        "startLine": 950,
+        "bodyStartLine": 950,
+        "endLine": 961,
+        "lineCount": 12
+      },
+      {
+        "name": "renderThreadMenuButton",
+        "kind": "function",
+        "startLine": 971,
+        "bodyStartLine": 971,
+        "endLine": 993,
+        "lineCount": 23
+      },
+      {
+        "name": "renderThreadMenu",
+        "kind": "function",
+        "startLine": 995,
+        "bodyStartLine": 995,
+        "endLine": 1035,
+        "lineCount": 41
+      },
+      {
+        "name": "renderEditableThreadTitle",
+        "kind": "function",
+        "startLine": 1043,
+        "bodyStartLine": 1043,
+        "endLine": 1101,
+        "lineCount": 59
+      },
+      {
+        "name": "renderOperatorThreadRow",
+        "kind": "function",
+        "startLine": 1110,
+        "bodyStartLine": 1110,
+        "endLine": 1130,
+        "lineCount": 21
+      },
+      {
+        "name": "renderOperatorSessionsSidebar",
+        "kind": "function",
+        "startLine": 1132,
+        "bodyStartLine": 1132,
+        "endLine": 1189,
+        "lineCount": 58
+      },
+      {
+        "name": "initOperatorChatSession",
+        "kind": "function",
+        "startLine": 1201,
+        "bodyStartLine": 1201,
+        "endLine": 1248,
+        "lineCount": 48
+      },
+      {
+        "name": "openOperatorConsole",
+        "kind": "function",
+        "startLine": 1255,
+        "bodyStartLine": 1255,
+        "endLine": 1267,
+        "lineCount": 13
+      },
+      {
+        "name": "buildContextHeaders",
+        "kind": "function",
+        "startLine": 1286,
+        "bodyStartLine": 1286,
+        "endLine": 1308,
+        "lineCount": 23
+      },
+      {
+        "name": "fetchMeContext",
+        "kind": "async function",
+        "startLine": 1321,
+        "bodyStartLine": 1321,
+        "endLine": 1378,
+        "lineCount": 58
+      },
+      {
+        "name": "setActiveRole",
+        "kind": "async function",
+        "startLine": 1387,
+        "bodyStartLine": 1387,
+        "endLine": 1471,
+        "lineCount": 85
+      },
+      {
+        "name": "fetchPermittedRoles",
+        "kind": "async function",
+        "startLine": 1479,
+        "bodyStartLine": 1479,
+        "endLine": 1501,
+        "lineCount": 23
+      },
+      {
+        "name": "fetchAuthMe",
+        "kind": "async function",
+        "startLine": 1517,
+        "bodyStartLine": 1517,
+        "endLine": 1630,
+        "lineCount": 114
+      },
+      {
+        "name": "generateInitials",
+        "kind": "function",
+        "startLine": 1637,
+        "bodyStartLine": 1637,
+        "endLine": 1656,
+        "lineCount": 20
+      },
+      {
+        "name": "doLogin",
+        "kind": "async function",
+        "startLine": 1670,
+        "bodyStartLine": 1670,
+        "endLine": 1840,
+        "lineCount": 171
+      },
+      {
+        "name": "renderAuthGate",
+        "kind": "function",
+        "startLine": 1846,
+        "bodyStartLine": 1846,
+        "endLine": 1973,
+        "lineCount": 128
+      },
+      {
+        "name": "doLogout",
+        "kind": "function",
+        "startLine": 1978,
+        "bodyStartLine": 1978,
+        "endLine": 2007,
+        "lineCount": 30
+      },
+      {
+        "name": "isEligibleScheduled",
+        "kind": "function",
+        "startLine": 2039,
+        "bodyStartLine": 2039,
+        "endLine": 2074,
+        "lineCount": 36
+      },
+      {
+        "name": "isHumanTask",
+        "kind": "function",
+        "startLine": 2094,
+        "bodyStartLine": 2094,
+        "endLine": 2101,
+        "lineCount": 8
+      },
+      {
+        "name": "isTaskRenderable",
+        "kind": "function",
+        "startLine": 2121,
+        "bodyStartLine": 2121,
+        "endLine": 2153,
+        "lineCount": 33
+      },
+      {
+        "name": "getTaskTargetRoles",
+        "kind": "function",
+        "startLine": 2160,
+        "bodyStartLine": 2160,
+        "endLine": 2171,
+        "lineCount": 12
+      },
+      {
+        "name": "throttle",
+        "kind": "function",
+        "startLine": 2213,
+        "bodyStartLine": 2213,
+        "endLine": 2222,
+        "lineCount": 10
+      },
+      {
+        "name": "getScrollRouteKey",
+        "kind": "function",
+        "startLine": 2228,
+        "bodyStartLine": 2228,
+        "endLine": 2230,
+        "lineCount": 3
+      },
+      {
+        "name": "getContainerKey",
+        "kind": "function",
+        "startLine": 2239,
+        "bodyStartLine": 2239,
+        "endLine": 2249,
+        "lineCount": 11
+      },
+      {
+        "name": "discoverScrollContainers",
+        "kind": "function",
+        "startLine": 2256,
+        "bodyStartLine": 2256,
+        "endLine": 2281,
+        "lineCount": 26
+      },
+      {
+        "name": "saveScrollPosition",
+        "kind": "function",
+        "startLine": 2289,
+        "bodyStartLine": 2289,
+        "endLine": 2295,
+        "lineCount": 7
+      },
+      {
+        "name": "captureAllScrollPositions",
+        "kind": "function",
+        "startLine": 2302,
+        "bodyStartLine": 2302,
+        "endLine": 2321,
+        "lineCount": 20
+      },
+      {
+        "name": "restoreAllScrollPositions",
+        "kind": "function",
+        "startLine": 2328,
+        "bodyStartLine": 2328,
+        "endLine": 2340,
+        "lineCount": 13
+      },
+      {
+        "name": "restoreScrollPositionsForRoute",
+        "kind": "function",
+        "startLine": 2346,
+        "bodyStartLine": 2346,
+        "endLine": 2351,
+        "lineCount": 6
+      },
+      {
+        "name": "attachScrollListeners",
+        "kind": "function",
+        "startLine": 2357,
+        "bodyStartLine": 2357,
+        "endLine": 2370,
+        "lineCount": 14
+      },
+      {
+        "name": "refreshActiveViewData",
+        "kind": "function",
+        "startLine": 2376,
+        "bodyStartLine": 2376,
+        "endLine": 2394,
+        "lineCount": 19
+      },
+      {
+        "name": "triggerGlobalRefresh",
+        "kind": "async function",
+        "startLine": 2401,
+        "bodyStartLine": 2401,
+        "endLine": 2477,
+        "lineCount": 77
+      },
+      {
+        "name": "refreshOasisEventsContent",
+        "kind": "function",
+        "startLine": 2483,
+        "bodyStartLine": 2483,
+        "endLine": 2492,
+        "lineCount": 10
+      },
+      {
+        "name": "refreshCommandHubEventsContent",
+        "kind": "function",
+        "startLine": 2497,
+        "bodyStartLine": 2497,
+        "endLine": 2505,
+        "lineCount": 9
+      },
+      {
+        "name": "refreshVtidsContent",
+        "kind": "function",
+        "startLine": 2511,
+        "bodyStartLine": 2511,
+        "endLine": 2521,
+        "lineCount": 11
+      },
+      {
+        "name": "refreshVtidLedgerContent",
+        "kind": "function",
+        "startLine": 2526,
+        "bodyStartLine": 2526,
+        "endLine": 2534,
+        "lineCount": 9
+      },
+      {
+        "name": "refreshOperatorContent",
+        "kind": "function",
+        "startLine": 2539,
+        "bodyStartLine": 2539,
+        "endLine": 2556,
+        "lineCount": 18
+      },
+      {
+        "name": "updateOasisEventsTableBody",
+        "kind": "function",
+        "startLine": 2561,
+        "bodyStartLine": 2561,
+        "endLine": 2572,
+        "lineCount": 12
+      },
+      {
+        "name": "updateCommandHubEventsTableBody",
+        "kind": "function",
+        "startLine": 2577,
+        "bodyStartLine": 2577,
+        "endLine": 2587,
+        "lineCount": 11
+      },
+      {
+        "name": "updateVtidsTableBodyFromProjection",
+        "kind": "function",
+        "startLine": 2593,
+        "bodyStartLine": 2593,
+        "endLine": 2654,
+        "lineCount": 62
+      },
+      {
+        "name": "updateVtidLedgerList",
+        "kind": "function",
+        "startLine": 2659,
+        "bodyStartLine": 2659,
+        "endLine": 2668,
+        "lineCount": 10
+      },
+      {
+        "name": "updateTickerEventsList",
+        "kind": "function",
+        "startLine": 2677,
+        "bodyStartLine": 2677,
+        "endLine": 2756,
+        "lineCount": 80
+      },
+      {
+        "name": "refreshGovernanceViolationsContent",
+        "kind": "function",
+        "startLine": 2761,
+        "bodyStartLine": 2761,
+        "endLine": 2826,
+        "lineCount": 66
+      },
+      {
+        "name": "refreshGovernanceProposalsContent",
+        "kind": "function",
+        "startLine": 2831,
+        "bodyStartLine": 2831,
+        "endLine": 2889,
+        "lineCount": 59
+      },
+      {
+        "name": "filterOasisEvents",
+        "kind": "function",
+        "startLine": 2896,
+        "bodyStartLine": 2896,
+        "endLine": 2916,
+        "lineCount": 21
+      },
+      {
+        "name": "groupConsecutiveEvents",
+        "kind": "function",
+        "startLine": 2921,
+        "bodyStartLine": 2921,
+        "endLine": 2952,
+        "lineCount": 32
+      },
+      {
+        "name": "filterCommandHubEvents",
+        "kind": "function",
+        "startLine": 2959,
+        "bodyStartLine": 2959,
+        "endLine": 2974,
+        "lineCount": 16
+      },
+      {
+        "name": "createOasisEventRow",
+        "kind": "function",
+        "startLine": 2982,
+        "bodyStartLine": 2982,
+        "endLine": 3091,
+        "lineCount": 110
+      },
+      {
+        "name": "inferSurface",
+        "kind": "function",
+        "startLine": 3096,
+        "bodyStartLine": 3096,
+        "endLine": 3115,
+        "lineCount": 20
+      },
+      {
+        "name": "formatSurfaceLabel",
+        "kind": "function",
+        "startLine": 3120,
+        "bodyStartLine": 3120,
+        "endLine": 3130,
+        "lineCount": 11
+      },
+      {
+        "name": "createCommandHubEventRow",
+        "kind": "function",
+        "startLine": 3137,
+        "bodyStartLine": 3137,
+        "endLine": 3179,
+        "lineCount": 43
+      },
+      {
+        "name": "createVtidLedgerItem",
+        "kind": "function",
+        "startLine": 3186,
+        "bodyStartLine": 3186,
+        "endLine": 3209,
+        "lineCount": 24
+      },
+      {
+        "name": "createTickerEventItem",
+        "kind": "function",
+        "startLine": 3218,
+        "bodyStartLine": 3218,
+        "endLine": 3296,
+        "lineCount": 79
+      },
+      {
+        "name": "deriveTaskStageState",
+        "kind": "function",
+        "startLine": 4691,
+        "bodyStartLine": 4691,
+        "endLine": 4745,
+        "lineCount": 55
+      },
+      {
+        "name": "formatStageTimestamp",
+        "kind": "function",
+        "startLine": 4750,
+        "bodyStartLine": 4750,
+        "endLine": 4759,
+        "lineCount": 10
+      },
+      {
+        "name": "getEventSeverity",
+        "kind": "function",
+        "startLine": 4789,
+        "bodyStartLine": 4789,
+        "endLine": 4827,
+        "lineCount": 39
+      },
+      {
+        "name": "isOasisNoiseEvent",
+        "kind": "function",
+        "startLine": 4840,
+        "bodyStartLine": 4840,
+        "endLine": 4893,
+        "lineCount": 54
+      },
+      {
+        "name": "formatEventTimestamp",
+        "kind": "function",
+        "startLine": 4898,
+        "bodyStartLine": 4898,
+        "endLine": 4908,
+        "lineCount": 11
+      },
+      {
+        "name": "fetchOasisEvents",
+        "kind": "async function",
+        "startLine": 4916,
+        "bodyStartLine": 4916,
+        "endLine": 4991,
+        "lineCount": 76
+      },
+      {
+        "name": "loadMoreOasisEvents",
+        "kind": "function",
+        "startLine": 4996,
+        "bodyStartLine": 4996,
+        "endLine": 4998,
+        "lineCount": 3
+      },
+      {
+        "name": "handleOasisFilterChange",
+        "kind": "function",
+        "startLine": 5003,
+        "bodyStartLine": 5003,
+        "endLine": 5012,
+        "lineCount": 10
+      },
+      {
+        "name": "fetchSmartOasisEvents",
+        "kind": "async function",
+        "startLine": 5018,
+        "bodyStartLine": 5018,
+        "endLine": 5079,
+        "lineCount": 62
+      },
+      {
+        "name": "fetchCommandHubEvents",
+        "kind": "async function",
+        "startLine": 5085,
+        "bodyStartLine": 5085,
+        "endLine": 5138,
+        "lineCount": 54
+      },
+      {
+        "name": "fetchVtidProjection",
+        "kind": "async function",
+        "startLine": 5152,
+        "bodyStartLine": 5152,
+        "endLine": 5217,
+        "lineCount": 66
+      },
+      {
+        "name": "loadMoreVtidProjection",
+        "kind": "function",
+        "startLine": 5222,
+        "bodyStartLine": 5222,
+        "endLine": 5224,
+        "lineCount": 3
+      },
+      {
+        "name": "updateApprovalsBadge",
+        "kind": "function",
+        "startLine": 5229,
+        "bodyStartLine": 5229,
+        "endLine": 5240,
+        "lineCount": 12
+      },
+      {
+        "name": "startApprovalsBadgePolling",
+        "kind": "function",
+        "startLine": 5249,
+        "bodyStartLine": 5249,
+        "endLine": 5255,
+        "lineCount": 7
+      },
+      {
+        "name": "fetchApprovals",
+        "kind": "async function",
+        "startLine": 5262,
+        "bodyStartLine": 5262,
+        "endLine": 5305,
+        "lineCount": 44
+      },
+      {
+        "name": "fetchGitHubFeed",
+        "kind": "async function",
+        "startLine": 5311,
+        "bodyStartLine": 5311,
+        "endLine": 5341,
+        "lineCount": 31
+      },
+      {
+        "name": "approveFeedItem",
+        "kind": "async function",
+        "startLine": 5356,
+        "bodyStartLine": 5356,
+        "endLine": 5419,
+        "lineCount": 64
+      },
+      {
+        "name": "generateDeploySummary",
+        "kind": "function",
+        "startLine": 5425,
+        "bodyStartLine": 5425,
+        "endLine": 5464,
+        "lineCount": 40
+      },
+      {
+        "name": "fetchDeploymentHistory",
+        "kind": "async function",
+        "startLine": 5490,
+        "bodyStartLine": 5490,
+        "endLine": 5554,
+        "lineCount": 65
+      },
+      {
+        "name": "showToast",
+        "kind": "function",
+        "startLine": 5566,
+        "bodyStartLine": 5566,
+        "endLine": 5576,
+        "lineCount": 11
+      },
+      {
+        "name": "renderApp",
+        "kind": "function",
+        "startLine": 5587,
+        "bodyStartLine": 5587,
+        "endLine": 5626,
+        "lineCount": 40
+      },
+      {
+        "name": "_renderAppCore",
+        "kind": "function",
+        "startLine": 5628,
+        "bodyStartLine": 5628,
+        "endLine": 5863,
+        "lineCount": 236
+      },
+      {
+        "name": "renderSidebar",
+        "kind": "function",
+        "startLine": 5865,
+        "bodyStartLine": 5865,
+        "endLine": 5968,
+        "lineCount": 104
+      },
+      {
+        "name": "renderOrbIdleElement",
+        "kind": "function",
+        "startLine": 5975,
+        "bodyStartLine": 5975,
+        "endLine": 6007,
+        "lineCount": 33
+      },
+      {
+        "name": "renderHeader",
+        "kind": "function",
+        "startLine": 6009,
+        "bodyStartLine": 6009,
+        "endLine": 6481,
+        "lineCount": 473
+      },
+      {
+        "name": "formatRelativeTime",
+        "kind": "function",
+        "startLine": 6492,
+        "bodyStartLine": 6492,
+        "endLine": 6509,
+        "lineCount": 18
+      },
+      {
+        "name": "ensureVersionDropdownPoller",
+        "kind": "function",
+        "startLine": 6513,
+        "bodyStartLine": 6513,
+        "endLine": 6530,
+        "lineCount": 18
+      },
+      {
+        "name": "renderVersionDropdown",
+        "kind": "function",
+        "startLine": 6532,
+        "bodyStartLine": 6532,
+        "endLine": 6704,
+        "lineCount": 173
+      },
+      {
+        "name": "envOf",
+        "kind": "function",
+        "startLine": 6581,
+        "bodyStartLine": 6581,
+        "endLine": 6585,
+        "lineCount": 5
+      },
+      {
+        "name": "renderMainContent",
+        "kind": "function",
+        "startLine": 6706,
+        "bodyStartLine": 6706,
+        "endLine": 6752,
+        "lineCount": 47
+      },
+      {
+        "name": "renderSplitScreen",
+        "kind": "function",
+        "startLine": 6754,
+        "bodyStartLine": 6754,
+        "endLine": 6797,
+        "lineCount": 44
+      },
+      {
+        "name": "kbcState",
+        "kind": "function",
+        "startLine": 6807,
+        "bodyStartLine": 6807,
+        "endLine": 6820,
+        "lineCount": 14
+      },
+      {
+        "name": "kbEl",
+        "kind": "function",
+        "startLine": 6822,
+        "bodyStartLine": 6822,
+        "endLine": 6827,
+        "lineCount": 6
+      },
+      {
+        "name": "kbTopicComplete",
+        "kind": "function",
+        "startLine": 6829,
+        "bodyStartLine": 6829,
+        "endLine": 6832,
+        "lineCount": 4
+      },
+      {
+        "name": "fetchKbChecklist",
+        "kind": "async function",
+        "startLine": 6834,
+        "bodyStartLine": 6834,
+        "endLine": 6859,
+        "lineCount": 26
+      },
+      {
+        "name": "kbSelectTopic",
+        "kind": "function",
+        "startLine": 6861,
+        "bodyStartLine": 6861,
+        "endLine": 6871,
+        "lineCount": 11
+      },
+      {
+        "name": "kbSaveTopic",
+        "kind": "async function",
+        "startLine": 6873,
+        "bodyStartLine": 6873,
+        "endLine": 6903,
+        "lineCount": 31
+      },
+      {
+        "name": "kbDisableTopic",
+        "kind": "async function",
+        "startLine": 6905,
+        "bodyStartLine": 6905,
+        "endLine": 6919,
+        "lineCount": 15
+      },
+      {
+        "name": "kbValidate",
+        "kind": "async function",
+        "startLine": 6921,
+        "bodyStartLine": 6921,
+        "endLine": 6937,
+        "lineCount": 17
+      },
+      {
+        "name": "kbPublish",
+        "kind": "async function",
+        "startLine": 6939,
+        "bodyStartLine": 6939,
+        "endLine": 6965,
+        "lineCount": 27
+      },
+      {
+        "name": "kbFetchVersions",
+        "kind": "async function",
+        "startLine": 6967,
+        "bodyStartLine": 6967,
+        "endLine": 6979,
+        "lineCount": 13
+      },
+      {
+        "name": "kbRollback",
+        "kind": "async function",
+        "startLine": 6981,
+        "bodyStartLine": 6981,
+        "endLine": 6996,
+        "lineCount": 16
+      },
+      {
+        "name": "kbExport",
+        "kind": "async function",
+        "startLine": 6998,
+        "bodyStartLine": 6998,
+        "endLine": 7012,
+        "lineCount": 15
+      },
+      {
+        "name": "kbRegenerateTopic",
+        "kind": "async function",
+        "startLine": 7016,
+        "bodyStartLine": 7016,
+        "endLine": 7040,
+        "lineCount": 25
+      },
+      {
+        "name": "kbRegenerateSession",
+        "kind": "async function",
+        "startLine": 7042,
+        "bodyStartLine": 7042,
+        "endLine": 7065,
+        "lineCount": 24
+      },
+      {
+        "name": "renderKbTable",
+        "kind": "function",
+        "startLine": 7067,
+        "bodyStartLine": 7067,
+        "endLine": 7096,
+        "lineCount": 30
+      },
+      {
+        "name": "td",
+        "kind": "function",
+        "startLine": 7081,
+        "bodyStartLine": 7081,
+        "endLine": 7081,
+        "lineCount": 1
+      },
+      {
+        "name": "renderKbEditor",
+        "kind": "function",
+        "startLine": 7098,
+        "bodyStartLine": 7098,
+        "endLine": 7173,
+        "lineCount": 76
+      },
+      {
+        "name": "field",
+        "kind": "function",
+        "startLine": 7110,
+        "bodyStartLine": 7110,
+        "endLine": 7129,
+        "lineCount": 20
+      },
+      {
+        "name": "renderKbVersions",
+        "kind": "function",
+        "startLine": 7175,
+        "bodyStartLine": 7175,
+        "endLine": 7208,
+        "lineCount": 34
+      },
+      {
+        "name": "td",
+        "kind": "function",
+        "startLine": 7187,
+        "bodyStartLine": 7187,
+        "endLine": 7187,
+        "lineCount": 1
+      },
+      {
+        "name": "renderKbChecklistView",
+        "kind": "function",
+        "startLine": 7210,
+        "bodyStartLine": 7210,
+        "endLine": 7357,
+        "lineCount": 148
+      },
+      {
+        "name": "inRow",
+        "kind": "function",
+        "startLine": 7262,
+        "bodyStartLine": 7262,
+        "endLine": 7262,
+        "lineCount": 1
+      },
+      {
+        "name": "sel",
+        "kind": "function",
+        "startLine": 7275,
+        "bodyStartLine": 7275,
+        "endLine": 7279,
+        "lineCount": 5
+      },
+      {
+        "name": "_convEl",
+        "kind": "function",
+        "startLine": 7366,
+        "bodyStartLine": 7366,
+        "endLine": 7373,
+        "lineCount": 8
+      },
+      {
+        "name": "_convFetch",
+        "kind": "async function",
+        "startLine": 7375,
+        "bodyStartLine": 7375,
+        "endLine": 7385,
+        "lineCount": 11
+      },
+      {
+        "name": "_convPanel",
+        "kind": "function",
+        "startLine": 7387,
+        "bodyStartLine": 7387,
+        "endLine": 7395,
+        "lineCount": 9
+      },
+      {
+        "name": "_convError",
+        "kind": "function",
+        "startLine": 7397,
+        "bodyStartLine": 7397,
+        "endLine": 7403,
+        "lineCount": 7
+      },
+      {
+        "name": "_convTable",
+        "kind": "function",
+        "startLine": 7405,
+        "bodyStartLine": 7405,
+        "endLine": 7434,
+        "lineCount": 30
+      },
+      {
+        "name": "renderConversationConfigView",
+        "kind": "function",
+        "startLine": 7436,
+        "bodyStartLine": 7436,
+        "endLine": 7457,
+        "lineCount": 22
+      },
+      {
+        "name": "renderConversationMonitorView",
+        "kind": "function",
+        "startLine": 7459,
+        "bodyStartLine": 7459,
+        "endLine": 7470,
+        "lineCount": 12
+      },
+      {
+        "name": "renderConversationToolHealthView",
+        "kind": "function",
+        "startLine": 7472,
+        "bodyStartLine": 7472,
+        "endLine": 7483,
+        "lineCount": 12
+      },
+      {
+        "name": "renderConversationSimulatorView",
+        "kind": "function",
+        "startLine": 7485,
+        "bodyStartLine": 7485,
+        "endLine": 7544,
+        "lineCount": 60
+      },
+      {
+        "name": "field",
+        "kind": "function",
+        "startLine": 7490,
+        "bodyStartLine": 7490,
+        "endLine": 7500,
+        "lineCount": 11
+      },
+      {
+        "name": "run",
+        "kind": "function",
+        "startLine": 7512,
+        "bodyStartLine": 7512,
+        "endLine": 7541,
+        "lineCount": 30
+      },
+      {
+        "name": "renderModuleContent",
+        "kind": "function",
+        "startLine": 7546,
+        "bodyStartLine": 7546,
+        "endLine": 7932,
+        "lineCount": 387
+      },
+      {
+        "name": "computeTaskAgeInfo",
+        "kind": "function",
+        "startLine": 7941,
+        "bodyStartLine": 7941,
+        "endLine": 7956,
+        "lineCount": 16
+      },
+      {
+        "name": "isAutonomousBoardTask",
+        "kind": "function",
+        "startLine": 7964,
+        "bodyStartLine": 7964,
+        "endLine": 7967,
+        "lineCount": 4
+      },
+      {
+        "name": "toggleTaskMultiSelect",
+        "kind": "function",
+        "startLine": 7970,
+        "bodyStartLine": 7970,
+        "endLine": 7978,
+        "lineCount": 9
+      },
+      {
+        "name": "bulkArchiveSelectedTasks",
+        "kind": "async function",
+        "startLine": 7988,
+        "bodyStartLine": 7988,
+        "endLine": 8027,
+        "lineCount": 40
+      },
+      {
+        "name": "handleTaskDropIntoInProgress",
+        "kind": "async function",
+        "startLine": 8039,
+        "bodyStartLine": 8039,
+        "endLine": 8070,
+        "lineCount": 32
+      },
+      {
+        "name": "renderTasksView",
+        "kind": "function",
+        "startLine": 8072,
+        "bodyStartLine": 8072,
+        "endLine": 8412,
+        "lineCount": 341
+      },
+      {
+        "name": "makeChipGroup",
+        "kind": "function",
+        "startLine": 8170,
+        "bodyStartLine": 8170,
+        "endLine": 8189,
+        "lineCount": 20
+      },
+      {
+        "name": "createTaskCard",
+        "kind": "function",
+        "startLine": 8419,
+        "bodyStartLine": 8419,
+        "endLine": 8617,
+        "lineCount": 199
+      },
+      {
+        "name": "startInlineTitleEdit",
+        "kind": "function",
+        "startLine": 8623,
+        "bodyStartLine": 8623,
+        "endLine": 8696,
+        "lineCount": 74
+      },
+      {
+        "name": "saveTitle",
+        "kind": "function",
+        "startLine": 8650,
+        "bodyStartLine": 8650,
+        "endLine": 8664,
+        "lineCount": 15
+      },
+      {
+        "name": "cancelEdit",
+        "kind": "function",
+        "startLine": 8667,
+        "bodyStartLine": 8667,
+        "endLine": 8669,
+        "lineCount": 3
+      },
+      {
+        "name": "startDrawerTitleEdit",
+        "kind": "function",
+        "startLine": 8702,
+        "bodyStartLine": 8702,
+        "endLine": 8775,
+        "lineCount": 74
+      },
+      {
+        "name": "saveTitle",
+        "kind": "function",
+        "startLine": 8729,
+        "bodyStartLine": 8729,
+        "endLine": 8743,
+        "lineCount": 15
+      },
+      {
+        "name": "cancelEdit",
+        "kind": "function",
+        "startLine": 8746,
+        "bodyStartLine": 8746,
+        "endLine": 8748,
+        "lineCount": 3
+      },
+      {
+        "name": "createRelatedTaskChip",
+        "kind": "function",
+        "startLine": 8784,
+        "bodyStartLine": 8784,
+        "endLine": 8801,
+        "lineCount": 18
+      },
+      {
+        "name": "createTaskStageTimeline",
+        "kind": "function",
+        "startLine": 8807,
+        "bodyStartLine": 8807,
+        "endLine": 8841,
+        "lineCount": 35
+      },
+      {
+        "name": "renderTaskDrawer",
+        "kind": "function",
+        "startLine": 8847,
+        "bodyStartLine": 8847,
+        "endLine": 9802,
+        "lineCount": 956
+      },
+      {
+        "name": "getEventsForVtid",
+        "kind": "function",
+        "startLine": 9807,
+        "bodyStartLine": 9807,
+        "endLine": 9812,
+        "lineCount": 6
+      },
+      {
+        "name": "renderTaskEventHistory",
+        "kind": "function",
+        "startLine": 9819,
+        "bodyStartLine": 9819,
+        "endLine": 9981,
+        "lineCount": 163
+      },
+      {
+        "name": "renderTaskExecutionStatus",
+        "kind": "function",
+        "startLine": 9994,
+        "bodyStartLine": 9994,
+        "endLine": 10168,
+        "lineCount": 175
+      },
+      {
+        "name": "formatElapsedTime",
+        "kind": "function",
+        "startLine": 10175,
+        "bodyStartLine": 10175,
+        "endLine": 10185,
+        "lineCount": 11
+      },
+      {
+        "name": "formatDuration",
+        "kind": "function",
+        "startLine": 10192,
+        "bodyStartLine": 10192,
+        "endLine": 10202,
+        "lineCount": 11
+      },
+      {
+        "name": "formatRelativeTime",
+        "kind": "function",
+        "startLine": 10204,
+        "bodyStartLine": 10204,
+        "endLine": 10217,
+        "lineCount": 14
+      },
+      {
+        "name": "renderTaskStageDetail",
+        "kind": "function",
+        "startLine": 10225,
+        "bodyStartLine": 10225,
+        "endLine": 10386,
+        "lineCount": 162
+      },
+      {
+        "name": "renderVtidStageTimeline",
+        "kind": "function",
+        "startLine": 10393,
+        "bodyStartLine": 10393,
+        "endLine": 10449,
+        "lineCount": 57
+      },
+      {
+        "name": "renderProfileModal",
+        "kind": "function",
+        "startLine": 10451,
+        "bodyStartLine": 10451,
+        "endLine": 11055,
+        "lineCount": 605
+      },
+      {
+        "name": "renderTaskModal",
+        "kind": "function",
+        "startLine": 11057,
+        "bodyStartLine": 11057,
+        "endLine": 11442,
+        "lineCount": 386
+      },
+      {
+        "name": "handleModuleClick",
+        "kind": "function",
+        "startLine": 11446,
+        "bodyStartLine": 11446,
+        "endLine": 11481,
+        "lineCount": 36
+      },
+      {
+        "name": "handleTabClick",
+        "kind": "function",
+        "startLine": 11483,
+        "bodyStartLine": 11483,
+        "endLine": 11507,
+        "lineCount": 25
+      },
+      {
+        "name": "applyRouteSubtab",
+        "kind": "function",
+        "startLine": 11551,
+        "bodyStartLine": 11551,
+        "endLine": 11557,
+        "lineCount": 7
+      },
+      {
+        "name": "getRouteFromPath",
+        "kind": "function",
+        "startLine": 11559,
+        "bodyStartLine": 11559,
+        "endLine": 11591,
+        "lineCount": 33
+      },
+      {
+        "name": "formatTabLabel",
+        "kind": "function",
+        "startLine": 11593,
+        "bodyStartLine": 11593,
+        "endLine": 11599,
+        "lineCount": 7
+      },
+      {
+        "name": "mapStatusToColumn",
+        "kind": "function",
+        "startLine": 11628,
+        "bodyStartLine": 11628,
+        "endLine": 11647,
+        "lineCount": 20
+      },
+      {
+        "name": "getEffectiveStatus",
+        "kind": "function",
+        "startLine": 11653,
+        "bodyStartLine": 11653,
+        "endLine": 11659,
+        "lineCount": 7
+      },
+      {
+        "name": "mapStatusToColumnWithOverride",
+        "kind": "function",
+        "startLine": 11666,
+        "bodyStartLine": 11666,
+        "endLine": 11677,
+        "lineCount": 12
+      },
+      {
+        "name": "fetchTasks",
+        "kind": "async function",
+        "startLine": 11684,
+        "bodyStartLine": 11684,
+        "endLine": 11792,
+        "lineCount": 109
+      },
+      {
+        "name": "fetchVtidDetail",
+        "kind": "async function",
+        "startLine": 11798,
+        "bodyStartLine": 11798,
+        "endLine": 11828,
+        "lineCount": 31
+      },
+      {
+        "name": "fetchExecutionStatus",
+        "kind": "async function",
+        "startLine": 11834,
+        "bodyStartLine": 11834,
+        "endLine": 11853,
+        "lineCount": 20
+      },
+      {
+        "name": "startExecutionStatusPolling",
+        "kind": "function",
+        "startLine": 11859,
+        "bodyStartLine": 11859,
+        "endLine": 11903,
+        "lineCount": 45
+      },
+      {
+        "name": "stopExecutionStatusPolling",
+        "kind": "function",
+        "startLine": 11908,
+        "bodyStartLine": 11908,
+        "endLine": 11914,
+        "lineCount": 7
+      },
+      {
+        "name": "fetchActiveExecutions",
+        "kind": "async function",
+        "startLine": 11920,
+        "bodyStartLine": 11920,
+        "endLine": 11966,
+        "lineCount": 47
+      },
+      {
+        "name": "startActiveExecutionsPolling",
+        "kind": "function",
+        "startLine": 11971,
+        "bodyStartLine": 11971,
+        "endLine": 11983,
+        "lineCount": 13
+      },
+      {
+        "name": "stopActiveExecutionsPolling",
+        "kind": "function",
+        "startLine": 11988,
+        "bodyStartLine": 11988,
+        "endLine": 11994,
+        "lineCount": 7
+      },
+      {
+        "name": "fetchScreenInventory",
+        "kind": "async function",
+        "startLine": 11996,
+        "bodyStartLine": 11996,
+        "endLine": 12019,
+        "lineCount": 24
+      },
+      {
+        "name": "fetchGovernanceRules",
+        "kind": "async function",
+        "startLine": 12027,
+        "bodyStartLine": 12027,
+        "endLine": 12051,
+        "lineCount": 25
+      },
+      {
+        "name": "fetchAdminUsers",
+        "kind": "async function",
+        "startLine": 12059,
+        "bodyStartLine": 12059,
+        "endLine": 12084,
+        "lineCount": 26
+      },
+      {
+        "name": "fetchAdminRolesSummary",
+        "kind": "async function",
+        "startLine": 12086,
+        "bodyStartLine": 12086,
+        "endLine": 12107,
+        "lineCount": 22
+      },
+      {
+        "name": "fetchAdminRoleUsers",
+        "kind": "async function",
+        "startLine": 12109,
+        "bodyStartLine": 12109,
+        "endLine": 12124,
+        "lineCount": 16
+      },
+      {
+        "name": "fetchAdminTenants",
+        "kind": "async function",
+        "startLine": 12126,
+        "bodyStartLine": 12126,
+        "endLine": 12151,
+        "lineCount": 26
+      },
+      {
+        "name": "fetchAdminTenantDetail",
+        "kind": "async function",
+        "startLine": 12153,
+        "bodyStartLine": 12153,
+        "endLine": 12168,
+        "lineCount": 16
+      },
+      {
+        "name": "fetchAdminModerationReports",
+        "kind": "async function",
+        "startLine": 12170,
+        "bodyStartLine": 12170,
+        "endLine": 12191,
+        "lineCount": 22
+      },
+      {
+        "name": "fetchAdminAccessLogs",
+        "kind": "async function",
+        "startLine": 12193,
+        "bodyStartLine": 12193,
+        "endLine": 12209,
+        "lineCount": 17
+      },
+      {
+        "name": "fetchAdminAnalyticsStats",
+        "kind": "async function",
+        "startLine": 12211,
+        "bodyStartLine": 12211,
+        "endLine": 12234,
+        "lineCount": 24
+      },
+      {
+        "name": "renderAdminUsersView",
+        "kind": "function",
+        "startLine": 12256,
+        "bodyStartLine": 12256,
+        "endLine": 12393,
+        "lineCount": 138
+      },
+      {
+        "name": "renderAdminPermissionsView",
+        "kind": "function",
+        "startLine": 12399,
+        "bodyStartLine": 12399,
+        "endLine": 12527,
+        "lineCount": 129
+      },
+      {
+        "name": "renderAdminTenantsView",
+        "kind": "function",
+        "startLine": 12533,
+        "bodyStartLine": 12533,
+        "endLine": 12722,
+        "lineCount": 190
+      },
+      {
+        "name": "renderAdminContentModerationView",
+        "kind": "function",
+        "startLine": 12728,
+        "bodyStartLine": 12728,
+        "endLine": 12798,
+        "lineCount": 71
+      },
+      {
+        "name": "fetchAdminMarketplaceProviders",
+        "kind": "async function",
+        "startLine": 12806,
+        "bodyStartLine": 12806,
+        "endLine": 12821,
+        "lineCount": 16
+      },
+      {
+        "name": "getAdminMpProvider",
+        "kind": "function",
+        "startLine": 12823,
+        "bodyStartLine": 12823,
+        "endLine": 12827,
+        "lineCount": 5
+      },
+      {
+        "name": "fetchAdminMarketplaceShops",
+        "kind": "async function",
+        "startLine": 12829,
+        "bodyStartLine": 12829,
+        "endLine": 12853,
+        "lineCount": 25
+      },
+      {
+        "name": "submitAdminMarketplaceShopCreate",
+        "kind": "async function",
+        "startLine": 12855,
+        "bodyStartLine": 12855,
+        "endLine": 12879,
+        "lineCount": 25
+      },
+      {
+        "name": "submitAdminMarketplaceShopToggle",
+        "kind": "async function",
+        "startLine": 12881,
+        "bodyStartLine": 12881,
+        "endLine": 12896,
+        "lineCount": 16
+      },
+      {
+        "name": "triggerMarketplaceSync",
+        "kind": "async function",
+        "startLine": 12898,
+        "bodyStartLine": 12898,
+        "endLine": 12916,
+        "lineCount": 19
+      },
+      {
+        "name": "fetchAdminBillingMetrics",
+        "kind": "async function",
+        "startLine": 12936,
+        "bodyStartLine": 12936,
+        "endLine": 12954,
+        "lineCount": 19
+      },
+      {
+        "name": "formatEur",
+        "kind": "function",
+        "startLine": 12956,
+        "bodyStartLine": 12956,
+        "endLine": 12959,
+        "lineCount": 4
+      },
+      {
+        "name": "renderAdminBillingDashboardView",
+        "kind": "function",
+        "startLine": 12961,
+        "bodyStartLine": 12961,
+        "endLine": 13113,
+        "lineCount": 153
+      },
+      {
+        "name": "kpiCard",
+        "kind": "function",
+        "startLine": 13015,
+        "bodyStartLine": 13015,
+        "endLine": 13023,
+        "lineCount": 9
+      },
+      {
+        "name": "fetchAdminBillingCodes",
+        "kind": "async function",
+        "startLine": 13132,
+        "bodyStartLine": 13132,
+        "endLine": 13151,
+        "lineCount": 20
+      },
+      {
+        "name": "generateAdminBillingCodes",
+        "kind": "async function",
+        "startLine": 13153,
+        "bodyStartLine": 13153,
+        "endLine": 13171,
+        "lineCount": 19
+      },
+      {
+        "name": "deactivateAdminBillingCode",
+        "kind": "async function",
+        "startLine": 13173,
+        "bodyStartLine": 13173,
+        "endLine": 13187,
+        "lineCount": 15
+      },
+      {
+        "name": "downloadCodesAsCsv",
+        "kind": "function",
+        "startLine": 13189,
+        "bodyStartLine": 13189,
+        "endLine": 14069,
+        "lineCount": 881
+      },
+      {
+        "name": "renderAdminIdentityAccessView",
+        "kind": "function",
+        "startLine": 14081,
+        "bodyStartLine": 14081,
+        "endLine": 14216,
+        "lineCount": 136
+      },
+      {
+        "name": "fetchAgentsRegistry",
+        "kind": "async function",
+        "startLine": 14226,
+        "bodyStartLine": 14226,
+        "endLine": 14295,
+        "lineCount": 70
+      },
+      {
+        "name": "renderAgentsApiStatusStrip",
+        "kind": "function",
+        "startLine": 14301,
+        "bodyStartLine": 14301,
+        "endLine": 14352,
+        "lineCount": 52
+      },
+      {
+        "name": "renderAgentsErrorPanel",
+        "kind": "function",
+        "startLine": 14357,
+        "bodyStartLine": 14357,
+        "endLine": 14396,
+        "lineCount": 40
+      },
+      {
+        "name": "renderSkillsTable",
+        "kind": "function",
+        "startLine": 14401,
+        "bodyStartLine": 14401,
+        "endLine": 14495,
+        "lineCount": 95
+      },
+      {
+        "name": "renderRawJsonDebug",
+        "kind": "function",
+        "startLine": 14500,
+        "bodyStartLine": 14500,
+        "endLine": 14525,
+        "lineCount": 26
+      },
+      {
+        "name": "escapeHtml",
+        "kind": "function",
+        "startLine": 14530,
+        "bodyStartLine": 14530,
+        "endLine": 19678,
+        "lineCount": 5149
+      },
+      {
+        "name": "fetchGovernanceHistory",
+        "kind": "async function",
+        "startLine": 19687,
+        "bodyStartLine": 19687,
+        "endLine": 19727,
+        "lineCount": 41
+      },
+      {
+        "name": "renderGovernanceHistoryView",
+        "kind": "function",
+        "startLine": 19732,
+        "bodyStartLine": 19732,
+        "endLine": 19971,
+        "lineCount": 240
+      },
+      {
+        "name": "renderGovernanceHistoryDrawer",
+        "kind": "function",
+        "startLine": 19976,
+        "bodyStartLine": 19976,
+        "endLine": 20107,
+        "lineCount": 132
+      },
+      {
+        "name": "fetchGovernanceCategories",
+        "kind": "async function",
+        "startLine": 20115,
+        "bodyStartLine": 20115,
+        "endLine": 20145,
+        "lineCount": 31
+      },
+      {
+        "name": "renderGovernanceCategoriesView",
+        "kind": "function",
+        "startLine": 20151,
+        "bodyStartLine": 20151,
+        "endLine": 20358,
+        "lineCount": 208
+      },
+      {
+        "name": "fetchGovernanceControls",
+        "kind": "async function",
+        "startLine": 20367,
+        "bodyStartLine": 20367,
+        "endLine": 20395,
+        "lineCount": 29
+      },
+      {
+        "name": "fetchControlHistory",
+        "kind": "async function",
+        "startLine": 20400,
+        "bodyStartLine": 20400,
+        "endLine": 20427,
+        "lineCount": 28
+      },
+      {
+        "name": "enableControl",
+        "kind": "async function",
+        "startLine": 20432,
+        "bodyStartLine": 20432,
+        "endLine": 20468,
+        "lineCount": 37
+      },
+      {
+        "name": "disableControl",
+        "kind": "async function",
+        "startLine": 20473,
+        "bodyStartLine": 20473,
+        "endLine": 20507,
+        "lineCount": 35
+      },
+      {
+        "name": "formatControlKey",
+        "kind": "function",
+        "startLine": 20512,
+        "bodyStartLine": 20512,
+        "endLine": 20517,
+        "lineCount": 6
+      },
+      {
+        "name": "getTimeRemaining",
+        "kind": "function",
+        "startLine": 20522,
+        "bodyStartLine": 20522,
+        "endLine": 20534,
+        "lineCount": 13
+      },
+      {
+        "name": "renderGovernanceControlsView",
+        "kind": "function",
+        "startLine": 20539,
+        "bodyStartLine": 20539,
+        "endLine": 20622,
+        "lineCount": 84
+      },
+      {
+        "name": "renderControlCard",
+        "kind": "function",
+        "startLine": 20627,
+        "bodyStartLine": 20627,
+        "endLine": 20723,
+        "lineCount": 97
+      },
+      {
+        "name": "renderEnableModal",
+        "kind": "function",
+        "startLine": 20728,
+        "bodyStartLine": 20728,
+        "endLine": 20842,
+        "lineCount": 115
+      },
+      {
+        "name": "renderDisableModal",
+        "kind": "function",
+        "startLine": 20847,
+        "bodyStartLine": 20847,
+        "endLine": 20926,
+        "lineCount": 80
+      },
+      {
+        "name": "renderControlHistoryDrawer",
+        "kind": "function",
+        "startLine": 20931,
+        "bodyStartLine": 20931,
+        "endLine": 21037,
+        "lineCount": 107
+      },
+      {
+        "name": "formatHistoryTimestamp",
+        "kind": "function",
+        "startLine": 21042,
+        "bodyStartLine": 21042,
+        "endLine": 21056,
+        "lineCount": 15
+      },
+      {
+        "name": "formatHistoryType",
+        "kind": "function",
+        "startLine": 21061,
+        "bodyStartLine": 21061,
+        "endLine": 21071,
+        "lineCount": 11
+      },
+      {
+        "name": "getHistoryTypeBadgeClass",
+        "kind": "function",
+        "startLine": 21076,
+        "bodyStartLine": 21076,
+        "endLine": 21086,
+        "lineCount": 11
+      },
+      {
+        "name": "capitalizeFirst",
+        "kind": "function",
+        "startLine": 21091,
+        "bodyStartLine": 21091,
+        "endLine": 21094,
+        "lineCount": 4
+      },
+      {
+        "name": "renderOasisEventsView",
+        "kind": "function",
+        "startLine": 21106,
+        "bodyStartLine": 21106,
+        "endLine": 21367,
+        "lineCount": 262
+      },
+      {
+        "name": "fetchOrbSessionTranscript",
+        "kind": "function",
+        "startLine": 21372,
+        "bodyStartLine": 21372,
+        "endLine": 21395,
+        "lineCount": 24
+      },
+      {
+        "name": "renderOasisEventDrawer",
+        "kind": "function",
+        "startLine": 21401,
+        "bodyStartLine": 21401,
+        "endLine": 21645,
+        "lineCount": 245
+      },
+      {
+        "name": "renderCommandHubEventsView",
+        "kind": "function",
+        "startLine": 21650,
+        "bodyStartLine": 21650,
+        "endLine": 21799,
+        "lineCount": 150
+      },
+      {
+        "name": "renderVtidProjectionTable",
+        "kind": "function",
+        "startLine": 21806,
+        "bodyStartLine": 21806,
+        "endLine": 21899,
+        "lineCount": 94
+      },
+      {
+        "name": "renderVtidsView",
+        "kind": "function",
+        "startLine": 21905,
+        "bodyStartLine": 21905,
+        "endLine": 21991,
+        "lineCount": 87
+      },
+      {
+        "name": "fetchOasisVtidDetail",
+        "kind": "async function",
+        "startLine": 22011,
+        "bodyStartLine": 22011,
+        "endLine": 22049,
+        "lineCount": 39
+      },
+      {
+        "name": "renderOasisLedgerTableWithDrilldown",
+        "kind": "function",
+        "startLine": 22054,
+        "bodyStartLine": 22054,
+        "endLine": 22155,
+        "lineCount": 102
+      },
+      {
+        "name": "renderOasisVtidLedgerView",
+        "kind": "function",
+        "startLine": 22163,
+        "bodyStartLine": 22163,
+        "endLine": 22295,
+        "lineCount": 133
+      },
+      {
+        "name": "renderOasisVtidLedgerDrawer",
+        "kind": "function",
+        "startLine": 22300,
+        "bodyStartLine": 22300,
+        "endLine": 22428,
+        "lineCount": 129
+      },
+      {
+        "name": "renderApprovalsView",
+        "kind": "function",
+        "startLine": 22442,
+        "bodyStartLine": 22442,
+        "endLine": 22608,
+        "lineCount": 167
+      },
+      {
+        "name": "renderDocsScreensView",
+        "kind": "function",
+        "startLine": 22610,
+        "bodyStartLine": 22610,
+        "endLine": 22701,
+        "lineCount": 92
+      },
+      {
+        "name": "renderHeartbeatOverlay",
+        "kind": "function",
+        "startLine": 22705,
+        "bodyStartLine": 22705,
+        "endLine": 22842,
+        "lineCount": 138
+      },
+      {
+        "name": "operatorDictationSupported",
+        "kind": "function",
+        "startLine": 22868,
+        "bodyStartLine": 22868,
+        "endLine": 22870,
+        "lineCount": 3
+      },
+      {
+        "name": "stopOperatorDictation",
+        "kind": "function",
+        "startLine": 22872,
+        "bodyStartLine": 22872,
+        "endLine": 22878,
+        "lineCount": 7
+      },
+      {
+        "name": "startOperatorDictation",
+        "kind": "function",
+        "startLine": 22885,
+        "bodyStartLine": 22885,
+        "endLine": 22953,
+        "lineCount": 69
+      },
+      {
+        "name": "operatorDictationErrorMessage",
+        "kind": "function",
+        "startLine": 22957,
+        "bodyStartLine": 22957,
+        "endLine": 22971,
+        "lineCount": 15
+      },
+      {
+        "name": "renderOperatorOverlay",
+        "kind": "function",
+        "startLine": 22973,
+        "bodyStartLine": 22973,
+        "endLine": 23087,
+        "lineCount": 115
+      },
+      {
+        "name": "describeToolActivity",
+        "kind": "function",
+        "startLine": 23101,
+        "bodyStartLine": 23101,
+        "endLine": 23112,
+        "lineCount": 12
+      },
+      {
+        "name": "renderOperatorChat",
+        "kind": "function",
+        "startLine": 23114,
+        "bodyStartLine": 23114,
+        "endLine": 23452,
+        "lineCount": 339
+      },
+      {
+        "name": "parseSseFrames",
+        "kind": "function",
+        "startLine": 23468,
+        "bodyStartLine": 23468,
+        "endLine": 23488,
+        "lineCount": 21
+      },
+      {
+        "name": "updateOperatorLiveTranscriptDom",
+        "kind": "function",
+        "startLine": 23499,
+        "bodyStartLine": 23499,
+        "endLine": 23513,
+        "lineCount": 15
+      },
+      {
+        "name": "applyOperatorTurnFrame",
+        "kind": "function",
+        "startLine": 23515,
+        "bodyStartLine": 23515,
+        "endLine": 23534,
+        "lineCount": 20
+      },
+      {
+        "name": "streamOperatorTurn",
+        "kind": "async function",
+        "startLine": 23536,
+        "bodyStartLine": 23536,
+        "endLine": 23579,
+        "lineCount": 44
+      },
+      {
+        "name": "requestOperatorTurn",
+        "kind": "async function",
+        "startLine": 23581,
+        "bodyStartLine": 23581,
+        "endLine": 23603,
+        "lineCount": 23
+      },
+      {
+        "name": "formatToolDuration",
+        "kind": "function",
+        "startLine": 23605,
+        "bodyStartLine": 23605,
+        "endLine": 23608,
+        "lineCount": 4
+      },
+      {
+        "name": "formatTokenCount",
+        "kind": "function",
+        "startLine": 23611,
+        "bodyStartLine": 23611,
+        "endLine": 23614,
+        "lineCount": 4
+      },
+      {
+        "name": "formatTurnCostUsd",
+        "kind": "function",
+        "startLine": 23616,
+        "bodyStartLine": 23616,
+        "endLine": 23621,
+        "lineCount": 6
+      },
+      {
+        "name": "formatTurnCostBadge",
+        "kind": "function",
+        "startLine": 23623,
+        "bodyStartLine": 23623,
+        "endLine": 23634,
+        "lineCount": 12
+      },
+      {
+        "name": "describeTurnCost",
+        "kind": "function",
+        "startLine": 23636,
+        "bodyStartLine": 23636,
+        "endLine": 23643,
+        "lineCount": 8
+      },
+      {
+        "name": "extractFollowedExecutionIds",
+        "kind": "function",
+        "startLine": 23669,
+        "bodyStartLine": 23669,
+        "endLine": 23680,
+        "lineCount": 12
+      },
+      {
+        "name": "followOperatorExecution",
+        "kind": "function",
+        "startLine": 23682,
+        "bodyStartLine": 23682,
+        "endLine": 23719,
+        "lineCount": 38
+      },
+      {
+        "name": "closeOperatorExecutionFollow",
+        "kind": "function",
+        "startLine": 23721,
+        "bodyStartLine": 23721,
+        "endLine": 23727,
+        "lineCount": 7
+      },
+      {
+        "name": "closeAllOperatorExecutionFollows",
+        "kind": "function",
+        "startLine": 23729,
+        "bodyStartLine": 23729,
+        "endLine": 23732,
+        "lineCount": 4
+      },
+      {
+        "name": "reattachFollowedExecutions",
+        "kind": "function",
+        "startLine": 23744,
+        "bodyStartLine": 23744,
+        "endLine": 23751,
+        "lineCount": 8
+      },
+      {
+        "name": "describeFollowedStep",
+        "kind": "function",
+        "startLine": 23753,
+        "bodyStartLine": 23753,
+        "endLine": 23761,
+        "lineCount": 9
+      },
+      {
+        "name": "renderOperatorExecutionFollow",
+        "kind": "function",
+        "startLine": 23765,
+        "bodyStartLine": 23765,
+        "endLine": 23813,
+        "lineCount": 49
+      },
+      {
+        "name": "renderOperatorLiveTranscript",
+        "kind": "function",
+        "startLine": 23815,
+        "bodyStartLine": 23815,
+        "endLine": 23851,
+        "lineCount": 37
+      },
+      {
+        "name": "sendChatMessage",
+        "kind": "async function",
+        "startLine": 23853,
+        "bodyStartLine": 23853,
+        "endLine": 24113,
+        "lineCount": 261
+      },
+      {
+        "name": "renderOperatorTicker",
+        "kind": "function",
+        "startLine": 24115,
+        "bodyStartLine": 24115,
+        "endLine": 24414,
+        "lineCount": 300
+      },
+      {
+        "name": "renderOperatorHistory",
+        "kind": "function",
+        "startLine": 24420,
+        "bodyStartLine": 24420,
+        "endLine": 24550,
+        "lineCount": 131
+      },
+      {
+        "name": "getSelectedVersion",
+        "kind": "function",
+        "startLine": 24558,
+        "bodyStartLine": 24558,
+        "endLine": 24563,
+        "lineCount": 6
+      },
+      {
+        "name": "renderPublishModal",
+        "kind": "function",
+        "startLine": 24569,
+        "bodyStartLine": 24569,
+        "endLine": 25007,
+        "lineCount": 439
+      },
+      {
+        "name": "updateRecommendationModalFooter",
+        "kind": "function",
+        "startLine": 25018,
+        "bodyStartLine": 25018,
+        "endLine": 25041,
+        "lineCount": 24
+      },
+      {
+        "name": "renderAutopilotRecommendationsModal",
+        "kind": "function",
+        "startLine": 25043,
+        "bodyStartLine": 25043,
+        "endLine": 25236,
+        "lineCount": 194
+      },
+      {
+        "name": "createRecommendationCard",
+        "kind": "function",
+        "startLine": 25241,
+        "bodyStartLine": 25241,
+        "endLine": 25426,
+        "lineCount": 186
+      },
+      {
+        "name": "fetchAutopilotRecommendationsCount",
+        "kind": "async function",
+        "startLine": 25431,
+        "bodyStartLine": 25431,
+        "endLine": 25446,
+        "lineCount": 16
+      },
+      {
+        "name": "runAutopilotBatchAction",
+        "kind": "async function",
+        "startLine": 25457,
+        "bodyStartLine": 25457,
+        "endLine": 25519,
+        "lineCount": 63
+      },
+      {
+        "name": "renderGovernanceBlockedModal",
+        "kind": "function",
+        "startLine": 25527,
+        "bodyStartLine": 25527,
+        "endLine": 25718,
+        "lineCount": 192
+      },
+      {
+        "name": "renderExecutionApprovalModal",
+        "kind": "function",
+        "startLine": 25732,
+        "bodyStartLine": 25732,
+        "endLine": 25978,
+        "lineCount": 247
+      },
+      {
+        "name": "renderBundleFingerprintBanner",
+        "kind": "function",
+        "startLine": 25984,
+        "bodyStartLine": 25984,
+        "endLine": 25989,
+        "lineCount": 6
+      },
+      {
+        "name": "renderBundleFingerprintFooter",
+        "kind": "function",
+        "startLine": 25991,
+        "bodyStartLine": 25991,
+        "endLine": 25996,
+        "lineCount": 6
+      },
+      {
+        "name": "renderToastContainer",
+        "kind": "function",
+        "startLine": 26000,
+        "bodyStartLine": 26000,
+        "endLine": 26034,
+        "lineCount": 35
+      },
+      {
+        "name": "fetchHeartbeatSnapshot",
+        "kind": "async function",
+        "startLine": 26042,
+        "bodyStartLine": 26042,
+        "endLine": 26071,
+        "lineCount": 30
+      },
+      {
+        "name": "registerPendingAction",
+        "kind": "function",
+        "startLine": 26103,
+        "bodyStartLine": 26103,
+        "endLine": 26123,
+        "lineCount": 21
+      },
+      {
+        "name": "handlePendingActionTimeout",
+        "kind": "function",
+        "startLine": 26129,
+        "bodyStartLine": 26129,
+        "endLine": 26144,
+        "lineCount": 16
+      },
+      {
+        "name": "resolvePendingAction",
+        "kind": "function",
+        "startLine": 26154,
+        "bodyStartLine": 26154,
+        "endLine": 26199,
+        "lineCount": 46
+      },
+      {
+        "name": "findPendingActionByVtid",
+        "kind": "function",
+        "startLine": 26205,
+        "bodyStartLine": 26205,
+        "endLine": 26207,
+        "lineCount": 3
+      },
+      {
+        "name": "hasPendingActionForVtid",
+        "kind": "function",
+        "startLine": 26212,
+        "bodyStartLine": 26212,
+        "endLine": 26214,
+        "lineCount": 3
+      },
+      {
+        "name": "startOperatorSse",
+        "kind": "function",
+        "startLine": 26219,
+        "bodyStartLine": 26219,
+        "endLine": 26365,
+        "lineCount": 147
+      },
+      {
+        "name": "fetchTelemetrySnapshot",
+        "kind": "async function",
+        "startLine": 26379,
+        "bodyStartLine": 26379,
+        "endLine": 26448,
+        "lineCount": 70
+      },
+      {
+        "name": "startTelemetryAutoRefresh",
+        "kind": "function",
+        "startLine": 26455,
+        "bodyStartLine": 26455,
+        "endLine": 26469,
+        "lineCount": 15
+      },
+      {
+        "name": "startOperatorLiveTicker",
+        "kind": "async function",
+        "startLine": 26477,
+        "bodyStartLine": 26477,
+        "endLine": 26524,
+        "lineCount": 48
+      },
+      {
+        "name": "uploadOperatorFile",
+        "kind": "async function",
+        "startLine": 26530,
+        "bodyStartLine": 26530,
+        "endLine": 26564,
+        "lineCount": 35
+      },
+      {
+        "name": "fetchServiceHealth",
+        "kind": "async function",
+        "startLine": 26645,
+        "bodyStartLine": 26645,
+        "endLine": 26719,
+        "lineCount": 75
+      },
+      {
+        "name": "updateServiceHealthPill",
+        "kind": "function",
+        "startLine": 26724,
+        "bodyStartLine": 26724,
+        "endLine": 26748,
+        "lineCount": 25
+      },
+      {
+        "name": "startCicdHealthPolling",
+        "kind": "function",
+        "startLine": 26753,
+        "bodyStartLine": 26753,
+        "endLine": 26768,
+        "lineCount": 16
+      },
+      {
+        "name": "startOverviewDashboardPolling",
+        "kind": "function",
+        "startLine": 26775,
+        "bodyStartLine": 26775,
+        "endLine": 26785,
+        "lineCount": 11
+      },
+      {
+        "name": "formatOrbChatTime",
+        "kind": "function",
+        "startLine": 26790,
+        "bodyStartLine": 26790,
+        "endLine": 26793,
+        "lineCount": 4
+      },
+      {
+        "name": "renderOrbChatDrawer",
+        "kind": "function",
+        "startLine": 26799,
+        "bodyStartLine": 26799,
+        "endLine": 26934,
+        "lineCount": 136
+      },
+      {
+        "name": "scrollOrbChatToBottom",
+        "kind": "function",
+        "startLine": 26944,
+        "bodyStartLine": 26944,
+        "endLine": 26948,
+        "lineCount": 5
+      },
+      {
+        "name": "sendOrbMessage",
+        "kind": "async function",
+        "startLine": 26956,
+        "bodyStartLine": 26956,
+        "endLine": 26975,
+        "lineCount": 20
+      },
+      {
+        "name": "orbSendMessage",
+        "kind": "function",
+        "startLine": 26981,
+        "bodyStartLine": 26981,
+        "endLine": 27037,
+        "lineCount": 57
+      },
+      {
+        "name": "fetchGovernanceViolations",
+        "kind": "function",
+        "startLine": 27047,
+        "bodyStartLine": 27047,
+        "endLine": 27094,
+        "lineCount": 48
+      },
+      {
+        "name": "renderGovernanceViolationsView",
+        "kind": "function",
+        "startLine": 27096,
+        "bodyStartLine": 27096,
+        "endLine": 27213,
+        "lineCount": 118
+      },
+      {
+        "name": "fetchGovernanceProposals",
+        "kind": "function",
+        "startLine": 27217,
+        "bodyStartLine": 27217,
+        "endLine": 27263,
+        "lineCount": 47
+      },
+      {
+        "name": "renderGovernanceProposalsView",
+        "kind": "function",
+        "startLine": 27265,
+        "bodyStartLine": 27265,
+        "endLine": 27391,
+        "lineCount": 127
+      },
+      {
+        "name": "fetchAgentsMemory",
+        "kind": "function",
+        "startLine": 27395,
+        "bodyStartLine": 27395,
+        "endLine": 27417,
+        "lineCount": 23
+      },
+      {
+        "name": "renderAgentsMemoryView",
+        "kind": "function",
+        "startLine": 27419,
+        "bodyStartLine": 27419,
+        "endLine": 27520,
+        "lineCount": 102
+      },
+      {
+        "name": "fetchOasisEntities",
+        "kind": "function",
+        "startLine": 27524,
+        "bodyStartLine": 27524,
+        "endLine": 27549,
+        "lineCount": 26
+      },
+      {
+        "name": "renderOasisEntitiesView",
+        "kind": "function",
+        "startLine": 27551,
+        "bodyStartLine": 27551,
+        "endLine": 27657,
+        "lineCount": 107
+      },
+      {
+        "name": "renderOasisStreamsView",
+        "kind": "function",
+        "startLine": 27661,
+        "bodyStartLine": 27661,
+        "endLine": 27765,
+        "lineCount": 105
+      },
+      {
+        "name": "connectOasisStream",
+        "kind": "function",
+        "startLine": 27767,
+        "bodyStartLine": 27767,
+        "endLine": 27811,
+        "lineCount": 45
+      },
+      {
+        "name": "fetchOasisCommandLog",
+        "kind": "function",
+        "startLine": 27815,
+        "bodyStartLine": 27815,
+        "endLine": 27840,
+        "lineCount": 26
+      },
+      {
+        "name": "renderOasisCommandLogView",
+        "kind": "function",
+        "startLine": 27842,
+        "bodyStartLine": 27842,
+        "endLine": 27949,
+        "lineCount": 108
+      },
+      {
+        "name": "computeSystemStatus",
+        "kind": "function",
+        "startLine": 27960,
+        "bodyStartLine": 27960,
+        "endLine": 27987,
+        "lineCount": 28
+      },
+      {
+        "name": "computeDeploySuccessRate",
+        "kind": "function",
+        "startLine": 27989,
+        "bodyStartLine": 27989,
+        "endLine": 28004,
+        "lineCount": 16
+      },
+      {
+        "name": "computeOrbSessionStats",
+        "kind": "function",
+        "startLine": 28006,
+        "bodyStartLine": 28006,
+        "endLine": 28050,
+        "lineCount": 45
+      },
+      {
+        "name": "dashboardRelativeTime",
+        "kind": "function",
+        "startLine": 28052,
+        "bodyStartLine": 28052,
+        "endLine": 28060,
+        "lineCount": 9
+      },
+      {
+        "name": "metricColor",
+        "kind": "function",
+        "startLine": 28062,
+        "bodyStartLine": 28062,
+        "endLine": 28067,
+        "lineCount": 6
+      },
+      {
+        "name": "metricColorInverse",
+        "kind": "function",
+        "startLine": 28069,
+        "bodyStartLine": 28069,
+        "endLine": 28074,
+        "lineCount": 6
+      },
+      {
+        "name": "fetchWT",
+        "kind": "function",
+        "startLine": 28080,
+        "bodyStartLine": 28080,
+        "endLine": 28086,
+        "lineCount": 7
+      },
+      {
+        "name": "fetchOverviewDashboard",
+        "kind": "async function",
+        "startLine": 28091,
+        "bodyStartLine": 28091,
+        "endLine": 28284,
+        "lineCount": 194
+      },
+      {
+        "name": "fetchOverviewHealth",
+        "kind": "async function",
+        "startLine": 28289,
+        "bodyStartLine": 28289,
+        "endLine": 28340,
+        "lineCount": 52
+      },
+      {
+        "name": "renderOverviewSystemView",
+        "kind": "function",
+        "startLine": 28345,
+        "bodyStartLine": 28345,
+        "endLine": 29397,
+        "lineCount": 1053
+      },
+      {
+        "name": "metricCardHTML",
+        "kind": "function",
+        "startLine": 28660,
+        "bodyStartLine": 28660,
+        "endLine": 28675,
+        "lineCount": 16
+      },
+      {
+        "name": "renderMetricsGroup",
+        "kind": "function",
+        "startLine": 28681,
+        "bodyStartLine": 28681,
+        "endLine": 28697,
+        "lineCount": 17
+      },
+      {
+        "name": "renderHealthServiceList",
+        "kind": "function",
+        "startLine": 28760,
+        "bodyStartLine": 28760,
+        "endLine": 28845,
+        "lineCount": 86
+      },
+      {
+        "name": "fetchActionRequired",
+        "kind": "async function",
+        "startLine": 29404,
+        "bodyStartLine": 29404,
+        "endLine": 29448,
+        "lineCount": 45
+      },
+      {
+        "name": "refreshActionRequiredPanel",
+        "kind": "function",
+        "startLine": 29456,
+        "bodyStartLine": 29456,
+        "endLine": 29461,
+        "lineCount": 6
+      },
+      {
+        "name": "fetchOverviewTimeseries",
+        "kind": "async function",
+        "startLine": 29464,
+        "bodyStartLine": 29464,
+        "endLine": 29495,
+        "lineCount": 32
+      },
+      {
+        "name": "sparklineSVG",
+        "kind": "function",
+        "startLine": 29500,
+        "bodyStartLine": 29500,
+        "endLine": 29514,
+        "lineCount": 15
+      },
+      {
+        "name": "renderActionRequiredPanel",
+        "kind": "function",
+        "startLine": 29519,
+        "bodyStartLine": 29519,
+        "endLine": 29601,
+        "lineCount": 83
+      },
+      {
+        "name": "renderActionRequiredCard",
+        "kind": "function",
+        "startLine": 29603,
+        "bodyStartLine": 29603,
+        "endLine": 29666,
+        "lineCount": 64
+      },
+      {
+        "name": "renderVtidAttentionSection",
+        "kind": "function",
+        "startLine": 29675,
+        "bodyStartLine": 29675,
+        "endLine": 29709,
+        "lineCount": 35
+      },
+      {
+        "name": "renderVtidAttentionCard",
+        "kind": "function",
+        "startLine": 29711,
+        "bodyStartLine": 29711,
+        "endLine": 29772,
+        "lineCount": 62
+      },
+      {
+        "name": "fetchPipelineSummary",
+        "kind": "async function",
+        "startLine": 29777,
+        "bodyStartLine": 29777,
+        "endLine": 29830,
+        "lineCount": 54
+      },
+      {
+        "name": "fetchOverviewMetrics",
+        "kind": "async function",
+        "startLine": 29835,
+        "bodyStartLine": 29835,
+        "endLine": 29860,
+        "lineCount": 26
+      },
+      {
+        "name": "renderOverviewLiveMetricsView",
+        "kind": "function",
+        "startLine": 29865,
+        "bodyStartLine": 29865,
+        "endLine": 30162,
+        "lineCount": 298
+      },
+      {
+        "name": "fetchOverviewRecentEvents",
+        "kind": "async function",
+        "startLine": 30191,
+        "bodyStartLine": 30191,
+        "endLine": 30214,
+        "lineCount": 24
+      },
+      {
+        "name": "renderOverviewRecentEventsView",
+        "kind": "function",
+        "startLine": 30219,
+        "bodyStartLine": 30219,
+        "endLine": 30367,
+        "lineCount": 149
+      },
+      {
+        "name": "fetchOverviewErrors",
+        "kind": "async function",
+        "startLine": 30372,
+        "bodyStartLine": 30372,
+        "endLine": 30395,
+        "lineCount": 24
+      },
+      {
+        "name": "renderOverviewErrorsViolationsView",
+        "kind": "function",
+        "startLine": 30400,
+        "bodyStartLine": 30400,
+        "endLine": 30505,
+        "lineCount": 106
+      },
+      {
+        "name": "fetchOverviewReleases",
+        "kind": "async function",
+        "startLine": 30510,
+        "bodyStartLine": 30510,
+        "endLine": 30536,
+        "lineCount": 27
+      },
+      {
+        "name": "fetchOverviewReleasesSilent",
+        "kind": "async function",
+        "startLine": 30539,
+        "bodyStartLine": 30539,
+        "endLine": 30558,
+        "lineCount": 20
+      },
+      {
+        "name": "startOverviewReleasesAutoRefresh",
+        "kind": "function",
+        "startLine": 30560,
+        "bodyStartLine": 30560,
+        "endLine": 30571,
+        "lineCount": 12
+      },
+      {
+        "name": "stopOverviewReleasesAutoRefresh",
+        "kind": "function",
+        "startLine": 30573,
+        "bodyStartLine": 30573,
+        "endLine": 30579,
+        "lineCount": 7
+      },
+      {
+        "name": "renderOverviewReleaseFeedView",
+        "kind": "function",
+        "startLine": 30584,
+        "bodyStartLine": 30584,
+        "endLine": 30697,
+        "lineCount": 114
+      },
+      {
+        "name": "fetchOperatorTaskQueue",
+        "kind": "async function",
+        "startLine": 30702,
+        "bodyStartLine": 30702,
+        "endLine": 30725,
+        "lineCount": 24
+      },
+      {
+        "name": "renderOperatorTaskQueueView",
+        "kind": "function",
+        "startLine": 30730,
+        "bodyStartLine": 30730,
+        "endLine": 30895,
+        "lineCount": 166
+      },
+      {
+        "name": "fetchOperatorDashboard",
+        "kind": "async function",
+        "startLine": 30900,
+        "bodyStartLine": 30900,
+        "endLine": 30941,
+        "lineCount": 42
+      },
+      {
+        "name": "renderOperatorDashboardView",
+        "kind": "function",
+        "startLine": 30946,
+        "bodyStartLine": 30946,
+        "endLine": 31270,
+        "lineCount": 325
+      },
+      {
+        "name": "fetchOperatorEventStream",
+        "kind": "async function",
+        "startLine": 31277,
+        "bodyStartLine": 31277,
+        "endLine": 31305,
+        "lineCount": 29
+      },
+      {
+        "name": "startOperatorEventStreamRefresh",
+        "kind": "function",
+        "startLine": 31307,
+        "bodyStartLine": 31307,
+        "endLine": 31312,
+        "lineCount": 6
+      },
+      {
+        "name": "stopOperatorEventStreamRefresh",
+        "kind": "function",
+        "startLine": 31314,
+        "bodyStartLine": 31314,
+        "endLine": 31319,
+        "lineCount": 6
+      },
+      {
+        "name": "renderOperatorEventStreamView",
+        "kind": "function",
+        "startLine": 31324,
+        "bodyStartLine": 31324,
+        "endLine": 31497,
+        "lineCount": 174
+      },
+      {
+        "name": "fetchOperatorDeployments",
+        "kind": "async function",
+        "startLine": 31502,
+        "bodyStartLine": 31502,
+        "endLine": 31535,
+        "lineCount": 34
+      },
+      {
+        "name": "renderOperatorDeploymentsView",
+        "kind": "function",
+        "startLine": 31540,
+        "bodyStartLine": 31540,
+        "endLine": 31719,
+        "lineCount": 180
+      },
+      {
+        "name": "fetchOperatorRunbook",
+        "kind": "async function",
+        "startLine": 31724,
+        "bodyStartLine": 31724,
+        "endLine": 31759,
+        "lineCount": 36
+      },
+      {
+        "name": "renderOperatorRunbookView",
+        "kind": "function",
+        "startLine": 31764,
+        "bodyStartLine": 31764,
+        "endLine": 31979,
+        "lineCount": 216
+      },
+      {
+        "name": "renderCommandHubLiveConsoleView",
+        "kind": "function",
+        "startLine": 31984,
+        "bodyStartLine": 31984,
+        "endLine": 32162,
+        "lineCount": 179
+      },
+      {
+        "name": "fetchIntegrationsMcp",
+        "kind": "function",
+        "startLine": 32168,
+        "bodyStartLine": 32168,
+        "endLine": 32198,
+        "lineCount": 31
+      },
+      {
+        "name": "renderIntegrationsMcpView",
+        "kind": "function",
+        "startLine": 32200,
+        "bodyStartLine": 32200,
+        "endLine": 32273,
+        "lineCount": 74
+      },
+      {
+        "name": "fetchIntegrationsLlm",
+        "kind": "function",
+        "startLine": 32275,
+        "bodyStartLine": 32275,
+        "endLine": 32305,
+        "lineCount": 31
+      },
+      {
+        "name": "fetchLlmRoutingPolicy",
+        "kind": "function",
+        "startLine": 32329,
+        "bodyStartLine": 32329,
+        "endLine": 32369,
+        "lineCount": 41
+      },
+      {
+        "name": "getFlagshipModelForProvider",
+        "kind": "function",
+        "startLine": 32371,
+        "bodyStartLine": 32371,
+        "endLine": 32382,
+        "lineCount": 12
+      },
+      {
+        "name": "getModelsForProvider",
+        "kind": "function",
+        "startLine": 32384,
+        "bodyStartLine": 32384,
+        "endLine": 32386,
+        "lineCount": 3
+      },
+      {
+        "name": "saveLlmRoutingPolicy",
+        "kind": "function",
+        "startLine": 32388,
+        "bodyStartLine": 32388,
+        "endLine": 32418,
+        "lineCount": 31
+      },
+      {
+        "name": "renderRoutingPolicyPanel",
+        "kind": "function",
+        "startLine": 32420,
+        "bodyStartLine": 32420,
+        "endLine": 32513,
+        "lineCount": 94
+      },
+      {
+        "name": "buildPickerCell",
+        "kind": "function",
+        "startLine": 32515,
+        "bodyStartLine": 32515,
+        "endLine": 32593,
+        "lineCount": 79
+      },
+      {
+        "name": "populateModelOptions",
+        "kind": "function",
+        "startLine": 32595,
+        "bodyStartLine": 32595,
+        "endLine": 32630,
+        "lineCount": 36
+      },
+      {
+        "name": "renderIntegrationsLlmProvidersView",
+        "kind": "function",
+        "startLine": 32632,
+        "bodyStartLine": 32632,
+        "endLine": 32790,
+        "lineCount": 159
+      },
+      {
+        "name": "openAiAssistantDrawer",
+        "kind": "function",
+        "startLine": 32795,
+        "bodyStartLine": 32795,
+        "endLine": 33030,
+        "lineCount": 236
+      },
+      {
+        "name": "renderIntegrationsApisView",
+        "kind": "function",
+        "startLine": 33032,
+        "bodyStartLine": 33032,
+        "endLine": 33102,
+        "lineCount": 71
+      },
+      {
+        "name": "fetchIntegrationsTools",
+        "kind": "function",
+        "startLine": 33104,
+        "bodyStartLine": 33104,
+        "endLine": 33150,
+        "lineCount": 47
+      },
+      {
+        "name": "renderIntegrationsToolsView",
+        "kind": "function",
+        "startLine": 33152,
+        "bodyStartLine": 33152,
+        "endLine": 33225,
+        "lineCount": 74
+      },
+      {
+        "name": "fetchIntegrationsPlugins",
+        "kind": "function",
+        "startLine": 33231,
+        "bodyStartLine": 33231,
+        "endLine": 33299,
+        "lineCount": 69
+      },
+      {
+        "name": "renderIntegrationsPluginsView",
+        "kind": "function",
+        "startLine": 33301,
+        "bodyStartLine": 33301,
+        "endLine": 33397,
+        "lineCount": 97
+      },
+      {
+        "name": "buildGcpStaticViewDisabledNotice",
+        "kind": "function",
+        "startLine": 33408,
+        "bodyStartLine": 33408,
+        "endLine": 33413,
+        "lineCount": 6
+      },
+      {
+        "name": "renderIntegrationsServiceMeshView",
+        "kind": "function",
+        "startLine": 33415,
+        "bodyStartLine": 33415,
+        "endLine": 33420,
+        "lineCount": 6
+      },
+      {
+        "name": "fetchDiagHealthChecks",
+        "kind": "function",
+        "startLine": 33426,
+        "bodyStartLine": 33426,
+        "endLine": 33451,
+        "lineCount": 26
+      },
+      {
+        "name": "renderDiagnosticsHealthChecksView",
+        "kind": "function",
+        "startLine": 33453,
+        "bodyStartLine": 33453,
+        "endLine": 33498,
+        "lineCount": 46
+      },
+      {
+        "name": "renderDiagnosticsLatencyView",
+        "kind": "function",
+        "startLine": 33500,
+        "bodyStartLine": 33500,
+        "endLine": 33563,
+        "lineCount": 64
+      },
+      {
+        "name": "renderDiagnosticsErrorsView",
+        "kind": "function",
+        "startLine": 33565,
+        "bodyStartLine": 33565,
+        "endLine": 33614,
+        "lineCount": 50
+      },
+      {
+        "name": "renderDiagnosticsSseView",
+        "kind": "function",
+        "startLine": 33616,
+        "bodyStartLine": 33616,
+        "endLine": 33687,
+        "lineCount": 72
+      },
+      {
+        "name": "renderDiagnosticsDebugPanelView",
+        "kind": "function",
+        "startLine": 33689,
+        "bodyStartLine": 33689,
+        "endLine": 33733,
+        "lineCount": 45
+      },
+      {
+        "name": "fetchModelsRegistry",
+        "kind": "function",
+        "startLine": 33744,
+        "bodyStartLine": 33744,
+        "endLine": 33762,
+        "lineCount": 19
+      },
+      {
+        "name": "fetchModelsTelemetry",
+        "kind": "function",
+        "startLine": 33767,
+        "bodyStartLine": 33767,
+        "endLine": 33792,
+        "lineCount": 26
+      },
+      {
+        "name": "fetchModelsRouting",
+        "kind": "function",
+        "startLine": 33797,
+        "bodyStartLine": 33797,
+        "endLine": 33819,
+        "lineCount": 23
+      },
+      {
+        "name": "aggregateBenchmarksFromTelemetry",
+        "kind": "function",
+        "startLine": 33824,
+        "bodyStartLine": 33824,
+        "endLine": 33858,
+        "lineCount": 35
+      },
+      {
+        "name": "startModelsAutoRefresh",
+        "kind": "function",
+        "startLine": 33864,
+        "bodyStartLine": 33864,
+        "endLine": 33877,
+        "lineCount": 14
+      },
+      {
+        "name": "stopModelsAutoRefresh",
+        "kind": "function",
+        "startLine": 33882,
+        "bodyStartLine": 33882,
+        "endLine": 33889,
+        "lineCount": 8
+      },
+      {
+        "name": "ensureModelsFetched",
+        "kind": "function",
+        "startLine": 33895,
+        "bodyStartLine": 33895,
+        "endLine": 33908,
+        "lineCount": 14
+      },
+      {
+        "name": "renderModelsListView",
+        "kind": "function",
+        "startLine": 33914,
+        "bodyStartLine": 33914,
+        "endLine": 33960,
+        "lineCount": 47
+      },
+      {
+        "name": "renderModelsEvaluationsView",
+        "kind": "function",
+        "startLine": 33962,
+        "bodyStartLine": 33962,
+        "endLine": 34044,
+        "lineCount": 83
+      },
+      {
+        "name": "renderModelsBenchmarksView",
+        "kind": "function",
+        "startLine": 34046,
+        "bodyStartLine": 34046,
+        "endLine": 34095,
+        "lineCount": 50
+      },
+      {
+        "name": "renderModelsRoutingView",
+        "kind": "function",
+        "startLine": 34097,
+        "bodyStartLine": 34097,
+        "endLine": 34173,
+        "lineCount": 77
+      },
+      {
+        "name": "renderModelsPlaygroundView",
+        "kind": "function",
+        "startLine": 34175,
+        "bodyStartLine": 34175,
+        "endLine": 34259,
+        "lineCount": 85
+      },
+      {
+        "name": "testingStatusClass",
+        "kind": "function",
+        "startLine": 34267,
+        "bodyStartLine": 34267,
+        "endLine": 34273,
+        "lineCount": 7
+      },
+      {
+        "name": "testingFormatDuration",
+        "kind": "function",
+        "startLine": 34275,
+        "bodyStartLine": 34275,
+        "endLine": 34280,
+        "lineCount": 6
+      },
+      {
+        "name": "fetchTestingRuns",
+        "kind": "function",
+        "startLine": 34282,
+        "bodyStartLine": 34282,
+        "endLine": 34298,
+        "lineCount": 17
+      },
+      {
+        "name": "fetchTestingSuites",
+        "kind": "function",
+        "startLine": 34300,
+        "bodyStartLine": 34300,
+        "endLine": 34308,
+        "lineCount": 9
+      },
+      {
+        "name": "fetchTestingCycles",
+        "kind": "function",
+        "startLine": 34310,
+        "bodyStartLine": 34310,
+        "endLine": 34325,
+        "lineCount": 16
+      },
+      {
+        "name": "triggerTestRun",
+        "kind": "async function",
+        "startLine": 34327,
+        "bodyStartLine": 34327,
+        "endLine": 34355,
+        "lineCount": 29
+      },
+      {
+        "name": "triggerCycleRun",
+        "kind": "async function",
+        "startLine": 34357,
+        "bodyStartLine": 34357,
+        "endLine": 34380,
+        "lineCount": 24
+      },
+      {
+        "name": "openTestRunDrawer",
+        "kind": "function",
+        "startLine": 34382,
+        "bodyStartLine": 34382,
+        "endLine": 34398,
+        "lineCount": 17
+      },
+      {
+        "name": "closeTestRunDrawer",
+        "kind": "function",
+        "startLine": 34400,
+        "bodyStartLine": 34400,
+        "endLine": 34405,
+        "lineCount": 6
+      },
+      {
+        "name": "renderTestRunsTable",
+        "kind": "function",
+        "startLine": 34407,
+        "bodyStartLine": 34407,
+        "endLine": 34438,
+        "lineCount": 32
+      },
+      {
+        "name": "renderTestRunDrawer",
+        "kind": "function",
+        "startLine": 34440,
+        "bodyStartLine": 34440,
+        "endLine": 34527,
+        "lineCount": 88
+      },
+      {
+        "name": "renderTestingQuickRunButtons",
+        "kind": "function",
+        "startLine": 34529,
+        "bodyStartLine": 34529,
+        "endLine": 34541,
+        "lineCount": 13
+      },
+      {
+        "name": "renderGatewayCoveragePhasesTable",
+        "kind": "function",
+        "startLine": 34561,
+        "bodyStartLine": 34561,
+        "endLine": 34595,
+        "lineCount": 35
+      },
+      {
+        "name": "renderTestingUnitView",
+        "kind": "function",
+        "startLine": 34597,
+        "bodyStartLine": 34597,
+        "endLine": 34639,
+        "lineCount": 43
+      },
+      {
+        "name": "renderTestingIntegrationView",
+        "kind": "function",
+        "startLine": 34641,
+        "bodyStartLine": 34641,
+        "endLine": 34677,
+        "lineCount": 37
+      },
+      {
+        "name": "renderTestingValidatorView",
+        "kind": "function",
+        "startLine": 34679,
+        "bodyStartLine": 34679,
+        "endLine": 34732,
+        "lineCount": 54
+      },
+      {
+        "name": "renderTestingE2eView",
+        "kind": "function",
+        "startLine": 34734,
+        "bodyStartLine": 34734,
+        "endLine": 34940,
+        "lineCount": 207
+      },
+      {
+        "name": "renderOrbMonitorSection",
+        "kind": "function",
+        "startLine": 34943,
+        "bodyStartLine": 34943,
+        "endLine": 35120,
+        "lineCount": 178
+      },
+      {
+        "name": "triggerOrbMonitor",
+        "kind": "async function",
+        "startLine": 35122,
+        "bodyStartLine": 35122,
+        "endLine": 35146,
+        "lineCount": 25
+      },
+      {
+        "name": "renderLivekitHourlyTestsPanel",
+        "kind": "function",
+        "startLine": 35155,
+        "bodyStartLine": 35155,
+        "endLine": 35438,
+        "lineCount": 284
+      },
+      {
+        "name": "triggerLivekitHourlyTests",
+        "kind": "async function",
+        "startLine": 35440,
+        "bodyStartLine": 35440,
+        "endLine": 35477,
+        "lineCount": 38
+      },
+      {
+        "name": "renderNovaSonicTestView",
+        "kind": "function",
+        "startLine": 35506,
+        "bodyStartLine": 35506,
+        "endLine": 35805,
+        "lineCount": 300
+      },
+      {
+        "name": "loadStatus",
+        "kind": "function",
+        "startLine": 35531,
+        "bodyStartLine": 35531,
+        "endLine": 35558,
+        "lineCount": 28
+      },
+      {
+        "name": "paintRun",
+        "kind": "function",
+        "startLine": 35578,
+        "bodyStartLine": 35578,
+        "endLine": 35605,
+        "lineCount": 28
+      },
+      {
+        "name": "loadRecentRuns",
+        "kind": "function",
+        "startLine": 35607,
+        "bodyStartLine": 35607,
+        "endLine": 35625,
+        "lineCount": 19
+      },
+      {
+        "name": "loadSessions",
+        "kind": "function",
+        "startLine": 35760,
+        "bodyStartLine": 35760,
+        "endLine": 35791,
+        "lineCount": 32
+      },
+      {
+        "name": "renderLivekitTestView",
+        "kind": "function",
+        "startLine": 35826,
+        "bodyStartLine": 35826,
+        "endLine": 37504,
+        "lineCount": 1679
+      },
+      {
+        "name": "rebuildVoiceOptions",
+        "kind": "function",
+        "startLine": 36063,
+        "bodyStartLine": 36063,
+        "endLine": 36089,
+        "lineCount": 27
+      },
+      {
+        "name": "applyMode",
+        "kind": "function",
+        "startLine": 36145,
+        "bodyStartLine": 36145,
+        "endLine": 36190,
+        "lineCount": 46
+      },
+      {
+        "name": "readToken",
+        "kind": "function",
+        "startLine": 36215,
+        "bodyStartLine": 36215,
+        "endLine": 36227,
+        "lineCount": 13
+      },
+      {
+        "name": "tokenLooksValid",
+        "kind": "function",
+        "startLine": 36229,
+        "bodyStartLine": 36229,
+        "endLine": 36237,
+        "lineCount": 9
+      },
+      {
+        "name": "refreshAuthUI",
+        "kind": "function",
+        "startLine": 36239,
+        "bodyStartLine": 36239,
+        "endLine": 36256,
+        "lineCount": 18
+      },
+      {
+        "name": "doSignIn",
+        "kind": "async function",
+        "startLine": 36258,
+        "bodyStartLine": 36258,
+        "endLine": 36296,
+        "lineCount": 39
+      },
+      {
+        "name": "doSignOut",
+        "kind": "function",
+        "startLine": 36298,
+        "bodyStartLine": 36298,
+        "endLine": 36307,
+        "lineCount": 10
+      },
+      {
+        "name": "diagAppend",
+        "kind": "function",
+        "startLine": 36319,
+        "bodyStartLine": 36319,
+        "endLine": 36324,
+        "lineCount": 6
+      },
+      {
+        "name": "diagRow",
+        "kind": "function",
+        "startLine": 36325,
+        "bodyStartLine": 36325,
+        "endLine": 36342,
+        "lineCount": 18
+      },
+      {
+        "name": "diagFetch",
+        "kind": "async function",
+        "startLine": 36343,
+        "bodyStartLine": 36343,
+        "endLine": 36366,
+        "lineCount": 24
+      },
+      {
+        "name": "diagDispatch",
+        "kind": "async function",
+        "startLine": 36367,
+        "bodyStartLine": 36367,
+        "endLine": 36379,
+        "lineCount": 13
+      },
+      {
+        "name": "runDiagnostics",
+        "kind": "async function",
+        "startLine": 36380,
+        "bodyStartLine": 36380,
+        "endLine": 36730,
+        "lineCount": 351
+      },
+      {
+        "name": "log",
+        "kind": "function",
+        "startLine": 36741,
+        "bodyStartLine": 36741,
+        "endLine": 36751,
+        "lineCount": 11
+      },
+      {
+        "name": "setState",
+        "kind": "function",
+        "startLine": 36753,
+        "bodyStartLine": 36753,
+        "endLine": 36753,
+        "lineCount": 1
+      },
+      {
+        "name": "setMic",
+        "kind": "function",
+        "startLine": 36754,
+        "bodyStartLine": 36754,
+        "endLine": 36754,
+        "lineCount": 1
+      },
+      {
+        "name": "setSpeaking",
+        "kind": "function",
+        "startLine": 36755,
+        "bodyStartLine": 36755,
+        "endLine": 36755,
+        "lineCount": 1
+      },
+      {
+        "name": "ensureAudioCtx",
+        "kind": "function",
+        "startLine": 36766,
+        "bodyStartLine": 36766,
+        "endLine": 36783,
+        "lineCount": 18
+      },
+      {
+        "name": "attachLocalMicMeter",
+        "kind": "function",
+        "startLine": 36785,
+        "bodyStartLine": 36785,
+        "endLine": 36822,
+        "lineCount": 38
+      },
+      {
+        "name": "loop",
+        "kind": "function",
+        "startLine": 36799,
+        "bodyStartLine": 36799,
+        "endLine": 36816,
+        "lineCount": 18
+      },
+      {
+        "name": "attachRemoteAudioMeter",
+        "kind": "function",
+        "startLine": 36824,
+        "bodyStartLine": 36824,
+        "endLine": 36850,
+        "lineCount": 27
+      },
+      {
+        "name": "tick",
+        "kind": "iife",
+        "startLine": 36837,
+        "bodyStartLine": 36837,
+        "endLine": 36846,
+        "lineCount": 10
+      },
+      {
+        "name": "stopAudioMeters",
+        "kind": "function",
+        "startLine": 36852,
+        "bodyStartLine": 36852,
+        "endLine": 36863,
+        "lineCount": 12
+      },
+      {
+        "name": "showAudioGateBanner",
+        "kind": "function",
+        "startLine": 36865,
+        "bodyStartLine": 36865,
+        "endLine": 36879,
+        "lineCount": 15
+      },
+      {
+        "name": "hideAudioGateBanner",
+        "kind": "function",
+        "startLine": 36880,
+        "bodyStartLine": 36880,
+        "endLine": 36883,
+        "lineCount": 4
+      },
+      {
+        "name": "forceReplayAllAudio",
+        "kind": "function",
+        "startLine": 36887,
+        "bodyStartLine": 36887,
+        "endLine": 36901,
+        "lineCount": 15
+      },
+      {
+        "name": "showMicPermissionBanner",
+        "kind": "function",
+        "startLine": 36903,
+        "bodyStartLine": 36903,
+        "endLine": 36906,
+        "lineCount": 4
+      },
+      {
+        "name": "hideMicPermissionBanner",
+        "kind": "function",
+        "startLine": 36907,
+        "bodyStartLine": 36907,
+        "endLine": 36910,
+        "lineCount": 4
+      },
+      {
+        "name": "appendTranscript",
+        "kind": "function",
+        "startLine": 36911,
+        "bodyStartLine": 36911,
+        "endLine": 36918,
+        "lineCount": 8
+      },
+      {
+        "name": "handleOrbDirective",
+        "kind": "function",
+        "startLine": 36930,
+        "bodyStartLine": 36930,
+        "endLine": 36945,
+        "lineCount": 16
+      },
+      {
+        "name": "loadLivekitClient",
+        "kind": "function",
+        "startLine": 36969,
+        "bodyStartLine": 36969,
+        "endLine": 36987,
+        "lineCount": 19
+      },
+      {
+        "name": "mintToken",
+        "kind": "async function",
+        "startLine": 36989,
+        "bodyStartLine": 36989,
+        "endLine": 37048,
+        "lineCount": 60
+      },
+      {
+        "name": "connect",
+        "kind": "async function",
+        "startLine": 37050,
+        "bodyStartLine": 37050,
+        "endLine": 37372,
+        "lineCount": 323
+      },
+      {
+        "name": "playReconnectChime",
+        "kind": "function",
+        "startLine": 37233,
+        "bodyStartLine": 37233,
+        "endLine": 37262,
+        "lineCount": 30
+      },
+      {
+        "name": "showReconnectBanner",
+        "kind": "function",
+        "startLine": 37267,
+        "bodyStartLine": 37267,
+        "endLine": 37280,
+        "lineCount": 14
+      },
+      {
+        "name": "hideReconnectBanner",
+        "kind": "function",
+        "startLine": 37281,
+        "bodyStartLine": 37281,
+        "endLine": 37284,
+        "lineCount": 4
+      },
+      {
+        "name": "disconnect",
+        "kind": "function",
+        "startLine": 37374,
+        "bodyStartLine": 37374,
+        "endLine": 37394,
+        "lineCount": 21
+      },
+      {
+        "name": "_computePrewarmKey",
+        "kind": "function",
+        "startLine": 37410,
+        "bodyStartLine": 37410,
+        "endLine": 37434,
+        "lineCount": 25
+      },
+      {
+        "name": "_kickPrewarm",
+        "kind": "function",
+        "startLine": 37436,
+        "bodyStartLine": 37436,
+        "endLine": 37459,
+        "lineCount": 24
+      },
+      {
+        "name": "renderTestingCiReportsView",
+        "kind": "function",
+        "startLine": 37506,
+        "bodyStartLine": 37506,
+        "endLine": 37558,
+        "lineCount": 53
+      },
+      {
+        "name": "renderAdminAnalyticsView",
+        "kind": "function",
+        "startLine": 37564,
+        "bodyStartLine": 37564,
+        "endLine": 37663,
+        "lineCount": 100
+      },
+      {
+        "name": "renderDocsApiInventoryView",
+        "kind": "function",
+        "startLine": 37669,
+        "bodyStartLine": 37669,
+        "endLine": 37751,
+        "lineCount": 83
+      },
+      {
+        "name": "renderDocsDatabaseSchemasView",
+        "kind": "function",
+        "startLine": 37753,
+        "bodyStartLine": 37753,
+        "endLine": 37821,
+        "lineCount": 69
+      },
+      {
+        "name": "renderDocsArchitectureView",
+        "kind": "function",
+        "startLine": 37823,
+        "bodyStartLine": 37823,
+        "endLine": 37870,
+        "lineCount": 48
+      },
+      {
+        "name": "renderDocsWorkforceView",
+        "kind": "function",
+        "startLine": 37872,
+        "bodyStartLine": 37872,
+        "endLine": 37938,
+        "lineCount": 67
+      },
+      {
+        "name": "initSystemKbState",
+        "kind": "function",
+        "startLine": 37949,
+        "bodyStartLine": 37949,
+        "endLine": 37962,
+        "lineCount": 14
+      },
+      {
+        "name": "fetchSystemKbDocs",
+        "kind": "async function",
+        "startLine": 37964,
+        "bodyStartLine": 37964,
+        "endLine": 37993,
+        "lineCount": 30
+      },
+      {
+        "name": "fetchSystemKbDoc",
+        "kind": "async function",
+        "startLine": 37995,
+        "bodyStartLine": 37995,
+        "endLine": 38021,
+        "lineCount": 27
+      },
+      {
+        "name": "renderDocsSystemKnowledgeView",
+        "kind": "function",
+        "startLine": 38023,
+        "bodyStartLine": 38023,
+        "endLine": 38243,
+        "lineCount": 221
+      },
+      {
+        "name": "initManualsState",
+        "kind": "function",
+        "startLine": 38272,
+        "bodyStartLine": 38272,
+        "endLine": 38290,
+        "lineCount": 19
+      },
+      {
+        "name": "fetchManualsForTenant",
+        "kind": "async function",
+        "startLine": 38292,
+        "bodyStartLine": 38292,
+        "endLine": 38320,
+        "lineCount": 29
+      },
+      {
+        "name": "fetchManualDoc",
+        "kind": "async function",
+        "startLine": 38322,
+        "bodyStartLine": 38322,
+        "endLine": 38344,
+        "lineCount": 23
+      },
+      {
+        "name": "renderManualMarkdown",
+        "kind": "function",
+        "startLine": 38350,
+        "bodyStartLine": 38350,
+        "endLine": 38911,
+        "lineCount": 562
+      },
+      {
+        "name": "isDeveloperSession",
+        "kind": "function",
+        "startLine": 38810,
+        "bodyStartLine": 38810,
+        "endLine": 38812,
+        "lineCount": 3
+      },
+      {
+        "name": "markActivity",
+        "kind": "function",
+        "startLine": 38813,
+        "bodyStartLine": 38813,
+        "endLine": 38813,
+        "lineCount": 1
+      },
+      {
+        "name": "checkTokenExpiry",
+        "kind": "async function",
+        "startLine": 38818,
+        "bodyStartLine": 38818,
+        "endLine": 38856,
+        "lineCount": 39
+      },
+      {
+        "name": "renderDatabasesSupabaseView",
+        "kind": "function",
+        "startLine": 38922,
+        "bodyStartLine": 38922,
+        "endLine": 39043,
+        "lineCount": 122
+      },
+      {
+        "name": "renderDatabasesVectorsView",
+        "kind": "function",
+        "startLine": 39049,
+        "bodyStartLine": 39049,
+        "endLine": 39161,
+        "lineCount": 113
+      },
+      {
+        "name": "fetchDbVectorStats",
+        "kind": "function",
+        "startLine": 39166,
+        "bodyStartLine": 39166,
+        "endLine": 39184,
+        "lineCount": 19
+      },
+      {
+        "name": "renderDatabasesCacheView",
+        "kind": "function",
+        "startLine": 39189,
+        "bodyStartLine": 39189,
+        "endLine": 39260,
+        "lineCount": 72
+      },
+      {
+        "name": "renderDatabasesAnalyticsView",
+        "kind": "function",
+        "startLine": 39266,
+        "bodyStartLine": 39266,
+        "endLine": 39348,
+        "lineCount": 83
+      },
+      {
+        "name": "renderDatabasesClustersView",
+        "kind": "function",
+        "startLine": 39353,
+        "bodyStartLine": 39353,
+        "endLine": 39412,
+        "lineCount": 60
+      },
+      {
+        "name": "fetchInfraServices",
+        "kind": "function",
+        "startLine": 39422,
+        "bodyStartLine": 39422,
+        "endLine": 39473,
+        "lineCount": 52
+      },
+      {
+        "name": "renderInfraServicesView",
+        "kind": "function",
+        "startLine": 39479,
+        "bodyStartLine": 39479,
+        "endLine": 39558,
+        "lineCount": 80
+      },
+      {
+        "name": "renderInfraHealthView",
+        "kind": "function",
+        "startLine": 39564,
+        "bodyStartLine": 39564,
+        "endLine": 39646,
+        "lineCount": 83
+      },
+      {
+        "name": "fetchInfraDeployments",
+        "kind": "function",
+        "startLine": 39651,
+        "bodyStartLine": 39651,
+        "endLine": 39668,
+        "lineCount": 18
+      },
+      {
+        "name": "renderInfraDeploymentsView",
+        "kind": "function",
+        "startLine": 39674,
+        "bodyStartLine": 39674,
+        "endLine": 39790,
+        "lineCount": 117
+      },
+      {
+        "name": "fetchInfraLogs",
+        "kind": "function",
+        "startLine": 39795,
+        "bodyStartLine": 39795,
+        "endLine": 39814,
+        "lineCount": 20
+      },
+      {
+        "name": "renderInfraLogsView",
+        "kind": "function",
+        "startLine": 39820,
+        "bodyStartLine": 39820,
+        "endLine": 39966,
+        "lineCount": 147
+      },
+      {
+        "name": "fetchInfraConfig",
+        "kind": "function",
+        "startLine": 39971,
+        "bodyStartLine": 39971,
+        "endLine": 39990,
+        "lineCount": 20
+      },
+      {
+        "name": "renderInfraConfigView",
+        "kind": "function",
+        "startLine": 39995,
+        "bodyStartLine": 39995,
+        "endLine": 40100,
+        "lineCount": 106
+      },
+      {
+        "name": "fetchSecurityPolicies",
+        "kind": "function",
+        "startLine": 40106,
+        "bodyStartLine": 40106,
+        "endLine": 40121,
+        "lineCount": 16
+      },
+      {
+        "name": "shHistoryUrl",
+        "kind": "function",
+        "startLine": 40130,
+        "bodyStartLine": 40130,
+        "endLine": 40135,
+        "lineCount": 6
+      },
+      {
+        "name": "fetchSelfHealingData",
+        "kind": "function",
+        "startLine": 40137,
+        "bodyStartLine": 40137,
+        "endLine": 40172,
+        "lineCount": 36
+      },
+      {
+        "name": "shFetchJson",
+        "kind": "function",
+        "startLine": 40144,
+        "bodyStartLine": 40144,
+        "endLine": 40149,
+        "lineCount": 6
+      },
+      {
+        "name": "loadMoreSelfHealingHistory",
+        "kind": "function",
+        "startLine": 40175,
+        "bodyStartLine": 40175,
+        "endLine": 40199,
+        "lineCount": 25
+      },
+      {
+        "name": "fetchDevAutopilotState",
+        "kind": "function",
+        "startLine": 40262,
+        "bodyStartLine": 40262,
+        "endLine": 40284,
+        "lineCount": 23
+      },
+      {
+        "name": "renderDevAutopilotView",
+        "kind": "function",
+        "startLine": 40286,
+        "bodyStartLine": 40286,
+        "endLine": 40411,
+        "lineCount": 126
+      },
+      {
+        "name": "renderDevAutopilotToolbar",
+        "kind": "function",
+        "startLine": 40416,
+        "bodyStartLine": 40416,
+        "endLine": 40482,
+        "lineCount": 67
+      },
+      {
+        "name": "makeSelect",
+        "kind": "function",
+        "startLine": 40420,
+        "bodyStartLine": 40420,
+        "endLine": 40439,
+        "lineCount": 20
+      },
+      {
+        "name": "filterDevAutopilotQueue",
+        "kind": "function",
+        "startLine": 40485,
+        "bodyStartLine": 40485,
+        "endLine": 40520,
+        "lineCount": 36
+      },
+      {
+        "name": "renderDevAutopilotQueue",
+        "kind": "function",
+        "startLine": 40522,
+        "bodyStartLine": 40522,
+        "endLine": 40544,
+        "lineCount": 23
+      },
+      {
+        "name": "renderDevAutopilotFindingCard",
+        "kind": "function",
+        "startLine": 40546,
+        "bodyStartLine": 40546,
+        "endLine": 40664,
+        "lineCount": 119
+      },
+      {
+        "name": "ensurePlanLoaded",
+        "kind": "function",
+        "startLine": 40668,
+        "bodyStartLine": 40668,
+        "endLine": 40759,
+        "lineCount": 92
+      },
+      {
+        "name": "renderDevAutopilotPlanBlock",
+        "kind": "function",
+        "startLine": 40761,
+        "bodyStartLine": 40761,
+        "endLine": 40841,
+        "lineCount": 81
+      },
+      {
+        "name": "devAutopilotInFlight",
+        "kind": "function",
+        "startLine": 40853,
+        "bodyStartLine": 40853,
+        "endLine": 40855,
+        "lineCount": 3
+      },
+      {
+        "name": "devAutopilotMarkFlight",
+        "kind": "function",
+        "startLine": 40857,
+        "bodyStartLine": 40857,
+        "endLine": 40860,
+        "lineCount": 4
+      },
+      {
+        "name": "devAutopilotApi",
+        "kind": "function",
+        "startLine": 40862,
+        "bodyStartLine": 40862,
+        "endLine": 40884,
+        "lineCount": 23
+      },
+      {
+        "name": "devAutopilotApproveOne",
+        "kind": "function",
+        "startLine": 40886,
+        "bodyStartLine": 40886,
+        "endLine": 40942,
+        "lineCount": 57
+      },
+      {
+        "name": "devAutopilotRejectOne",
+        "kind": "function",
+        "startLine": 40944,
+        "bodyStartLine": 40944,
+        "endLine": 40963,
+        "lineCount": 20
+      },
+      {
+        "name": "devAutopilotSnoozeOne",
+        "kind": "function",
+        "startLine": 40965,
+        "bodyStartLine": 40965,
+        "endLine": 40984,
+        "lineCount": 20
+      },
+      {
+        "name": "devAutopilotContinuePlanning",
+        "kind": "function",
+        "startLine": 40986,
+        "bodyStartLine": 40986,
+        "endLine": 41079,
+        "lineCount": 94
+      },
+      {
+        "name": "devAutopilotBatchAction",
+        "kind": "function",
+        "startLine": 41081,
+        "bodyStartLine": 41081,
+        "endLine": 41132,
+        "lineCount": 52
+      },
+      {
+        "name": "devAutopilotCancelExecution",
+        "kind": "function",
+        "startLine": 41134,
+        "bodyStartLine": 41134,
+        "endLine": 41166,
+        "lineCount": 33
+      },
+      {
+        "name": "devAutopilotToggleDiff",
+        "kind": "function",
+        "startLine": 41173,
+        "bodyStartLine": 41173,
+        "endLine": 41183,
+        "lineCount": 11
+      },
+      {
+        "name": "ensureExecutionDiffLoaded",
+        "kind": "function",
+        "startLine": 41185,
+        "bodyStartLine": 41185,
+        "endLine": 41199,
+        "lineCount": 15
+      },
+      {
+        "name": "devAutopilotExecutionLists",
+        "kind": "function",
+        "startLine": 41203,
+        "bodyStartLine": 41203,
+        "endLine": 41208,
+        "lineCount": 6
+      },
+      {
+        "name": "devAutopilotApproveExecution",
+        "kind": "function",
+        "startLine": 41210,
+        "bodyStartLine": 41210,
+        "endLine": 41234,
+        "lineCount": 25
+      },
+      {
+        "name": "devAutopilotRejectExecution",
+        "kind": "function",
+        "startLine": 41236,
+        "bodyStartLine": 41236,
+        "endLine": 41260,
+        "lineCount": 25
+      },
+      {
+        "name": "renderExecutionDiffPanel",
+        "kind": "function",
+        "startLine": 41262,
+        "bodyStartLine": 41262,
+        "endLine": 41303,
+        "lineCount": 42
+      },
+      {
+        "name": "renderDevAutopilotBatchBar",
+        "kind": "function",
+        "startLine": 41309,
+        "bodyStartLine": 41309,
+        "endLine": 41357,
+        "lineCount": 49
+      },
+      {
+        "name": "mkBtn",
+        "kind": "function",
+        "startLine": 41321,
+        "bodyStartLine": 41321,
+        "endLine": 41329,
+        "lineCount": 9
+      },
+      {
+        "name": "renderDevAutopilotActions",
+        "kind": "function",
+        "startLine": 41359,
+        "bodyStartLine": 41359,
+        "endLine": 41490,
+        "lineCount": 132
+      },
+      {
+        "name": "mkBtn",
+        "kind": "function",
+        "startLine": 41423,
+        "bodyStartLine": 41423,
+        "endLine": 41431,
+        "lineCount": 9
+      },
+      {
+        "name": "renderDevAutopilotGenerationProgress",
+        "kind": "function",
+        "startLine": 41496,
+        "bodyStartLine": 41496,
+        "endLine": 41563,
+        "lineCount": 68
+      },
+      {
+        "name": "renderDevAutopilotChatHistory",
+        "kind": "function",
+        "startLine": 41568,
+        "bodyStartLine": 41568,
+        "endLine": 41606,
+        "lineCount": 39
+      },
+      {
+        "name": "devAutopilotEscape",
+        "kind": "function",
+        "startLine": 41608,
+        "bodyStartLine": 41608,
+        "endLine": 42665,
+        "lineCount": 1058
+      },
+      {
+        "name": "renderVoiceImproveView",
+        "kind": "function",
+        "startLine": 42674,
+        "bodyStartLine": 42674,
+        "endLine": 42857,
+        "lineCount": 184
+      },
+      {
+        "name": "verbLabel",
+        "kind": "function",
+        "startLine": 42859,
+        "bodyStartLine": 42859,
+        "endLine": 42869,
+        "lineCount": 11
+      },
+      {
+        "name": "handleVoiceImproveAction",
+        "kind": "function",
+        "startLine": 42871,
+        "bodyStartLine": 42871,
+        "endLine": 43019,
+        "lineCount": 149
+      },
+      {
+        "name": "renderMovedToVoiceBreadcrumb",
+        "kind": "function",
+        "startLine": 43023,
+        "bodyStartLine": 43023,
+        "endLine": 43040,
+        "lineCount": 18
+      },
+      {
+        "name": "renderVoiceProvidersView",
+        "kind": "function",
+        "startLine": 43052,
+        "bodyStartLine": 43052,
+        "endLine": 43503,
+        "lineCount": 452
+      },
+      {
+        "name": "fetchTtsVoicesForLanguage",
+        "kind": "function",
+        "startLine": 43505,
+        "bodyStartLine": 43505,
+        "endLine": 43515,
+        "lineCount": 11
+      },
+      {
+        "name": "renderVoiceProviderQualityStrip",
+        "kind": "function",
+        "startLine": 43520,
+        "bodyStartLine": 43520,
+        "endLine": 43605,
+        "lineCount": 86
+      },
+      {
+        "name": "vpMakeCard",
+        "kind": "function",
+        "startLine": 43607,
+        "bodyStartLine": 43607,
+        "endLine": 43615,
+        "lineCount": 9
+      },
+      {
+        "name": "vpMakeFieldRow",
+        "kind": "function",
+        "startLine": 43617,
+        "bodyStartLine": 43617,
+        "endLine": 43625,
+        "lineCount": 9
+      },
+      {
+        "name": "vpStyleSelect",
+        "kind": "function",
+        "startLine": 43627,
+        "bodyStartLine": 43627,
+        "endLine": 43629,
+        "lineCount": 3
+      },
+      {
+        "name": "vpStyleInput",
+        "kind": "function",
+        "startLine": 43630,
+        "bodyStartLine": 43630,
+        "endLine": 43632,
+        "lineCount": 3
+      },
+      {
+        "name": "renderAwarenessWatchdogsTable",
+        "kind": "function",
+        "startLine": 43637,
+        "bodyStartLine": 43637,
+        "endLine": 43785,
+        "lineCount": 149
+      },
+      {
+        "name": "renderVoiceAwarenessView",
+        "kind": "function",
+        "startLine": 43790,
+        "bodyStartLine": 43790,
+        "endLine": 43838,
+        "lineCount": 49
+      },
+      {
+        "name": "renderTeachVitanalandView",
+        "kind": "function",
+        "startLine": 43849,
+        "bodyStartLine": 43849,
+        "endLine": 44016,
+        "lineCount": 168
+      },
+      {
+        "name": "makeTeachPanel",
+        "kind": "function",
+        "startLine": 44018,
+        "bodyStartLine": 44018,
+        "endLine": 44034,
+        "lineCount": 17
+      },
+      {
+        "name": "loadTeachVitanalandData",
+        "kind": "function",
+        "startLine": 44036,
+        "bodyStartLine": 44036,
+        "endLine": 44057,
+        "lineCount": 22
+      },
+      {
+        "name": "renderJourneyContextReliabilityAnalysisPanel",
+        "kind": "function",
+        "startLine": 44947,
+        "bodyStartLine": 44947,
+        "endLine": 45075,
+        "lineCount": 129
+      },
+      {
+        "name": "renderJourneyContextFeatureDiscoveryPanel",
+        "kind": "function",
+        "startLine": 45090,
+        "bodyStartLine": 45090,
+        "endLine": 45163,
+        "lineCount": 74
+      },
+      {
+        "name": "renderJourneyContextNextActionInspectorPanel",
+        "kind": "function",
+        "startLine": 45174,
+        "bodyStartLine": 45174,
+        "endLine": 45241,
+        "lineCount": 68
+      },
+      {
+        "name": "renderInlineArchitectureReports",
+        "kind": "function",
+        "startLine": 45248,
+        "bodyStartLine": 45248,
+        "endLine": 45346,
+        "lineCount": 99
+      },
+      {
+        "name": "handleArchReportAction",
+        "kind": "function",
+        "startLine": 45348,
+        "bodyStartLine": 45348,
+        "endLine": 45375,
+        "lineCount": 28
+      },
+      {
+        "name": "renderVoiceSelfHealingPanel",
+        "kind": "function",
+        "startLine": 45377,
+        "bodyStartLine": 45377,
+        "endLine": 45576,
+        "lineCount": 200
+      },
+      {
+        "name": "renderTestContractsPanel",
+        "kind": "function",
+        "startLine": 45586,
+        "bodyStartLine": 45586,
+        "endLine": 45772,
+        "lineCount": 187
+      },
+      {
+        "name": "renderMissingContractsSection",
+        "kind": "function",
+        "startLine": 45774,
+        "bodyStartLine": 45774,
+        "endLine": 45906,
+        "lineCount": 133
+      },
+      {
+        "name": "renderSelfHealingView",
+        "kind": "function",
+        "startLine": 45908,
+        "bodyStartLine": 45908,
+        "endLine": 46500,
+        "lineCount": 593
+      },
+      {
+        "name": "shFmtAbs",
+        "kind": "function",
+        "startLine": 46325,
+        "bodyStartLine": 46325,
+        "endLine": 46333,
+        "lineCount": 9
+      },
+      {
+        "name": "shFmtRel",
+        "kind": "function",
+        "startLine": 46335,
+        "bodyStartLine": 46335,
+        "endLine": 46350,
+        "lineCount": 16
+      },
+      {
+        "name": "renderSecurityPoliciesView",
+        "kind": "function",
+        "startLine": 46506,
+        "bodyStartLine": 46506,
+        "endLine": 46597,
+        "lineCount": 92
+      },
+      {
+        "name": "fetchSecurityRoles",
+        "kind": "function",
+        "startLine": 46599,
+        "bodyStartLine": 46599,
+        "endLine": 46614,
+        "lineCount": 16
+      },
+      {
+        "name": "renderSecurityRolesView",
+        "kind": "function",
+        "startLine": 46616,
+        "bodyStartLine": 46616,
+        "endLine": 46687,
+        "lineCount": 72
+      },
+      {
+        "name": "renderSecurityKeysSecretsView",
+        "kind": "function",
+        "startLine": 46689,
+        "bodyStartLine": 46689,
+        "endLine": 46765,
+        "lineCount": 77
+      },
+      {
+        "name": "fetchSecurityAuditLog",
+        "kind": "function",
+        "startLine": 46767,
+        "bodyStartLine": 46767,
+        "endLine": 46782,
+        "lineCount": 16
+      },
+      {
+        "name": "renderSecurityAuditLogView",
+        "kind": "function",
+        "startLine": 46784,
+        "bodyStartLine": 46784,
+        "endLine": 46899,
+        "lineCount": 116
+      },
+      {
+        "name": "renderSecurityRlsAccessView",
+        "kind": "function",
+        "startLine": 46901,
+        "bodyStartLine": 46901,
+        "endLine": 46997,
+        "lineCount": 97
+      },
+      {
+        "name": "autopilotStatusColor",
+        "kind": "function",
+        "startLine": 47021,
+        "bodyStartLine": 47021,
+        "endLine": 47033,
+        "lineCount": 13
+      },
+      {
+        "name": "autopilotTriggerIcon",
+        "kind": "function",
+        "startLine": 47035,
+        "bodyStartLine": 47035,
+        "endLine": 47044,
+        "lineCount": 10
+      },
+      {
+        "name": "createSummaryCard",
+        "kind": "function",
+        "startLine": 47047,
+        "bodyStartLine": 47047,
+        "endLine": 47059,
+        "lineCount": 13
+      },
+      {
+        "name": "fetchAutopilotRegistry",
+        "kind": "async function",
+        "startLine": 47065,
+        "bodyStartLine": 47065,
+        "endLine": 47091,
+        "lineCount": 27
+      },
+      {
+        "name": "fetchAutopilotAutoApprove",
+        "kind": "async function",
+        "startLine": 47734,
+        "bodyStartLine": 47734,
+        "endLine": 47754,
+        "lineCount": 21
+      },
+      {
+        "name": "renderAutopilotAutoApproveView",
+        "kind": "function",
+        "startLine": 47756,
+        "bodyStartLine": 47756,
+        "endLine": 47929,
+        "lineCount": 174
+      },
+      {
+        "name": "renderSurfaceRow",
+        "kind": "function",
+        "startLine": 47848,
+        "bodyStartLine": 47848,
+        "endLine": 47884,
+        "lineCount": 37
+      },
+      {
+        "name": "renderAutopilotRunsView",
+        "kind": "function",
+        "startLine": 47931,
+        "bodyStartLine": 47931,
+        "endLine": 48127,
+        "lineCount": 197
+      },
+      {
+        "name": "renderAutopilotLiveView",
+        "kind": "function",
+        "startLine": 48129,
+        "bodyStartLine": 48129,
+        "endLine": 48423,
+        "lineCount": 295
+      },
+      {
+        "name": "renderAutopilotEngineView",
+        "kind": "function",
+        "startLine": 48429,
+        "bodyStartLine": 48429,
+        "endLine": 48573,
+        "lineCount": 145
+      },
+      {
+        "name": "fetchAutopilotGrowth",
+        "kind": "async function",
+        "startLine": 48579,
+        "bodyStartLine": 48579,
+        "endLine": 48599,
+        "lineCount": 21
+      },
+      {
+        "name": "computeGrowthMetrics",
+        "kind": "function",
+        "startLine": 48601,
+        "bodyStartLine": 48601,
+        "endLine": 48632,
+        "lineCount": 32
+      },
+      {
+        "name": "renderAutopilotGrowthView",
+        "kind": "function",
+        "startLine": 48634,
+        "bodyStartLine": 48634,
+        "endLine": 48730,
+        "lineCount": 97
+      },
+      {
+        "name": "fetchMissionAlignmentRecs",
+        "kind": "function",
+        "startLine": 48751,
+        "bodyStartLine": 48751,
+        "endLine": 48777,
+        "lineCount": 27
+      },
+      {
+        "name": "aggregateMissionAlignment",
+        "kind": "function",
+        "startLine": 48779,
+        "bodyStartLine": 48779,
+        "endLine": 48811,
+        "lineCount": 33
+      },
+      {
+        "name": "formatPillarLabel",
+        "kind": "function",
+        "startLine": 48813,
+        "bodyStartLine": 48813,
+        "endLine": 48816,
+        "lineCount": 4
+      },
+      {
+        "name": "formatAxisLabel",
+        "kind": "function",
+        "startLine": 48817,
+        "bodyStartLine": 48817,
+        "endLine": 48820,
+        "lineCount": 4
+      },
+      {
+        "name": "formatLevelLabel",
+        "kind": "function",
+        "startLine": 48821,
+        "bodyStartLine": 48821,
+        "endLine": 48824,
+        "lineCount": 4
+      },
+      {
+        "name": "renderMissionAlignmentBreakdown",
+        "kind": "function",
+        "startLine": 48826,
+        "bodyStartLine": 48826,
+        "endLine": 48871,
+        "lineCount": 46
+      },
+      {
+        "name": "renderAutopilotMissionAlignmentView",
+        "kind": "function",
+        "startLine": 48873,
+        "bodyStartLine": 48873,
+        "endLine": 49013,
+        "lineCount": 141
+      },
+      {
+        "name": "renderVitanaAwarenessTestView",
+        "kind": "function",
+        "startLine": 49024,
+        "bodyStartLine": 49024,
+        "endLine": 49233,
+        "lineCount": 210
+      },
+      {
+        "name": "renderChecks",
+        "kind": "function",
+        "startLine": 49069,
+        "bodyStartLine": 49069,
+        "endLine": 49093,
+        "lineCount": 25
+      },
+      {
+        "name": "renderSection",
+        "kind": "function",
+        "startLine": 49095,
+        "bodyStartLine": 49095,
+        "endLine": 49113,
+        "lineCount": 19
+      },
+      {
+        "name": "renderList",
+        "kind": "function",
+        "startLine": 49115,
+        "bodyStartLine": 49115,
+        "endLine": 49136,
+        "lineCount": 22
+      },
+      {
+        "name": "renderResult",
+        "kind": "function",
+        "startLine": 49138,
+        "bodyStartLine": 49138,
+        "endLine": 49173,
+        "lineCount": 36
+      },
+      {
+        "name": "runTest",
+        "kind": "function",
+        "startLine": 49175,
+        "bodyStartLine": 49175,
+        "endLine": 49203,
+        "lineCount": 29
+      },
+      {
+        "name": "awarenessFetchConfig",
+        "kind": "function",
+        "startLine": 49259,
+        "bodyStartLine": 49259,
+        "endLine": 49283,
+        "lineCount": 25
+      },
+      {
+        "name": "awarenessFetchAudit",
+        "kind": "function",
+        "startLine": 49285,
+        "bodyStartLine": 49285,
+        "endLine": 49295,
+        "lineCount": 11
+      },
+      {
+        "name": "awarenessSavePending",
+        "kind": "function",
+        "startLine": 49297,
+        "bodyStartLine": 49297,
+        "endLine": 49330,
+        "lineCount": 34
+      },
+      {
+        "name": "awarenessRunPreview",
+        "kind": "function",
+        "startLine": 49332,
+        "bodyStartLine": 49332,
+        "endLine": 49348,
+        "lineCount": 17
+      },
+      {
+        "name": "awarenessSignalEffective",
+        "kind": "function",
+        "startLine": 49350,
+        "bodyStartLine": 49350,
+        "endLine": 49358,
+        "lineCount": 9
+      },
+      {
+        "name": "awarenessUpdatePending",
+        "kind": "function",
+        "startLine": 49360,
+        "bodyStartLine": 49360,
+        "endLine": 49367,
+        "lineCount": 8
+      },
+      {
+        "name": "renderAwarenessSignalRow",
+        "kind": "function",
+        "startLine": 49369,
+        "bodyStartLine": 49369,
+        "endLine": 49537,
+        "lineCount": 169
+      },
+      {
+        "name": "renderAwarenessTier",
+        "kind": "function",
+        "startLine": 49539,
+        "bodyStartLine": 49539,
+        "endLine": 49579,
+        "lineCount": 41
+      },
+      {
+        "name": "renderAwarenessPreviewDrawer",
+        "kind": "function",
+        "startLine": 49581,
+        "bodyStartLine": 49581,
+        "endLine": 49609,
+        "lineCount": 29
+      },
+      {
+        "name": "renderAdminAwarenessView",
+        "kind": "function",
+        "startLine": 49611,
+        "bodyStartLine": 49611,
+        "endLine": 49743,
+        "lineCount": 133
+      },
+      {
+        "name": "escapeHtml",
+        "kind": "function",
+        "startLine": 49799,
+        "bodyStartLine": 49799,
+        "endLine": 51141,
+        "lineCount": 1343
+      },
+      {
+        "name": "openSpecialistEditor",
+        "kind": "function",
+        "startLine": 51147,
+        "bodyStartLine": 51147,
+        "endLine": 51377,
+        "lineCount": 231
+      },
+      {
+        "name": "fieldRow",
+        "kind": "function",
+        "startLine": 51204,
+        "bodyStartLine": 51204,
+        "endLine": 51213,
+        "lineCount": 10
+      },
+      {
+        "name": "saveAll",
+        "kind": "async function",
+        "startLine": 51310,
+        "bodyStartLine": 51310,
+        "endLine": 51349,
+        "lineCount": 40
+      },
+      {
+        "name": "openPersonaVersionsDrawer",
+        "kind": "function",
+        "startLine": 51379,
+        "bodyStartLine": 51379,
+        "endLine": 51425,
+        "lineCount": 47
+      },
+      {
+        "name": "renderFeedbackAuditView",
+        "kind": "function",
+        "startLine": 51429,
+        "bodyStartLine": 51429,
+        "endLine": 51487,
+        "lineCount": 59
+      },
+      {
+        "name": "openNewSpecialistWizard",
+        "kind": "function",
+        "startLine": 51496,
+        "bodyStartLine": 51496,
+        "endLine": 51644,
+        "lineCount": 149
+      },
+      {
+        "name": "field",
+        "kind": "function",
+        "startLine": 51518,
+        "bodyStartLine": 51518,
+        "endLine": 51533,
+        "lineCount": 16
+      },
+      {
+        "name": "txt",
+        "kind": "function",
+        "startLine": 51535,
+        "bodyStartLine": 51535,
+        "endLine": 51541,
+        "lineCount": 7
+      },
+      {
+        "name": "area",
+        "kind": "function",
+        "startLine": 51543,
+        "bodyStartLine": 51543,
+        "endLine": 51549,
+        "lineCount": 7
+      },
+      {
+        "name": "renderMemoryOpsView",
+        "kind": "function",
+        "startLine": 51660,
+        "bodyStartLine": 51660,
+        "endLine": 51674,
+        "lineCount": 15
+      },
+      {
+        "name": "memoryOpsFetchHealth",
+        "kind": "function",
+        "startLine": 51676,
+        "bodyStartLine": 51676,
+        "endLine": 51686,
+        "lineCount": 11
+      },
+      {
+        "name": "memoryOpsHeader",
+        "kind": "function",
+        "startLine": 51688,
+        "bodyStartLine": 51688,
+        "endLine": 51706,
+        "lineCount": 19
+      },
+      {
+        "name": "memoryOpsStatGrid",
+        "kind": "function",
+        "startLine": 51708,
+        "bodyStartLine": 51708,
+        "endLine": 51727,
+        "lineCount": 20
+      },
+      {
+        "name": "memoryOpsLoading",
+        "kind": "function",
+        "startLine": 51729,
+        "bodyStartLine": 51729,
+        "endLine": 51736,
+        "lineCount": 8
+      },
+      {
+        "name": "memoryOpsErrorBox",
+        "kind": "function",
+        "startLine": 51738,
+        "bodyStartLine": 51738,
+        "endLine": 51747,
+        "lineCount": 10
+      },
+      {
+        "name": "memoryOpsTimeAgo",
+        "kind": "function",
+        "startLine": 51749,
+        "bodyStartLine": 51749,
+        "endLine": 51758,
+        "lineCount": 10
+      },
+      {
+        "name": "memoryOpsRenderOrchestratorCard",
+        "kind": "function",
+        "startLine": 51764,
+        "bodyStartLine": 51764,
+        "endLine": 51833,
+        "lineCount": 70
+      },
+      {
+        "name": "memoryOpsRenderMemoryVault",
+        "kind": "function",
+        "startLine": 51836,
+        "bodyStartLine": 51836,
+        "endLine": 51965,
+        "lineCount": 130
+      },
+      {
+        "name": "memoryOpsRenderKnowledgeGraph",
+        "kind": "function",
+        "startLine": 51968,
+        "bodyStartLine": 51968,
+        "endLine": 51988,
+        "lineCount": 21
+      },
+      {
+        "name": "renderEdgesTable",
+        "kind": "function",
+        "startLine": 51990,
+        "bodyStartLine": 51990,
+        "endLine": 52014,
+        "lineCount": 25
+      },
+      {
+        "name": "memoryOpsRenderEmbeddings",
+        "kind": "function",
+        "startLine": 52017,
+        "bodyStartLine": 52017,
+        "endLine": 52052,
+        "lineCount": 36
+      },
+      {
+        "name": "memoryOpsRenderRecall",
+        "kind": "function",
+        "startLine": 52055,
+        "bodyStartLine": 52055,
+        "endLine": 52132,
+        "lineCount": 78
+      },
+      {
+        "name": "memoryOpsRenderInspector",
+        "kind": "function",
+        "startLine": 52135,
+        "bodyStartLine": 52135,
+        "endLine": 52169,
+        "lineCount": 35
+      },
+      {
+        "name": "renderOperatorLocalizationView",
+        "kind": "function",
+        "startLine": 52180,
+        "bodyStartLine": 52180,
+        "endLine": 52476,
+        "lineCount": 297
+      },
+      {
+        "name": "renderRunsTabs",
+        "kind": "function",
+        "startLine": 52224,
+        "bodyStartLine": 52224,
+        "endLine": 52239,
+        "lineCount": 16
+      },
+      {
+        "name": "setStatus",
+        "kind": "function",
+        "startLine": 52243,
+        "bodyStartLine": 52243,
+        "endLine": 52243,
+        "lineCount": 1
+      },
+      {
+        "name": "authHeader",
+        "kind": "function",
+        "startLine": 52245,
+        "bodyStartLine": 52245,
+        "endLine": 52248,
+        "lineCount": 4
+      },
+      {
+        "name": "fetchLocales",
+        "kind": "function",
+        "startLine": 52250,
+        "bodyStartLine": 52250,
+        "endLine": 52266,
+        "lineCount": 17
+      },
+      {
+        "name": "renderTable",
+        "kind": "function",
+        "startLine": 52268,
+        "bodyStartLine": 52268,
+        "endLine": 52354,
+        "lineCount": 87
+      },
+      {
+        "name": "makeActionBtn",
+        "kind": "function",
+        "startLine": 52356,
+        "bodyStartLine": 52356,
+        "endLine": 52362,
+        "lineCount": 7
+      },
+      {
+        "name": "triggerTranslate",
+        "kind": "function",
+        "startLine": 52364,
+        "bodyStartLine": 52364,
+        "endLine": 52392,
+        "lineCount": 29
+      },
+      {
+        "name": "triggerAudit",
+        "kind": "function",
+        "startLine": 52394,
+        "bodyStartLine": 52394,
+        "endLine": 52422,
+        "lineCount": 29
+      },
+      {
+        "name": "fetchRuns",
+        "kind": "function",
+        "startLine": 52424,
+        "bodyStartLine": 52424,
+        "endLine": 52465,
+        "lineCount": 42
+      }
+    ],
+    "orb-widget.js": [
+      {
+        "name": "_currentPlaybackRate",
+        "kind": "function",
+        "startLine": 43,
+        "bodyStartLine": 43,
+        "endLine": 47,
+        "lineCount": 5
+      },
+      {
+        "name": "_pcmRateFromMime",
+        "kind": "function",
+        "startLine": 57,
+        "bodyStartLine": 57,
+        "endLine": 61,
+        "lineCount": 5
+      },
+      {
+        "name": "_isTokenExpired",
+        "kind": "function",
+        "startLine": 88,
+        "bodyStartLine": 88,
+        "endLine": 99,
+        "lineCount": 12
+      },
+      {
+        "name": "_jwtSub",
+        "kind": "function",
+        "startLine": 104,
+        "bodyStartLine": 104,
+        "endLine": 112,
+        "lineCount": 9
+      },
+      {
+        "name": "_injectStyles",
+        "kind": "function",
+        "startLine": 474,
+        "bodyStartLine": 474,
+        "endLine": 681,
+        "lineCount": 208
+      },
+      {
+        "name": "_playChime",
+        "kind": "function",
+        "startLine": 697,
+        "bodyStartLine": 697,
+        "endLine": 715,
+        "lineCount": 19
+      },
+      {
+        "name": "_playReadyBeep",
+        "kind": "function",
+        "startLine": 717,
+        "bodyStartLine": 717,
+        "endLine": 730,
+        "lineCount": 14
+      },
+      {
+        "name": "_playErrorTone",
+        "kind": "function",
+        "startLine": 732,
+        "bodyStartLine": 732,
+        "endLine": 744,
+        "lineCount": 13
+      },
+      {
+        "name": "_startCtxKeepAlive",
+        "kind": "function",
+        "startLine": 755,
+        "bodyStartLine": 755,
+        "endLine": 770,
+        "lineCount": 16
+      },
+      {
+        "name": "_stopCtxKeepAlive",
+        "kind": "function",
+        "startLine": 772,
+        "bodyStartLine": 772,
+        "endLine": 777,
+        "lineCount": 6
+      },
+      {
+        "name": "_unlockPlaybackCtxFromGesture",
+        "kind": "function",
+        "startLine": 811,
+        "bodyStartLine": 811,
+        "endLine": 840,
+        "lineCount": 30
+      },
+      {
+        "name": "_installGestureAudioUnlock",
+        "kind": "function",
+        "startLine": 847,
+        "bodyStartLine": 847,
+        "endLine": 863,
+        "lineCount": 17
+      },
+      {
+        "name": "_announceAudioBlocked",
+        "kind": "function",
+        "startLine": 870,
+        "bodyStartLine": 870,
+        "endLine": 891,
+        "lineCount": 22
+      },
+      {
+        "name": "_clearAudioBlocked",
+        "kind": "function",
+        "startLine": 893,
+        "bodyStartLine": 893,
+        "endLine": 913,
+        "lineCount": 21
+      },
+      {
+        "name": "_resolveCaptionLocale",
+        "kind": "function",
+        "startLine": 962,
+        "bodyStartLine": 962,
+        "endLine": 968,
+        "lineCount": 7
+      },
+      {
+        "name": "_loc",
+        "kind": "function",
+        "startLine": 972,
+        "bodyStartLine": 972,
+        "endLine": 976,
+        "lineCount": 5
+      },
+      {
+        "name": "_caption",
+        "kind": "function",
+        "startLine": 1081,
+        "bodyStartLine": 1081,
+        "endLine": 1081,
+        "lineCount": 1
+      },
+      {
+        "name": "_pickLang",
+        "kind": "function",
+        "startLine": 1208,
+        "bodyStartLine": 1208,
+        "endLine": 1208,
+        "lineCount": 1
+      },
+      {
+        "name": "_alertClipBaseUrl",
+        "kind": "function",
+        "startLine": 1210,
+        "bodyStartLine": 1210,
+        "endLine": 1216,
+        "lineCount": 7
+      },
+      {
+        "name": "_preloadAlertClips",
+        "kind": "function",
+        "startLine": 1222,
+        "bodyStartLine": 1222,
+        "endLine": 1253,
+        "lineCount": 32
+      },
+      {
+        "name": "_wsFallbackLatched",
+        "kind": "function",
+        "startLine": 1268,
+        "bodyStartLine": 1268,
+        "endLine": 1272,
+        "lineCount": 5
+      },
+      {
+        "name": "_latchWsFallback",
+        "kind": "function",
+        "startLine": 1274,
+        "bodyStartLine": 1274,
+        "endLine": 1280,
+        "lineCount": 7
+      },
+      {
+        "name": "_useWsTransport",
+        "kind": "function",
+        "startLine": 1284,
+        "bodyStartLine": 1284,
+        "endLine": 1294,
+        "lineCount": 11
+      },
+      {
+        "name": "_fetchServerTransport",
+        "kind": "function",
+        "startLine": 1299,
+        "bodyStartLine": 1299,
+        "endLine": 1312,
+        "lineCount": 14
+      },
+      {
+        "name": "_closeWs",
+        "kind": "function",
+        "startLine": 1316,
+        "bodyStartLine": 1316,
+        "endLine": 1323,
+        "lineCount": 8
+      },
+      {
+        "name": "_prewarmBootstrap",
+        "kind": "function",
+        "startLine": 1330,
+        "bodyStartLine": 1330,
+        "endLine": 1336,
+        "lineCount": 7
+      },
+      {
+        "name": "_prewarmNovaWs",
+        "kind": "function",
+        "startLine": 1355,
+        "bodyStartLine": 1355,
+        "endLine": 1402,
+        "lineCount": 48
+      },
+      {
+        "name": "stale",
+        "kind": "function",
+        "startLine": 1366,
+        "bodyStartLine": 1366,
+        "endLine": 1366,
+        "lineCount": 1
+      },
+      {
+        "name": "drop",
+        "kind": "function",
+        "startLine": 1367,
+        "bodyStartLine": 1367,
+        "endLine": 1371,
+        "lineCount": 5
+      },
+      {
+        "name": "_playAlert",
+        "kind": "function",
+        "startLine": 1408,
+        "bodyStartLine": 1408,
+        "endLine": 1427,
+        "lineCount": 20
+      },
+      {
+        "name": "_announceDisconnect",
+        "kind": "function",
+        "startLine": 1429,
+        "bodyStartLine": 1429,
+        "endLine": 1555,
+        "lineCount": 127
+      },
+      {
+        "name": "_clearDisconnect",
+        "kind": "function",
+        "startLine": 1557,
+        "bodyStartLine": 1557,
+        "endLine": 1595,
+        "lineCount": 39
+      },
+      {
+        "name": "_shouldResumeGuidedTopic",
+        "kind": "function",
+        "startLine": 1619,
+        "bodyStartLine": 1619,
+        "endLine": 1624,
+        "lineCount": 6
+      },
+      {
+        "name": "_resetAndReconnect",
+        "kind": "function",
+        "startLine": 1629,
+        "bodyStartLine": 1629,
+        "endLine": 1710,
+        "lineCount": 82
+      },
+      {
+        "name": "_signalAudioReady",
+        "kind": "function",
+        "startLine": 1720,
+        "bodyStartLine": 1720,
+        "endLine": 1755,
+        "lineCount": 36
+      },
+      {
+        "name": "_playAudio",
+        "kind": "function",
+        "startLine": 1757,
+        "bodyStartLine": 1757,
+        "endLine": 1768,
+        "lineCount": 12
+      },
+      {
+        "name": "_processQueue",
+        "kind": "function",
+        "startLine": 1770,
+        "bodyStartLine": 1770,
+        "endLine": 1913,
+        "lineCount": 144
+      },
+      {
+        "name": "_sessionStart",
+        "kind": "async function",
+        "startLine": 1919,
+        "bodyStartLine": 1919,
+        "endLine": 2376,
+        "lineCount": 458
+      },
+      {
+        "name": "_sessionStartWs",
+        "kind": "function",
+        "startLine": 2383,
+        "bodyStartLine": 2383,
+        "endLine": 2498,
+        "lineCount": 116
+      },
+      {
+        "name": "bail",
+        "kind": "function",
+        "startLine": 2409,
+        "bodyStartLine": 2409,
+        "endLine": 2418,
+        "lineCount": 10
+      },
+      {
+        "name": "_sessionStop",
+        "kind": "async function",
+        "startLine": 2500,
+        "bodyStartLine": 2500,
+        "endLine": 2623,
+        "lineCount": 124
+      },
+      {
+        "name": "_handleMessage",
+        "kind": "function",
+        "startLine": 2629,
+        "bodyStartLine": 2629,
+        "endLine": 3383,
+        "lineCount": 755
+      },
+      {
+        "name": "_waitForAudioEnd",
+        "kind": "iife",
+        "startLine": 2784,
+        "bodyStartLine": 2784,
+        "endLine": 2969,
+        "lineCount": 186
+      },
+      {
+        "name": "_armIdleNudge",
+        "kind": "iife",
+        "startLine": 2952,
+        "bodyStartLine": 2952,
+        "endLine": 2966,
+        "lineCount": 15
+      },
+      {
+        "name": "check",
+        "kind": "iife",
+        "startLine": 2953,
+        "bodyStartLine": 2953,
+        "endLine": 2965,
+        "lineCount": 13
+      },
+      {
+        "name": "_waitForGoodbyeEnd",
+        "kind": "iife",
+        "startLine": 3125,
+        "bodyStartLine": 3125,
+        "endLine": 3150,
+        "lineCount": 26
+      },
+      {
+        "name": "_waitForNavReady",
+        "kind": "iife",
+        "startLine": 3211,
+        "bodyStartLine": 3211,
+        "endLine": 3260,
+        "lineCount": 50
+      },
+      {
+        "name": "_waitForFarewellEnd",
+        "kind": "iife",
+        "startLine": 3318,
+        "bodyStartLine": 3318,
+        "endLine": 3336,
+        "lineCount": 19
+      },
+      {
+        "name": "_startAudioCapture",
+        "kind": "async function",
+        "startLine": 3389,
+        "bodyStartLine": 3389,
+        "endLine": 3645,
+        "lineCount": 257
+      },
+      {
+        "name": "_silentFrame",
+        "kind": "function",
+        "startLine": 3671,
+        "bodyStartLine": 3671,
+        "endLine": 3678,
+        "lineCount": 8
+      },
+      {
+        "name": "_encodeFrame",
+        "kind": "function",
+        "startLine": 3680,
+        "bodyStartLine": 3680,
+        "endLine": 3688,
+        "lineCount": 9
+      },
+      {
+        "name": "_sendAudio",
+        "kind": "function",
+        "startLine": 3717,
+        "bodyStartLine": 3717,
+        "endLine": 3727,
+        "lineCount": 11
+      },
+      {
+        "name": "_flushPreRollOrdered",
+        "kind": "function",
+        "startLine": 3734,
+        "bodyStartLine": 3734,
+        "endLine": 3756,
+        "lineCount": 23
+      },
+      {
+        "name": "_sendAudioNow",
+        "kind": "function",
+        "startLine": 3758,
+        "bodyStartLine": 3758,
+        "endLine": 3806,
+        "lineCount": 49
+      },
+      {
+        "name": "_handleStaleSessionInstance",
+        "kind": "function",
+        "startLine": 3825,
+        "bodyStartLine": 3825,
+        "endLine": 3858,
+        "lineCount": 34
+      },
+      {
+        "name": "_registerAudioSendFailure",
+        "kind": "function",
+        "startLine": 3862,
+        "bodyStartLine": 3862,
+        "endLine": 3874,
+        "lineCount": 13
+      },
+      {
+        "name": "_sendInterrupt",
+        "kind": "function",
+        "startLine": 3876,
+        "bodyStartLine": 3876,
+        "endLine": 3893,
+        "lineCount": 18
+      },
+      {
+        "name": "_shuffled",
+        "kind": "function",
+        "startLine": 3938,
+        "bodyStartLine": 3938,
+        "endLine": 3945,
+        "lineCount": 8
+      },
+      {
+        "name": "_buildThinkingQueue",
+        "kind": "function",
+        "startLine": 3949,
+        "bodyStartLine": 3949,
+        "endLine": 3956,
+        "lineCount": 8
+      },
+      {
+        "name": "_startThinkingProgress",
+        "kind": "function",
+        "startLine": 3958,
+        "bodyStartLine": 3958,
+        "endLine": 3977,
+        "lineCount": 20
+      },
+      {
+        "name": "_startWatchdog",
+        "kind": "function",
+        "startLine": 3983,
+        "bodyStartLine": 3983,
+        "endLine": 3998,
+        "lineCount": 16
+      },
+      {
+        "name": "_stopWatchdog",
+        "kind": "function",
+        "startLine": 4000,
+        "bodyStartLine": 4000,
+        "endLine": 4005,
+        "lineCount": 6
+      },
+      {
+        "name": "_resetWatchdog",
+        "kind": "function",
+        "startLine": 4007,
+        "bodyStartLine": 4007,
+        "endLine": 4009,
+        "lineCount": 3
+      },
+      {
+        "name": "_startBackgroundWatchdog",
+        "kind": "function",
+        "startLine": 4029,
+        "bodyStartLine": 4029,
+        "endLine": 4062,
+        "lineCount": 34
+      },
+      {
+        "name": "_stopBackgroundWatchdog",
+        "kind": "function",
+        "startLine": 4064,
+        "bodyStartLine": 4064,
+        "endLine": 4069,
+        "lineCount": 6
+      },
+      {
+        "name": "_speakingStateWatchdog",
+        "kind": "function",
+        "startLine": 4092,
+        "bodyStartLine": 4092,
+        "endLine": 4143,
+        "lineCount": 52
+      },
+      {
+        "name": "_startSpeakingWatchdog",
+        "kind": "function",
+        "startLine": 4145,
+        "bodyStartLine": 4145,
+        "endLine": 4148,
+        "lineCount": 4
+      },
+      {
+        "name": "_stopSpeakingWatchdog",
+        "kind": "function",
+        "startLine": 4150,
+        "bodyStartLine": 4150,
+        "endLine": 4155,
+        "lineCount": 6
+      },
+      {
+        "name": "_renderFab",
+        "kind": "function",
+        "startLine": 4161,
+        "bodyStartLine": 4161,
+        "endLine": 4174,
+        "lineCount": 14
+      },
+      {
+        "name": "_renderOverlay",
+        "kind": "function",
+        "startLine": 4176,
+        "bodyStartLine": 4176,
+        "endLine": 4256,
+        "lineCount": 81
+      },
+      {
+        "name": "_setOrbState",
+        "kind": "function",
+        "startLine": 4269,
+        "bodyStartLine": 4269,
+        "endLine": 4308,
+        "lineCount": 40
+      },
+      {
+        "name": "_setStatus",
+        "kind": "function",
+        "startLine": 4317,
+        "bodyStartLine": 4317,
+        "endLine": 4324,
+        "lineCount": 8
+      },
+      {
+        "name": "_updateUI",
+        "kind": "function",
+        "startLine": 4326,
+        "bodyStartLine": 4326,
+        "endLine": 4348,
+        "lineCount": 23
+      },
+      {
+        "name": "_toggleMute",
+        "kind": "function",
+        "startLine": 4354,
+        "bodyStartLine": 4354,
+        "endLine": 4379,
+        "lineCount": 26
+      },
+      {
+        "name": "_wipeIdentityBoundState",
+        "kind": "function",
+        "startLine": 4393,
+        "bodyStartLine": 4393,
+        "endLine": 4417,
+        "lineCount": 25
+      },
+      {
+        "name": "_refreshToken",
+        "kind": "function",
+        "startLine": 4419,
+        "bodyStartLine": 4419,
+        "endLine": 4476,
+        "lineCount": 58
+      },
+      {
+        "name": "_show",
+        "kind": "function",
+        "startLine": 4478,
+        "bodyStartLine": 4478,
+        "endLine": 4509,
+        "lineCount": 32
+      },
+      {
+        "name": "_suppressSoundscape",
+        "kind": "function",
+        "startLine": 4522,
+        "bodyStartLine": 4522,
+        "endLine": 4536,
+        "lineCount": 15
+      },
+      {
+        "name": "_restoreSoundscape",
+        "kind": "function",
+        "startLine": 4538,
+        "bodyStartLine": 4538,
+        "endLine": 4553,
+        "lineCount": 16
+      },
+      {
+        "name": "_persistContinuity",
+        "kind": "function",
+        "startLine": 4559,
+        "bodyStartLine": 4559,
+        "endLine": 4586,
+        "lineCount": 28
+      },
+      {
+        "name": "_clearContinuity",
+        "kind": "function",
+        "startLine": 4589,
+        "bodyStartLine": 4589,
+        "endLine": 4598,
+        "lineCount": 10
+      },
+      {
+        "name": "_touchGuidedTopicActivity",
+        "kind": "function",
+        "startLine": 4643,
+        "bodyStartLine": 4643,
+        "endLine": 4646,
+        "lineCount": 4
+      },
+      {
+        "name": "_endGuidedTopicTeaching",
+        "kind": "function",
+        "startLine": 4654,
+        "bodyStartLine": 4654,
+        "endLine": 4697,
+        "lineCount": 44
+      },
+      {
+        "name": "_waitForGuidedTeachingAudioDrained",
+        "kind": "iife",
+        "startLine": 4672,
+        "bodyStartLine": 4672,
+        "endLine": 4696,
+        "lineCount": 25
+      },
+      {
+        "name": "_hide",
+        "kind": "function",
+        "startLine": 4699,
+        "bodyStartLine": 4699,
+        "endLine": 4799,
+        "lineCount": 101
+      },
+      {
+        "name": "_reset",
+        "kind": "function",
+        "startLine": 4803,
+        "bodyStartLine": 4803,
+        "endLine": 4815,
+        "lineCount": 13
+      },
+      {
+        "name": "_isClosingForNav",
+        "kind": "function",
+        "startLine": 4824,
+        "bodyStartLine": 4824,
+        "endLine": 4826,
+        "lineCount": 3
+      },
+      {
+        "name": "_attemptReconnect",
+        "kind": "function",
+        "startLine": 4857,
+        "bodyStartLine": 4857,
+        "endLine": 5023,
+        "lineCount": 167
+      },
+      {
+        "name": "_enterStuckState",
+        "kind": "function",
+        "startLine": 5031,
+        "bodyStartLine": 5031,
+        "endLine": 5065,
+        "lineCount": 35
+      },
+      {
+        "name": "_activateFallbackMode",
+        "kind": "function",
+        "startLine": 5073,
+        "bodyStartLine": 5073,
+        "endLine": 5085,
+        "lineCount": 13
+      },
+      {
+        "name": "_sendFallbackMessage",
+        "kind": "async function",
+        "startLine": 5087,
+        "bodyStartLine": 5087,
+        "endLine": 5135,
+        "lineCount": 49
+      }
+    ],
+    "command-hub-staging.js": [
+      {
+        "name": "refreshEnv",
+        "kind": "async function",
+        "startLine": 39,
+        "bodyStartLine": 39,
+        "endLine": 55,
+        "lineCount": 17
+      },
+      {
+        "name": "el",
+        "kind": "function",
+        "startLine": 62,
+        "bodyStartLine": 62,
+        "endLine": 78,
+        "lineCount": 17
+      },
+      {
+        "name": "formatTimeAgo",
+        "kind": "function",
+        "startLine": 80,
+        "bodyStartLine": 80,
+        "endLine": 91,
+        "lineCount": 12
+      },
+      {
+        "name": "renderPublishStagingCard",
+        "kind": "function",
+        "startLine": 106,
+        "bodyStartLine": 106,
+        "endLine": 279,
+        "lineCount": 174
+      },
+      {
+        "name": "renderRevertButton",
+        "kind": "function",
+        "startLine": 294,
+        "bodyStartLine": 294,
+        "endLine": 310,
+        "lineCount": 17
+      },
+      {
+        "name": "openRevertOverlay",
+        "kind": "function",
+        "startLine": 312,
+        "bodyStartLine": 312,
+        "endLine": 448,
+        "lineCount": 137
+      },
+      {
+        "name": "summarize",
+        "kind": "function",
+        "startLine": 383,
+        "bodyStartLine": 383,
+        "endLine": 391,
+        "lineCount": 9
+      },
+      {
+        "name": "phaseChip",
+        "kind": "function",
+        "startLine": 458,
+        "bodyStartLine": 458,
+        "endLine": 473,
+        "lineCount": 16
+      },
+      {
+        "name": "spinnerSvg",
+        "kind": "function",
+        "startLine": 475,
+        "bodyStartLine": 475,
+        "endLine": 482,
+        "lineCount": 8
+      },
+      {
+        "name": "ensureSpinnerCss",
+        "kind": "function",
+        "startLine": 485,
+        "bodyStartLine": 485,
+        "endLine": 491,
+        "lineCount": 7
+      },
+      {
+        "name": "renderPublishInlineFlow",
+        "kind": "function",
+        "startLine": 507,
+        "bodyStartLine": 507,
+        "endLine": 897,
+        "lineCount": 391
+      },
+      {
+        "name": "dispatchPublish",
+        "kind": "function",
+        "startLine": 899,
+        "bodyStartLine": 899,
+        "endLine": 923,
+        "lineCount": 25
+      },
+      {
+        "name": "pollUntilCanaryActive",
+        "kind": "function",
+        "startLine": 925,
+        "bodyStartLine": 925,
+        "endLine": 954,
+        "lineCount": 30
+      },
+      {
+        "name": "pollUntilCommitLive",
+        "kind": "function",
+        "startLine": 970,
+        "bodyStartLine": 970,
+        "endLine": 1034,
+        "lineCount": 65
+      },
+      {
+        "name": "pollUntilFullVerified",
+        "kind": "function",
+        "startLine": 1036,
+        "bodyStartLine": 1036,
+        "endLine": 1049,
+        "lineCount": 14
+      },
+      {
+        "name": "renderLiveRevisionPill",
+        "kind": "function",
+        "startLine": 1059,
+        "bodyStartLine": 1059,
+        "endLine": 1097,
+        "lineCount": 39
+      }
+    ],
+    "intelligence-panels.js": [],
+    "orb-voice-bench.js": [
+      {
+        "name": "log",
+        "kind": "function",
+        "startLine": 59,
+        "bodyStartLine": 59,
+        "endLine": 63,
+        "lineCount": 5
+      },
+      {
+        "name": "setVerdict",
+        "kind": "function",
+        "startLine": 65,
+        "bodyStartLine": 65,
+        "endLine": 68,
+        "lineCount": 4
+      },
+      {
+        "name": "renderConfig",
+        "kind": "function",
+        "startLine": 70,
+        "bodyStartLine": 70,
+        "endLine": 81,
+        "lineCount": 12
+      },
+      {
+        "name": "evaluateFrame",
+        "kind": "function",
+        "startLine": 88,
+        "bodyStartLine": 88,
+        "endLine": 120,
+        "lineCount": 33
+      },
+      {
+        "name": "render",
+        "kind": "function",
+        "startLine": 122,
+        "bodyStartLine": 122,
+        "endLine": 137,
+        "lineCount": 16
+      },
+      {
+        "name": "startTone",
+        "kind": "function",
+        "startLine": 146,
+        "bodyStartLine": 146,
+        "endLine": 180,
+        "lineCount": 35
+      },
+      {
+        "name": "stop",
+        "kind": "function",
+        "startLine": 175,
+        "bodyStartLine": 175,
+        "endLine": 179,
+        "lineCount": 5
+      },
+      {
+        "name": "run",
+        "kind": "async function",
+        "startLine": 182,
+        "bodyStartLine": 182,
+        "endLine": 305,
+        "lineCount": 124
+      },
+      {
+        "name": "finish",
+        "kind": "function",
+        "startLine": 307,
+        "bodyStartLine": 307,
+        "endLine": 362,
+        "lineCount": 56
+      },
+      {
+        "name": "ttsBase",
+        "kind": "function",
+        "startLine": 402,
+        "bodyStartLine": 402,
+        "endLine": 405,
+        "lineCount": 4
+      },
+      {
+        "name": "initTts",
+        "kind": "function",
+        "startLine": 407,
+        "bodyStartLine": 407,
+        "endLine": 417,
+        "lineCount": 11
+      },
+      {
+        "name": "initTabs",
+        "kind": "function",
+        "startLine": 419,
+        "bodyStartLine": 419,
+        "endLine": 431,
+        "lineCount": 13
+      },
+      {
+        "name": "show",
+        "kind": "function",
+        "startLine": 420,
+        "bodyStartLine": 420,
+        "endLine": 428,
+        "lineCount": 9
+      },
+      {
+        "name": "b64ToBytes",
+        "kind": "function",
+        "startLine": 433,
+        "bodyStartLine": 433,
+        "endLine": 438,
+        "lineCount": 6
+      },
+      {
+        "name": "decodeAndPlay",
+        "kind": "async function",
+        "startLine": 449,
+        "bodyStartLine": 449,
+        "endLine": 474,
+        "lineCount": 26
+      },
+      {
+        "name": "ttsRow",
+        "kind": "function",
+        "startLine": 476,
+        "bodyStartLine": 476,
+        "endLine": 483,
+        "lineCount": 8
+      },
+      {
+        "name": "fillRow",
+        "kind": "function",
+        "startLine": 485,
+        "bodyStartLine": 485,
+        "endLine": 488,
+        "lineCount": 4
+      },
+      {
+        "name": "runOneTts",
+        "kind": "async function",
+        "startLine": 490,
+        "bodyStartLine": 490,
+        "endLine": 548,
+        "lineCount": 59
+      },
+      {
+        "name": "runTtsSweep",
+        "kind": "async function",
+        "startLine": 550,
+        "bodyStartLine": 550,
+        "endLine": 597,
+        "lineCount": 48
+      }
+    ],
+    "watcher.js": [
+      {
+        "name": "el",
+        "kind": "function",
+        "startLine": 17,
+        "bodyStartLine": 17,
+        "endLine": 22,
+        "lineCount": 6
+      },
+      {
+        "name": "clear",
+        "kind": "function",
+        "startLine": 24,
+        "bodyStartLine": 24,
+        "endLine": 26,
+        "lineCount": 3
+      },
+      {
+        "name": "api",
+        "kind": "function",
+        "startLine": 28,
+        "bodyStartLine": 28,
+        "endLine": 38,
+        "lineCount": 11
+      },
+      {
+        "name": "showError",
+        "kind": "function",
+        "startLine": 40,
+        "bodyStartLine": 40,
+        "endLine": 46,
+        "lineCount": 7
+      },
+      {
+        "name": "renderHealth",
+        "kind": "function",
+        "startLine": 51,
+        "bodyStartLine": 51,
+        "endLine": 106,
+        "lineCount": 56
+      },
+      {
+        "name": "card",
+        "kind": "function",
+        "startLine": 108,
+        "bodyStartLine": 108,
+        "endLine": 113,
+        "lineCount": 6
+      },
+      {
+        "name": "renderTimeline",
+        "kind": "function",
+        "startLine": 118,
+        "bodyStartLine": 118,
+        "endLine": 147,
+        "lineCount": 30
+      },
+      {
+        "name": "renderReminders",
+        "kind": "function",
+        "startLine": 152,
+        "bodyStartLine": 152,
+        "endLine": 183,
+        "lineCount": 32
+      },
+      {
+        "name": "loadHealth",
+        "kind": "function",
+        "startLine": 188,
+        "bodyStartLine": 188,
+        "endLine": 198,
+        "lineCount": 11
+      },
+      {
+        "name": "loadTimeline",
+        "kind": "function",
+        "startLine": 200,
+        "bodyStartLine": 200,
+        "endLine": 208,
+        "lineCount": 9
+      },
+      {
+        "name": "loadReminders",
+        "kind": "function",
+        "startLine": 210,
+        "bodyStartLine": 210,
+        "endLine": 217,
+        "lineCount": 8
+      }
+    ],
+    "intent-engine.js": [
+      {
+        "name": "getAuthToken",
+        "kind": "function",
+        "startLine": 16,
+        "bodyStartLine": 16,
+        "endLine": 26,
+        "lineCount": 11
+      },
+      {
+        "name": "api",
+        "kind": "async function",
+        "startLine": 28,
+        "bodyStartLine": 28,
+        "endLine": 43,
+        "lineCount": 16
+      },
+      {
+        "name": "fmtTime",
+        "kind": "function",
+        "startLine": 45,
+        "bodyStartLine": 45,
+        "endLine": 54,
+        "lineCount": 10
+      },
+      {
+        "name": "renderKpi",
+        "kind": "function",
+        "startLine": 56,
+        "bodyStartLine": 56,
+        "endLine": 118,
+        "lineCount": 63
+      },
+      {
+        "name": "renderDisputes",
+        "kind": "function",
+        "startLine": 120,
+        "bodyStartLine": 120,
+        "endLine": 157,
+        "lineCount": 38
+      },
+      {
+        "name": "loadStuck",
+        "kind": "async function",
+        "startLine": 159,
+        "bodyStartLine": 159,
+        "endLine": 173,
+        "lineCount": 15
+      },
+      {
+        "name": "load",
+        "kind": "async function",
+        "startLine": 175,
+        "bodyStartLine": 175,
+        "endLine": 188,
+        "lineCount": 14
+      },
+      {
+        "name": "attachActions",
+        "kind": "function",
+        "startLine": 190,
+        "bodyStartLine": 190,
+        "endLine": 208,
+        "lineCount": 19
+      }
+    ],
+    "intelligence-cockpit-nav.js": [
+      {
+        "name": "slugify",
+        "kind": "function",
+        "startLine": 23,
+        "bodyStartLine": 23,
+        "endLine": 30,
+        "lineCount": 8
+      },
+      {
+        "name": "panelTitle",
+        "kind": "function",
+        "startLine": 32,
+        "bodyStartLine": 32,
+        "endLine": 39,
+        "lineCount": 8
+      },
+      {
+        "name": "panelBadge",
+        "kind": "function",
+        "startLine": 41,
+        "bodyStartLine": 41,
+        "endLine": 45,
+        "lineCount": 5
+      },
+      {
+        "name": "buildNav",
+        "kind": "function",
+        "startLine": 47,
+        "bodyStartLine": 47,
+        "endLine": 112,
+        "lineCount": 66
+      },
+      {
+        "name": "wireScrollSpy",
+        "kind": "function",
+        "startLine": 114,
+        "bodyStartLine": 114,
+        "endLine": 151,
+        "lineCount": 38
+      },
+      {
+        "name": "setActive",
+        "kind": "function",
+        "startLine": 117,
+        "bodyStartLine": 117,
+        "endLine": 127,
+        "lineCount": 11
+      },
+      {
+        "name": "init",
+        "kind": "function",
+        "startLine": 153,
+        "bodyStartLine": 153,
+        "endLine": 169,
+        "lineCount": 17
+      }
+    ],
+    "intent-moderation.js": [
+      {
+        "name": "authHeaders",
+        "kind": "function",
+        "startLine": 6,
+        "bodyStartLine": 6,
+        "endLine": 9,
+        "lineCount": 4
+      },
+      {
+        "name": "api",
+        "kind": "function",
+        "startLine": 11,
+        "bodyStartLine": 11,
+        "endLine": 21,
+        "lineCount": 11
+      },
+      {
+        "name": "setMuted",
+        "kind": "function",
+        "startLine": 23,
+        "bodyStartLine": 23,
+        "endLine": 27,
+        "lineCount": 5
+      },
+      {
+        "name": "loadDisputes",
+        "kind": "async function",
+        "startLine": 30,
+        "bodyStartLine": 30,
+        "endLine": 72,
+        "lineCount": 43
+      },
+      {
+        "name": "loadStats",
+        "kind": "async function",
+        "startLine": 134,
+        "bodyStartLine": 134,
+        "endLine": 144,
+        "lineCount": 11
+      }
+    ],
+    "voice-budget.js": [
+      {
+        "name": "authHeaders",
+        "kind": "function",
+        "startLine": 9,
+        "bodyStartLine": 9,
+        "endLine": 12,
+        "lineCount": 4
+      },
+      {
+        "name": "fetchJSON",
+        "kind": "async function",
+        "startLine": 16,
+        "bodyStartLine": 16,
+        "endLine": 23,
+        "lineCount": 8
+      },
+      {
+        "name": "severityClass",
+        "kind": "function",
+        "startLine": 30,
+        "bodyStartLine": 30,
+        "endLine": 34,
+        "lineCount": 5
+      },
+      {
+        "name": "fmt",
+        "kind": "function",
+        "startLine": 36,
+        "bodyStartLine": 36,
+        "endLine": 38,
+        "lineCount": 3
+      },
+      {
+        "name": "sortRows",
+        "kind": "function",
+        "startLine": 49,
+        "bodyStartLine": 49,
+        "endLine": 58,
+        "lineCount": 10
+      },
+      {
+        "name": "render",
+        "kind": "function",
+        "startLine": 60,
+        "bodyStartLine": 60,
+        "endLine": 116,
+        "lineCount": 57
+      },
+      {
+        "name": "load",
+        "kind": "async function",
+        "startLine": 118,
+        "bodyStartLine": 118,
+        "endLine": 136,
+        "lineCount": 19
+      }
+    ],
+    "navigation-config.js": []
+  }
+}

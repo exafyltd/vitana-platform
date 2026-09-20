@@ -180,7 +180,7 @@ provision() {
         name:$proxy_name, image:$proxy_img, essential:true,
         portMappings:[{containerPort:$proxy_port, protocol:"tcp"}],
         environment:[{name:"SUPABASE_AUTH_HOST", value:$auth_host}],
-        healthCheck:{command:["CMD-SHELL","wget -q -O- http://localhost:8080/ || exit 1"], interval:15, timeout:5, retries:3, startPeriod:10},
+        healthCheck:{command:["CMD-SHELL","wget -q -O- http://localhost:8080/alive || exit 1"], interval:15, timeout:5, retries:3, startPeriod:10},
         logConfiguration:{logDriver:"awslogs", options:{"awslogs-group":$lg, "awslogs-region":$region, "awslogs-stream-prefix":"proxy"}}
       },
       {
@@ -199,7 +199,6 @@ provision() {
           {name:"PGRST_DB_URI", valueFrom:$db_uri_arn},
           {name:"PGRST_JWT_SECRET", valueFrom:$jwt_arn}
         ],
-        healthCheck:{command:["CMD-SHELL","wget -q -O- http://localhost:3000/ || exit 1"], interval:15, timeout:5, retries:3, startPeriod:10},
         logConfiguration:{logDriver:"awslogs", options:{"awslogs-group":$lg, "awslogs-region":$region, "awslogs-stream-prefix":"postgrest"}}
       }
     ],
