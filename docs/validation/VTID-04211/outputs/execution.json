@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-04211",
+  "title": "Operator: bootstrap pack all-sources-fail test",
+  "type": "test-only",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "services/gateway/src/services/operator-bootstrap-pack.ts — whole-pack behavior when every source fails simultaneously",
+    "confirmed_new_coverage": "the existing single-source-failure test explicitly asserts the OPPOSITE case (one section still succeeds); the existing 'never throws' test passes a PARTIAL deps object that silently falls through to real production I/O for every other source, and asserts nothing about content"
+  },
+  "fix": {
+    "source_files_changed": [],
+    "test_files_changed": [
+      "services/gateway/test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts"
+    ],
+    "mechanism": "additive test only; fully-overridden deterministic BootstrapDeps object, no fallthrough to real I/O"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 5,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts",
+      "tests_total": 5,
+      "tests_passing": 5
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts",
+        "services/gateway/test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts"
+      ],
+      "suites_total": 2,
+      "tests_total": 21,
+      "failures": 0
+    }
+  },
+  "live_verification": "not applicable — test-only change, no runtime behavior difference to observe live"
+}

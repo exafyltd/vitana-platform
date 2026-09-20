@@ -1,0 +1,70 @@
+VTID-04211 — commands run, in order
+
+1. Continuing the standing instruction to keep shipping real, tested
+   improvements to the Command Hub Operator Console. Picked "Bootstrap
+   pack full-failure degradation test" from the previously-generated task
+   backlog (/tmp/console-tasks.json).
+
+2. Read services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts
+   in full, per the task's own instruction to confirm this is genuinely
+   new coverage first. Found: "a failing or hanging source renders as
+   unavailable and does not block the others" fails only 3 of 7 sections
+   and explicitly asserts the CLAUDE.md section still succeeds — the
+   opposite case. "never throws — a broken deps set fails open to an
+   empty pack" passes only a PARTIAL deps object ({ readRepoFile:
+   undefined }); since getOperatorBootstrapPack() spreads
+   { ...defaultDeps(), ...opts.deps }, every other source in that test
+   silently falls through to REAL production I/O (real GitHub/Supabase
+   calls) rather than a controlled failure — it only passes because those
+   real calls fail fast in this sandboxed environment, and it asserts
+   nothing about the resulting content. Confirmed: genuinely new coverage.
+
+3. Read services/gateway/src/services/operator-bootstrap-pack.ts in full:
+   buildBootstrapSections() (7 sections, their exact source-function
+   wiring), assembleBootstrapPack() (the "(unavailable: ...)" rendering
+   format and PACK_MAX_CHARS clip), resolvePlatformOpenPrs() (throws when
+   the enriched list fails and no bare fallback was supplied — confirmed
+   my override shape would trigger this), and the "Live build-info"
+   section's own per-target try/catch (renderBuildInfo degrades
+   internally, never sets the outer section.error) — the one section
+   whose failure mode differs from the other six.
+
+4. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-bootstrap-pack-all-sources-fail-test"}'
+   -> 200 {"ok":true,"vtid":"VTID-04211", ...}
+
+5. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04211 \
+     -d '{"title":"Operator: bootstrap pack all-sources-fail test",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+6. git fetch origin main; git checkout -B
+   claude/vtid-04211-bootstrap-pack-all-sources-fail-test origin/main
+   (test-only change, clean tree).
+
+7. Wrote test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts with a
+   fully-overridden, deterministic allFailingDeps() helper (every named
+   source rejects; no partial object, no fallthrough to real I/O).
+
+8. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts --silent
+   -> first run: 4/5 passing, 1 failure — my own initial assertion
+      wrongly expected ALL 7 sections to carry .error, not accounting for
+      "Live build-info"'s own internal per-target catch (which I had
+      already correctly pinned in a SEPARATE test in the same file).
+      Fixed the first test to correctly split 6 sections via .error vs.
+      1 (build-info) via its own degraded body.
+
+9. Re-ran: node node_modules/.bin/jest \
+        test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts --silent
+   -> 1 suite, 5 tests, all passing.
+
+10. node node_modules/.bin/tsc --noEmit
+    -> exit 0, no output.
+
+11. node node_modules/.bin/jest \
+        test/vtid-04018-operator-bootstrap-pack.test.ts \
+        test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts --silent
+    -> 2 suites, 21 tests, all passing, 0 regressions.
+
+12. Wrote docs/validation/VTID-04211/{acceptance.md,commands.log,outputs/execution.json}.
