@@ -23278,6 +23278,37 @@ function renderOperatorChat() {
                     badge.textContent = badgeText;
                     badge.title = describeTurnCost(msg.meta);
                     meta.appendChild(badge);
+
+                    // VTID-04179: "Copy raw" — puts the badge's own underlying
+                    // meta JSON (provider, model, duration_ms, usage, cost_usd,
+                    // cost_priced, model_calls) on the clipboard for debugging,
+                    // with the same transient "Copied" confirmation the message
+                    // copy button above uses.
+                    var rawBtn = document.createElement('button');
+                    rawBtn.type = 'button';
+                    rawBtn.className = 'message-cost-badge-copy';
+                    rawBtn.textContent = 'Copy raw';
+                    rawBtn.title = 'Copy raw model meta JSON';
+                    rawBtn.setAttribute('aria-label', 'Copy raw model meta JSON');
+                    rawBtn.onclick = function () {
+                        var showRawCopied = function () {
+                            rawBtn.textContent = 'Copied';
+                            rawBtn.classList.add('message-cost-badge-copy--copied');
+                            setTimeout(function () {
+                                rawBtn.textContent = 'Copy raw';
+                                rawBtn.classList.remove('message-cost-badge-copy--copied');
+                            }, 1500);
+                        };
+                        try {
+                            var rawResult = navigator.clipboard.writeText(buildTurnCostMetaJson(msg.meta));
+                            if (rawResult && typeof rawResult.then === 'function') {
+                                rawResult.then(showRawCopied).catch(function () { /* ignore */ });
+                            } else {
+                                showRawCopied();
+                            }
+                        } catch (e) { /* clipboard API unavailable — no-op */ }
+                    };
+                    meta.appendChild(rawBtn);
                 }
             }
 
@@ -23622,6 +23653,26 @@ function describeTurnCost(meta) {
     if (meta.usage) lines.push('Tokens: ' + (meta.usage.input_tokens || 0) + ' in / ' + (meta.usage.output_tokens || 0) + ' out' + (typeof meta.model_calls === 'number' ? ' over ' + meta.model_calls + ' model call' + (meta.model_calls === 1 ? '' : 's') : ''));
     if (meta.usage) lines.push(meta.cost_priced === false ? 'Cost: model not in the price table' : 'Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
     return lines.join('\n');
+}
+
+// VTID-04179: the badge's own underlying meta, as JSON — what the "Copy raw"
+// affordance next to the badge puts on the clipboard for debugging. Field
+// names stay exactly as the gateway/reply meta spells them (snake_case), and
+// only these seven are ever emitted: whatever else the reply meta carries
+// (thread ids, prompt text, tool args) is deliberately not copied. A field the
+// badge itself never received is left out rather than invented as null.
+// Kept free of state/DOM so it is a pure, independently testable function.
+function buildTurnCostMetaJson(meta) {
+    var src = meta || {};
+    var out = {};
+    if (src.provider !== undefined) out.provider = src.provider;
+    if (src.model !== undefined) out.model = src.model;
+    if (src.duration_ms !== undefined) out.duration_ms = src.duration_ms;
+    if (src.usage !== undefined) out.usage = src.usage;
+    if (src.cost_usd !== undefined) out.cost_usd = src.cost_usd;
+    if (src.cost_priced !== undefined) out.cost_priced = src.cost_priced;
+    if (src.model_calls !== undefined) out.model_calls = src.model_calls;
+    return JSON.stringify(out, null, 2);
 }
 
 // VTID-04033 (W4i): after a turn queues (or approves) a Dev Autopilot
