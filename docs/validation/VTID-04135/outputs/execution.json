@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04135",
+  "execution_id": "f64f22e2-33f1-4976-8395-d579834dd857",
+  "finding_id": "d3948b06-3625-437b-9540-852b809b5d17",
+  "plan_version": 1,
+  "branch": "dev-autopilot/f64f22e2",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/vtid-04135-env-var-inventory-exhaustive.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T20:00:57.279Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
