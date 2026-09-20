@@ -3,7 +3,26 @@
 Built 2026-08-12, in response to the explicit direction: get Aurora serving
 **staging** first (tested, then a separate approval gate for production).
 
-## Correction notice, 2026-08-29 — read this before "Why this exists" below
+## Second correction notice, 2026-09-19 — this file's ORIGINAL framing is restored
+
+The 2026-08-29 correction notice directly below this one said the
+"Option A, keep Supabase Auth forever" framing this file was originally
+written with had been superseded by Option B (Cognito/self-issued-JWT,
+full Supabase shutdown incl. Auth). **That has now been reversed again.**
+In a live session on 2026-09-19, the platform owner was shown that Option
+B is a multi-week programme that cannot land by the 20 September 2026
+deadline, and — given that tradeoff explicitly — overrode the 2026-08-25
+"shut down Auth too" directive: *"keep Supabase for auth, free tier,
+forever."* That is Option A, which is exactly what this file's original
+design (below the 08-29 notice) describes: PostgREST in front of Aurora,
+Supabase Auth (GoTrue) kept as the permanent identity source. The 08-29
+notice's "keep Supabase Auth, forever premise is dead" line is itself now
+the dead one. Full detail: `docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`'s
+Phase 1 section. This is the second reversal on this exact question — do
+not build toward Cognito/self-issued-JWT auth without fresh, explicit
+re-confirmation from the platform owner.
+
+## Correction notice, 2026-08-29 (superseded 2026-09-19, see above) — read this before "Why this exists" below
 
 This file's own framing — **"Option A instead, staging-scoped"**, "keep
 Supabase Auth (GoTrue) as the identity source per the standing 'Supabase
@@ -80,6 +99,94 @@ Two containers in one ECS task:
   `0000_auth_roles.sql` already exist — that groundwork from PR #3087 is
   done, this build doesn't need to repeat it.
 
+## Status update, 2026-09-19 (VTID-04101) — both items below are RESOLVED
+
+Both blockers this section originally described are closed, verified live
+the same day, under the platform-owner's Option A override (see the
+second correction notice above — Auth stays on Supabase permanently, this
+proxy is now the actual near-term target, not a stale artifact):
+
+- **Item 0 (FK constraints) is moot — Aurora has 0 foreign keys on the
+  public schema today**, confirmed via `pg_constraint`. Nothing to drop.
+  (Whether they were dropped and never restored, or something else
+  changed since August, wasn't investigated — the practical effect is the
+  same: no FK-drop step is needed before a full-load reload.)
+- **Item 1 (the `authenticator` role) already existed** — but its stored
+  password had drifted stale, the SAME class of defect independently found
+  and fixed the same day on the DMS target endpoint's own stored
+  `vitana_admin` password (see `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`
+  / the VTID-04084 branch history). Fixed by re-syncing the role's password
+  to match `vitana/aurora/prod/postgrest-authenticator-uri` via the RDS-
+  managed master secret (`rds!cluster-...`, readable by this session — a
+  DIFFERENT secret from the hand-named `vitana/aurora/prod/*` ones the
+  Deny below still blocks). The secret itself, the `anon`/`authenticated`/
+  `service_role` grants, and the four `auth.*` shim functions were all
+  already correct — confirmed live, not assumed.
+- **Aurora's data is now correct and RLS-complete, not just schema-ready**:
+  a fresh full-load reload (`vitana-fullload-rehearsal-v2`, TRUNCATE_BEFORE_LOAD,
+  592/594 tables, row counts verified matching Supabase exactly on
+  `profiles`/`chat_messages`/`app_users`) plus the full RLS-parity DDL
+  (606 tables RLS-enabled, 1,059 policies, matching Supabase's live
+  `pg_policies` snapshot) both ran and were verified the same day.
+- **The remaining blocker is now purely AWS-provisioning, not credentials
+  or data**: this session's IAM identity (`claude-code-aws-agent`) gets
+  `AccessDenied` on `ecr:CreateRepository`, `ecr:GetAuthorizationToken`
+  (i.e. it cannot even `docker login`, so it cannot push an image under
+  ANY repo), and `ecs:CreateService` — confirmed live 2026-09-19, the
+  same "needs an operator with AWS admin rights" shape this repo's other
+  services (erp-bridge, the Vertex Serbian bridge) already hit. What
+  changed: `ecs:RegisterTaskDefinition` (additive, versioned, never
+  destructive) DOES succeed from this session — used to validate the new
+  provisioning script's task-definition JSON is well-formed against the
+  live account before handing it to the operator.
+- **New, simpler plan than the original ALB-based one below**: reuse the
+  `vitana.internal` Cloud Map private-DNS namespace already created for
+  erp-bridge, instead of an ALB target group + host-header rule. **This
+  covers the GATEWAY's leg only** — the gateway only ever needs to reach
+  this proxy from inside the VPC — so plain internal HTTP at
+  `http://postgrest-aurora.vitana.internal:8080` is simpler and sidesteps
+  CLAUDE.md §1b's documented ALB-priority trap entirely — same posture
+  erp-bridge already uses successfully. The ECS app-tier security group
+  (`sg-0fbcf7b59b1f0d685`, same SG `vitana-gateway`/erp-bridge run in)
+  **already has an ingress rule into Aurora's SG on 5432** — no new
+  security-group rule is needed either.
+- **New provisioning script + workflow, ready for the operator to run**:
+  `scripts/aws/setup-postgrest-aurora-proxy-staging.sh` (dry-run by
+  default, `--apply` to execute — mirrors `setup-erp-bridge-staging.sh`
+  exactly) and `.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`
+  (CI build+push+roll, staging-only, same shape as
+  `AWS-STAGE-DEPLOY-ERP-BRIDGE.yml`). Once the operator runs
+  `provision --apply`, the very next push to `main` under this directory
+  (or a manual dispatch) builds and rolls the real proxy image — no
+  bootstrap-tenant-style gate is needed here, since Aurora's data is
+  already correct and can serve real reads from the first deploy.
+- **No env-var split needed WITHIN the gateway's own repoint.** Checked
+  every gateway call site that does real Supabase Auth work (`.auth.admin.*`,
+  `.auth.signInWith*`, `.auth.getUser()`, a raw `fetch('${SUPABASE_URL}/auth/v1/...')`)
+  — all of them resolve through `getSupabase()`, `createUserSupabaseClient()`,
+  or a direct fetch, and all three read the SAME `process.env.SUPABASE_URL`.
+  There is no separate `SUPABASE_AUTH_URL` anywhere in the gateway. Since
+  this proxy's `/auth/v1/*` passthrough is unconditional and header-agnostic,
+  one `SUPABASE_URL` repoint transparently serves every one of the ~601
+  Supabase call sites in the gateway — the Auth-heavy files need no special
+  casing. **This does NOT cover the frontend** (`exafyltd/vitana-v1`) — it
+  talks to Supabase directly (649 call sites, 282 importing files, via a
+  hardcoded-URL generated `client.ts`), a second, independent surface that
+  needs its own repoint (a rebuild+redeploy, not an env var) plus public
+  (not just VPC-internal) reachability for the proxy. Full detail, including
+  why both repoints likely need to happen together to avoid a split-brain
+  window: `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`'s two 2026-09-19
+  addenda ("one SUPABASE_URL repoint" and its "still later" follow-up).
+  Still needs a real smoke test (login + a `.from()` read + an
+  RLS-sensitive read) against the deployed proxy before any of this is
+  more than a structural argument.
+
+The sections below (from "What's blocking a live deploy right now" through
+"Remaining steps once vitana_admin access is available") are the
+**original 2026-08-12 plan, kept for historical record** — its item 4
+(ALB target group + host-header rule) is superseded by the Cloud Map
+approach above; its items 0–1 are resolved as described above.
+
 ## What's blocking a live deploy right now
 
 **Two** missing pieces, and both need the same privileged access this
@@ -149,18 +256,24 @@ empty-password lockout on this same cluster), not a bug to route around.
 
 ## Remaining steps once vitana_admin access is available
 
-0. Run `aurora-fk-drop-2026-08-12.sql`, then restart the DMS task
-   (`vitana-supabase-to-aurora-v3`) via `reload-target` — it was left
-   **stopped**, not flailing, so this is a clean resume, not a recovery.
-1. Run the `authenticator` role SQL above, create its secret.
+**Superseded by the 2026-09-19 status update above — items 0-1 are
+already done, items 2-4 are replaced by one script.** For the CURRENT
+plan: run `scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision
+--apply`, then push to `main` under this directory (or dispatch
+`AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`) to build and roll the real
+image. The steps below are kept for historical record only.
+
+0. ~~Run `aurora-fk-drop-2026-08-12.sql`, then restart the DMS task~~ —
+   moot, Aurora has 0 FKs on the public schema as of 2026-09-19.
+1. ~~Run the `authenticator` role SQL above, create its secret~~ — already
+   existed; only its password needed re-syncing (done 2026-09-19).
 2. Build + push the `proxy` image to ECR (`cloud-run-source-deploy`-style
    repo, or a new `vitana-postgrest-aurora-proxy` ECR repo).
 3. Create the ECS execution/task roles, register the task definition.
-4. New ECS service on `Vitana-ECS-Cluster` (same cluster as AWS staging
-   gateway), target group + ALB host-header rule
-   (`aurora-staging-rest.vitanaland.com` or similar — remember: priority
-   **< 10**, the path-based rules at priority 10 route to staging
-   regardless of `Host` otherwise, per CLAUDE.md §1b's documented trap).
+4. ~~New ECS service on `Vitana-ECS-Cluster` ... target group + ALB
+   host-header rule~~ — replaced by a Cloud Map private-DNS entry in the
+   existing `vitana.internal` namespace (see 2026-09-19 status update);
+   no ALB rule, no host-header priority risk.
 5. Point `gateway-staging`'s `SUPABASE_URL` at the new host — **staging
    only**, never production, until this has actually been tested.
 6. Smoke test: an authenticated request through the real login flow, then
@@ -170,6 +283,35 @@ empty-password lockout on this same cluster), not a bug to route around.
    / "Never mix tenant data" rules).
 7. Only after that passes: the actual "run all tests, get approval" step
    the user asked for, before any production conversation.
+
+## Status update, 2026-09-20 — first live provisioning + deploy, two task-def bugs found and fixed
+
+`setup-postgrest-aurora-proxy-staging.sh provision --apply` was run for
+real for the first time (ECR repo + ECS service created), and the deploy
+workflow ran on the first push to `main` under this directory. Two
+container-health-check defects surfaced immediately, both fixed in the
+live task definition (revision 5) and in this repo (the setup script and
+`task-definition.template.json`, so a future re-provision doesn't
+reintroduce them):
+
+1. **`proxy`'s health check hit `/`, not `/alive`.** The real
+   `nginx.conf.template` deliberately returns `501` on `/` ("fail loudly
+   rather than silently 404 through to nowhere") — `wget` treats a 5xx as
+   a failure, so the health check could never pass against the real image,
+   only against the interim placeholder (where it failed for a different
+   reason: stock `nginx:1.27-alpine` doesn't listen on 8080 at all).
+   Fixed to check `/alive`, which the real config actually serves `200` on.
+2. **`postgrest`'s health check can never pass, on any image build.** The
+   official `postgrest/postgrest` Docker image ships with no `wget`,
+   `curl`, or any other HTTP client binary at all (confirmed via
+   PostgREST's own GitHub Discussion #3854: "The default PostgREST Docker
+   image does not contain curl or any other binary that would run a health
+   check inside the container.") — the container logs showed it
+   connecting to Aurora and loading the schema cache successfully every
+   time, while its Docker-level health check failed every time regardless.
+   Removed the `postgrest` container's `healthCheck` entirely; ECS treats
+   a container with no health check as healthy once `RUNNING`, so
+   task/service health now rests on `proxy`'s check alone.
 
 ## Explicitly out of scope for this build
 

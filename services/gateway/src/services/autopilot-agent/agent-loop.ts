@@ -45,6 +45,11 @@ export interface AgentLoopOptions {
    * only the copy handed to `callLlm`). Defaults to `HISTORY_CHAR_BUDGET`.
    */
   historyCharBudget?: number;
+  /**
+   * VTID-04194: once a real edit has landed, force wrap-up once this many
+   * turns remain before `maxTurns`. Defaults to `WRAP_UP_MARGIN_TURNS`.
+   */
+  wrapUpMarginTurns?: number;
 }
 
 export interface AgentLoopResult {
@@ -66,6 +71,36 @@ export const CONTINUE_PROMPT = 'Tool results above. Continue — read, edit, run
 export const NUDGE_PROMPT = 'You answered with text only. This runner acts only on tool calls: either continue with read_file / search_text / edit_file / run_check, or call finish(summary, pr_title, pr_body) if the change is complete and verified.';
 const MAX_CONSECUTIVE_NUDGES = 3;
 const TOOL_RESULT_MAX_CHARS = 30_000;
+
+/**
+ * VTID-04194: once a real edit has landed AND the turn budget is nearly
+ * exhausted, stop encouraging further exploration — force wrap-up instead.
+ *
+ * Observed live (VTID-04138, execution d5c52526): the agent spent 119 of
+ * 120 turns on search_text/read_file against a 2.6MB app.js (mostly
+ * unproductive — guessing at interval variable names across many unrelated
+ * polling mechanisms), made its FIRST and ONLY edit_file call on turn
+ * 120/120, and the loop then hit `turns < maxTurns` false with no turn left
+ * to run a check or call finish — discarding a real edit entirely and
+ * terminalizing the VTID `failed`. The pre-existing MAX_CONSECUTIVE_NUDGES
+ * guard only fires on text-only replies; it never fires here because every
+ * one of those 119 turns was a genuine (if unproductive) tool call.
+ *
+ * `MUTATING_TOOLS` names the tools this loop treats as "a real edit has
+ * happened" — the same set `RepeatedCheckGuard.markEdited()` reacts to in
+ * `agent-tools.ts`, kept in sync deliberately rather than re-derived.
+ */
+const MUTATING_TOOLS: ReadonlySet<string> = new Set(['write_file', 'edit_file', 'delete_file']);
+const WRAP_UP_MARGIN_TURNS = 8;
+
+export function buildWrapUpPrompt(turnsRemaining: number): string {
+  return [
+    `You have already made file edit(s), and only ${turnsRemaining} turn(s) remain before this run's hard cap.`,
+    'Do NOT start new exploration or open new files. Run only the check(s) needed to verify the files you already changed,',
+    'fix anything they report, and call finish(summary, pr_title, pr_body) now — a smaller, verified change beats running',
+    'out of turns with an uncommitted edit.',
+  ].join(' ');
+}
 
 /**
  * VTID-04112: `TOOL_RESULT_MAX_CHARS` bounds any ONE tool result, but
@@ -137,12 +172,14 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   const maxTurns = o.maxTurns ?? 60;
   const deadline = started + (o.deadlineMs ?? 20 * 60_000);
   const historyCharBudget = o.historyCharBudget ?? HISTORY_CHAR_BUDGET;
+  const wrapUpMarginTurns = o.wrapUpMarginTurns ?? WRAP_UP_MARGIN_TURNS;
   const history: LLMRouterMessage[] = [...(o.history ?? [])];
   const usage = { inputTokens: 0, outputTokens: 0 };
   let prompt = o.prompt;
   let turns = 0;
   let toolCalls = 0;
   let nudges = 0;
+  let hasEdited = false;
   let provider: string | undefined;
   let model: string | undefined;
   let fallbackUsed = false;
@@ -201,13 +238,20 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
       step({ turn: turns, kind: 'tool', name: c.name, detail: out.isError ? out.result.slice(0, 300) : summarizeArgs(c), ms: now() - s0, isError: out.isError });
       results.push({ id: c.id, name: c.name, result: clip(out.result), isError: out.isError });
       if (out.finished && !finished) finished = out.finished;
+      if (!out.isError && MUTATING_TOOLS.has(c.name)) hasEdited = true;
     }
     history.push({ role: 'user', toolResults: results });
     if (finished) {
       step({ turn: turns, kind: 'finish', detail: finished.pr_title });
       return { ok: true, finished, history, turns, toolCalls, provider, model, fallbackUsed, usage };
     }
-    prompt = CONTINUE_PROMPT;
+    const turnsRemaining = maxTurns - turns;
+    if (hasEdited && turnsRemaining <= wrapUpMarginTurns) {
+      step({ turn: turns, kind: 'nudge', detail: `wrap-up: ${turnsRemaining} turn(s) remain after an edit — forcing finish` });
+      prompt = buildWrapUpPrompt(turnsRemaining);
+    } else {
+      prompt = CONTINUE_PROMPT;
+    }
   }
   step({ turn: turns, kind: 'error', detail: 'max turns reached', isError: true });
   return { ok: false, error: `agent hit the ${maxTurns}-turn cap without calling finish`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
