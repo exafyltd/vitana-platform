@@ -1,4 +1,8 @@
-# Supabase → Aurora Cutover Runbook — 2026-09-20 22:00 CET
+# Supabase → Aurora Cutover Runbook — 2026-09-21 00:00 CET (midnight)
+
+**UPDATED 2026-09-20: the freeze window was moved from 22:00 CET to
+midnight CET (00:00 CET, 2026-09-21 = 22:00 UTC, 2026-09-20) per explicit
+platform-owner instruction. Every other rule/step below is unchanged.**
 
 **This is the execution checklist for tonight's deadline. It consolidates
 everything already decided and verified in `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`
@@ -118,6 +122,23 @@ aws rds-data execute-statement --region eu-central-1 \
 594 tables. Cutover can proceed without them and they can be backfilled
 post-cutover — flag this explicitly as a known gap rather than blocking
 the whole cutover on it.
+
+**CLOSED OUT THIS SESSION, TREAT AS THE BACKFILLABLE-GAP CASE ABOVE, NOT A
+BLOCKER.** Ran the full sequence above with explicit approval: the `text`
+widen succeeded, DMS reload succeeded (594/594 tables, 0 errors, row counts
+match Supabase exactly — `vtid_ledger` 1987/1987, `dev_agent_memory`
+97/97), but the final cast back to `vector` **failed** — DMS silently
+truncates the embedding text to a fixed 3064 characters regardless of the
+live column definition (a third, deeper root cause: stale DMS-side target
+metadata cached from the original `varchar(1532)` schema-conversion
+artifact, which a direct Postgres `ALTER` cannot invalidate). Full detail
+and the likely real fix: `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`,
+"2026-09-20, later — approved and executed, and hit a THIRD, deeper root
+cause" addendum. **Both columns are now `text`, correctly populated (but
+truncated/unusable as vectors).** Do not re-attempt the `vector` cast
+during tonight's freeze window without first addressing the truncation —
+it will fail the same way. This does not block cutover; proceed per the
+"if there's no time left" note above.
 
 ### Step 2 — `products`/`knowledge_docs` — RESOLVED 2026-09-20, no action needed
 
