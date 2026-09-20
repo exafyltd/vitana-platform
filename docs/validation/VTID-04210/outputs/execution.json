@@ -1,0 +1,40 @@
+{
+  "vtid": "VTID-04210",
+  "title": "Operator: capability flags on GET /operator/health",
+  "investigation": {
+    "trigger": "standing instruction to keep shipping real, tested improvements to the Command Hub Operator Console",
+    "target": "GET /api/v1/operator/health (services/gateway/src/routes/operator.ts) — already existed as a plain liveness check",
+    "finding": "no route reported which of the six optional, env-gated Operator Console capabilities were live; an operator had to check each env var on the live ECS task def separately"
+  },
+  "fix": {
+    "files": [
+      "services/gateway/src/routes/operator.ts"
+    ],
+    "mechanism": "extended the existing GET /health handler additively with a capabilities object, reusing each capability's own existing predicate function (isOperatorThreadsEnabled, isTurnMemoryEnabled, isSqlReadonlyEnabled, isBootstrapPackEnabled, isVtidSelfAllocateEnabled) plus the inline OPERATOR_AWS_READONLY_ENABLED check every existing call site already uses; every pre-existing response field unchanged"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 7,
+    "own_suite": {
+      "file": "services/gateway/test/vtid-04210-operator-capability-health.test.ts",
+      "tests_total": 7,
+      "tests_passing": 7
+    },
+    "regression_sweep": {
+      "files": [
+        "services/gateway/test/vtid-03926-operator-chat-userrole.test.ts",
+        "services/gateway/test/operator-chat-oasis.test.ts",
+        "services/gateway/test/vtid-04022-operator-threads.test.ts",
+        "services/gateway/test/vtid-04025-operator-turn-memory.test.ts",
+        "services/gateway/test/vtid-04023-operator-sql-readonly.test.ts",
+        "services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts",
+        "services/gateway/test/vtid-04007-open-ended-intake.test.ts",
+        "services/gateway/test/vtid-04210-operator-capability-health.test.ts"
+      ],
+      "suites_total": 8,
+      "tests_total": 99,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — no live task-def env-var state was inspected from this session; the next real signal is a real curl of GET /api/v1/operator/health against staging/prod reflecting the actual pinned flags"
+}

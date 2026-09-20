@@ -1,0 +1,84 @@
+VTID-04210 — commands run, in order
+
+1. Continuing the standing instruction to keep shipping real, tested
+   improvements to the Command Hub Operator Console. Picked "Operator
+   Console capability health route" from the previously-generated task
+   backlog (/tmp/console-tasks.json).
+
+2. grep -n "^router\.\(get\|post\)" services/gateway/src/routes/operator.ts
+   -> discovered GET /health ALREADY EXISTS at this exact path, as a
+   plain liveness check (ok/service/timestamp/status/vtid) — the task's
+   exact requested path was already taken for a different purpose.
+
+3. grep -rln "operator/health|'/health'" services/gateway/test/*.ts and
+   inspected both hits (navigation-catalog.test.ts, route-guard.test.ts)
+   -> confirmed neither pins this route's exact response shape; safe to
+   extend additively rather than replace or add a colliding second route.
+
+4. grep -rn "OPERATOR_THREADS_ENABLED|OPERATOR_TURN_MEMORY_ENABLED|
+   OPERATOR_SQL_READONLY_ENABLED|OPERATOR_AWS_READONLY_ENABLED|
+   OPERATOR_BOOTSTRAP_PACK_ENABLED|OPERATOR_VTID_SELF_ALLOCATE_ENABLED"
+   services/gateway/src/services/*.ts | grep "export function"
+   -> found 5 existing dedicated predicate functions
+   (isOperatorThreadsEnabled, isTurnMemoryEnabled, isSqlReadonlyEnabled,
+   isBootstrapPackEnabled, isVtidSelfAllocateEnabled); confirmed
+   OPERATOR_AWS_READONLY_ENABLED has no dedicated predicate anywhere —
+   every existing call site (gemini-operator.ts) checks it inline —
+   decided to match that convention rather than add a new
+   single-caller function.
+
+5. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-capability-health"}'
+   -> 200 {"ok":true,"vtid":"VTID-04210", ...}
+
+6. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04210 \
+     -d '{"title":"Operator: capability flags on GET /operator/health",
+          "status":"in_progress","spec_status":"approved"}'
+   -> 200 confirmed.
+
+7. git fetch origin main; git checkout -B
+   claude/vtid-04210-operator-capability-health origin/main (picked up
+   further Command Hub PRs merged since the last branch cut — expected,
+   not reverted; this task doesn't touch Command Hub frontend so the
+   ownership guard is not in scope here).
+
+8. Edited services/gateway/src/routes/operator.ts: added three new
+   imports (isSqlReadonlyEnabled, isBootstrapPackEnabled,
+   isVtidSelfAllocateEnabled), extended the existing GET /health handler
+   with a `capabilities` object reusing each capability's own predicate
+   (plus the inline OPERATOR_AWS_READONLY_ENABLED check) — every
+   pre-existing response field left unchanged.
+
+9. node node_modules/.bin/tsc --noEmit
+   -> exit 0, no output.
+
+10. Checked each predicate's signature before writing the test — all five
+    named functions take `env: NodeJS.ProcessEnv = process.env` (read
+    fresh per call, never cached at module load), and the inline
+    OPERATOR_AWS_READONLY_ENABLED check reads process.env directly too —
+    confirmed jest.resetModules() would be unnecessary overhead/risk;
+    mutating process.env directly around requests against a single,
+    already-imported app is sufficient and matches this repo's simpler
+    existing test convention.
+
+11. Wrote test/vtid-04210-operator-capability-health.test.ts (7 tests):
+    all-false, all-true, mixed on/off, non-"true" values treated as off,
+    no-auth-required, no-secret-values (every value is a boolean), and
+    the pre-existing fields left unchanged.
+
+12. cd services/gateway && node node_modules/.bin/jest \
+        test/vtid-04210-operator-capability-health.test.ts --silent
+    -> 1 suite, 7 tests, all passing.
+
+13. node node_modules/.bin/jest \
+        test/vtid-03926-operator-chat-userrole.test.ts \
+        test/operator-chat-oasis.test.ts \
+        test/vtid-04022-operator-threads.test.ts \
+        test/vtid-04025-operator-turn-memory.test.ts \
+        test/vtid-04023-operator-sql-readonly.test.ts \
+        test/vtid-04018-operator-bootstrap-pack.test.ts \
+        test/vtid-04007-open-ended-intake.test.ts \
+        test/vtid-04210-operator-capability-health.test.ts --silent
+    -> 8 suites, 99 tests, all passing, 0 regressions.
+
+14. Wrote docs/validation/VTID-04210/{acceptance.md,commands.log,outputs/execution.json}.

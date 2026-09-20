@@ -36,6 +36,9 @@ import { processMessage } from '../services/ai-orchestrator';
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
+import { isSqlReadonlyEnabled } from '../services/operator-sql-readonly';
+import { isBootstrapPackEnabled } from '../services/operator-bootstrap-pack';
+import { isVtidSelfAllocateEnabled } from '../services/operator-execution-onramp';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
 // cleared on EVERY /chat request — threadId is client-supplied).
@@ -698,6 +701,15 @@ router.get('/chat/:threadId', async (req: Request, res: Response) => {
 
 /**
  * GET /health → /api/v1/operator/health
+ *
+ * VTID-04210: adds `capabilities` — a single glanceable read of which
+ * OPTIONAL Operator Console features are live, instead of checking each
+ * env var separately. No auth: every value is a boolean reflecting
+ * whether an env var is set to the exact string 'true', never a secret or
+ * data value. Reuses each feature's own existing predicate (never a
+ * second copy of the env-var name/convention) — `aws_readonly` has no
+ * dedicated predicate of its own elsewhere in this codebase, so it's read
+ * the same way its own call sites already do (gemini-operator.ts).
  */
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
@@ -705,7 +717,15 @@ router.get('/health', (_req: Request, res: Response) => {
     service: 'operator-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
-    vtid: 'VTID-0509'
+    vtid: 'VTID-0509',
+    capabilities: {
+      threads: isOperatorThreadsEnabled(),
+      turn_memory: isTurnMemoryEnabled(),
+      sql_readonly: isSqlReadonlyEnabled(),
+      aws_readonly: process.env.OPERATOR_AWS_READONLY_ENABLED === 'true',
+      bootstrap_pack: isBootstrapPackEnabled(),
+      vtid_self_allocate: isVtidSelfAllocateEnabled()
+    }
   });
 });
 
