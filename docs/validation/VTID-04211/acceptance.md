@@ -70,8 +70,13 @@ throws when assembling an all-failed pack...".
 
 AC-2: the test is a genuinely new case, not a duplicate of existing
 single-source-failure coverage.
-Confirmed above by reading the existing file first; documented in this
-file's own header comment for anyone reading it later.
+TEST: `services/gateway/test/vtid-04211-bootstrap-pack-all-sources-fail.test.ts`
+'s own file header documents the comparison against
+`vtid-04018-operator-bootstrap-pack.test.ts` (confirmed above, "Confirming
+this was genuinely new coverage") — the existing single-source-failure
+test explicitly asserts the opposite case, and the existing "never
+throws" test falls through to real production I/O for every source but
+one, asserting nothing about content.
 
 ## Verification
 
