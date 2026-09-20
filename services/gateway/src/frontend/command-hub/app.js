@@ -6493,25 +6493,12 @@ function renderHeader() {
  * - Shows SWV label
  * - Hover/tooltip shows VTID + timestamp
  */
-// Lovable-style relative time: "just now", "2m ago", "1h ago", "3d ago", "May 12".
-function formatRelativeTime(isoString) {
-    if (!isoString) return '';
-    const then = new Date(isoString).getTime();
-    if (Number.isNaN(then)) return '';
-    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
-    if (seconds < 45) return 'just now';
-    if (seconds < 90) return '1m ago';
-    const minutes = Math.round(seconds / 60);
-    if (minutes < 60) return minutes + 'm ago';
-    if (minutes < 90) return '1h ago';
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return hours + 'h ago';
-    if (hours < 36) return '1d ago';
-    const days = Math.round(hours / 24);
-    if (days < 14) return days + 'd ago';
-    // Older than two weeks — switch to date.
-    return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
+// VTID-04136: the relative-time formatter lives in exactly one place —
+// formatRelativeTime() further down this file (see its own doc comment). A
+// second, same-named declaration used to sit here and silently shadowed it:
+// both are top-level function declarations in this plain script, so the later
+// one wins for every call site regardless of position. Behaviour is unchanged
+// because the surviving implementation is the one that was actually running.
 
 // Set up a 10s polling tick that keeps the CLOCK dropdown fresh while open
 // AND refreshes the relative timestamps without re-hitting the API.
@@ -10189,11 +10176,6 @@ function formatElapsedTime(ms) {
     return hours + 'h ' + mins + 'm elapsed';
 }
 
-/**
- * VTID-01209: Format timestamp as relative time.
- * @param {string} timestamp - ISO timestamp
- * @returns {string}
- */
 function formatDuration(ms) {
     if (!ms || ms < 0) return '-';
     var seconds = Math.floor(ms / 1000);
@@ -10206,6 +10188,14 @@ function formatDuration(ms) {
     return hours + 'h ' + remainMin + 'm';
 }
 
+/**
+ * VTID-01209: Format timestamp as relative time.
+ * VTID-04136: the file's single formatRelativeTime() — it is a top-level
+ * function declaration, so a second same-named declaration anywhere in this
+ * script would silently shadow it for every call site.
+ * @param {string|number} timestamp - ISO timestamp or epoch ms
+ * @returns {string}
+ */
 function formatRelativeTime(timestamp) {
     if (!timestamp) return '';
     var diff = Date.now() - new Date(timestamp).getTime();

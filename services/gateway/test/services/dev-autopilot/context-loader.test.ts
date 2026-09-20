@@ -40,6 +40,21 @@ describe('loadAutopilotContext', () => {
     expect(ctx).toContain('Enforce Phase 2B Naming Standards');
   });
 
+  it('includes the Command Hub symbol-index navigation section (VTID-04195)', () => {
+    const ctx = loadAutopilotContext();
+    expect(ctx).toContain('## Command Hub navigation');
+    expect(ctx).toContain('services/gateway/specs/command-hub-symbol-index.json');
+    expect(ctx).toContain('services/gateway/scripts/generate-command-hub-symbol-index.mjs');
+  });
+
+  it('places the Command Hub navigation section before "When in doubt" (VTID-04195)', () => {
+    const ctx = loadAutopilotContext();
+    const navIdx = ctx.indexOf('## Command Hub navigation');
+    const doubtIdx = ctx.indexOf('## When in doubt');
+    expect(navIdx).toBeGreaterThan(-1);
+    expect(doubtIdx).toBeGreaterThan(navIdx);
+  });
+
   it('includes the imports-surface section', () => {
     const ctx = loadAutopilotContext();
     expect(ctx).toContain('# Imports surface — public exports of frequently-imported gateway modules');

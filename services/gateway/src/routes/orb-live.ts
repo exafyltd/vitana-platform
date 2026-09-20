@@ -524,9 +524,8 @@ const connectionCountByIP = new Map<string, number>();
 
 // Gemini API configuration
 const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || '';
-// Legacy/fallback tag string only (Gemini API model id used in fallback and metadata fields) — NOT a live provider selector; Nova Sonic is the live voice transport.
-const LEGACY_GEMINI_API_MODEL = 'gemini-2.0-flash-exp';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${LEGACY_GEMINI_API_MODEL}:generateContent`;
+const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // =============================================================================
 // VTID-01186: Identity Helpers for Memory Operations
@@ -11808,7 +11807,7 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   // here at construction time — no setProvider() correction needed later.
   const provider = session.upstreamProvider === 'nova_sonic'
     ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
-    : `vertex/${LEGACY_GEMINI_API_MODEL}`;
+    : `vertex/${GEMINI_MODEL}`;
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
@@ -12837,7 +12836,7 @@ router.get('/live', (req: Request, res: Response) => {
   session.lastActivity = new Date();
 
   // Send ready event
-  writeSseEvent(res, { type: 'ready', meta: { model: LEGACY_GEMINI_API_MODEL } });
+  writeSseEvent(res, { type: 'ready', meta: { model: GEMINI_MODEL } });
 
   // VTID-HEARTBEAT-FIX: data-message heartbeat (NOT an SSE comment) so
   // client EventSource.onmessage fires and resets its watchdog.
@@ -12899,7 +12898,7 @@ router.post('/start', (req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     sessionId,
-    meta: { model: LEGACY_GEMINI_API_MODEL }
+    meta: { model: GEMINI_MODEL }
   });
 });
 
@@ -16765,7 +16764,7 @@ router.get('/health', async (_req: Request, res: Response) => {
     ok: true,
     service: 'orb-live',
     vtid: ['DEV-COMHU-2025-0014', 'VTID-0135', 'VTID-01039', 'VTID-01106', 'VTID-01107', 'VTID-01113', 'VTID-01118', 'VTID-01155', 'VTID-01219'],
-    model: LEGACY_GEMINI_API_MODEL,
+    model: GEMINI_MODEL,
     transport: 'SSE',
     gemini_configured: hasGeminiKey,
     tts_client_ready: !!ttsClient,

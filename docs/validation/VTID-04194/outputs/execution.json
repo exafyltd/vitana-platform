@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-04194",
+  "title": "Agent executor: reserve turn headroom for finish() once a real edit has landed",
+  "root_cause_execution_id": "d5c52526-8a39-42cf-91bf-b6bf3da44b29",
+  "root_cause_vtid": "VTID-04138",
+  "files_changed": [
+    "services/gateway/src/services/autopilot-agent/agent-loop.ts",
+    "services/gateway/test/autopilot-agent-loop.test.ts"
+  ],
+  "tsc_noemit": "clean",
+  "targeted_suite": {
+    "file": "services/gateway/test/autopilot-agent-loop.test.ts",
+    "passed": 19,
+    "total": 19,
+    "new_tests": 6
+  },
+  "full_gateway_suite": {
+    "suites_passed": 1008,
+    "suites_total": 1009,
+    "suites_skipped_preexisting": 1,
+    "tests_passed": 16747,
+    "tests_total": 16782,
+    "failures": 0
+  },
+  "not_verified": "no live re-run of a real Dev Autopilot execution hitting this exact edge on demand"
+}
