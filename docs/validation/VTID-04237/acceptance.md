@@ -17,6 +17,17 @@ staging and rerun the scan." Two facts shape how that is done:
    merges to `main`, the opposite of the "held PR" the brief specifies.
    So the pins go in first, then the flip, then the scan.
 
+## Result (16:45 UTC)
+
+| AC | Result |
+|---|---|
+| AC-1 | MET — both workflows pin both values; prod gateway untouched (#3533 → `2b55e03`) |
+| AC-2 | MET — 8 suites / 96 tests green locally, CI green on 36d885e |
+| AC-3 | MET — executor task def rev 22 carries both (run #21 on main; the branch-ref dispatch #20 was refused by the main-only OIDC trust); staging gateway now serves `2b55e03` (run 508) |
+| AC-4 | MET — flipped 16:28:12Z, `kill_switch` false (outputs/config-flip.txt) |
+| AC-5 | MET — 6 executions auto-approved within 45 s, all claimed `claimed_env=staging`, all dispatched via `ecs:RunTask` to rev 22, agent ran (41–73 turns), 4 at `awaiting_approval` with a pushed `dev-autopilot/<exec8>` branch and a stored diff preview; 2 still running at 16:45 (outputs/trace-executions.txt) |
+| AC-6 | MET so far — 0 `execution.pr_opened`, 0 merges, no dev-autopilot PR on GitHub; 2 findings blocked by the safety gate (allow-scope) and snoozed 7d |
+
 ## Acceptance criteria
 
 AC-1 Both workflows pin `DEV_AUTOPILOT_EXECUTOR=agent` and `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true` (executor task def; staging gateway for the in-process fallback), stripped-then-added; prod gateway workflow untouched.
