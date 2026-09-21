@@ -34,3 +34,28 @@
 #
 # Gateway process restarted twice in the window (16:29:16, 16:40:24 "starting background executor") — the AWS-STAGE-DEPLOY-GATEWAY run 508
 # rollout (staging now on task def 493 = 197a76a ⊇ 2b55e03, both pins present; new task up, old task drained); executions survived because they run on the ECS executor task, not in-process (VTID-03850).
+
+# ---- close-out at 17:41 UTC ----
+# exec      finding   status              outcome
+# 2a9edcb4  1b7d874a  awaiting_approval   held 16:35:31, 74 turns
+# c52bfcca  efec84e4  awaiting_approval   held 16:35:35, 45 turns
+# dba39e32  23e083d1  awaiting_approval   held 16:36:40, 42 turns
+# 39604ba4  e8cb7fae  awaiting_approval   held 16:42:25, 54 turns
+# d49edb78  5fbe06e1  awaiting_approval   held 16:51:58, 75 turns, diff 8,557 chars (branch dev-autopilot/d49edb78) — the "text-only nudges" run recovered
+# 246e5344  9e1bdb97  failed 16:48:01     "agent hit the 120-turn cap without calling finish" (npm-audit: CVE in package.json)
+# fbfe1a18  9e1bdb97  failed 17:05:55     same finding, re-approved 24 s after the first failure; 120 turns again ("2-turn cap" = the last fix round's remaining budget)
+# 98a23757  9e1bdb97  failed 17:30:37     same finding, third attempt, 120 turns
+# 59875200  9e1bdb97  running since 17:31 fourth attempt, 90 turns at 17:41
+#
+# FINDING (reported, not fixed): the npm-audit finding is unsolvable by the agent's tool surface — run_check only offers tsc/jest/git,
+# there is no npm/pnpm and no lockfile regeneration — so every attempt exhausts AGENT_MAX_TURNS=120 reading pnpm-lock.yaml and
+# workflows (turns 112-120 of 246e5344: search_text/read_file over pnpm-lock.yaml, run_check exit 1). autoApproveTick re-approves the
+# finding within one tick of each failure and only stops at AUTO_RETRY_CAP=5 terminal failures in 24 h (then snoozes 7 d). At the
+# current pace that is 5 x ~5.5M DeepSeek input tokens before the cap trips. Same shape as the 2026-05-04 drain the cap was written for;
+# the cap bounds it, it does not prevent it. Options: (a) exclude npm-audit-scanner-v1 from auto_approve_scanners until the agent
+# can run a package manager, (b) let approveAutoExecute refuse a finding whose previous execution failed on the turn cap (a cheaper
+# breaker than 5 full runs), (c) give the executor a run_check kind for pnpm audit fix.
+#
+# Worker-stage LLM totals 16:28-17:41 (deepseek-flash, all fallback_used=false): 31538125 in / 1066579 out tokens
+#   = approx $5.37 at the MODEL_COSTS rate ($0.15 in / $0.6 out per 1M); the npm-audit chain alone 20433675 in ≈ $3.07.
+# Still zero execution.pr_opened, zero merges, zero dev-autopilot PRs on GitHub.

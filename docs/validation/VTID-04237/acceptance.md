@@ -25,8 +25,8 @@ staging and rerun the scan." Two facts shape how that is done:
 | AC-2 | MET — 8 suites / 96 tests green locally, CI green on 36d885e |
 | AC-3 | MET — executor task def rev 22 carries both (run #21 on main; the branch-ref dispatch #20 was refused by the main-only OIDC trust); staging gateway serves `197a76a` (VTID-04236 landed on `main` right after; it contains `2b55e03`) on task def `vitana-gateway:493`, which carries both values |
 | AC-4 | MET — flipped 16:28:12Z, `kill_switch` false (outputs/config-flip.txt) |
-| AC-5 | MET — 6 executions auto-approved within 45 s, all claimed `claimed_env=staging`, all dispatched via `ecs:RunTask` to rev 22, agent ran (41–73 turns), 4 at `awaiting_approval` with a pushed `dev-autopilot/<exec8>` branch and a stored diff preview; 2 still running at 16:45 (outputs/trace-executions.txt) |
-| AC-6 | MET so far — 0 `execution.pr_opened`, 0 merges, no dev-autopilot PR on GitHub; 2 findings blocked by the safety gate (allow-scope) and snoozed 7d |
+| AC-5 | MET — 9 executions auto-approved unattended, all `claimed_env=staging`, all dispatched via `ecs:RunTask` to rev 22; **5 held at `awaiting_approval`** with a pushed `dev-autopilot/<exec8>` branch and a stored diff preview (42–75 agent turns); the npm-audit finding failed 3× on the 120-turn cap and is on its 4th attempt (outputs/trace-executions.txt) |
+| AC-6 | MET — 0 `execution.pr_opened`, 0 merges, no dev-autopilot PR on GitHub at 17:41; 2 findings blocked by the safety gate (allow-scope) and snoozed 7d |
 
 ## Acceptance criteria
 
