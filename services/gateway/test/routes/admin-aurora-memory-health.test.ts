@@ -3,10 +3,18 @@
  *
  * Same admin-gate pattern as test/routes/admin-memory-broker.test.ts: assert
  * requireAuth/requireExafyAdmin refuse BEFORE the route ever touches Aurora,
- * then exercise the three real outcomes a Phase-0 network check can report —
- * not configured, reachable, and reachable-but-erroring (distinguishing a
- * network failure from an auth/TLS failure, since they point at different
- * fixes: a security-group rule vs. a Secrets Manager value).
+ * then exercise the real outcomes a Phase-0 network check can report — not
+ * configured, reachable, and reachable-but-erroring. All four `error_type`
+ * values the route can emit are exercised: 'config' and 'unknown' on the
+ * config-resolution path, and 'network' / 'auth_or_tls' / 'unknown' on the DB
+ * path. They point at different fixes (a security-group rule, a Secrets
+ * Manager value, or something genuinely unclassified), and conflating them
+ * sends whoever reads the report chasing the wrong one.
+ *
+ * Note on path: this suite lives under test/routes/ — the repo convention
+ * (jest.config.js roots is <rootDir>/test, singular) and the same candidates
+ * self-healing-injector-service.ts's deriveTestPathForSource probes. A copy
+ * under tests/ (plural) would never be collected by Jest.
  */
 import request from 'supertest';
 import express from 'express';
@@ -103,6 +111,22 @@ describe('GET /admin/aurora-memory/health (authenticated admin)', () => {
     expect(mockWithAuroraClient).not.toHaveBeenCalled();
   });
 
+  it('reports error_type=unknown when config resolution fails for a non-config reason', async () => {
+    mockResolveAuroraConfig.mockImplementation(() => {
+      throw new Error('unexpected explosion in config resolution');
+    });
+
+    const res = await request(app)
+      .get('/admin/aurora-memory/health')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send();
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({ ok: false, reachable: false, configured: false, error_type: 'unknown' });
+    expect(res.body.error_message).toBe('unexpected explosion in config resolution');
+    expect(mockWithAuroraClient).not.toHaveBeenCalled();
+  });
+
   it('reports reachable=true with latency and db_time on a real round trip', async () => {
     mockWithAuroraClient.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) =>
       fn({
@@ -120,7 +144,24 @@ describe('GET /admin/aurora-memory/health (authenticated admin)', () => {
     expect(res.body.reachable).toBe(true);
     expect(res.body.configured).toBe(true);
     expect(res.body.db_time).toBe('2026-08-27T00:00:00.000Z');
+    expect(res.body.target).toBe('postgres://user:***@aurora-host:5432/vitana');
     expect(typeof res.body.latency_ms).toBe('number');
+    expect(res.body.latency_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports db_time=null (not a crash) when the query returns no row', async () => {
+    mockWithAuroraClient.mockImplementation(async (fn: (client: unknown) => Promise<unknown>) =>
+      fn({ query: jest.fn().mockResolvedValue({ rows: [] }) }),
+    );
+
+    const res = await request(app)
+      .get('/admin/aurora-memory/health')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send();
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.db_time).toBeNull();
   });
 
   it('classifies a connection timeout as a network failure, not auth/TLS', async () => {
@@ -133,6 +174,23 @@ describe('GET /admin/aurora-memory/health (authenticated admin)', () => {
 
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ ok: false, reachable: false, configured: true, error_type: 'network' });
+    expect(typeof res.body.latency_ms).toBe('number');
+    expect(res.body.latency_ms).toBeGreaterThanOrEqual(0);
+    expect(res.body.target).toBe('postgres://user:***@aurora-host:5432/vitana');
+  });
+
+  it('classifies a bad password as auth_or_tls, not network', async () => {
+    mockWithAuroraClient.mockRejectedValue(
+      new Error('password authentication failed for user "vitana"'),
+    );
+
+    const res = await request(app)
+      .get('/admin/aurora-memory/health')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send();
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({ ok: false, reachable: false, configured: true, error_type: 'auth_or_tls' });
   });
 
   it('classifies a TLS/certificate rejection as auth_or_tls, not network', async () => {
@@ -145,5 +203,34 @@ describe('GET /admin/aurora-memory/health (authenticated admin)', () => {
 
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ ok: false, reachable: false, configured: true, error_type: 'auth_or_tls' });
+  });
+
+  it('classifies an unclassifiable failure as unknown rather than guessing', async () => {
+    mockWithAuroraClient.mockRejectedValue(new Error('something unexpected went wrong'));
+
+    const res = await request(app)
+      .get('/admin/aurora-memory/health')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send();
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({ ok: false, reachable: false, configured: true, error_type: 'unknown' });
+    expect(res.body.error_message).toBe('something unexpected went wrong');
+    expect(typeof res.body.latency_ms).toBe('number');
+    expect(res.body.latency_ms).toBeGreaterThanOrEqual(0);
+    expect(res.body.target).toBe('postgres://user:***@aurora-host:5432/vitana');
+  });
+
+  it('classifies a non-Error rejection without crashing', async () => {
+    mockWithAuroraClient.mockRejectedValue('plain string failure');
+
+    const res = await request(app)
+      .get('/admin/aurora-memory/health')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send();
+
+    expect(res.status).toBe(503);
+    expect(res.body.error_type).toBe('unknown');
+    expect(res.body.error_message).toBe('plain string failure');
   });
 });
