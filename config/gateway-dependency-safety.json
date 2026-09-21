@@ -1,0 +1,41 @@
+{
+  "vtid": "VTID-DA-59875200",
+  "generated_at": "2026-09-21",
+  "scanner": "npm-audit-scanner-v1",
+  "service": "services/gateway",
+  "manifest": "services/gateway/package.json",
+  "description": "Minimum safe versions for the three packages the npm-audit-scanner-v1 run flagged against services/gateway/package.json. This file is the machine-readable floor; cve-version-guard.test.ts pins it and evaluateDependencySafety() (services/gateway/src/lib/dependency-safety-guard.ts) validates a manifest against it — so the floors survive future dependency churn instead of living only in a one-off PR.",
+  "requirements": [
+    {
+      "package": "@grpc/grpc-js",
+      "field": "overrides",
+      "min_version": "1.14.4",
+      "severity": "high",
+      "reason": "Transitive (via the @google-cloud/* and firebase-admin grpc clients). Only a root-level overrides pin can raise it — a direct dependency bump would not reach the transitive copy."
+    },
+    {
+      "package": "@modelcontextprotocol/sdk",
+      "field": "dependencies",
+      "min_version": "1.24.0",
+      "severity": "high",
+      "reason": "Direct dependency. The vulnerable line is the 0.x series; the safe floor is a 1.x release."
+    },
+    {
+      "package": "express-rate-limit",
+      "field": "dependencies",
+      "min_version": "8.2.2",
+      "severity": "high",
+      "reason": "Direct dependency. 8.2.1 is the affected release; 8.2.2 carries the fix."
+    }
+  ],
+  "pending_remediation": {
+    "finding_id": "9e1bdb97",
+    "task": "VTID-DA-59875200",
+    "reason": "services/gateway/package.json, pnpm-lock.yaml and package-lock.json are outside the Dev Autopilot executor's allow_scope (package.json is only reachable through the npm-audit scanner override in dev-autopilot-safety.ts:applyScannerOverrides, which the runner's own scope check does not apply). Apply the three requirements above to services/gateway/package.json by hand — bump @modelcontextprotocol/sdk to ^1.24.0, bump express-rate-limit to ^8.2.2, add a root-level \"overrides\": { \"@grpc/grpc-js\": \">=1.14.4\" } block — regenerate the lock file with pnpm install, then delete this pending_remediation block: cve-version-guard.test.ts fails until it is removed, which is what keeps this hand-off from silently rotting.",
+    "packages": [
+      "@grpc/grpc-js",
+      "@modelcontextprotocol/sdk",
+      "express-rate-limit"
+    ]
+  }
+}
