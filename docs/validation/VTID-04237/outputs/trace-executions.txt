@@ -59,3 +59,35 @@
 # Worker-stage LLM totals 16:28-17:41 (deepseek-flash, all fallback_used=false): 31538125 in / 1066579 out tokens
 #   = approx $5.37 at the MODEL_COSTS rate ($0.15 in / $0.6 out per 1M); the npm-audit chain alone 20433675 in ≈ $3.07.
 # Still zero execution.pr_opened, zero merges, zero dev-autopilot PRs on GitHub.
+
+# ---- ADDENDUM 18:16 UTC (check-in after the close-out above) ----
+# npm-audit finding 9e1bdb97, final chain (dev_autopilot_executions, read-only):
+#   246e5344  failed 16:48  "agent hit the 120-turn cap without calling finish"   121 llm turns
+#   fbfe1a18  failed 17:05  "agent hit the 2-turn cap without calling finish"     121 llm turns
+#   98a23757  failed 17:30  "agent hit the 2-turn cap without calling finish"     121 llm turns
+#   59875200  awaiting_approval 17:51  pushed dev-autopilot/59875200@eb3ed49d, 3 files, diff 19455 chars, NO PR
+# 3 terminal failures in 24 h (AUTO_RETRY_CAP=5 not reached); attempt 4 is HELD, so the finding has an active
+# execution and autoApproveTick will not re-approve it while it stays awaiting_approval.
+#
+# What attempt 4 did: it did NOT touch package.json (out of allow_scope, no package manager). It wrote
+# config/gateway-dependency-safety.json (floor policy for @grpc/grpc-js >=1.14.4 via overrides,
+# @modelcontextprotocol/sdk ^1.24.0, express-rate-limit ^8.2.2), src/lib/dependency-safety-guard.ts (pure range
+# checker) and test/cve-version-guard.test.ts (23 tests; asserts the REAL manifest currently fails on exactly those
+# three packages while a pending_remediation block exists, and must pass once it is removed). The PR body lists the
+# manual remediation steps. 90 turns, 3768535 in / 214535 out tokens (agent.finish). This is a hand-off, not the fix
+# — the owner decides whether a policy-plus-failing-guard PR is wanted.
+#
+# SECOND FINDING (reported, not fixed): the "2-turn cap" on attempts 2 and 3 is a runner defect, not the model.
+# Both called finish at turn 118; the post-hoc validation rejected the diff (edit to services/gateway/package.json,
+# outside allow_scope) and opened a fix round with maxTurns = AGENT_MAX_TURNS - totalTurns = 2
+# (run-agent-execution.ts L288). The model edited package.json again on turns 1 and 2 and the round died on the cap.
+# A run that finishes close to the cap therefore has no budget left to repair anything the runner rejects; the fix
+# rounds (AGENT_MAX_FIX_ROUNDS) are effectively zero. Option: give each fix round its own floor (e.g. min 15 turns)
+# independent of the turns the first round consumed.
+#
+# Worker-stage LLM totals 16:28-18:05 (752 calls, deepseek-flash, fallback_used=false): 32015893 in / 1076963 out
+#   = approx $5.45 at the MODEL_COSTS rate. Includes one execution that is NOT this run's: a08daafd (18:02-18:08,
+#   operator-onramp probe by operator-autopilot@exafy.io for VTID-04223/04229, held then rejected by its own
+#   session, branch deleted, 18 turns).
+# Five VTID-04237 holds re-confirmed at 18:10: 2a9edcb4 c52bfcca dba39e32 39604ba4 d49edb78 all awaiting_approval,
+#   pr_url null, pr_number null. Still zero dev-autopilot PRs, zero merges.
