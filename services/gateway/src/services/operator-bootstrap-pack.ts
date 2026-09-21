@@ -18,6 +18,8 @@
  *   recent events      — the last N deploy.* / dev_autopilot.* OASIS events
  *   tool catalog       — rendered from the declarations the model is
  *                        actually given this turn (never a hand-typed list)
+ *   operator flags     — whether thread persistence and turn-memory
+ *                        extraction are on, read live each turn (VTID-04175)
  *
  * Every source is independently bounded, timed out and fail-open: a source
  * that cannot be read renders one "(unavailable: …)" line and the turn
@@ -30,6 +32,8 @@
  */
 
 import { getFileContents, listOpenPrsBare, listOpenPrsWithStatus } from './github-service';
+import { isOperatorThreadsEnabled } from './operator-threads';
+import { isTurnMemoryEnabled } from './operator-turn-memory';
 
 export const BOOTSTRAP_TTL_MS = 5 * 60_000;
 export const SOURCE_TIMEOUT_MS = 2_500;
@@ -57,6 +61,20 @@ const FRONTEND_REPO = 'exafyltd/vitana-v1';
 export function isBootstrapPackEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.OPERATOR_BOOTSTRAP_PACK_ENABLED === 'true';
 }
+
+/**
+ * VTID-04175: one line telling the operator whether the two operator-agent
+ * persistence switches are on, so a turn can see at a glance whether threads
+ * are recorded (VTID-04022) and turn memory is extracted (VTID-04025)
+ * without reading the environment directly. Rendered per turn, never cached
+ * with the fetched sections: a flag flip shows up on the next turn.
+ */
+export function renderOperatorFlags(env: NodeJS.ProcessEnv = process.env): string {
+  const flag = (on: boolean) => (on ? 'on' : 'off');
+  return `OPERATOR_THREADS_ENABLED=${flag(isOperatorThreadsEnabled(env))} (server-side thread persistence), OPERATOR_TURN_MEMORY_ENABLED=${flag(isTurnMemoryEnabled(env))} (turn-memory extraction)`;
+}
+
+export const OPERATOR_FLAGS_SECTION_TITLE = 'Operator flags (thread persistence / turn-memory)';
 
 /** `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS="staging=https://…/build-info,prod=https://…/build-info"` */
 export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Array<{ label: string; url: string }> {
@@ -343,8 +361,9 @@ async function getSections(deps: BootstrapDeps): Promise<CacheEntry> {
 
 /**
  * The pack for one turn: '' when disabled; otherwise the cached sections
- * plus the tool catalog rendered from the definitions this turn was given.
- * Never throws — the operator turn must not depend on it.
+ * plus the per-turn operator-flag line and the tool catalog rendered from
+ * the definitions this turn was given. Never throws — the operator turn
+ * must not depend on it.
  */
 export async function getOperatorBootstrapPack(opts: {
   toolDefs: Array<{ name: string; description: string }>;
@@ -356,8 +375,12 @@ export async function getOperatorBootstrapPack(opts: {
   try {
     const deps: BootstrapDeps = { ...defaultDeps(), ...(opts.deps || {}), env };
     const entry = await getSections(deps);
+    // VTID-04175: the flag line is read from the environment per turn and
+    // appended with the per-turn catalog — never cached with the fetched
+    // sections, so flipping a flag is visible on the very next turn.
+    const flags: PackSection = { title: OPERATOR_FLAGS_SECTION_TITLE, body: renderOperatorFlags(env) };
     const catalog: PackSection = { title: 'Tool catalog (rendered from the declarations you were given this turn)', body: renderToolCatalog(opts.toolDefs) };
-    return assembleBootstrapPack([...entry.sections, catalog], entry.builtAtIso);
+    return assembleBootstrapPack([...entry.sections, flags, catalog], entry.builtAtIso);
   } catch (err) {
     console.warn(`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`);
     return '';
