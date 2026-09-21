@@ -180,3 +180,73 @@ staging after the deploy is the exercise.
 | Architecture investigator | ⚠️ events only | ✅ | ❌ | ✅ `triage` stage (VTID-04234) |
 | Memory jobs (9a/9b) | ✅ | ✅ | n/a | ✅ |
 | cognee-extractor | n/a | ❌ dead path | n/a | ❌ unrouted, unconfigured |
+
+## 6. Model policy verification (VTID-04238, build plan item 6 — read live 2026-09-21)
+
+Every number here was read from the live project the same hour, read-only
+(`docs/validation/VTID-04238/outputs/`), not from a workflow file or this
+document's earlier sections.
+
+### 6.1 Stage → provider / model, from the ACTIVE `llm_routing_policy` row (v17, `environment=DEV`, shared by staging and prod)
+
+| Stage | Primary | Fallback | Agents on it (registry §2) | Served in the last 24 h |
+|---|---|---|---|---|
+| `operator` | deepseek / `deepseek-flash` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Operator chat (row 1) | 157 calls, all deepseek-flash, 0 fallback |
+| `worker` | bedrock / `eu.anthropic.claude-opus-4-5-20251101-v1:0` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Agent executor (row 2, with its own DeepSeek-Flash `providerOverride`), single-shot executor (row 3) | 6,799 deepseek-flash (the override) + 508 bedrock Opus 4.5, 0 fallback |
+| `planner` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | Planner (row 4); spec generator (row 6) since VTID-04233 | 41 calls, bedrock Opus 4.5, 0 fallback |
+| `validator` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | LLM merge review (row 5) | 3 calls, bedrock Opus 4.5, 0 fallback |
+| `triage` | bedrock / `eu.anthropic.claude-sonnet-4-6` | deepseek / `deepseek-chat` | Self-healing triage (row 7); architecture investigator (row 8) since VTID-04234 | 24 calls, bedrock Sonnet 4.6, 0 fallback |
+| `memory` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | turn memory, thread summaries, executor run-transcript facts | 93 calls, bedrock Sonnet 4.6, 0 fallback |
+| `classifier` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | — | 0 calls |
+| `vision` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | — | 0 calls |
+
+**Verified:** no stage points at `vertex` or `anthropic` as primary or
+fallback (ALWAYS 10a/10b, IF-THEN 27 hold on the live row); zero
+`llm.call.failed`, zero `llm.call.fallback`, zero `fallback_used=true`,
+zero calls to `anthropic`/`vertex`/`openai` in 24 h. Every agent in §2 is
+now on a stage — the two bypasses finding 1 named are closed (VTID-04234
+→ `triage`, VTID-04233 → `planner`).
+
+### 6.2 Is every model an agent runs in `llm_allowed_models`?
+
+Yes. Every provider/model pair v17 names exists as an active catalog row:
+`bedrock` × {`eu.anthropic.claude-opus-4-5-20251101-v1:0`,
+`eu.anthropic.claude-sonnet-4-6`, `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`}
+and `deepseek` × {`deepseek-flash`, `deepseek-chat`}. `deepseek-flash`
+carries every stage in `applicable_stages`. The governed
+`POST /api/v1/llm/routing-policy` therefore accepts v17 verbatim (the
+VTID-03817 catalog gap is still closed).
+
+### 6.3 What is flagged, and the decisions that are the owner's
+
+1. **Three fallbacks sit on the retired `deepseek-chat` alias** (`memory`,
+   `triage`, `classifier`). DeepSeek serves it as V4.1-Flash today on a
+   discontinuation clock (VTID-03816); when it stops, those three stages
+   lose their fallback silently — `LLM_SAFE_DEFAULTS` already says
+   `deepseek-flash`, but a fully-populated stored row is served as-is.
+   **Decision:** activate a v18 through the governed endpoint with the three
+   fallbacks on `deepseek-flash`, everything else byte-identical. Not done
+   here — the routing table is the Command Hub's, per the standing
+   convention (VTID-03816/03817).
+2. **The catalog still offers Google and the direct Anthropic API to the
+   dropdown**: 6 active `vertex` rows (three marked recommended, incl.
+   `gemini-1.5-flash`), 6 active `anthropic` rows (two recommended, incl.
+   the end-of-life `claude-3-5-sonnet-20241022`), and `llm_allowed_providers`
+   lists `vertex` and `anthropic` as active. Nothing routes there, but a
+   single dropdown click would put a stage back on a dead provider, which
+   is the VTID-03563 incident shape. **Decision:** deactivate the `vertex`
+   and `anthropic` provider rows and their models (`is_active=false`, never
+   delete — history references them), and retire `deepseek-reasoner`
+   (still `is_recommended=true`). Owner decision because it changes what
+   the Command Hub offers.
+3. **`RECOMMENDED_MODELS` in `constants/llm-defaults.ts` still lists
+   `gemini-3.1-pro-preview` first for `memory` and `triage`** — a code-side
+   recommendation toward Google that contradicts IF-THEN 27. A one-line
+   follow-up VTID, not done here (this VTID is docs-only by design).
+4. **Prod has no `DEEPSEEK_API_KEY`** (VTID-04230 finding): on production
+   the `operator` stage's primary is unavailable and the router serves the
+   Bedrock fallback on every turn; the executor's DeepSeek override likewise
+   falls to Bedrock. The staging numbers above are therefore not prod's.
+   Decision recorded on PR #3532.
+5. **`vision` and `classifier` served zero calls in 24 h** — no agent
+   reaches them today; they are not misrouted, just unused.
