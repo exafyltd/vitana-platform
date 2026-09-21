@@ -60,11 +60,80 @@ const DEFAULT_CONFIG: CodebaseAnalyzerConfig = {
 // Todo/Fixme Scanner
 // =============================================================================
 
-interface TodoMatch {
+export interface TodoMatch {
   file: string;
   line: number;
   type: 'TODO' | 'FIXME' | 'HACK' | 'XXX';
   text: string;
+}
+
+/**
+ * Extensions the TODO scan looks at. These are a post-filter rather than
+ * grep's `--include=` flags on purpose — see parseTodoScanOutput().
+ */
+const TODO_SCAN_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.sql'];
+
+export interface TodoScanFilter {
+  include_extensions: string[];
+  exclude_paths: string[];
+}
+
+/**
+ * Parses `grep -rn` output (`file:line:content`) into TodoMatches, applying
+ * the include-extension / exclude-path semantics that used to be passed to
+ * grep itself.
+ *
+ * Why the filter lives here and not in the grep invocation: the gateway runs
+ * on `node:20-alpine`, whose BusyBox grep does NOT support the GNU-only
+ * `--include=` / `--exclude-dir=` flags (BusyBox exits 2 with "unrecognized
+ * option"). The old command piped stderr to /dev/null and ended in `|| true`,
+ * so that exit code was swallowed and scanTodos() returned zero matches on
+ * every real deployment while looking healthy. Keeping the filtering in
+ * process makes the scan independent of which grep implementation (GNU vs
+ * BusyBox) happens to be on PATH.
+ */
+export function parseTodoScanOutput(
+  stdout: string,
+  basePath: string,
+  filter: TodoScanFilter
+): TodoMatch[] {
+  const todos: TodoMatch[] = [];
+  // Only top-level directory names are supported (node_modules, dist, .git,
+  // coverage, build) — the shape DEFAULT_CONFIG.exclude_paths already has.
+  const excludeDirs = filter.exclude_paths
+    .map(p => p.replace(/\/+$/, ''))
+    .filter(p => p.length > 0 && !p.includes('/'));
+  const normalizedBase = basePath.replace(/\/+$/, '');
+
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue;
+
+    // Parse grep output: file:line:content
+    const match = line.match(/^(.+?):(\d+):(.+)$/);
+    if (!match) continue;
+
+    const [, file, lineNum, content] = match;
+    const relativePath = file.startsWith(normalizedBase + '/')
+      ? file.slice(normalizedBase.length + 1)
+      : file;
+
+    if (!filter.include_extensions.some(ext => relativePath.endsWith(ext))) continue;
+
+    const segments = relativePath.split('/');
+    if (excludeDirs.some(dir => segments.includes(dir))) continue;
+
+    const typeMatch = content.match(/(TODO|FIXME|HACK|XXX)/i);
+    if (!typeMatch) continue;
+
+    todos.push({
+      file: relativePath,
+      line: parseInt(lineNum, 10),
+      type: typeMatch[1].toUpperCase() as TodoMatch['type'],
+      text: content.trim(),
+    });
+  }
+
+  return todos;
 }
 
 async function scanTodos(basePath: string, config: CodebaseAnalyzerConfig): Promise<TodoMatch[]> {
@@ -74,33 +143,21 @@ async function scanTodos(basePath: string, config: CodebaseAnalyzerConfig): Prom
     // Use grep to find TODOs efficiently
     const { execSync } = await import('child_process');
 
-    const excludeArgs = config.exclude_paths.map(p => `--exclude-dir=${p.replace(/\/$/, '')}`).join(' ');
-    const includePattern = '--include=*.ts --include=*.tsx --include=*.js --include=*.jsx --include=*.sql';
-
     for (const scanPath of config.scan_paths) {
       try {
         const fullPath = `${basePath}/${scanPath}`;
-        const cmd = `grep -rn ${excludeArgs} ${includePattern} -E "(TODO|FIXME|HACK|XXX):?" ${fullPath} 2>/dev/null || true`;
+        // Deliberately no `--include=` / `--exclude-dir=` (see
+        // parseTodoScanOutput above). `|| true` keeps grep's exit-1-when-
+        // nothing-matches from throwing the scan away.
+        const cmd = `grep -rn -E "(TODO|FIXME|HACK|XXX):?" "${fullPath}" 2>/dev/null || true`;
         const result = execSync(cmd, { maxBuffer: 10 * 1024 * 1024 }).toString();
 
-        for (const line of result.split('\n')) {
-          if (!line.trim()) continue;
-
-          // Parse grep output: file:line:content
-          const match = line.match(/^(.+?):(\d+):(.+)$/);
-          if (match) {
-            const [, file, lineNum, content] = match;
-            const typeMatch = content.match(/(TODO|FIXME|HACK|XXX)/i);
-            if (typeMatch) {
-              todos.push({
-                file: file.replace(basePath + '/', ''),
-                line: parseInt(lineNum, 10),
-                type: typeMatch[1].toUpperCase() as TodoMatch['type'],
-                text: content.trim(),
-              });
-            }
-          }
-        }
+        todos.push(
+          ...parseTodoScanOutput(result, basePath, {
+            include_extensions: TODO_SCAN_EXTENSIONS,
+            exclude_paths: config.exclude_paths,
+          })
+        );
       } catch {
         // Path doesn't exist or grep failed, continue
       }
@@ -271,7 +328,11 @@ export async function analyzeCodebase(
 
     // Convert TODOs to signals
     for (const todo of todos) {
-      const severity = todo.type === 'FIXME' || todo.type === 'HACK' ? 'high' : 'medium';
+      // Parenthesized on purpose: `||` binds tighter than `?:`, so the
+      // unwrapped form already groups as `(FIXME || HACK) ? ... : ...` and
+      // returns a string. Keep the grouping explicit so the intent — and the
+      // `CodebaseSignal['severity']` union — stays obvious at a glance.
+      const severity = (todo.type === 'FIXME' || todo.type === 'HACK') ? 'high' : 'medium';
       signals.push({
         type: 'todo',
         severity,
