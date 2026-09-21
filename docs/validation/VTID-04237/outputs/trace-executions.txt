@@ -33,4 +33,4 @@
 # GitHub: open PR list unchanged (newest #3532 from 15:13) — no dev-autopilot PR exists; the four branches exist on origin.
 #
 # Gateway process restarted twice in the window (16:29:16, 16:40:24 "starting background executor") — the AWS-STAGE-DEPLOY-GATEWAY run 508
-# rollout for 2b55e03 (new task up, old task drained); executions survived because they run on the ECS executor task, not in-process (VTID-03850).
+# rollout (staging now on task def 493 = 197a76a ⊇ 2b55e03, both pins present; new task up, old task drained); executions survived because they run on the ECS executor task, not in-process (VTID-03850).
