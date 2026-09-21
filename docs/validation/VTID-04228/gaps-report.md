@@ -89,3 +89,59 @@ it would double-dispatch auto-approved self-healing VTIDs to worker-runner
   deliberately staging-only in VTID-04225/04226).
 - The session IAM user (`claude-code-aws-agent`) has no `scheduler:*`,
   `lambda:*`, `iam:*` — the EventBridge apply is owner-run.
+
+## 5e. Found by the live run itself (2026-09-21 15:21–15:40 UTC, staging) — reported, not fixed
+
+Three defects the scan → plan leg exposed the first time it ran against a
+live host. All three are real; none is in the brief's scope, so each is
+recorded with the live evidence and a proposed fix rather than patched in
+this PR.
+
+### 5e-1. The same finding is planned up to 10 times concurrently (41 planner calls for 9 plan rows)
+
+`oasis_events` `llm.call.completed` per VTID: `VTID-DA-FIND-9e1bdb97` 10
+calls, `23e083d1` 8, `efec84e4` 8, `b0aa6815` 5, `e8cb7fae` 5, `b869c955` 3
+(which is how it got a `plan.version_added` v2 nobody asked for). Two
+producers race: the post-scan eager planner (`eagerlyPlanTopK`, K=5,
+fire-and-forget from `ingestScan`) and `lazyPlanTick` every 30 s, while a
+single `generatePlanVersion` takes 20–40 s plus one "lacks test files"
+retry. `lazyPlanTick`'s "plan already exists" check happens BEFORE the
+generation it is racing, and its in-flight guard reads
+`dev_autopilot_worker_queue` (`kind=plan`, `pending/running`) — which stayed
+at 0 rows the whole time, because planning is inline, not queued. The
+VTID-03579 backoff only covers FAILED generations; a slow successful one is
+invisible to every guard. Cost at Opus 4.5 list price for this one scan:
+302,556 in + 63,445 out ≈ $9 for work that needed ≈ $2.
+Proposed fix: an in-process `Set<findingId>` of generations in flight
+(checked and set inside `lazyPlanTick` and `eagerlyPlanTopK`, cleared in
+`finally`), plus a `dev_autopilot_plan_versions` unique index on
+`(finding_id, version)` so a second concurrent v1 fails at the DB instead
+of landing as v2. One instance per env today, so the in-process set is
+sufficient; the index is the belt.
+
+### 5e-2. `dev_autopilot_runs` never finalizes — the run row still says `ingesting`
+
+`run_id=cf77d23c…` has `status='ingesting'`, `new_finding_count=0`,
+`completed_at=NULL` (re-read 15:40 UTC) while the
+`dev_autopilot.scan.completed` event at 15:21:19.883 says "15 new, 0
+updated". The finalize PATCH in `dev-autopilot-synthesis.ts` (step 4,
+`status:'done'`) has no `.ok` check and logs nothing on failure; `'done'`
+IS allowed by the table's CHECK constraint, so the failure is in the
+request itself, not the value. Any dashboard or scanner-health check
+reading `dev_autopilot_runs` sees every scan as still running.
+Proposed fix: check the PATCH result, log + emit `dev_autopilot.scan.failed`
+on a non-ok, and add a test that the finalize body is what lands.
+
+### 5e-3. Planner cost is reported as $0
+
+Every `llm.call.completed` row carries `cost_estimate_usd: 0` because
+`MODEL_COSTS` in `constants/llm-defaults.ts` has no key for the Bedrock
+inference-profile id `eu.anthropic.claude-opus-4-5-20251101-v1:0` (nor
+`eu.anthropic.claude-sonnet-4-6`); `estimateCost` falls through to 0.
+VTID-04031 solved exactly this for the Operator Console
+(`pricingKeyForModel` strips the `eu.`/`global.` profile prefix) but only
+on that surface. The autopilot's daily budget (`dev_autopilot_config.daily_budget`
+500) is therefore never consumed by planner calls.
+Proposed fix: apply `pricingKeyForModel` inside `estimateCost` (or the
+router's telemetry emitter) so every stage prices Bedrock profiles the same
+way.
