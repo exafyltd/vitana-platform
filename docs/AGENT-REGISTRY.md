@@ -29,7 +29,9 @@ tools and stage are all real for that agent.
 |---|---|---|---|
 | `operator` | deepseek / `deepseek-flash` | bedrock / `eu.anthropic.claude-sonnet-4-6` | VTID-03817 |
 | `worker` | bedrock / `eu.anthropic.claude-opus-4-5-20251101-v1:0` | bedrock / `eu.anthropic.claude-sonnet-4-6` | the agent executor overrides the PRIMARY to deepseek-flash (VTID-04006); the fallback still applies |
+| `planner` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
 | `validator` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
+| `triage` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | retired alias (VTID-03816) — still served by DeepSeek, on a discontinuation clock |
 | `memory` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | same |
 | `classifier` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | same |
 | `vision` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
@@ -159,8 +161,6 @@ staging after the deploy is the exercise.
    `dev_ecs_tasks` / `dev_run_sql_readonly` / `get_architecture_reports` on the
    `triage` stage through the same loop; its prompt no longer names tools it
    does not have. The spec generator is VTID-04233.*
-   (the loop the triage agent — VTID-04232 — and the spec generator —
-   VTID-04233 — reuse).*
 4. **Production runs a different operator than staging** — rev 114 pins one
    flag and lacks the DeepSeek secret; the shared policy row makes prod's
    `operator` primary silently unavailable.
@@ -192,9 +192,16 @@ document's earlier sections.
 
 ### 6.1 Stage → provider / model, from the ACTIVE `llm_routing_policy` row (v17, `environment=DEV`, shared by staging and prod)
 
+| Stage | Primary | Fallback | Agents on it (registry §2) | Served in the last 24 h |
 |---|---|---|---|---|
+| `operator` | deepseek / `deepseek-flash` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Operator chat (row 1) | 157 calls, all deepseek-flash, 0 fallback |
+| `worker` | bedrock / `eu.anthropic.claude-opus-4-5-20251101-v1:0` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Agent executor (row 2, with its own DeepSeek-Flash `providerOverride`), single-shot executor (row 3) | 6,799 deepseek-flash (the override) + 508 bedrock Opus 4.5, 0 fallback |
 | `planner` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | Planner (row 4); spec generator (row 6) since VTID-04233 | 41 calls, bedrock Opus 4.5, 0 fallback |
+| `validator` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | LLM merge review (row 5) | 3 calls, bedrock Opus 4.5, 0 fallback |
 | `triage` | bedrock / `eu.anthropic.claude-sonnet-4-6` | deepseek / `deepseek-chat` | Self-healing triage (row 7); architecture investigator (row 8) since VTID-04234 | 24 calls, bedrock Sonnet 4.6, 0 fallback |
+| `memory` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | turn memory, thread summaries, executor run-transcript facts | 93 calls, bedrock Sonnet 4.6, 0 fallback |
+| `classifier` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | — | 0 calls |
+| `vision` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | — | 0 calls |
 
 **Verified:** no stage points at `vertex` or `anthropic` as primary or
 fallback (ALWAYS 10a/10b, IF-THEN 27 hold on the live row); zero
