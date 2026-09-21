@@ -16,6 +16,10 @@ on:
         description: "If true, produce signals.json but skip POSTing to gateway"
         required: false
         default: "false"
+      gateway_url:
+        description: "Gateway to POST the scan to. Default = AWS STAGING (preview-aws-gateway). Production (gateway.vitanaland.com) only on an explicit, owner-approved dispatch — the cron always targets staging (VTID-04225)."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,7 +33,13 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     env:
-      GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+      # VTID-04225: the GCP Cloud Run gateway this used to POST to was deleted
+      # 2026-08-16 (VTID-03599/03649) — every scheduled run since answered 404
+      # (run #324, 2026-09-21: "POST failed 404 ... Page not found") and the
+      # Dev Autopilot queue starved. The scan now lands on the AWS STAGING
+      # gateway; a dispatch may point it at prod only with owner approval
+      # (staging-first, CLAUDE.md §16 / IF-THEN 26).
+      GATEWAY_URL: ${{ github.event.inputs.gateway_url || 'https://preview-aws-gateway.vitanaland.com' }}
       DEV_AUTOPILOT_SCAN_TOKEN: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
       DEV_AUTOPILOT_SCAN_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
     steps:

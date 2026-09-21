@@ -47,9 +47,13 @@ describe('VTID-03850: staging gateway dispatches executions to the ECS executor'
     expect(strip).toContain('"DEV_AUTOPILOT_JOB_CLOUD"');
   });
 
-  it('is deliberately NOT pinned on the prod gateway deploy workflow', () => {
-    expect(prod).not.toContain('DEV_AUTOPILOT_USE_JOB');
-    expect(prod).not.toContain('DEV_AUTOPILOT_JOB_CLOUD');
+  it('is now ALSO declared on the prod gateway deploy workflow (VTID-04227 — was "deliberately NOT" until 2026-09-21)', () => {
+    // VTID-04227 declares the same two values on prod, unconditionally, in
+    // the always-pinned block; the prod-side assertions live in
+    // vtid-04227-prod-dev-autopilot-flags-pinned.test.ts. This test keeps
+    // asserting the staging side and that the two stacks agree.
+    expect(prod).toMatch(/\{name:"DEV_AUTOPILOT_USE_JOB", value:"true"\}/);
+    expect(prod).toMatch(/\{name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"\}/);
   });
 
   it('the on-ramp flag it feeds is still pinned on staging (VTID-03820) — this change is downstream of it', () => {

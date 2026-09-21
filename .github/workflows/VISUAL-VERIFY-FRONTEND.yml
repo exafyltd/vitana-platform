@@ -10,7 +10,7 @@ on:
       community_url:
         description: 'Community app URL to verify'
         required: false
-        default: 'https://community-app-q74ibpv6ia-uc.a.run.app'
+        default: 'https://preview-aws.vitanaland.com'
 
 concurrency:
   group: visual-verify-frontend
@@ -38,7 +38,7 @@ jobs:
       - name: Run Frontend Visual Verification
         working-directory: e2e
         env:
-          COMMUNITY_URL: ${{ github.event.client_payload.community_url || github.event.inputs.community_url || 'https://community-app-q74ibpv6ia-uc.a.run.app' }}
+          COMMUNITY_URL: ${{ github.event.client_payload.community_url || github.event.inputs.community_url || 'https://preview-aws.vitanaland.com' }}
           SCREENSHOT_DIR: /tmp/visual-verify-frontend
         run: npx tsx ci-visual-verify-frontend.ts
 

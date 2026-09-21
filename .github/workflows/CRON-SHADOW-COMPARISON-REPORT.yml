@@ -54,7 +54,7 @@ jobs:
         working-directory: services/gateway
         env:
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
-          STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+          STAGING_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
           WINDOW_HOURS: ${{ inputs.window_hours || '24' }}
           REPORT_MARKDOWN_PATH: /tmp/shadow-comparison-report.md
         run: |
