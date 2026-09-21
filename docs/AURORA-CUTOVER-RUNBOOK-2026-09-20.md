@@ -1,13 +1,45 @@
-# Supabase → Aurora Cutover Runbook — 2026-09-21 00:00 CET (midnight)
+# Supabase → Aurora Cutover Runbook — 2026-09-21 14:00 CEST
 
-**UPDATED 2026-09-20: the freeze window was moved from 22:00 CET to
-midnight CET (00:00 CET, 2026-09-21 = 22:00 UTC, 2026-09-20) per explicit
-platform-owner instruction. Every other rule/step below is unchanged.**
+**UPDATED 2026-09-20 (second update, supersedes the one below it): the
+freeze window was postponed again — from tonight's midnight-CET window to
+Monday 2026-09-21 14:00 CET/CEST (12:00 UTC) — per explicit platform-owner
+instruction, given after a direct risk review of the write-freeze
+mechanism. Recorded for whoever picks this up Monday: the freeze itself
+(`REVOKE INSERT, UPDATE, DELETE ON SCHEMA public FROM anon, authenticated,
+service_role`) is non-destructive and fully reversible via
+`scripts/aws/aurora-cutover-restore-grants.sql` — re-verified byte-for-byte
+current against live Supabase grants as of 2026-09-20 22:05 UTC
+(4,174/4,174 statements match) — and tonight's plan never repoints
+production traffic at Aurora, so there is no path by which production
+"can't be turned back on." This postponement is a scheduling choice, not a
+response to newly discovered risk. Every rule/step below is otherwise
+unchanged.**
 
-**This is the execution checklist for tonight's deadline. It consolidates
-everything already decided and verified in `docs/AURORA-MIGRATION-STATUS-2026-09-10.md`
-(2026-09-18/19/20 addenda) into one ordered, copy-paste-ready sequence. Read
-the status doc for the *why*; read this for the *what, in what order*.**
+**Known open item before Monday's window, not yet resolved:** ECS Exec
+into the `postgrest-aurora` proxy task fails with
+`TargetNotConnectedException` — `vitana-ecs-task-role` has no
+`ssmmessages:CreateControlChannel`/`CreateDataChannel`/`OpenControlChannel`/
+`OpenDataChannel` grants, and the VPC has an interface endpoint for `ssm`
+but none for `ssmmessages`/`ec2messages` (one NAT gateway exists,
+`nat-072e06f231370eceb`, whose reachability from the task's subnets for
+this purpose is unconfirmed). Neither gap is fixable from a Claude Code
+session's IAM identity (the permissions boundary denies the relevant
+`iam:Put*`/`ec2:CreateVpcEndpoint` actions) — needs an admin/owner action.
+Until it's resolved, the proxy's functional smoke test (auth passthrough,
+REST read, cross-tenant RLS isolation) cannot run. The proxy is otherwise
+live and reports `healthStatus: HEALTHY` after the container health-check
+fixes in PR #3482 (merged as `f25798c8`) — see
+`services/postgrest-aurora-proxy/README.md` for detail.
+
+~~**UPDATED 2026-09-20 (first update, superseded above): the freeze window
+was moved from 22:00 CET to midnight CET (00:00 CET, 2026-09-21 = 22:00
+UTC, 2026-09-20) per explicit platform-owner instruction.**~~
+
+**This is the execution checklist for the Monday 14:00 CEST window. It
+consolidates everything already decided and verified in
+`docs/AURORA-MIGRATION-STATUS-2026-09-10.md` (2026-09-18/19/20 addenda)
+into one ordered, copy-paste-ready sequence. Read the status doc for the
+*why*; read this for the *what, in what order*.**
 
 Target architecture: **Option A** — Supabase Auth (GoTrue) stays on Supabase
 permanently, free tier. Everything else (all Postgres data) moves to Aurora.
