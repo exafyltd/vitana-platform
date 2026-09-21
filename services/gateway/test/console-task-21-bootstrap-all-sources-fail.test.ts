@@ -100,11 +100,16 @@ describe('VTID-04185 bootstrap pack — every source fails or times out at once'
     for (const title of EXPECTED_TITLES) expect(pack).toContain(`### ${title}\n`);
 
     // AC-1: apart from the heading, the per-turn tool catalog (rendered from
-    // the declarations, never a fetched source) and the intro line, every
-    // rendered line is an "(unavailable: …)" note.
+    // the declarations, never a fetched source), the intro line and the
+    // operator flag-state line (VTID-04175: rendered from process env, never
+    // fetched — it cannot be "unavailable"), every rendered line is an
+    // "(unavailable: …)" note. (VTID-04219: VTID-04185 and VTID-04175 merged
+    // independently green and broke each other on main — this filter is
+    // what reconciles them.)
     const CATALOG_TITLE = '### Tool catalog (rendered from the declarations you were given this turn)';
     const contentLines = pack.split('\n').filter((line) =>
-      line !== '' && !line.startsWith('### ') && !line.startsWith('**Session bootstrap pack') && !line.startsWith('- dev_read_file —'));
+      line !== '' && !line.startsWith('### ') && !line.startsWith('**Session bootstrap pack') && !line.startsWith('- dev_read_file —')
+      && !line.startsWith('OPERATOR_THREADS_ENABLED='));
     expect(contentLines).toHaveLength(8); // 4 section errors + 2 build-info targets + PRs + OASIS
     for (const line of contentLines) expect(isUnavailableLine(line)).toBe(true);
 
