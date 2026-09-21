@@ -1,0 +1,49 @@
+[setup-operator-agent-task-role-grants] account 472838866351 region eu-central-1
+[setup-operator-agent-task-role-grants] role vitana-ecs-task-role  policy vitana-operator-agent-readonly-and-cancel-VTID-04037
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OperatorCloudWatchLogsReadVTID04020",
+      "Effect": "Allow",
+      "Action": [
+        "logs:FilterLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": [
+        "arn:aws:logs:eu-central-1:472838866351:log-group:/ecs/vitana-*",
+        "arn:aws:logs:eu-central-1:472838866351:log-group:/ecs/vitana-*:*"
+      ]
+    },
+    {
+      "Sid": "OperatorEcsTasksReadVTID04035",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:ListTasks",
+        "ecs:DescribeTasks"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnEquals": {
+          "ecs:cluster": "arn:aws:ecs:eu-central-1:472838866351:cluster/Vitana-ECS-Cluster"
+        }
+      }
+    },
+    {
+      "Sid": "DevAutopilotCancelStopTaskVTID04032",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:StopTask"
+      ],
+      "Resource": "arn:aws:ecs:eu-central-1:472838866351:task/Vitana-ECS-Cluster/*",
+      "Condition": {
+        "ArnEquals": {
+          "ecs:cluster": "arn:aws:ecs:eu-central-1:472838866351:cluster/Vitana-ECS-Cluster"
+        }
+      }
+    }
+  ]
+}
+
+An error occurred (AccessDenied) when calling the PutRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:PutRolePolicy on resource: role vitana-ecs-task-role because no identity-based policy allows the iam:PutRolePolicy action. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/ekiulzj3r8t6z91w8q48m1mn for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: ekiulzj3r8t6z91w8q48m1mn

@@ -1,0 +1,109 @@
+=== Code index bucket provisioning (VTID-04229) ===
+account   : 472838866351
+region    : eu-central-1
+bucket    : vitana-code-index
+read role : vitana-ecs-task-role   (gateway + executor tasks)
+write role: vitana-gateway-awsdr-deploy-role   (CODEINTEL-INDEX.yml via GitHub OIDC)
+
+{
+    "BucketArn": "arn:aws:s3:::vitana-code-index",
+    "BucketRegion": "eu-central-1",
+    "AccessPointAlias": false
+}
+bucket vitana-code-index already exists — leaving it alone.
++ aws s3api put-public-access-block --bucket vitana-code-index --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
++ aws s3api put-bucket-encryption --bucket vitana-code-index --server-side-encryption-configuration {"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}
+
+An error occurred (AccessDenied) when calling the PutBucketEncryption operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: s3:PutEncryptionConfiguration on resource: "arn:aws:s3:::vitana-code-index" because no identity-based policy allows the s3:PutEncryptionConfiguration action
+!! DENIED/FAILED: aws s3api put-bucket-encryption --bucket vitana-code-index --server-side-encryption-configuration {"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}
++ aws s3api put-bucket-lifecycle-configuration --bucket vitana-code-index --lifecycle-configuration file:///tmp/code-index-lifecycle.json
+{
+    "TransitionDefaultMinimumObjectSize": "all_storage_classes_128K"
+}
+
+bucket policy (read: vitana-ecs-task-role, publish: vitana-gateway-awsdr-deploy-role):
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CodeIndexReadByEcsTasks",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::472838866351:role/vitana-ecs-task-role" },
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::vitana-code-index/*"
+    },
+    {
+      "Sid": "CodeIndexListByEcsTasks",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::472838866351:role/vitana-ecs-task-role" },
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vitana-code-index"
+    },
+    {
+      "Sid": "CodeIndexPublishByCi",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::472838866351:role/vitana-gateway-awsdr-deploy-role" },
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::vitana-code-index/*"
+    },
+    {
+      "Sid": "CodeIndexListByCi",
+      "Effect": "Allow",
+      "Principal": { "AWS": "arn:aws:iam::472838866351:role/vitana-gateway-awsdr-deploy-role" },
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vitana-code-index"
+    }
+  ]
+}
++ aws s3api put-bucket-policy --bucket vitana-code-index --policy file:///tmp/code-index-bucket-policy.json
+
+read policy (VitanaCodeIndexRead on vitana-ecs-task-role):
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CodeIndexList",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vitana-code-index"
+    },
+    {
+      "Sid": "CodeIndexRead",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::vitana-code-index/*"
+    }
+  ]
+}
++ aws iam put-role-policy --role-name vitana-ecs-task-role --policy-name VitanaCodeIndexRead --policy-document file:///tmp/code-index-read-policy.json
+
+An error occurred (AccessDenied) when calling the PutRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:PutRolePolicy on resource: role vitana-ecs-task-role because no identity-based policy allows the iam:PutRolePolicy action. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/cplgv1x5axiutwo74z5gj8na2 for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: cplgv1x5axiutwo74z5gj8na2
+!! DENIED/FAILED: aws iam put-role-policy --role-name vitana-ecs-task-role --policy-name VitanaCodeIndexRead --policy-document file:///tmp/code-index-read-policy.json
+
+write policy (VitanaCodeIndexPublish on vitana-gateway-awsdr-deploy-role):
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CodeIndexList",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::vitana-code-index"
+    },
+    {
+      "Sid": "CodeIndexPublish",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::vitana-code-index/*"
+    }
+  ]
+}
++ aws iam put-role-policy --role-name vitana-gateway-awsdr-deploy-role --policy-name VitanaCodeIndexPublish --policy-document file:///tmp/code-index-write-policy.json
+
+An error occurred (AccessDenied) when calling the PutRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:PutRolePolicy on resource: role vitana-gateway-awsdr-deploy-role with an explicit deny in a permissions boundary: arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/85j16kahpicishvvi1xmbz45r for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: 85j16kahpicishvvi1xmbz45r
+!! DENIED/FAILED: aws iam put-role-policy --role-name vitana-gateway-awsdr-deploy-role --policy-name VitanaCodeIndexPublish --policy-document file:///tmp/code-index-write-policy.json
+
+=== INCOMPLETE — 3 step(s) were denied for this caller; run them with an owner/IAM-admin identity ===
+  - aws s3api put-bucket-encryption --bucket vitana-code-index --server-side-encryption-configuration {"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]} :: An error occurred (AccessDenied) when calling the PutBucketEncryption operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: s3:PutEncryptionConfiguration on resource: "arn:aws:s3:::vitana-code-index" because no identity-based policy allows the s3:PutEncryptionConfiguration action
+  - aws iam put-role-policy --role-name vitana-ecs-task-role --policy-name VitanaCodeIndexRead --policy-document file:///tmp/code-index-read-policy.json :: An error occurred (AccessDenied) when calling the PutRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:PutRolePolicy on resource: role vitana-ecs-task-role because no identity-based policy allows the iam:PutRolePolicy action. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/cplgv1x5axiutwo74z5gj8na2 for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: cplgv1x5axiutwo74z5gj8na2
+  - aws iam put-role-policy --role-name vitana-gateway-awsdr-deploy-role --policy-name VitanaCodeIndexPublish --policy-document file:///tmp/code-index-write-policy.json :: An error occurred (AccessDenied) when calling the PutRolePolicy operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:PutRolePolicy on resource: role vitana-gateway-awsdr-deploy-role with an explicit deny in a permissions boundary: arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/85j16kahpicishvvi1xmbz45r for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: 85j16kahpicishvvi1xmbz45r

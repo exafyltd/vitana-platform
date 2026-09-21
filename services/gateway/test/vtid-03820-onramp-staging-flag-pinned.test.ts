@@ -45,13 +45,13 @@ describe('VTID-03820 follow-up: staging pins OPERATOR_EXECUTION_ONRAMP_ENABLED',
     expect(strip).toContain('"OPERATOR_EXECUTION_ONRAMP_ENABLED"');
   });
 
-  it('is deliberately NOT pinned on the prod deploy workflow yet', () => {
+  it('is now ALSO declared on the prod deploy workflow (VTID-04230 prod parity — declared, never dispatched from a session)', () => {
     const prodWorkflow = path.resolve(
       __dirname,
       '../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml',
     );
     const prodYml = fs.readFileSync(prodWorkflow, 'utf8');
-    expect(prodYml).not.toContain('OPERATOR_EXECUTION_ONRAMP_ENABLED');
+    expect(prodYml).toMatch(/\{name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"\}/);
   });
 
   it('DEEPSEEK_API_KEY secret is already wired on the same task definition (a real prerequisite for the on-ramp)', () => {

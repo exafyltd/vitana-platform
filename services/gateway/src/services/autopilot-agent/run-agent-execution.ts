@@ -25,15 +25,17 @@ import { applyPrContract } from '../dev-autopilot-pr-contract';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
 import type { LLMProvider, LLMRouterMessage } from '../llm-router';
-import { AGENT_TOOLS, executeAgentTool } from './agent-tools';
+import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
-import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
+import { buildAgentMemoryContext, recordAgentRunMemory } from './agent-memory-context';
+import type { FinishArgs } from './agent-tools';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -115,7 +117,7 @@ function stepEmitter(executionId: string, vtid: string): (step: AgentStep) => vo
       source: 'autopilot-agent',
       status: step.isError ? 'warning' : 'info',
       message: `[${executionId.slice(0, 8)}] turn ${step.turn} ${step.kind}${step.name ? ` ${step.name}` : ''}: ${step.detail.slice(0, 200)}`,
-      payload: { execution_id: executionId, turn: step.turn, kind: step.kind, tool: step.name, ms: step.ms, is_error: !!step.isError },
+      payload: { execution_id: executionId, turn: step.turn, kind: step.kind, tool: step.name, ms: step.ms, is_error: !!step.isError, ...(step.data ? { data: step.data } : {}) },
     }).catch(() => undefined);
     console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] t${step.turn} ${step.kind}${step.name ? ` ${step.name}` : ''} ${step.ms != null ? `${step.ms}ms ` : ''}${step.detail.slice(0, 160)}`);
   };
@@ -186,6 +188,10 @@ export async function runAgentExecutionSession(
   const { callViaRouter } = await import('../llm-router');
 
   let ws: Workspace | null = null;
+  // VTID-04223: the transcript and finish args are kept outside the try so the
+  // end-of-run memory extraction in `finally` sees them on every exit path.
+  let memHistory: LLMRouterMessage[] = [];
+  let memFinished: FinishArgs | null = null;
   try {
     const scope = await loadScope(s);
     onStep({ turn: 0, kind: 'llm', detail: fixMode
@@ -210,20 +216,50 @@ export async function runAgentExecutionSession(
     const linked = await linkNodeModules(ws.repoDir, 'services/gateway', AGENT_NODE_MODULES_SOURCE);
     console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${baseSha.slice(0, 8)} node_modules=${linked}${fixMode ? ' fix_mode' : ''}`);
 
+    // VTID-04223: engineering memory IN — the W4a bootstrap pack (service map,
+    // schema index, open PRs, recent deploy/autopilot events), top-10
+    // category-diverse dev_agent_memory recall against the task, and the
+    // finding's prior agent_runs. Bounded; every source fails open to ''.
+    const memory = await buildAgentMemoryContext(
+      { executionId, findingId: exec.finding_id, vtid: telemetryVtid, planMarkdown: plan.plan_markdown, priorFailure },
+      s,
+    );
+    onStep({
+      turn: 0, kind: 'tool', name: 'runner:memory_context',
+      isError: memory.stats.enabled && memory.stats.total_chars === 0 && memory.stats.errors.length > 0,
+      detail: `enabled=${memory.stats.enabled} chars=${memory.stats.total_chars} bootstrap=${memory.stats.bootstrap_sections}s/${memory.stats.bootstrap_chars}c recall=${memory.stats.recall_rows} prior_runs=${memory.stats.prior_runs}`
+        + (memory.stats.recall_titles.length ? ` recalled: ${memory.stats.recall_titles.slice(0, 3).join(' | ')}` : '')
+        + (memory.stats.errors.length ? ` errors: ${memory.stats.errors.join('; ')}` : ''),
+      data: { memory: memory.stats },
+    });
+    // VTID-04229: the S3-published codebase index (Graphify graph + RepoWise
+    // facts, rebuilt on every merge to main). Loaded once per run; when it is
+    // absent the three index tools are simply not declared.
+    const codeIndex = await pullCodeIndex(`${GITHUB_OWNER}/${GITHUB_REPO}`);
+    onStep({
+      turn: 0, kind: 'tool', name: 'runner:code_index', isError: codeIndex.stats.enabled && !codeIndex.bundle,
+      detail: codeIndex.bundle
+        ? `${codeIndex.describe} (source ${codeIndex.stats.source}, ${codeIndex.stats.from_cache ? 'cached' : 'loaded'} in ${codeIndex.stats.ms} ms)`
+        : codeIndex.stats.enabled ? `code index unavailable: ${codeIndex.stats.error}` : 'code index disabled (AGENT_CODE_INDEX_ENABLED=false)',
+      data: { code_index: codeIndex.stats },
+    });
     const systemPrompt = buildAgentSystemPrompt({
       repo: `${GITHUB_OWNER}/${GITHUB_REPO}`, baseBranch: GITHUB_BASE_BRANCH, branch, vtid: telemetryVtid,
       allowScope: scope.allow_scope, denyScope: scope.deny_scope,
       conventions: loadAutopilotContext(), claudeMdExcerpt: await readClaudeMdExcerpt(ws.repoDir),
+      memoryContext: memory.text,
+      codeIndex: codeIndex.describe || undefined,
     });
     const repoDir = ws.repoDir;
     // VTID-04016: refuse re-running a check that already failed since the
     // last edit (Run #4b spent ~18 of 22 minutes on nine identical tsc runs).
     const checkGuard = new RepeatedCheckGuard();
-    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), checkGuard, log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
+    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), checkGuard, codeIndex: codeIndex.bundle, log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
+    const runTools = agentToolsFor(toolCtx);
     const callLlm = (prompt: string, history: LLMRouterMessage[], sys: string) =>
       callViaRouter('worker', prompt, {
         vtid: telemetryVtid, service: 'autopilot-agent', allowFallback: true, maxTokens: AGENT_MAX_TOKENS,
-        systemPrompt: sys, history, tools: AGENT_TOOLS,
+        systemPrompt: sys, history, tools: runTools,
         providerOverride: override.provider, modelOverride: override.model,
       });
 
@@ -247,12 +283,13 @@ export async function runAgentExecutionSession(
     for (let round = 0; round <= AGENT_MAX_FIX_ROUNDS; round++) {
       fixRounds = round;
       const loop = await runAgentLoop({
-        systemPrompt, prompt, tools: AGENT_TOOLS, history,
+        systemPrompt, prompt, tools: runTools, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
         callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
         isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,
       });
       history = loop.history; totalTurns += loop.turns;
+      memHistory = history; memFinished = loop.finished || memFinished;
       usage.inputTokens += loop.usage.inputTokens; usage.outputTokens += loop.usage.outputTokens;
       provider = loop.provider || provider; model = loop.model || model; fallbackUsed = fallbackUsed || loop.fallbackUsed;
       run.turns = totalTurns; run.fix_rounds = round; run.input_tokens = usage.inputTokens; run.output_tokens = usage.outputTokens;
@@ -378,5 +415,14 @@ export async function runAgentExecutionSession(
     run.recorded_at = new Date().toISOString();
     run.cost_usd = estimateCost(run.model || '', run.input_tokens, run.output_tokens);
     await recordAgentRunUsage(exec.finding_id, run).catch(() => undefined);
+    // VTID-04223: engineering memory OUT — ≤3 durable facts from the run's
+    // transcript via the `memory` routing stage. The task_outcome / failure
+    // row is the gateway's (applyExecutionResult), not written here.
+    if (memHistory.length > 0) {
+      const mem = await recordAgentRunMemory({
+        executionId, vtid: activatedVtid, taskText: plan.plan_markdown, history: memHistory, finished: memFinished, outcome: run.outcome, error: run.error,
+      }).catch(() => ({ written: 0, skipped: 'error' as string | undefined }));
+      onStep({ turn: 0, kind: 'tool', name: 'runner:memory_record', detail: `written=${mem.written}${mem.skipped ? ` skipped=${mem.skipped}` : ''}`, data: { memory_record: mem } });
+    }
   }
 }

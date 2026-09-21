@@ -47,6 +47,9 @@ export const SOURCE_TIMEOUT_MS = 2_500;
 export const OPEN_PRS_ENRICH_BUDGET_MS = 1_500;
 export const OPEN_PRS_FALLBACK_NOTE = '(platform CI state omitted: enrichment exceeded its budget — dev_github_feed has it)';
 export const PACK_MAX_CHARS = 40_000;
+/** VTID-04223: named so a consumer that already carries CLAUDE.md Part 1 (the
+ *  agent executor reads it from its clone) can drop this section by title. */
+export const BOOTSTRAP_RULES_SECTION_TITLE = 'Governance rules (CLAUDE.md Part 1, abridged)';
 
 const LIMITS = {
   rulesChars: 8_000,
@@ -236,7 +239,9 @@ async function section(title: string, ms: number, fn: () => Promise<string>): Pr
   }
 }
 
-function defaultDeps(): BootstrapDeps {
+/** VTID-04223: exported so the agent executor reuses the same fetchers (GitHub
+ *  contents, open PRs, OASIS events, build-info) instead of forking them. */
+export function defaultBootstrapDeps(): BootstrapDeps {
   const supaUrl = process.env.SUPABASE_URL || '';
   const supaKey = process.env.SUPABASE_SERVICE_ROLE || '';
   return {
@@ -341,7 +346,7 @@ export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackS
   const env = deps.env || process.env;
   const claudeMd = deps.readRepoFile('CLAUDE.md');
   const [rules, changelog, pathMap, schema, buildInfo, prs, events] = await Promise.all([
-    section('Governance rules (CLAUDE.md Part 1, abridged)', SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
+    section(BOOTSTRAP_RULES_SECTION_TITLE, SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
     section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => extractChangelogRows(await claudeMd).join('\n')),
     section('Service path map (config/service-path-map.json)', SOURCE_TIMEOUT_MS, async () => renderServicePathMap(await deps.readRepoFile('config/service-path-map.json'))),
     section('Database tables (DATABASE_SCHEMA.md index)', SOURCE_TIMEOUT_MS, async () => extractSchemaTableIndex(await deps.readRepoFile('DATABASE_SCHEMA.md'))),
@@ -408,7 +413,7 @@ export async function getOperatorBootstrapPack(opts: {
   const env = opts.env || process.env;
   if (!isBootstrapPackEnabled(env)) return '';
   try {
-    const deps: BootstrapDeps = { ...defaultDeps(), ...(opts.deps || {}), env };
+    const deps: BootstrapDeps = { ...defaultBootstrapDeps(), ...(opts.deps || {}), env };
     const entry = await getSections(deps);
     // VTID-04175: the flag line is read from the environment per turn and
     // appended with the per-turn catalog — never cached with the fetched

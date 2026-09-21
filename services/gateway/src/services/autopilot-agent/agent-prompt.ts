@@ -23,6 +23,21 @@ export interface AgentSystemPromptInput {
    * runner's own current date.
    */
   today?: string;
+  /**
+   * VTID-04223: the executor's engineering memory for this run — the
+   * session bootstrap pack (service map, schema index, open PRs, recent
+   * deploy/autopilot events), the recalled `dev_agent_memory` rows and the
+   * prior attempts on this finding. Rendered by agent-memory-context.ts,
+   * already bounded; empty when memory is disabled or every source failed.
+   */
+  memoryContext?: string;
+  /**
+   * VTID-04229: one line describing the loaded codebase index (repo@sha,
+   * counts). When set, the three dev_index_query / dev_graph_path /
+   * dev_get_risk tools are declared for this run and the prompt tells the
+   * model to use them before grepping.
+   */
+  codeIndex?: string;
 }
 
 /** VTID-04046: `YYYY-MM-DD` for a Date, UTC. */
@@ -38,6 +53,7 @@ export function buildAgentSystemPrompt(i: AgentSystemPromptInput): string {
     ``,
     `## How to work`,
     `1. Read the plan, then READ the files it names and the callers/tests around them (search_text / find_files) before editing. Never guess a file's contents or an export's shape.`,
+    ...(i.codeIndex ? [`   Codebase index available (${i.codeIndex}): call dev_index_query FIRST to locate the files/symbols a task touches and their callers, dev_graph_path for "how does A reach B", and dev_get_risk on every file you will edit — it names the importers and tests that must still pass. The index is a map built at the last merge to main, not the live tree: confirm with read_file before editing.`] : []),
     `2. Make the smallest change that fully implements the plan. Follow the conventions below exactly (strict TypeScript, existing patterns, snake_case JSON fields).`,
     `3. Every non-deletion change needs test coverage in the same diff: add or update a jest test under the project's test/ directory.`,
     `4. Verify before finishing: run_check kind=tsc (project dir), then run_check kind=jest with the test file(s) you touched. Fix failures. Do not call finish while a check fails.`,
@@ -53,6 +69,7 @@ export function buildAgentSystemPrompt(i: AgentSystemPromptInput): string {
     ``,
     `## Governance rules (from CLAUDE.md, abridged)`,
     i.claudeMdExcerpt,
+    ...(i.memoryContext && i.memoryContext.trim() ? [``, i.memoryContext.trim()] : []),
   ].join('\n');
 }
 

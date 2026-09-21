@@ -691,7 +691,7 @@ export async function ciWatcherTick(): Promise<void> {
         source: 'dev-autopilot-watcher',
         status: review.ok ? (review.passed ? 'success' : 'warning') : 'error',
         message: `LLM merge review for ${exec.id.slice(0, 8)}: ${review.summary}`,
-        payload: { execution_id: exec.id, pr_url: exec.pr_url, ok: review.ok, passed: review.passed, error: review.error },
+        payload: { execution_id: exec.id, pr_url: exec.pr_url, ok: review.ok, passed: review.passed, error: review.error, provider: review.provider, model: review.model, tool_calls: review.tool_calls, tools_used: review.tools_used },
       });
       if (!review.passed) {
         await transitionStatus(s, exec.id, 'merging', 'failed', {

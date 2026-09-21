@@ -27,6 +27,10 @@
 #                          §2b; credentials come from the task role itself)
 #   - AWS_BEDROCK_REGION = eu-central-1
 #   - DEEPSEEK_API_KEY   = Secrets Manager `vitana/gateway/staging/deepseek-api-key`
+#   - AGENT_MEMORY_CONTEXT_ENABLED=true + OPERATOR_BOOTSTRAP_BUILD_INFO_URLS
+#     (VTID-04223) = the executor's engineering memory (bootstrap pack +
+#     dev_agent_memory recall + prior agent_runs in; run-transcript facts
+#     out). Default-on in code; pinned here so the live task def declares it.
 #                          (the same secret the staging gateway already resolves)
 #                          — referenced by its full ARN, hardcoded below (VTID-03880).
 #                          See that step's own comment for why it is not resolved
@@ -176,16 +180,28 @@ jobs:
           # that work before it can finish. Raised for every executor run,
           # not Command-Hub-specific -- the code has no way to tell what
           # kind of task it was dispatched until it starts reading files.
+          # VTID-04237 -- every execution this task runs uses the agentic
+          # executor (DEV_AUTOPILOT_EXECUTOR=agent, VTID-04006) and HOLDS at
+          # awaiting_approval instead of opening its PR
+          # (DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true, VTID-04029). Row-level
+          # metadata.executor / metadata.require_approval still win; these are
+          # the process defaults for rows autoApproveTick creates, which stamp
+          # neither. Without the hold, auto-approved executions would open PRs
+          # that the live staging watcher merges on green with no human step.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg TASK_ROLE "$TASK_ROLE_ARN" \
                  --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS") | not) ]
+                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS","DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED") | not) ]
                       + [ {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:$REGION},
                           {name:"AGENT_MAX_TURNS", value:"120"},
-                          {name:"AGENT_DEADLINE_MS", value:"2100000"} ] )
+                          {name:"AGENT_DEADLINE_MS", value:"2100000"},
+                          {name:"AGENT_MEMORY_CONTEXT_ENABLED", value:"true"},
+                          {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"},
+                          {name:"DEV_AUTOPILOT_EXECUTOR", value:"agent"},
+                          {name:"DEV_AUTOPILOT_PR_APPROVAL_REQUIRED", value:"true"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
                       + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )

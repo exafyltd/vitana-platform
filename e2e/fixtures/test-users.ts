@@ -28,7 +28,7 @@ export type UserRole = 'community' | 'patient' | 'professional' | 'staff' | 'adm
  */
 export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   const baseURL = role === 'developer'
-    ? (process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app')
+    ? (process.env.HUB_URL || 'https://preview-aws-gateway.vitanaland.com')
     : (process.env.COMMUNITY_URL || 'https://vitanaland.com');
 
   // Step 1: Sign in via Supabase REST API (no browser interaction needed)
@@ -71,7 +71,7 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
   }, { session });
 
   // Step 3: Switch to target role via gateway API
-  const gatewayUrl = process.env.HUB_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+  const gatewayUrl = process.env.HUB_URL || 'https://preview-aws-gateway.vitanaland.com';
 
   await page.evaluate(async ({ gatewayUrl: gw, jwt: token, role: r }) => {
     try {

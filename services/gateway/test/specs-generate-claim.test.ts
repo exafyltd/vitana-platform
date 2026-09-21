@@ -27,10 +27,15 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../src/services/claude-text-client', () => ({
-  callClaudeText: jest.fn().mockResolvedValue('x'.repeat(300)),
-  CLAUDE_SONNET_4_6: 'eu.anthropic.claude-sonnet-4-6',
+// VTID-04233: the spec generator runs the planner stage through the shared
+// stage loop (with the code index when it loads) instead of callClaudeText.
+jest.mock('../src/services/llm-stage-tool-loop', () => ({
+  runStageToolLoop: jest.fn().mockResolvedValue({ ok: true, text: 'x'.repeat(300), toolCalls: 0, toolNames: [], fallbackUsed: false, usage: { inputTokens: 0, outputTokens: 0 }, turns: 1, history: [], steps: [], budgetExhausted: false }),
 }));
+jest.mock('../src/services/codeintel-index', () => {
+  const actual = jest.requireActual('../src/services/codeintel-index');
+  return { ...actual, loadCodeIndex: jest.fn().mockRejectedValue(new Error('no index in test')) };
+});
 
 jest.mock('../src/services/spec-quality-agent', () => ({
   runFullQualityCheck: jest.fn(),

@@ -480,6 +480,44 @@ jobs:
         # "$..._INPUT" ]` conditional override block).
         env:
           MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
+        # VTID-04230 — Operator Console / Dev Autopilot capability flags,
+        # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
+        # 4: "production runs a different operator than staging — rev 114
+        # pins one flag"). Every value below is the exact value
+        # AWS-STAGE-DEPLOY-GATEWAY.yml pins, verified live on staging
+        # (VTID-04037 pass, the VTID-04221 end-to-end completions), so the
+        # prod console gets the same bootstrap pack, threads, turn memory,
+        # read tools, codebase index and maker-checker approval hold.
+        #
+        # What this does NOT do:
+        #   - It does not deploy. This workflow is workflow_dispatch-only;
+        #     declaring the pins here changes nothing until the next PUBLISH
+        #     or manual dispatch (CLAUDE.md §16). VTID-04230 was merged
+        #     WITHOUT dispatching this workflow, on the platform owner's
+        #     explicit "declare, do not dispatch".
+        #   - The Dev Autopilot loop flags (watcher-live, use-job, job-cloud,
+        #     llm-review, executor-enabled) are NOT declared in this block:
+        #     the loop-flags block directly above declares them. This block
+        #     is the Operator Console surface only.
+        #   - It does not wire the read-only SQL tool (dev_run_sql_readonly, its
+        #     switch + database-URL secret, VTID-04023/04037): that needs a Secrets
+        #     Manager reference, this workflow carries the task def forward
+        #     without a secrets loop, and the prod deploy role has no
+        #     secretsmanager:Describe* (VTID-03880). A literal ARN to a
+        #     secret that does not exist fails ECS provisioning before the
+        #     container starts — so the tool stays not_configured on prod
+        #     until scripts/aws/setup-operator-sql-readonly-secret.sh has
+        #     been run for a prod path and the reference added deliberately.
+        #   - It does not add the DeepSeek key secret. The operator stage's primary
+        #     (deepseek/deepseek-flash, policy v17) is unavailable on prod
+        #     for that reason and the router serves the Bedrock fallback;
+        #     wiring the secret (VTID-03880 shape) is the owner's call
+        #     because a secret the task role cannot read also fails
+        #     provisioning.
+        # Rollback for any flag: value -> "false" here, no code revert.
+        # CODEINTEL_*_REPO_DIR are NOT pinned: the CLI bridge cannot work on
+        # this image (lancedb, VTID-04222 §3); OPERATOR_CODEINTEL_ENABLED
+        # alone gates the S3 code-index tools (VTID-04229).
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -604,6 +642,70 @@ jobs:
                     {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                     {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )')
+
+          # VTID-04227 — the Dev Autopilot loop's five operating flags, DECLARED
+          # here instead of living only in whatever the live task def happens
+          # to carry (the VTID-03513 lesson). Read off vitana-gateway-awsdr rev
+          # 114 on 2026-09-21: DEV_AUTOPILOT_JOB_CLOUD=aws and
+          # DEV_AUTOPILOT_EXECUTOR_ENABLED=false were present; the other three
+          # were ABSENT, which means:
+          #   - DEV_AUTOPILOT_WATCHER_LIVE unset -> dev-autopilot-watcher.ts
+          #     ran in DRY_RUN and FABRICATED ci_passed/pr_merged/deployed on
+          #     rows it never checked against GitHub (VTID-04003, gap analysis
+          #     §7 — it did this to a STAGING row before VTID-04005's
+          #     env-ownership stamp). "true" makes it poll real GitHub state.
+          #   - DEV_AUTOPILOT_USE_JOB unset -> a claimed execution would run
+          #     in-process inside this gateway task (VTID-03841: no token,
+          #     20-minute watchdog death). "true"+"aws" dispatch it to the
+          #     vitana-autopilot-executor Fargate task via ecs:RunTask.
+          #   - DEV_AUTOPILOT_LLM_REVIEW_ENABLED unset -> off by default.
+          # DEV_AUTOPILOT_EXECUTOR_ENABLED is declared "true" because the loop
+          # is the point (the 2026-08-11 planner-storm this breaker was built
+          # for was fixed at the root — lazyPlanTick's plan-row dedupe, and
+          # dev_autopilot_config.auto_approve_enabled is itself a DB-side
+          # gate). The per-dispatch `dev_autopilot_executor_enabled` input in
+          # step 2/2 runs AFTER this block and still wins for that dispatch;
+          # a durable "off" belongs in this file, not in live state.
+          # This block runs on every prod dispatch — it is the declaration, not
+          # the promotion: nothing changes on prod until an owner dispatches
+          # this workflow (IF-THEN 26). Pinned by
+          # test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("DEV_AUTOPILOT_WATCHER_LIVE","DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD","DEV_AUTOPILOT_LLM_REVIEW_ENABLED","DEV_AUTOPILOT_EXECUTOR_ENABLED") | not) ]
+                + [ {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
+                    {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
+                    {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
+                    {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
+                    {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:"true"} ] )')
+          # VTID-04230 — Operator Console capability flags, prod parity with staging.
+          # Rationale + the deliberate absences are in this step's header comment
+          # (moved out of the run: body for the VTID-03788 20,000-char guard).
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                          "OPERATOR_ONRAMP_EXECUTOR",
+                                          "OPERATOR_CODEBASE_READ_ENABLED",
+                                          "OPERATOR_DB_READONLY_ENABLED",
+                                          "OPERATOR_AWS_READONLY_ENABLED",
+                                          "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+                                          "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
+                                          "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                          "OPERATOR_CODEINTEL_ENABLED",
+                                          "OPERATOR_PLANNER_ENABLED") | not) ]
+                + [ {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                    {name:"OPERATOR_ONRAMP_EXECUTOR", value:"agent"},
+                    {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                    {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_AWS_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"},
+                    {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
+                    {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
+                    {name:"OPERATOR_THREADS_ENABLED", value:"true"},
+                    {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                    {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                    {name:"OPERATOR_PLANNER_ENABLED", value:"true"} ] )')
 
           # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
           # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed

@@ -35,6 +35,8 @@
  */
 
 import githubService from './github-service';
+import { runStageToolLoop } from './llm-stage-tool-loop';
+import { createValidatorToolExecutor, validatorRouterTools } from './dev-autopilot-llm-review-tools';
 
 const LOG_PREFIX = '[dev-autopilot-llm-review]';
 // Keep the review prompt well inside the router's per-call token budget —
@@ -47,6 +49,23 @@ export function isLlmMergeReviewEnabled(): boolean {
   return (process.env.DEV_AUTOPILOT_LLM_REVIEW_ENABLED || '').toLowerCase() === 'true';
 }
 
+/**
+ * VTID-04231: the reviewer's tool loop (read_file at the PR head, ci_evidence,
+ * dev_get_risk — dev-autopilot-llm-review-tools.ts). Default ON under the
+ * parent switch above; the exact string 'false' restores the single-shot
+ * diff-only review. Bounds: `REVIEW_MAX_TURNS` model turns, `REVIEW_MAX_TOOL_CALLS`
+ * tool calls, `REVIEW_DEADLINE_MS` wall clock — then one tool-less call for the
+ * verdict. A tool or loop failure stays fail-open exactly like a single-shot
+ * failure (below).
+ */
+export function isLlmMergeReviewToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.DEV_AUTOPILOT_LLM_REVIEW_TOOLS_ENABLED || '').toLowerCase() !== 'false';
+}
+export const REVIEW_MAX_TURNS = 6;
+export const REVIEW_MAX_TOOL_CALLS = 8;
+export const REVIEW_DEADLINE_MS = 90_000;
+export const REVIEW_SYSTEM_PROMPT = 'You are a pre-merge safety reviewer for an autonomous code-change pipeline. You answer with exactly one JSON verdict object and nothing else.';
+
 export interface LlmMergeReviewResult {
   /** false only on an infrastructure failure (diff fetch, LLM call, parse) — see `passed`, which still reads true in that case (fail-open). */
   ok: boolean;
@@ -54,6 +73,11 @@ export interface LlmMergeReviewResult {
   passed: boolean;
   summary: string;
   error?: string;
+  /** VTID-04231: which provider/model served the verdict and how many tool calls the reviewer made. */
+  provider?: string;
+  model?: string;
+  tool_calls?: number;
+  tools_used?: string[];
 }
 
 interface PrFileForReview {
@@ -85,7 +109,7 @@ export function buildDiffBundle(files: PrFileForReview[]): string {
   return parts.join('\n');
 }
 
-export function buildReviewPrompt(vtid: string, diffBundle: string): string {
+export function buildReviewPrompt(vtid: string, diffBundle: string, toolsAvailable: boolean = false): string {
   return [
     `You are a pre-merge safety reviewer for an autonomous code-change pipeline.`,
     `A PR for ${vtid} is about to be auto-merged with no human review. Look ONLY`,
@@ -99,6 +123,15 @@ export function buildReviewPrompt(vtid: string, diffBundle: string): string {
     `confident is a real problem — a false positive here blocks real work in a`,
     `production pipeline, which is worse than missing a minor issue.`,
     ``,
+    ...(toolsAvailable ? [
+      `You have three read-only tools, all pinned to the PR head commit:`,
+      `read_file(path, start_line?, end_line?) to see the rest of a changed file when`,
+      `a hunk alone is ambiguous; ci_evidence() for the head commit's check-runs and any`,
+      `failing job's log; dev_get_risk(path) for a file's churn/bug-fix/ownership/fan-in`,
+      `facts. Use them only when the diff alone cannot settle a real concern — most`,
+      `reviews need none. Then answer.`,
+      ``,
+    ] : []),
     `Respond with ONLY a single JSON object and nothing else, no markdown fence:`,
     `{"verdict":"pass"} or {"verdict":"block","reasons":["<short reason>", ...]}`,
     ``,
@@ -145,32 +178,59 @@ export async function runLlmMergeReview(params: {
   }
 
   const diffBundle = buildDiffBundle(files);
-  const prompt = buildReviewPrompt(params.vtid, diffBundle);
 
-  const { callViaRouter } = await import('./llm-router');
-  const r = await callViaRouter('validator', prompt, {
-    vtid: params.vtid,
+  // VTID-04231: resolve the PR head so every tool reads exactly what would
+  // merge. A failure here is not a review failure — it just means the
+  // single-shot, diff-only review runs (no tools), as before this VTID.
+  let headSha: string | null = null;
+  if (isLlmMergeReviewToolsEnabled()) {
+    try {
+      const pr = await githubService.getPullRequest(params.repo, params.prNumber);
+      headSha = (pr as { head?: { sha?: string } })?.head?.sha || null;
+      if (!headSha) console.warn(`${LOG_PREFIX} PR #${params.prNumber} has no head sha — reviewing without tools`);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} PR head lookup failed for #${params.prNumber} — reviewing without tools:`, err);
+    }
+  }
+  const toolsOn = Boolean(headSha);
+  const prompt = buildReviewPrompt(params.vtid, diffBundle, toolsOn);
+
+  const loop = await runStageToolLoop({
+    stage: 'validator',
     service: 'dev-autopilot-llm-review',
-    allowFallback: true,
+    vtid: params.vtid,
+    systemPrompt: REVIEW_SYSTEM_PROMPT,
+    prompt,
+    tools: toolsOn ? validatorRouterTools() : [],
+    execute: toolsOn
+      ? createValidatorToolExecutor({ repo: params.repo, headSha: headSha as string })
+      : async (name) => ({ result: `no tools are available in this review (${name})`, isError: true }),
+    maxTurns: toolsOn ? REVIEW_MAX_TURNS : 1,
+    maxToolCalls: toolsOn ? REVIEW_MAX_TOOL_CALLS : 0,
+    deadlineMs: REVIEW_DEADLINE_MS,
     maxTokens: 1000,
+    allowFallback: true,
   });
+  const r = { ok: loop.ok, text: loop.text, error: loop.error };
+  const meta = { provider: loop.provider, model: loop.model, tool_calls: loop.toolCalls, tools_used: loop.toolNames };
   if (!r.ok || !r.text) {
     console.warn(`${LOG_PREFIX} review call failed for PR #${params.prNumber} — skipping review (fail-open): ${r.error}`);
-    return { ok: false, passed: true, summary: 'review call failed — skipped, not blocking', error: r.error };
+    return { ok: false, passed: true, summary: 'review call failed — skipped, not blocking', error: r.error, ...meta };
   }
 
   const verdict = parseReviewVerdict(r.text);
   if (!verdict) {
     console.warn(`${LOG_PREFIX} unparseable review response for PR #${params.prNumber} — skipping review (fail-open): ${r.text.slice(0, 200)}`);
-    return { ok: false, passed: true, summary: 'unparseable review response — skipped, not blocking', error: 'unparseable_verdict' };
+    return { ok: false, passed: true, summary: 'unparseable review response — skipped, not blocking', error: 'unparseable_verdict', ...meta };
   }
 
   if (verdict.verdict === 'pass') {
-    return { ok: true, passed: true, summary: 'LLM review found no blocking issues' };
+    return { ok: true, passed: true, summary: `LLM review found no blocking issues${loop.toolCalls ? ` (${loop.toolCalls} tool call(s): ${loop.toolNames.join(', ')})` : ''}`, ...meta };
   }
   return {
     ok: true,
     passed: false,
     summary: `LLM review blocked merge: ${verdict.reasons.join('; ') || 'unspecified'}`,
+    ...meta,
   };
 }
