@@ -25,8 +25,8 @@ describe('VTID-04006: staging pins OPERATOR_ONRAMP_EXECUTOR=agent', () => {
     expect(strip).toContain('"OPERATOR_ONRAMP_EXECUTOR"');
   });
 
-  it('is deliberately NOT pinned on the prod gateway deploy workflow', () => {
-    expect(prod).not.toContain('OPERATOR_ONRAMP_EXECUTOR');
+  it('is now ALSO declared on the prod gateway deploy workflow (VTID-04230 prod parity)', () => {
+    expect(prod).toMatch(/\{name:"OPERATOR_ONRAMP_EXECUTOR", value:"agent"\}/);
   });
 
   it('sits behind the on-ramp flag and the ECS executor dispatch it depends on', () => {
