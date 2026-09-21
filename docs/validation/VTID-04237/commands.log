@@ -4,3 +4,4 @@ aws ecs describe-task-definition --task-definition vitana-autopilot-executor   #
 select … from autopilot_recommendations cross join dev_autopilot_config          # 15 findings: 10 eligible by scanner/effort/risk, 8 of them with a plan (outputs/eligible-findings.txt)
 edit .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml + AWS-STAGE-DEPLOY-GATEWAY.yml (strip + add both env vars)
 npx jest <8 pin/guard suites>   # 8/8 suites green after updating the two verbatim strip-list assertions
+gh (MCP) create_pull_request → #3533 (draft) head 5b182b9; subscribed
