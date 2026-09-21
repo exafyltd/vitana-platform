@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04164",
+  "execution_id": "1685afbf-7de1-430b-ad80-c4d71c98b1fc",
+  "finding_id": "40cf0405-1f25-48b8-bf8a-af9cdd930b5a",
+  "plan_version": 1,
+  "branch": "dev-autopilot/1685afbf",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/operator-execution-onramp.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/__mocks__/setup-tests.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/operator-onramp-rate-limit.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/console-task-02-onramp-rate-limit.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:00:00.402Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

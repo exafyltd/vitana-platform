@@ -56,6 +56,13 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockFetch.mockClear();
   mockVtidStore.length = 0;
+
+  // VTID-04164: the operator on-ramp rate limiter is process-wide state keyed
+  // by `requestedBy`. Every test starts from a fresh window, so a suite that
+  // hits the on-ramp repeatedly with one thread id (vtid-03820/04005/04007)
+  // is never throttled by its own earlier cases.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('../../src/services/operator-onramp-rate-limit').resetOnRampRateLimit();
   
   // Default mock implementation for Supabase/OASIS calls
   mockFetch.mockImplementation((url: string | Request, options?: any) => {
