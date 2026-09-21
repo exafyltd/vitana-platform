@@ -244,6 +244,15 @@ export async function executeAgentTool(
   const args = rawArgs || {};
   const log = ctx.log || (() => undefined);
   try {
+    // VTID-04163: refuse an exact-repeat navigation call before doing any
+    // work — see agent-check-guard.ts's RepeatedCheckGuard.shouldRefuseNav.
+    if (name === 'read_file' || name === 'search_text' || name === 'list_dir' || name === 'find_files') {
+      const refusal = ctx.checkGuard?.shouldRefuseNav(name, args);
+      if (refusal) {
+        log(`${name} refused by the repeated-navigation guard`);
+        return { result: refusal, isError: true };
+      }
+    }
     switch (name) {
       case 'read_file': {
         const abs = resolveInsideRoot(ctx.root, args.path);

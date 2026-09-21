@@ -1,0 +1,1 @@
+{ "vtid": "VTID-04219", "title": "Fix main: bootstrap-pack all-sources-fail test vs flag-state line", "executor": "claude-code-session", "broken_by": ["#3508 (VTID-04185)", "#3513 (VTID-04175)"], "kind": "test-only reconciliation" }

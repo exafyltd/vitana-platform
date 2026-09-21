@@ -23615,12 +23615,28 @@ function formatTurnCostBadge(meta) {
     return parts.join(' \u00b7 ');
 }
 
+// VTID-04181: the badge's $ figure is computed from the MODEL_COSTS table —
+// the same list prices the router's telemetry is priced with — so it is an
+// estimate, not a bill. The badge itself has no room for that caveat without
+// changing its text and layout (AC-2), and its hover breakdown is already the
+// detail view, so the caveat is appended there, right under the estimate.
+var TURN_COST_ESTIMATE_NOTE = 'Estimate from list prices, not exact billing';
+
 function describeTurnCost(meta) {
     if (!meta) return '';
     var lines = ['Provider: ' + (meta.provider || '?'), 'Model: ' + (meta.model || '?')];
     if (typeof meta.duration_ms === 'number') lines.push('Turn: ' + formatToolDuration(meta.duration_ms) + (typeof meta.tool_calls === 'number' ? ' (' + meta.tool_calls + ' tool call' + (meta.tool_calls === 1 ? '' : 's') + ')' : ''));
     if (meta.usage) lines.push('Tokens: ' + (meta.usage.input_tokens || 0) + ' in / ' + (meta.usage.output_tokens || 0) + ' out' + (typeof meta.model_calls === 'number' ? ' over ' + meta.model_calls + ' model call' + (meta.model_calls === 1 ? '' : 's') : ''));
-    if (meta.usage) lines.push(meta.cost_priced === false ? 'Cost: model not in the price table' : 'Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
+    if (meta.usage) {
+        if (meta.cost_priced === false) {
+            // No dollar figure is shown for an unknown model, so no estimate
+            // caveat is needed — the table simply does not know the model.
+            lines.push('Cost: model not in the price table');
+        } else {
+            lines.push('Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
+            lines.push(TURN_COST_ESTIMATE_NOTE);
+        }
+    }
     return lines.join('\n');
 }
 
@@ -48303,6 +48319,12 @@ function renderAutopilotLiveView() {
             var pill = document.createElement('span');
             pill.textContent = exec.status;
             pill.style.cssText = 'background:' + statusColor + '20;color:' + statusColor + ';border:1px solid ' + statusColor + '60;padding:2px 10px;border-radius:999px;font-size:0.72rem;font-weight:600;text-transform:uppercase;min-width:80px;text-align:center;';
+            // VTID-04148: the pill is the only text a screen reader gets for
+            // an execution's state, and it changes (queued → running →
+            // completed/failed) purely via re-render — without a live region
+            // the transition is silent. 'polite' so a state change never cuts
+            // off what the user is already hearing.
+            pill.setAttribute('aria-live', 'polite');
             card.appendChild(pill);
 
             // Task label (from upstream finding if available, else exec id)

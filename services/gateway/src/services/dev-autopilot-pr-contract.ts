@@ -64,6 +64,9 @@ export interface PrContractInput {
     fixRounds: number;
     /** run_check calls the repeated-check guard refused (VTID-04016). */
     checksRefused: number;
+    /** read_file/search_text/list_dir/find_files exact-repeat calls the
+     *  repeated-navigation guard refused (VTID-04163). */
+    navRepeatsRefused: number;
     fallbackUsed: boolean;
     /** false when AGENT_SKIP_TSC disabled the runner's tsc. */
     tscRun: boolean;
@@ -226,10 +229,10 @@ export function buildCommandsLog(input: PrContractInput & { vtid: string }): str
     ``,
   ];
   if (input.executor === 'agent') {
-    const a = input.agentStats || { turns: 0, fixRounds: 0, checksRefused: 0, fallbackUsed: false, tscRun: true };
+    const a = input.agentStats || { turns: 0, fixRounds: 0, checksRefused: 0, navRepeatsRefused: 0, fallbackUsed: false, tscRun: true };
     return [
       ...header,
-      `# agent turns=${a.turns} fix_rounds=${a.fixRounds} checks_refused_by_guard=${a.checksRefused} fallback_used=${a.fallbackUsed}`,
+      `# agent turns=${a.turns} fix_rounds=${a.fixRounds} checks_refused_by_guard=${a.checksRefused} nav_repeats_refused_by_guard=${a.navRepeatsRefused} fallback_used=${a.fallbackUsed}`,
       ``,
       `$ git clone --depth 1 --branch ${input.baseBranch} <repo> && git checkout -b ${input.branch}`,
       `$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci`,

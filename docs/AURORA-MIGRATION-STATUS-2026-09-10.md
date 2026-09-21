@@ -3392,7 +3392,6 @@ should make" that this doc's own standing instructions say to flag and
 move on from, not route around. **Whoever picks this up next: check
 whether the platform owner has responded in the live conversation before
 touching PR #1117 either way.**
-
 ---
 
 ### 2026-09-21, ~12:00-13:00 UTC — freeze window attempted (Steps 4-6+8 of the runbook), Step 5 (DMS reload) categorically blocked; production write-freeze exercised and fully reverted

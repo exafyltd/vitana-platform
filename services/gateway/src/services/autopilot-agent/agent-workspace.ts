@@ -179,7 +179,12 @@ export async function commitAndPush(
   const exec = opts.exec ?? defaultExec;
   try {
     await exec('git', ['add', '-A'], { cwd: repoDir });
-    await exec('git', ['commit', '-q', '-m', opts.message], { cwd: repoDir });
+    // VTID-04217: in fix mode a clean `mergeBaseIntoBranch` already produced
+    // the merge commit, so the tree can be clean here — `git commit` would
+    // exit 1 ("nothing to commit") and the push would never happen. Commit
+    // only when something is staged; HEAD is the commit to push either way.
+    const { stdout: pending } = await exec('git', ['status', '--porcelain'], { cwd: repoDir });
+    if (pending.trim()) await exec('git', ['commit', '-q', '-m', opts.message], { cwd: repoDir });
     const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
     // The branch name is unique to this execution (dev-autopilot/<exec8>);
     // a stale remote branch from an earlier attempt of the same execution is
@@ -191,6 +196,85 @@ export async function commitAndPush(
   } catch (err) {
     throw new Error(`commit/push failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
   }
+}
+
+/**
+ * VTID-04217: fix mode must be able to resolve a merge conflict. Measured on
+ * the 2026-09-21 batch (16 approved executions): 4 failed with
+ * `merge conflict (dirty)` because a sibling PR merged first and touched the
+ * same file; the fix-mode child got that reason as its CI evidence but had
+ * no way to bring `main` into its branch — no git merge in the tool surface,
+ * and a depth-1 clone with no shared history to merge across.
+ *
+ * `mergeBaseIntoBranch` runs BEFORE the agent's tool loop: deepen the clone
+ * so a merge base exists (`--unshallow` on the single-branch clone; a plain
+ * fetch when it is already complete), fetch the base branch, and
+ * `git merge` it. A clean merge leaves the merge commit on HEAD; a conflict
+ * leaves the standard `<<<<<<< / ======= / >>>>>>>` markers in the working
+ * tree and returns the conflicted paths so the task prompt can hand them
+ * to the agent. Nothing here decides anything — the runner refuses to push
+ * while any marker remains (`findFilesWithConflictMarkers`).
+ */
+export interface MergeBaseResult {
+  status: 'merged' | 'up_to_date' | 'conflict';
+  /** Paths still unmerged (only for `conflict`). */
+  conflicts: string[];
+  /** SHA of the base branch tip that was merged (FETCH_HEAD). */
+  baseSha: string;
+}
+
+const CONFLICT_MARKER_RE = /^(<{7}( |$)|={7}$|>{7}( |$))/m;
+
+export function textHasConflictMarkers(text: string): boolean {
+  return CONFLICT_MARKER_RE.test(text);
+}
+
+export async function listUnmergedFiles(repoDir: string, exec: ExecFn = defaultExec): Promise<string[]> {
+  const { stdout } = await exec('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: repoDir });
+  return stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+export async function mergeBaseIntoBranch(
+  repoDir: string,
+  baseBranch: string,
+  opts: { exec?: ExecFn; mergeMessage?: string } = {},
+): Promise<MergeBaseResult> {
+  const exec = opts.exec ?? defaultExec;
+  // Deepen: `--unshallow` completes the single cloned branch's history (the
+  // fork point from the base is in it); on a clone that is already complete
+  // git refuses with "does not make sense", so fall back to a plain fetch.
+  try {
+    await exec('git', ['fetch', '--unshallow', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  } catch {
+    await exec('git', ['fetch', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  }
+  await exec('git', ['fetch', 'origin', baseBranch], { cwd: repoDir, timeoutMs: 600_000 });
+  const { stdout: baseOut } = await exec('git', ['rev-parse', 'FETCH_HEAD'], { cwd: repoDir });
+  const baseSha = baseOut.trim();
+  const message = opts.mergeMessage || `Merge origin/${baseBranch} into the PR branch (dev-autopilot fix mode, VTID-04217)`;
+  try {
+    const { stdout } = await exec('git', ['merge', '--no-edit', '-m', message, 'FETCH_HEAD'], { cwd: repoDir, timeoutMs: 300_000 });
+    if (/already up to date/i.test(stdout)) return { status: 'up_to_date', conflicts: [], baseSha };
+    return { status: 'merged', conflicts: [], baseSha };
+  } catch (err) {
+    const conflicts = await listUnmergedFiles(repoDir, exec).catch(() => [] as string[]);
+    if (conflicts.length > 0) return { status: 'conflict', conflicts, baseSha };
+    throw new Error(`merge of ${baseBranch} failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Files (among `paths`) that still carry conflict markers. Missing files are skipped. */
+export async function findFilesWithConflictMarkers(repoDir: string, paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const rel of paths) {
+    try {
+      const text = await fs.readFile(path.join(repoDir, rel), 'utf8');
+      if (textHasConflictMarkers(text)) out.push(rel);
+    } catch {
+      /* deleted or binary — nothing to scan */
+    }
+  }
+  return out;
 }
 
 /**
