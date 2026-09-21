@@ -54,6 +54,15 @@ const TEST_PAIR_ROOTS = [
 
 function relFromRepoLocal(p) { return relFromRepo(REPO_ROOT, p); }
 
+// scanTodos walks `scripts` too, so this driver's own machinery matched itself:
+// the marker alternation in TODO_PATTERN above, and the marker comparison in
+// the severity ternary below, are literals that look exactly like unresolved
+// markers. That produced two permanent findings about this file on every scan
+// — noise the autopilot then had to triage. Skip the driver's own source; its
+// markers are the scanner, not unfinished work. Same pattern as
+// scanners/voice-experience-scanner.mjs skipping its own helper file.
+const SELF_REL_PATH = 'scripts/ci/dev-autopilot-scan.mjs';
+
 // =============================================================================
 // Inline legacy scanners — the four that existed before the scanner-registry PR.
 // Kept inline to avoid churn; new scanners live under scripts/ci/scanners/*.mjs.
@@ -66,12 +75,17 @@ function scanTodos(files) {
     if (!SOURCE_EXTS.has(ext)) continue;
     const src = readFileSafe(file);
     if (!src) continue;
+    if (relFromRepoLocal(file) === SELF_REL_PATH) continue;
     const lines = src.split('\n');
     lines.forEach((line, idx) => {
       const m = line.match(TODO_PATTERN);
       if (!m) return;
       const rest = (m[2] || '').trim();
       if (rest.length < 3) return;
+      // Severity mapping: the two actionable markers from TODO_PATTERN above
+      // → medium, the informational ones → low. Those marker names are
+      // deliberately absent from THIS comment: the scanner walks scripts/ too,
+      // so marker prose here becomes a finding about this file.
       signals.push({
         type: 'todo',
         severity: m[1] === 'FIXME' || m[1] === 'HACK' ? 'medium' : 'low',
