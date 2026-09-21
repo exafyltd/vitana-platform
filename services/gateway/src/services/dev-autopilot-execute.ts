@@ -63,7 +63,9 @@ import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
 // VTID-04006: single-shot vs agent executor selection.
-import { resolveExecutorMode } from './autopilot-agent/executor-mode';
+import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
+import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-autopilot-vtid-allocate';
+import { hasTurnCapFailure } from './dev-autopilot-retry-breaker';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { recordShown } from './watcher/feedback';
@@ -2858,7 +2860,9 @@ export async function backgroundExecutorTick(): Promise<void> {
       body: JSON.stringify({
         status: 'running',
         updated_at: new Date().toISOString(),
-        metadata: { ...(exec.metadata || {}), ...claimStamp() },
+        // VTID-04247: record the executor this row will run on (from the
+        // process pin) so the bridge's fix-mode gate can see it later.
+        metadata: { ...(exec.metadata || {}), ...claimStamp(), ...claimExecutorStamp(exec.metadata) },
       }),
     });
     if (!claim.ok) {
@@ -3144,6 +3148,35 @@ export async function applyExecutionResult(
  * The safety gate (evaluateSafetyGate inside approveAutoExecute) still runs
  * on every finding — this function only automates the "click Approve" step.
  */
+/**
+ * VTID-04246: give an auto-approved finding a real VTID before its execution
+ * exists. Without one the PR contract (VTID-04002) skips itself and the PR
+ * ships titled `VTID-DA-<exec8>`, which VALIDATOR-CHECK rejects on exit 10 —
+ * every one of the six owner-approved PRs of 2026-09-21 (#3543–#3548) died
+ * that way inside a minute and was reverted. Returns false (and logs) when
+ * allocation fails so the caller skips the approval: an execution that
+ * cannot produce a mergeable PR only burns tokens.
+ */
+async function ensureFindingVtid(
+  s: SupaConfig,
+  f: { id: string; risk_class: string | null; effort_score: number | null; spec_snapshot: { scanner?: string } | null; activated_vtid: string | null },
+): Promise<boolean> {
+  if (f.activated_vtid) return true;
+  const scanner = f.spec_snapshot?.scanner ?? null;
+  const alloc = await allocateAndRegisterFindingVtid(s, {
+    findingId: f.id,
+    title: buildFindingVtidTitle(f.spec_snapshot as Record<string, unknown> | null, f.id, scanner),
+    summary: `Auto-approved Dev Autopilot finding ${f.id} (${scanner || 'unknown scanner'}, risk ${f.risk_class || 'n/a'}, effort ${f.effort_score ?? 'n/a'})`,
+    scanner,
+  });
+  if (!alloc.ok) {
+    console.warn(`${LOG_PREFIX} auto-approve skipped ${f.id.slice(0, 8)}: ${alloc.error}`);
+    return false;
+  }
+  f.activated_vtid = alloc.vtid;
+  return true;
+}
+
 export async function autoApproveTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -3182,7 +3215,8 @@ export async function autoApproveTick(): Promise<void> {
     risk_class: 'low' | 'medium' | 'high' | null;
     effort_score: number | null;
     impact_score: number | null;
-    spec_snapshot: { scanner?: string } | null;
+    spec_snapshot: { scanner?: string; title?: string } | null;
+    activated_vtid: string | null;
   }>>(
     s,
     // VTID-02984 (PR-M1.x): widen the source_type filter from
@@ -3194,7 +3228,7 @@ export async function autoApproveTick(): Promise<void> {
       + `&effort_score=lte.${maxEffort}`
       + `&spec_snapshot->>scanner=in.(${scannerList})`
       + `&order=impact_score.desc.nullslast,created_at.asc&limit=${slots * 2}`
-      + `&select=id,risk_class,effort_score,impact_score,spec_snapshot`,
+      + `&select=id,risk_class,effort_score,impact_score,spec_snapshot,activated_vtid`,
   );
   if (!findingsR.ok || !findingsR.data || findingsR.data.length === 0) return;
 
@@ -3250,13 +3284,39 @@ export async function autoApproveTick(): Promise<void> {
     // >= AUTO_RETRY_CAP, auto-snooze the recommendation 7 days. Operator
     // can manually unsnooze if the spec/scope/plan changes.
     const failureWindow = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-    const failuresR = await supa<Array<{ id: string }>>(
+    const failuresR = await supa<Array<{ id: string; metadata: Record<string, unknown> | null }>>(
       s,
       `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
       + `&status=in.(failed,reverted,failed_escalated)`
       + `&updated_at=gte.${encodeURIComponent(failureWindow)}`
-      + `&select=id&limit=10`,
+      + `&select=id,metadata&limit=10`,
     );
+    // VTID-04243: a turn-cap failure is terminal for auto-approve. The agent
+    // exhausted its turns on this plan with this tool surface; re-approving
+    // re-runs the identical exhaustion (≈5.5 M input tokens per attempt on
+    // the 2026-09-21 npm-audit chain). Snooze now, not after five of them.
+    if (failuresR.ok && hasTurnCapFailure(failuresR.data)) {
+      const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${f.id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: 'snoozed', snoozed_until: snoozedUntil, updated_at: new Date().toISOString() }),
+        },
+      );
+      console.log(`${LOG_PREFIX} auto-approve refused ${f.id.slice(0, 8)}: a prior execution hit the agent turn cap — snoozed 7d (VTID-04243)`);
+      await emitOasisEvent({
+        vtid: EXEC_VTID,
+        type: 'dev_autopilot.finding.snoozed',
+        source: 'dev-autopilot',
+        status: 'warning',
+        message: `Finding ${f.id.slice(0, 8)} snoozed 7d: prior execution hit the agent turn cap (re-approval refused, VTID-04243)`,
+        payload: { finding_id: f.id, reason: 'turn_cap_failure', snoozed_until: snoozedUntil },
+      });
+      continue;
+    }
     const AUTO_RETRY_CAP = 5;
     if (failuresR.ok && failuresR.data && failuresR.data.length >= AUTO_RETRY_CAP) {
       const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -3286,6 +3346,8 @@ export async function autoApproveTick(): Promise<void> {
     // silently no-op since the feature shipped. NULL is a valid sentinel
     // for "approved by the system" — the OASIS event below is the audit
     // trail for non-human approvals.
+    // VTID-04246: a real VTID before the execution exists (see ensureFindingVtid).
+    if (!(await ensureFindingVtid(s, f))) continue;
     const result = await approveAutoExecute({ finding_id: f.id });
     if (!result.ok || !result.execution) {
       // A safety-gate rejection here is EXPECTED for findings that cite
@@ -3333,13 +3395,14 @@ export async function autoApproveTick(): Promise<void> {
         risk_class: 'low' | 'medium' | 'high' | null;
         effort_score: number | null;
         impact_score: number | null;
-        spec_snapshot: { rule?: string; severity?: string; category?: string } | null;
+        spec_snapshot: { rule?: string; severity?: string; category?: string; scanner?: string; title?: string } | null;
+        activated_vtid: string | null;
       }>>(
         s,
         `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&status=eq.new`
           + `&spec_snapshot->>rule=in.(${ruleList})`
           + `&order=impact_score.desc.nullslast,created_at.asc&limit=${remainingSlots * 2}`
-          + `&select=id,risk_class,effort_score,impact_score,spec_snapshot`,
+          + `&select=id,risk_class,effort_score,impact_score,spec_snapshot,activated_vtid`,
       );
       if (impactR.ok && impactR.data && impactR.data.length > 0) {
         for (const f of impactR.data) {
@@ -3365,6 +3428,8 @@ export async function autoApproveTick(): Promise<void> {
     // silently no-op since the feature shipped. NULL is a valid sentinel
     // for "approved by the system" — the OASIS event below is the audit
     // trail for non-human approvals.
+    // VTID-04246: a real VTID before the execution exists (see ensureFindingVtid).
+    if (!(await ensureFindingVtid(s, f))) continue;
     const result = await approveAutoExecute({ finding_id: f.id });
           if (!result.ok || !result.execution) {
             console.log(`${LOG_PREFIX} auto-approve (impact) skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
