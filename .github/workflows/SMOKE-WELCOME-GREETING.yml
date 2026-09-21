@@ -18,14 +18,16 @@ name: Smoke — Welcome Greeting Trigger (Structural)
 # real regressions like the May-18-through-28 outage.
 #
 # Triggered:
-#   * After every successful EXEC-DEPLOY (workflow_run)
+#   * After every successful staging gateway deploy (workflow_run on
+#     AWS-STAGE-DEPLOY-GATEWAY — EXEC-DEPLOY was the GCP-era deploy and was
+#     retired under VTID-04225)
 #   * Daily at 07:00 UTC (cron)
 #   * On demand (workflow_dispatch)
 
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Exec Deploy (VTID Bridge)"]
+    workflows: ["AWS Stage Deploy Gateway (ECS)"]
     types: [completed]
     branches: [main]
   schedule:

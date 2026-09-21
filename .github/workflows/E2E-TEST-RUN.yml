@@ -72,7 +72,7 @@ jobs:
         working-directory: e2e
         run: ${{ steps.cmd.outputs.cmd }}
         env:
-          HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          HUB_URL: https://preview-aws-gateway.vitanaland.com
           COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://vitanaland.com' }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
@@ -81,7 +81,7 @@ jobs:
       - name: Report failure to self-healing
         if: failure()
         env:
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
           SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: |
           if [ -z "$SERVICE_TOKEN" ]; then

@@ -21,6 +21,30 @@
 # Scheduler Input payload at invoke time instead of each job getting its
 # own deployed function. 25 schedules, 1 function, 2 IAM roles total.
 #
+# VTID-04226 (2026-09-21) — two more jobs, and the Lambda grew three
+# optional Input fields to carry them:
+#   gateway-test-contracts-scheduled-run  POST /api/v1/test-contracts/scheduled-run
+#   gateway-test-contracts-missing        GET  /api/v1/test-contracts/missing
+# Both routes lost their scheduler with GCP and were never in this list —
+# their source_types (test-contract-failure-scanner / missing-test-scanner,
+# autopilot-executable-source-types.ts) are in the executor lane but nothing
+# ever produced a row for them. NOTE: no GCP cadence for them exists in git
+# (scripts/setup-cloud-scheduler.sh never listed them; the route header said
+# "operator wires this manually post-merge"), so the cadences below are
+# CHOSEN here, not restored: */15 for the live-probe scanner (its debounce/
+# quarantine state machine expects a steady tick), daily for the missing-test
+# listing. Both authenticate with `X-Gateway-Internal` — the Lambda reads
+# that token from Secrets Manager at invoke time (`auth: "gateway_internal"`
+# in the Input, secret id in GATEWAY_INTERNAL_TOKEN_SECRET_ID), never from a
+# plain env var or the schedule Input. The secret is provisioned by
+# scripts/aws/setup-gateway-internal-token.sh and wired onto the gateway
+# task def by AWS-STAGE-DEPLOY-GATEWAY.yml once it exists (VTID-04225).
+# Until then the two schedules run and get an honest 403 — loud in the
+# Lambda log, not silent. Per-job `gateway_url` lets these two target the
+# STAGING gateway (TEST_CONTRACTS_GATEWAY_URL) while the rest keep prod.
+# `GET /missing` is a read-only listing — it produces no rows by itself;
+# the row-producing sweep is a documented gap, not built here.
+#
 # WHAT THIS DOES NOT DO
 #
 # It does not touch gateway-push-dispatch — that already has its own
@@ -50,6 +74,10 @@ REGION="${VITANA_AWS_REGION:-eu-central-1}"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"
 GATEWAY_URL="${GATEWAY_URL:-https://gateway.vitanaland.com}"
 TENANT_ID="${DEFAULT_TENANT_ID:-}"
+# VTID-04226: the test-contract scanners target STAGING until the owner
+# promotes them (IF-THEN 26); override to gateway.vitanaland.com deliberately.
+TEST_CONTRACTS_GATEWAY_URL="${TEST_CONTRACTS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"
+INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/staging/internal-token}"
 
 LAMBDA_NAME="vitana-cron-dispatch"
 LAMBDA_EXEC_ROLE_NAME="vitana-cron-dispatch-lambda-exec"
@@ -70,7 +98,9 @@ if [[ -z "$TENANT_ID" && "$DELETE" = "false" ]]; then
   exit 1
 fi
 
-# Format: NAME|SCHEDULE(5-field unix cron)|TIMEZONE|PATH|BODY_JSON
+# Format: NAME|SCHEDULE(5-field unix cron)|TIMEZONE|PATH|BODY_JSON[|EXTRA_INPUT_JSON]
+# EXTRA_INPUT_JSON (optional, VTID-04226) is merged into the schedule's
+# Input: {"method":"GET","auth":"gateway_internal","gateway_url":"https://..."}
 # Verbatim from scripts/setup-cloud-scheduler.sh's JOBS + MEMORY_INTELLIGENCE_JOBS
 # + DIRECT_JOBS (minus push-dispatch, already migrated) + TENANT_DIRECT_JOBS.
 JOBS=(
@@ -99,11 +129,15 @@ JOBS=(
   "gateway-daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications|{\"tenant_id\":\"$TENANT_ID\"}"
   "gateway-daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip|{\"tenant_id\":\"$TENANT_ID\"}"
   "gateway-night-push|0 * * * *|UTC|/api/v1/scheduled-notifications/night-push|{\"tenant_id\":\"$TENANT_ID\"}"
+  # VTID-04226 — test-contract scanners (see header). Cadence chosen, not restored.
+  "gateway-test-contracts-scheduled-run|*/15 * * * *|UTC|/api/v1/test-contracts/scheduled-run|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  "gateway-test-contracts-missing|30 6 * * *|UTC|/api/v1/test-contracts/missing|{}|{\"method\":\"GET\",\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
 
 echo "Region:   $REGION"
 echo "Account:  $ACCOUNT_ID"
 echo "Gateway:  $GATEWAY_URL"
+echo "Test-contract gateway: $TEST_CONTRACTS_GATEWAY_URL (internal token secret: $INTERNAL_TOKEN_SECRET_ID)"
 echo "Jobs:     ${#JOBS[@]}"
 echo "Delete:   $DELETE"
 echo "Dry run:  $DRY_RUN"
@@ -127,8 +161,8 @@ fi
 if $DRY_RUN; then
   echo "Would create/update 1 Lambda, 2 IAM roles, and ${#JOBS[@]} schedules:"
   for JOB in "${JOBS[@]}"; do
-    IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY <<< "$JOB"
-    echo "  $NAME  ($SCHEDULE $TIMEZONE)  -> $PATH_  body=$BODY"
+    IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY EXTRA <<< "$JOB"
+    echo "  $NAME  ($SCHEDULE $TIMEZONE)  -> $PATH_  body=$BODY${EXTRA:+  extra=$EXTRA}"
   done
   exit 0
 fi
@@ -155,6 +189,23 @@ aws iam attach-role-policy \
   --role-name "$LAMBDA_EXEC_ROLE_NAME" \
   --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 LAMBDA_EXEC_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_EXEC_ROLE_NAME}"
+# VTID-04226: read-only access to the ONE internal-token secret (any version
+# suffix), so `auth: "gateway_internal"` jobs can fetch it at invoke time.
+INTERNAL_TOKEN_POLICY=$(cat <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "secretsmanager:GetSecretValue",
+    "Resource": "arn:aws:secretsmanager:${REGION}:${ACCOUNT_ID}:secret:${INTERNAL_TOKEN_SECRET_ID}-*"
+  }]
+}
+JSON
+)
+aws iam put-role-policy \
+  --role-name "$LAMBDA_EXEC_ROLE_NAME" \
+  --policy-name "read-gateway-internal-token" \
+  --policy-document "$INTERNAL_TOKEN_POLICY"
 
 echo "Waiting 10s for IAM role propagation..."
 sleep 10
@@ -173,19 +224,46 @@ const https = require('https');
 // Lambda failure, not a silent success, or nothing can ever alert on
 // it). 170s timeout matches the longest-running known job
 // (AP-XXXX automations, same headroom push-dispatch uses).
+// VTID-04226 — optional Input fields: `method` (default POST), `gateway_url`
+// (per-job target override, e.g. staging for the test-contract scanners),
+// `headers` (extra plain headers), and `auth: "gateway_internal"` which adds
+// `X-Gateway-Internal: <token>` read from Secrets Manager
+// (GATEWAY_INTERNAL_TOKEN_SECRET_ID) and cached for the container lifetime.
+// The token never sits in the schedule Input or a plain env var.
+let cachedInternalToken = null;
+async function internalToken() {
+  if (cachedInternalToken) return cachedInternalToken;
+  const secretId = process.env.GATEWAY_INTERNAL_TOKEN_SECRET_ID;
+  if (!secretId) throw new Error('auth=gateway_internal requested but GATEWAY_INTERNAL_TOKEN_SECRET_ID is unset');
+  const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+  const out = await new SecretsManagerClient({}).send(new GetSecretValueCommand({ SecretId: secretId }));
+  const raw = out.SecretString || '';
+  let token = raw;
+  try { const parsed = JSON.parse(raw); if (parsed && typeof parsed.token === 'string') token = parsed.token; } catch (_) { /* plain string secret */ }
+  if (!token) throw new Error(`secret ${secretId} is empty — run scripts/aws/setup-gateway-internal-token.sh`);
+  cachedInternalToken = token;
+  return token;
+}
+
 exports.handler = async (event) => {
   const path = event && event.path;
-  const body = event && typeof event.body === 'string' ? event.body : JSON.stringify(event && event.body || {});
+  const method = (event && event.method ? String(event.method) : 'POST').toUpperCase();
+  const body = method === 'GET' ? '' : (event && typeof event.body === 'string' ? event.body : JSON.stringify(event && event.body || {}));
   if (!path) throw new Error('Lambda invoked with no `path` in its Input — check the schedule Target.Input');
 
-  const url = new URL((process.env.GATEWAY_URL || 'https://gateway.vitanaland.com') + path);
+  const headers = Object.assign({}, (event && event.headers) || {});
+  if (method !== 'GET') { headers['Content-Type'] = 'application/json'; headers['Content-Length'] = Buffer.byteLength(body); }
+  if (event && event.auth === 'gateway_internal') headers['X-Gateway-Internal'] = await internalToken();
+
+  const base = (event && event.gateway_url) || process.env.GATEWAY_URL || 'https://gateway.vitanaland.com';
+  const url = new URL(base + path);
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: url.hostname,
         path: url.pathname,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        method,
+        headers,
         timeout: 170000,
       },
       (res) => {
@@ -203,7 +281,7 @@ exports.handler = async (event) => {
     );
     req.on('timeout', () => req.destroy(new Error(`${path} request timed out`)));
     req.on('error', reject);
-    req.write(body);
+    if (body) req.write(body);
     req.end();
   });
 };
@@ -219,7 +297,7 @@ if aws lambda create-function \
   --handler index.handler \
   --zip-file "fileb://$WORKDIR/function.zip" \
   --timeout 180 \
-  --environment "Variables={GATEWAY_URL=$GATEWAY_URL}" \
+  --environment "Variables={GATEWAY_URL=$GATEWAY_URL,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}" \
   --description "Shared cron-dispatch trigger for the remaining ~25 migrated GCP Cloud Scheduler jobs (VTID-03766)" 2>&1; then
   echo "Function created."
 else
@@ -233,7 +311,7 @@ else
     --function-name "$LAMBDA_NAME" \
     --region "$REGION" \
     --timeout 180 \
-    --environment "Variables={GATEWAY_URL=$GATEWAY_URL}"
+    --environment "Variables={GATEWAY_URL=$GATEWAY_URL,GATEWAY_INTERNAL_TOKEN_SECRET_ID=$INTERNAL_TOKEN_SECRET_ID}"
   echo "Function code and configuration updated."
 fi
 LAMBDA_ARN="arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_NAME}"
@@ -290,7 +368,8 @@ to_eventbridge_cron() {
 CREATED=0
 FAILED=0
 for JOB in "${JOBS[@]}"; do
-  IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY <<< "$JOB"
+  IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY EXTRA <<< "$JOB"
+  EXTRA="${EXTRA:-{\}}"
   EB_CRON=$(to_eventbridge_cron "$SCHEDULE")
   # Built in Python, not a bash heredoc — the Input field is itself a
   # JSON-encoded string (EventBridge Scheduler's contract), and getting
@@ -301,7 +380,7 @@ print(json.dumps({
   'Arn': '$LAMBDA_ARN',
   'RoleArn': '$SCHEDULER_ROLE_ARN',
   'RetryPolicy': {'MaximumRetryAttempts': 1},
-  'Input': json.dumps({'path': '$PATH_', 'body': json.loads('$BODY')})
+  'Input': json.dumps(dict({'path': '$PATH_', 'body': json.loads('$BODY')}, **json.loads('$EXTRA')))
 }))
 ")
 

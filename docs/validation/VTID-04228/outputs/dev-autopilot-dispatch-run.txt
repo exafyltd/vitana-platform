@@ -1,0 +1,17 @@
+# VTID-04228 — AC-2: the two workflow_dispatch runs against staging (head 70bd61a, the #3529 merge)
+#
+# DEV-AUTOPILOT.yml  run 35618171751 (#325)  event=workflow_dispatch inputs={dry_run:false, gateway_url:<default>}
+#   created 15:19:37Z  completed 15:21:23Z  conclusion=SUCCESS
+#   "Run scanner + POST to gateway" step: POST https://preview-aws-gateway.vitanaland.com/api/v1/dev-autopilot/scan
+#     POST ok 200 {"ok":true,"run_id":"cf77d23c-380c-4833-bbf4-158d70551939","signal_count":2334,
+#                  "new_finding_count":15,"updated_finding_count":0}
+#   Compare run #324 (before VTID-04225): "POST failed 404" against gateway-q74ibpv6ia-uc.a.run.app
+#   (outputs recorded in ../VTID-04225/outputs/dev-autopilot-run-324-failure.txt).
+#
+# E2E-ORB-MONITOR.yml  run 35618174451 (#2758)  event=workflow_dispatch
+#   created 15:19:38Z  completed 15:20:57Z  conclusion=SUCCESS  — all three legs passed
+#   (hub leg: 10 tests in 9.6 s against https://preview-aws-gateway.vitanaland.com; before VTID-04225 this
+#   leg was cancelled at its 5-minute timeout against the dead GCP host). No leg failed, so the
+#   failure-only self-healing report step did not run — see trace-self-healing.txt.
+#
+# Both runs took the staging default; no input, secret or env pointed at gateway.vitanaland.com (prod).

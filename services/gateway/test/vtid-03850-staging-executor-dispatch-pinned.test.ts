@@ -47,9 +47,13 @@ describe('VTID-03850: staging gateway dispatches executions to the ECS executor'
     expect(strip).toContain('"DEV_AUTOPILOT_JOB_CLOUD"');
   });
 
-  it('is deliberately NOT pinned on the prod gateway deploy workflow', () => {
-    expect(prod).not.toContain('DEV_AUTOPILOT_USE_JOB');
-    expect(prod).not.toContain('DEV_AUTOPILOT_JOB_CLOUD');
+  it('is now ALSO declared on the prod gateway deploy workflow (VTID-04227 — was "deliberately NOT" until 2026-09-21)', () => {
+    // VTID-04227 declares the same two values on prod, unconditionally, in
+    // the always-pinned block; the prod-side assertions live in
+    // vtid-04227-prod-dev-autopilot-flags-pinned.test.ts. This test keeps
+    // asserting the staging side and that the two stacks agree.
+    expect(prod).toMatch(/\{name:"DEV_AUTOPILOT_USE_JOB", value:"true"\}/);
+    expect(prod).toMatch(/\{name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"\}/);
   });
 
   it('the on-ramp flag it feeds is still pinned on staging (VTID-03820) — this change is downstream of it', () => {
@@ -88,7 +92,7 @@ describe('VTID-03850: the executor task definition gets an LLM runtime of its ow
     // env upsert still strips its own targets before re-adding them, just
     // four names instead of two now.
     expect(registerStep).toMatch(
-      /select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS"\) \| not\)/,
+      /select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS","DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED"\) \| not\)/,
     );
     expect(registerStep).toMatch(/select\(\.name \| IN\("DEEPSEEK_API_KEY"\) \| not\)/);
     expect(registerStep).toMatch(/\(\. \/\/ \[\]\)\[\]/);
