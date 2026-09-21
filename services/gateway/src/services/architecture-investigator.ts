@@ -7,8 +7,14 @@
  * Flow:
  *   1. Caller passes an incident (topic + optional vtid/signature/notes)
  *   2. We pull recent oasis_events for context
- *   3. We call DeepSeek (deepseek-flash, DeepSeek-V4.1-Flash) with a
- *      structured-output prompt
+ *   3. We call the `triage` LLM routing stage through callViaRouter — the
+ *      DB-backed llm_routing_policy picks the provider/model (v17: Bedrock
+ *      Claude Sonnet 4.6 primary, DeepSeek fallback), the call is logged to
+ *      llm.call.* with usage and cost, and a primary outage degrades to the
+ *      stage's own fallback instead of throwing. VTID-04234: until then this
+ *      was a direct fetch to api.deepseek.com with the DeepSeek API key — no
+ *      policy, no fallback, no cost accounting, and a hard failure on any
+ *      task def without the key (docs/AGENT-REGISTRY.md finding 1).
  *   4. We persist the report to architecture_reports
  *   5. We emit architecture.investigation.completed
  *
@@ -20,11 +26,10 @@ import { emitOasisEvent } from './oasis-event-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
-// BOOTSTRAP-DEEPSEEK-V4.1-FLASH: deepseek-reasoner is a retired alias now
-// served by DeepSeek-V4.1-Flash (deepseek-flash) — see llm-defaults.ts.
-const DEEPSEEK_MODEL = process.env.ARCH_INVESTIGATOR_MODEL || 'deepseek-flash';
+/** VTID-04234: the routing stage this agent runs on. Never a direct provider call. */
+export const ARCH_INVESTIGATOR_STAGE = 'triage' as const;
+export const ARCH_INVESTIGATOR_SERVICE = 'architecture-investigator';
+export const ARCH_INVESTIGATOR_MAX_TOKENS = 4096;
 
 const LOG_PREFIX = '[architecture-investigator]';
 
@@ -64,8 +69,11 @@ export interface InvestigatorReport {
     distinct_topics: string[];
     time_window_minutes: number;
   };
-  llm_provider: 'deepseek';
+  /** VTID-04234: the provider/model the router actually served (policy or its fallback). */
+  llm_provider: string;
   llm_model: string;
+  /** VTID-04234: true when the stage's fallback served the call. */
+  llm_fallback_used?: boolean;
   prompt_tokens?: number;
   completion_tokens?: number;
   latency_ms: number;
@@ -155,7 +163,7 @@ function summarizeEvents(events: OasisEventRow[]): InvestigatorReport['evidence_
 }
 
 // =============================================================================
-// LLM call (DeepSeek-reasoner)
+// LLM call — the `triage` routing stage (VTID-04234)
 // =============================================================================
 
 const SYSTEM_PROMPT = `You are an architecture investigator for the Vitana platform. You analyze incident telemetry and produce ONE structured root-cause hypothesis with a concrete suggested fix and at least 2 alternative hypotheses with reasons they are less likely.
@@ -177,48 +185,54 @@ Rules:
 - "why_less_likely" must reference disconfirming evidence
 - If evidence is insufficient for a confident hypothesis, set confidence < 0.5 and say so plainly`;
 
-interface DeepSeekResponse {
-  choices: Array<{ message: { content: string } }>;
-  usage?: { prompt_tokens: number; completion_tokens: number };
-}
-
-async function callDeepSeek(prompt: string): Promise<{
+export interface InvestigatorLlmResult {
   text: string;
+  provider: string;
+  model: string;
+  fallbackUsed: boolean;
   prompt_tokens?: number;
   completion_tokens?: number;
   latency_ms: number;
-}> {
-  if (!DEEPSEEK_API_KEY) {
-    throw new Error('DEEPSEEK_API_KEY not set');
-  }
+}
+
+/**
+ * VTID-04234: an optional per-call PRIMARY override, the same pair contract
+ * the agent executor uses (VTID-03820/04006): BOTH `ARCH_INVESTIGATOR_PROVIDER`
+ * and `ARCH_INVESTIGATOR_MODEL` must be set, or neither is used — a lone
+ * model name (the pre-VTID-04234 task defs carried `ARCH_INVESTIGATOR_MODEL`
+ * on its own) would otherwise pin a DeepSeek model id onto a Bedrock call.
+ * The stage's own policy fallback still applies either way.
+ */
+export function resolveInvestigatorOverride(env: NodeJS.ProcessEnv = process.env): { providerOverride: string; modelOverride: string } | null {
+  const provider = (env.ARCH_INVESTIGATOR_PROVIDER || '').trim();
+  const model = (env.ARCH_INVESTIGATOR_MODEL || '').trim();
+  if (!provider || !model) return null;
+  return { providerOverride: provider, modelOverride: model };
+}
+
+async function callInvestigatorModel(prompt: string, vtid?: string): Promise<InvestigatorLlmResult> {
+  const { callViaRouter } = await import('./llm-router');
+  const override = resolveInvestigatorOverride();
   const start = Date.now();
-  const resp = await fetch(`${DEEPSEEK_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: DEEPSEEK_MODEL,
-      max_tokens: 4096,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    }),
+  const r = await callViaRouter(ARCH_INVESTIGATOR_STAGE, prompt, {
+    vtid: vtid || null,
+    service: ARCH_INVESTIGATOR_SERVICE,
+    systemPrompt: SYSTEM_PROMPT,
+    maxTokens: ARCH_INVESTIGATOR_MAX_TOKENS,
+    allowFallback: true,
+    ...(override ? { providerOverride: override.providerOverride as never, modelOverride: override.modelOverride } : {}),
   });
   const latency_ms = Date.now() - start;
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '<no body>');
-    throw new Error(`DeepSeek HTTP ${resp.status}: ${body.slice(0, 300)}`);
+  if (!r.ok || !r.text) {
+    throw new Error(`${ARCH_INVESTIGATOR_STAGE} stage call failed: ${r.error || 'empty response'}`);
   }
-  const data = (await resp.json()) as DeepSeekResponse;
-  const text = data.choices?.[0]?.message?.content || '';
   return {
-    text,
-    prompt_tokens: data.usage?.prompt_tokens,
-    completion_tokens: data.usage?.completion_tokens,
+    text: r.text,
+    provider: String(r.provider || 'unknown'),
+    model: String(r.model || 'unknown'),
+    fallbackUsed: Boolean(r.fallbackUsed),
+    prompt_tokens: r.usage?.inputTokens,
+    completion_tokens: r.usage?.outputTokens,
     latency_ms,
   };
 }
@@ -279,7 +293,7 @@ async function persistReport(
   input: InvestigatorInput,
   parsed: ReturnType<typeof parseReport>,
   evidence: InvestigatorReport['evidence_summary'],
-  llm: { prompt_tokens?: number; completion_tokens?: number; latency_ms: number }
+  llm: InvestigatorLlmResult
 ): Promise<string | null> {
   const row = {
     incident_topic: input.incident_topic,
@@ -290,8 +304,8 @@ async function persistReport(
     confidence: parsed.confidence,
     suggested_fix: parsed.suggested_fix,
     alternative_hypotheses: parsed.alternative_hypotheses,
-    llm_provider: 'deepseek',
-    llm_model: DEEPSEEK_MODEL,
+    llm_provider: llm.provider,
+    llm_model: llm.model,
     evidence_summary: evidence,
     prompt_tokens: llm.prompt_tokens || null,
     completion_tokens: llm.completion_tokens || null,
@@ -322,7 +336,7 @@ export async function investigateIncident(
   const evidence = summarizeEvents(events);
   const prompt = buildPrompt(input, events);
 
-  const llm = await callDeepSeek(prompt);
+  const llm = await callInvestigatorModel(prompt, input.vtid);
   const parsed = parseReport(llm.text);
 
   const id = await persistReport(input, parsed, evidence, llm);
@@ -340,8 +354,10 @@ export async function investigateIncident(
       signature: input.signature,
       trigger_reason: input.trigger_reason || 'manual',
       confidence: parsed.confidence,
-      provider: 'deepseek',
-      model: DEEPSEEK_MODEL,
+      stage: ARCH_INVESTIGATOR_STAGE,
+      provider: llm.provider,
+      model: llm.model,
+      fallback_used: llm.fallbackUsed,
       latency_ms: llm.latency_ms,
     },
   }).catch((err) => {
@@ -355,8 +371,9 @@ export async function investigateIncident(
     suggested_fix: parsed.suggested_fix,
     alternative_hypotheses: parsed.alternative_hypotheses,
     evidence_summary: evidence,
-    llm_provider: 'deepseek',
-    llm_model: DEEPSEEK_MODEL,
+    llm_provider: llm.provider,
+    llm_model: llm.model,
+    llm_fallback_used: llm.fallbackUsed,
     prompt_tokens: llm.prompt_tokens,
     completion_tokens: llm.completion_tokens,
     latency_ms: llm.latency_ms,

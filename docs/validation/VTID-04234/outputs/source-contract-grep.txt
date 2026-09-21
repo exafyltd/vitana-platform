@@ -1,0 +1,3 @@
+non-comment hits above (expect none)
+30:export const ARCH_INVESTIGATOR_STAGE = 'triage' as const;
+217:  const r = await callViaRouter(ARCH_INVESTIGATOR_STAGE, prompt, {
