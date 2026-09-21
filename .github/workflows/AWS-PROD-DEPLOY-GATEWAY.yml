@@ -480,6 +480,44 @@ jobs:
         # "$..._INPUT" ]` conditional override block).
         env:
           MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
+        # VTID-04230 — Operator Console / Dev Autopilot capability flags,
+        # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
+        # 4: "production runs a different operator than staging — rev 114
+        # pins one flag"). Every value below is the exact value
+        # AWS-STAGE-DEPLOY-GATEWAY.yml pins, verified live on staging
+        # (VTID-04037 pass, the VTID-04221 end-to-end completions), so the
+        # prod console gets the same bootstrap pack, threads, turn memory,
+        # read tools, codebase index and maker-checker approval hold.
+        #
+        # What this does NOT do:
+        #   - It does not deploy. This workflow is workflow_dispatch-only;
+        #     declaring the pins here changes nothing until the next PUBLISH
+        #     or manual dispatch (CLAUDE.md §16). VTID-04230 was merged
+        #     WITHOUT dispatching this workflow, on the platform owner's
+        #     explicit "declare, do not dispatch".
+        #   - The Dev Autopilot loop flags (watcher-live, use-job, job-cloud,
+        #     llm-review, executor-enabled) are NOT declared in this block:
+        #     the loop-flags block directly above declares them. This block
+        #     is the Operator Console surface only.
+        #   - It does not wire the read-only SQL tool (dev_run_sql_readonly, its
+        #     switch + database-URL secret, VTID-04023/04037): that needs a Secrets
+        #     Manager reference, this workflow carries the task def forward
+        #     without a secrets loop, and the prod deploy role has no
+        #     secretsmanager:Describe* (VTID-03880). A literal ARN to a
+        #     secret that does not exist fails ECS provisioning before the
+        #     container starts — so the tool stays not_configured on prod
+        #     until scripts/aws/setup-operator-sql-readonly-secret.sh has
+        #     been run for a prod path and the reference added deliberately.
+        #   - It does not add the DeepSeek key secret. The operator stage's primary
+        #     (deepseek/deepseek-flash, policy v17) is unavailable on prod
+        #     for that reason and the router serves the Bedrock fallback;
+        #     wiring the secret (VTID-03880 shape) is the owner's call
+        #     because a secret the task role cannot read also fails
+        #     provisioning.
+        # Rollback for any flag: value -> "false" here, no code revert.
+        # CODEINTEL_*_REPO_DIR are NOT pinned: the CLI bridge cannot work on
+        # this image (lancedb, VTID-04222 §3); OPERATOR_CODEINTEL_ENABLED
+        # alone gates the S3 code-index tools (VTID-04229).
         run: |
           set -e
           # VTID-03420: promote mode ships staging's image; rebuild mode ships
@@ -640,44 +678,9 @@ jobs:
                     {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                     {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
                     {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:"true"} ] )')
-          # VTID-04230 — Operator Console / Dev Autopilot capability flags,
-          # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
-          # 4: "production runs a different operator than staging — rev 114
-          # pins one flag"). Every value below is the exact value
-          # AWS-STAGE-DEPLOY-GATEWAY.yml pins, verified live on staging
-          # (VTID-04037 pass, the VTID-04221 end-to-end completions), so the
-          # prod console gets the same bootstrap pack, threads, turn memory,
-          # read tools, codebase index and maker-checker approval hold.
-          #
-          # What this does NOT do:
-          #   - It does not deploy. This workflow is workflow_dispatch-only;
-          #     declaring the pins here changes nothing until the next PUBLISH
-          #     or manual dispatch (CLAUDE.md §16). VTID-04230 was merged
-          #     WITHOUT dispatching this workflow, on the platform owner's
-          #     explicit "declare, do not dispatch".
-          #   - The Dev Autopilot loop flags (watcher-live, use-job, job-cloud,
-          #     llm-review, executor-enabled) are NOT declared in this block:
-          #     the loop-flags block directly above declares them. This block
-          #     is the Operator Console surface only.
-          #   - It does not wire the read-only SQL tool (dev_run_sql_readonly, its
-          #     switch + database-URL secret, VTID-04023/04037): that needs a Secrets
-          #     Manager reference, this workflow carries the task def forward
-          #     without a secrets loop, and the prod deploy role has no
-          #     secretsmanager:Describe* (VTID-03880). A literal ARN to a
-          #     secret that does not exist fails ECS provisioning before the
-          #     container starts — so the tool stays not_configured on prod
-          #     until scripts/aws/setup-operator-sql-readonly-secret.sh has
-          #     been run for a prod path and the reference added deliberately.
-          #   - It does not add the DeepSeek key secret. The operator stage's primary
-          #     (deepseek/deepseek-flash, policy v17) is unavailable on prod
-          #     for that reason and the router serves the Bedrock fallback;
-          #     wiring the secret (VTID-03880 shape) is the owner's call
-          #     because a secret the task role cannot read also fails
-          #     provisioning.
-          # Rollback for any flag: value -> "false" here, no code revert.
-          # CODEINTEL_*_REPO_DIR are NOT pinned: the CLI bridge cannot work on
-          # this image (lancedb, VTID-04222 §3); OPERATOR_CODEINTEL_ENABLED
-          # alone gates the S3 code-index tools (VTID-04229).
+          # VTID-04230 — Operator Console capability flags, prod parity with staging.
+          # Rationale + the deliberate absences are in this step's header comment
+          # (moved out of the run: body for the VTID-03788 20,000-char guard).
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("OPERATOR_EXECUTION_ONRAMP_ENABLED",

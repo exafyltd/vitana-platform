@@ -45,9 +45,21 @@ function pinnedValue(yml: string, name: string): string | null {
   return m ? m[1] : null;
 }
 
+function prodRationale(): string {
+  // The step-level header comment (8-space indent, before `run: |`).
+  const start = prod.indexOf('\n        # VTID-04230') + 1;
+  expect(start).toBeGreaterThan(0);
+  const end = prod.indexOf('\n        run: |', start);
+  expect(end).toBeGreaterThan(start);
+  return prod.slice(start, end);
+}
+
 function prodBlock(): string {
-  const start = prod.indexOf('# VTID-04230');
-  expect(start).toBeGreaterThan(-1);
+  // The block INSIDE the run: body (10-space indent). The step's header
+  // comment carries the long rationale (moved out of the run: scalar for the
+  // VTID-03788 20,000-char guard) and is not the jq pass this suite pins.
+  const start = prod.indexOf('\n          # VTID-04230') + 1;
+  expect(start).toBeGreaterThan(0);
   // Bounded by the next VTID-marked block, whichever it is — sibling blocks
   // (the Dev Autopilot loop flags, the VTID-03618 pins) are not this one's.
   const end = prod.indexOf("\n          # VTID-", start + 1);
@@ -80,12 +92,14 @@ describe('VTID-04230: prod declares the operator/autopilot flags staging pins', 
     expect(prod).not.toContain('OPERATOR_SQL_READONLY');
     expect(prod).not.toContain('DEEPSEEK_API_KEY');
     expect(prod).not.toContain('CODEINTEL_PLATFORM_REPO_DIR');
-    const block = prodBlock();
-    expect(block).toMatch(/does not deploy/);
-    expect(block).toMatch(/secretsmanager:Describe/);
+    // The rationale lives in the step's header comment (outside the run:
+    // scalar, VTID-03788 size guard); the jq pass is what prodBlock() bounds.
+    const rationale = prodRationale();
+    expect(rationale).toMatch(/does not deploy/);
+    expect(rationale).toMatch(/secretsmanager:Describe/);
+    expect(rationale).toMatch(/loop-flags block directly above/);
     // The loop flags live in VTID-04227's block, not in this one.
-    expect(block).not.toContain('"DEV_AUTOPILOT_USE_JOB"');
-    expect(block).toMatch(/loop-flags block directly above/);
+    expect(prodBlock()).not.toContain('"DEV_AUTOPILOT_USE_JOB"');
   });
 
   it('every mirrored flag is a code-level exact-string gate, so a wrong value is off, never on', () => {
