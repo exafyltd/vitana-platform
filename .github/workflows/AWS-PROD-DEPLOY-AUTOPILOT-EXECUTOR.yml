@@ -27,6 +27,10 @@
 #                          §2b; credentials come from the task role itself)
 #   - AWS_BEDROCK_REGION = eu-central-1
 #   - DEEPSEEK_API_KEY   = Secrets Manager `vitana/gateway/staging/deepseek-api-key`
+#   - AGENT_MEMORY_CONTEXT_ENABLED=true + OPERATOR_BOOTSTRAP_BUILD_INFO_URLS
+#     (VTID-04223) = the executor's engineering memory (bootstrap pack +
+#     dev_agent_memory recall + prior agent_runs in; run-transcript facts
+#     out). Default-on in code; pinned here so the live task def declares it.
 #                          (the same secret the staging gateway already resolves)
 #                          — referenced by its full ARN, hardcoded below (VTID-03880).
 #                          See that step's own comment for why it is not resolved
@@ -181,11 +185,13 @@ jobs:
                  --arg REGION "${{ env.TARGET_AWS_REGION }}" --arg DS "$DEEPSEEK_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS") | not) ]
+                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS") | not) ]
                       + [ {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:$REGION},
                           {name:"AGENT_MAX_TURNS", value:"120"},
-                          {name:"AGENT_DEADLINE_MS", value:"2100000"} ] )
+                          {name:"AGENT_DEADLINE_MS", value:"2100000"},
+                          {name:"AGENT_MEMORY_CONTEXT_ENABLED", value:"true"},
+                          {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"} ] )
                 | .containerDefinitions[0].secrets |=
                     ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
                       + [ {name:"DEEPSEEK_API_KEY", valueFrom:$DS} ] )

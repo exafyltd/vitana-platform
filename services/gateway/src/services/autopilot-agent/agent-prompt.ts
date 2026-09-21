@@ -23,6 +23,14 @@ export interface AgentSystemPromptInput {
    * runner's own current date.
    */
   today?: string;
+  /**
+   * VTID-04223: the executor's engineering memory for this run — the
+   * session bootstrap pack (service map, schema index, open PRs, recent
+   * deploy/autopilot events), the recalled `dev_agent_memory` rows and the
+   * prior attempts on this finding. Rendered by agent-memory-context.ts,
+   * already bounded; empty when memory is disabled or every source failed.
+   */
+  memoryContext?: string;
 }
 
 /** VTID-04046: `YYYY-MM-DD` for a Date, UTC. */
@@ -53,6 +61,7 @@ export function buildAgentSystemPrompt(i: AgentSystemPromptInput): string {
     ``,
     `## Governance rules (from CLAUDE.md, abridged)`,
     i.claudeMdExcerpt,
+    ...(i.memoryContext && i.memoryContext.trim() ? [``, i.memoryContext.trim()] : []),
   ].join('\n');
 }
 
