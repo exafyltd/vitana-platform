@@ -58,7 +58,7 @@ AC-7 — The executor workflow pins `AGENT_MEMORY_CONTEXT_ENABLED=true` and the 
 TEST: services/gateway/test/vtid-04223-agent-memory-context.test.ts — "the executor workflow pins…"; services/gateway/test/vtid-03850-staging-executor-dispatch-pinned.test.ts.
 
 AC-8 — Live (staging): a real agent execution on the rebuilt image emits `runner:memory_context` with `chars > 0`, `bootstrap_sections > 0` and at least one recalled row, and `runner:memory_record` with `written ≥ 0`.
-TEST: docs/validation/VTID-04223/outputs/ — recorded after the executor image rebuild; NOT verified at PR time (stated in the PR).
+TEST: docs/validation/VTID-04223/outputs/ac8-staging-run-a08daafd-steps.json — VERIFIED LIVE 2026-09-21 18:03 UTC (see below).
 
 ## Not verified at PR time
 
@@ -71,3 +71,20 @@ TEST: docs/validation/VTID-04223/outputs/ — recorded after the executor image 
 OASIS_PROOF: not applicable — no new OASIS topic; `runner:memory_context` /
 `runner:memory_record` are steps on the existing `dev_autopilot.agent.tool`
 topic (payload gains `data`).
+
+## Verified live — 2026-09-21 (executor image run 22 from `c815249`, staging gateway `c815249`)
+
+Execution `a08daafd-d695-4acf-94ab-64f709190d3a`, queued from the staging
+Operator Console (`autopilot_run_task`; the on-ramp self-allocated
+VTID-04239), claimed by the staging gateway, run on the rebuilt
+`vitana-autopilot-executor` image. From its step feed
+(`outputs/ac8-staging-run-a08daafd-steps.json`):
+
+- `runner:memory_context: enabled=true chars=17558 bootstrap=6s/11699c recall=10 prior_runs=0 recalled: …` — the bootstrap pack (11,699 chars, built in 6 s) plus 10 recalled `dev_agent_memory` rows were injected before turn 1; `prior_runs=0` because no earlier agent run had touched these files. **AC-8 satisfied** (`chars > 0`, bootstrap sections > 0, ≥ 1 recalled row).
+- turn 17: `runner:tsc: clean`, `runner:jest: … vtid-04223-agent-recall-query.test.ts → pass`, pushed `eb65bcda` on `dev-autopilot/a08daafd` (4 files: the test + the VTID-04002 evidence pack), held `awaiting_approval` — no PR opened (`OPERATOR_PR_APPROVAL_REQUIRED=true`).
+- `runner:memory_record: written=0` — the end-of-run extraction ran and wrote nothing: a test-only probe with no failure yields no durable `decision`/`gotcha` row, and the `task_outcome` row is written by the PR-open/failure paths (VTID-04025), which a held execution does not reach. `written ≥ 0` is what AC-8 asks; the "writes a row on PR open" leg is still unobserved live.
+
+Disposition: rejected through `POST /executions/:id/reject` (branch deleted;
+`outputs/ac8-staging-run-a08daafd-pending-diff.json` keeps the held diff);
+VTID-04239 terminalized `cancelled`. It was a verification probe, not a
+change to merge.

@@ -67,3 +67,16 @@ CURL: `aws s3 ls --recursive s3://vitana-code-index/` → outputs/s3-listing-202
 
 AC-9 — Live, NOT verified at PR time: a staging Operator Console turn calling `dev_index_query` answers with `sha 9545b190…` (or newer, once CODEINTEL-INDEX.yml has run), and a staging executor run shows `runner:code_index` with `nodes>0` and at least one `dev_index_query`/`dev_get_risk` tool call in its steps.
 UI: Command Hub → Operator Console on `preview-aws-gateway.vitanaland.com` after this merge deploys staging; steps via `GET /api/v1/dev-autopilot/executions/:id/steps` after the next `autopilot_run_task`. Recorded under outputs/ when done.
+
+## Verified live — 2026-09-21 18:03–18:07 UTC
+
+Both consumers read the bucket under `vitana-ecs-task-role` for real:
+
+- **Executor** (`outputs/staging-executor-run-a08daafd-steps.json`): `runner:code_index: code index exafyltd/vitana-platform@d7849e6ccf95 built 2026-09-21T17:16:54.675Z: 47447 nodes, 89979 edges, 2746 file risk records, 50 hotspots (source s3://vitana-code-index (eu-central-1) …)`; the agent's FIRST tool call (turn 1) was `dev_index_query`, before any `search_text`/`read_file`.
+- **Operator Console** (`outputs/staging-console-dev_index_query-2026-09-21.json`): a read-only turn on staging (`c815249`) called `dev_index_query("dev autopilot ci watcher merge")` → `ok:true`, `nodes_touched:46`, 6 seeds led by `dev-autopilot-watcher.ts` and its two test files, with `imports_from` edges resolved.
+
+Bundle served: `d7849e6` (the CODEINTEL-INDEX run that published `latest/`),
+not the newest merge — see the CLAUDE.md row for the `latest/` pointer
+observation. The IAM read path (`s3:GetObject` via the bucket policy) is
+therefore confirmed; the bucket-policy read-back (`s3:GetBucketPolicy`)
+remains denied to sessions.
