@@ -1,0 +1,41 @@
+Detected VTID=VTID-04225 PROFILE=gateway_backend
+Changed files: 72
+NOT JUDGED — 54 file(s) outside this gate's remit:
+  .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+  .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+  .github/workflows/BIND-STAGING-SERVICE-TOKEN.yml
+  .github/workflows/BOOTSTRAP-LIVEKIT-SECRETS.yml
+  .github/workflows/CANARY-READINESS-REPORT.yml
+  .github/workflows/CRON-AUTOPILOT-BACKLOG-CONVERSION-PLAN.yml
+  .github/workflows/CRON-AUTOPILOT-BACKLOG-DRAIN-PLAN.yml
+  .github/workflows/CRON-CONTEXT-QUALITY-SCORE.yml
+  .github/workflows/CRON-CONTEXT-SOURCE-INVENTORY.yml
+  .github/workflows/CRON-DATASET-EXTRACTION.yml
+  .github/workflows/CRON-FINETUNE-STATUS.yml
+  .github/workflows/CRON-FINETUNE-TRAINER.yml
+  .github/workflows/CRON-SHADOW-COMPARISON-REPORT.yml
+  .github/workflows/DEBUG-GATEWAY-LOGS.yml
+  .github/workflows/DEPLOY-AUTOPILOT-JOB.yml
+  .github/workflows/DEPLOY-ORB-AGENT.yml
+  .github/workflows/DESCRIBE-VERTEX-CUSTOMJOB.yml
+  .github/workflows/DEV-AUTOPILOT-IMPACT.yml
+  .github/workflows/DEV-AUTOPILOT.yml
+  .github/workflows/DIAGNOSE-AUTOPILOT.yml
+  .github/workflows/E2E-ORB-MONITOR.yml
+  .github/workflows/E2E-TEST-RUN.yml
+  .github/workflows/ENABLE-GOOGLE-OAUTH-APIS.yml
+  .github/workflows/EXEC-DEPLOY.yml
+  .github/workflows/EXERCISE-STAGING-SHADOW-CORPUS.yml
+  ...and 29 more
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 18 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-04225
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-04225/
