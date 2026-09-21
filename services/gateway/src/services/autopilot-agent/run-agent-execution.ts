@@ -22,6 +22,7 @@ import { parseFixMode } from '../dev-autopilot-bridge';
 import { recordAgentRunUsage, type AgentRunUsage } from '../dev-autopilot-outcomes';
 import { estimateCost } from '../../constants/llm-defaults';
 import { applyPrContract } from '../dev-autopilot-pr-contract';
+import { fixRoundTurnBudget, resolveFixRoundMinTurns } from './fix-round-budget';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
 import type { LLMProvider, LLMRouterMessage } from '../llm-router';
@@ -54,6 +55,8 @@ const AGENT_PRIMARY_MODEL = process.env.AGENT_PRIMARY_MODEL || 'deepseek-flash';
 const AGENT_MAX_TURNS = Number.parseInt(process.env.AGENT_MAX_TURNS || '60', 10);
 const AGENT_DEADLINE_MS = Number.parseInt(process.env.AGENT_DEADLINE_MS || String(22 * 60_000), 10);
 const AGENT_MAX_FIX_ROUNDS = Number.parseInt(process.env.AGENT_MAX_FIX_ROUNDS || '3', 10);
+/** VTID-04244: every fix round gets at least this many turns, whatever the first round consumed. */
+const AGENT_FIX_ROUND_MIN_TURNS = resolveFixRoundMinTurns();
 /** VTID-04112: chars of history resent per turn before older tool results
  *  are trimmed — see agent-loop.ts's HISTORY_CHAR_BUDGET for why. */
 const AGENT_HISTORY_CHAR_BUDGET = Number.parseInt(process.env.AGENT_HISTORY_CHAR_BUDGET || '120000', 10);
@@ -285,7 +288,7 @@ export async function runAgentExecutionSession(
       const loop = await runAgentLoop({
         systemPrompt, prompt, tools: runTools, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
-        callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
+        callLlm, maxTurns: fixRoundTurnBudget(round, AGENT_MAX_TURNS, totalTurns, AGENT_FIX_ROUND_MIN_TURNS), deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
         isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,
       });
       history = loop.history; totalTurns += loop.turns;
