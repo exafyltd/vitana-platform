@@ -133,7 +133,7 @@ describe('runLlmMergeReview', () => {
     mockGetPrFiles.mockResolvedValue([{ filename: 'a.ts', status: 'modified', patch: '+ok', additions: 1, deletions: 0 }]);
     mockCallViaRouter.mockResolvedValue({ ok: true, text: '{"verdict":"pass"}' });
     const result = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 42, vtid: 'VTID-DEV-AUTOPILOT' });
-    expect(result).toEqual({ ok: true, passed: true, summary: 'LLM review found no blocking issues' });
+    expect(result).toMatchObject({ ok: true, passed: true, summary: 'LLM review found no blocking issues', tool_calls: 0 }); // VTID-04231: provider/model/tool telemetry fields are additive
     expect(mockCallViaRouter).toHaveBeenCalledWith('validator', expect.any(String), expect.objectContaining({ vtid: 'VTID-DEV-AUTOPILOT', allowFallback: true }));
   });
 
@@ -160,7 +160,7 @@ describe('runLlmMergeReview', () => {
     const result = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 42, vtid: 'VTID-DEV-AUTOPILOT' });
     expect(result.ok).toBe(false);
     expect(result.passed).toBe(true);
-    expect(result.error).toBe('no provider configured');
+    expect(result.error).toContain('no provider configured'); // VTID-04231: the stage loop prefixes the stage and turn
   });
 
   it('fails open when the response cannot be parsed as a verdict', async () => {

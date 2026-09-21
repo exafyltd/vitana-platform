@@ -1,0 +1,10 @@
+PASS test/vtid-04005-onramp-vtid-self-allocate.test.ts
+PASS test/dev-autopilot-watcher.test.ts
+PASS test/dev-autopilot-watcher-failure-reason.test.ts
+PASS test/vtid-04231-validator-tools.test.ts
+PASS test/vtid-03853-watcher-review-wiring.test.ts
+PASS test/vtid-03853-llm-merge-review.test.ts
+PASS test/vtid-04231-llm-stage-tool-loop.test.ts
+PASS test/vtid-04229-code-index.test.ts
+Test Suites: 8 passed, 8 total
+Tests:       121 passed, 121 total
