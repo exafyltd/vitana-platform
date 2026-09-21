@@ -81,7 +81,7 @@ jobs:
       - name: Ingest impact findings into Developer Autopilot queue
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
           DEV_AUTOPILOT_SCAN_TOKEN: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
         run: |
           if [ ! -f dev-autopilot-impact-findings.json ]; then

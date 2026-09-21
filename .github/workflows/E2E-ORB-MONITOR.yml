@@ -47,14 +47,14 @@ jobs:
         working-directory: e2e
         run: npx playwright test --project=${{ matrix.project }} ${{ matrix.spec }}
         env:
-          HUB_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          HUB_URL: https://preview-aws-gateway.vitanaland.com
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
 
       - name: Report failure to self-healing
         if: failure()
         env:
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
           SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: |
           if [ -z "$SERVICE_TOKEN" ]; then

@@ -37,7 +37,7 @@ permissions:
   contents: read
 
 env:
-  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+  STAGING_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
 
 jobs:
   set-consent:

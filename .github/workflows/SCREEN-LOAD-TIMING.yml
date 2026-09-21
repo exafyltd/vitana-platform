@@ -53,7 +53,7 @@ jobs:
         run: npx playwright test --project=mobile-shared screen-load-timing.spec.ts
         env:
           COMMUNITY_URL: ${{ inputs.community_url || 'https://vitanaland.com' }}
-          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
           SCREEN_LOAD_ENV: production
           SCREEN_LOAD_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
