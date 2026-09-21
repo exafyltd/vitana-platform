@@ -1,26 +1,48 @@
 #!/usr/bin/env node
 /**
- * BOOTSTRAP-GUIDED-JOURNEY-POPUP — backfill per-locale translations of the
- * Guided Journey curriculum into `journey_checklist_translations`.
+ * BOOTSTRAP-GUIDED-JOURNEY-POPUP / VTID-04236 — backfill per-locale
+ * translations of the Guided Journey curriculum into
+ * `journey_checklist_translations`.
  *
- * The curriculum is authored in GERMAN (source of truth). This script reads the
- * current PUBLISHED snapshot, asks Gemini to translate the six user-facing
- * fields per topic into the target locale(s), and upserts the result. The
- * gateway overlays these onto the German snapshot at read time (missing fields
- * fall back to German), so the Topic Explanation popup renders in the user's
- * language instead of mixing English labels with German body text.
+ * The curriculum is authored in GERMAN (source of truth). This script reads
+ * the current PUBLISHED snapshot, asks Claude (via AWS Bedrock) to translate
+ * the six user-facing fields per topic into the target locale(s), and
+ * upserts the result. The gateway overlays these onto the German snapshot at
+ * read time (missing fields fall back to German), so the Topic Explanation
+ * popup renders in the user's language instead of mixing English labels with
+ * German body text.
  *
- * Run it wherever the secrets + DB live (CI/Cloud Shell), NOT a dev sandbox:
+ * VTID-04236: this script previously called Google's Gemini API directly
+ * (`GEMINI_API_KEY`), which violates this repo's standing rule (CLAUDE.md
+ * ALWAYS 10a/10c, IF-THEN 27 — no sanctioned Google dependency for LLM
+ * routing/content generation) and hardcoded its locale allowlist to
+ * en/es/sr only, silently dropping every other GA locale. It now calls
+ * Claude on Bedrock via the AWS CLI (`aws bedrock-runtime invoke-model`),
+ * the same invocation shape CLAUDE.md §2b documents as the verified way to
+ * reach a real, invokable inference profile, and supports the full GA
+ * locale set.
  *
- *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE=... GEMINI_API_KEY=... \
+ * Run it wherever the secrets + DB + `aws` CLI live (CI/Cloud Shell), NOT a
+ * dev sandbox:
+ *
+ *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE=... \
  *     node scripts/journey/generate-checklist-translations.mjs \
- *       --locale=en,es,sr [--curriculum=v2] [--limit=N] [--dry-run]
+ *       --locale=en,es,sr,tr,zh,ar,fr,pl,pt,ru [--curriculum=v2] [--limit=N] [--dry-run]
  *
  * Idempotent: upserts on (topic_id, locale). Re-running refreshes content and
  * stamps source_version_id so a future re-publish can detect stale rows.
  *
- * Brand voice: informal register (du-form for DE source; tú for ES, ti for SR).
+ * Brand voice: informal register (du-form for DE source; the target-locale
+ * equivalent for each language, named per-locale below).
  */
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const execFileAsync = promisify(execFile);
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -31,37 +53,49 @@ const args = Object.fromEntries(
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-// Accept either GEMINI_API_KEY or the workflow's GOOGLE_GEMINI_API_KEY secret.
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 const CURRICULUM = String(args.curriculum || 'v2');
+// Full GA locale set (supported_locales.status='ga', 2026-09-21) minus the
+// two source languages (de is the curriculum source; en is also a normal
+// target here since the curriculum itself is authored in German).
+const SUPPORTED_LOCALES = ['en', 'es', 'sr', 'fr', 'pl', 'pt', 'ru', 'tr', 'zh', 'ar'];
 const LOCALES = String(args.locale || 'en,es,sr')
   .split(',')
   .map((s) => s.trim())
-  .filter((s) => ['en', 'es', 'sr'].includes(s));
+  .filter((s) => SUPPORTED_LOCALES.includes(s));
 const LIMIT = args.limit ? Number(args.limit) : Infinity;
 const DRY_RUN = Boolean(args['dry-run']);
-const MODEL = process.env.GEMINI_TRANSLATE_MODEL || 'gemini-2.5-flash';
+// Cross-region inference profile ID — see CLAUDE.md §2b. eu.anthropic.claude-sonnet-4-6
+// is one of the confirmed-invokable profiles (not merely ACTIVE in the listing).
+const BEDROCK_MODEL_ID = process.env.BEDROCK_TRANSLATE_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6';
+const BEDROCK_REGION = process.env.AWS_BEDROCK_REGION || process.env.AWS_REGION || 'eu-central-1';
 const FORCE = Boolean(args.force); // re-translate even topics that already exist
 
 // Network resilience: no call may hang the whole run.
 const REST_TIMEOUT_MS = 20_000;
-const GEMINI_TIMEOUT_MS = 45_000;
+const BEDROCK_TIMEOUT_MS = 45_000;
 const MAX_RETRIES = 2; // per call, with backoff
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE');
   process.exit(1);
 }
-if (!GEMINI_API_KEY && !DRY_RUN) {
-  console.error('Missing GEMINI_API_KEY (or pass --dry-run)');
-  process.exit(1);
-}
 if (LOCALES.length === 0) {
-  console.error('No valid --locale given (en,es,sr)');
+  console.error(`No valid --locale given (${SUPPORTED_LOCALES.join(',')})`);
   process.exit(1);
 }
 
-const LOCALE_NAME = { en: 'English', es: 'Spanish (Spain, informal "tú")', sr: 'Serbian (informal "ti")' };
+const LOCALE_NAME = {
+  en: 'English',
+  es: 'Spanish (Spain, informal "tú")',
+  sr: 'Serbian (informal "ti")',
+  fr: 'French (informal "tu")',
+  pl: 'Polish (informal "ty")',
+  pt: 'Portuguese (Brazil, informal "você")',
+  ru: 'Russian (informal "ты")',
+  tr: 'Turkish (informal "sen")',
+  zh: 'Simplified Chinese',
+  ar: 'Modern Standard Arabic',
+};
 const FIELDS = [
   ['display_label', 'displayLabel'],
   ['short_description', 'shortDescription'],
@@ -112,7 +146,50 @@ function sourceFields(topic) {
   };
 }
 
-/** Translate one topic's German fields into a locale via Gemini (strict JSON). */
+/**
+ * Invoke Claude on Bedrock via the AWS CLI (VTID-04236 — replaces the
+ * former direct Gemini call). Shells out rather than adding an
+ * `@aws-sdk/client-bedrock-runtime` dependency to this standalone script:
+ * `aws bedrock-runtime invoke-model` is the exact invocation CLAUDE.md §2b
+ * documents and trusts, and every environment this script targets
+ * (CI/Cloud Shell with AWS deploy credentials) already has the AWS CLI as
+ * an established prerequisite.
+ */
+async function invokeBedrockClaude(prompt) {
+  const dir = await mkdtemp(join(tmpdir(), 'bedrock-translate-'));
+  const inPath = join(dir, 'in.json');
+  const outPath = join(dir, 'out.json');
+  try {
+    await writeFile(
+      inPath,
+      JSON.stringify({
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: 2048,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    );
+    await execFileAsync(
+      'aws',
+      [
+        'bedrock-runtime', 'invoke-model',
+        '--region', BEDROCK_REGION,
+        '--model-id', BEDROCK_MODEL_ID,
+        '--body', `fileb://${inPath}`,
+        outPath,
+      ],
+      { timeout: BEDROCK_TIMEOUT_MS },
+    );
+    const raw = await readFile(outPath, 'utf8');
+    const data = JSON.parse(raw);
+    const text = data?.content?.[0]?.text ?? '{}';
+    return text;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Translate one topic's German fields into a locale via Bedrock (strict JSON). */
 async function translateTopic(src, locale) {
   const payload = {};
   for (const [col] of FIELDS) if (src[col]) payload[col] = src[col];
@@ -121,31 +198,17 @@ async function translateTopic(src, locale) {
   const prompt = [
     `Translate the following German UI strings for a longevity-community app into ${LOCALE_NAME[locale]}.`,
     `Use the informal register/second person. Keep it concise and natural — these are short UI labels and explanations.`,
-    `Return ONLY a JSON object with the SAME keys, values translated. Do not add keys or commentary.`,
+    `Return ONLY a JSON object with the SAME keys, values translated. Do not add keys, markdown fences, or commentary — the response must be valid JSON and nothing else.`,
     JSON.stringify(payload),
   ].join('\n');
 
   if (DRY_RUN) return payload; // echo source — lets you preview without spending tokens
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-  // Retry with backoff; each attempt is time-boxed so a stalled connection
-  // can't hang the run. Returns null after exhausting retries → caller skips
-  // the topic (a later re-run fills it in — the script is resumable).
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
-        }),
-      });
-      if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-      return JSON.parse(text);
+      const text = await invokeBedrockClaude(prompt);
+      const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+      return JSON.parse(cleaned);
     } catch (e) {
       const last = attempt === MAX_RETRIES;
       console.warn(`  ! ${locale} topic translate ${last ? 'FAILED (skipping)' : `retry ${attempt + 1}/${MAX_RETRIES}`}: ${e?.message || e}`);
@@ -160,7 +223,7 @@ async function main() {
   const { versionId, topics } = await fetchCurrentSnapshot();
   const slice = topics.slice(0, LIMIT);
   console.log(
-    `Translating ${slice.length}/${topics.length} topics → [${LOCALES.join(', ')}] from version ${versionId}${DRY_RUN ? ' (dry-run)' : ''}`,
+    `Translating ${slice.length}/${topics.length} topics → [${LOCALES.join(', ')}] from version ${versionId}${DRY_RUN ? ' (dry-run)' : ''} via Bedrock model ${BEDROCK_MODEL_ID}`,
   );
 
   for (const locale of LOCALES) {
