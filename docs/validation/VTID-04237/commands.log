@@ -5,3 +5,4 @@ select … from autopilot_recommendations cross join dev_autopilot_config       
 edit .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml + AWS-STAGE-DEPLOY-GATEWAY.yml (strip + add both env vars)
 npx jest <8 pin/guard suites>   # 8/8 suites green after updating the two verbatim strip-list assertions
 gh (MCP) create_pull_request → #3533 (draft) head 5b182b9; subscribed
+gh (MCP) actions_run_trigger AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml ref=claude/autopilot-self-healing-starvation-9ftloo (reason recorded)  # run 35624216627 (#20) FAILED at configure-aws-credentials: "Not authorized to perform sts:AssumeRoleWithWebIdentity" — the deploy role's OIDC trust only admits refs/heads/main; re-dispatched from main after the merge (outputs/executor-dispatch-branch-oidc-denied.txt)
