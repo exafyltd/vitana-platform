@@ -3471,3 +3471,64 @@ for that action. ECS Exec (and therefore Step 7) remains blocked by the
 same three reasons as every prior session that has hit this in this
 document — nothing new to try from inside a Claude Code session on the
 current access level.
+
+## Addendum, 2026-09-21 continued — PR #3520 merged; the reconciliation script's own "not yet exercised against real credentials" caveat is now explained, not just repeated
+
+Follow-up in the same conversation, on explicit instruction to finish
+everything runnable without further owner participation. Three things
+done, all read-only or additive, nothing destructive attempted.
+
+1. **PR #3520 (this file's own freeze/restore addendum above) merged to
+   `main`** as `636f1058`. Docs-only, 0 CI checks required, no review
+   threads — there was nothing left to gate it.
+
+2. **DMS task inventory re-checked directly (`aws dms
+   describe-replication-tasks`), not assumed from prior rows.**
+   `vitana-fullload-rehearsal-v2` — the task the abandoned Step 5 reload
+   would have re-run — is `stopped`/`FULL_LOAD_ONLY_FINISHED`, **594/594
+   tables loaded, 0 errored**, from its last successful run earlier the
+   same day. `vitana-supabase-to-aurora-v3` (the one `full-load-and-cdc`
+   attempt) is `failed` with `Last Error: An internal WAL conversational
+   protocol error has occurred` — CDC remains completely non-functional,
+   consistent with every earlier row in this document. **No live CDC
+   task exists in any working state** — Aurora has had zero ongoing
+   replication since the last full-load run finished, so drift versus
+   Supabase has been accumulating unmeasured ever since, at whatever
+   rate production writes occur.
+
+3. **Attempted the reconciliation script this file has flagged as
+   "not yet exercised against real credentials" since VTID-03649
+   (2026-08-16) — and found a NEW, previously undocumented reason it
+   cannot run from a Claude Code session, independent of the
+   credentials question.** `AURORA_DATABASE_URL` (`vitana/aurora/prod/
+   database-url`) is fetchable from AWS Secrets Manager under this
+   session's IAM identity; `SUPABASE_DATABASE_URL` (`vitana/supabase/
+   prod/database-url`) is not — `secretsmanager:GetSecretValue` on that
+   secret is an **explicit deny** in this session's own IAM permissions
+   boundary (`claude-code-aws-agent-boundary`), a deliberate scoping
+   choice, not a missing grant. More decisively: even with the Aurora
+   URL in hand, `psql` against the Aurora RDS proxy endpoint
+   (`vitana-rds-proxy-prod.proxy-cfk228aiedf3.eu-central-1.rds.
+   amazonaws.com:5432`) **timed out on both resolved IPs** — this
+   session's sandbox has no network route into the VPC the proxy lives
+   in, the same private-networking gap already documented for ECS Exec
+   into `vitana-postgrest-aurora-proxy` above (blocker (a), the missing
+   `ssmmessages`/`ec2messages` VPC interface endpoints). **So this
+   reconciliation script cannot run from ANY Claude Code session as
+   currently networked, regardless of which credentials it holds** —
+   the fix is the same VPC/interface-endpoint work Step 7 already needs,
+   not a separate credentials request. The fetched Aurora URL was used
+   for nothing else and deleted from disk (`shred -u`) immediately after
+   the failed connection attempt; no query was ever run against
+   production with it.
+
+**Net: nothing here required, or attempted, a destructive or
+production-write action.** The two live gaps this session leaves for the
+next one with real AWS network access (VPC-connected, not this sandbox):
+(a) run the reconciliation script for real, now that the exact blocker
+(no VPC route from a Claude Code sandbox, not a missing secret) is
+understood; (b) provision the `ssmmessages`/`ec2messages` VPC interface
+endpoints + IAM grants — `vitana-ecs-task-role` needs — this single fix
+unblocks BOTH the reconciliation script's DB connection path and the
+ECS Exec / Step 7 smoke test, since both dead-end at the identical
+private-networking gap.
