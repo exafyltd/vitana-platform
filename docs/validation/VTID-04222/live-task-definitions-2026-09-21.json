@@ -1,0 +1,96 @@
+{
+ "vitana-gateway": {
+  "revision": 487,
+  "image": "gateway:a8a8e841e3da",
+  "env": {
+   "OPERATOR_PR_APPROVAL_REQUIRED": "true",
+   "OPERATOR_TURN_MEMORY_ENABLED": "true",
+   "DEV_AUTOPILOT_LLM_REVIEW_ENABLED": "true",
+   "OPERATOR_CODEINTEL_ENABLED": "true",
+   "OPERATOR_THREADS_ENABLED": "true",
+   "DEV_AUTOPILOT_JOB_CLOUD": "aws",
+   "OPERATOR_CODEBASE_READ_ENABLED": "true",
+   "OPERATOR_ONRAMP_EXECUTOR": "agent",
+   "GATEWAY_URL": "http://gateway.vitanaland.com",
+   "VITANA_ENV": "staging",
+   "BEDROCK_ROLE_ARN": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+   "DEV_AUTOPILOT_WATCHER_LIVE": "true",
+   "OPERATOR_PLANNER_ENABLED": "true",
+   "OPERATOR_EXECUTION_ONRAMP_ENABLED": "true",
+   "DEV_AUTOPILOT_USE_JOB": "true",
+   "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS": "staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info",
+   "OPERATOR_BOOTSTRAP_PACK_ENABLED": "true",
+   "CODEINTEL_V1_REPO_DIR": "/repo-vitana-v1",
+   "OPERATOR_VTID_SELF_ALLOCATE_ENABLED": "true",
+   "AWS_BEDROCK_REGION": "eu-central-1",
+   "OPERATOR_AWS_READONLY_ENABLED": "true",
+   "OPERATOR_DB_READONLY_ENABLED": "true",
+   "CODEINTEL_PLATFORM_REPO_DIR": "/repo-platform"
+  },
+  "secret_names": [
+   "AURORA_DATABASE_URL",
+   "AURORA_RLS_DATABASE_URL",
+   "DB_PASSWORD",
+   "DEEPSEEK_API_KEY",
+   "ERP_BRIDGE_TOKEN",
+   "FISH_API_KEY",
+   "GEMINI_API_KEY",
+   "GITHUB_SAFE_MERGE_TOKEN",
+   "GOOGLE_GEMINI_API_KEY",
+   "OPENAI_API_KEY",
+   "SUPABASE_ANON_KEY",
+   "SUPABASE_JWT_SECRET",
+   "SUPABASE_SERVICE_ROLE",
+   "SUPABASE_URL"
+  ]
+ },
+ "vitana-gateway-awsdr": {
+  "revision": 114,
+  "image": "gateway:a286b94abc0e",
+  "env": {
+   "BEDROCK_MODEL_ID": "eu.anthropic.claude-opus-4-7",
+   "DEV_AUTOPILOT_JOB_CLOUD": "aws",
+   "GATEWAY_URL": "https://dr-gateway.vitanaland.com",
+   "VITANA_ENV": "production",
+   "BEDROCK_ROLE_ARN": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+   "OPERATOR_EXECUTION_ONRAMP_ENABLED": "true",
+   "AWS_BEDROCK_REGION": "eu-central-1",
+   "DEV_AUTOPILOT_EXECUTOR_ENABLED": "false"
+  },
+  "secret_names": [
+   "APPILIX_API_KEY",
+   "APPILIX_APP_KEY",
+   "APPILIX_IOS_API_KEY",
+   "APPILIX_IOS_APP_KEY",
+   "DB_PASSWORD",
+   "FRONTEND_DEPLOY_TOKEN",
+   "GATEWAY_SERVICE_TOKEN",
+   "GITHUB_SAFE_MERGE_TOKEN",
+   "SUPABASE_ANON_KEY",
+   "SUPABASE_JWT_SECRET",
+   "SUPABASE_SERVICE_ROLE",
+   "SUPABASE_URL"
+  ]
+ },
+ "vitana-autopilot-executor": {
+  "revision": 20,
+  "image": "autopilot-executor:a8a8e841e3da",
+  "env": {
+   "BEDROCK_ROLE_ARN": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+   "DEV_AUTOPILOT_REPO_OWNER": "exafyltd",
+   "DEV_AUTOPILOT_REPO_NAME": "vitana-platform",
+   "AGENT_DEADLINE_MS": "2100000",
+   "DEV_AUTOPILOT_REPO_REF": "main",
+   "AWS_BEDROCK_REGION": "eu-central-1",
+   "DEV_AUTOPILOT_GITHUB_REPO": "exafyltd/vitana-platform",
+   "AGENT_MAX_TURNS": "120"
+  },
+  "secret_names": [
+   "DB_PASSWORD",
+   "DEEPSEEK_API_KEY",
+   "GITHUB_SAFE_MERGE_TOKEN",
+   "SUPABASE_SERVICE_ROLE",
+   "SUPABASE_URL"
+  ]
+ }
+}
