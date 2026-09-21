@@ -1,0 +1,19 @@
+VTID-04219 — commands run this session (Claude Code)
+
+1. Self-allocated via the governed gateway API (title inline)
+   -> {"ok":true,"vtid":"VTID-04219","num":4219,"id":"c62d8eae-94d5-408e-a9db-948e9f4c2042"}
+
+2. Evidence: PR #3521 check "Gateway (Jest, ~7.5k tests)" job 106359341990 failing with
+   FAIL test/console-task-21-bootstrap-all-sources-fail.test.ts — Expected length: 8,
+   Received length: 9 — the 9th line being the VTID-04175 flag-state line.
+   git log origin/main: 7dc48ed (e1fa489e / #3508) and 3db5aa3 (e39f056a / #3513).
+
+3. Reproduced locally on main:
+   cd services/gateway && npx jest test/console-task-21-bootstrap-all-sources-fail.test.ts
+   -> 1 failed, 1 passed
+
+4. Fix: filter the flag-state line out of the content-line count (test only).
+
+5. Re-run:
+   npx jest test/console-task-21-bootstrap-all-sources-fail.test.ts test/console-task-12-bootstrap-flag-visibility.test.ts
+   -> see PR body for the result
