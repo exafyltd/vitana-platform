@@ -1,0 +1,24 @@
+# VTID-04228 — AC-6: self-healing chain via E2E-ORB-MONITOR.yml (staging)
+#
+# gh (MCP) actions_run_trigger E2E-ORB-MONITOR.yml ref=main → run 35618174451 (#2758), 15:19:37 UTC.
+# Result: conclusion=success. All three legs passed against the repointed hosts
+# (hub leg: 10 tests in 9.6 s against https://preview-aws-gateway.vitanaland.com — the leg that was
+# cancelled at the 5-minute timeout on the dead GCP host before VTID-04225).
+#
+# Because every leg passed, the failure-only "Report failure to self-healing" step did not run, so
+# POST /api/v1/self-healing/report was NOT exercised by this dispatch. Read-only DB check confirms nothing
+# was written by it:
+#   select count(*) from self_healing_log where created_at > '2026-09-21T15:15:00Z';                     → 0
+#   select topic, count(*) from oasis_events where (topic like 'self-healing.%' or topic like 'autopilot.task.%'
+#     or topic like 'e2e.%') and created_at > '2026-09-21T14:00:00Z';                                      → no rows
+#
+# What IS verified for the self-healing leg:
+#   - the report step now targets a live host (VTID-04225) instead of a 404;
+#   - the staging task def vitana-gateway:491 carries GATEWAY_SERVICE_TOKEN (valueFrom the Secrets Manager
+#     ARN, see VTID-04225/outputs/task-def-env-names.txt), which requireServiceOrAdmin on
+#     routes/self-healing.ts needs for a Bearer service call to return 2xx instead of 401.
+# What is NOT verified: an actual 2xx from /self-healing/report and the resulting self_healing_log +
+# self-healing.task.injected rows. That needs a genuinely failing leg; manufacturing one (breaking a
+# staging test on purpose) was not done. AC-6 is therefore PARTIAL — recorded honestly, not claimed.
+# Next real signal: the first E2E-ORB-MONITOR leg that fails on its own schedule (cron */30 on the
+# workflow) will post to staging; check self_healing_log and oasis_events topic='self-healing.task.injected'.
