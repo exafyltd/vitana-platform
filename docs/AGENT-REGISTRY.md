@@ -161,6 +161,8 @@ staging after the deploy is the exercise.
    `dev_ecs_tasks` / `dev_run_sql_readonly` / `get_architecture_reports` on the
    `triage` stage through the same loop; its prompt no longer names tools it
    does not have. The spec generator is VTID-04233.*
+   (the loop the triage agent — VTID-04232 — and the spec generator —
+   VTID-04233 — reuse).*
 4. **Production runs a different operator than staging** — rev 114 pins one
    flag and lacks the DeepSeek secret; the shared policy row makes prod's
    `operator` primary silently unavailable.
