@@ -1,32 +1,32 @@
--- BOOTSTRAP — dev_agent_memory: file-scoped recall + stage provenance
+-- VTID-04224 — dev_agent_memory: file-scoped recall + stage provenance
 --
--- Extends dev_agent_memory (VTID-03889, Operator Console engineering
--- memory) so the Planner/Worker/Validator LLM routing stages can read
--- and write it too -- today only the `memory` extraction stage
--- (Operator Console turns) and the Dev Autopilot executor's outcome
--- writer (`recordExecutionOutcomeMemory`) ever touch this table.
+-- Extends dev_agent_memory (VTID-03889) so the Planner/Worker/Validator
+-- LLM routing stages can read/write it, not just the Operator Console
+-- chat and the Dev Autopilot executor's outcome writer.
 --
--- Two additive columns:
---   - file_paths text[]: the concrete repo-relative files a memory row
---     is about (the diff's changed files on write, a task's target
---     files on read). Plain array-overlap (&&) -- both sides are
---     concrete paths, never glob patterns, so no glob-matching helper
---     is needed on the read side.
+--   - file_paths text[]: concrete repo-relative files a memory row is
+--     about (changed files on write, target files on read). Plain
+--     array-overlap (&&) -- no glob matching needed.
 --   - stage text: which routing stage produced the row (provenance
---     only -- it never restricts which stage may RECALL a row; a
---     gotcha the Worker found on a file is exactly what the Planner
---     should see before planning a similar change to that file again).
+--     only -- never restricts which stage may RECALL a row).
 --
--- Every existing row, index, constraint and RPC signature is left
--- intact -- this is purely additive. write_dev_memory() gains two new,
--- defaulted, TRAILING parameters, so every existing caller (today:
--- operator-turn-memory.ts's two writers) compiles and runs unchanged.
+-- write_dev_memory() must be DROPPED and RECREATED, not just
+-- CREATE-OR-REPLACEd: Postgres matches functions by name+argument
+-- TYPES, so a create-or-replace with two new trailing parameters
+-- creates a SECOND overload alongside the original 10-arg one instead
+-- of widening it -- confirmed live (42725 "function name is not
+-- unique" the moment anything referenced the name without an explicit
+-- arg list, and any future named-parameter RPC call with only the
+-- original 10 names would itself become ambiguous between the two
+-- overloads). Dropping the exact original signature first leaves
+-- exactly one write_dev_memory, with the two new params defaulted, so
+-- every existing caller keeps working unchanged.
 --
--- NOT applied to any live database from this session -- no live
--- Supabase/production write access was exercised here. Apply the same
--- way this repo's own governed path expects (Supabase MCP, ahead of
--- the Migration Drift Check) before merging code that depends on the
--- new column or the new recall_dev_memory_by_files() RPC.
+-- Applied live to the VITANA Supabase project (inmkhvwdcuyhnxkgfvsb)
+-- and round-trip verified 2026-09-21: write_dev_memory() with a
+-- placeholder embedding, recall_dev_memory_by_files() found the row by
+-- file_paths overlap, then the test row was deleted. See
+-- docs/validation/VTID-04224/ for the full evidence pack.
 
 alter table dev_agent_memory
   add column if not exists file_paths text[] not null default '{}';
@@ -48,8 +48,11 @@ comment on column dev_agent_memory.stage is
 create index if not exists dev_agent_memory_file_paths_idx
   on dev_agent_memory using gin (file_paths);
 
--- write_dev_memory(): widened with two new, defaulted, trailing params.
-create or replace function write_dev_memory(
+drop function if exists write_dev_memory(
+  text, text, text, text, vector(1024), text, smallint, text, text[], uuid
+);
+
+create function write_dev_memory(
   p_repo text,
   p_category text,
   p_title text,
@@ -86,18 +89,16 @@ begin
 end;
 $$;
 
-comment on function write_dev_memory is
-  'VTID-03889 + BOOTSTRAP file-scope wiring: insert one dev_agent_memory '
+comment on function write_dev_memory(
+  text, text, text, text, vector(1024), text, smallint, text, text[], uuid, text[], text
+) is
+  'VTID-03889 + VTID-04224 file-scope wiring: insert one dev_agent_memory '
   'row. embedding must be a real Titan Embeddings G2 vector computed by '
   'the caller -- there is no default and no fallback to a null/zero '
   'vector; the column is NOT NULL. file_paths/stage are optional and '
   'additive.';
 
--- recall_dev_memory_by_files(): deterministic, file-scoped sibling to
--- recall_dev_memory() (semantic/embedding-based). No embedding call
--- needed -- a caller combines both when the file-scoped result set is
--- thin (e.g. a brand-new file with no history yet).
-create or replace function recall_dev_memory_by_files(
+create function recall_dev_memory_by_files(
   p_repo text,
   p_files text[],
   p_category text default null,
@@ -132,11 +133,13 @@ as $$
   limit p_limit;
 $$;
 
-comment on function recall_dev_memory_by_files is
-  'BOOTSTRAP file-scope wiring: recall by concrete changed/target file '
-  'overlap (&&), ordered by importance then recency -- deliberately not '
-  'a similarity ranking, since there is no query embedding here. Sibling '
-  'to recall_dev_memory() (semantic).';
+comment on function recall_dev_memory_by_files(text, text[], text, int) is
+  'VTID-04224: recall by concrete changed/target file overlap (&&), '
+  'ordered by importance then recency -- deliberately not a similarity '
+  'ranking, since there is no query embedding here. Sibling to '
+  'recall_dev_memory() (semantic).';
 
-grant execute on function write_dev_memory to service_role;
-grant execute on function recall_dev_memory_by_files to service_role;
+grant execute on function write_dev_memory(
+  text, text, text, text, vector(1024), text, smallint, text, text[], uuid, text[], text
+) to service_role;
+grant execute on function recall_dev_memory_by_files(text, text[], text, int) to service_role;

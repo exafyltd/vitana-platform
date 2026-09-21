@@ -1,0 +1,63 @@
+VTID-04224 — commands run this session (single-shot session, not the Dev Autopilot executor)
+
+1. VTID self-allocation
+   $ select allocate_global_vtid('claude-code', null, 'dev-agent-memory');
+   -> (VTID-04224, 4224, c4c87a40-c318-492a-8185-faad60f52a9f)
+   $ update vtid_ledger set title=..., summary=..., status='in_progress',
+     spec_status='approved', metadata=... where vtid='VTID-04224';
+   -> 1 row updated
+
+2. Typecheck (services/gateway)
+   $ npx tsc --noEmit -p .
+   -> exit 0, no output
+
+3. Targeted tests (before migration was applied)
+   $ npx jest test/services/dev-agent-memory.test.ts test/vtid-04025-operator-turn-memory.test.ts --silent
+   -> 2 suites passed, 25 tests passed, 0 failed
+
+4. First migration attempt (CREATE OR REPLACE) — failed, transaction rolled back
+   $ supabase apply_migration vtid_04224_dev_agent_memory_file_scope (CREATE OR REPLACE variant)
+   -> ERROR 42725: function name "write_dev_memory" is not unique
+   Confirmed no partial state landed:
+   $ select proname, pg_get_function_identity_arguments(oid) from pg_proc
+     where proname in ('write_dev_memory','recall_dev_memory_by_files');
+   -> only the original 10-arg write_dev_memory; no new columns; no recall_dev_memory_by_files
+
+5. Second migration attempt (DROP + CREATE) — applied
+   $ supabase apply_migration vtid_04224_dev_agent_memory_file_scope (drop-then-create variant)
+   -> {"success": true}
+
+6. Live round-trip verification (real DB, real functions, placeholder embedding)
+   $ select write_dev_memory('vitana-platform','gotcha',
+       'VTID-04224 live verification row (delete me)', '...',
+       ('['||array_to_string(array_fill(0.001::float8, ARRAY[1024]),',')||']')::vector(1024),
+       'VTID-04224', 10::smallint, 'manual', ARRAY['vtid-04224-verification'], null,
+       ARRAY['services/gateway/src/services/dev-agent-memory.ts'], 'worker');
+   -> new_id: cc6a911e-3df4-489f-a474-d2f364d2f88b
+
+   $ select id, vtid, category, title, file_paths, stage
+     from recall_dev_memory_by_files('vitana-platform',
+       ARRAY['services/gateway/src/services/dev-agent-memory.ts'], null, 5);
+   -> 1 row: exactly the row just written, file_paths/stage round-tripped correctly
+
+   $ delete from dev_agent_memory where id = 'cc6a911e-3df4-489f-a474-d2f364d2f88b'::uuid returning id;
+   -> 1 row deleted (test row cleaned up; nothing left behind)
+
+7. Local migration file rewritten to match what actually ran live (drop-then-create,
+   not the first, broken create-or-replace attempt) — no drift between the committed
+   file and the live schema.
+
+8. Build gate rehearsal
+   $ npm run build   (services/gateway: tsc && copy-frontend && copy-data)
+   -> exit 0
+
+9. Full targeted re-run after all edits
+   $ npx tsc --noEmit -p .
+   -> exit 0
+   $ npx jest test/services/dev-agent-memory.test.ts test/vtid-04025-operator-turn-memory.test.ts --silent
+   -> 2 suites passed, 25 tests passed, 0 failed
+
+Not run: the full gateway test suite (thousands of tests across many
+unrelated services) — this PR's own tsc/build/targeted-test results above
+are the direct evidence for its own diff; CI's own build gate re-runs
+`npm run build` independently.

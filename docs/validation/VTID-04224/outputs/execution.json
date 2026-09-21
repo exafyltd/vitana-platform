@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04224",
+  "title": "dev_agent_memory: file-scoped recall + stage provenance (Phase 0/1 of Planner/Worker/Validator memory wiring)",
+  "pr_url": "https://github.com/exafyltd/vitana-platform/pull/3525",
+  "executor": "session",
+  "model_calls": 0,
+  "migration": {
+    "file": "supabase/migrations/20260921120000_bootstrap_dev_agent_memory_file_scope.sql",
+    "applied_to_project": "inmkhvwdcuyhnxkgfvsb",
+    "applied_at": "2026-09-21",
+    "first_attempt_failed": "42725 function name \"write_dev_memory\" is not unique (CREATE OR REPLACE created a second overload)",
+    "fix": "DROP FUNCTION on the exact original signature, then CREATE the widened function",
+    "second_attempt": "success"
+  },
+  "live_round_trip": {
+    "write_dev_memory_id": "cc6a911e-3df4-489f-a474-d2f364d2f88b (deleted after verification)",
+    "recall_dev_memory_by_files_found_row": true,
+    "test_row_cleaned_up": true
+  },
+  "checks": {
+    "tsc_noEmit": "pass",
+    "npm_run_build": "pass",
+    "jest_targeted": "25/25 passing (2 suites)"
+  },
+  "vtid_ledger": {
+    "status": "in_progress",
+    "spec_status": "approved"
+  }
+}
