@@ -1,0 +1,1 @@
+No workflow_dispatch of AWS-PROD-DEPLOY-GATEWAY.yml was issued by this session (2026-09-21). Prod build-info at session time: git_commit a286b94abc0e8506c502598f2dadcd30297497de, booted 2026-09-20T17:11:56Z.

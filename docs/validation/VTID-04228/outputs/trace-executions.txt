@@ -1,0 +1,32 @@
+# VTID-04228 — AC-5: did autoApproveTick create an execution? (read-only Supabase SQL, 15:30 + 15:40 UTC)
+#
+# select count(*) from dev_autopilot_executions where created_at > '2026-09-21T15:00:00Z';   → 0
+# select count(*) from dev_autopilot_worker_queue where created_at > '2026-09-21T15:15:00Z'; → 0
+# select topic ... from oasis_events where topic like 'dev_autopilot.%' and created_at > 15:15Z:
+#   dev_autopilot.scan.started       1
+#   dev_autopilot.scan.completed     1
+#   dev_autopilot.plan.generated     8
+#   dev_autopilot.plan.version_added 1
+#   (no dev_autopilot.execution.*, no dev_autopilot.agent.* — nothing was approved or claimed)
+#
+# The gate that stopped it, with the live row:
+# select kill_switch, auto_approve_enabled, updated_at from dev_autopilot_config order by updated_at desc limit 1;
+#   kill_switch=false  auto_approve_enabled=false  updated_at=2026-09-17 18:47:19 UTC
+#
+# autoApproveTick (services/gateway/src/services/dev-autopilot-execute.ts) returns before selecting any
+# finding when cfg.auto_approve_enabled is false. The scanned findings therefore stay status='new' with a
+# plan attached, exactly as the loop is configured to leave them. This is a single shared row (prod and
+# staging read the same Supabase project), so flipping it here would flip it for production too — it was
+# NOT flipped (brief: "GAPS TO REPORT, NOT SILENTLY FIX"). See gaps-report.md §5a.
+#
+# Consequences for the rest of AC-5: with no execution row there was no executor claim, so whether the
+# staging executor runs as 'agent' or single-shot was not observed this run (DEV_AUTOPILOT_EXECUTOR=agent
+# was therefore not set — nothing to set it for yet). The executor and watcher themselves were confirmed
+# armed on the new task def (CloudWatch /vitana/gateway, 15:17:52 UTC):
+#   [dev-autopilot-execute] starting background executor (tick=30000ms, dry_run=false)
+#   [dev-autopilot-watcher] starting watchers (ci=60000ms, deploy=60000ms, verify=60000ms, dry_run=false)
+#
+# Side observation from the same log window: the allocated-orphan reaper tombstoned VTID-04231..04235
+# ("Allocated - Pending Title", allocated 15:13-15:14 UTC, sources claude-code x4 / operator-console x1 —
+# not this session's; this session's VTIDs are 04225-04228) at 15:23-15:25 → vtid_ledger status='deleted',
+# is_terminal=true. That reaper is working as designed.

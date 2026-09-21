@@ -1,0 +1,8 @@
+# VTID-04237 — commands (2026-09-21), appended as the work proceeds
+curl POST https://gateway.vitanaland.com/api/v1/vtid/allocate → VTID-04237; ledger title/status/spec_status set (Supabase MCP)
+aws ecs describe-task-definition --task-definition vitana-autopilot-executor   # rev 21: no DEV_AUTOPILOT_EXECUTOR, no DEV_AUTOPILOT_PR_APPROVAL_REQUIRED (outputs/task-def-before.txt)
+select … from autopilot_recommendations cross join dev_autopilot_config          # 15 findings: 10 eligible by scanner/effort/risk, 8 of them with a plan (outputs/eligible-findings.txt)
+edit .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml + AWS-STAGE-DEPLOY-GATEWAY.yml (strip + add both env vars)
+npx jest <8 pin/guard suites>   # 8/8 suites green after updating the two verbatim strip-list assertions
+gh (MCP) create_pull_request → #3533 (draft) head 5b182b9; subscribed
+gh (MCP) actions_run_trigger AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml ref=claude/autopilot-self-healing-starvation-9ftloo (reason recorded)  # run 35624216627 (#20) FAILED at configure-aws-credentials: "Not authorized to perform sts:AssumeRoleWithWebIdentity" — the deploy role's OIDC trust only admits refs/heads/main; re-dispatched from main after the merge (outputs/executor-dispatch-branch-oidc-denied.txt)

@@ -1,0 +1,39 @@
+# VTID-04228 — AC-3: autopilot_recommendations rows written by the staging scan
+# Read-only Supabase SQL (project inmkhvwdcuyhnxkgfvsb), taken 2026-09-21 15:30 UTC.
+# Baseline (outputs/baseline-before.txt): 0 rows with source_type='dev_autopilot' in the prior 14 days.
+#
+# select id, status, risk_level, risk_class, auto_exec_eligible, title, created_at
+#   from autopilot_recommendations
+#  where source_type='dev_autopilot' and created_at > '2026-09-21T15:15:00Z' order by created_at;
+#
+# 15 rows, all status='new', written 15:21:17.209 → 15:21:19.747 UTC by scan run cf77d23c
+# (DEV-AUTOPILOT.yml run 35618171751 / #325, workflow_dispatch, dry_run=false, gateway_url default = staging).
+id                                    status  risk    auto_exec  title
+23e083d1-29e3-4509-856a-b54f8ee49212  new     medium  false      Address TODO/FIXME in codebase-analyzer.ts
+5fbe06e1-e3e3-4869-9181-3c6182d2ec8f  new     medium  false      Address TODO/FIXME in dev-autopilot-scan.mjs
+8caa3710-2ed0-4f4b-9945-0dbd7c742a1a  new     medium  false      Address TODO/FIXME in dev-autopilot-scan.mjs
+a726d525-8235-41aa-a87a-1c79ec130f13  new     high    false      Refactor large file governance-controller.ts
+41e2d7d4-9603-421b-804f-e77df05017ed  new     high    false      Refactor large file app.js
+e8cb7fae-fe1c-47df-95c8-1474f37adb52  new     medium  false      Add missing tests for admin-aurora-memory-health.ts
+e367b3a1-62dd-4e52-b6c1-276cd0c26368  new     medium  false      Add missing tests for action-executors.ts
+b0aa6815-67e0-4662-8f64-0943038f045d  new     medium  false      [rollup] safety-gap-scanner-v1 flagged 8 files with the same fix class
+b869c955-f2c6-42a8-80f5-a8ba58421be5  new     medium  false      Missing RLS policy on 20251209000000_add_task_stage.sql
+1b7d874a-b928-486a-9e42-fe0a7d3e5127  new     medium  false      Schema drift in server-locale-repository.ts
+efec84e4-6d75-49b2-ac91-5b623e671019  new     medium  false      Missing auth middleware in admin-health.ts
+3d729613-5196-4219-8d49-d4bf317ee51c  new     high    false      Hardcoded secret in AURORA-I18N-INTEGRATION.yml
+9e1bdb97-d4ec-449d-a00b-5ec70428cada  new     low     true       CVE: package.json
+cd05643c-4463-4812-8313-1c62beaf731e  new     low     false      Stale feature flag — index.ts
+9975d092-66a6-41d9-aedd-03a0e023d78c  new     low     false      Remove dead code in index-repository.ts
+
+# Scan run row (dev_autopilot_runs):
+# run_id=cf77d23c-380c-4833-bbf4-158d70551939 triggered_by=github-actions signal_count=2334
+# status='ingesting' new_finding_count=0 completed_at=NULL   <-- gaps-report.md §5e-2: the
+# finalize PATCH (dev-autopilot-synthesis.ts ~L539, no .ok check) did not land, while the
+# dev_autopilot.scan.completed OASIS event (15:21:19.883) says "15 new, 0 updated".
+# Re-read at 15:40 UTC: unchanged.
+
+# OASIS events for the scan (topic, status, created_at, message):
+# dev_autopilot.scan.started    info     15:21:13.626  Dev Autopilot scan cf77d23c started with 2334 signals
+# dev_autopilot.scan.completed  success  15:21:19.883  Dev Autopilot scan cf77d23c: 15 new, 0 updated
+# Gateway log (CloudWatch /vitana/gateway):
+# [dev-autopilot-synthesis] rollup applied: 13 cluster(s) collapsed (2332 signals → 13 rollup findings)

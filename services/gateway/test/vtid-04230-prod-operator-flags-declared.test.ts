@@ -9,10 +9,12 @@
  * prod").
  *
  * Deliberately NOT mirrored, each with a reason the workflow comment
- * records: DEV_AUTOPILOT_USE_JOB / JOB_CLOUD / WATCHER_LIVE (prod's executor
- * tick is off; staging owns the executions), the read-only SQL switch +
- * secret (needs a Secrets Manager reference this workflow cannot resolve),
- * DEEPSEEK_API_KEY (a secret the task role may not read fails provisioning).
+ * records: the read-only SQL switch + secret (needs a Secrets Manager
+ * reference this workflow cannot resolve) and DEEPSEEK_API_KEY (a secret the
+ * task role may not read fails provisioning). The Dev Autopilot loop flags
+ * (DEV_AUTOPILOT_WATCHER_LIVE / USE_JOB / JOB_CLOUD / LLM_REVIEW_ENABLED /
+ * EXECUTOR_ENABLED) are declared by VTID-04227's own block, not this one —
+ * test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts pins those.
  */
 
 import * as fs from 'fs';
@@ -46,7 +48,9 @@ function pinnedValue(yml: string, name: string): string | null {
 function prodBlock(): string {
   const start = prod.indexOf('# VTID-04230');
   expect(start).toBeGreaterThan(-1);
-  const end = prod.indexOf("# VTID-03618", start);
+  // Bounded by the next VTID-marked block, whichever it is — sibling blocks
+  // (the Dev Autopilot loop flags, the VTID-03618 pins) are not this one's.
+  const end = prod.indexOf("\n          # VTID-", start + 1);
   expect(end).toBeGreaterThan(start);
   return prod.slice(start, end);
 }
@@ -72,17 +76,16 @@ describe('VTID-04230: prod declares the operator/autopilot flags staging pins', 
     expect(block).not.toMatch(/_INPUT/);
   });
 
-  it('deliberately does not pin the executor-tick, SQL-readonly or DeepSeek wiring on prod, and says why', () => {
-    expect(prod).not.toContain('DEV_AUTOPILOT_USE_JOB');
-    expect(prod).not.toContain('DEV_AUTOPILOT_JOB_CLOUD');
-    expect(prod).not.toContain('DEV_AUTOPILOT_WATCHER_LIVE');
+  it('deliberately does not pin the SQL-readonly or DeepSeek wiring on prod, and says why', () => {
     expect(prod).not.toContain('OPERATOR_SQL_READONLY');
     expect(prod).not.toContain('DEEPSEEK_API_KEY');
     expect(prod).not.toContain('CODEINTEL_PLATFORM_REPO_DIR');
     const block = prodBlock();
     expect(block).toMatch(/does not deploy/);
-    expect(block).toMatch(/DEV_AUTOPILOT_EXECUTOR_ENABLED=false/);
     expect(block).toMatch(/secretsmanager:Describe/);
+    // The loop flags live in VTID-04227's block, not in this one.
+    expect(block).not.toContain('"DEV_AUTOPILOT_USE_JOB"');
+    expect(block).toMatch(/loop-flags block directly above/);
   });
 
   it('every mirrored flag is a code-level exact-string gate, so a wrong value is off, never on', () => {
