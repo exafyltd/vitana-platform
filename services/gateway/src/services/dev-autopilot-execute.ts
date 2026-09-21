@@ -58,8 +58,9 @@ import {
 // VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
 import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
+import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from './dev-autopilot-deploy-topics';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
-import { claimStamp, filterOwnedExecutions } from './dev-autopilot-env-ownership';
+import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
 // VTID-04006: single-shot vs agent executor selection.
 import { resolveExecutorMode } from './autopilot-agent/executor-mode';
 
@@ -2431,35 +2432,54 @@ async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<vo
   //      across the platform as proof that THIS exec deployed. False
   //      positive risk during concurrent autopilot runs.
   //
-  // Fixed query uses `topic` and selects `metadata` so we can match by
-  // merge SHA (set on the exec when the watcher merges its PR).
+  // VTID-04215: a third, and the one that reverted real merges. The topic
+  // list was the GCP-era `deploy.gateway.success` family, which no AWS
+  // workflow emits — `AWS-STAGE-DEPLOY-GATEWAY.yml` writes
+  // `staging.deploy.completed` (`prod.deploy.completed` on the prod
+  // workflow). So the query below always came back empty, this function
+  // always reached the failure branch at the 30-minute mark, and
+  // `bridgeFailure(…, 'deploying', …)` reverted the merge from main
+  // (141c4e4b / f64f22e2 on 2026-09-20, both with a green staging deploy).
+  // The list now comes from `deployTopicsForEnv` (this process's own env
+  // plus legacy), rows are normalized, and `resolveDeployOutcome` applies
+  // the exact `git_commit === merge_sha` match first and then the same
+  // queued-merge fallback the watcher has had since VTID-02700 — a later
+  // successful `main` deploy after the merge carries the merge.
   const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.deploying * 2).toISOString();
-  const deployR = await supa<Array<{ id: string; topic: string; created_at: string; metadata?: Record<string, unknown> }>>(s,
-    `/rest/v1/oasis_events?topic=in.(deploy.gateway.success,deploy.success,vtid.lifecycle.deployed)`
-    + `&created_at=gte.${since}&order=created_at.desc&limit=20&select=id,topic,created_at,metadata`);
-  if (deployR.ok && deployR.data && deployR.data.length > 0) {
-    const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
-    // Prefer events whose git_commit matches the exec's merge SHA. If the
-    // exec has no merge_sha (older row from before VTID-02697), fall back
-    // to the original "any recent deploy success" behavior.
-    const matched = mergeSha
-      ? deployR.data.find((e) => {
-          const m = (e.metadata as { git_commit?: string } | null | undefined);
-          return typeof m?.git_commit === 'string' && m.git_commit === mergeSha;
-        })
-      : deployR.data[0];
-    if (matched) {
-      await patchExecution(s, exec.id, { status: 'verifying' });
-      await emitOasisEvent({
-        vtid: EXEC_VTID,
-        type: 'dev_autopilot.execution.deployed',
-        source: 'dev-autopilot',
-        status: 'success',
-        message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
-        payload: { execution_id: exec.id, deploy_event_id: matched.id, reconciled_from: 'deploying', matched_by: mergeSha ? 'merge_sha' : 'recency' },
-      });
-      return;
-    }
+  const deployR = await supa<Array<{ id: string; topic: string; created_at: string; status?: string; metadata?: Record<string, unknown> }>>(s,
+    `/rest/v1/oasis_events?topic=${deployTopicsInFilter(currentEnv())}`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=50&select=id,topic,created_at,status,metadata`);
+  const events = deployR.ok && deployR.data ? deployR.data.map(normalizeDeployEvent) : [];
+  const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+  const resolved = resolveDeployOutcome(events, { mergeSha, sinceIso: exec.updated_at });
+  if (resolved.outcome === 'success' && resolved.matched) {
+    await patchExecution(s, exec.id, { status: 'verifying' });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.deployed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
+      payload: { execution_id: exec.id, deploy_event_id: resolved.matched.id, deploy_topic: resolved.matched.topic, reconciled_from: 'deploying', matched_by: resolved.matched_by },
+    });
+    return;
+  }
+  if (resolved.outcome === 'failed' && resolved.matched) {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { ...(exec.metadata || {}), error: `reconciler: deploy failure event ${resolved.matched.topic} observed in deploying (matched_by=${resolved.matched_by})` },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.deploy_failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Reconciler: ${exec.id.slice(0, 8)} deploy failure event observed`,
+      payload: { execution_id: exec.id, reason: 'deploy_failure_event', deploy_event_id: resolved.matched.id, deploy_topic: resolved.matched.topic, matched_by: resolved.matched_by },
+    });
+    bridgeFailure(exec.id, 'deploying', `deploy failure event ${resolved.matched.topic} observed`).catch(() => {});
+    return;
   }
 
   // No deploy event seen within the look-back window — fail.
