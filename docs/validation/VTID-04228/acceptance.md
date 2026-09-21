@@ -1,7 +1,7 @@
 # VTID-04228 — Live staging verification of the Dev Autopilot + self-healing loops
 
-Status: DONE for the scan → plan leg (AC-1..AC-4, AC-7 met with live rows);
-AC-5 and AC-6 are PARTIAL and say exactly where the chain stopped and why.
+Status: DONE for the scan → plan leg (criteria 1-4 and 7 met with live rows);
+criteria 5 and 6 are PARTIAL and say exactly where the chain stopped and why.
 `outputs/baseline-before.txt` is the read-only state before #3529 merged
 (`70bd61a`); `outputs/trace-*.txt` are the read-only Supabase/CloudWatch
 reads after it. Nothing here touched production: every write went through
