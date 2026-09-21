@@ -62,34 +62,6 @@ export function isBootstrapPackEnabled(env: NodeJS.ProcessEnv = process.env): bo
   return env.OPERATOR_BOOTSTRAP_PACK_ENABLED === 'true';
 }
 
-// ---------------------------------------------------------------------------
-// VTID-04173: make a missing build-info configuration discoverable
-// ---------------------------------------------------------------------------
-
-export const MISSING_BUILD_INFO_ENV_NAME = 'OPERATOR_BOOTSTRAP_BUILD_INFO_URLS';
-
-export const MISSING_BUILD_INFO_ENV_WARNING =
-  `[VTID-04173] ${MISSING_BUILD_INFO_ENV_NAME} is unset or empty — the session bootstrap pack omits live build-info for every gateway it reports on. ` +
-  `Set it (e.g. "${MISSING_BUILD_INFO_ENV_NAME}='staging=https://…/api/v1/admin/build-info,prod=https://…/api/v1/admin/build-info'") to restore that section.`;
-
-/** Process-wide, not per turn: the first build-info section with nothing to
- *  fetch warns; every later one (cache rebuild, another turn, another role)
- *  stays quiet. */
-let warnedMissingBuildInfoEnv = false;
-
-/** VTID-04173: returns true exactly once per process when the env var is
- *  unset/blank; silent (returns false) when the var is set. */
-export function warnMissingBuildInfoEnvOnce(env: NodeJS.ProcessEnv = process.env): boolean {
-  if ((env[MISSING_BUILD_INFO_ENV_NAME] || '').trim()) return false;
-  if (warnedMissingBuildInfoEnv) return false;
-  warnedMissingBuildInfoEnv = true;
-  console.warn(MISSING_BUILD_INFO_ENV_WARNING);
-  return true;
-}
-
-/** Test hook — the process-wide flag is intentionally not resettable in prod. */
-export function resetMissingBuildInfoEnvWarning(): void { warnedMissingBuildInfoEnv = false; }
-
 /** `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS="staging=https://…/build-info,prod=https://…/build-info"` */
 export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Array<{ label: string; url: string }> {
   const raw = (env.OPERATOR_BOOTSTRAP_BUILD_INFO_URLS || '').trim();
@@ -318,6 +290,34 @@ export async function resolvePlatformOpenPrs(
   if (b.ok) return { items: b.items, degraded: true };
   throw new Error(`platform: ${richErr}; bare list: ${b.err instanceof Error ? b.err.message : String(b.err)}`);
 }
+
+// ---------------------------------------------------------------------------
+// VTID-04173: make a missing build-info configuration discoverable
+// ---------------------------------------------------------------------------
+
+export const MISSING_BUILD_INFO_ENV_NAME = 'OPERATOR_BOOTSTRAP_BUILD_INFO_URLS';
+
+export const MISSING_BUILD_INFO_ENV_WARNING =
+  `[VTID-04173] ${MISSING_BUILD_INFO_ENV_NAME} is unset or empty — the session bootstrap pack omits live build-info for every gateway it reports on. ` +
+  `Set it (e.g. "${MISSING_BUILD_INFO_ENV_NAME}='staging=https://…/api/v1/admin/build-info,prod=https://…/api/v1/admin/build-info'") to restore that section.`;
+
+/** Process-wide, not per turn: the first build-info section with nothing to
+ *  fetch warns; every later one (cache rebuild, another turn, another role)
+ *  stays quiet. */
+let warnedMissingBuildInfoEnv = false;
+
+/** VTID-04173: returns true exactly once per process when the env var is
+ *  unset/blank; silent (returns false) when the var is set. */
+export function warnMissingBuildInfoEnvOnce(env: NodeJS.ProcessEnv = process.env): boolean {
+  if ((env[MISSING_BUILD_INFO_ENV_NAME] || '').trim()) return false;
+  if (warnedMissingBuildInfoEnv) return false;
+  warnedMissingBuildInfoEnv = true;
+  console.warn(MISSING_BUILD_INFO_ENV_WARNING);
+  return true;
+}
+
+/** Test hook — the process-wide flag is intentionally not resettable in prod. */
+export function resetMissingBuildInfoEnvWarning(): void { warnedMissingBuildInfoEnv = false; }
 
 export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackSection[]> {
   const env = deps.env || process.env;
