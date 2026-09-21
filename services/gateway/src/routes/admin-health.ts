@@ -59,6 +59,8 @@ const BUILD_COMMIT =
   process.env.K_REVISION ||
   null;
 
+// public-route — deliberately unauthenticated diagnostic endpoint for
+// post-deploy smoke tests; carries no secrets (see file header).
 router.get('/health', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
@@ -70,6 +72,8 @@ router.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// public-route — deliberately unauthenticated diagnostic endpoint for
+// post-deploy smoke tests; carries no secrets (see file header).
 router.get('/build-info', (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
