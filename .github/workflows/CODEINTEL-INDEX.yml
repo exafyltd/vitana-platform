@@ -61,9 +61,18 @@ permissions:
   contents: read
   id-token: write
 
+# VTID-04241: QUEUE, never cancel. With cancel-in-progress a burst of merges
+# starves the index: a full build takes ~12 min and on 2026-09-21 runs 3, 4
+# and 5 (c815249, 7e57461, 636f105) were each cancelled by the next push
+# before publishing, so latest/ stayed on run 2's sha (d7849e6) through
+# three merges — the executor and the console served a correct but stale
+# bundle. With cancel-in-progress off GitHub keeps one running and one
+# pending run per group (older pending runs are superseded by the newest
+# push), so the newest sha always gets built and published; a run is only
+# ever superseded while still waiting, never killed mid-build.
 concurrency:
   group: codeintel-index
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CODE_INDEX_BUCKET: vitana-code-index

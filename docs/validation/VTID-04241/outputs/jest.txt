@@ -1,0 +1,313 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/claude-0/-home-user/37ed95d6-5b04-5b45-b572-abe58a75fe19/scratchpad/wt-04241/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/claude-0/-home-user/37ed95d6-5b04-5b45-b572-abe58a75fe19/scratchpad/wt-04241/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04241-codeintel-index-queues.test.ts
+  VTID-04241: CODEINTEL-INDEX concurrency
+    ✓ keeps a single concurrency group so two runs never race on latest/ (50 ms)
+    ✓ does NOT cancel the in-flight build on a new push (queues instead) (1 ms)
+    ✓ records why, next to the setting (1 ms)
+
+  console.log
+    [VTID-0536] Executing tool: dev_index_query
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (f293622e-dab1-4d8a-8a26-79b95e9f5925)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_index_query completed in 9ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_graph_path
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (1fdc4c6a-e66b-4e07-a78a-4ceb78bf6852)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_graph_path completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_get_risk
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (39f63c87-5186-42bb-9d8b-35c0736f5304)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_get_risk completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_index_query
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04229] dev_index_query thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=false ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (e079b7c2-5d79-40cb-b083-18390d2829bd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_index_query completed in 3ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_graph_path
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04229] dev_graph_path thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=true ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (2ce006ba-aa11-49fc-8309-33e77df926c2)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_graph_path completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_get_risk
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04229] dev_get_risk thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=true ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (edeb1a59-26e1-4cc0-be71-411b686bd851)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_get_risk completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_index_query
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (c902dc3e-2dbb-4f5f-a534-ecc4e859119b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_index_query completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_get_risk
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (9ee99f33-3527-4f12-9e4e-17df14f04889)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_get_risk completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_repowise
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04116] dev_repowise thread=t-04229 command=risk repo=exafyltd/vitana-platform ok=false
+
+      at executeDevRepowise (src/services/gemini-operator.ts:2990:13)
+
+  console.log
+    [VTID-04229] dev_get_risk thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=false ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (c992c8d0-4f0f-4e71-a54a-53debaa31178)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_repowise completed in 4ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_repowise
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04116] dev_repowise thread=t-04229 command=ask repo=exafyltd/vitana-platform ok=false
+
+      at executeDevRepowise (src/services/gemini-operator.ts:2990:13)
+
+  console.log
+    [VTID-04229] dev_index_query thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=true ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (d9de66af-bb69-4e1e-9668-871435167980)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_repowise completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_graphify
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04116] dev_graphify thread=t-04229 command=path repo=exafyltd/vitana-platform ok=false
+
+      at executeDevGraphify (src/services/gemini-operator.ts:3022:13)
+
+  console.log
+    [VTID-04229] dev_graph_path thread=t-04229 repo=exafyltd/vitana-platform sha=abcdef01 cache=true ok=true
+
+      at executeDevCodeIndexTool (src/services/gemini-operator.ts:3053:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (d2171ed3-fc46-4486-9d05-6a591bc4adc3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_graphify completed in 2ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_graphify
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.log
+    [VTID-04116] dev_graphify thread=t-04229 command=query repo=exafyltd/vitana-platform ok=false
+
+      at executeDevGraphify (src/services/gemini-operator.ts:3022:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (64b70120-12ce-4529-9dd7-e5156fda956a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_graphify completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:4123:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_index_query
+
+      at executeTool (src/services/gemini-operator.ts:3620:11)
+
+  console.warn
+    [VTID-DEV-ASSIST] TOOL BLOCKED: dev_index_query denied for role=community thread=t-04229-community
+
+      3627 |     const threadRole = threadIdentity?.role;
+      3628 |     if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+    > 3629 |       console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+           |               ^
+      3630 |       return {
+      3631 |         ok: false,
+      3632 |         error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+
+      at executeTool (src/services/gemini-operator.ts:3629:15)
+      at Object.<anonymous> (test/vtid-04229-code-index.test.ts:421:32)
+
+PASS test/vtid-04229-code-index.test.ts
+  VTID-04229 build-code-index.mjs (the CI bundle builder)
+    ✓ writes manifest + gzipped graph and risk indexes with counts (7 ms)
+    ✓ compacts nodes to [id,label,kind,file,loc,fileType] and edges to index triples (4 ms)
+    ✓ parses RepoWise file-page prose into per-file risk facts (history, owner, bug fixes, hotspot, layer, neighbours) (2 ms)
+  VTID-04229 loadCodeIndex (dir source, latest pointer, cache)
+    ✓ resolves latest/manifest.json → <sha>/ bundle and assembles adjacency + label/file indexes (14 ms)
+    ✓ serves from cache within the TTL and re-validates the sha after it (same sha → still cached) (3 ms)
+    ✓ reports a plain reason when the index was never published, and refuses an unknown repo (29 ms)
+    ✓ picks the local dir over S3 when CODE_INDEX_LOCAL_DIR is set, else the bucket in the resolved region
+  VTID-04229 pure queries over the bundle
+    ✓ tokenize drops stop words and short tokens, keeps identifiers and their parts (1 ms)
+    ✓ indexQuery finds the symbol, its container, callers, importing tests and referencing docs (2 ms)
+    ✓ indexQuery honours the budget and says so; an empty/no-match query is reported not invented (4 ms)
+    ✓ graphPath resolves by file path, label or suffix and walks the undirected graph (2 ms)
+    ✓ getRisk merges RepoWise facts with the graph import fan-in, and names closest paths on a miss (2 ms)
+    ✓ runCodeIndexTool dispatches the three names and rejects an unknown one (2 ms)
+  VTID-04229 executor: tool declaration, pull, dispatch, prompt
+    ✓ declares the three tools only when a bundle is present; names are shared with the operator
+    ✓ pullCodeIndex loads through the shared loader, reports stats, and fails open with the loader reason (3 ms)
+    ✓ executeAgentTool answers the index tools from the bundle and refuses honestly without one (2 ms)
+    ✓ the system prompt tells the model to use the index first, only when one loaded (1 ms)
+    ✓ the runner wires the pull before the prompt and passes the per-run tool list to every router call (source contract) (1 ms)
+  VTID-04229 Operator Console: dev_index_query / dev_graph_path / dev_get_risk
+    ✓ refuses all three when OPERATOR_CODEINTEL_ENABLED is not "true" (55 ms)
+    ✓ answers from the published bundle with the sha and the index description (8 ms)
+    ✓ reports the loader reason when nothing is published, and rejects an unknown repo before loading (3 ms)
+    ✓ dev_repowise / dev_graphify fall back to the index when the CLI is not installed (not_configured) (12 ms)
+    ✓ is declared on the wire schema for developers and gated off for everyone else (7 ms)
+  VTID-04229 CODEINTEL-INDEX.yml + setup script
+    ✓ runs on merge to main (and by hand), indexes both repos, never on a deploy path (9 ms)
+    ✓ builds with the same commands the bundle expects and derives via the tracked script
+    ✓ publishes via OIDC to <repo>/<sha>/ and writes latest/manifest.json LAST
+    ✓ the setup script is dry-run by default, refuses the wrong account, and grants read to the task role / publish to the CI role (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 passed, 2 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        4.074 s
+Ran all test suites matching /test\/vtid-04241-codeintel-index-queues.test.ts|test\/vtid-04229/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

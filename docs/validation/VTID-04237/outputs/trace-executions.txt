@@ -1,0 +1,93 @@
+# VTID-04237 — first unattended Dev Autopilot executions on staging (read-only Supabase + CloudWatch, 16:28–16:45 UTC, 2026-09-21)
+#
+# 16:28:12  dev_autopilot_config.auto_approve_enabled → true (kill_switch=false)
+# 16:28:13  DEV-AUTOPILOT.yml #326 dispatched (dry_run=false) → scan fc57091d: 2334 signals, 0 new, 15 updated (16:29:49)
+# 16:28:23  autoApproveTick (staging gateway, 12 s after the flip): "auto-approved 4 finding(s) this tick"
+#           safety gate BLOCKED b869c955 (RLS migration) — "Plan touches 1 file(s) outside the allow-scope" → snoozed 7d
+# 16:28:56  next tick: "auto-approved 2 finding(s)"; safety gate BLOCKED b0aa6815 (safety-gap rollup) the same way → snoozed 7d
+# 16:29:27–16:29:50  [aws-ecs-admin] dispatched task for exec=2a9edcb4 / c52bfcca / 246e5344 / dba39e32 (ecs:RunTask, executor task def rev 22)
+# 16:35:49  [aws-ecs-admin] dispatched task for exec=d49edb78 / 39604ba4 (concurrency_cap=4 held these two until slots freed)
+#
+# dev_autopilot_executions (all metadata.claimed_env=staging, all metadata.ecs_task_arn set, all pr_url NULL):
+# exec      finding   scanner                    status              branch                    agent turns  pushed    diff chars  staged_at
+# 2a9edcb4  1b7d874a  schema-drift-scanner-v1    awaiting_approval   dev-autopilot/2a9edcb4    73           c0bc520a  9,732       16:35:31
+# c52bfcca  efec84e4  route-auth-scanner-v1      awaiting_approval   dev-autopilot/c52bfcca    44           62f042ad  8,307       16:35:35
+# dba39e32  23e083d1  todo-scanner-v1            awaiting_approval   dev-autopilot/dba39e32    41           b6741756  11,340      16:36:40
+# 39604ba4  e8cb7fae  missing-tests-scanner-v1   awaiting_approval   dev-autopilot/39604ba4    53           e92f836f  6,353       16:42:25
+# 246e5344  9e1bdb97  npm-audit-scanner-v1       running (turn 90+ at 16:43; repeated identical read_file refused by the VTID-04016 guard ×5)
+# d49edb78  5fbe06e1  todo-scanner-v1            running (turn 35 at 16:44; 6 "text only — act with a tool call" nudges)
+#
+# The four held rows carry metadata.pending_approval = {branch, base_sha, head_sha, pr_title, pr_body, diff, staged_at, session_id}
+# and the agent's own finish events read "awaiting approval: N file(s), diff … chars — no PR opened".
+# PR titles the agent chose:
+#   2a9edcb4  DEV-AUTOPILOT: order memory_facts by extracted_at, not the nonexistent created_at (VTID-DA-2a9edcb4)
+#   c52bfcca  DEV-AUTOPILOT: annotate the intentionally public /health and /build-info handlers with `// public-route`
+#   dba39e32  DEV-AUTOPILOT: fix TODO scanner silently returning zero matches on BusyBox grep (severity ternary premise corrected)
+#   39604ba4  DEV-AUTOPILOT: complete admin-aurora-memory-health route coverage (VTID-DA-39604ba4)
+#
+# OASIS events 16:28→16:45 (topic: n): execution.approved 6, execution.auto_approved 6, execution.running 6, execution.awaiting_approval 4,
+#   agent.llm 348, agent.tool 336 (+18 warning: failing run_check exit 1 = the agent's own red jest/tsc rounds; read_file ENOENT; 5 guard refusals),
+#   agent.nudge 6, agent.finish 12, scan.started/completed 1 each.  ZERO execution.pr_opened, ZERO watcher/merge events.
+# LLM calls (llm.call.completed): worker / deepseek / deepseek-flash × 342, fallback_used=false, 13,698,063 in / 364,624 out tokens, avg 5.5 s;
+#   memory / bedrock / eu.anthropic.claude-sonnet-4-6 × 4 (agent memory context, VTID-04223). 0 anthropic, 0 vertex, 0 failed.
+# GitHub: open PR list unchanged (newest #3532 from 15:13) — no dev-autopilot PR exists; the four branches exist on origin.
+#
+# Gateway process restarted twice in the window (16:29:16, 16:40:24 "starting background executor") — the AWS-STAGE-DEPLOY-GATEWAY run 508
+# rollout (staging now on task def 493 = 197a76a ⊇ 2b55e03, both pins present; new task up, old task drained); executions survived because they run on the ECS executor task, not in-process (VTID-03850).
+
+# ---- close-out at 17:41 UTC ----
+# exec      finding   status              outcome
+# 2a9edcb4  1b7d874a  awaiting_approval   held 16:35:31, 74 turns
+# c52bfcca  efec84e4  awaiting_approval   held 16:35:35, 45 turns
+# dba39e32  23e083d1  awaiting_approval   held 16:36:40, 42 turns
+# 39604ba4  e8cb7fae  awaiting_approval   held 16:42:25, 54 turns
+# d49edb78  5fbe06e1  awaiting_approval   held 16:51:58, 75 turns, diff 8,557 chars (branch dev-autopilot/d49edb78) — the "text-only nudges" run recovered
+# 246e5344  9e1bdb97  failed 16:48:01     "agent hit the 120-turn cap without calling finish" (npm-audit: CVE in package.json)
+# fbfe1a18  9e1bdb97  failed 17:05:55     same finding, re-approved 24 s after the first failure; 120 turns again ("2-turn cap" = the last fix round's remaining budget)
+# 98a23757  9e1bdb97  failed 17:30:37     same finding, third attempt, 120 turns
+# 59875200  9e1bdb97  running since 17:31 fourth attempt, 90 turns at 17:41
+#
+# FINDING (reported, not fixed): the npm-audit finding is unsolvable by the agent's tool surface — run_check only offers tsc/jest/git,
+# there is no npm/pnpm and no lockfile regeneration — so every attempt exhausts AGENT_MAX_TURNS=120 reading pnpm-lock.yaml and
+# workflows (turns 112-120 of 246e5344: search_text/read_file over pnpm-lock.yaml, run_check exit 1). autoApproveTick re-approves the
+# finding within one tick of each failure and only stops at AUTO_RETRY_CAP=5 terminal failures in 24 h (then snoozes 7 d). At the
+# current pace that is 5 x ~5.5M DeepSeek input tokens before the cap trips. Same shape as the 2026-05-04 drain the cap was written for;
+# the cap bounds it, it does not prevent it. Options: (a) exclude npm-audit-scanner-v1 from auto_approve_scanners until the agent
+# can run a package manager, (b) let approveAutoExecute refuse a finding whose previous execution failed on the turn cap (a cheaper
+# breaker than 5 full runs), (c) give the executor a run_check kind for pnpm audit fix.
+#
+# Worker-stage LLM totals 16:28-17:41 (deepseek-flash, all fallback_used=false): 31538125 in / 1066579 out tokens
+#   = approx $5.37 at the MODEL_COSTS rate ($0.15 in / $0.6 out per 1M); the npm-audit chain alone 20433675 in ≈ $3.07.
+# Still zero execution.pr_opened, zero merges, zero dev-autopilot PRs on GitHub.
+
+# ---- ADDENDUM 18:16 UTC (check-in after the close-out above) ----
+# npm-audit finding 9e1bdb97, final chain (dev_autopilot_executions, read-only):
+#   246e5344  failed 16:48  "agent hit the 120-turn cap without calling finish"   121 llm turns
+#   fbfe1a18  failed 17:05  "agent hit the 2-turn cap without calling finish"     121 llm turns
+#   98a23757  failed 17:30  "agent hit the 2-turn cap without calling finish"     121 llm turns
+#   59875200  awaiting_approval 17:51  pushed dev-autopilot/59875200@eb3ed49d, 3 files, diff 19455 chars, NO PR
+# 3 terminal failures in 24 h (AUTO_RETRY_CAP=5 not reached); attempt 4 is HELD, so the finding has an active
+# execution and autoApproveTick will not re-approve it while it stays awaiting_approval.
+#
+# What attempt 4 did: it did NOT touch package.json (out of allow_scope, no package manager). It wrote
+# config/gateway-dependency-safety.json (floor policy for @grpc/grpc-js >=1.14.4 via overrides,
+# @modelcontextprotocol/sdk ^1.24.0, express-rate-limit ^8.2.2), src/lib/dependency-safety-guard.ts (pure range
+# checker) and test/cve-version-guard.test.ts (23 tests; asserts the REAL manifest currently fails on exactly those
+# three packages while a pending_remediation block exists, and must pass once it is removed). The PR body lists the
+# manual remediation steps. 90 turns, 3768535 in / 214535 out tokens (agent.finish). This is a hand-off, not the fix
+# — the owner decides whether a policy-plus-failing-guard PR is wanted.
+#
+# SECOND FINDING (reported, not fixed): the "2-turn cap" on attempts 2 and 3 is a runner defect, not the model.
+# Both called finish at turn 118; the post-hoc validation rejected the diff (edit to services/gateway/package.json,
+# outside allow_scope) and opened a fix round with maxTurns = AGENT_MAX_TURNS - totalTurns = 2
+# (run-agent-execution.ts L288). The model edited package.json again on turns 1 and 2 and the round died on the cap.
+# A run that finishes close to the cap therefore has no budget left to repair anything the runner rejects; the fix
+# rounds (AGENT_MAX_FIX_ROUNDS) are effectively zero. Option: give each fix round its own floor (e.g. min 15 turns)
+# independent of the turns the first round consumed.
+#
+# Worker-stage LLM totals 16:28-18:05 (752 calls, deepseek-flash, fallback_used=false): 32015893 in / 1076963 out
+#   = approx $5.45 at the MODEL_COSTS rate. Includes one execution that is NOT this run's: a08daafd (18:02-18:08,
+#   operator-onramp probe by operator-autopilot@exafy.io for VTID-04223/04229, held then rejected by its own
+#   session, branch deleted, 18 turns).
+# Five VTID-04237 holds re-confirmed at 18:10: 2a9edcb4 c52bfcca dba39e32 39604ba4 d49edb78 all awaiting_approval,
+#   pr_url null, pr_number null. Still zero dev-autopilot PRs, zero merges.
