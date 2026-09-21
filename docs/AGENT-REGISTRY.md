@@ -29,9 +29,7 @@ tools and stage are all real for that agent.
 |---|---|---|---|
 | `operator` | deepseek / `deepseek-flash` | bedrock / `eu.anthropic.claude-sonnet-4-6` | VTID-03817 |
 | `worker` | bedrock / `eu.anthropic.claude-opus-4-5-20251101-v1:0` | bedrock / `eu.anthropic.claude-sonnet-4-6` | the agent executor overrides the PRIMARY to deepseek-flash (VTID-04006); the fallback still applies |
-| `planner` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
 | `validator` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
-| `triage` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | retired alias (VTID-03816) — still served by DeepSeek, on a discontinuation clock |
 | `memory` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | same |
 | `classifier` | bedrock / sonnet-4-6 | deepseek / **`deepseek-chat`** | same |
 | `vision` | bedrock / opus-4-5 | bedrock / sonnet-4-6 | |
@@ -71,7 +69,7 @@ what the live task definitions actually carry (staging rev 487 / prod rev 114
 | 4 | **Planner** | `services/dev-autopilot-planning.ts` `callRoutedLlm()` | `planner` → bedrock/opus-4-5, fb sonnet-4-6 (`DEV_AUTOPILOT_PLANNING_MODEL` is declared but never handed to the router) | **N** — reads the files it will plan against from GitHub; no memory, no bootstrap, no index | **N** as memory — writes `dev_autopilot_plan_versions` (a plan, not a durable fact) | none | `DEV_AUTOPILOT_PLANNING_STUB_ENABLED` (stub path only); otherwise always on | — | — |
 | 5 | **Validator / LLM review** | `services/dev-autopilot-llm-review.ts` `runLlmMergeReview()` ← `dev-autopilot-watcher.ts` `ciWatcherTick()` | `validator` → bedrock/opus-4-5, fb sonnet-4-6 | **N** — sees the diff bundle plus what its tools fetch | **N** — verdict is logged on the `llm_review_passed/blocked` event (now with provider/model/tool_calls); fail-open (a failed call passes) | **`read_file` (PR head sha), `ci_evidence` (head check-runs + failing job-log excerpts), `dev_get_risk` (VTID-04229 index)** through the bounded `llm-stage-tool-loop.ts` (VTID-04231: ≤6 turns, ≤8 tool calls, 90 s, then one tool-less call for the verdict); `DEV_AUTOPILOT_LLM_REVIEW_TOOLS_ENABLED=false` restores the diff-only single shot | `DEV_AUTOPILOT_LLM_REVIEW_ENABLED` | `true` | unset → off |
 | 6 | **Operator planner (spec drafts)** | `services/operator-planner.ts` `generateSpecForTask()` → self-fetch `POST /api/v1/specs/:vtid/generate` → `routes/specs.ts` `generateSpecWithLLM()` | **NOT a routing stage.** `callClaudeText({ model: CLAUDE_SONNET_4_6 })` (`claude-text-client.ts` → `invokeBedrock()` directly): no policy row, no fallback, no `llm.call.*` telemetry, no cost badge | **N** — `gatherSystemContext()` (spec-shaped context from the ledger), no memory, no index | `oasis_specs` draft (`spec_status='draft'`) | none | `OPERATOR_PLANNER_ENABLED`, `OPERATOR_PLANNER_INTERVAL_MS` | `true` | unset → off |
-| 7 | **Self-healing triage** | `services/self-healing-triage-service.ts` `spawnTriageAgent()` ← `dev-autopilot-bridge.ts:611`, `self-healing-reconciler.ts:723`, `routes/self-healing.ts` | `triage` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | **partial** — pre-fetches ≤50 `oasis_events` for a session id found in the diagnosis; no `dev_agent_memory`, no `architecture_reports`, no logs | **N** as memory — the report goes back to the caller (execution metadata / self-heal decision) | none (the file still declares the dead Managed-Agents constants `ANTHROPIC_API_KEY`, `TRIAGE_AGENT_ID`, `TRIAGE_ENVIRONMENT_ID`) | reconciler `SELF_HEALING_RECONCILER_ENABLED !== 'false'`; bridge unconditional on execution failure | — | — |
+| 7 | **Self-healing triage** | `services/self-healing-triage-service.ts` `spawnTriageAgent()` ← `dev-autopilot-bridge.ts:611`, `self-healing-reconciler.ts:723`, `routes/self-healing.ts` | `triage` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | recent `oasis_events` of the diagnosis session (pre-fetched) + whatever its tools fetch | **N** — the report goes to the caller only; provider/model/tool telemetry on it (VTID-04232) | **`query_oasis_events` (session or VTID), `dev_cloudwatch_logs`, `dev_ecs_tasks`, `dev_run_sql_readonly`, `get_architecture_reports`** through the bounded `llm-stage-tool-loop.ts` (VTID-04232: ≤8 turns, ≤10 tool calls, 180 s); the AWS/SQL tools honour the same `OPERATOR_AWS_READONLY_ENABLED` / `OPERATOR_SQL_READONLY_ENABLED` switches as the console copies; `SELF_HEALING_TRIAGE_TOOLS_ENABLED=false` restores the single shot | reconciler `SELF_HEALING_RECONCILER_ENABLED !== 'false'`; bridge unconditional on execution failure | — | — |
 | 8 | **Architecture investigator** | `services/architecture-investigator.ts` `investigateIncident()` ← operator tool `investigate_failure`, `routes/architecture-investigator.ts` (SERVICE_AUTH_TOKEN) | **`triage`** (VTID-04234): `callViaRouter('triage', …)` with `service:'architecture-investigator'`, `allowFallback:true`, `maxTokens:4096` — primary Bedrock Sonnet 4.6, fallback DeepSeek under v17; `ARCH_INVESTIGATOR_PROVIDER`+`ARCH_INVESTIGATOR_MODEL` (both, or neither) act as a router override; provider/model/tokens/fallback recorded on the `architecture_reports` row and the completion event | recent `oasis_events` for the topic | **Y** — `architecture_reports` row + `architecture.investigation.completed` event | none | none beyond the router's own (`BEDROCK_ROLE_ARN` / `DEEPSEEK_API_KEY` per provider) | — | routed on both stacks once deployed; a stage call that fails on both providers throws `triage stage call failed: …` and writes nothing |
 | 9a | **Memory job — thread summary** | `services/operator-threads.ts` (every `OPERATOR_THREAD_SUMMARY_EVERY`=10 turns) | `memory` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | last 30 messages + prior summary | `operator_threads.summary` | none | `OPERATOR_THREADS_ENABLED` | `true` | unset |
 | 9b | **Memory job — turn memory** | `services/operator-turn-memory.ts` `extractAndRecordTurnMemory()` / `recordExecutionOutcomeMemory()` | `memory` (extraction call); the outcome writer is deterministic | the turn transcript (bounded 6 KB) | `dev_agent_memory` (decision/convention/incident/preference/gotcha/task_outcome), embedded via `dev-memory-embedding.ts` (Titan on Bedrock) | none | `OPERATOR_TURN_MEMORY_ENABLED` | `true` | unset |
@@ -156,6 +154,11 @@ staging after the deploy is the exercise.
    log or an `architecture_reports` row.
    *Validator half closed by VTID-04231: `read_file`/`ci_evidence`/`dev_get_risk`
    on the `validator` stage through the new shared `llm-stage-tool-loop.ts`
+   (the loop the triage agent and the spec generator reuse).*
+   *Triage half closed by VTID-04232: `query_oasis_events` / `dev_cloudwatch_logs` /
+   `dev_ecs_tasks` / `dev_run_sql_readonly` / `get_architecture_reports` on the
+   `triage` stage through the same loop; its prompt no longer names tools it
+   does not have. The spec generator is VTID-04233.*
    (the loop the triage agent — VTID-04232 — and the spec generator —
    VTID-04233 — reuse).*
 4. **Production runs a different operator than staging** — rev 114 pins one
@@ -176,7 +179,7 @@ staging after the deploy is the exercise.
 | Planner | ❌ | ❌ | ❌ | ✅ |
 | Validator | ⚠️ diff + tool reads only | ⚠️ event only | ✅ VTID-04231 (read_file / ci_evidence / dev_get_risk; live run pending) | ✅ |
 | Operator planner | ❌ | ⚠️ spec only | ❌ | ❌ direct Bedrock |
-| Self-healing triage | ⚠️ events only | ❌ | ❌ | ✅ |
+| Self-healing triage | ⚠️ events + tool reads | ⚠️ report to caller | ✅ VTID-04232 (events / logs / ECS / SQL / architecture_reports; live run pending) | ✅ |
 | Architecture investigator | ⚠️ events only | ✅ | ❌ | ✅ `triage` stage (VTID-04234) |
 | Memory jobs (9a/9b) | ✅ | ✅ | n/a | ✅ |
 | cognee-extractor | n/a | ❌ dead path | n/a | ❌ unrouted, unconfigured |
@@ -189,16 +192,9 @@ document's earlier sections.
 
 ### 6.1 Stage → provider / model, from the ACTIVE `llm_routing_policy` row (v17, `environment=DEV`, shared by staging and prod)
 
-| Stage | Primary | Fallback | Agents on it (registry §2) | Served in the last 24 h |
 |---|---|---|---|---|
-| `operator` | deepseek / `deepseek-flash` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Operator chat (row 1) | 157 calls, all deepseek-flash, 0 fallback |
-| `worker` | bedrock / `eu.anthropic.claude-opus-4-5-20251101-v1:0` | bedrock / `eu.anthropic.claude-sonnet-4-6` | Agent executor (row 2, with its own DeepSeek-Flash `providerOverride`), single-shot executor (row 3) | 6,799 deepseek-flash (the override) + 508 bedrock Opus 4.5, 0 fallback |
 | `planner` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | Planner (row 4); spec generator (row 6) since VTID-04233 | 41 calls, bedrock Opus 4.5, 0 fallback |
-| `validator` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | LLM merge review (row 5) | 3 calls, bedrock Opus 4.5, 0 fallback |
 | `triage` | bedrock / `eu.anthropic.claude-sonnet-4-6` | deepseek / `deepseek-chat` | Self-healing triage (row 7); architecture investigator (row 8) since VTID-04234 | 24 calls, bedrock Sonnet 4.6, 0 fallback |
-| `memory` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | turn memory, thread summaries, executor run-transcript facts | 93 calls, bedrock Sonnet 4.6, 0 fallback |
-| `classifier` | bedrock / Sonnet 4.6 | deepseek / `deepseek-chat` | — | 0 calls |
-| `vision` | bedrock / Opus 4.5 | bedrock / Sonnet 4.6 | — | 0 calls |
 
 **Verified:** no stage points at `vertex` or `anthropic` as primary or
 fallback (ALWAYS 10a/10b, IF-THEN 27 hold on the live row); zero
