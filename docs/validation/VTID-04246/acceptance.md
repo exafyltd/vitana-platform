@@ -62,7 +62,31 @@ OASIS_PROOF: new event type `dev_autopilot.finding.snoozed` (source `dev-autopil
 | AC-3 | MET — budget tests + runner wiring contract green |
 | AC-4 | MET — stamp tests incl. the live pre-fix shape (not eligible) vs stamped (eligible) |
 | AC-5 | MET — 8 suites / 71 tests green; broader sweep in `outputs/sweep.txt` |
-| AC-6 | NOT YET — needs the staging deploy of this merge plus one auto-approved execution; recorded in a follow-up row when observed |
+| AC-6 | BLOCKED, not failed — see "AC-6 live check" below |
+
+## AC-6 live check (2026-09-21, post-deploy)
+
+Staging is on `e0beb2e` (post-merge of #3550/#3551/#3552). Checked
+`dev_autopilot_runs`/`autopilot_recommendations` directly: two scan
+dispatches since the merge (`22:17` and `22:27` UTC) both report
+`new_finding_count: 0` — no new, previously-unseen finding was produced for
+`autoApproveTick` to select. The only `auto_exec_eligible: true` row in the
+table is the pre-existing `CVE: package.json` finding (`9e1bdb97`), and its
+newest execution attempt (`a427ba48`, 19:26 UTC — before this merge deployed)
+was refused by the stranded-PR guard verbatim: *"finding 9e1bdb97 already has
+an unmerged PR https://github.com/exafyltd/vitana-platform/pull/3543 from
+execution 59875200 (status=failed_escalated); refusing to open a duplicate."*
+That is exactly the guard this PR's own "Not fixed here" section named as
+still standing.
+
+So AC-1 through AC-5 are verified (allocator/breaker/floor/stamp unit +
+wiring tests, live-reachable code paths); AC-6 cannot be exercised until
+either (a) a genuinely new finding surfaces from a future scan, or (b) the
+six stranded PRs (#3543–#3548) are cleared by the owner so `9e1bdb97` (or a
+future finding sharing its shape) can be re-approved and actually produce a
+PR through `ensureFindingVtid`. This is not a code defect in VTID-04246 —
+it is the same intentional stranded-PR guard working as designed, on rows
+that predate this fix and were never going to change status on their own.
 
 ## Not fixed here, stated plainly
 
