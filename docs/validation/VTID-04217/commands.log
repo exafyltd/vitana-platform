@@ -1,0 +1,28 @@
+VTID-04217 — commands run this session (Claude Code, not the Dev Autopilot executor)
+
+1. Self-allocated via the governed gateway API (title passed inline):
+   curl -sS -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate \
+     -H 'Content-Type: application/json' \
+     -d '{"source":"claude-code","layer":"DEV","module":"autopilot-agent","title":"…"}'
+   -> {"ok":true,"vtid":"VTID-04217","num":4217,"id":"62821d8c-ec08-4f13-b47c-28553348d87c"}
+
+2. Evidence (read-only):
+   - dev_autopilot_executions for pr_number 3503..3518: c5a4f0bf/9e1c371f
+     reverted (ci, "merge conflict (dirty)" / "PR mergeable_state=dirty"),
+     add20bb2/c80751b5 failed_escalated (ci, dirty); fix-mode children
+     546373b0, d2f8af0f, 6fd8ed30 cooling with metadata.fix_mode set.
+   - GitHub PR #3515: mergeable_state=dirty, base c63a28b, head 8fb2b480.
+   - agent-workspace.ts prepareWorkspace: --depth 1 --single-branch clone;
+     agent-tools.ts run_check kinds: tsc|jest|git_diff|git_status|node_check.
+
+3. Code: agent-workspace.ts (+mergeBaseIntoBranch, listUnmergedFiles,
+   textHasConflictMarkers, findFilesWithConflictMarkers; commitAndPush
+   commits only when staged), agent-prompt.ts (+mergeBase,
+   buildMergeConflictSection), run-agent-execution.ts (fix-mode wiring +
+   marker gate), new test.
+
+4. Checks:
+   cd services/gateway && npx tsc --noEmit -p tsconfig.json  -> exit 0
+   npx jest test/vtid-04217-fix-mode-merge-conflicts.test.ts test/vtid-04017-fix-mode.test.ts \
+     test/vtid-04032-cancel-running-execution.test.ts test/vtid-04046-agent-prompt-date.test.ts \
+     test/autopilot-agent-scope-validate.test.ts            -> 5 suites, 61 tests, 0 failures
