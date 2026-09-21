@@ -13,7 +13,9 @@
  *                snapshots + applied diff → explains what went wrong
  *
  * The agent has access to:
- *   - The vitana-platform repo (mounted at /workspace/repo)
+ *   - (VTID-04232) the investigator tool set in self-healing-triage-tools.ts —
+ *     OASIS events, CloudWatch logs, ECS tasks, read-only SQL, prior
+ *     architecture_reports — through the shared bounded stage loop
  *   - OASIS events via the `query_oasis_events` custom tool (Supabase creds host-side)
  *   - E2E test results via the `query_test_results` custom tool (future)
  *
@@ -69,6 +71,12 @@ export interface TriageReport {
   elapsed_ms: number;
   mode: TriageMode;
   raw_output: string;
+  /** VTID-04232: which provider/model served the report and which tools it called. */
+  llm_provider?: string;
+  llm_model?: string;
+  llm_fallback_used?: boolean;
+  tool_calls?: number;
+  tools_used?: string[];
 }
 
 export interface TriageResult {
@@ -117,8 +125,8 @@ async function anthropicRequest<T>(
 // OASIS events custom tool handler (same as triage-agent.ts)
 // =============================================================================
 
-async function queryOasisEvents(
-  sessionId: string,
+export async function queryOasisEvents(
+  filter: string | { sessionId?: string; vtid?: string },
   limit: number = 100
 ): Promise<string> {
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -128,9 +136,17 @@ async function queryOasisEvents(
     return 'Error: Missing Supabase credentials';
   }
 
+  const f = typeof filter === 'string' ? { sessionId: filter } : filter;
+  const where = f.sessionId
+    ? `or=(metadata->>session_id.eq.${encodeURIComponent(f.sessionId)},metadata->>sessionId.eq.${encodeURIComponent(f.sessionId)})`
+    : f.vtid
+      ? `vtid=eq.${encodeURIComponent(f.vtid)}`
+      : '';
+  if (!where) return 'Error: session_id or vtid is required';
+
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/oasis_events?or=(metadata->>session_id.eq.${encodeURIComponent(sessionId)},metadata->>sessionId.eq.${encodeURIComponent(sessionId)})&order=created_at.asc&limit=${limit}&select=id,topic,vtid,status,message,metadata,created_at`,
+      `${supabaseUrl}/rest/v1/oasis_events?${where}&order=created_at.asc&limit=${limit}&select=id,topic,vtid,status,message,metadata,created_at`,
       {
         headers: {
           apikey: supabaseKey,
@@ -150,9 +166,17 @@ async function queryOasisEvents(
   }
 }
 
-// =============================================================================
-// Prompt builders per mode
-// =============================================================================
+/**
+ * VTID-04232: the triage agent's tool loop (self-healing-triage-tools.ts).
+ * Default ON; the exact string 'false' restores the single-shot call.
+ */
+export function isTriageToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.SELF_HEALING_TRIAGE_TOOLS_ENABLED || '').toLowerCase() !== 'false';
+}
+export const TRIAGE_MAX_TURNS = 8;
+export const TRIAGE_MAX_TOOL_CALLS = 10;
+export const TRIAGE_DEADLINE_MS = 180_000;
+export const TRIAGE_SYSTEM_PROMPT = 'You are a self-healing triage agent. Investigate the failure and produce a structured report with: Severity, Root Cause Hypothesis, Affected Component, Evidence (bulleted list), Recommended Fix, Confidence (low|medium|high). Use plain markdown headings (## Severity, ## Root Cause Hypothesis, etc.).';
 
 function buildPrompt(input: TriageInput): string {
   const lines: string[] = [];
@@ -174,8 +198,8 @@ function buildPrompt(input: TriageInput): string {
         `${JSON.stringify(input.diagnosis, null, 2)}`,
         ``,
         `### Instructions`,
-        `1. Call query_oasis_events if the diagnosis mentions a session_id`,
-        `2. Read the relevant source code in /workspace/repo/ based on the failure class`,
+        `1. Use the tools if you have them: query_oasis_events for the session/VTID timeline, dev_cloudwatch_logs for what the service logged, dev_ecs_tasks for task state, dev_run_sql_readonly for counts the feed cannot answer, get_architecture_reports for a prior root cause on this topic`,
+        `2. Reason from the failure class and the evidence you gathered — a few tool calls, not an audit`,
         `3. Produce your triage report with a confidence assessment`,
       );
       break;
@@ -200,7 +224,7 @@ function buildPrompt(input: TriageInput): string {
         `${JSON.stringify(input.original_diagnosis, null, 2)}`,
         ``,
         `### Instructions`,
-        `1. Read the source code that was targeted by the previous fix`,
+        `1. Gather evidence with the tools if you have them (query_oasis_events by VTID, dev_cloudwatch_logs, get_architecture_reports for the prior hypothesis on this topic)`,
         `2. Understand why the previous approach failed`,
         `3. Propose a DIFFERENT root cause and fix — do not repeat the same approach`,
         `4. Your diagnosis will feed a FRESH self-healing cycle with a new VTID`,
@@ -225,7 +249,7 @@ function buildPrompt(input: TriageInput): string {
         `${JSON.stringify(input.blast_radius, null, 2)}`,
         ``,
         `### Instructions`,
-        `1. Read the code that was modified by the applied spec`,
+        `1. Gather evidence with the tools if you have them (query_oasis_events, dev_cloudwatch_logs, dev_ecs_tasks around the verification window)`,
         `2. Analyze why the fix caused blast radius or failed verification`,
         `3. Explain what went wrong and what the next attempt should do differently`,
       );
@@ -345,20 +369,33 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   //    pre-fetched events if any.
   const prompt = buildPrompt(input) + oasisEventsBlock;
 
-  // 3. Single-shot call via router. Provider chosen by llm_routing_policy.
+  // 3. The `triage` stage, through the shared bounded tool loop (VTID-04232):
+  //    the provider comes from llm_routing_policy; the tools are the
+  //    investigator's read-only set (self-healing-triage-tools.ts). With the
+  //    tools off, this is the same single-shot call as before this VTID.
   //    `pseudoSessionId` is just a correlation id for the parser — there is
   //    no real session.
   const pseudoSessionId = `triage-${input.vtid}-${Date.now()}`;
-  const r = await (async () => {
-    const { callViaRouter } = await import('./llm-router');
-    return callViaRouter('triage', prompt, {
-      vtid: input.vtid,
-      service: 'self-healing-triage',
-      systemPrompt: 'You are a self-healing triage agent. Investigate the failure and produce a structured report with: Severity, Root Cause Hypothesis, Affected Component, Evidence (bulleted list), Recommended Fix, Confidence (low|medium|high). Use plain markdown headings (## Severity, ## Root Cause Hypothesis, etc.).',
-      maxTokens: 4000,
-      allowFallback: true,
-    });
-  })();
+  const toolsOn = isTriageToolsEnabled();
+  const { runStageToolLoop } = await import('./llm-stage-tool-loop');
+  const { triageRouterTools, createTriageToolExecutor } = await import('./self-healing-triage-tools');
+  const loop = await runStageToolLoop({
+    stage: 'triage',
+    service: 'self-healing-triage',
+    vtid: input.vtid,
+    systemPrompt: TRIAGE_SYSTEM_PROMPT,
+    prompt,
+    tools: toolsOn ? triageRouterTools() : [],
+    execute: toolsOn
+      ? createTriageToolExecutor({ vtid: input.vtid, queryOasisEvents })
+      : async (name) => ({ result: `no tools are available in this triage (${name})`, isError: true }),
+    maxTurns: toolsOn ? TRIAGE_MAX_TURNS : 1,
+    maxToolCalls: toolsOn ? TRIAGE_MAX_TOOL_CALLS : 0,
+    deadlineMs: TRIAGE_DEADLINE_MS,
+    maxTokens: 4000,
+    allowFallback: true,
+  });
+  const r = { ok: loop.ok, text: loop.text, error: loop.error, provider: loop.provider, model: loop.model };
 
   const elapsedMs = Date.now() - startTime;
 
@@ -374,8 +411,13 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   }
 
   const report = parseTriageReport(rawOutput, pseudoSessionId, input.mode, elapsedMs);
+  report.llm_provider = r.provider;
+  report.llm_model = r.model;
+  report.llm_fallback_used = loop.fallbackUsed;
+  report.tool_calls = loop.toolCalls;
+  report.tools_used = loop.toolNames;
   console.log(
-    `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
+    `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} fallback=${loop.fallbackUsed} tool_calls=${loop.toolCalls}${loop.toolNames.length ? ` (${loop.toolNames.join(', ')})` : ''} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
   );
 
   return { ok: true, report };
