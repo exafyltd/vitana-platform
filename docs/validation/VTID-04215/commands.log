@@ -1,0 +1,35 @@
+VTID-04215 — commands run this session (Claude Code, not the Dev Autopilot executor)
+
+1. Self-allocated the VTID via the governed gateway API:
+   curl -sS -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate \
+     -H 'Content-Type: application/json' \
+     -d '{"source":"claude-code","layer":"DEV","module":"dev-autopilot"}'
+   -> {"ok":true,"vtid":"VTID-04215","num":4215,"id":"17fe72c9-93a8-4135-b871-393558067933"}
+
+2. Evidence gathered read-only:
+   - dev_autopilot_executions status counts (last 4 days): failed 67,
+     awaiting_approval 21, reverted 10, completed 4.
+   - git log origin/main: afa9998 / 91d8dfc "Dev Autopilot auto-merge:
+     execution 141c4e4b / f64f22e2" followed by 89bbf34 / c73c0ad "Revert:
+     auto-fix … failed deploying verification".
+   - GitHub Actions AWS-STAGE-DEPLOY-GATEWAY.yml runs 473 (20:06Z, success),
+     474 (20:11Z, success), 475/476 (the reverts), 478 (cancelled by concurrency).
+   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml "Emit OASIS event" step:
+     TOPIC=staging.deploy.completed|staging.deploy.failed,
+     metadata.git_commit=$GITHUB_SHA.
+   - dev-autopilot-watcher.ts loadRecentDeployEvents and
+     dev-autopilot-execute.ts reconcileDeploying: topic=in.(deploy.gateway.success,…).
+
+3. Code:
+   - new  services/gateway/src/services/dev-autopilot-deploy-topics.ts
+   - edit services/gateway/src/services/dev-autopilot-watcher.ts (loader)
+   - edit services/gateway/src/services/dev-autopilot-execute.ts (reconcileDeploying)
+   - new  services/gateway/test/vtid-04215-deploy-event-contract.test.ts
+
+4. Checks:
+   cd services/gateway && npx tsc --noEmit -p tsconfig.json          -> exit 0
+   npx jest test/vtid-04215-deploy-event-contract.test.ts \
+            test/dev-autopilot-watcher.test.ts                        -> 2 suites, 50 tests, 0 failures
+   npx jest test/dev-autopilot-execute.test.ts test/dev-autopilot-bridge.test.ts \
+            test/dev-autopilot-env-ownership.test.ts \
+            test/self-healing-reconciler-autopilot-link.test.ts       -> 4 suites, 59 tests, 0 failures

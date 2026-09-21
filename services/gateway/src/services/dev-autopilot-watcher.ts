@@ -28,6 +28,8 @@ import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
+import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
+import { currentEnv } from './dev-autopilot-env-ownership';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -716,18 +718,26 @@ export async function ciWatcherTick(): Promise<void> {
 
 async function loadRecentDeployEvents(s: SupaConfig): Promise<Array<{ type: string; payload?: Record<string, unknown>; created_at?: string; status?: string }>> {
   // Last 60 minutes of deploy events — narrow window keeps scans cheap.
+  //
+  // VTID-04215: the topic list comes from `deployTopicsForEnv` — this
+  // process's OWN AWS deploy topics (`staging.deploy.completed`/`.failed`
+  // on staging, `prod.deploy.*` on production) plus the legacy GCP-era
+  // ones. Until this change only the legacy topics were queried, and no
+  // AWS workflow ever emits them, so every auto-merged execution sat in
+  // `deploying` until the reconciler's 30-minute timeout failed it and the
+  // bridge reverted the merge from main. `normalizeDeployEvent` maps the
+  // AWS rows onto the `deploy.gateway.success|failed` + `branch:'main'`
+  // shape `findDeployOutcomeForExecution` matches on.
   const since = new Date(Date.now() - 60 * 60_000).toISOString();
   const r = await supa<Array<{ topic: string; metadata?: Record<string, unknown>; created_at?: string; status?: string }>>(
     s,
-    `/rest/v1/oasis_events?topic=in.(deploy.gateway.success,deploy.gateway.failed,cicd.deploy.service.succeeded,cicd.deploy.service.failed)&created_at=gte.${encodeURIComponent(since)}&select=topic,metadata,created_at,status&order=created_at.desc&limit=200`,
+    `/rest/v1/oasis_events?topic=${deployTopicsInFilter(currentEnv())}&created_at=gte.${encodeURIComponent(since)}&select=topic,metadata,created_at,status&order=created_at.desc&limit=200`,
   );
   if (!r.ok || !r.data) return [];
-  return r.data.map((row) => ({
-    type: row.topic,
-    payload: row.metadata,
-    created_at: row.created_at,
-    status: row.status,
-  }));
+  return r.data.map((row) => {
+    const n = normalizeDeployEvent(row);
+    return { type: n.type, payload: n.payload, created_at: n.created_at, status: n.status };
+  });
 }
 
 export async function deployWatcherTick(): Promise<void> {
