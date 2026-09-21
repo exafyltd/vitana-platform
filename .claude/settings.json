@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in */services/gateway/src/*) cd /home/user/vitana-platform/services/gateway && ERRORS=$(npx tsc --noEmit 2>&1 | grep 'error TS' | head -5); if [ -n \"$ERRORS\" ]; then echo \"$ERRORS\" >&2; echo '{\"decision\":\"block\",\"reason\":\"TypeScript build errors found \u2014 deploy will fail. Fix before committing.\"}'; exit 1; fi ;; esac; }",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in */services/gateway/src/*) cd /home/user/vitana-platform/services/gateway && ERRORS=$(npx tsc --noEmit 2>&1 | grep 'error TS' | head -5); if [ -n \"$ERRORS\" ]; then echo \"$ERRORS\" >&2; echo '{\"decision\":\"block\",\"reason\":\"TypeScript build errors found — deploy will fail. Fix before committing.\"}'; exit 1; fi ;; esac; }",
             "timeout": 60,
             "statusMessage": "Checking TypeScript build..."
           }
@@ -85,6 +85,16 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-codeintel-setup.sh\"",
             "timeout": 300,
             "statusMessage": "Installing/refreshing RepoWise + Graphify (CLAUDE.md codebase intelligence workflow)..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-automode-config.sh\"",
+            "timeout": 10,
+            "statusMessage": "Applying standing auto-mode approvals (VTID-04248)..."
           }
         ]
       }
