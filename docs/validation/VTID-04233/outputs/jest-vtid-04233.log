@@ -1,0 +1,8 @@
+PASS test/vtid-04229-code-index.test.ts
+PASS test/vtid-04231-validator-tools.test.ts
+PASS test/vtid-04233-spec-generator-planner-stage.test.ts
+PASS test/vtid-04231-llm-stage-tool-loop.test.ts
+PASS test/specs-gen-system-prompt-accuracy.test.ts
+PASS test/specs-generate-claim.test.ts
+Test Suites: 6 passed, 6 total
+Tests:       68 passed, 68 total

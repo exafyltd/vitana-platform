@@ -14,7 +14,8 @@ import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runFullQualityCheck } from '../services/spec-quality-agent';
-import { callClaudeText, CLAUDE_SONNET_4_6 } from '../services/claude-text-client';
+import { runStageToolLoop } from '../services/llm-stage-tool-loop';
+import { codeIndexRouterTools, isCodeIndexToolName, loadCodeIndex, runCodeIndexTool, type CodeIndexBundle } from '../services/codeintel-index';
 
 const router = Router();
 
@@ -22,7 +23,87 @@ const router = Router();
 // Claude Sonnet 4.6 for LLM-powered spec generation (BOOTSTRAP-GEMINI-TO-CLAUDE:
 // migrated off Gemini 3.1 Pro / 2.5 Pro — see claude-text-client.ts)
 // ===========================================================================
-const SPEC_GEN_MODEL = CLAUDE_SONNET_4_6;
+/**
+ * VTID-04233: spec generation goes through the `planner` routing stage
+ * (`llm_routing_policy.planner` — Bedrock Opus 4.5 primary / Sonnet 4.6
+ * fallback under v17) instead of a direct Bedrock call, so it is routed,
+ * costed and visible in `llm.call.*` like every other agent; and it gets the
+ * VTID-04229 codebase index (`dev_index_query` / `dev_graph_path` /
+ * `dev_get_risk`) through the shared bounded stage loop, so "Files to
+ * modify" names files that exist and hotspots are called out from facts,
+ * not guessed. Bounds: SPEC_GEN_MAX_TURNS model turns, SPEC_GEN_MAX_TOOL_CALLS
+ * tool calls, then one tool-less call for the spec. The index is optional —
+ * a load failure means the planner writes from the system context alone,
+ * exactly as before.
+ */
+export const SPEC_GEN_STAGE = 'planner' as const;
+export const SPEC_GEN_SERVICE = 'spec-generator';
+export const SPEC_GEN_MAX_TOKENS = 16384;
+export const SPEC_GEN_MAX_TURNS = 6;
+export const SPEC_GEN_MAX_TOOL_CALLS = 8;
+export const SPEC_GEN_DEADLINE_MS = 240_000;
+const SPEC_GEN_MODEL = `${SPEC_GEN_STAGE} stage`;
+export const SPEC_GEN_REPO = 'exafyltd/vitana-platform';
+
+export function isSpecGenIndexToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.SPEC_GEN_INDEX_TOOLS_ENABLED || '').toLowerCase() !== 'false';
+}
+
+export interface SpecGenLlmResult {
+  text: string | null;
+  provider?: string;
+  model?: string;
+  fallbackUsed: boolean;
+  toolCalls: number;
+  toolNames: string[];
+  error?: string;
+}
+
+/** The planner's model call: the stage loop with the code-index tools when the index loads. Never throws. */
+export async function callSpecGenerator(
+  vtid: string,
+  prompt: string,
+  deps: { loadIndex?: typeof loadCodeIndex; runLoop?: typeof runStageToolLoop; env?: NodeJS.ProcessEnv } = {},
+): Promise<SpecGenLlmResult> {
+  const env = deps.env || process.env;
+  let bundle: CodeIndexBundle | null = null;
+  if (isSpecGenIndexToolsEnabled(env)) {
+    try {
+      bundle = (await (deps.loadIndex || loadCodeIndex)(SPEC_GEN_REPO)).bundle;
+    } catch (err: any) {
+      console.warn(`[VTID-04233] code index unavailable for ${vtid} — planning without index tools: ${err?.message || err}`);
+    }
+  }
+  const b = bundle;
+  const loop = await (deps.runLoop || runStageToolLoop)({
+    stage: SPEC_GEN_STAGE,
+    service: SPEC_GEN_SERVICE,
+    vtid,
+    systemPrompt: SPEC_GEN_SYSTEM_PROMPT,
+    prompt,
+    tools: b ? codeIndexRouterTools() : [],
+    execute: async (name, args) => {
+      if (!b) return { result: `no codebase index is loaded in this run (${name})`, isError: true };
+      if (!isCodeIndexToolName(name)) return { result: `unknown tool: ${name}`, isError: true };
+      const out = runCodeIndexTool(name, args, b);
+      return { result: out.text, isError: !out.ok };
+    },
+    maxTurns: b ? SPEC_GEN_MAX_TURNS : 1,
+    maxToolCalls: b ? SPEC_GEN_MAX_TOOL_CALLS : 0,
+    deadlineMs: SPEC_GEN_DEADLINE_MS,
+    maxTokens: SPEC_GEN_MAX_TOKENS,
+    allowFallback: true,
+  });
+  return {
+    text: loop.ok ? (loop.text || null) : null,
+    provider: loop.provider,
+    model: loop.model,
+    fallbackUsed: loop.fallbackUsed,
+    toolCalls: loop.toolCalls,
+    toolNames: loop.toolNames,
+    error: loop.ok ? undefined : loop.error,
+  };
+}
 
 // ===========================================================================
 // VTID-01188: Spec Template (Mandatory Output Format)
@@ -274,6 +355,7 @@ async function generateSpecWithLLM(vtid: string, title: string, summary: string,
     systemContext ? `--- SYSTEM CONTEXT (use this to make the spec specific and accurate) ---\n${systemContext}` : '',
     ``,
     `INSTRUCTIONS:`,
+    `- If codebase-index tools are available (dev_index_query, dev_graph_path, dev_get_risk), use them first to find the real files, their callers and their change risk, then write the spec — a few calls, not many`,
     `- Use the EXACT markdown template format from your system instructions`,
     `- Fill EVERY section with specific, actionable, concrete content`,
     `- Reference actual Vitana file paths (services/gateway/src/..., supabase/migrations/...)`,
@@ -286,24 +368,19 @@ async function generateSpecWithLLM(vtid: string, title: string, summary: string,
 
   try {
     console.log(`[VTID-01188] Trying ${SPEC_GEN_MODEL} for ${vtid}: "${title}" (context: ${systemContext.length} chars)`);
-    const text = await callClaudeText({
-      model: SPEC_GEN_MODEL,
-      system: SPEC_GEN_SYSTEM_PROMPT,
-      prompt: promptParts,
-      maxTokens: 16384,
-      temperature: 0.3,
-    });
+    const r = await callSpecGenerator(vtid, promptParts);
+    const text = r.text;
     if (text && text.length > 200) {
-      console.log(`[VTID-01188] ${SPEC_GEN_MODEL} spec generated for ${vtid}: ${text.length} chars`);
+      console.log(`[VTID-01188] ${SPEC_GEN_MODEL} spec generated for ${vtid}: ${text.length} chars provider=${r.provider} model=${r.model} fallback=${r.fallbackUsed} tool_calls=${r.toolCalls}${r.toolNames.length ? ` (${r.toolNames.join(', ')})` : ''}`);
       return text;
     }
-    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL} returned insufficient content (${text?.length || 0} chars)`);
+    console.warn(`[VTID-01188] ${SPEC_GEN_MODEL} returned insufficient content (${text?.length || 0} chars)${r.error ? ` — ${r.error}` : ''}`);
   } catch (err: any) {
     console.error(`[VTID-01188] ${SPEC_GEN_MODEL} failed for ${vtid}: ${err.message}`);
   }
 
   // Fallback: minimal template (clearly marked as needing manual editing)
-  console.log(`[VTID-01188] Using template fallback for ${vtid} (Vertex AI unavailable)`);
+  console.log(`[VTID-01188] Using template fallback for ${vtid} (planner stage unavailable)`);
   return SPEC_TEMPLATE
     .replace('{TITLE}', title || `Task ${vtid}`)
     .replace('{VTID}', vtid)
