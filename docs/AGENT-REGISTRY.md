@@ -69,10 +69,10 @@ what the live task definitions actually carry (staging rev 487 / prod rev 114
 | 2 | **Agent executor** | `services/autopilot-agent/run-agent-execution.ts` `runAgentExecutionSession()` ← `job-entry.ts` (ECS task `vitana-autopilot-executor`, dispatched by the staging gateway's executor tick) | `worker` with `providerOverride: deepseek/deepseek-flash` (VTID-04006 standing policy); fallback = the worker stage's own bedrock/sonnet-4-6 | **partial** — CLAUDE.md Part 1 excerpt read from the clone (≤14 KB) + `loadAutopilotContext()` conventions block. **No** bootstrap pack, **no** `dev_agent_memory` recall, **no** prior `agent_runs` — a retry does not know what attempt N-1 did | **indirect only** — the executor task writes nothing itself; the gateway's `applyExecutionResult` (`dev-autopilot-execute.ts:3065/3102`) writes `task_outcome` / `gotcha` rows via `recordExecutionOutcomeMemory` (gated on the GATEWAY's `OPERATOR_TURN_MEMORY_ENABLED`) and `recordAgentRunUsage` appends `metadata.agent_runs[]` on the finding's `dev_autopilot_outcomes` row | `read_file`, `list_dir`, `search_text`, `find_files`, `write_file`, `edit_file`, `delete_file`, `run_check(tsc\|jest\|node_check\|git_diff\|git_status)`, `finish` (`agent-tools.ts`) — no shell, no index, no memory tool | row `metadata.executor='agent'` (stamped by the on-ramp from `OPERATOR_ONRAMP_EXECUTOR=agent`) or `DEV_AUTOPILOT_EXECUTOR=agent` | executor rev 20: `AGENT_MAX_TURNS=120`, `AGENT_DEADLINE_MS=2100000`, `BEDROCK_ROLE_ARN`, `AWS_BEDROCK_REGION`, `DEEPSEEK_API_KEY` secret, `GITHUB_SAFE_MERGE_TOKEN`; no `OPERATOR_*` flag on the task | prod gateway `DEV_AUTOPILOT_EXECUTOR_ENABLED=false` → prod never dispatches an execution |
 | 3 | **Single-shot executor** | `services/dev-autopilot-execute.ts` `runExecutionSession()` → `callRoutedLlm()` | `worker` → bedrock/opus-4-5, fb sonnet-4-6 (or the row's `llm_on_ramp_override`) | **partial** — `loadAutopilotContext()` + the plan's `files_referenced` contents, nothing else | same indirect `applyExecutionResult` path as row 2 | **none** — one call must emit whole replacement files for ≤8 pre-fetched paths | default executor when row 2 is not selected | as row 1/2 | as row 2 |
 | 4 | **Planner** | `services/dev-autopilot-planning.ts` `callRoutedLlm()` | `planner` → bedrock/opus-4-5, fb sonnet-4-6 (`DEV_AUTOPILOT_PLANNING_MODEL` is declared but never handed to the router) | **N** — reads the files it will plan against from GitHub; no memory, no bootstrap, no index | **N** as memory — writes `dev_autopilot_plan_versions` (a plan, not a durable fact) | none | `DEV_AUTOPILOT_PLANNING_STUB_ENABLED` (stub path only); otherwise always on | — | — |
-| 5 | **Validator / LLM review** | `services/dev-autopilot-llm-review.ts` `reviewExecutionPr()` | `validator` → bedrock/opus-4-5, fb sonnet-4-6 | **N** — sees only the diff bundle | **N** — verdict is logged; fail-open (a failed call passes) | none — no file read beyond the diff, no CI log excerpt (`dev-autopilot-ci-logs.ts` feeds triage, not review), no risk signal | `DEV_AUTOPILOT_LLM_REVIEW_ENABLED` | `true` | unset → off |
-| 6 | **Operator planner (spec drafts)** | `services/operator-planner.ts` `generateSpecForTask()` → self-fetch `POST /api/v1/specs/:vtid/generate` → `routes/specs.ts` `generateSpecWithLLM()` | **NOT a routing stage.** `callClaudeText({ model: CLAUDE_SONNET_4_6 })` (`claude-text-client.ts` → `invokeBedrock()` directly): no policy row, no fallback, no `llm.call.*` telemetry, no cost badge | **N** — `gatherSystemContext()` (spec-shaped context from the ledger), no memory, no index | `oasis_specs` draft (`spec_status='draft'`) | none | `OPERATOR_PLANNER_ENABLED`, `OPERATOR_PLANNER_INTERVAL_MS` | `true` | unset → off |
-| 7 | **Self-healing triage** | `services/self-healing-triage-service.ts` `spawnTriageAgent()` ← `dev-autopilot-bridge.ts:611`, `self-healing-reconciler.ts:723`, `routes/self-healing.ts` | `triage` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | **partial** — pre-fetches ≤50 `oasis_events` for a session id found in the diagnosis; no `dev_agent_memory`, no `architecture_reports`, no logs | **N** as memory — the report goes back to the caller (execution metadata / self-heal decision) | none (the file still declares the dead Managed-Agents constants `ANTHROPIC_API_KEY`, `TRIAGE_AGENT_ID`, `TRIAGE_ENVIRONMENT_ID`) | reconciler `SELF_HEALING_RECONCILER_ENABLED !== 'false'`; bridge unconditional on execution failure | — | — |
-| 8 | **Architecture investigator** | `services/architecture-investigator.ts` `investigateIncident()` ← operator tool `investigate_failure`, `routes/architecture-investigator.ts` (SERVICE_AUTH_TOKEN) | **NOT routed.** Direct `fetch` to `https://api.deepseek.com/chat/completions` with `DEEPSEEK_API_KEY`, model `ARCH_INVESTIGATOR_MODEL \|\| deepseek-flash`: no fallback, no cost accounting, no policy | recent `oasis_events` for the topic | **Y** — `architecture_reports` row + `architecture.investigation.completed` event | none | needs `DEEPSEEK_API_KEY`; throws `DEEPSEEK_API_KEY not set` otherwise | key present | **no key on prod** → the operator's `investigate_failure` tool fails on prod |
+| 5 | **Validator / LLM review** | `services/dev-autopilot-llm-review.ts` `runLlmMergeReview()` ← `dev-autopilot-watcher.ts` `ciWatcherTick()` | `validator` → bedrock/opus-4-5, fb sonnet-4-6 | **N** — sees the diff bundle plus what its tools fetch | **N** — verdict is logged on the `llm_review_passed/blocked` event (now with provider/model/tool_calls); fail-open (a failed call passes) | **`read_file` (PR head sha), `ci_evidence` (head check-runs + failing job-log excerpts), `dev_get_risk` (VTID-04229 index)** through the bounded `llm-stage-tool-loop.ts` (VTID-04231: ≤6 turns, ≤8 tool calls, 90 s, then one tool-less call for the verdict); `DEV_AUTOPILOT_LLM_REVIEW_TOOLS_ENABLED=false` restores the diff-only single shot | `DEV_AUTOPILOT_LLM_REVIEW_ENABLED` | `true` | unset → off |
+| 6 | **Operator planner (spec drafts)** | `services/operator-planner.ts` `generateSpecForTask()` → self-fetch `POST /api/v1/specs/:vtid/generate` → `routes/specs.ts` `generateSpecWithLLM()` | **`planner`** (VTID-04233): `runStageToolLoop({stage:'planner', service:'spec-generator'})` — bedrock/opus-4-5, fb sonnet-4-6 under v17; routed, costed, `llm.call.*` visible; the template fallback is unchanged when the stage fails | **N** — `gatherSystemContext()` (spec-shaped context from the ledger), no memory, no index | `oasis_specs` draft (`spec_status='draft'`) | **`dev_index_query` / `dev_graph_path` / `dev_get_risk`** (VTID-04229 index, loaded per generation; a load failure means planning from the system context alone) through the bounded loop (≤6 turns, ≤8 tool calls, 240 s); `SPEC_GEN_INDEX_TOOLS_ENABLED=false` disables the tools | `OPERATOR_PLANNER_ENABLED`, `OPERATOR_PLANNER_INTERVAL_MS` | `true` | unset → off |
+| 7 | **Self-healing triage** | `services/self-healing-triage-service.ts` `spawnTriageAgent()` ← `dev-autopilot-bridge.ts:611`, `self-healing-reconciler.ts:723`, `routes/self-healing.ts` | `triage` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | recent `oasis_events` of the diagnosis session (pre-fetched) + whatever its tools fetch | **N** — the report goes to the caller only; provider/model/tool telemetry on it (VTID-04232) | **`query_oasis_events` (session or VTID), `dev_cloudwatch_logs`, `dev_ecs_tasks`, `dev_run_sql_readonly`, `get_architecture_reports`** through the bounded `llm-stage-tool-loop.ts` (VTID-04232: ≤8 turns, ≤10 tool calls, 180 s); the AWS/SQL tools honour the same `OPERATOR_AWS_READONLY_ENABLED` / `OPERATOR_SQL_READONLY_ENABLED` switches as the console copies; `SELF_HEALING_TRIAGE_TOOLS_ENABLED=false` restores the single shot | reconciler `SELF_HEALING_RECONCILER_ENABLED !== 'false'`; bridge unconditional on execution failure | — | — |
+| 8 | **Architecture investigator** | `services/architecture-investigator.ts` `investigateIncident()` ← operator tool `investigate_failure`, `routes/architecture-investigator.ts` (SERVICE_AUTH_TOKEN) | **`triage`** (VTID-04234): `callViaRouter('triage', …)` with `service:'architecture-investigator'`, `allowFallback:true`, `maxTokens:4096` — primary Bedrock Sonnet 4.6, fallback DeepSeek under v17; `ARCH_INVESTIGATOR_PROVIDER`+`ARCH_INVESTIGATOR_MODEL` (both, or neither) act as a router override; provider/model/tokens/fallback recorded on the `architecture_reports` row and the completion event | recent `oasis_events` for the topic | **Y** — `architecture_reports` row + `architecture.investigation.completed` event | none | none beyond the router's own (`BEDROCK_ROLE_ARN` / `DEEPSEEK_API_KEY` per provider) | — | routed on both stacks once deployed; a stage call that fails on both providers throws `triage stage call failed: …` and writes nothing |
 | 9a | **Memory job — thread summary** | `services/operator-threads.ts` (every `OPERATOR_THREAD_SUMMARY_EVERY`=10 turns) | `memory` → bedrock/sonnet-4-6, fb deepseek/deepseek-chat | last 30 messages + prior summary | `operator_threads.summary` | none | `OPERATOR_THREADS_ENABLED` | `true` | unset |
 | 9b | **Memory job — turn memory** | `services/operator-turn-memory.ts` `extractAndRecordTurnMemory()` / `recordExecutionOutcomeMemory()` | `memory` (extraction call); the outcome writer is deterministic | the turn transcript (bounded 6 KB) | `dev_agent_memory` (decision/convention/incident/preference/gotcha/task_outcome), embedded via `dev-memory-embedding.ts` (Titan on Bedrock) | none | `OPERATOR_TURN_MEMORY_ENABLED` | `true` | unset |
 | 10 | **cognee-extractor** | `services/agents/cognee-extractor/main.py` (FastAPI + litellm) ← `services/gateway/src/services/cognee-extractor-client.ts` `extractAsync()` | **NOT routed.** `LLM_PROVIDER` default `gemini` / `gemini/gemini-3.1-pro-preview` (dead, GCP is off); deepseek only when `LLM_PROVIDER=deepseek` + `DEEPSEEK_API_KEY` | the session transcript | `memory_facts` (`write_fact`), `relationship_nodes`, `memory_items` — via the gateway client, not the service | none | gateway: `COGNEE_EXTRACTOR_URL` (client `enabled = !!env`) | **unset on both gateways** → `extractAsync` never fires. ECS service `vitana-cognee-extractor` is ACTIVE 1/1 on task def `:5` with **no LLM env at all** (only the three Supabase secrets) — it is running, unreachable by the gateway, and could not call any model if reached | same |
@@ -87,7 +87,7 @@ what the live task definitions actually carry (staging rev 487 / prod rev 114
 | `triage` | `routes/triage-agent.ts`, `feedback-llm-resolvers.ts`, `natural-language-service.ts` |
 | `memory` | `inline-fact-extractor.ts`, `knowledge-hub.ts`, `user-model-synthesis.ts`, `guide/session-summaries.ts` |
 | `vision` | `anthropic-vision-client.ts`, `assistant-core.ts` |
-| direct Bedrock (`callClaudeText`, no stage) | `routes/specs.ts`, `matchmaker-agent.ts`, `intent-extractor.ts`, `intent-classifier.ts`, `voice-architecture-investigator.ts`, `self-healing-spec-service.ts` |
+| direct Bedrock (`callClaudeText`, no stage) | `matchmaker-agent.ts`, `intent-extractor.ts`, `intent-classifier.ts`, `voice-architecture-investigator.ts`, `self-healing-spec-service.ts` |
 
 ## 3. Codebase index — live state (the W6 gap, measured)
 
@@ -116,18 +116,55 @@ works (CI, ubuntu) and published**, and the runtime must **not need lancedb**
 CLI; RepoWise's per-file history/risk signal has to be exported at build
 time or the runtime image has to leave Alpine.
 
+**Shipped — VTID-04229 (2026-09-21):** exactly that. `CODEINTEL-INDEX.yml`
+builds both tools on ubuntu on every merge to `main`, `scripts/codeintel/
+build-code-index.mjs` derives a ~1.6 MB bundle (compact graph + per-file
+risk facts from the RepoWise export) and publishes it to
+`s3://vitana-code-index/<repo>/<sha>/` + `latest/`; `codeintel-index.ts`
+loads it (no CLI, no Python) and answers `dev_index_query` /
+`dev_graph_path` / `dev_get_risk` for the Operator Console (behind the
+existing `OPERATOR_CODEINTEL_ENABLED`; `dev_repowise`/`dev_graphify` fall
+back to it on `not_configured`) and for the executor (`pullCodeIndex` at run
+start, same three tools declared only when the bundle loaded). Bucket +
+bucket policy (read: `vitana-ecs-task-role`, publish: the OIDC deploy
+role) provisioned from the session; both `iam:PutRolePolicy` steps and
+`s3:PutEncryptionConfiguration` were denied and are recorded verbatim in
+`docs/validation/VTID-04229/outputs/`. A bootstrap bundle from `9545b19` is
+published. **Not yet observed live:** a staging turn or executor run
+reading the bucket under the task role — the first `dev_index_query` on
+staging after the deploy is the exercise.
+
 ## 4. Cross-cutting findings (ranked)
 
 1. **Two agents bypass the routing policy entirely** — the architecture
    investigator (direct DeepSeek fetch) and the spec generator behind the
    operator planner (direct Bedrock). Neither has a fallback, cost record,
    or `llm.call.*` telemetry; the investigator hard-fails on prod (no key).
+   *Investigator half closed by VTID-04234 (`callViaRouter('triage', …)`,
+   `service:'architecture-investigator'`): routed, costed through the
+   router's `llm.call.*` telemetry, Bedrock-first with DeepSeek fallback
+   under v17, no direct `api.deepseek.com` fetch left in the file (source
+   contract test). Spec-generator half closed by VTID-04233: `routes/specs.ts`
+   runs the `planner` stage through the shared stage loop with the VTID-04229
+   index tools; no `callClaudeText` left in the route.*
 2. **The agent executor has no memory at all** — no bootstrap, no recall,
    no prior-attempt record. Fix mode re-reads the CI evidence but never
-   what attempt N-1 tried.
+   what attempt N-1 tried. *Closed by VTID-04223 (merged 2026-09-21,
+   `agent-memory-context.ts`): bootstrap pack + top-10 recall + prior
+   `agent_runs` in, run-transcript facts out; live run still to be
+   recorded.*
 3. **Validator, planner and triage are tool-less single-shot calls** —
    the validator cannot read a file the diff touches, triage cannot read a
    log or an `architecture_reports` row.
+   *Validator half closed by VTID-04231: `read_file`/`ci_evidence`/`dev_get_risk`
+   on the `validator` stage through the new shared `llm-stage-tool-loop.ts`
+   (the loop the triage agent and the spec generator reuse).*
+   *Triage half closed by VTID-04232: `query_oasis_events` / `dev_cloudwatch_logs` /
+   `dev_ecs_tasks` / `dev_run_sql_readonly` / `get_architecture_reports` on the
+   `triage` stage through the same loop; its prompt no longer names tools it
+   does not have. The spec generator is VTID-04233.*
+   (the loop the triage agent — VTID-04232 — and the spec generator —
+   VTID-04233 — reuse).*
 4. **Production runs a different operator than staging** — rev 114 pins one
    flag and lacks the DeepSeek secret; the shared policy row makes prod's
    `operator` primary silently unavailable.
@@ -140,13 +177,13 @@ time or the runtime image has to leave Alpine.
 
 | Agent | Memory in | Memory out | Tools scoped | Routed stage |
 |---|---|---|---|---|
-| Operator chat | ✅ | ✅ | ✅ (codeintel not live) | ✅ |
-| Agent executor | ❌ | ⚠️ indirect | ⚠️ no index | ✅ |
+| Operator chat | ✅ | ✅ | ✅ index tools shipped (VTID-04229; staging read not yet observed) | ✅ |
+| Agent executor | ✅ VTID-04223 (live run pending) | ✅ VTID-04223 (run-transcript facts) + indirect | ✅ index tools shipped (VTID-04229; live run pending) | ✅ |
 | Single-shot executor | ⚠️ | ⚠️ indirect | ❌ | ✅ |
 | Planner | ❌ | ❌ | ❌ | ✅ |
-| Validator | ❌ | ❌ | ❌ | ✅ |
-| Operator planner | ❌ | ⚠️ spec only | ❌ | ❌ direct Bedrock |
-| Self-healing triage | ⚠️ events only | ❌ | ❌ | ✅ |
-| Architecture investigator | ⚠️ events only | ✅ | ❌ | ❌ direct DeepSeek |
+| Validator | ⚠️ diff + tool reads only | ⚠️ event only | ✅ VTID-04231 (read_file / ci_evidence / dev_get_risk; live run pending) | ✅ |
+| Operator planner | ⚠️ system context + index reads | ⚠️ spec only | ✅ VTID-04233 (dev_index_query / dev_graph_path / dev_get_risk; live run pending) | ✅ `planner` (VTID-04233) |
+| Self-healing triage | ⚠️ events + tool reads | ⚠️ report to caller | ✅ VTID-04232 (events / logs / ECS / SQL / architecture_reports; live run pending) | ✅ |
+| Architecture investigator | ⚠️ events only | ✅ | ❌ | ✅ `triage` stage (VTID-04234) |
 | Memory jobs (9a/9b) | ✅ | ✅ | n/a | ✅ |
 | cognee-extractor | n/a | ❌ dead path | n/a | ❌ unrouted, unconfigured |

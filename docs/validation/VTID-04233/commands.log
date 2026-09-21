@@ -1,0 +1,6 @@
+# VTID-04233 — commands run (2026-09-21)
+git worktree add scratchpad/wt-04233 -b claude/cool-dijkstra-p9s8vx-vtid-04233 origin/claude/cool-dijkstra-p9s8vx-vtid-04231   # stacked on the stage loop
+# Edited: src/routes/specs.ts (callClaudeText -> callSpecGenerator over runStageToolLoop('planner') + codeIndexRouterTools), test/specs-generate-claim.test.ts (mock moved to the loop)
+cd services/gateway
+npx tsc --noEmit -p .; echo exit=$?                                    # -> outputs/tsc-noEmit.log
+npx jest test/vtid-04233-spec-generator-planner-stage.test.ts test/specs-generate-claim.test.ts test/specs-gen-system-prompt-accuracy.test.ts test/vtid-04231 test/vtid-04229-code-index   # -> outputs/jest-vtid-04233.log

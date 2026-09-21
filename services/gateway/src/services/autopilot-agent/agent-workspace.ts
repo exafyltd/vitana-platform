@@ -13,6 +13,7 @@ import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
+import { describeBundle, loadCodeIndex, type CodeIndexBundle } from '../codeintel-index';
 
 const execFileP = promisify(execFile);
 
@@ -303,4 +304,59 @@ export async function linkNodeModules(repoDir: string, projectRel: string, sourc
 export async function cleanupWorkspace(ws: Workspace | null | undefined): Promise<void> {
   if (!ws) return;
   await fs.rm(ws.root, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/**
+ * VTID-04229: pull the S3-published codebase index for this run.
+ *
+ * The bundle (Graphify graph + RepoWise facts, built by CODEINTEL-INDEX.yml
+ * on every merge to main) is loaded through codeintel-index.ts's shared
+ * loader — the executor never installs a CLI or builds an index itself.
+ * Gated by AGENT_CODE_INDEX_ENABLED (default on; exact `false` turns it
+ * off). Fail-open: a missing bucket/object/credential is returned as a
+ * plain reason in `stats.error` and the run continues without the three
+ * index tools (agentToolsFor), exactly like a missing memory source.
+ */
+export interface CodeIndexPullStats {
+  enabled: boolean;
+  source: string | null;
+  sha: string | null;
+  built_at: string | null;
+  nodes: number;
+  edges: number;
+  risk_files: number;
+  from_cache: boolean;
+  ms: number;
+  error: string | null;
+}
+
+export function isAgentCodeIndexEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.AGENT_CODE_INDEX_ENABLED || '').trim().toLowerCase() !== 'false';
+}
+
+export async function pullCodeIndex(
+  repo: string,
+  opts: { env?: NodeJS.ProcessEnv; load?: typeof loadCodeIndex; now?: () => number } = {},
+): Promise<{ bundle: CodeIndexBundle | null; stats: CodeIndexPullStats; describe: string | null }> {
+  const env = opts.env || process.env;
+  const now = opts.now || Date.now;
+  const stats: CodeIndexPullStats = { enabled: isAgentCodeIndexEnabled(env), source: null, sha: null, built_at: null, nodes: 0, edges: 0, risk_files: 0, from_cache: false, ms: 0, error: null };
+  if (!stats.enabled) return { bundle: null, stats, describe: null };
+  const started = now();
+  try {
+    const loaded = await (opts.load || loadCodeIndex)(repo, { env });
+    stats.source = loaded.source;
+    stats.sha = loaded.bundle.sha;
+    stats.built_at = loaded.bundle.builtAt;
+    stats.nodes = loaded.bundle.graph.nodes.length;
+    stats.edges = loaded.bundle.graph.edges.length;
+    stats.risk_files = Object.keys(loaded.bundle.risk.files).length;
+    stats.from_cache = loaded.fromCache;
+    stats.ms = now() - started;
+    return { bundle: loaded.bundle, stats, describe: describeBundle(loaded.bundle) };
+  } catch (err) {
+    stats.ms = now() - started;
+    stats.error = err instanceof Error ? err.message : String(err);
+    return { bundle: null, stats, describe: null };
+  }
 }

@@ -3392,3 +3392,82 @@ should make" that this doc's own standing instructions say to flag and
 move on from, not route around. **Whoever picks this up next: check
 whether the platform owner has responded in the live conversation before
 touching PR #1117 either way.**
+---
+
+### 2026-09-21, ~12:00-13:00 UTC — freeze window attempted (Steps 4-6+8 of the runbook), Step 5 (DMS reload) categorically blocked; production write-freeze exercised and fully reverted
+
+Following the runbook's Steps 4-6+8 sequence (Step 7, the traffic
+repoint, deliberately held — see below), and after re-verifying
+`aurora-cutover-restore-grants.sql` is still byte-for-byte current
+against live Supabase (MD5 `a479aa337a0139d9e4a6d476d0aa7087` over the
+4,174-grant set, unchanged since the last check):
+
+1. **Step 4 (freeze) executed cleanly.** Ran
+   `scripts/aws/aurora-cutover-freeze-writes.sql`'s blanket
+   `REVOKE INSERT, UPDATE, DELETE ... FROM anon, authenticated,
+   service_role` against production Supabase (`inmkhvwdcuyhnxkgfvsb`) at
+   ~12:04 UTC. Verification query confirmed `count(*) = 0` immediately
+   after — the freeze took full effect.
+
+2. **Step 5 (the final DMS `reload-target` run on
+   `vitana-fullload-rehearsal-v2`) could not be executed at all.**
+   `aws dms start-replication-task --start-replication-task-type
+   reload-target` was denied twice by this session's own Claude Code
+   auto-mode safety classifier: first a "Stage 2 classifier error"
+   (flagged transient, retried once per its own suggestion), then a
+   second, definitive denial with reason `[Modify Shared Resources]` —
+   not flagged as transient. This is a categorical block on this session
+   performing the reload, independent of AWS IAM (the underlying
+   credentials were never tested against this specific call because the
+   classifier intercepted it first).
+
+3. **Because the reload that Step 4's freeze exists to bracket could not
+   run, the freeze was serving no purpose left unfrozen.** Per this
+   runbook's own explicit instruction not to leave production in a
+   frozen-writes state, the freeze was abandoned immediately and Step 8
+   (restore) was started right away rather than waiting or attempting a
+   workaround.
+
+4. **Step 8 (restore) executed in full, verified byte-for-byte correct.**
+   `aurora-cutover-restore-grants.sql`'s 4,174 GRANT statements were
+   replayed verbatim in six ~700-line chunks (the file's 128,194 tokens
+   exceed the Read tool's single-call limit) via direct
+   `execute_sql` calls — chosen specifically to avoid any transcription
+   risk on a security-sensitive grants file. **First verification pass
+   found a real discrepancy: 4,173/4,174 grants restored** (confirmed via
+   `information_schema.role_table_grants` count, then narrowed by
+   privilege type → `DELETE` was 1,389/1,390 → narrowed by grantee →
+   `anon` was 146/147 → diffed the file's 147 `DELETE ... TO anon` lines
+   against the live 146, isolating the single missing statement:
+   `GRANT DELETE ON TABLE public.memory_confidence_history TO anon;`
+   (most likely lost at a chunk boundary in the prior, summarized
+   session). Executed that one statement directly, then re-verified:
+   **count 4,174/4,174, and the live MD5 hash now reads
+   `a479aa337a0139d9e4a6d476d0aa7087` — an exact match to the pre-freeze
+   hash.** Production write grants are confirmed restored to their exact
+   original state, not just approximately.
+
+5. **Step 7 (the `SUPABASE_URL`/traffic repoint) was never attempted, as
+   planned going in.** ECS Exec into `vitana-postgrest-aurora-proxy` (the
+   one path to run the RLS-isolation smoke test the runbook names as the
+   safety-critical precondition for Step 7) remains blocked for three
+   independent, compounding reasons, all re-confirmed this session: (a)
+   `vitana-ecs-task-role` has no `ssmmessages`/`ec2messages` IAM grants
+   and no VPC interface endpoints exist for them; (b) this session's
+   sandbox has no `session-manager-plugin` binary; (c) the Claude Code
+   auto-mode safety classifier denies the exec attempt outright with
+   reason `[Sensitive Remote Exec]`, independent of (a)/(b). With the
+   smoke test unrunnable, Step 7 stayed correctly held.
+
+**Net outcome, stated plainly: the freeze/restore SQL mechanics are now
+proven correct under real execution (not just reviewed), including
+catching and correcting a real one-grant discrepancy — but today's
+actual objective, advancing the Aurora full-load data sync via a fresh
+DMS reload, was not achieved.** Production was never left in a
+degraded state at any point after ~12:30 UTC. This needs one of: a human
+operator with AWS access unmediated by this session's classifier running
+the `reload-target` dispatch directly, or a session explicitly cleared
+for that action. ECS Exec (and therefore Step 7) remains blocked by the
+same three reasons as every prior session that has hit this in this
+document — nothing new to try from inside a Claude Code session on the
+current access level.
