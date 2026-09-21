@@ -30,7 +30,7 @@ import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
-import { cleanupWorkspace, commitAndPush, fetchRefSha, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, prepareWorkspace, scrubSecret, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
@@ -194,7 +194,19 @@ export async function runAgentExecutionSession(
     ws = await prepareWorkspace({ owner: GITHUB_OWNER, repo: GITHUB_REPO, baseBranch: GITHUB_BASE_BRANCH, branch, token, existingBranch: !!fixMode });
     // In fix mode the diff that matters is the whole PR (parent's committed
     // work + this run's edits) versus the base branch.
-    const baseSha = fixMode ? await fetchRefSha(ws.repoDir, GITHUB_BASE_BRANCH) : ws.baseSha;
+    // VTID-04217: fix mode first merges the latest base branch into the PR
+    // branch. A clean merge is the whole fix for a `merge conflict (dirty)`
+    // failure; a conflicted one leaves markers the agent is told to resolve,
+    // and the runner refuses to push while any remain (below).
+    let mergeBase: MergeBaseResult | null = null;
+    if (fixMode) {
+      mergeBase = await mergeBaseIntoBranch(ws.repoDir, GITHUB_BASE_BRANCH);
+      onStep({
+        turn: 0, kind: 'tool', name: 'runner:merge_base', isError: mergeBase.status === 'conflict',
+        detail: `merge origin/${GITHUB_BASE_BRANCH}@${mergeBase.baseSha.slice(0, 8)} → ${mergeBase.status}${mergeBase.conflicts.length ? `: ${mergeBase.conflicts.join(', ')}` : ''}`,
+      });
+    }
+    const baseSha = mergeBase ? mergeBase.baseSha : ws.baseSha;
     const linked = await linkNodeModules(ws.repoDir, 'services/gateway', AGENT_NODE_MODULES_SOURCE);
     console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${baseSha.slice(0, 8)} node_modules=${linked}${fixMode ? ' fix_mode' : ''}`);
 
@@ -221,6 +233,7 @@ export async function runAgentExecutionSession(
       ? buildFixModeTaskPrompt({
         vtid: telemetryVtid, planMarkdown: plan.plan_markdown, prUrl: fixMode.pr_url, branch, prFiles: changed.map((c) => c.path),
         ciEvidence: priorFailure || '', attempt: (exec.auto_fix_depth || 0) + 1, maxAttempts: (exec.auto_fix_depth || 0) + 1 + AGENT_MAX_FIX_ROUNDS,
+        mergeBase: mergeBase ? { status: mergeBase.status, conflicts: mergeBase.conflicts, baseBranch: GITHUB_BASE_BRANCH } : undefined,
       })
       : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
     let history: LLMRouterMessage[] = [];
@@ -251,10 +264,23 @@ export async function runAgentExecutionSession(
       // --- runner-side verification, independent of what the model claims ---
       changed = await repoDirChanged();
       if (changed.length === 0) return finish({ ok: false, error: 'agent finished with an empty diff — refusing to open an empty PR', session_id: sessionId, branch });
-      if (fixMode && (await listChangedFiles(repoDir)).length === 0) {
+      if (fixMode && mergeBase?.status !== 'merged' && (await listChangedFiles(repoDir)).length === 0) {
         // The PR diff is non-empty (the parent's work) but this run edited
-        // nothing — pushing would re-run the same red CI.
+        // nothing — pushing would re-run the same red CI. (VTID-04217: a
+        // clean base merge IS the change when the failure was the conflict,
+        // so that case is exempt — the merge commit is already on HEAD.)
         return finish({ ok: false, error: 'fix mode: agent finished without changing anything on the PR branch', session_id: sessionId, branch });
+      }
+      if (mergeBase) {
+        // VTID-04217: never push a conflict marker. Scan the files git
+        // reported as conflicted plus everything changed vs the base.
+        const candidates = Array.from(new Set([...mergeBase.conflicts, ...changed.map((c) => c.path)]));
+        const marked = await findFilesWithConflictMarkers(repoDir, candidates);
+        if (marked.length > 0) {
+          onStep({ turn: totalTurns, kind: 'tool', name: 'runner:conflict_markers', detail: marked.join(', '), isError: true });
+          if (round === AGENT_MAX_FIX_ROUNDS) return finish({ ok: false, error: `merge conflict markers still present after ${round} fix round(s): ${marked.join(', ')}`, session_id: sessionId, branch });
+          prompt = buildValidationFixPrompt('merge conflict resolution', `These files still contain conflict markers (<<<<<<< / ======= / >>>>>>>): ${marked.join(', ')}. Resolve every marker, keeping both this PR's change and ${GITHUB_BASE_BRANCH}'s, then re-run the checks.`, round + 1, AGENT_MAX_FIX_ROUNDS); continue;
+        }
       }
       const scopeCheck = checkChangedFilesScope(changed, scope.allow_scope, scope.deny_scope, [`docs/validation/${telemetryVtid}/**`]);
       if (!scopeCheck.ok) {

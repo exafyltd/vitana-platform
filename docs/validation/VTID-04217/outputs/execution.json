@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04217",
+  "title": "Agent executor fix mode: merge the base branch and resolve conflicts instead of failing",
+  "executor": "claude-code-session",
+  "branch": "claude/cool-dijkstra-p9s8vx",
+  "evidence_batch": "2026-09-21 PRs #3503-#3518",
+  "conflict_failures": ["c5a4f0bf/#3515", "9e1c371f/#3518", "add20bb2/#3512", "c80751b5/#3514"],
+  "checks": { "tsc": "clean", "jest_new_suite": "11/11", "jest_sibling_suites": "50/50" }
+}
