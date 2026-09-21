@@ -60,6 +60,7 @@ import { runReadonlySql, isSqlReadonlyEnabled, SQL_DEFAULT_ROWS, SQL_MAX_ROWS, S
 // VTID-03836: Operator Console AWS ECS read-only status
 import { describeEcsServices, ALLOWED_ECS_SERVICES, listEcsTasks, ALLOWED_ECS_TASK_FAMILIES, TASKS_DEFAULT_LIMIT, TASKS_MAX_LIMIT } from './aws-ecs-readonly';
 import { runRepowise, isRepowiseCommand, runGraphify, isGraphifyCommand, resolveCodeintelRepoDir, ALLOWED_CODEINTEL_REPOS } from './codeintel-readonly';
+import { CODE_INDEX_TOOL_NAMES, CODE_INDEX_TOOL_SCHEMAS, describeBundle, loadCodeIndex, resolveCodeIndexRepo, runCodeIndexTool, type CodeIndexToolName } from './codeintel-index';
 // VTID-01208: LLM Telemetry
 import {
   startLLMCall,
@@ -757,6 +758,20 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
         required: ['command']
       }
     },
+    // VTID-04229: Operator Console codebase index — the S3-published bundle
+    // (Graphify graph + RepoWise facts, rebuilt on every merge to main by
+    // CODEINTEL-INDEX.yml). Unlike dev_repowise/dev_graphify above these need
+    // no CLI in the image, so they work on the live gateway; the same three
+    // declarations are the executor's (agent-tools.ts). Read-only.
+    ...CODE_INDEX_TOOL_NAMES.map((name) => ({
+      name,
+      description: `${CODE_INDEX_TOOL_SCHEMAS[name].description} Developer/admin role only.`,
+      parameters: {
+        type: 'object',
+        properties: CODE_INDEX_TOOL_SCHEMAS[name].properties,
+        required: CODE_INDEX_TOOL_SCHEMAS[name].required,
+      },
+    })),
     // VTID-04023: Operator Console read-only SQL — one bounded SELECT over a
     // dedicated read-only connection (operator-sql-readonly.ts), for the
     // questions the 4-table allowlist below cannot answer (joins, aggregates,
@@ -2973,6 +2988,10 @@ async function executeDevRepowise(
   try {
     const result = await runRepowise(command, args.argument, repoDir);
     console.log(`[VTID-04116] dev_repowise thread=${threadId} command=${command} repo=${args.repo || 'exafyltd/vitana-platform'} ok=${result.ok}${result.truncated ? ' (truncated)' : ''}`);
+    if (!result.ok && (result.error || '').startsWith('not_configured')) {
+      const fb = await codeIndexFallbackFor('repowise', command, args.argument, args.repo, threadId);
+      if (fb) return fb;
+    }
     if (!result.ok) return { ok: false, error: result.error || 'repowise call failed' };
     return { ok: true, data: result as any };
   } catch (err: any) {
@@ -3001,11 +3020,75 @@ async function executeDevGraphify(
   try {
     const result = await runGraphify(command, args.argument, repoDir);
     console.log(`[VTID-04116] dev_graphify thread=${threadId} command=${command} repo=${args.repo || 'exafyltd/vitana-platform'} ok=${result.ok}${result.truncated ? ' (truncated)' : ''}`);
+    if (!result.ok && (result.error || '').startsWith('not_configured')) {
+      const fb = await codeIndexFallbackFor('graphify', command, args.argument, args.repo, threadId);
+      if (fb) return fb;
+    }
     if (!result.ok) return { ok: false, error: result.error || 'graphify call failed' };
     return { ok: true, data: result as any };
   } catch (err: any) {
     return { ok: false, error: `graphify call failed: ${err.message}` };
   }
+}
+
+/**
+ * VTID-04229: dev_index_query / dev_graph_path / dev_get_risk — pure queries
+ * over the S3-published codebase index. Same kill switch as the CLI bridge
+ * (OPERATOR_CODEINTEL_ENABLED); a missing bundle is reported as the loader's
+ * own reason (bucket, key, credential) — never a silent empty answer.
+ */
+async function executeDevCodeIndexTool(
+  name: CodeIndexToolName,
+  args: Record<string, unknown>,
+  threadId: string
+): Promise<ToolExecutionResult> {
+  if (process.env.OPERATOR_CODEINTEL_ENABLED !== 'true') {
+    return { ok: false, error: 'operator_codeintel_disabled: OPERATOR_CODEINTEL_ENABLED is not "true"' };
+  }
+  const repo = resolveCodeIndexRepo(args.repo);
+  if (!repo) return { ok: false, error: `repo must be one of: ${Object.keys(ALLOWED_CODEINTEL_REPOS).join(', ')}` };
+  try {
+    const loaded = await loadCodeIndex(repo);
+    const out = runCodeIndexTool(name, args, loaded.bundle);
+    console.log(`[VTID-04229] ${name} thread=${threadId} repo=${repo} sha=${loaded.bundle.sha.slice(0, 8)} cache=${loaded.fromCache} ok=${out.ok}`);
+    if (!out.ok) return { ok: false, error: out.text };
+    return { ok: true, data: { text: out.text, index: describeBundle(loaded.bundle), ...(out.data || {}) } };
+  } catch (err: any) {
+    return { ok: false, error: `code index unavailable: ${err?.message || String(err)}` };
+  }
+}
+
+/**
+ * VTID-04229: when the CLI bridge reports not_configured (the binary is not
+ * in this image — true of every deployment so far, VTID-04222 §3), answer
+ * the same question from the S3 index instead of returning the stub error.
+ */
+async function codeIndexFallbackFor(
+  tool: 'repowise' | 'graphify',
+  command: string,
+  argument: string | undefined,
+  repo: string | undefined,
+  threadId: string
+): Promise<ToolExecutionResult | null> {
+  const arg = (argument || '').trim();
+  let name: CodeIndexToolName;
+  let args: Record<string, unknown>;
+  if (tool === 'graphify' && command === 'path') {
+    const parts = arg.split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return null;
+    name = 'dev_graph_path'; args = { source: parts[0], target: parts.slice(1).join(' '), repo };
+  } else if (tool === 'repowise' && (command === 'risk' || command === 'context')) {
+    if (!arg) return null;
+    name = 'dev_get_risk'; args = { path: arg, repo };
+  } else if (tool === 'repowise' && (command === 'health' || command === 'status')) {
+    name = 'dev_index_query'; args = { query: 'services gateway index status', repo, budget_chars: 1200 };
+  } else {
+    if (!arg) return null;
+    name = 'dev_index_query'; args = { query: arg, repo };
+  }
+  const res = await executeDevCodeIndexTool(name, args, threadId);
+  if (!res.ok) return res;
+  return { ok: true, data: { ...(res.data || {}), served_by: `${name} (S3 code index; the ${tool} CLI is not installed in this runtime)` } };
 }
 
 // VTID-03837: explicit table allowlist for dev_db_query — never arbitrary SQL.
@@ -3735,6 +3818,13 @@ export async function executeTool(
         );
         break;
 
+      // VTID-04229: Operator Console codebase index (S3 bundle)
+      case 'dev_index_query':
+      case 'dev_graph_path':
+      case 'dev_get_risk':
+        result = await executeDevCodeIndexTool(toolName as CodeIndexToolName, args as Record<string, unknown>, threadId);
+        break;
+
       // VTID-04023: Operator Console read-only SQL
       case 'dev_run_sql_readonly':
         result = await executeDevRunSqlReadonly(
@@ -4071,6 +4161,7 @@ const CODEBASE_OVERVIEW_BLOCK = `**Codebase orientation (vitana-platform, refres
 - Architectural hubs (most-connected symbols, i.e. touching these has the widest blast radius): RunContext, function_tool(), summarize(), emitOasisEvent(), getSupabase(), _dispatch(), renderApp() (Command Hub frontend, services/gateway/src/frontend/command-hub/app.js), gatewayApiCall(), buildContextHeaders(), requireAuth(), developerGate().
 - Known health hotspot: services/gateway/src/routes/orb-live.ts (lowest maintainability score in the repo — large, stateful, high change-risk file).
 - dev_search_codebase blind spot: GitHub's code search index excludes files over 384KB. app.js above is ~2.5MB, so a search will ALWAYS return zero hits for anything inside it regardless of query — this is a tool limitation, not evidence the content is missing. Use dev_read_file with an explicit path for that file instead.
+- Codebase index (VTID-04229): dev_index_query (symbols/files matching a question + what they import/call and what calls them), dev_graph_path (shortest dependency path A→B) and dev_get_risk (churn, bug fixes, ownership, import fan-in, dead code for one file) answer from the Graphify+RepoWise bundle rebuilt on every merge to main — use dev_index_query BEFORE dev_search_codebase to find the right files, and dev_get_risk before proposing an edit to a shared file. Both repos, via the "repo" parameter.
 - For anything beyond this summary — a specific file, function, recent change, or "where is X implemented" — call dev_search_codebase / dev_read_file (real GitHub API, VTID-03835/VTID-03946) or dev_db_query (VTID-03837) rather than guessing from this block alone.`;
 
 /**

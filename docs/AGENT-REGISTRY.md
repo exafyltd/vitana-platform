@@ -116,6 +116,24 @@ works (CI, ubuntu) and published**, and the runtime must **not need lancedb**
 CLI; RepoWise's per-file history/risk signal has to be exported at build
 time or the runtime image has to leave Alpine.
 
+**Shipped — VTID-04229 (2026-09-21):** exactly that. `CODEINTEL-INDEX.yml`
+builds both tools on ubuntu on every merge to `main`, `scripts/codeintel/
+build-code-index.mjs` derives a ~1.6 MB bundle (compact graph + per-file
+risk facts from the RepoWise export) and publishes it to
+`s3://vitana-code-index/<repo>/<sha>/` + `latest/`; `codeintel-index.ts`
+loads it (no CLI, no Python) and answers `dev_index_query` /
+`dev_graph_path` / `dev_get_risk` for the Operator Console (behind the
+existing `OPERATOR_CODEINTEL_ENABLED`; `dev_repowise`/`dev_graphify` fall
+back to it on `not_configured`) and for the executor (`pullCodeIndex` at run
+start, same three tools declared only when the bundle loaded). Bucket +
+bucket policy (read: `vitana-ecs-task-role`, publish: the OIDC deploy
+role) provisioned from the session; both `iam:PutRolePolicy` steps and
+`s3:PutEncryptionConfiguration` were denied and are recorded verbatim in
+`docs/validation/VTID-04229/outputs/`. A bootstrap bundle from `9545b19` is
+published. **Not yet observed live:** a staging turn or executor run
+reading the bucket under the task role — the first `dev_index_query` on
+staging after the deploy is the exercise.
+
 ## 4. Cross-cutting findings (ranked)
 
 1. **Two agents bypass the routing policy entirely** — the architecture
@@ -124,7 +142,10 @@ time or the runtime image has to leave Alpine.
    or `llm.call.*` telemetry; the investigator hard-fails on prod (no key).
 2. **The agent executor has no memory at all** — no bootstrap, no recall,
    no prior-attempt record. Fix mode re-reads the CI evidence but never
-   what attempt N-1 tried.
+   what attempt N-1 tried. *Closed by VTID-04223 (merged 2026-09-21,
+   `agent-memory-context.ts`): bootstrap pack + top-10 recall + prior
+   `agent_runs` in, run-transcript facts out; live run still to be
+   recorded.*
 3. **Validator, planner and triage are tool-less single-shot calls** —
    the validator cannot read a file the diff touches, triage cannot read a
    log or an `architecture_reports` row.
@@ -140,8 +161,8 @@ time or the runtime image has to leave Alpine.
 
 | Agent | Memory in | Memory out | Tools scoped | Routed stage |
 |---|---|---|---|---|
-| Operator chat | ✅ | ✅ | ✅ (codeintel not live) | ✅ |
-| Agent executor | ❌ | ⚠️ indirect | ⚠️ no index | ✅ |
+| Operator chat | ✅ | ✅ | ✅ index tools shipped (VTID-04229; staging read not yet observed) | ✅ |
+| Agent executor | ✅ VTID-04223 (live run pending) | ✅ VTID-04223 (run-transcript facts) + indirect | ✅ index tools shipped (VTID-04229; live run pending) | ✅ |
 | Single-shot executor | ⚠️ | ⚠️ indirect | ❌ | ✅ |
 | Planner | ❌ | ❌ | ❌ | ✅ |
 | Validator | ❌ | ❌ | ❌ | ✅ |
