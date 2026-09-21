@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04184",
+  "execution_id": "9a998bb2-c35c-4df2-95a5-d06b2960b576",
+  "finding_id": "ac808795-0d42-416d-9d28-ebd895671e09",
+  "plan_version": 1,
+  "branch": "dev-autopilot/9a998bb2",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/console-task-20-test-only-plan-safety-gate.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:25:07.305Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
