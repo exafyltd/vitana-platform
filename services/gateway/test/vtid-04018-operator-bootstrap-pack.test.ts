@@ -194,13 +194,15 @@ describe('VTID-04018 wiring', () => {
     expect(body).toMatch(/const systemPrompt = toolResultPack \? `\$\{baseToolResultPrompt\}\\n\\n\$\{toolResultPack\}` : baseToolResultPrompt;/);
   });
 
-  it('staging pins the flag and the two build-info targets; prod does not', () => {
+  it('staging pins the flag and the two build-info targets; prod declares the same (VTID-04230)', () => {
     expect(staging).toMatch(/\{name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"\}/);
     expect(staging).toMatch(/\{name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https:\/\/[^"]+\/api\/v1\/admin\/build-info,prod=https:\/\/[^"]+\/api\/v1\/admin\/build-info"\}/);
     const stripBlock = staging.slice(staging.indexOf('.containerDefinitions[0].environment |='), staging.indexOf('.containerDefinitions[0].secrets |='));
     const strip = stripBlock.slice(0, stripBlock.indexOf('| not) ]'));
     expect(strip).toContain('"OPERATOR_BOOTSTRAP_PACK_ENABLED"');
     expect(strip).toContain('"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS"');
-    expect(prod).not.toContain('OPERATOR_BOOTSTRAP_PACK_ENABLED');
+    // VTID-04230: prod now declares the same pin and the same two targets.
+    expect(prod).toMatch(/\{name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"\}/);
+    expect(prod).toMatch(/\{name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https:\/\/[^"]+\/api\/v1\/admin\/build-info,prod=https:\/\/[^"]+\/api\/v1\/admin\/build-info"\}/);
   });
 });
