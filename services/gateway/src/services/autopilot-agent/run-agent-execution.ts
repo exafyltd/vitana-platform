@@ -25,12 +25,12 @@ import { applyPrContract } from '../dev-autopilot-pr-contract';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
 import type { LLMProvider, LLMRouterMessage } from '../llm-router';
-import { AGENT_TOOLS, executeAgentTool } from './agent-tools';
+import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
-import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
@@ -232,21 +232,34 @@ export async function runAgentExecutionSession(
         + (memory.stats.errors.length ? ` errors: ${memory.stats.errors.join('; ')}` : ''),
       data: { memory: memory.stats },
     });
+    // VTID-04229: the S3-published codebase index (Graphify graph + RepoWise
+    // facts, rebuilt on every merge to main). Loaded once per run; when it is
+    // absent the three index tools are simply not declared.
+    const codeIndex = await pullCodeIndex(`${GITHUB_OWNER}/${GITHUB_REPO}`);
+    onStep({
+      turn: 0, kind: 'tool', name: 'runner:code_index', isError: codeIndex.stats.enabled && !codeIndex.bundle,
+      detail: codeIndex.bundle
+        ? `${codeIndex.describe} (source ${codeIndex.stats.source}, ${codeIndex.stats.from_cache ? 'cached' : 'loaded'} in ${codeIndex.stats.ms} ms)`
+        : codeIndex.stats.enabled ? `code index unavailable: ${codeIndex.stats.error}` : 'code index disabled (AGENT_CODE_INDEX_ENABLED=false)',
+      data: { code_index: codeIndex.stats },
+    });
     const systemPrompt = buildAgentSystemPrompt({
       repo: `${GITHUB_OWNER}/${GITHUB_REPO}`, baseBranch: GITHUB_BASE_BRANCH, branch, vtid: telemetryVtid,
       allowScope: scope.allow_scope, denyScope: scope.deny_scope,
       conventions: loadAutopilotContext(), claudeMdExcerpt: await readClaudeMdExcerpt(ws.repoDir),
       memoryContext: memory.text,
+      codeIndex: codeIndex.describe || undefined,
     });
     const repoDir = ws.repoDir;
     // VTID-04016: refuse re-running a check that already failed since the
     // last edit (Run #4b spent ~18 of 22 minutes on nine identical tsc runs).
     const checkGuard = new RepeatedCheckGuard();
-    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), checkGuard, log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
+    const toolCtx = { root: repoDir, runCheck: makeCheckRunner(repoDir), checkGuard, codeIndex: codeIndex.bundle, log: (l: string) => console.log(`${LOG_PREFIX} [${short}] ${l}`) };
+    const runTools = agentToolsFor(toolCtx);
     const callLlm = (prompt: string, history: LLMRouterMessage[], sys: string) =>
       callViaRouter('worker', prompt, {
         vtid: telemetryVtid, service: 'autopilot-agent', allowFallback: true, maxTokens: AGENT_MAX_TOKENS,
-        systemPrompt: sys, history, tools: AGENT_TOOLS,
+        systemPrompt: sys, history, tools: runTools,
         providerOverride: override.provider, modelOverride: override.model,
       });
 
@@ -270,7 +283,7 @@ export async function runAgentExecutionSession(
     for (let round = 0; round <= AGENT_MAX_FIX_ROUNDS; round++) {
       fixRounds = round;
       const loop = await runAgentLoop({
-        systemPrompt, prompt, tools: AGENT_TOOLS, history,
+        systemPrompt, prompt, tools: runTools, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
         callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
         isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,

@@ -18,6 +18,7 @@ import path from 'path';
 import type { LLMRouterTool } from '../llm-router';
 import { matchGlob } from '../dev-autopilot-safety';
 import type { RepeatedCheckGuard } from './agent-check-guard';
+import { codeIndexRouterTools, isCodeIndexToolName, runCodeIndexTool, type CodeIndexBundle } from '../codeintel-index';
 
 export type CheckKind = 'tsc' | 'jest' | 'git_diff' | 'git_status' | 'node_check';
 
@@ -36,6 +37,13 @@ export interface AgentToolContext {
   /** VTID-04016: refuses re-running a check that already failed since the
    *  last edit (Run #4b re-ran an identically failing tsc nine times). */
   checkGuard?: RepeatedCheckGuard;
+  /**
+   * VTID-04229: the S3-published codebase index for this run, pulled by
+   * `pullCodeIndex` (agent-workspace.ts). When absent the three index tools
+   * are not declared (see `agentToolsFor`) and, if called anyway, answer
+   * with an honest "not available" error instead of a crash.
+   */
+  codeIndex?: CodeIndexBundle | null;
 }
 
 export interface FinishArgs {
@@ -156,6 +164,18 @@ export const AGENT_TOOLS: LLMRouterTool[] = [
   },
 ];
 
+/**
+ * VTID-04229: dev_index_query / dev_graph_path / dev_get_risk — the same
+ * three declarations the Operator Console gets (codeintel-index.ts), in the
+ * router's provider-neutral shape. Declared for a run only when its bundle
+ * loaded, so a missing index costs the model no wasted turns.
+ */
+export const CODE_INDEX_TOOLS: LLMRouterTool[] = codeIndexRouterTools();
+
+export function agentToolsFor(ctx: Pick<AgentToolContext, 'codeIndex'>): LLMRouterTool[] {
+  return ctx.codeIndex ? [...AGENT_TOOLS, ...CODE_INDEX_TOOLS] : AGENT_TOOLS;
+}
+
 /** Resolve a repo-root-relative path inside `root`; throws on any escape. */
 export function resolveInsideRoot(root: string, rel: unknown): string {
   if (typeof rel !== 'string' || rel.trim().length === 0) throw new Error('path is required');
@@ -252,6 +272,14 @@ export async function executeAgentTool(
         log(`${name} refused by the repeated-navigation guard`);
         return { result: refusal, isError: true };
       }
+    }
+    // VTID-04229: codebase index tools — pure functions over the loaded
+    // bundle; no file system access, no subprocess.
+    if (isCodeIndexToolName(name)) {
+      if (!ctx.codeIndex) return { result: `${name} is not available in this run (no codebase index was loaded — use search_text / find_files instead)`, isError: true };
+      const out = runCodeIndexTool(name, args, ctx.codeIndex);
+      log(`${name} ${JSON.stringify(args).slice(0, 160)} → ${out.ok ? 'ok' : 'error'}`);
+      return { result: out.text, isError: !out.ok };
     }
     switch (name) {
       case 'read_file': {
