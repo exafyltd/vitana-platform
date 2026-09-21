@@ -122,6 +122,44 @@ export function deriveVtidTitleFromPlan(planMarkdown: string, explicit?: string)
  * route calls — no parallel allocator, no fabricated number. Any failure is
  * returned as an error so the caller refuses loudly instead of executing
  * without a governed VTID.
+ *
+ * FAILURE MODES WHEN THIS PARTIALLY FAILS (VTID-04193 — behaviour as actually
+ * implemented below; three distinct outcomes, only the first is fully clean):
+ *
+ *  1. The `allocate_global_vtid` RPC never returns a usable VTID (non-2xx, a
+ *     body with no/malformed `vtid`, or a thrown fetch/parse error). The
+ *     `try`/`catch` returns `{ ok: false }` and NOTHING further happens: no
+ *     ledger row, no recommendation, no execution. Fully clean refusal.
+ *
+ *  2. The RPC DOES return a VTID but the follow-up registration PATCH fails
+ *     (`patch.ok === false`). The allocator has already INSERTed a shell row
+ *     (`status='allocated'`, `title='Allocated - Pending Title'`) in its own
+ *     transaction — this function issues no compensating DELETE/rollback, so
+ *     a PARTIAL/ORPHANED allocation IS possible and is left behind: the VTID
+ *     exists as a bare `allocated` shell, never
+ *     registered `spec_status='approved'`/`status='in_progress'`, and it
+ *     permanently consumes that VTID number (the allocator's skip-forward
+ *     loop treats any existing `vtid_ledger` row as taken). It is inert
+ *     though: this function returns `vtid_registration_failed for <vtid>`
+ *     before `triggerOperatorExecution` reaches the governance re-read, the
+ *     recommendation insert or `approveAutoExecute`, so no execution, no code
+ *     change and no PR is ever created against it. The caller sees a clean
+ *     `{ ok: false }`; the orphan is visible in `vtid_ledger` for manual
+ *     cleanup and is pinned by
+ *     `test/console-task-29-vtid-selfalloc-failure-mode.test.ts`.
+ *
+ *  3. The registration PATCH throws instead of returning `ok: false` (e.g.
+ *     the `supa()` helper rejects). This is caught by the same outer `catch`
+ *     as case 1, so the caller gets the SAME
+ *     `vtid_allocation_failed: <message>` prefix even though a VTID was in
+ *     fact minted — the orphan from case 2 is possible here too, just
+ *     reported under the allocation-failure label. The error text is
+ *     therefore not a reliable signal of whether a shell row exists; treat
+ *     any `vtid_allocation_failed` without a returned VTID as "may have
+ *     left an allocated shell row".
+ *
+ * In no case does this function return a VTID that was not successfully
+ * registered approved — on every failure the caller refuses the execution.
  */
 async function allocateAndRegisterVtid(
   s: SupaConfig,
