@@ -605,6 +605,73 @@ jobs:
                     {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
                     {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"} ] )')
 
+          # VTID-04230 — Operator Console / Dev Autopilot capability flags,
+          # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
+          # 4: "production runs a different operator than staging — rev 114
+          # pins one flag"). Every value below is the exact value
+          # AWS-STAGE-DEPLOY-GATEWAY.yml pins, verified live on staging
+          # (VTID-04037 pass, the VTID-04221 end-to-end completions), so the
+          # prod console gets the same bootstrap pack, threads, turn memory,
+          # read tools, codebase index and maker-checker approval hold.
+          #
+          # What this does NOT do:
+          #   - It does not deploy. This workflow is workflow_dispatch-only;
+          #     declaring the pins here changes nothing until the next PUBLISH
+          #     or manual dispatch (CLAUDE.md §16). VTID-04230 was merged
+          #     WITHOUT dispatching this workflow, on the platform owner's
+          #     explicit "declare, do not dispatch".
+          #   - It does not pin the staging ECS-dispatch trio (use-job,
+          #     job-cloud, watcher-live). The live prod task def carries
+          #     DEV_AUTOPILOT_EXECUTOR_ENABLED=false (the executor tick is off
+          #     on prod), so an execution queued from the prod console is
+          #     claimed and run by the staging gateway (env-ownership,
+          #     VTID-04005) — prod never runs the executor in-process. Turning
+          #     the prod tick on is a separate owner decision.
+          #   - It does not wire the read-only SQL tool (dev_run_sql_readonly, its
+          #     switch + database-URL secret, VTID-04023/04037): that needs a Secrets
+          #     Manager reference, this workflow carries the task def forward
+          #     without a secrets loop, and the prod deploy role has no
+          #     secretsmanager:Describe* (VTID-03880). A literal ARN to a
+          #     secret that does not exist fails ECS provisioning before the
+          #     container starts — so the tool stays not_configured on prod
+          #     until scripts/aws/setup-operator-sql-readonly-secret.sh has
+          #     been run for a prod path and the reference added deliberately.
+          #   - It does not add the DeepSeek key secret. The operator stage's primary
+          #     (deepseek/deepseek-flash, policy v17) is unavailable on prod
+          #     for that reason and the router serves the Bedrock fallback;
+          #     wiring the secret (VTID-03880 shape) is the owner's call
+          #     because a secret the task role cannot read also fails
+          #     provisioning.
+          # Rollback for any flag: value -> "false" here, no code revert.
+          # CODEINTEL_*_REPO_DIR are NOT pinned: the CLI bridge cannot work on
+          # this image (lancedb, VTID-04222 §3); OPERATOR_CODEINTEL_ENABLED
+          # alone gates the S3 code-index tools (VTID-04229).
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                          "OPERATOR_ONRAMP_EXECUTOR",
+                                          "OPERATOR_CODEBASE_READ_ENABLED",
+                                          "OPERATOR_DB_READONLY_ENABLED",
+                                          "OPERATOR_AWS_READONLY_ENABLED",
+                                          "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+                                          "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
+                                          "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                          "OPERATOR_CODEINTEL_ENABLED",
+                                          "OPERATOR_PLANNER_ENABLED") | not) ]
+                + [ {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                    {name:"OPERATOR_ONRAMP_EXECUTOR", value:"agent"},
+                    {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                    {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_AWS_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"},
+                    {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
+                    {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
+                    {name:"OPERATOR_THREADS_ENABLED", value:"true"},
+                    {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                    {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                    {name:"OPERATOR_PLANNER_ENABLED", value:"true"} ] )')
+
           # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
           # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
           # unconditionally as a plain env var (`--update-env-vars=
