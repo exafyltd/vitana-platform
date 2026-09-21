@@ -1,7 +1,9 @@
-// impact-allow-no-test: pure data-access seam (thin Supabase query
-// wrappers, no independent request-handling behavior). Coverage note:
-// all 6 referencing test files wholesale jest.mock i18n/server-locale.ts
-// itself — zero genuine coverage of these queries today.
+// Genuine coverage: test/i18n/server-locale-repository.test.ts passes a
+// hand-built functional fake client directly (no jest.mock()) and asserts
+// on the exact table/column/filter/order calls issued — real coverage, not
+// a mock. (Before that, all 6 referencing test files wholesale
+// jest.mock'ed i18n/server-locale.ts itself, so these queries had zero
+// genuine coverage.)
 /**
  * i18n/server-locale.ts — Aurora migration B1 data-access seam
  * (VTID-03702, Supabase→Aurora migration workstream — see
@@ -25,12 +27,17 @@ export async function fetchUserPreferenceSttLanguage(sb: SupabaseClient, userId:
 }
 
 export async function fetchLatestPreferredLanguageFact(sb: SupabaseClient, userId: string) {
+  // memory_facts has NO created_at column (its timestamps are extracted_at /
+  // superseded_at / updated_at) — ordering by created_at was a schema drift
+  // that made PostgREST reject the query, silently disabling this last-resort
+  // locale fallback. Order by the real extraction timestamp, exactly as
+  // services/preference-facts-repository.ts does.
   return sb
     .from('memory_facts')
     .select('fact_value')
     .eq('user_id', userId)
     .eq('fact_key', 'preferred_language')
-    .order('created_at', { ascending: false })
+    .order('extracted_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 }
