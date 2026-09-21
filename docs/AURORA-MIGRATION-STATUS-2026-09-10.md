@@ -3532,3 +3532,78 @@ endpoints + IAM grants — `vitana-ecs-task-role` needs — this single fix
 unblocks BOTH the reconciliation script's DB connection path and the
 ECS Exec / Step 7 smoke test, since both dead-end at the identical
 private-networking gap.
+
+## Addendum, 2026-09-21 (VTID-04242) — state re-verified after a scheduled resume; closed the "exclude-done tables" catch-up gap with evidence this file already had
+
+Scheduled routine fired to continue the migration. Re-established
+current state from primary sources before doing anything, per the
+routine's own instructions, rather than trusting any cached summary:
+
+1. **Live DMS task inventory unchanged since the last addendum** — same
+   6 tasks, same statuses (`vitana-fullload-rehearsal-v2`
+   `stopped`/594-594-0, `vitana-supabase-to-aurora-v3` `failed` on the
+   same WAL protocol error, no new task created). No progress has
+   occurred on Step 5 since the ~12:00-13:00 UTC freeze-window attempt.
+2. **Production write grants re-verified live as currently RESTORED, not
+   frozen** — `information_schema.role_table_grants` for
+   `anon`/`authenticated`/`service_role` × `INSERT`/`UPDATE`/`DELETE`
+   shows the full, non-zero counts (`anon` 147/150/147, matching the
+   post-fix 4,174-grant baseline) — confirms the freeze exercised
+   ~12:00-13:00 UTC really was fully unfrozen afterward and production
+   has not been touched since. Checked via the Supabase MCP connection
+   (API-level), not `psql` — this session again has no VPC route to
+   Aurora, same gap as every prior row.
+3. **VTID-04101 has no open PRs in either repo.** Both PRs that carried
+   that VTID (`vitana-platform` #3461, #3482) are merged/closed;
+   `vitana-v1` #1117 is the same merged-without-review PR the
+   2026-09-21T00:53 UTC addendum flagged — **still unresolved, still not
+   touched.** That addendum's standing hold ("this session has stopped
+   taking further merge actions of any kind on any PR in either repo
+   until that decision is made") is respected here: this addendum's own
+   work is pushed as an open, unmerged PR (see below), not self-merged,
+   specifically because the platform-owner decision on #1117 is still
+   outstanding and this entry has no fresh in-conversation instruction
+   overriding it the way the 2026-09-21 freeze-window session's explicit
+   "Merge PR #3520" instruction did for that PR.
+4. **Closed a real, previously-unresolved runbook gap using evidence this
+   file already had, rather than opening a new investigation.** The
+   2026-09-19 open-item list (Addendum "2026-09-18", items (d)/(e)) asked
+   whether the `products`/`knowledge_docs`/10-other "exclude-done"
+   tables needed to move from "stay excluded" to "fix and include"
+   before the final cutover load. `products`/`knowledge_docs` was
+   already closed 2026-09-20 (no fix needed). The other 10 — the
+   `exclude-done-*` tables — was never closed, and the runbook's Step 5
+   (as of this morning) still said "clone `vitana-fullload-rehearsal-v2`'s
+   exact shape," which retains their exclusion. But this file's own
+   2026-09-12 Addenda (7) and (11) had ALREADY answered the underlying
+   question: (7) measured real drift (2-11%) on 4 of these tables since
+   whatever earlier effort first loaded them, and (11) traced every
+   Aurora-connected code path in the gateway and confirmed NONE of them
+   reads or writes any of the 10 tables — the actual `write_fact()`
+   memory-write path goes straight to Supabase PostgREST, never through
+   an Aurora pool. There is no separate sync mechanism protecting these
+   tables from a fresh load; they were loaded once, then abandoned.
+   **Fix:** new `scripts/aws/aurora-cutover-final-catchup-task.sh` —
+   byte-identical to `aurora-cutover-rehearsal-task.sh` (same
+   TRUNCATE_BEFORE_LOAD prep mode, same endpoints) except the 10
+   `exclude-done-*` mapping rules are removed, so `include public.%`
+   picks them up; `products`/`knowledge_docs` stay excluded (that
+   question is separately closed). Dry-run by default, validated
+   locally: `bash -n` clean, both embedded JSON blobs (`TABLE_MAPPINGS`,
+   `TASK_SETTINGS`) parse, dry-run output inspected and correct.
+   `docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md`'s Step 5 updated to point
+   at the new script and explain why, instead of the old
+   `vitana-fullload-rehearsal-v2` clone instruction.
+
+**Not done, and why:** the new script is created but **not run** — it
+only ever creates a DMS task (never starts one) even under `--apply`,
+and actually applying it here would require the same
+`ecs:RunTask`-adjacent AWS write access this session already has for
+`aws dms create-replication-task`, but running the real final catch-up
+load only makes sense inside a write-freeze window (Step 4), which
+nothing in this session's access level can safely orchestrate end-to-end
+(dispatching `reload-target` remains blocked by the auto-mode safety
+classifier, same as every prior attempt in this document). This is
+prep work for whoever executes the real Step 4-8 sequence next, not an
+attempt to execute it. Nothing destructive was attempted; nothing was
+written to production Supabase outside the governed VTID ledger.
