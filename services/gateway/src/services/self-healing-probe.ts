@@ -8,8 +8,8 @@
  * let the dedicated Synthetic Voice Probe verify them instead.
  */
 
-const DEFAULT_GATEWAY_URL =
-  process.env.GATEWAY_URL || 'https://gateway.vitanaland.com';
+import { gatewayBaseUrl } from '../env';
+
 const DEFAULT_TIMEOUT_MS = 5_000;
 
 export interface ProbeResult {
@@ -69,7 +69,9 @@ export async function probeEndpoint(
   }
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const gatewayUrl = opts.gatewayUrl ?? DEFAULT_GATEWAY_URL;
+  // VTID-04220: default to THIS environment's gateway (staging probes
+  // staging), resolved at call time so a task-def change needs no restart.
+  const gatewayUrl = opts.gatewayUrl ?? gatewayBaseUrl();
   const url = buildProbeUrl(endpoint, gatewayUrl);
   const started = Date.now();
 

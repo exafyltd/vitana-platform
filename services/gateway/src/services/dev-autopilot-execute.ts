@@ -59,6 +59,7 @@ import {
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
 import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
 import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from './dev-autopilot-deploy-topics';
+import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
 // VTID-04006: single-shot vs agent executor selection.
@@ -2558,7 +2559,9 @@ async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<vo
   // 429 (rate-limited during deploy churn) or 503 (Cloud Run cold start)
   // shouldn't fail an execution that's otherwise healthy. Only treat
   // 4xx-non-429 / 5xx-non-503 / network errors as definitive failure.
-  const gatewayUrl = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+  // VTID-04220: this environment's own gateway (staging probes staging), never
+  // the dead GCP host this line used to default to.
+  const gatewayUrl = gatewayBaseUrl();
   let alive = false;
   let lastStatus: number | null = null;
   for (let attempt = 0; attempt < 3 && !alive; attempt++) {
