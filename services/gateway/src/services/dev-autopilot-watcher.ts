@@ -389,7 +389,19 @@ export function analyzeVerificationWindow(
 // Status helpers
 // =============================================================================
 
-async function transitionStatus(
+/**
+ * VTID-04218: did a conditional PATCH actually move a row? PostgREST answers
+ * a 0-row PATCH with 200 and `[]` when a representation is requested, so
+ * "request succeeded" and "row moved" are different facts. Pure; exported
+ * for tests.
+ */
+export function transitionMovedRow(r: { ok: boolean; data?: unknown }): boolean {
+  if (!r.ok) return false;
+  if (Array.isArray(r.data)) return r.data.length > 0;
+  return true; // no representation returned — trust the status
+}
+
+export async function transitionStatus(
   s: SupaConfig,
   execId: string,
   fromStatus: string,
@@ -397,19 +409,27 @@ async function transitionStatus(
   extras: Record<string, unknown> = {},
 ): Promise<boolean> {
   // Conditional update via WHERE — if another tick already moved the row,
-  // this PATCH affects 0 rows and we treat it as a no-op.
-  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&status=eq.${fromStatus}`, {
+  // this PATCH affects 0 rows. VTID-04218: ask for the representation so a
+  // 0-row PATCH is reported as `false` (it used to return 204 and read as
+  // success), and so a write that the database REFUSED (2026-09-21: the
+  // Aurora cutover write-freeze revoked service_role writes for ~70 min
+  // while the watcher kept merging PRs on GitHub with nothing recorded)
+  // is visible to the caller — the live CI path now refuses to merge
+  // when this returns false.
+  const r = await supa<unknown[]>(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&status=eq.${fromStatus}`, {
     method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
+    headers: { Prefer: 'return=representation' },
     body: JSON.stringify({ status: toStatus, updated_at: new Date().toISOString(), ...extras }),
   });
+  const moved = transitionMovedRow(r);
+  if (!moved) console.warn(`${LOG_PREFIX} transition ${execId.slice(0, 8)} ${fromStatus}→${toStatus} did not move a row${r.ok ? '' : `: ${r.error}`}`);
   // VTID-AUTOPILOT-DUPMERGE: fire shared terminal side effects on success.
   // Without this, the watcher's `verifying → completed` transition never
   // flips the recommendation `new → completed`, and autoApproveTick re-
   // approves the same finding on the next 30s tick. See
   // applyExecTerminalSideEffects() docstring for incident detail.
-  if (r.ok) applyExecTerminalSideEffects(s, execId, toStatus);
-  return r.ok;
+  if (moved) applyExecTerminalSideEffects(s, execId, toStatus);
+  return moved;
 }
 
 async function bridgeFailure(execId: string, stage: FailureStage, error?: string, extras: Record<string, unknown> = {}): Promise<void> {
@@ -607,7 +627,15 @@ export async function ciWatcherTick(): Promise<void> {
     }
 
     // Both gate evaluations passed. Proceed with merge.
-    await transitionStatus(s, exec.id, 'ci', 'merging');
+    // VTID-04218: the merge is irreversible; the bookkeeping must land
+    // first. If the ci→merging transition did not move the row (another
+    // tick took it, or the database refused the write), do NOT merge —
+    // leave the PR for the next tick / the reconciler.
+    const enteredMerging = await transitionStatus(s, exec.id, 'ci', 'merging');
+    if (!enteredMerging) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] ci→merging not recorded; refusing to merge PR #${exec.pr_number} this tick`);
+      continue;
+    }
     await emitOasisEvent({
       vtid: WATCHER_VTID,
       type: 'dev_autopilot.execution.ci_passed',

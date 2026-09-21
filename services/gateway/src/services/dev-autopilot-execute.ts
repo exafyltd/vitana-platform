@@ -2310,6 +2310,16 @@ async function bridgeFailure(executionId: string, stage: string, error: string):
   }
 }
 
+/**
+ * VTID-04218: the squash-merge commit GitHub reports on a merged PR
+ * (`merge_commit_sha`), or null when absent/unset. Pure; exported for tests.
+ */
+export function mergedShaFromPr(pr: { merged?: boolean; merge_commit_sha?: string | null } | null | undefined): string | null {
+  if (!pr || !pr.merged) return null;
+  const sha = typeof pr.merge_commit_sha === 'string' ? pr.merge_commit_sha.trim() : '';
+  return /^[0-9a-f]{7,40}$/i.test(sha) ? sha : null;
+}
+
 /** Reconcile status='ci'. Source of truth: GitHub PR check runs. */
 async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
   if (!exec.pr_number) {
@@ -2321,6 +2331,7 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
   const prR = await githubRequest<{
     state: 'open' | 'closed';
     merged: boolean;
+    merge_commit_sha?: string | null;
     mergeable_state: 'clean' | 'unstable' | 'dirty' | 'blocked' | 'behind' | 'has_hooks' | 'unknown';
     head: { sha: string };
   }>(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`);
@@ -2331,14 +2342,24 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
 
   if (prR.data.merged) {
     // Already merged (CI green and watcher merged) — advance to deploying.
-    await patchExecution(s, exec.id, { status: 'deploying' });
+    // VTID-04218: stamp merge_sha exactly as the watcher's own merge path
+    // does, so the deploy stage can match the deploy event by commit
+    // (VTID-04215) and a failure there can still be reverted. Observed
+    // 2026-09-21: 11 rows reached here after a DB write outage swallowed the
+    // watcher's transitions; without the SHA they could only match by
+    // recency, and a later `deploying` failure could not be auto-reverted.
+    const mergeSha = mergedShaFromPr(prR.data);
+    await patchExecution(s, exec.id, {
+      status: 'deploying',
+      ...(mergeSha ? { metadata: { ...(exec.metadata || {}), merge_sha: mergeSha } } : {}),
+    });
     await emitOasisEvent({
       vtid: EXEC_VTID,
       type: 'dev_autopilot.execution.pr_merged',
       source: 'dev-autopilot',
       status: 'success',
       message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} already merged — advancing to deploying`,
-      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'ci' },
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'ci', merge_sha: mergeSha },
     });
     return;
   }
@@ -2396,19 +2417,24 @@ async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
 /** Reconcile status='merging'. Source of truth: GitHub PR.merged. */
 async function reconcileMerging(s: SupaConfig, exec: StuckExecRow): Promise<void> {
   if (!exec.pr_number) return;
-  const prR = await githubRequest<{ state: string; merged: boolean }>(
+  const prR = await githubRequest<{ state: string; merged: boolean; merge_commit_sha?: string | null }>(
     `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`,
   );
   if (!prR.ok || !prR.data) return;
   if (prR.data.merged) {
-    await patchExecution(s, exec.id, { status: 'deploying' });
+    // VTID-04218: same merge_sha stamp as reconcileCi — see there.
+    const mergeSha = mergedShaFromPr(prR.data);
+    await patchExecution(s, exec.id, {
+      status: 'deploying',
+      ...(mergeSha ? { metadata: { ...(exec.metadata || {}), merge_sha: mergeSha } } : {}),
+    });
     await emitOasisEvent({
       vtid: EXEC_VTID,
       type: 'dev_autopilot.execution.pr_merged',
       source: 'dev-autopilot',
       status: 'success',
       message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} merged — advancing to deploying`,
-      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'merging' },
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'merging', merge_sha: mergeSha },
     });
   } else if (prR.data.state === 'closed') {
     await patchExecution(s, exec.id, {
