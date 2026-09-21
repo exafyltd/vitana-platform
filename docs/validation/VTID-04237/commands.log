@@ -1,0 +1,6 @@
+# VTID-04237 — commands (2026-09-21), appended as the work proceeds
+curl POST https://gateway.vitanaland.com/api/v1/vtid/allocate → VTID-04237; ledger title/status/spec_status set (Supabase MCP)
+aws ecs describe-task-definition --task-definition vitana-autopilot-executor   # rev 21: no DEV_AUTOPILOT_EXECUTOR, no DEV_AUTOPILOT_PR_APPROVAL_REQUIRED (outputs/task-def-before.txt)
+select … from autopilot_recommendations cross join dev_autopilot_config          # 15 findings: 10 eligible by scanner/effort/risk, 8 of them with a plan (outputs/eligible-findings.txt)
+edit .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml + AWS-STAGE-DEPLOY-GATEWAY.yml (strip + add both env vars)
+npx jest <8 pin/guard suites>   # 8/8 suites green after updating the two verbatim strip-list assertions

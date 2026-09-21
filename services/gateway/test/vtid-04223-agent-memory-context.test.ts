@@ -214,6 +214,6 @@ describe('VTID-04223 prompt + runner wiring (source contract)', () => {
     const wf = readFileSync(join(__dirname, '../../../.github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml'), 'utf8');
     expect(wf).toMatch(/\{name:"AGENT_MEMORY_CONTEXT_ENABLED", value:"true"\}/);
     expect(wf).toMatch(/\{name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/admin\/build-info,prod=https:\/\/gateway\.vitanaland\.com\/api\/v1\/admin\/build-info"\}/);
-    expect(wf).toMatch(/IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS"\)/);
+    expect(wf).toMatch(/IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS","DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED"\)/);
   });
 });

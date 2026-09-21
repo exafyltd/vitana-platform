@@ -880,6 +880,7 @@ jobs:
                                                 "GCP_SERVICE_ACCOUNT_JSON",
                                                 "OPERATOR_CODEINTEL_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
+                                                "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -915,6 +916,8 @@ jobs:
                           {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
                           {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                           {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
+                          {name:"DEV_AUTOPILOT_EXECUTOR", value:"agent"},
+                          {name:"DEV_AUTOPILOT_PR_APPROVAL_REQUIRED", value:"true"},
                           {name:"OPERATOR_PLANNER_ENABLED", value:"true"},
                           {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
                           {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},

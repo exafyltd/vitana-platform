@@ -92,7 +92,7 @@ describe('VTID-03850: the executor task definition gets an LLM runtime of its ow
     // env upsert still strips its own targets before re-adding them, just
     // four names instead of two now.
     expect(registerStep).toMatch(
-      /select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS"\) \| not\)/,
+      /select\(\.name \| IN\("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS","AGENT_MEMORY_CONTEXT_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS","DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED"\) \| not\)/,
     );
     expect(registerStep).toMatch(/select\(\.name \| IN\("DEEPSEEK_API_KEY"\) \| not\)/);
     expect(registerStep).toMatch(/\(\. \/\/ \[\]\)\[\]/);
