@@ -32,7 +32,7 @@ export async function insertFeedbackTicket(sb: SupabaseClient, insertRow: Record
 export async function fetchMyTickets(sb: SupabaseClient, args: { limit: number; cursor: string | undefined }) {
   let query = sb
     .from('feedback_tickets')
-    .select('id, ticket_number, kind, status, priority, surface, created_at, resolver_agent, resolved_at, user_confirmed_at, structured_fields')
+    .select('id, ticket_number, kind, status, priority, surface, created_at, resolver_agent, resolved_at, user_confirmed_at, structured_fields, resolution_md, draft_answer_md')
     .order('created_at', { ascending: false })
     .limit(args.limit);
 

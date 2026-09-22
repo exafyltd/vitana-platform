@@ -409,6 +409,7 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
       if (upErr || !updated) { skipped++; continue; }
       sent++;
       results.push({ ticket_number: updated.ticket_number, from: 'answer_ready', to: 'resolved' });
+      void import('../services/feedback-reporter-notify').then((m) => m.notifyFeedbackReporter(t.id)).catch(() => { /* best-effort */ });
       await emit('feedback.ticket.resolved', updated, { from: 'bulk-send-answer', resolver_agent: updated.resolver_agent });
     }
   }
@@ -953,7 +954,11 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   else if (t.kind === 'support_question' && t.status === 'answer_ready') {
     const { data: u, error: upErr } = await ticketsRepo.resolveSupportQuestionTicket(supabase, t.id, new Date().toISOString());
     if (upErr) return res.status(502).json({ ok: false, error: upErr.message });
-    if (u) { newStatus = 'resolved'; action = 'sent_answer'; }
+    if (u) {
+      newStatus = 'resolved'; action = 'sent_answer';
+      // VTID-04312: tell the member their question was answered.
+      void import('../services/feedback-reporter-notify').then((m) => m.notifyFeedbackReporter(t.id)).catch(() => { /* best-effort */ });
+    }
   }
 
   // marketplace_claim / account_issue: spec_ready → in_progress (no

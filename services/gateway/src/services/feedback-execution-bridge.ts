@@ -286,6 +286,13 @@ export async function dispatchFeedbackTicket(
   if (!spec) {
     return { ok: false, error: 'NO_SPEC — call /draft-spec before dispatch' };
   }
+  // VTID-04311: a placeholder spec (SQL auto-triage or an LLM-unavailable
+  // fallback) must never become an autopilot plan.
+  const { isPlaceholderSpec } = await import('./feedback-spec-drafter');
+  if (isPlaceholderSpec(spec)) {
+    const message = 'The spec is still a placeholder — draft a real spec first (it is redrafted automatically).';
+    return { ok: false, error: `SPEC_PLACEHOLDER — ${message}`, violations: [{ code: 'spec_placeholder', message }] };
+  }
 
   // 1. Idempotency (VTID-02674): the recommendation has a UNIQUE constraint
   //    on (source_type, signal_fingerprint). A previous failed attempt may

@@ -234,9 +234,18 @@ router.get('/mine', async (req: Request, res: Response) => {
     return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
   }
 
+  // VTID-04312: the reporter sees the answer / resolution once the ticket is
+  // resolved — never an unsent draft.
+  const RESOLVED = new Set(['resolved', 'user_confirmed']);
+  const tickets = (data ?? []).map((t: Record<string, unknown>) => {
+    const { resolution_md, draft_answer_md, ...rest } = t as Record<string, unknown> & { resolution_md?: string | null; draft_answer_md?: string | null };
+    if (!RESOLVED.has(String(rest.status))) return rest;
+    return { ...rest, resolution_md: resolution_md ?? null, answer_md: draft_answer_md ?? null };
+  });
+
   return res.json({
     ok: true,
-    tickets: data ?? [],
+    tickets,
     next_cursor: data && data.length === limit ? data[data.length - 1].created_at : null,
   });
 });

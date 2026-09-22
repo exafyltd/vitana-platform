@@ -26,6 +26,8 @@ export const GATEWAY_DEFAULT_LOCALE: GatewayLocale = 'de';
 
 // Locale-agnostic key registry. Add new keys here, then add translations below.
 export type GatewayI18nKey =
+  | 'notif.feedback_resolved.title'
+  | 'notif.feedback_resolved.body'
   | 'notif.morning_briefing.title'
   | 'notif.morning_briefing.body'
   | 'notif.diary_reminder.title'

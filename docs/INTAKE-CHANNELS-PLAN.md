@@ -70,10 +70,10 @@ report-back reconciler.
 |---|------|------|--------|
 | 1 | VTID-04307 | Verify JWT signature on the ticket admin endpoints (`ensureTenantAdmin`) | done — PR #3595 (`a24a674`) |
 | 2 | VTID-04308 | "Approve & Fix" dispatches; VTID per dispatched ticket (`linked_vtid`); feedback lane obeys the kill switch | done — PR #3595 (`a24a674`) |
-| 3 | VTID-04309 | Command Hub voice turns recorded into the Operator Console thread; not copied into the community inbox | in review (steps 3+4 PR) |
-| 4 | VTID-04310 | Command Hub voice: one operator-delegation tool (same gate + hold as `autopilot_run_task`), surface-gated developer catalog, persona prompt update | in review (steps 3+4 PR) |
-| 5 | VTID-04311 | LLM spec drafting at triage for bug/ux; dispatch refuses placeholder specs | pending |
-| 6 | VTID-04312 | Notify the reporter on resolved / needs-more-info (tt() catalog); resolution in `/mine` | pending |
+| 3 | VTID-04309 | Command Hub voice turns recorded into the Operator Console thread; not copied into the community inbox | done — PR #3596 (`7763609`) |
+| 4 | VTID-04310 | Command Hub voice: one operator-delegation tool (same gate + hold as `autopilot_run_task`), surface-gated developer catalog, persona prompt update | done — PR #3596 (`7763609`) |
+| 5 | VTID-04311 | LLM spec drafting at triage for bug/ux; dispatch refuses placeholder specs | in review (steps 5+6 PR) |
+| 6 | VTID-04312 | Notify the reporter on resolved (tt() catalog); resolution in `/mine` | in review (steps 5+6 PR) |
 | 7 | VTID-04313 | Diary recorders → `feedback_tickets`, retire `user_feedback_reports`; root-cause the intake silence since 2026-07-11 | pending |
 
 ### Step details
@@ -131,3 +131,10 @@ report-back reconciler.
 - **Step 3/4 residual:** the Command Hub voice-turn sync runs after each
   spoken turn and when the overlay closes; a console opened in a
   second tab sees voice turns only when that thread is (re)opened.
+- **Step 6 scope decision:** only RESOLVED is announced to the member.
+  `needs_more_info` after a failed autopilot run is a supervisor note (the fix
+  attempt failed), not a message for the reporter. Arabic stays on the
+  EN/DE fallback until its catalog is translated through the audit workflow
+  (the catalog guard requires `ar` to stay honestly incomplete).
+- **Step 6 frontend follow-up (step 7 PR, `exafyltd/vitana-v1`):** Talk to
+  Vitana should render `resolution_md` / `answer_md` from `/mine`.

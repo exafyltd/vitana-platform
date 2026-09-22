@@ -116,5 +116,7 @@
   "notif.partner_test_status_changed.title": "Actualización de {partner_name}",
   "notif.partner_test_status_changed.body": "Hay una actualización sobre tu {test_name}.",
   "notif.partner_test_result_ready.title": "Tus resultados ya están listos",
-  "notif.partner_test_result_ready.body": "Tus resultados de {test_name} de {partner_name} ya están listos. Pídele a Vitana que te los explique."
+  "notif.partner_test_result_ready.body": "Tus resultados de {test_name} de {partner_name} ya están listos. Pídele a Vitana que te los explique.",
+  "notif.feedback_resolved.title": "Tu reporte está resuelto",
+  "notif.feedback_resolved.body": "Hemos solucionado el problema que reportaste ({ticket}). ¡Gracias por ayudarnos a mejorar!"
 }

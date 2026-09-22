@@ -134,3 +134,14 @@ describe('kill switch applies to the feedback lane (exemption removed)', () => {
     expect(src).toMatch(/if \(cfg\.kill_switch\) return;\n\n  \/\/ 2\. Concurrency cap/);
   });
 });
+
+describe('VTID-04311: a placeholder spec is never dispatched', () => {
+  it('refuses with spec_placeholder before any allocation or execution', async () => {
+    ticketRow.spec_md = '# Devon auto-draft spec (placeholder)\n\nUser report: x';
+    const r = await approveAndDispatchTicket('tk-1', 'admin-1');
+    expect(r.ok).toBe(false);
+    expect(r.violations?.[0]?.code).toBe('spec_placeholder');
+    expect(mockAlloc).not.toHaveBeenCalled();
+    expect(mockBridge).not.toHaveBeenCalled();
+  });
+});

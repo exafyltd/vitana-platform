@@ -181,6 +181,8 @@ export async function reconcileCompletedFeedbackTickets(s: SupaConfig): Promise<
       if (upR.ok) {
         closed++;
         console.log(`${LOG_PREFIX} closed ${tk.ticket_number} via execution ${exec.id.slice(0, 8)} (verified=${verified})`);
+        // VTID-04312: tell the reporter their problem was fixed.
+        void import('./feedback-reporter-notify').then((m) => m.notifyFeedbackReporter(tk.id)).catch(() => { /* best-effort */ });
         // Best-effort OASIS event so dashboards see closure.
         try {
           const { emitOasisEvent } = await import('./oasis-event-service');
