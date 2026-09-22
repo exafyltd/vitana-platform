@@ -50,6 +50,7 @@ function getSupa(): SupaConfig | null {
 }
 
 let missingTableWarned = false;
+let nonUuidUserIdLogged = false;
 
 async function rest<T>(s: SupaConfig, path: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
   try {
@@ -82,7 +83,7 @@ async function rest<T>(s: SupaConfig, path: string, init: { method?: string; bod
 }
 
 /** Reset the once-per-process warning (tests). */
-export function resetOperatorThreadsWarning(): void { missingTableWarned = false; }
+export function resetOperatorThreadsWarning(): void { missingTableWarned = false; nonUuidUserIdLogged = false; }
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -127,6 +128,31 @@ export function shouldSummarize(turns: number, summaryTurns: number, every: numb
   return turns > 0 && turns % every === 0 && turns > summaryTurns;
 }
 
+/**
+ * VTID-04189: `operator_threads.user_id` is a UUID column. Non-standard
+ * callers can carry a non-UUID identity string (a service name, a handle…),
+ * and a raw insert then fails the whole thread write — the failure was only
+ * ever swallowed by the generic try/catch, silently no-oping the first-turn
+ * bookkeeping. Normalise anything that isn't UUID-shaped to null so the row
+ * still lands (the thread is bookkeeping; the identity is not essential).
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuidShapedUserId(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
+/** UUID-shaped identity → itself; anything else → null (logged once per process). */
+function normalizeUserId(userId: string | null | undefined): string | null {
+  const raw = userId || null;
+  if (raw === null || isUuidShapedUserId(raw)) return raw;
+  if (!nonUuidUserIdLogged) {
+    nonUuidUserIdLogged = true;
+    console.log(`${LOG_PREFIX} non-UUID identity user_id normalised to null for thread bookkeeping (operator_threads.user_id is a uuid column)`);
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------------
@@ -165,7 +191,7 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
         method: 'POST',
         body: {
           id: input.threadId,
-          user_id: input.identity?.user_id || null,
+          user_id: normalizeUserId(input.identity?.user_id),
           tenant_id: input.identity?.tenant_id || null,
           role: input.identity?.role || null,
           title: deriveThreadTitle(input.userText),

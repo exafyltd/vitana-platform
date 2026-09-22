@@ -44,8 +44,8 @@ describe('VTID-04037: staging pins the four operator-agent flags to exact "true"
     expect(envStripList()).toContain(`"${flag}"`);
   });
 
-  it.each(FLAGS)('does NOT pin %s on the prod gateway deploy workflow', (flag) => {
-    expect(prod).not.toContain(flag);
+  it.each(FLAGS)('is now ALSO declared %s=true on the prod gateway deploy workflow (VTID-04230 prod parity — declared, not dispatched)', (flag) => {
+    expect(prod).toContain(`{name:"${flag}", value:"true"}`);
   });
 
   it('keeps the on-ramp, agent executor and ECS dispatch the flags depend on', () => {

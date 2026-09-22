@@ -18,6 +18,8 @@
  *   recent events      — the last N deploy.* / dev_autopilot.* OASIS events
  *   tool catalog       — rendered from the declarations the model is
  *                        actually given this turn (never a hand-typed list)
+ *   operator flags     — whether thread persistence and turn-memory
+ *                        extraction are on, read live each turn (VTID-04175)
  *
  * Every source is independently bounded, timed out and fail-open: a source
  * that cannot be read renders one "(unavailable: …)" line and the turn
@@ -25,11 +27,17 @@
  * and concurrent builds coalesce, so a cold cache costs one round of
  * fetches, not one per request. `OPERATOR_BOOTSTRAP_PACK_ENABLED=true`
  * gates the whole thing (default off — deploying this changes nothing).
+ * VTID-04173: when `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS` is unset, the
+ * build-info section still renders its "(no build-info targets …)" line and
+ * one process-wide warning names the missing env var — a misconfigured
+ * deployment is discoverable in the logs instead of degrading silently.
  * Not a replacement for dev_read_file / dev_search_codebase: the pack is
  * orientation, the tools are the detail.
  */
 
 import { getFileContents, listOpenPrsBare, listOpenPrsWithStatus } from './github-service';
+import { isOperatorThreadsEnabled } from './operator-threads';
+import { isTurnMemoryEnabled } from './operator-turn-memory';
 
 export const BOOTSTRAP_TTL_MS = 5 * 60_000;
 export const SOURCE_TIMEOUT_MS = 2_500;
@@ -39,6 +47,9 @@ export const SOURCE_TIMEOUT_MS = 2_500;
 export const OPEN_PRS_ENRICH_BUDGET_MS = 1_500;
 export const OPEN_PRS_FALLBACK_NOTE = '(platform CI state omitted: enrichment exceeded its budget — dev_github_feed has it)';
 export const PACK_MAX_CHARS = 40_000;
+/** VTID-04223: named so a consumer that already carries CLAUDE.md Part 1 (the
+ *  agent executor reads it from its clone) can drop this section by title. */
+export const BOOTSTRAP_RULES_SECTION_TITLE = 'Governance rules (CLAUDE.md Part 1, abridged)';
 
 const LIMITS = {
   rulesChars: 8_000,
@@ -57,6 +68,20 @@ const FRONTEND_REPO = 'exafyltd/vitana-v1';
 export function isBootstrapPackEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.OPERATOR_BOOTSTRAP_PACK_ENABLED === 'true';
 }
+
+/**
+ * VTID-04175: one line telling the operator whether the two operator-agent
+ * persistence switches are on, so a turn can see at a glance whether threads
+ * are recorded (VTID-04022) and turn memory is extracted (VTID-04025)
+ * without reading the environment directly. Rendered per turn, never cached
+ * with the fetched sections: a flag flip shows up on the next turn.
+ */
+export function renderOperatorFlags(env: NodeJS.ProcessEnv = process.env): string {
+  const flag = (on: boolean) => (on ? 'on' : 'off');
+  return `OPERATOR_THREADS_ENABLED=${flag(isOperatorThreadsEnabled(env))} (server-side thread persistence), OPERATOR_TURN_MEMORY_ENABLED=${flag(isTurnMemoryEnabled(env))} (turn-memory extraction)`;
+}
+
+export const OPERATOR_FLAGS_SECTION_TITLE = 'Operator flags (thread persistence / turn-memory)';
 
 /** `OPERATOR_BOOTSTRAP_BUILD_INFO_URLS="staging=https://…/build-info,prod=https://…/build-info"` */
 export function parseBuildInfoTargets(env: NodeJS.ProcessEnv = process.env): Array<{ label: string; url: string }> {
@@ -214,7 +239,9 @@ async function section(title: string, ms: number, fn: () => Promise<string>): Pr
   }
 }
 
-function defaultDeps(): BootstrapDeps {
+/** VTID-04223: exported so the agent executor reuses the same fetchers (GitHub
+ *  contents, open PRs, OASIS events, build-info) instead of forking them. */
+export function defaultBootstrapDeps(): BootstrapDeps {
   const supaUrl = process.env.SUPABASE_URL || '';
   const supaKey = process.env.SUPABASE_SERVICE_ROLE || '';
   return {
@@ -287,16 +314,47 @@ export async function resolvePlatformOpenPrs(
   throw new Error(`platform: ${richErr}; bare list: ${b.err instanceof Error ? b.err.message : String(b.err)}`);
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04173: make a missing build-info configuration discoverable
+// ---------------------------------------------------------------------------
+
+export const MISSING_BUILD_INFO_ENV_NAME = 'OPERATOR_BOOTSTRAP_BUILD_INFO_URLS';
+
+export const MISSING_BUILD_INFO_ENV_WARNING =
+  `[VTID-04173] ${MISSING_BUILD_INFO_ENV_NAME} is unset or empty — the session bootstrap pack omits live build-info for every gateway it reports on. ` +
+  `Set it (e.g. "${MISSING_BUILD_INFO_ENV_NAME}='staging=https://…/api/v1/admin/build-info,prod=https://…/api/v1/admin/build-info'") to restore that section.`;
+
+/** Process-wide, not per turn: the first build-info section with nothing to
+ *  fetch warns; every later one (cache rebuild, another turn, another role)
+ *  stays quiet. */
+let warnedMissingBuildInfoEnv = false;
+
+/** VTID-04173: returns true exactly once per process when the env var is
+ *  unset/blank; silent (returns false) when the var is set. */
+export function warnMissingBuildInfoEnvOnce(env: NodeJS.ProcessEnv = process.env): boolean {
+  if ((env[MISSING_BUILD_INFO_ENV_NAME] || '').trim()) return false;
+  if (warnedMissingBuildInfoEnv) return false;
+  warnedMissingBuildInfoEnv = true;
+  console.warn(MISSING_BUILD_INFO_ENV_WARNING);
+  return true;
+}
+
+/** Test hook — the process-wide flag is intentionally not resettable in prod. */
+export function resetMissingBuildInfoEnvWarning(): void { warnedMissingBuildInfoEnv = false; }
+
 export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackSection[]> {
   const env = deps.env || process.env;
   const claudeMd = deps.readRepoFile('CLAUDE.md');
   const [rules, changelog, pathMap, schema, buildInfo, prs, events] = await Promise.all([
-    section('Governance rules (CLAUDE.md Part 1, abridged)', SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
+    section(BOOTSTRAP_RULES_SECTION_TITLE, SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
     section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => extractChangelogRows(await claudeMd).join('\n')),
     section('Service path map (config/service-path-map.json)', SOURCE_TIMEOUT_MS, async () => renderServicePathMap(await deps.readRepoFile('config/service-path-map.json'))),
     section('Database tables (DATABASE_SCHEMA.md index)', SOURCE_TIMEOUT_MS, async () => extractSchemaTableIndex(await deps.readRepoFile('DATABASE_SCHEMA.md'))),
     section('Live build-info', SOURCE_TIMEOUT_MS, async () => {
       const targets = parseBuildInfoTargets(env);
+      // VTID-04173: an unconfigured deployment degrades silently otherwise —
+      // warn once per process, naming the env var, then render as before.
+      if (targets.length === 0) warnMissingBuildInfoEnvOnce(env);
       const results = await Promise.all(targets.map(async (t) => {
         try { const r = await withTimeout(deps.fetchBuildInfo(t.url), SOURCE_TIMEOUT_MS - 200, t.label); return { label: t.label, ok: true, ...r }; }
         catch (err) { return { label: t.label, ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 120) }; }
@@ -343,8 +401,9 @@ async function getSections(deps: BootstrapDeps): Promise<CacheEntry> {
 
 /**
  * The pack for one turn: '' when disabled; otherwise the cached sections
- * plus the tool catalog rendered from the definitions this turn was given.
- * Never throws — the operator turn must not depend on it.
+ * plus the per-turn operator-flag line and the tool catalog rendered from
+ * the definitions this turn was given. Never throws — the operator turn
+ * must not depend on it.
  */
 export async function getOperatorBootstrapPack(opts: {
   toolDefs: Array<{ name: string; description: string }>;
@@ -354,10 +413,14 @@ export async function getOperatorBootstrapPack(opts: {
   const env = opts.env || process.env;
   if (!isBootstrapPackEnabled(env)) return '';
   try {
-    const deps: BootstrapDeps = { ...defaultDeps(), ...(opts.deps || {}), env };
+    const deps: BootstrapDeps = { ...defaultBootstrapDeps(), ...(opts.deps || {}), env };
     const entry = await getSections(deps);
+    // VTID-04175: the flag line is read from the environment per turn and
+    // appended with the per-turn catalog — never cached with the fetched
+    // sections, so flipping a flag is visible on the very next turn.
+    const flags: PackSection = { title: OPERATOR_FLAGS_SECTION_TITLE, body: renderOperatorFlags(env) };
     const catalog: PackSection = { title: 'Tool catalog (rendered from the declarations you were given this turn)', body: renderToolCatalog(opts.toolDefs) };
-    return assembleBootstrapPack([...entry.sections, catalog], entry.builtAtIso);
+    return assembleBootstrapPack([...entry.sections, flags, catalog], entry.builtAtIso);
   } catch (err) {
     console.warn(`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`);
     return '';

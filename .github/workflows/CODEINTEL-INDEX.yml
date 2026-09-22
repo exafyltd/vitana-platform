@@ -1,0 +1,196 @@
+# CODEINTEL-INDEX — build the codebase index every agent reads and publish
+# it to S3 (VTID-04229, operator agent build plan W6).
+#
+# WHY A WORKFLOW AND NOT THE IMAGE
+#
+# VTID-04118 tried to bake RepoWise + Graphify into the gateway's
+# node:20-alpine image. It cannot work: `repowise` depends on `lancedb`,
+# which publishes no musl wheel, so `pip install` fails on Alpine and
+# dev_repowise/dev_graphify reported not_configured on every deployment
+# (VTID-04222 §3, verified live). The executor task shares that image
+# lineage. Both tools install cleanly on ubuntu, so the index is built HERE
+# on every merge to main and the derived bundle
+# (scripts/codeintel/build-code-index.mjs — a compact graph + per-file risk
+# facts, ~2 MB gzipped) is published to
+#
+#   s3://vitana-code-index/<owner>/<repo>/<sha>/{manifest.json,graph-index.json.gz,risk-index.json.gz}
+#   s3://vitana-code-index/<owner>/<repo>/latest/manifest.json   (pointer)
+#
+# The gateway (Operator Console dev_index_query / dev_graph_path /
+# dev_get_risk) and the ECS executor load that bundle through
+# services/gateway/src/services/codeintel-index.ts. Neither installs a CLI.
+#
+# Both repos are indexed: this one from the pushed commit, exafyltd/vitana-v1
+# from its main (read via VITANA_V1_READ_TOKEN — the same secret
+# AWS-STAGE-DEPLOY-GATEWAY.yml already uses for cross-repo reads). A failed
+# vitana-v1 checkout skips that leg with a notice; it never fails the
+# platform leg.
+#
+# Auth: GitHub OIDC via AWS_PROD_ROLE_ARN (trust-scoped to refs/heads/main,
+# which is the only ref this workflow publishes from). The bucket and the
+# s3:PutObject grant on that role are provisioned by
+# scripts/aws/setup-code-index-bucket.sh — until the grant exists the
+# publish step fails with the verbatim IAM denial, never silently.
+#
+# `repowise init --no-prose` is structural only (no LLM provider, no cost);
+# it takes ~8 minutes on this repo. The job runs in the background of a
+# merge and is never on a deploy's critical path.
+
+name: CODEINTEL-INDEX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'scripts/**'
+      - 'packages/**'
+      - 'config/**'
+      - 'docs/**'
+      - 'CLAUDE.md'
+      - 'DATABASE_SCHEMA.md'
+      - '.github/workflows/CODEINTEL-INDEX.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why this index rebuild is being dispatched by hand'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+# VTID-04241: QUEUE, never cancel. With cancel-in-progress a burst of merges
+# starves the index: a full build takes ~12 min and on 2026-09-21 runs 3, 4
+# and 5 (c815249, 7e57461, 636f105) were each cancelled by the next push
+# before publishing, so latest/ stayed on run 2's sha (d7849e6) through
+# three merges — the executor and the console served a correct but stale
+# bundle. With cancel-in-progress off GitHub keeps one running and one
+# pending run per group (older pending runs are superseded by the newest
+# push), so the newest sha always gets built and published; a run is only
+# ever superseded while still waiting, never killed mid-build.
+concurrency:
+  group: codeintel-index
+  cancel-in-progress: false
+
+env:
+  CODE_INDEX_BUCKET: vitana-code-index
+  AWS_REGION: eu-central-1
+
+jobs:
+  index:
+    name: Build + publish (${{ matrix.repo }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [exafyltd/vitana-platform, exafyltd/vitana-v1]
+    steps:
+      - name: Checkout ${{ matrix.repo }}
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.repo == 'exafyltd/vitana-platform' && github.sha || 'main' }}
+          # Full history: RepoWise's file pages carry commit counts, bug-fix
+          # history and ownership — a shallow clone would publish zeros.
+          fetch-depth: 0
+          token: ${{ matrix.repo == 'exafyltd/vitana-platform' && secrets.GITHUB_TOKEN || (secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN) }}
+          path: src
+
+      - name: Checkout the build script (this repo, this commit)
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-platform
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            scripts/codeintel
+          sparse-checkout-cone-mode: true
+          path: tools
+
+      - name: Skip leg when the source checkout failed
+        id: gate
+        run: |
+          if [ "${{ steps.checkout.outcome }}" != "success" ] || [ ! -d src/.git ]; then
+            echo "::warning::${{ matrix.repo }} checkout failed (missing VITANA_V1_READ_TOKEN?) — skipping this leg"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git -C src rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        if: steps.gate.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install RepoWise + Graphify
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -e
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet repowise graphifyy
+          repowise --version || true
+          graphify --version || true
+
+      - name: Build the Graphify graph
+        if: steps.gate.outputs.skip == 'false'
+        working-directory: src
+        run: |
+          set -e
+          # AST-only, no clustering/LLM (no cost). Output: graphify-out/graph.json
+          graphify update . --no-cluster
+          test -s graphify-out/graph.json
+
+      - name: Build the RepoWise index + JSON export
+        if: steps.gate.outputs.skip == 'false'
+        working-directory: src
+        run: |
+          set -e
+          # Structural index only — no prose synthesis, no provider, no cost.
+          repowise init --no-prose -y
+          repowise export --format json --full -o .repowise/export
+          test -s .repowise/export/wiki_pages.json
+
+      - name: Derive the bundle
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -e
+          node tools/scripts/codeintel/build-code-index.mjs \
+            --graph src/graphify-out/graph.json \
+            --export src/.repowise/export/wiki_pages.json \
+            --repo "${{ matrix.repo }}" \
+            --sha "${{ steps.gate.outputs.sha }}" \
+            --out bundle
+          ls -la bundle
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        if: steps.gate.outputs.skip == 'false'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish to S3 (<repo>/<sha>/ then latest/manifest.json)
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          set -e
+          PREFIX="s3://${CODE_INDEX_BUCKET}/${{ matrix.repo }}/${{ steps.gate.outputs.sha }}"
+          aws s3 cp bundle/graph-index.json.gz "$PREFIX/graph-index.json.gz" --content-type application/json --content-encoding gzip
+          aws s3 cp bundle/risk-index.json.gz  "$PREFIX/risk-index.json.gz"  --content-type application/json --content-encoding gzip
+          aws s3 cp bundle/manifest.json       "$PREFIX/manifest.json"       --content-type application/json
+          # The pointer goes last, so a reader never sees latest/ name a sha
+          # whose objects are not all there yet.
+          aws s3 cp bundle/manifest.json "s3://${CODE_INDEX_BUCKET}/${{ matrix.repo }}/latest/manifest.json" --content-type application/json
+          echo "published $PREFIX"
+          cat bundle/manifest.json

@@ -24,7 +24,7 @@
  */
 
 import { callViaRouter } from './llm-router';
-import { writeDevMemory, type DevMemoryCategory, type WriteDevMemoryInput } from './dev-agent-memory';
+import { writeDevMemory, type DevMemoryCategory, type DevMemorySource, type WriteDevMemoryInput } from './dev-agent-memory';
 
 const LOG_PREFIX = '[operator-turn-memory]';
 export const MAX_ITEMS_PER_TURN = 3;
@@ -131,6 +131,12 @@ export interface TurnMemoryInput {
   tools?: TurnTool[];
   summary?: string | null;
   vtidHint?: string;
+  /** VTID-04223: who is recording. Defaults keep the Operator Console shape
+   *  byte-for-byte; the agent executor passes its own provenance/tags/source
+   *  so a later reader can tell a console fact from an executor-run fact. */
+  provenance?: string;
+  tags?: string[];
+  source?: DevMemorySource;
 }
 
 /**
@@ -154,11 +160,11 @@ export async function extractAndRecordTurnMemory(
         repo: 'vitana-platform',
         category: m.category,
         title: m.title,
-        content: `${m.content}\n\n(Operator Console thread ${input.threadId.slice(0, 8)}, extracted from the turn by VTID-04025.)`,
+        content: `${m.content}\n\n(${input.provenance || `Operator Console thread ${input.threadId.slice(0, 8)}, extracted from the turn by VTID-04025.`})`,
         vtid: m.vtid,
         importance: m.importance,
-        source: 'session',
-        tags: ['operator-console', 'turn-extracted', m.category],
+        source: input.source || 'session',
+        tags: [...(input.tags || ['operator-console', 'turn-extracted']), m.category],
       });
       if (r.ok) written += 1;
       else console.warn(`${LOG_PREFIX} write failed (${m.category} "${m.title.slice(0, 40)}"): ${r.error}`);

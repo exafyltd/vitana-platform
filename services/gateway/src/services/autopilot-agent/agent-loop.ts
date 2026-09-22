@@ -23,6 +23,8 @@ export interface AgentStep {
   detail: string;
   ms?: number;
   isError?: boolean;
+  /** VTID-04223: structured facts for the OASIS payload (bounded by the emitter's caller). */
+  data?: Record<string, unknown>;
 }
 
 export interface AgentLoopOptions {

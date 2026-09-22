@@ -149,12 +149,16 @@ describe('VTID-04022 recordOperatorTurn / getThreadSummary / maybeSummarizeThrea
   it('creates the thread on the first turn, appends user + tool + assistant messages, increments turns on the next', async () => {
     const state = { threads: {} as Record<string, any>, messages: [] as any[] };
     const calls = installFakeRest(state);
+    // VTID-04189: operator_threads.user_id is a uuid column, so a UUID-shaped
+    // identity is what a real write carries; anything else is normalised to
+    // null before insert (see console-task-25-non-uuid-identity-threads.test.ts).
+    const userId = 'a1b2c3d4-e5f6-4789-8abc-def012345678';
     const r1 = await recordOperatorTurn({
-      threadId: 'thread-A', identity: { user_id: 'u1', role: 'admin' }, userText: 'Rebuild the executor image\nplease',
+      threadId: 'thread-A', identity: { user_id: userId, role: 'admin' }, userText: 'Rebuild the executor image\nplease',
       reply: 'Dispatched run #12.', tools: [{ name: 'dev_github_dispatch', result: '{"run":12}' }], meta: { request_id: 'r1' },
     });
     expect(r1).toEqual({ recorded: true, turns: 1 });
-    expect(state.threads['thread-A']).toMatchObject({ id: 'thread-A', user_id: 'u1', role: 'admin', title: 'Rebuild the executor image', turns: 1 });
+    expect(state.threads['thread-A']).toMatchObject({ id: 'thread-A', user_id: userId, role: 'admin', title: 'Rebuild the executor image', turns: 1 });
     expect(state.messages.map((m) => [m.role, m.tool_name || null])).toEqual([['user', null], ['tool', 'dev_github_dispatch'], ['assistant', null]]);
     expect(state.messages[0].meta).toEqual({ request_id: 'r1' });
 

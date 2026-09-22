@@ -1,0 +1,14 @@
+PASS test/vtid-04223-agent-memory-context.test.ts
+PASS test/vtid-04016-agent-check-guard.test.ts
+PASS test/vtid-04217-fix-mode-merge-conflicts.test.ts
+PASS test/vtid-04027-dev-memory-recall-ranking.test.ts
+PASS test/vtid-04032-cancel-running-execution.test.ts
+PASS test/vtid-04017-fix-mode.test.ts
+PASS test/vtid-04025-operator-turn-memory.test.ts
+PASS test/autopilot-agent-loop.test.ts
+PASS test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+PASS test/vtid-04018-operator-bootstrap-pack.test.ts
+PASS test/vtid-04024-bootstrap-pack-open-prs.test.ts
+Test Suites: 11 passed, 11 total
+Tests:       147 passed, 147 total
+tsc clean

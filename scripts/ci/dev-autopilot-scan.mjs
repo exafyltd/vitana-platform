@@ -13,7 +13,7 @@
  *      verify it produces reasonable output.
  *
  * Env:
- *   GATEWAY_URL                https://gateway-q74ibpv6ia-uc.a.run.app
+ *   GATEWAY_URL                https://preview-aws-gateway.vitanaland.com
  *   DEV_AUTOPILOT_SCAN_TOKEN   matches gateway's DEV_AUTOPILOT_SCAN_TOKEN
  *   GITHUB_SHA / GITHUB_RUN_ID optional — included in run metadata
  *   DEV_AUTOPILOT_SCAN_DRY_RUN if 'true', print signals.json and skip POST
@@ -200,7 +200,9 @@ function scanSafetyGaps() {
     { key: 'rls-write-guard', title: 'RLS-write-deny assertion test missing', source_file: 'supabase/migrations', test_file: 'services/gateway/test/rls-write-deny.test.ts', description: 'Test that hits each write-target table with the anon key and asserts RLS rejects the write.' },
     { key: 'oasis-event-emission', title: 'OASIS event emission contract test missing', source_file: 'services/gateway/src/routes', test_file: 'services/gateway/test/oasis-emission.test.ts', description: 'Contract test: every state-mutating route handler emits a documented OASIS event from services/gateway/src/types/cicd.ts.' },
     { key: 'governance-gates', title: 'Governance kill-switch test missing', source_file: 'services/gateway/src/services', test_file: 'services/gateway/test/governance-gates.test.ts', description: 'Test that EXECUTION_DISARMED and AUTOPILOT_LOOP_ENABLED, when flipped, actually block the executor/approve paths.' },
-    { key: 'deploy-smoke', title: 'Post-deploy smoke step missing in EXEC-DEPLOY', source_file: '.github/workflows/EXEC-DEPLOY.yml', test_file: '.github/workflows/EXEC-DEPLOY.yml', description: 'EXEC-DEPLOY should curl /alive and /api/v1/vtid/list post-deploy and hard-fail on non-JSON 200.' },
+    // VTID-04225: EXEC-DEPLOY.yml (GCP Cloud Run) was retired; the canonical
+    // deploy is AWS-PROD-DEPLOY-GATEWAY.yml, which carries its own smoke step.
+    { key: 'deploy-smoke', title: 'Post-deploy smoke step missing in AWS-PROD-DEPLOY-GATEWAY', source_file: '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml', test_file: '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml', description: 'AWS-PROD-DEPLOY-GATEWAY should curl /alive and /api/v1/vtid/list post-deploy and hard-fail on non-JSON 200.' },
     { key: 'e2e-playwright-autopilot', title: 'Playwright smoke for task/approval/execution missing', source_file: 'e2e/command-hub/roles/developer', test_file: 'e2e/command-hub/roles/developer/autopilot-flow.spec.ts', description: 'e2e spec that creates a task, approves a finding, and watches one execution through to merge.' },
   ];
   for (const gap of gaps) {

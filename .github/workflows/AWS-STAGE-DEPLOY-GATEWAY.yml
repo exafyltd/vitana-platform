@@ -221,6 +221,15 @@ jobs:
           NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
           NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
           NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
+          # VTID-04225: the CI scan token DEV-AUTOPILOT.yml sends as
+          # X-DevAutopilot-Scan-Token. Read off the live task def 2026-09-21:
+          # NEITHER gateway task def carried DEV_AUTOPILOT_SCAN_TOKEN, so
+          # routes/dev-autopilot.ts's requireScanToken rejected every scan
+          # post ("DEV_AUTOPILOT_SCAN_TOKEN not set — rejecting all scan
+          # posts") even before the dead GCP URL made the question moot. Same
+          # repo secret the workflow uses; plain env var on the task def, the
+          # MARKETPLACE_SYNC_SECRET precedent on the prod workflow.
+          DEV_AUTOPILOT_SCAN_TOKEN_VALUE: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
         # NOTE (VTID-03788): the comments below were relocated OUT of the run:
         # script below. That block's run: value had grown to 25,111 characters
         # (only ~7,400 of it is actual bash -- the rest was accumulated comments),
@@ -631,6 +640,20 @@ jobs:
 # never fail a gateway deploy. Rollback for any of these is the value ->
 # "false" (or removal), no code revert.
 #
+# VTID-04225 -- three credentials the starved autopilot/self-healing loops
+# needed on THIS task def and never had (read off the live task def rev 489,
+# 2026-09-21): DEV_AUTOPILOT_SCAN_TOKEN (plain env from the repo secret, so
+# DEV-AUTOPILOT.yml's scan can be accepted at all); GATEWAY_SERVICE_TOKEN
+# (Secrets Manager ref, the SAME vitana/supabase/prod/service-role-key the
+# prod task def already maps it to -- E2E-ORB-MONITOR/E2E-TEST-RUN post
+# /api/v1/self-healing/report with the repo secret of that name, and
+# require-service-or-admin.ts fails closed when the var is unset, which is
+# what staging did); GATEWAY_INTERNAL_TOKEN (OPTIONAL, the ERP-bridge
+# pattern -- wired only once vitana/gateway/staging/internal-token exists,
+# provisioned by scripts/aws/setup-gateway-internal-token.sh; it is what the
+# VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
+# None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
+#
 # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
         # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
         # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
@@ -650,6 +673,96 @@ jobs:
         # live task def state is untouched pending real staging observation
         # under live mode. Rollback is this value -> "false", no code
         # revert. Platform owner approved 2026-09-14.
+# VTID-03788 relocation (VTID-04225): the two comment blocks below used to sit
+# INSIDE the register step's run: script and pushed it past the 20,000-char
+# guard once the VTID-04225 credential wiring was added. Comments are bash
+# no-ops wherever they live; the shell they annotate is unchanged.
+#
+# VTID-04000: the Vertex Serbian bridge. Project id is
+# `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
+# 20926255361), location is `global` — the platform owner enabled
+# the Live API as a global-endpoint service, not a regional one;
+# confirmed against Google's own docs that the Vertex Live
+# WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
+# accepts `global` as a literal location the same way it accepts
+# any region, so no code change was needed for this.
+#
+# GCP_SERVICE_ACCOUNT_JSON is wired as a PLAIN value, not an AWS
+# secret — because it isn't one. Org policy
+# `iam.disableServiceAccountKeyCreation` (enforced org-wide,
+# confirmed live by the platform owner hitting it repeatedly even
+# as org Owner) makes a downloadable service-account private key
+# impossible here, so this uses Workload Identity Federation
+# instead: a Workload Identity Pool (`vitana-aws-pool`) + AWS
+# provider (`vitana-aws-provider`) trusting AWS account
+# `472838866351` directly, with `roles/iam.workloadIdentityUser`
+# granted on `vitanaland@project-da3eb05a-c86e-47cb-85f
+# .iam.gserviceaccount.com` to
+# `principal://iam.googleapis.com/projects/20926255361/locations/
+# global/workloadIdentityPools/vitana-aws-pool/subject/
+# arn:aws:iam::472838866351:user/claude-code-aws-agent` — all
+# created live via `gcloud` in Cloud Shell by the platform owner
+# (org Owner), since the AWS-CLI-verified session here has no GCP
+# credentials of its own. The JSON below is the `external_account`
+# credential config `gcloud iam workload-identity-pools
+# create-cred-config` generated against that exact pool/provider —
+# Google's own docs state this file contains no secret (no
+# private key, just federation config: pool/provider names, STS
+# endpoints) and is safe to store in plain text/source control,
+# unlike a service-account key. `gcp-adc-bootstrap.ts` already
+# handles this generically — it writes whatever valid JSON is
+# here to a file and points `GOOGLE_APPLICATION_CREDENTIALS` at
+# it, and `google-auth-library`'s `GoogleAuth()` auto-detects
+# `type:"external_account"` and resolves AWS credentials itself
+# (env vars first, then the ECS task-role credential endpoint) —
+# no code change was needed there either.
+#
+# NOT yet independently confirmed against a live token exchange —
+# writing/using this class of federated-credential config to test
+# it locally was blocked by this session's own sandbox safety
+# layer (flagged as a containment-escape-shaped action, a
+# reasonable guard this session did not attempt to route around).
+# This config is Google's own authoritative output against the
+# real, live pool/provider/binding, not hand-constructed, but the
+# real signal is still the next real `sr` session on staging
+# actually producing audio — confirm via `oasis_events` reporting
+# `reason:'vertex_serbian_bridge'` before trusting this further.
+# VTID-03591/B4/VTID-03813 — AURORA_RLS_DATABASE_URL on STAGING, so
+# the already-built and already-tested GET
+# /api/v1/admin/aurora-rls-health endpoint (services/aurora-client.ts's
+# withAuroraRlsContext(), wired into a real route by VTID-03591 commit
+# 5cbf8178) gets exercised for the first time over its real transport
+# (pg.Pool/Postgres wire protocol) instead of only the RDS Data API a
+# sandboxed session can reach. getAuroraPool() treats this as optional
+# (returns null when unset), so leaving it unset anywhere is always
+# the safe fallback — this only ever turns the diagnostic ON, never
+# off by omission.
+#
+# Deliberately a SEPARATE env var from AURORA_DATABASE_URL above, not
+# the same one: that var (VTID-03773) resolves to the `vitana_admin`
+# secret (confirmed superuser-class — see
+# vitana/aurora/prod/database-url), which is correct for the
+# db-i18n seam's needs but WRONG for this diagnostic, whose entire
+# purpose is proving RLS composes correctly for a non-superuser
+# login role. Reusing the admin URL here would make the health
+# route permanently report "unsafe" (BYPASSRLS/superuser) — a
+# false alarm about Aurora RLS, not a true one. Points instead at
+# the ONE Aurora cluster that exists (`vitana-aurora-prod` —
+# confirmed via `aws rds describe-db-clusters`, no separate staging
+# cluster) via the pre-provisioned `authenticator` role secret
+# (`vitana/aurora/prod/postgrest-authenticator-uri`) — the same
+# unprivileged, non-BYPASSRLS login role PostgREST itself would use,
+# verified live in VTID-03769 to have `rolsuper=false`/
+# `rolbypassrls=false`. This is not a new access grant or a new data
+# exposure: staging already reads/writes the same production
+# Supabase project (CLAUDE.md, `vitana-v1`'s "gateway-staging runs
+# against prod Supabase too"), and B1's repository seams still route
+# every real business call through supabase-js regardless — this
+# var only lights up one read-only, admin-gated diagnostic route.
+# Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml — promoting
+# this to prod is a separate, later, human decision.
+# $SEC_AURORA_RLS is resolved above in the same describe-secret loop
+# as the other per-deploy secrets, not re-resolved here.
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -667,7 +780,8 @@ jobs:
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
-            "SEC_GITHUB_TOKEN:vitana/github/token" ; do
+            "SEC_GITHUB_TOKEN:vitana/github/token" \
+            "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -698,55 +812,10 @@ jobs:
           else
             echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
-          # VTID-04000: the Vertex Serbian bridge. Project id is
-          # `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
-          # 20926255361), location is `global` — the platform owner enabled
-          # the Live API as a global-endpoint service, not a regional one;
-          # confirmed against Google's own docs that the Vertex Live
-          # WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
-          # accepts `global` as a literal location the same way it accepts
-          # any region, so no code change was needed for this.
-          #
-          # GCP_SERVICE_ACCOUNT_JSON is wired as a PLAIN value, not an AWS
-          # secret — because it isn't one. Org policy
-          # `iam.disableServiceAccountKeyCreation` (enforced org-wide,
-          # confirmed live by the platform owner hitting it repeatedly even
-          # as org Owner) makes a downloadable service-account private key
-          # impossible here, so this uses Workload Identity Federation
-          # instead: a Workload Identity Pool (`vitana-aws-pool`) + AWS
-          # provider (`vitana-aws-provider`) trusting AWS account
-          # `472838866351` directly, with `roles/iam.workloadIdentityUser`
-          # granted on `vitanaland@project-da3eb05a-c86e-47cb-85f
-          # .iam.gserviceaccount.com` to
-          # `principal://iam.googleapis.com/projects/20926255361/locations/
-          # global/workloadIdentityPools/vitana-aws-pool/subject/
-          # arn:aws:iam::472838866351:user/claude-code-aws-agent` — all
-          # created live via `gcloud` in Cloud Shell by the platform owner
-          # (org Owner), since the AWS-CLI-verified session here has no GCP
-          # credentials of its own. The JSON below is the `external_account`
-          # credential config `gcloud iam workload-identity-pools
-          # create-cred-config` generated against that exact pool/provider —
-          # Google's own docs state this file contains no secret (no
-          # private key, just federation config: pool/provider names, STS
-          # endpoints) and is safe to store in plain text/source control,
-          # unlike a service-account key. `gcp-adc-bootstrap.ts` already
-          # handles this generically — it writes whatever valid JSON is
-          # here to a file and points `GOOGLE_APPLICATION_CREDENTIALS` at
-          # it, and `google-auth-library`'s `GoogleAuth()` auto-detects
-          # `type:"external_account"` and resolves AWS credentials itself
-          # (env vars first, then the ECS task-role credential endpoint) —
-          # no code change was needed there either.
-          #
-          # NOT yet independently confirmed against a live token exchange —
-          # writing/using this class of federated-credential config to test
-          # it locally was blocked by this session's own sandbox safety
-          # layer (flagged as a containment-escape-shaped action, a
-          # reasonable guard this session did not attempt to route around).
-          # This config is Google's own authoritative output against the
-          # real, live pool/provider/binding, not hand-constructed, but the
-          # real signal is still the next real `sr` session on staging
-          # actually producing audio — confirm via `oasis_events` reporting
-          # `reason:'vertex_serbian_bridge'` before trusting this further.
+          SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
+          [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
+          [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
+          [ -n "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" ] || echo "::warning::DEV_AUTOPILOT_SCAN_TOKEN repo secret empty (VTID-04225)"
           GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
             --query 'taskDefinition.taskRoleArn' --output text)
@@ -756,42 +825,6 @@ jobs:
           fi
           echo "Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN"
 
-          # VTID-03591/B4/VTID-03813 — AURORA_RLS_DATABASE_URL on STAGING, so
-          # the already-built and already-tested GET
-          # /api/v1/admin/aurora-rls-health endpoint (services/aurora-client.ts's
-          # withAuroraRlsContext(), wired into a real route by VTID-03591 commit
-          # 5cbf8178) gets exercised for the first time over its real transport
-          # (pg.Pool/Postgres wire protocol) instead of only the RDS Data API a
-          # sandboxed session can reach. getAuroraPool() treats this as optional
-          # (returns null when unset), so leaving it unset anywhere is always
-          # the safe fallback — this only ever turns the diagnostic ON, never
-          # off by omission.
-          #
-          # Deliberately a SEPARATE env var from AURORA_DATABASE_URL above, not
-          # the same one: that var (VTID-03773) resolves to the `vitana_admin`
-          # secret (confirmed superuser-class — see
-          # vitana/aurora/prod/database-url), which is correct for the
-          # db-i18n seam's needs but WRONG for this diagnostic, whose entire
-          # purpose is proving RLS composes correctly for a non-superuser
-          # login role. Reusing the admin URL here would make the health
-          # route permanently report "unsafe" (BYPASSRLS/superuser) — a
-          # false alarm about Aurora RLS, not a true one. Points instead at
-          # the ONE Aurora cluster that exists (`vitana-aurora-prod` —
-          # confirmed via `aws rds describe-db-clusters`, no separate staging
-          # cluster) via the pre-provisioned `authenticator` role secret
-          # (`vitana/aurora/prod/postgrest-authenticator-uri`) — the same
-          # unprivileged, non-BYPASSRLS login role PostgREST itself would use,
-          # verified live in VTID-03769 to have `rolsuper=false`/
-          # `rolbypassrls=false`. This is not a new access grant or a new data
-          # exposure: staging already reads/writes the same production
-          # Supabase project (CLAUDE.md, `vitana-v1`'s "gateway-staging runs
-          # against prod Supabase too"), and B1's repository seams still route
-          # every real business call through supabase-js regardless — this
-          # var only lights up one read-only, admin-gated diagnostic route.
-          # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml — promoting
-          # this to prod is a separate, later, human decision.
-          # $SEC_AURORA_RLS is resolved above in the same describe-secret loop
-          # as the other per-deploy secrets, not re-resolved here.
 
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
@@ -806,6 +839,8 @@ jobs:
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg SEC_SQL_RO "$SEC_SQL_RO" \
+                 --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
+                 --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
@@ -844,6 +879,8 @@ jobs:
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
                                                 "GCP_SERVICE_ACCOUNT_JSON",
                                                 "OPERATOR_CODEINTEL_ENABLED",
+                                                "DEV_AUTOPILOT_SCAN_TOKEN",
+                                                "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -879,6 +916,8 @@ jobs:
                           {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
                           {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
                           {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
+                          {name:"DEV_AUTOPILOT_EXECUTOR", value:"agent"},
+                          {name:"DEV_AUTOPILOT_PR_APPROVAL_REQUIRED", value:"true"},
                           {name:"OPERATOR_PLANNER_ENABLED", value:"true"},
                           {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
                           {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
@@ -893,9 +932,10 @@ jobs:
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
                           {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
-                          {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"} ] )
+                          {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
+                          {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )
                 | .containerDefinitions[0].secrets |=
-                    ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
+                    ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY","GATEWAY_SERVICE_TOKEN","GATEWAY_INTERNAL_TOKEN",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
                                                 "OPENAI_API_KEY","DEEPSEEK_API_KEY","FISH_API_KEY",
                                                 "AURORA_DATABASE_URL",
@@ -911,7 +951,13 @@ jobs:
                           {name:"FISH_API_KEY",          valueFrom:$SEC_FISH},
                           {name:"AURORA_DATABASE_URL",   valueFrom:$SEC_AURORA},
                           {name:"AURORA_RLS_DATABASE_URL", valueFrom:$SEC_AURORA_RLS},
-                          {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$SEC_GITHUB_TOKEN} ] )
+                          {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$SEC_GITHUB_TOKEN},
+                          {name:"GATEWAY_SERVICE_TOKEN", valueFrom:$SEC_SERVICE_TOKEN} ] )
+                | ( if $SEC_INTERNAL_TOKEN != "" then
+                      ( .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("GATEWAY_INTERNAL_TOKEN") | not) ]
+                            + [ {name:"GATEWAY_INTERNAL_TOKEN", valueFrom:$SEC_INTERNAL_TOKEN} ] ) )
+                    else . end )
                 | ( if $SEC_ERP_BRIDGE != "" then
                       ( .containerDefinitions[0].environment |=
                           ( [ .[] | select(.name | IN("ERP_BRIDGE_URL") | not) ]

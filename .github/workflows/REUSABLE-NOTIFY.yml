@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Send notification
         env:
-          GATEWAY_URL: ${{ secrets.GATEWAY_URL || 'https://vitana-gateway-86804897789.us-central1.run.app' }}
+          GATEWAY_URL: ${{ secrets.GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
         run: |
           curl -fsS -X POST "$GATEWAY_URL/new-request-with-notification" \
             -H "Content-Type: application/json" \

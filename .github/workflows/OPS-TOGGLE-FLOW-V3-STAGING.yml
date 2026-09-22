@@ -20,7 +20,7 @@ on:
     paths: ['.github/workflows/OPS-TOGGLE-FLOW-V3-STAGING.yml']
 
 env:
-  STAGING_GATEWAY: 'https://gateway-staging-q74ibpv6ia-uc.a.run.app'
+  STAGING_GATEWAY: 'https://preview-aws-gateway.vitanaland.com'
   CONTROL_KEY: 'vitana_journey_conversation_v2_enabled'
 
 jobs:

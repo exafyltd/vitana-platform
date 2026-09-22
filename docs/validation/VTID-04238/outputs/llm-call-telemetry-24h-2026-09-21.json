@@ -1,0 +1,14 @@
+{
+  "window": "2026-09-20T17:55Z .. 2026-09-21T17:55Z",
+  "source": "oasis_events topic in (llm.call.completed, llm.call.failed, llm.call.fallback), grouped by stage/provider/model/fallback_used (Supabase MCP, read-only)",
+  "rows": [
+    { "topic": "llm.call.completed", "stage": "memory",    "provider": "bedrock",  "model": "eu.anthropic.claude-sonnet-4-6",             "fallback_used": false, "n": 93 },
+    { "topic": "llm.call.completed", "stage": "operator",  "provider": "deepseek", "model": "deepseek-flash",                             "fallback_used": false, "n": 157 },
+    { "topic": "llm.call.completed", "stage": "planner",   "provider": "bedrock",  "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0", "fallback_used": false, "n": 41 },
+    { "topic": "llm.call.completed", "stage": "triage",    "provider": "bedrock",  "model": "eu.anthropic.claude-sonnet-4-6",             "fallback_used": false, "n": 24 },
+    { "topic": "llm.call.completed", "stage": "validator", "provider": "bedrock",  "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0", "fallback_used": false, "n": 3 },
+    { "topic": "llm.call.completed", "stage": "worker",    "provider": "deepseek", "model": "deepseek-flash",                             "fallback_used": false, "n": 6799, "note": "the agent executor's providerOverride (VTID-04006) on the worker stage, not the policy primary" },
+    { "topic": "llm.call.completed", "stage": "worker",    "provider": "bedrock",  "model": "eu.anthropic.claude-opus-4-5-20251101-v1:0", "fallback_used": false, "n": 508 }
+  ],
+  "absent": { "llm.call.failed": 0, "llm.call.fallback": 0, "provider=anthropic": 0, "provider=vertex": 0, "provider=openai": 0, "fallback_used=true": 0 }
+}
