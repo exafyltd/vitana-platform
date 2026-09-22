@@ -90,11 +90,15 @@
     "node": ">=18.0.0"
   },
   "overrides": {
-    "@grpc/grpc-js": ">=1.14.4"
+    "@grpc/grpc-js": ">=1.14.4",
+    "fast-xml-builder": ">=1.2.0",
+    "fast-xml-parser": ">=5.5.7"
   },
   "pnpm": {
     "overrides": {
-      "@grpc/grpc-js": ">=1.14.4"
+      "@grpc/grpc-js": ">=1.14.4",
+      "fast-xml-builder": ">=1.2.0",
+      "fast-xml-parser": ">=5.5.7"
     }
   }
 }
