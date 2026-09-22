@@ -40389,6 +40389,41 @@ function renderDevAutopilotView() {
     refreshBtn.onclick = function () { fetchDevAutopilotState(); };
     header.appendChild(refreshBtn);
 
+    // VTID-04264: kill switch toggle, wired to the existing GET /config /
+    // POST /config/kill-switch routes (services/gateway/src/routes/dev-autopilot.ts).
+    // Those routes already worked — the panel only ever displayed the
+    // kill_switch value as a read-only chip below, with no way to flip it
+    // without a direct DB write.
+    var killSwitchArmed = !!(state.devAutopilot.config && state.devAutopilot.config.kill_switch);
+    var killSwitchBtn = document.createElement('button');
+    killSwitchBtn.className = 'btn dev-autopilot-kill-switch-btn ' + (killSwitchArmed ? 'btn-success' : 'btn-danger');
+    killSwitchBtn.textContent = killSwitchArmed ? 'Disarm kill switch' : 'Arm kill switch';
+    killSwitchBtn.title = killSwitchArmed
+        ? 'Kill switch is ARMED — Dev Autopilot execution is paused. Click to resume.'
+        : 'Arm the kill switch to pause all Dev Autopilot execution (scan/plan still run; approve/execute is blocked).';
+    killSwitchBtn.onclick = function () {
+        var nextArmed = !killSwitchArmed;
+        if (nextArmed && !confirm('This will ARM the Dev Autopilot kill switch and block new executions. Continue?')) return;
+        killSwitchBtn.disabled = true;
+        killSwitchBtn.textContent = 'Updating…';
+        fetch('/api/v1/dev-autopilot/config/kill-switch', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ armed: nextArmed }),
+        }).then(function (r) { return r.json(); }).then(function (result) {
+            if (!result || result.ok === false) {
+                throw new Error((result && result.error) || 'Request failed');
+            }
+            state.devAutopilot.fetched = false;
+            return fetchDevAutopilotState();
+        }).catch(function (err) {
+            killSwitchBtn.disabled = false;
+            killSwitchBtn.textContent = killSwitchArmed ? 'Disarm kill switch' : 'Arm kill switch';
+            showToast('Kill switch error: ' + (err && err.message ? err.message : err), 'error');
+        });
+    };
+    header.appendChild(killSwitchBtn);
+
     container.appendChild(header);
 
     if (state.devAutopilot.error) {

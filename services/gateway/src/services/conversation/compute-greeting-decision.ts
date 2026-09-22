@@ -401,6 +401,13 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
 export function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!_dayCloseRungEnabled) return null;
   if (ctx.isAnonymous) return null;
+  // VTID-04255 — same missing invariant as `shouldAttemptNewdayOverview`
+  // above, same sibling rung shape (a once-per-day stamp with no independent
+  // temporal-proximity check). A `reconnect`-bucketed session must never
+  // open with a fresh day_close either, regardless of `lastDayCloseDate`'s
+  // durability. See the long comment on `shouldAttemptNewdayOverview` for
+  // the full production evidence.
+  if (ctx.bucket === 'reconnect') return null;
   // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
   // context with before the timezone helpers resolve (mirrors `localHour: -1`
   // on the safe-fast side) — an empty string is not a valid ISO date and must
@@ -539,7 +546,36 @@ export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boole
     // index, the calendar and the journey is worth speaking whether or not the
     // prefetch that carries the name happened to run.
     ctx.hasUserId &&
-    ctx.hasSupabase
+    ctx.hasSupabase &&
+    // VTID-04255 — this gate had NO temporal-proximity check at all, and
+    // `briefingDue()` below depends entirely on `stampBriefingDate` having
+    // been durably written after the LAST time this rung fired. When that
+    // write fails (measured live 2026-09-21/22: `permission denied for table
+    // user_journey` — a broken AWS Secrets Manager credential, not a logic
+    // bug), `lastFullBriefingDate` never advances, `briefingDue` stays true
+    // forever, and the ONLY thing standing between that and firing the full
+    // briefing on every single session is this function. `bucket==='reconnect'`
+    // (< ~2 min since the user's last turn, per describeTimeSince's own
+    // threshold) is NOT covered by the sibling `silent_reconnect` defense
+    // elsewhere in this ladder — that one keys off `ctx.openDecision.mode
+    // ==='silent'`, a transport-level native-WS-resume signal, and a fresh
+    // reconnect-bucketed session (a brand new session_id, just temporally
+    // close to the last one) never sets it. So a reconnect got the FULL
+    // new-day overview 3x in 21h for the same user, live in production,
+    // entirely independent of the DB write's health.
+    //
+    // Fix: make this ONE always-true, DB-independent invariant explicit here
+    // — a session bucketed `reconnect` never opens with a fresh greeting of
+    // any kind, full stop, matching the rest of this codebase's established
+    // meaning for that bucket (`decideGreetingPolicyWithEvidence`'s own
+    // `bucket_reconnect_forces_skip`). This does NOT block a genuine
+    // day-boundary crossing that happens to fall inside the reconnect
+    // window (23:58→00:02): that case still gets the briefing on the VERY
+    // NEXT session once the gap widens past `reconnect`, exactly once,
+    // because `briefingDue` is unaffected by this change when the durable
+    // stamp IS working. What this closes is the failure mode where a broken
+    // stamp write turns "reconnect" into "briefing on every single reopen."
+    ctx.bucket !== 'reconnect'
   );
 }
 

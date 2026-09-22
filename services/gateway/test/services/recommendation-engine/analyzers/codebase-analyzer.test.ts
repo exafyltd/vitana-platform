@@ -76,4 +76,65 @@ describe('codebase-analyzer severity mapping', () => {
     expect(severityByType['HACK']).toBe('high');
     expect(severityByType['XXX']).toBe('medium');
   });
+
+  it('does not flag its own detection-pattern source as a TODO (VTID-04275)', async () => {
+    // The analyzer's own real file, on the live path a grep sweep over
+    // services/ would report, containing a line that legitimately matches
+    // the TODO_PATTERN (a string comparison against 'FIXME', not a real
+    // comment) — the exact shape that produced a phantom finding live.
+    const selfPath = path.join(
+      tmpDir,
+      'services',
+      'gateway',
+      'src',
+      'services',
+      'recommendation-engine',
+      'analyzers',
+      'codebase-analyzer.ts',
+    );
+    fs.mkdirSync(path.dirname(selfPath), { recursive: true });
+    fs.writeFileSync(
+      selfPath,
+      `const severity = todo.type === 'FIXME' || todo.type === 'HACK' ? 'high' : 'medium';\n`,
+      'utf-8',
+    );
+
+    const result = await analyzeCodebase(tmpDir, {
+      scan_paths: ['services/'],
+      exclude_paths: [],
+      file_size_threshold_lines: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.signals).toHaveLength(0);
+  });
+
+  it('still flags a genuine TODO in a sibling analyzer file (VTID-04275)', async () => {
+    // The self-match exclusion must be scoped to the one file — a real
+    // TODO living next to it must still be caught.
+    const siblingPath = path.join(
+      tmpDir,
+      'services',
+      'gateway',
+      'src',
+      'services',
+      'recommendation-engine',
+      'analyzers',
+      'other-analyzer.ts',
+    );
+    fs.mkdirSync(path.dirname(siblingPath), { recursive: true });
+    fs.writeFileSync(siblingPath, '// TODO: implement this for real\n', 'utf-8');
+
+    const result = await analyzeCodebase(tmpDir, {
+      scan_paths: ['services/'],
+      exclude_paths: [],
+      file_size_threshold_lines: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.signals).toHaveLength(1);
+    expect(result.signals[0].file_path).toBe(
+      'services/gateway/src/services/recommendation-engine/analyzers/other-analyzer.ts',
+    );
+  });
 });

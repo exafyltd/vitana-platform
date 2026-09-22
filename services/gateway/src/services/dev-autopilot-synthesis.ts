@@ -497,10 +497,22 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
 
   for (const signal of effectiveSignals) {
     const fingerprint = fingerprintSignal(signal);
-    // Lookup existing live finding with this fingerprint
+    // Lookup existing live finding with this fingerprint.
+    // VTID-04274: must include 'activated' alongside 'new'/'snoozed' — a
+    // finding that already has a VTID and an in-flight execution is still
+    // the SAME live problem, not a resolved one. Excluding it here is what
+    // let signal_fingerprint 42c32f9e7e689576 ("CVE: package.json") spawn a
+    // second, fully duplicate finding + VTID + execution the next time the
+    // scan ran while the first was still status='activated' — confirmed
+    // live via autopilot_recommendations rows 9e1bdb97 (activated) and
+    // 7a93bca4 (new), same fingerprint, ~21 hours apart. Only the genuinely
+    // terminal statuses (completed/rejected/auto_archived) should allow a
+    // fresh row — if the identical signal reappears after being closed,
+    // that is either a regression worth a new finding or a real
+    // coincidental collision, not something to silently re-merge.
     const existing = await supaRequest<FindingRow[]>(
       supa,
-      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed)&select=id,seen_count,last_seen_at,status&limit=1`,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed,activated)&select=id,seen_count,last_seen_at,status&limit=1`,
     );
     if (!existing.ok) {
       console.warn(`${LOG_PREFIX} lookup failed for ${fingerprint}: ${existing.error}`);
