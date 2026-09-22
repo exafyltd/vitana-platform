@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04269",
+  "title": "Engine Configuration CRON tables — investigate + honest static-data notice",
+  "executor": "claude-code-session",
+  "origin": "operator-console-onramp-took-over-on-failure",
+  "part_of": "VTID-04262 CHANGE LOG task list (kill-switch button VTID-04264, tool-call transcript VTID-04265, Autonomy Pulse visibility VTID-04266, spend surfacing VTID-04267, writable config VTID-04268, this item)",
+  "investigation_result": "No reliable live source exists for the CRON Jobs table (GCP Cloud Scheduler billing disabled 2026-08-16, no listing API reachable from this gateway, only push-dispatch confirmed migrated to AWS EventBridge per VTID-03676). Added an honest static-data notice per the task brief's fallback instruction, instead of inventing a fake live source.",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/vtid-04269-engine-config-cron-notice.test.ts",
+    "docs/validation/VTID-04269/acceptance.md",
+    "docs/validation/VTID-04269/commands.log",
+    "docs/validation/VTID-04269/outputs/execution.json"
+  ],
+  "backend_changed": false,
+  "new_routes": false,
+  "test_suites_run": [
+    "services/gateway/test/vtid-04269-engine-config-cron-notice.test.ts",
+    "services/gateway/test/command-hub/",
+    "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts",
+    "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts"
+  ],
+  "test_result": "22 suites passed, 304 tests passed, 0 regressions",
+  "tsc_noemit": "clean",
+  "csp_gate": "No CSP pattern hits in added lines.",
+  "deployed": false,
+  "not_verified_live": "The next Engine Configuration tab load on staging after this deploys is the exercise — confirm the amber notice renders above the CRON Jobs table."
+}

@@ -48523,6 +48523,23 @@ function renderAutopilotEngineView() {
     cronCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">\u23F0 Cloud Scheduler CRON Jobs</h3>' +
         '<p style="color:#888;font-size:0.8rem;margin-bottom:1rem;">These jobs are managed via scripts/setup-cloud-scheduler.sh and POST to /api/v1/automations/cron/&lt;AP-ID&gt;</p>';
 
+    // VTID-04269: this table was always STATIC reference data copied from
+    // scripts/setup-cloud-scheduler.sh's job list \u2014 no gateway route or DB
+    // table backs it with a live query, and there is no reliable live
+    // source to wire up instead (GCP Cloud Scheduler's own listing API
+    // isn't reachable from this gateway, and GCP billing on the project
+    // that script targets by default was disabled 2026-08-16 \u2014 CLAUDE.md
+    // \u00A71). Per the same repo's own VTID-03676 finding, only the
+    // push-dispatch job has a confirmed AWS EventBridge replacement; these
+    // 10 rows' actual running status today is unconfirmed. Labelling that
+    // honestly rather than presenting the table as live infrastructure
+    // state, per this file's own established remedy for the same defect
+    // shape (VTID-04064's buildGcpStaticViewDisabledNotice()).
+    var cronStaticNotice = document.createElement('div');
+    cronStaticNotice.className = 'autopilot-static-cron-notice';
+    cronStaticNotice.textContent = 'Static reference values from scripts/setup-cloud-scheduler.sh, not a live query. GCP Cloud Scheduler billing was disabled 2026-08-16; only push-dispatch has a confirmed AWS EventBridge replacement (VTID-03676) \u2014 whether these jobs are still actually firing is unconfirmed.';
+    cronCard.appendChild(cronStaticNotice);
+
     var cronJobs = [
         { id: 'AP-0101', name: 'Daily Match Delivery', schedule: '0 8 * * *', tz: 'Europe/Berlin' },
         { id: 'AP-0501', name: 'Morning Briefing', schedule: '0 7 * * *', tz: 'Europe/Berlin' },
