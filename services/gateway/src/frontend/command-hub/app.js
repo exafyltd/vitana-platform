@@ -41941,6 +41941,12 @@ function autonomyPulseDoAction(item, action) {
         var execId = item.metadata.execution_id;
         if (action === 'cancel') {
             promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/cancel', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'approve') {
+            // VTID-04266: an awaiting_approval execution — same route the
+            // Autopilot Live / Dev Autopilot cards already call.
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/approve', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'reject') {
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/reject', { method: 'POST', headers, body: '{}' });
         }
     }
     // self_healing apply_heal / discard_heal — Self-Healing endpoints live
