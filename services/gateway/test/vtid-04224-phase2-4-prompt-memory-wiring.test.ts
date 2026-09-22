@@ -59,14 +59,16 @@ describe('buildFixModeTaskPrompt — dev_agent_memory splice (Worker, agentic fi
 });
 
 describe('buildReviewPrompt — dev_agent_memory splice (Validator)', () => {
-  it('includes the block when passed', () => {
-    const p = buildReviewPrompt('VTID-09999', '### a.ts (modified)\n```diff\n+x\n```', MEMORY_BLOCK);
+  it('includes the block when passed, independent of the toolsAvailable arg', () => {
+    const p = buildReviewPrompt('VTID-09999', '### a.ts (modified)\n```diff\n+x\n```', false, MEMORY_BLOCK);
     expect(p).toContain('Engineering memory for these specific files');
+    const withTools = buildReviewPrompt('VTID-09999', 'diff', true, MEMORY_BLOCK);
+    expect(withTools).toContain('Engineering memory for these specific files');
   });
 
   it('is byte-identical to before this phase when the block is omitted', () => {
-    const withUndefined = buildReviewPrompt('VTID-09999', 'diff');
-    const withEmpty = buildReviewPrompt('VTID-09999', 'diff', '');
+    const withUndefined = buildReviewPrompt('VTID-09999', 'diff', false);
+    const withEmpty = buildReviewPrompt('VTID-09999', 'diff', false, '');
     expect(withUndefined).toBe(withEmpty);
     expect(withUndefined).not.toContain('Engineering memory for these specific files');
   });
