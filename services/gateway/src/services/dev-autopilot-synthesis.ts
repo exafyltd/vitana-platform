@@ -313,6 +313,22 @@ function domainForPath(path: string): string {
 // — so adding scanner #14 inherits the behaviour automatically.
 const ROLLUP_THRESHOLD = Number.parseInt(process.env.AUTOPILOT_ROLLUP_THRESHOLD || '5', 10);
 
+// VTID-04277: the rollup rule assumes a cluster of same-(scanner,type,severity)
+// signals is mechanically fungible — "apply the same fix class to every file,
+// typically a one-line change per file" (buildRollupSignal below). That is
+// true for a scanner that sweeps real files and emits one signal per hit
+// (dead_code, todo, missing_tests, ...), but false for safety-gap-scanner-v1:
+// it emits from a small, fixed, hand-authored catalog of ~10 DISTINCT
+// engineering tasks (a new RLS-write-deny suite, an admin auth-coverage test,
+// a schema-vs-migrations validator, ...), each with its own scope and no
+// mechanical relationship to the others. Once >=ROLLUP_THRESHOLD of that
+// catalog's test files are missing, the collapse produced a finding claiming
+// "N files with the same fix class" (they don't have one) and listed
+// directory-scoped source_file entries (e.g. services/gateway/src/routes/admin)
+// under "Files:" — live rows b0aa6815/e89e7537 are exactly this shape.
+// safety_gap signals always pass through individually instead.
+const ROLLUP_EXEMPT_TYPES = new Set<SignalType>(['safety_gap']);
+
 interface RollupGroup {
   scanner: string;
   signal_type: SignalType;
@@ -325,7 +341,12 @@ function groupSignalsForRollup(signals: DevAutopilotSignal[]): {
   rollups: RollupGroup[];
 } {
   const groups = new Map<string, RollupGroup>();
+  const passthrough: DevAutopilotSignal[] = [];
   for (const s of signals) {
+    if (ROLLUP_EXEMPT_TYPES.has(s.type)) {
+      passthrough.push(s);
+      continue;
+    }
     const scanner = s.scanner || 'unknown';
     const key = `${scanner}|${s.type}|${s.severity}`;
     let g = groups.get(key);
@@ -335,7 +356,6 @@ function groupSignalsForRollup(signals: DevAutopilotSignal[]): {
     }
     g.signals.push(s);
   }
-  const passthrough: DevAutopilotSignal[] = [];
   const rollups: RollupGroup[] = [];
   for (const g of groups.values()) {
     if (g.signals.length >= ROLLUP_THRESHOLD) rollups.push(g);

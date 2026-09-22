@@ -1,0 +1,93 @@
+VTID-04277 — commands run to build and verify this change
+
+1. Continuing the user-approved backlog walkthrough (task #2 of "start
+   with those three"): investigated whether safety-gap-scanner-v1 is a
+   third scanner self-match/structural bug, per the same live rollup
+   finding pattern already fixed twice this session (VTID-04273
+   secret-exposure, VTID-04275 TODO/FIXME).
+
+2. `Glob **/safety-gap*.mjs` -> no match; the scanner is not a standalone
+   file. `Grep scanSafetyGaps|safety-gap-scanner-v1` ->
+   scripts/ci/dev-autopilot-scan.mjs.
+
+3. Read scanSafetyGaps() (dev-autopilot-scan.mjs:206-237) — a hardcoded
+   array of 10 distinct, hand-authored gap descriptors, each with its own
+   source_file (some directories, some files by design), test_file, and
+   description. Confirmed this is NOT a self-match bug — none of the 10
+   gaps reference the scanner's own source.
+
+4. Read services/gateway/src/services/dev-autopilot-synthesis.ts's
+   groupSignalsForRollup()/buildRollupSignal() (the "[rollup] ... flagged
+   N files with the same fix class" mechanism). Confirmed the defect:
+   grouping keys only on (scanner, type, severity) — all safety_gap
+   signals from this scanner share that triple regardless of how
+   unrelated their actual fixes are, so >=ROLLUP_THRESHOLD (default 5)
+   unaddressed gaps collapse into one finding claiming a shared "fix
+   class" that does not exist, listing directory paths as "Files:".
+
+5. Confirmed via scoreSignal()/TYPE_RISK_CLASS that safety_gap is
+   risk_class='medium', never auto_exec_eligible — so this defect never
+   caused an unsupervised bad merge, only a misleading finding a human
+   reviewer (or, if the risk class is ever revisited, an executor) would
+   read.
+
+6. Allocated VTID-04277 via allocate_global_vtid (Supabase MCP
+   execute_sql), title/status/spec_status set to in_progress/approved
+   (this is the user's own directly-instructed follow-up work).
+
+7. `git fetch origin main && git checkout -b
+   claude/vtid-04277-safety-gap-rollup-mislabel origin/main` — fresh
+   origin/main at 45434e6 (VTID-04275, already merged).
+
+8. Edited services/gateway/src/services/dev-autopilot-synthesis.ts:
+   added ROLLUP_EXEMPT_TYPES = Set(['safety_gap']) with a comment
+   explaining the live evidence and root cause; groupSignalsForRollup()
+   now routes any signal whose type is in that set straight to
+   passthrough before building the (scanner,type,severity) key, so it
+   can never enter a rollup regardless of cluster size.
+
+9. Added 3 new tests to
+   services/gateway/test/dev-autopilot-synthesis.test.ts (new describe
+   block "ingestScan — safety_gap rollup exemption (VTID-04277)"):
+   - 8 distinct safety_gap signals (the scanner's real catalog shape,
+     mixed dir/file source paths) -> 8 individual findings, none tagged
+     [rollup], each summary preserved verbatim.
+   - a below-threshold safety_gap cluster (2 signals) -> unchanged,
+     still passes through (proves this is a strict widening).
+   - a control: 6 dead_code signals -> still collapses into exactly one
+     [rollup] finding with raw.rollup=true, total_files=6 (proves the
+     exemption is scoped to safety_gap only, general rollup unchanged).
+
+10. `cd services/gateway && node node_modules/.bin/jest
+    test/dev-autopilot-synthesis.test.ts` -> first run: 2 failures, both
+    assertion mistakes in the new tests (asserted body.message/body.raw
+    instead of the real insert shape body.summary/body.spec_snapshot —
+    the POST body for autopilot_recommendations has title/summary/
+    spec_snapshot fields, not message/raw). Fixed the assertions to
+    match the real insert shape (ingestScan lines 558-594). Second run:
+    1 failure (a lexicographic-sort ordering mistake in the expected
+    array, "rls-write-guard" sorts before "route-guard"). Fixed the
+    expected order. Third run: 24/24 passing.
+
+11. `npx tsc --noEmit` -> clean.
+
+12. Mutation verification (cp backup, not git checkout — this session's
+    established practice after an earlier git-checkout mistake this same
+    day): removed the ROLLUP_EXEMPT_TYPES check from
+    groupSignalsForRollup() -> exactly 1/24 tests correctly failed (the
+    "never collapses" assertion, new_finding_count 1 instead of 8); the
+    other two new tests (control + below-threshold) correctly stayed
+    green, since neither depends on the removed check. Restored from
+    backup; `diff` confirmed byte-identical to the fixed file.
+
+13. `cd services/gateway && node node_modules/.bin/jest
+    test/dev-autopilot-synthesis.test.ts` -> 24/24 passing again after
+    restore. `npx tsc --noEmit` -> clean.
+
+14. `cd services/gateway && node node_modules/.bin/jest --silent` (full
+    suite) — run in background; result recorded in outputs/execution.json.
+
+No Supabase or AWS mutation was made from this session for this VTID
+beyond self-allocating the VTID itself. The two live stuck rows
+(b0aa6815/e89e7537) this defect produced are handled separately (task #1
+of the same user-approved backlog walkthrough).

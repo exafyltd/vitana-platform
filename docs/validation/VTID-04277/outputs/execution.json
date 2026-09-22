@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-04277",
+  "title": "Rollup layer mislabels heterogeneous safety-gap-scanner-v1 findings as \"same fix class\"",
+  "profile": "gateway_backend",
+  "executor": "claude-code-session",
+  "live_findings_explained": [
+    {
+      "id": "b0aa6815",
+      "status": "snoozed",
+      "signal_fingerprint": "10a9a4091a8afa54",
+      "note": "[rollup] safety-gap-scanner-v1 flagged 8 files with the same fix class — root cause confirmed: rollup grouping keys only on (scanner,type,severity), not on whether the underlying signals actually share a fix"
+    },
+    {
+      "id": "e89e7537",
+      "status": "activated",
+      "activated_vtid": "VTID-02012 (dead, scheduled/draft, ~5 months old)",
+      "signal_fingerprint": "10a9a4091a8afa54",
+      "note": "duplicate of b0aa6815 (pre-existing duplicate, predates the VTID-04274 dedup fix) — release handled separately as backlog task #1"
+    }
+  ],
+  "files_changed": [
+    "services/gateway/src/services/dev-autopilot-synthesis.ts",
+    "services/gateway/test/dev-autopilot-synthesis.test.ts",
+    "docs/validation/VTID-04277/acceptance.md",
+    "docs/validation/VTID-04277/commands.log",
+    "docs/validation/VTID-04277/outputs/execution.json"
+  ],
+  "checks": {
+    "new_tests": { "count": 3, "passing": 3, "total": 3, "mutation_verified": true },
+    "targeted_suite": { "file": "services/gateway/test/dev-autopilot-synthesis.test.ts", "passing": 24, "total": 24, "failures": 0 },
+    "tsc_noemit": "clean",
+    "full_gateway_suite": "run in background; see commands.log step 14 for invocation — result appended once complete"
+  },
+  "supabase_mutations_from_this_session": "none beyond self-allocating VTID-04277 itself",
+  "live_verification": "not yet performed — the next scheduled dev-autopilot scan with >=5 unaddressed safety_gap catalog gaps is the exercise; expect N individual findings, never one [rollup] finding"
+}
