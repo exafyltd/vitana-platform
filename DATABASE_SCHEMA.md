@@ -294,10 +294,41 @@ overlap, then the test row was deleted.
 (`recallDevMemoryByFiles`), `operator-turn-memory.ts`'s
 `buildExecutionOutcomeMemory` (stamps `stage:'worker'`, threads
 `filePaths` through the executor's existing `task_outcome`/`gotcha`
-writes). Read-side wiring into the Planner/Validator LLM stages, and
-real file-list wiring into `dev-autopilot-execute.ts`'s two
-`recordExecutionOutcomeMemory` call sites, are explicit follow-ups, not
-done in VTID-04224.
+writes).
+
+**Phases 2-4 (same VTID-04224, same PR): read-side wiring into every
+autopilot LLM stage.** New `dev-agent-memory-file-recall.ts` —
+`buildFileScopedMemoryBlock(files, repo)` (fetch + render in one call,
+fails open to `''` on any error) plus three independent, exact-string
+`'true'` kill switches, each defaulting OFF (ships inert, same posture as
+every other opt-in feature in this file's CHANGE LOG):
+
+- `DEV_AUTOPILOT_WORKER_MEMORY_ENABLED` — both Worker executors (the
+  single-shot path's `buildExecutionPrompt` in `dev-autopilot-execute.ts`,
+  and the agentic path's `buildAgentTaskPrompt`/`buildFixModeTaskPrompt` in
+  `autopilot-agent/run-agent-execution.ts` + `agent-prompt.ts`), recalled
+  against the plan's `files_referenced` (or the PR's changed files in fix
+  mode).
+- `DEV_AUTOPILOT_VALIDATOR_MEMORY_ENABLED` — the pre-merge LLM review
+  (`dev-autopilot-llm-review.ts`'s `runLlmMergeReview`/`buildReviewPrompt`),
+  recalled against the PR's changed filenames.
+- `DEV_AUTOPILOT_PLANNER_MEMORY_ENABLED` — plan generation
+  (`dev-autopilot-planning.ts`'s `buildPlanningPrompt`), recalled against
+  the finding's `spec_snapshot.file_path` plus, for the feedback-bridge
+  lane, `proposed_files`.
+
+Every call site follows the same shape: gate check → `try { await
+buildFileScopedMemoryBlock(...) } catch { '' }` → spliced into the
+prompt only if non-empty. All four prompt builders are pure/synchronous
+and are byte-identical to their pre-Phase-2 output when the block is `''`
+or omitted (pinned by tests). **Phase 1's real (non-empty) file-list
+wiring into `dev-autopilot-execute.ts`'s two `recordExecutionOutcomeMemory`
+call sites remains an explicit follow-up, not done here** — that file's
+own change-log history flags it repeatedly as high-churn and
+cancellation-sensitive, and Phase 2-4's read side does not depend on it
+(the Worker's outcome WRITES still land with `file_paths: []` until that
+follow-up ships; the new recall reads are keyed off the PLAN's/PR's own
+file list instead, which was always populated).
 
 ---
 

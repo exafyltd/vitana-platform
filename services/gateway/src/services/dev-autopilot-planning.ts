@@ -54,6 +54,7 @@ import {
 import { applyScannerOverrides } from './dev-autopilot-safety';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
@@ -405,6 +406,13 @@ export function buildPlanningPrompt(
    * the database is untestable.
    */
   watcherRemindersBlock?: string,
+  /**
+   * VTID-04224 Phase 4: pre-rendered file-scoped dev_agent_memory block
+   * (dev-agent-memory-file-recall.ts) for the finding's candidate file(s).
+   * Same pure/synchronous contract as watcherRemindersBlock. '' when the
+   * flag is off or nothing was recalled.
+   */
+  devMemoryBlock?: string,
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -512,6 +520,8 @@ export function buildPlanningPrompt(
   // Ships dark behind WATCHER_REMINDERS_ENABLED. Off, this is a no-op and
   // the prompt is byte-identical to before.
   if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
+  if (devMemoryBlock) lines.push(devMemoryBlock, ``);
 
   if (previousPlan && feedbackNote) {
     lines.push(
@@ -921,7 +931,24 @@ async function runPlanningSession(
       watcherBlock = '';
     }
   }
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock) + fileSection;
+  // VTID-04224 Phase 4: flag-gated file-scoped dev_agent_memory recall over
+  // the finding's candidate file(s) — the referenced file plus, for the
+  // feedback lane, any bridge-validated proposed_files. Fail-open — a
+  // recall failure must never block or degrade planning.
+  let devMemoryBlock = '';
+  if (isPlannerMemoryRecallEnabled()) {
+    try {
+      const proposedFiles = (finding.spec_snapshot as { proposed_files?: unknown } | null)?.proposed_files;
+      const candidateFiles = Array.from(new Set([
+        ...(filePath ? [filePath] : []),
+        ...(Array.isArray(proposedFiles) ? proposedFiles.filter((p): p is string => typeof p === 'string') : []),
+      ]));
+      devMemoryBlock = await buildFileScopedMemoryBlock(candidateFiles, 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock, devMemoryBlock) + fileSection;
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls

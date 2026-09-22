@@ -61,3 +61,69 @@ Not run: the full gateway test suite (thousands of tests across many
 unrelated services) — this PR's own tsc/build/targeted-test results above
 are the direct evidence for its own diff; CI's own build gate re-runs
 `npm run build` independently.
+
+---
+
+Phase 2-5 — read-side wiring into Worker/Validator/Planner + guardrails
+(same VTID-04224, same PR, continued in the same session)
+
+10. New module: services/gateway/src/services/dev-agent-memory-file-recall.ts
+    — three kill switches (isWorkerMemoryRecallEnabled,
+    isValidatorMemoryRecallEnabled, isPlannerMemoryRecallEnabled),
+    renderDevMemoryFileBlock, buildFileScopedMemoryBlock (fetch+render,
+    fail-open to '').
+
+11. Wired into four call sites, each: gate check -> try { await
+    buildFileScopedMemoryBlock(...) } catch { '' } -> spliced into the
+    prompt only if non-empty:
+    - dev-autopilot-execute.ts: buildExecutionPrompt (single-shot Worker)
+    - autopilot-agent/run-agent-execution.ts + agent-prompt.ts:
+      buildAgentTaskPrompt / buildFixModeTaskPrompt (agentic Worker)
+    - dev-autopilot-llm-review.ts: buildReviewPrompt / runLlmMergeReview
+      (Validator)
+    - dev-autopilot-planning.ts: buildPlanningPrompt (Planner)
+
+12. Typecheck (services/gateway)
+    $ npx tsc --noEmit -p .
+    -> exit 0, no output
+
+13. Build
+    $ npm run build
+    -> exit 0 (tsc + copy-frontend + copy-data all succeeded)
+
+14. New targeted tests
+    $ npx jest test/vtid-04224-phase2-4-prompt-memory-wiring.test.ts \
+        test/vtid-04224-phase3-validator-memory-wiring.test.ts \
+        test/services/dev-agent-memory-file-recall.test.ts \
+        test/services/dev-agent-memory.test.ts \
+        test/vtid-04025-operator-turn-memory.test.ts \
+        test/dev-autopilot-execute.test.ts \
+        test/dev-autopilot-planning.test.ts \
+        test/vtid-03853-llm-merge-review.test.ts --silent
+    -> 8 suites passed, 102 tests passed, 0 failed
+
+15. Regression sweep — every pre-existing dev-autopilot suite
+    $ npx jest --testPathPattern "dev-autopilot" --silent
+    -> 24 suites passed, 559 tests passed, 0 failed
+
+16. Regression sweep — every pre-existing operator-memory-adjacent suite
+    $ npx jest --testPathPattern "dev-agent-memory|dev-memory-ranking|vtid-04027|vtid-0402[2-9]|vtid-04224" --silent
+    -> 11 suites passed, 131 tests passed, 0 failed
+
+17. Regression sweep — agentic executor suites (agent-prompt.ts,
+    run-agent-execution.ts touched)
+    $ npx jest test/autopilot-agent-scope-validate.test.ts \
+        test/autopilot-agent-tools.test.ts \
+        test/autopilot-agent-loop.test.ts \
+        test/vtid-04046-agent-prompt-date.test.ts \
+        test/vtid-04016-agent-check-guard.test.ts --silent
+    -> 5 suites passed, tests passed, 0 failed
+
+18. DATABASE_SCHEMA.md updated (dev_agent_memory section) with the
+    Phase 2-4 wiring, the three flag names, and the explicit follow-ups
+    list — no schema change in this phase, documentation only.
+
+Not run: a live round trip through any of the four call sites (Planner/
+Worker/Validator runs need a real finding/execution/PR and live Supabase
+state this session cannot safely drive end to end); all three flags ship
+OFF by default and are not pinned on any deploy workflow in this PR.

@@ -35,6 +35,7 @@
  */
 
 import githubService from './github-service';
+import { isValidatorMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 
 const LOG_PREFIX = '[dev-autopilot-llm-review]';
 // Keep the review prompt well inside the router's per-call token budget —
@@ -85,7 +86,7 @@ export function buildDiffBundle(files: PrFileForReview[]): string {
   return parts.join('\n');
 }
 
-export function buildReviewPrompt(vtid: string, diffBundle: string): string {
+export function buildReviewPrompt(vtid: string, diffBundle: string, devMemoryBlock?: string): string {
   return [
     `You are a pre-merge safety reviewer for an autonomous code-change pipeline.`,
     `A PR for ${vtid} is about to be auto-merged with no human review. Look ONLY`,
@@ -104,6 +105,7 @@ export function buildReviewPrompt(vtid: string, diffBundle: string): string {
     ``,
     `## Diff`,
     diffBundle,
+    devMemoryBlock ? `\n${devMemoryBlock}\n` : '',
   ].join('\n');
 }
 
@@ -145,7 +147,17 @@ export async function runLlmMergeReview(params: {
   }
 
   const diffBundle = buildDiffBundle(files);
-  const prompt = buildReviewPrompt(params.vtid, diffBundle);
+  // VTID-04224 Phase 3: flag-gated file-scoped dev_agent_memory recall,
+  // fail-open — a recall failure must never block or degrade the review.
+  let devMemoryBlock = '';
+  if (isValidatorMemoryRecallEnabled()) {
+    try {
+      devMemoryBlock = await buildFileScopedMemoryBlock(files.map((f) => f.filename), 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
+  const prompt = buildReviewPrompt(params.vtid, diffBundle, devMemoryBlock);
 
   const { callViaRouter } = await import('./llm-router');
   const r = await callViaRouter('validator', prompt, {
