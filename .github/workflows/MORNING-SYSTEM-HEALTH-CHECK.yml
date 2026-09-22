@@ -470,6 +470,13 @@ jobs:
             "ALERT-OASIS-LEDGER-INTEGRITY.yml"
             "ALERT-ORB-SESSION-STATE-HEALTH.yml"
             "ALERT-ORB-BOOTSTRAP-LATENCY.yml"
+            # VTID-04263: ALERT-PUSH-DISPATCH-HEALTH.yml existed (VTID-03656)
+            # but was never added here — it failed on every ~20-min run for
+            # an extended period (a 1000+-row, ~208-day-old unsent backlog)
+            # with zero visibility in this daily roll-up. Do not repeat that
+            # gap for a future ALERT-*.yml without adding it here too.
+            "ALERT-PUSH-DISPATCH-HEALTH.yml"
+            "ALERT-APP-USERS-IDENTITY-DRIFT.yml"
           )
           BAD=""
           for WF in "${WATCHLIST[@]}"; do

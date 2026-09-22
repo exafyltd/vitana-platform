@@ -1,0 +1,144 @@
+name: Alert — New-Day Briefing Loop / Stamp-Write Health
+
+# VTID-04255.
+#
+# WHY THIS EXISTS: reported live as "every new day greeting now is nonstop
+# new day greeting" — a user got a full "new day" morning briefing 3 times
+# in 21 hours (safe_fast_newday_overview/newday_overview wake_opener,
+# 2026-09-21/22 UTC), because the ONLY thing gating a repeat full-briefing
+# greeting was a durable DB date-stamp write (user_journey.
+# last_full_briefing_date) that was silently failing in production with
+# Postgres error "permission denied for table user_journey" — very likely a
+# stale/wrong deployed AWS Secrets Manager value for the Supabase
+# service-role key (see the VTID-04255 PR body for the full trace).
+#
+# The code fix (compute-greeting-decision.ts: both
+# shouldAttemptNewdayOverview() and tryDayCloseRung() now refuse to fire
+# on ctx.bucket==='reconnect') closes the USER-VISIBLE symptom
+# unconditionally — but the underlying DB write can still be broken, and a
+# silent DB-permission failure is exactly the kind of degradation that
+# nobody notices for days unless something is watching (VTID-03480's
+# standing lesson, repeated verbatim in this repo's other ALERT-*.yml
+# files: a degradation nobody alerts on is not detected, it is merely
+# recorded).
+#
+# This checks TWO independent things, either of which is actionable on
+# its own:
+#   1. stamp_briefing_date_write failures in the last window — the
+#      root-cause DB write. Any occurrence means the AWS Secrets Manager
+#      credential fix described in the VTID-04255 PR is still outstanding.
+#   2. A regression of the exact symptom this VTID fixed — a
+#      newday_overview/safe_fast_newday_overview wake_opener firing on a
+#      ctx.bucket==='reconnect' session. Post-fix this combination should
+#      be structurally unreachable; any occurrence means the fix was
+#      reverted, bypassed, or a new code path re-introduced the gap.
+#
+# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`
+# — GitHub runner IPs are not on the Supabase project's network allow-list,
+# so every psql-based check in this repo is structurally unable to connect
+# (VTID-03485/03492). oasis_events is already reachable by service_role
+# through PostgREST — no RPC or migration needed, matching
+# ALERT-PUSH-DISPATCH-HEALTH.yml's precedent.
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'   # every 20 minutes — catch a recurrence within an hour, not a day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # How far back to look on each run. Generously wider than the cron
+  # interval so a missed run doesn't create a blind spot.
+  LOOKBACK_MINUTES: '60'
+
+jobs:
+  newday-briefing-loop-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch recent stamp-write failures and reconnect-bucket briefing greetings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+
+          SINCE=$(node -e "console.log(new Date(Date.now() - ${LOOKBACK_MINUTES}*60000).toISOString())")
+
+          # 1. stamp_briefing_date_write failures (result=error or result=threw)
+          HTTP1=$(curl -sS -o stamp_failures.json -w '%{http_code}' -G \
+            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
+            --data-urlencode 'select=id,created_at,metadata' \
+            --data-urlencode 'topic=eq.orb.live.diag' \
+            --data-urlencode "metadata->>stage=eq.stamp_briefing_date_write" \
+            --data-urlencode "metadata->>result=in.(error,threw)" \
+            --data-urlencode "created_at=gte.${SINCE}" \
+            --data-urlencode 'order=created_at.desc' \
+            --data-urlencode 'limit=50' \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
+          if [ "$HTTP1" != "200" ]; then
+            echo "::error::stamp_briefing_date_write query returned HTTP $HTTP1"
+            head -c 500 stamp_failures.json || true
+            exit 1
+          fi
+
+          # 2. VTID-04255 regression check: a full-briefing wake_opener firing
+          #    while ctx.bucket==='reconnect' should be structurally
+          #    unreachable after this fix — any hit means the fix regressed.
+          HTTP2=$(curl -sS -o reconnect_briefings.json -w '%{http_code}' -G \
+            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
+            --data-urlencode 'select=id,created_at,metadata' \
+            --data-urlencode 'topic=eq.orb.live.diag' \
+            --data-urlencode "metadata->>stage=eq.greeting_sent" \
+            --data-urlencode "metadata->>wake_opener=in.(newday_overview,safe_fast_newday_overview)" \
+            --data-urlencode "metadata->>bucket=eq.reconnect" \
+            --data-urlencode "created_at=gte.${SINCE}" \
+            --data-urlencode 'order=created_at.desc' \
+            --data-urlencode 'limit=50' \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
+          if [ "$HTTP2" != "200" ]; then
+            echo "::error::reconnect-bucket briefing regression query returned HTTP $HTTP2"
+            head -c 500 reconnect_briefings.json || true
+            exit 1
+          fi
+
+      - name: Evaluate
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const stampFailures = JSON.parse(fs.readFileSync("stamp_failures.json", "utf8"));
+            const reconnectBriefings = JSON.parse(fs.readFileSync("reconnect_briefings.json", "utf8"));
+
+            console.log(`stamp_write_failures=${stampFailures.length}  reconnect_bucket_briefing_regressions=${reconnectBriefings.length}  lookback_min=${process.env.LOOKBACK_MINUTES}`);
+
+            const problems = [];
+
+            if (stampFailures.length > 0) {
+              const byResult = {};
+              for (const r of stampFailures) {
+                const result = r.metadata?.result || "unknown";
+                byResult[result] = (byResult[result] || 0) + 1;
+              }
+              problems.push(`${stampFailures.length} stamp_briefing_date_write failure(s) in the last ${process.env.LOOKBACK_MINUTES}min (by result: ${JSON.stringify(byResult)}) — the last_full_briefing_date write is still broken (VTID-04255: check the AWS Secrets Manager service-role credential on vitana/supabase/prod/service-role-key-GfBpSP, then force a new ECS deployment on vitana-gateway-awsdr)`);
+            }
+
+            if (reconnectBriefings.length > 0) {
+              const users = reconnectBriefings.map((r) => r.metadata?.session_id || "unknown").join(", ");
+              problems.push(`${reconnectBriefings.length} full-briefing greeting(s) fired on a bucket=reconnect session in the last ${process.env.LOOKBACK_MINUTES}min (session_ids: ${users}) — this combination should be structurally unreachable after VTID-04255; the fix in compute-greeting-decision.ts (shouldAttemptNewdayOverview/tryDayCloseRung) may have been reverted or bypassed by a new code path`);
+            }
+
+            if (problems.length) {
+              console.log("::error::" + problems.join(" | "));
+              process.exit(1);
+            }
+
+            console.log("No stamp-write failures and no reconnect-bucket briefing regressions in the lookback window.");
+          '

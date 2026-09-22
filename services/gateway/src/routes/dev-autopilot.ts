@@ -266,10 +266,14 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
       .digest('hex')
       .slice(0, 32);
 
-    // Lookup existing live finding with this fingerprint
+    // Lookup existing live finding with this fingerprint. VTID-04274: must
+    // include 'activated' alongside 'new'/'snoozed' — see the sibling fix
+    // in dev-autopilot-synthesis.ts for the live duplicate this excluded
+    // status caused (a finding already has a VTID and an in-flight
+    // execution is still the same live problem, not a resolved one).
     const existing = await supaGet<Array<{ id: string; seen_count: number | null }>>(
       supa,
-      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed)&select=id,seen_count&limit=1`,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed,activated)&select=id,seen_count&limit=1`,
     );
     const hit = existing.ok && existing.data && existing.data[0];
     if (hit) {

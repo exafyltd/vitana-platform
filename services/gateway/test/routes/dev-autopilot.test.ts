@@ -475,6 +475,36 @@ describe('requireScanToken governance gate — POST /impact-ingest', () => {
     expect(res.body.new_count).toBe(0);
     expect(patchedBody).toMatchObject({ seen_count: 4 });
   });
+
+  it('VTID-04274: the dedup lookup includes activated findings, not just new/snoozed', async () => {
+    // Same live bug as dev-autopilot-synthesis.ts's ingestScan dedup: a
+    // finding already status='activated' (has a VTID, an in-flight
+    // execution) is still the same live problem — excluding it from the
+    // dedup lookup let a repeat signal spawn a duplicate finding + VTID.
+    let getUrl: string | null = null;
+    setFetchRoutes([
+      (url, opts) => {
+        if (url.includes('/rest/v1/autopilot_recommendations') && method(opts) === 'GET') {
+          getUrl = url;
+          return jsonRes(200, [{ id: 'existing-activated', seen_count: 1 }]);
+        }
+        if (url.includes('/rest/v1/autopilot_recommendations?id=eq.existing-activated') && method(opts) === 'PATCH') {
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+
+    const res = await request(app)
+      .post('/api/v1/dev-autopilot/impact-ingest')
+      .set('X-DevAutopilot-Scan-Token', SCAN_TOKEN)
+      .send({ findings: [{ rule: 'r4', severity: 'blocker', message: 'm4' }] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.updated_count).toBe(1);
+    expect(res.body.new_count).toBe(0);
+    expect(getUrl).toContain('status=in.(new,snoozed,activated)');
+  });
 });
 
 // =============================================================================
