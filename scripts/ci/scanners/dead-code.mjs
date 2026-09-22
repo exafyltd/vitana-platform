@@ -37,8 +37,38 @@ const NEVER_FLAG = new Set([
 
 const EXPORT_RE = /^\s*export\s+(?:async\s+)?(?:const|let|var|function|class|interface|type|enum)\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
 
+// VTID-04291: the `// @public-api` escape hatch this scanner's own
+// `suggested_action` tells humans to use — implemented here, because until
+// now the advice pointed at a mechanism that did not exist in this file:
+// annotating an export changed nothing and the identical finding came back
+// on the next scan. It exists for exports that ARE reached, just not in a
+// way a literal symbol grep can see — a barrel/namespace import
+// (`repo.fetchX(...)`, `import * as repo from './x-repository'`), a dynamic
+// dispatch, or a deliberate seam for a not-yet-landed workstream.
+const PUBLIC_API_MARKER_RE = /@public-api\b/;
+
+/**
+ * Walks up from a 1-based declaration line over the CONTIGUOUS comment block
+ * immediately above it and reports whether that block carries an
+ * `@public-api` marker. A blank line or any non-comment line ends the walk —
+ * deliberately, so an annotation on one export can never leak onto the next
+ * export below it (e.g. `// @public-api` above `foo()` must not also silence
+ * `bar()` two lines later).
+ */
+function isPublicApiAnnotated(lines, declLine) {
+  for (let i = declLine - 2; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed === '') return false;
+    const isComment = trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*');
+    if (!isComment) return false;
+    if (PUBLIC_API_MARKER_RE.test(trimmed)) return true;
+  }
+  return false;
+}
+
 function collectExports(file, src) {
   const out = [];
+  const lines = src.split('\n');
   let m;
   EXPORT_RE.lastIndex = 0;
   while ((m = EXPORT_RE.exec(src)) !== null) {
@@ -46,6 +76,7 @@ function collectExports(file, src) {
     if (NEVER_FLAG.has(name)) continue;
     if (name.startsWith('_')) continue; // convention: _-prefixed = internal
     const line = src.slice(0, m.index).split('\n').length;
+    if (isPublicApiAnnotated(lines, line)) continue;
     out.push({ name, line });
   }
   return out;
