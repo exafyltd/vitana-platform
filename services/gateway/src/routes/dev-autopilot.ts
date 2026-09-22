@@ -23,6 +23,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
 import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
 
 const router = Router();
 
@@ -379,6 +380,31 @@ router.get('/runs/:run_id', requireDevRole, async (req: Request, res: Response) 
   const row = (r.data || [])[0];
   if (!row) return res.status(404).json({ ok: false, error: 'run not found' });
   return res.json({ ok: true, run: row });
+});
+
+// =============================================================================
+// GET /supervisor — VTID-04281: one correlated snapshot for the Autopilot tabs
+// =============================================================================
+// Scan cadence, 7-day execution funnel + failure reasons, a blocker diagnosis
+// for every open finding, impact-rule hits, effective autonomy and alerts.
+// Cached 15 s: every Autopilot tab polls it for its status strip.
+const SUPERVISOR_CACHE_MS = 15_000;
+let supervisorCache: { at: number; body: unknown } | null = null;
+
+router.get('/supervisor', requireDevRole, async (req: Request, res: Response) => {
+  const fresh = req.query.fresh === '1';
+  if (!fresh && supervisorCache && Date.now() - supervisorCache.at < SUPERVISOR_CACHE_MS) {
+    return res.json(supervisorCache.body);
+  }
+  try {
+    const body = await buildSupervisorSnapshot();
+    if (!body.ok) return res.status(500).json(body);
+    supervisorCache = { at: Date.now(), body };
+    return res.json(body);
+  } catch (err) {
+    console.error('[dev-autopilot] supervisor snapshot failed:', err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 // =============================================================================
@@ -1243,6 +1269,32 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
     }
   } catch (err) {
     console.warn(`${LOG_PREFIX} last_event_at enrichment failed:`, err);
+  }
+
+  // VTID-04282: attach the finding's title/scanner/file so the Live view can
+  // say WHAT each execution is fixing. Best-effort, one query.
+  const findingIds = Array.from(new Set(executions
+    .map((e) => (typeof e.finding_id === 'string' ? e.finding_id : null))
+    .filter((id): id is string => id !== null)));
+  if (findingIds.length > 0) {
+    const recR = await supaGet<Array<{ id: string; title: string; source_type: string | null; spec_snapshot: Record<string, unknown> | null }>>(
+      supa,
+      `/rest/v1/autopilot_recommendations?id=in.(${findingIds.join(',')})&select=id,title,source_type,spec_snapshot`,
+    );
+    if (recR.ok && recR.data) {
+      const byId = new Map(recR.data.map((r) => [r.id, r]));
+      for (const exec of executions) {
+        const rec = typeof exec.finding_id === 'string' ? byId.get(exec.finding_id) : undefined;
+        if (rec && !exec.recommendation) {
+          const snap = rec.spec_snapshot || {};
+          exec.recommendation = {
+            title: rec.title,
+            source_type: rec.source_type,
+            spec_snapshot: { scanner: snap.scanner ?? snap.rule ?? null, file_path: snap.file_path ?? null },
+          };
+        }
+      }
+    }
   }
 
   return res.json({ ok: true, executions });

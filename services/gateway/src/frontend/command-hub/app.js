@@ -7930,22 +7930,31 @@ function renderModuleContent(moduleKey, tab) {
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotRegistryView());
     } else if (moduleKey === 'autopilot' && tab === 'scanners') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotScannersView());
     } else if (moduleKey === 'autopilot' && tab === 'impact-rules') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotImpactRulesView());
     } else if (moduleKey === 'autopilot' && tab === 'auto-approve') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotAutoApproveView());
     } else if (moduleKey === 'autopilot' && tab === 'runs') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotRunsView());
     } else if (moduleKey === 'autopilot' && tab === 'live') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotLiveView());
     } else if (moduleKey === 'autopilot' && tab === 'engine') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotEngineView());
     } else if (moduleKey === 'autopilot' && tab === 'growth') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotGrowthView());
     } else if (moduleKey === 'autopilot' && tab === 'mission-alignment') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotMissionAlignmentView());
 
     // ──── Knowledge Base → Checklist (VTID-03278: Guided Journey curriculum) ────
@@ -47325,13 +47334,18 @@ if (!state.autopilot) {
         impactRules: { loading: false, data: null, filter: { category: '', severity: '' } },
         autoApprove: { loading: false, data: null },
         runs: { loading: false, data: null, filters: { status: '', limit: 50 } },
-        live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
+        live: { loading: false, loaded: false, devAutopilotExecutions: null, recentExecutions: null, error: null, signature: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
         growth: { loading: false, metrics: null, period: '7d' },
         missionAlignment: { loading: false, recs: null, error: null, lastFetchAt: null, statusFilter: 'new' },
+        // VTID-04282: shared supervisor snapshot for every Autopilot tab.
+        supervisor: { loading: false, data: null, error: null, signature: null, fetchedAt: null, timer: null },
         selectedAutomation: null,
         drawerOpen: false,
     };
+}
+if (!state.autopilot.supervisor) {
+    state.autopilot.supervisor = { loading: false, data: null, error: null, signature: null, fetchedAt: null, timer: null };
 }
 
 // ── Helper: status badge color ───────────────────────────────
@@ -47362,6 +47376,313 @@ function autopilotTriggerIcon(type) {
         case 'webhook': return '\u{1F310}'; // globe
         default: return '\u2022';
     }
+}
+
+// =============================================================================
+// VTID-04282: Supervisor layer shared by every Autopilot tab
+// =============================================================================
+// One snapshot (GET /api/v1/dev-autopilot/supervisor, VTID-04281) correlates
+// the tabs: is the loop being fed (scan cadence), is work moving (executions),
+// what is stuck and who must act (a blocker diagnosis per open finding), and
+// why runs fail. Polled every 30 s while an Autopilot tab is open; the view
+// re-renders only when the snapshot changed and nobody is typing.
+
+var AUTOPILOT_SUPERVISOR_POLL_MS = 30000;
+
+async function fetchAutopilotSupervisor(force) {
+    var sup = state.autopilot.supervisor;
+    if (sup.loading) return;
+    sup.loading = true;
+    try {
+        var res = await fetch('/api/v1/dev-autopilot/supervisor' + (force ? '?fresh=1' : ''), { headers: buildContextHeaders({}) });
+        var body = await res.json().catch(function () { return null; });
+        if (res.ok && body && body.ok) {
+            var sig = JSON.stringify([body.scan, body.executions, body.findings, body.alerts, body.config]);
+            var changed = sig !== sup.signature;
+            sup.data = body;
+            sup.error = null;
+            sup.signature = sig;
+            sup.fetchedAt = Date.now();
+            if (changed) autopilotSupervisorRerender();
+        } else {
+            sup.error = (body && body.error) || ('HTTP ' + res.status);
+            autopilotSupervisorRerender();
+        }
+    } catch (err) {
+        sup.error = String(err && err.message ? err.message : err);
+        autopilotSupervisorRerender();
+    } finally {
+        sup.loading = false;
+    }
+}
+
+function autopilotSupervisorRerender() {
+    if (state.currentModuleKey !== 'autopilot') return;
+    var active = document.activeElement;
+    var typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+    if (typing || state.autopilot.drawerOpen) return;
+    renderApp();
+}
+
+function ensureAutopilotSupervisorPolling() {
+    var sup = state.autopilot.supervisor;
+    if (!sup.data && !sup.loading && !sup.error) setTimeout(function () { fetchAutopilotSupervisor(false); }, 0);
+    if (sup.timer) return;
+    sup.timer = setInterval(function () {
+        if (state.currentModuleKey === 'autopilot') fetchAutopilotSupervisor(false);
+    }, AUTOPILOT_SUPERVISOR_POLL_MS);
+}
+
+function autopilotSupervisorAgo(iso) {
+    if (!iso) return 'never';
+    return formatRelativeTime(iso) || 'just now';
+}
+
+function autopilotSupervisorTile(label, value, sub, tone, tab) {
+    var tile = document.createElement('div');
+    tile.className = 'ap-sup-tile ap-sup-tone-' + (tone || 'neutral');
+    var v = document.createElement('div');
+    v.className = 'ap-sup-tile-value';
+    v.textContent = value;
+    tile.appendChild(v);
+    var l = document.createElement('div');
+    l.className = 'ap-sup-tile-label';
+    l.textContent = label;
+    tile.appendChild(l);
+    if (sub) {
+        var s = document.createElement('div');
+        s.className = 'ap-sup-tile-sub';
+        s.textContent = sub;
+        tile.appendChild(s);
+    }
+    if (tab && tab !== state.currentTab) {
+        makeClickable(tile, function () { handleTabClick(tab); }, { label: label + ': open the ' + tab + ' tab' });
+    }
+    return tile;
+}
+
+function renderAutopilotSupervisorStrip() {
+    ensureAutopilotSupervisorPolling();
+    var sup = state.autopilot.supervisor;
+    var strip = document.createElement('section');
+    strip.className = 'ap-sup-strip';
+    strip.setAttribute('aria-label', 'Autopilot supervisor status');
+
+    var head = document.createElement('div');
+    head.className = 'ap-sup-head';
+    var h = document.createElement('span');
+    h.className = 'ap-sup-title';
+    h.textContent = 'Self-healing loop — live status';
+    head.appendChild(h);
+    var meta = document.createElement('span');
+    meta.className = 'ap-sup-meta';
+    meta.textContent = sup.fetchedAt ? ('updated ' + autopilotSupervisorAgo(new Date(sup.fetchedAt).toISOString()) + ' · auto-refresh 30 s') : 'loading…';
+    head.appendChild(meta);
+    var refresh = document.createElement('button');
+    refresh.className = 'ap-sup-refresh';
+    refresh.textContent = sup.loading ? 'Refreshing…' : 'Refresh';
+    refresh.onclick = function () { fetchAutopilotSupervisor(true); };
+    head.appendChild(refresh);
+    strip.appendChild(head);
+
+    if (sup.error && !sup.data) {
+        var err = document.createElement('div');
+        err.className = 'ap-sup-alert ap-sup-sev-critical';
+        err.textContent = 'Supervisor data unavailable: ' + sup.error;
+        strip.appendChild(err);
+        return strip;
+    }
+    var d = sup.data;
+    if (!d) return strip;
+
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    var scan = d.scan;
+    tiles.appendChild(autopilotSupervisorTile('Last scan',
+        scan.last_success_at ? autopilotSupervisorAgo(scan.last_success_at) : 'never',
+        scan.overdue ? 'OVERDUE — expected every ~12 h' : ('next ' + new Date(scan.next_scheduled_at).toISOString().slice(11, 16) + ' UTC · ' + scan.runs_7d + ' runs / 7d'),
+        scan.overdue ? 'bad' : (scan.failed_7d > 0 ? 'warn' : 'good'), 'runs'));
+    var by = d.findings.by_actor || {};
+    tiles.appendChild(autopilotSupervisorTile('Open findings', String(d.findings.open),
+        (by.system || 0) + ' stuck · ' + (by.human || 0) + ' need you · ' + (by.moving || 0) + ' moving',
+        (by.system || 0) > 0 ? 'warn' : 'neutral', 'scanners'));
+    var ex = d.executions;
+    tiles.appendChild(autopilotSupervisorTile('Active executions', String(ex.active),
+        ex.awaiting_approval > 0 ? (ex.awaiting_approval + ' awaiting your approval') : ('last started ' + autopilotSupervisorAgo(ex.last_execution_at)),
+        ex.awaiting_approval > 0 ? 'warn' : (ex.active > 0 ? 'good' : 'neutral'), 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Success rate (7d)',
+        ex.success_rate_7d === null ? '—' : (ex.success_rate_7d + '%'),
+        ex.succeeded_7d + ' fixed · ' + ex.failed_7d + ' failed · ' + autopilotOriginSplit(ex),
+        ex.success_rate_7d === null ? 'neutral' : (ex.success_rate_7d >= 70 ? 'good' : (ex.success_rate_7d >= 40 ? 'warn' : 'bad')), 'live'));
+    var au = d.autonomy;
+    tiles.appendChild(autopilotSupervisorTile('Effective autonomy',
+        au.open_findings_autonomous_percent === null ? '—' : (au.open_findings_autonomous_percent + '%'),
+        'of open findings need no human · detector coverage ' + au.config_coverage_percent + '%',
+        au.open_findings_autonomous_percent === null ? 'neutral' : (au.open_findings_autonomous_percent >= 90 ? 'good' : 'warn'), 'auto-approve'));
+    tiles.appendChild(autopilotSupervisorTile('Kill switch', d.config.kill_switch ? 'ON' : 'off',
+        'budget ' + d.config.budget_left_today + '/' + d.config.daily_budget + ' left · slots ' + d.config.concurrency_left + '/' + d.config.concurrency_cap,
+        d.config.kill_switch ? 'bad' : 'good', 'auto-approve'));
+    strip.appendChild(tiles);
+
+    (d.alerts || []).forEach(function (a) {
+        var row = document.createElement('div');
+        row.className = 'ap-sup-alert ap-sup-sev-' + a.severity;
+        row.textContent = (a.severity === 'critical' ? '⛔ ' : a.severity === 'warning' ? '⚠️ ' : 'ℹ️ ') + a.text;
+        if (a.tab && a.tab !== state.currentTab) {
+            var go = document.createElement('button');
+            go.className = 'ap-sup-alert-go';
+            go.textContent = 'Open ' + a.tab + ' →';
+            go.onclick = function () { handleTabClick(a.tab); };
+            row.appendChild(go);
+        }
+        strip.appendChild(row);
+    });
+    return strip;
+}
+
+function renderAutopilotEffectiveAutonomy() {
+    var section = document.createElement('section');
+    section.className = 'ap-sup-autonomy';
+    var d = state.autopilot.supervisor.data;
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = 'Effective autonomy — what the system actually does unattended';
+    section.appendChild(h);
+    if (!d) {
+        var wait = document.createElement('div');
+        wait.className = 'ap-sup-empty';
+        wait.textContent = 'Loading…';
+        section.appendChild(wait);
+        return section;
+    }
+    var au = d.autonomy;
+    var ex = d.executions;
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    tiles.appendChild(autopilotSupervisorTile('Open findings, no human needed',
+        au.open_findings_autonomous_percent === null ? '—' : au.open_findings_autonomous_percent + '%',
+        (d.findings.by_actor.human || 0) + ' of ' + d.findings.open + ' open findings wait for a human decision',
+        au.open_findings_autonomous_percent !== null && au.open_findings_autonomous_percent >= 90 ? 'good' : 'warn', null));
+    tiles.appendChild(autopilotSupervisorTile('Executions auto-approved (7d)',
+        au.executions_auto_approved_percent === null ? '—' : au.executions_auto_approved_percent + '%',
+        ex.auto_approved_7d + ' started unattended · ' + ex.human_approved_7d + ' human-requested or approved', 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Unattended success (7d)',
+        ex.success_rate_7d === null ? '—' : ex.success_rate_7d + '%',
+        'autonomy only counts if the fixes land', ex.success_rate_7d !== null && ex.success_rate_7d >= 70 ? 'good' : 'bad', 'live'));
+    section.appendChild(tiles);
+    var note = document.createElement('p');
+    note.className = 'ap-sup-note';
+    note.textContent = 'Raising coverage by adding detectors to the allowlist only helps if their findings then succeed unattended. '
+        + 'The two lists below are the actual gap to 100%: findings a human must decide on, and findings the system itself is stuck on.';
+    section.appendChild(note);
+    section.appendChild(renderAutopilotOpenFindingsPanel('Needs a human decision',
+        function (f) { return f.blocker.actor === 'human'; }, 'Nothing is waiting for a human.'));
+    section.appendChild(renderAutopilotOpenFindingsPanel('Stuck on a system blocker',
+        function (f) { return f.blocker.actor === 'system'; }, 'Nothing is stuck on a system blocker.'));
+    return section;
+}
+
+/** VTID-04282: the community AP engine behind Registry/Growth has no live trigger since GCP. */
+function renderAutopilotCommunityEngineBanner() {
+    var d = state.autopilot.supervisor.data;
+    var box = document.createElement('div');
+    if (!d) return box;
+    var ce = d.community_engine || {};
+    var dead = ce.days_since_last_run === null || ce.days_since_last_run >= 2;
+    box.className = 'ap-sup-alert ' + (dead ? 'ap-sup-sev-critical' : 'ap-sup-sev-info');
+    box.textContent = ce.last_run_at
+        ? ('Community automation engine last ran ' + ce.last_run_at.slice(0, 10) + ' (' + ce.days_since_last_run + ' days ago). '
+            + (dead ? 'Its CRON/heartbeat triggers were Cloud Scheduler jobs that stopped when GCP was shut down (2026-08-16); nothing re-triggers these automations until they are moved to AWS EventBridge. Re-enabling them sends real notifications to members, so that switch is a product decision.' : 'Runs are being recorded.'))
+        : 'Community automation engine has no recorded runs.';
+    return box;
+}
+
+function renderAutopilotSelfImprovementCard() {
+    var section = document.createElement('section');
+    section.className = 'ap-sup-autonomy';
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = 'Self-improvement (Dev Autopilot, last 7 days)';
+    section.appendChild(h);
+    var d = state.autopilot.supervisor.data;
+    if (!d) return section;
+    var ex = d.executions;
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    tiles.appendChild(autopilotSupervisorTile('New findings', String(d.scan.new_findings_7d), d.scan.runs_7d + ' scans', 'neutral', 'runs'));
+    tiles.appendChild(autopilotSupervisorTile('Executions', String(ex.total_7d), autopilotOriginSplit(ex), 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('PRs opened', String(ex.prs_opened_7d), null, 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Fixes landed', String(ex.succeeded_7d), 'completed or self-healed', ex.succeeded_7d > 0 ? 'good' : 'warn', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Failed', String(ex.failed_7d), ex.top_failure_reasons[0] ? ex.top_failure_reasons[0].reason : null, ex.failed_7d > ex.succeeded_7d ? 'bad' : 'neutral', 'live'));
+    section.appendChild(tiles);
+    return section;
+}
+
+function autopilotOriginSplit(ex) {
+    var o = ex.by_origin_7d || {};
+    var self = (o.scanner ? o.scanner.total : 0) + (o.impact ? o.impact.total : 0);
+    var op = o.operator ? o.operator.total : 0;
+    return self + ' self-healing + ' + op + ' operator-requested runs';
+}
+
+function impactRuleHitsByRule() {
+    var out = {};
+    var d = state.autopilot.supervisor.data;
+    ((d && d.impact_rules) || []).forEach(function (h) { out[h.rule] = h; });
+    return out;
+}
+
+/** Open findings with their blocker diagnosis. filter(item) narrows the list. */
+function renderAutopilotOpenFindingsPanel(title, filter, emptyText) {
+    var panel = document.createElement('section');
+    panel.className = 'ap-sup-findings';
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = title;
+    panel.appendChild(h);
+    var d = state.autopilot.supervisor.data;
+    if (!d) {
+        var wait = document.createElement('div');
+        wait.className = 'ap-sup-empty';
+        wait.textContent = 'Loading pipeline status…';
+        panel.appendChild(wait);
+        return panel;
+    }
+    var items = (d.findings.items || []).filter(filter || function () { return true; });
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'ap-sup-empty';
+        empty.textContent = emptyText || 'Nothing open.';
+        panel.appendChild(empty);
+        return panel;
+    }
+    items.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'ap-sup-finding';
+        var chip = document.createElement('span');
+        chip.className = 'ap-sup-chip ap-sup-actor-' + f.blocker.actor;
+        chip.textContent = f.blocker.label;
+        chip.title = f.blocker.detail;
+        row.appendChild(chip);
+        var body = document.createElement('div');
+        body.className = 'ap-sup-finding-body';
+        var t = document.createElement('div');
+        t.className = 'ap-sup-finding-title';
+        t.textContent = f.title;
+        body.appendChild(t);
+        var m = document.createElement('div');
+        m.className = 'ap-sup-finding-meta';
+        m.textContent = [f.detector || f.source_type, f.file_path, 'risk ' + (f.risk_class || '?'), 'effort ' + (f.effort_score == null ? '?' : f.effort_score),
+            f.has_plan ? 'planned' : 'no plan', f.attempts + ' attempt(s)', 'open ' + f.age_days + 'd'].filter(Boolean).join(' · ');
+        body.appendChild(m);
+        var why = document.createElement('div');
+        why.className = 'ap-sup-finding-why';
+        why.textContent = f.blocker.detail;
+        body.appendChild(why);
+        row.appendChild(body);
+        panel.appendChild(row);
+    });
+    return panel;
 }
 
 // ── Helper: create summary card ───────────────────────────────
@@ -47421,8 +47742,9 @@ function renderAutopilotRegistryView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Browse all AP-XXXX automations, filter by domain/status/trigger, and manually execute.';
+    subtitle.textContent = 'The community-facing AP-XXXX automations (a separate engine from the Dev Autopilot self-healing loop). "Planned" means no handler has been written yet — those rows only move when code ships.';
     container.appendChild(subtitle);
+    container.appendChild(renderAutopilotCommunityEngineBanner()); // VTID-04282
 
     var reg = state.autopilot.registry;
 
@@ -47447,7 +47769,7 @@ function renderAutopilotRegistryView() {
     cardsRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     cardsRow.appendChild(createSummaryCard('Total', sum.total || reg.data.length, '#fff'));
     cardsRow.appendChild(createSummaryCard('Executable', sum.executable || 0, '#4caf50'));
-    cardsRow.appendChild(createSummaryCard('Planned', sum.planned || 0, '#ff9800'));
+    cardsRow.appendChild(createSummaryCard('Planned (no handler)', sum.planned || 0, '#ff9800'));
     // Count by trigger type
     var cronCount = reg.data.filter(function (a) { return a.triggerType === 'cron'; }).length;
     var heartbeatCount = reg.data.filter(function (a) { return a.triggerType === 'heartbeat'; }).length;
@@ -47775,6 +48097,13 @@ function renderAutopilotScannersView() {
     summaryRow.appendChild(createSummaryCard('Open findings', openTotal, '#ffb74d'));
     container.appendChild(summaryRow);
 
+    // VTID-04282: every open finding with the gate that is holding it, so
+    // "N open" is never a number without a next step.
+    container.appendChild(renderAutopilotOpenFindingsPanel(
+        'Open findings — what is holding each one',
+        function (f) { return f.source_type === 'dev_autopilot'; },
+        'No open scanner findings — every finding has been fixed, rejected or archived.'));
+
     // Filters
     var filter = scanners.filter;
     var filtersRow = document.createElement('div');
@@ -47956,9 +48285,21 @@ function renderAutopilotImpactRulesView() {
     summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     summaryRow.appendChild(createSummaryCard('Rules', total, '#fff'));
     summaryRow.appendChild(createSummaryCard('Enabled', enabled, '#4caf50'));
-    summaryRow.appendChild(createSummaryCard('Blockers', blocker, '#f44336'));
-    summaryRow.appendChild(createSummaryCard('Warnings', warning, '#ffb74d'));
+    summaryRow.appendChild(createSummaryCard('Blocker-severity rules', blocker, '#f44336'));
+    summaryRow.appendChild(createSummaryCard('Warning-severity rules', warning, '#ffb74d'));
+    // VTID-04282: severity is what a rule does to a PR when it fires, not a
+    // count of open problems. The real signal is how often each rule fires.
+    var ruleHits = impactRuleHitsByRule();
+    var openHits = Object.keys(ruleHits).reduce(function (acc, k) { return acc + (ruleHits[k].open || 0); }, 0);
+    var hits30 = Object.keys(ruleHits).reduce(function (acc, k) { return acc + (ruleHits[k].hits_30d || 0); }, 0);
+    summaryRow.appendChild(createSummaryCard('Open hits', state.autopilot.supervisor.data ? openHits : '…', '#60a5fa'));
+    summaryRow.appendChild(createSummaryCard('Hits (30d)', state.autopilot.supervisor.data ? hits30 : '…', '#9ca3af'));
     container.appendChild(summaryRow);
+    var sevNote = document.createElement('p');
+    sevNote.className = 'ap-sup-note';
+    sevNote.textContent = '"Blocker" is a rule\u2019s severity: when it fires on a PR, the PR check fails. It is not an open problem. '
+        + 'Each card shows how often the rule actually fired; open hits flow into the same plan \u2192 approve \u2192 execute pipeline as scanner findings.';
+    container.appendChild(sevNote);
 
     var filter = s.filter;
     var filtersRow = document.createElement('div');
@@ -48047,6 +48388,16 @@ function renderAutopilotImpactRulesView() {
             desc.style.cssText = 'margin:0.4rem 0 0 0;color:#bbb;font-size:0.82rem;line-height:1.4;';
             card.appendChild(desc);
 
+            // VTID-04282: live hit counts for this rule.
+            var hit = ruleHits[r.rule];
+            var hitLine = document.createElement('div');
+            hitLine.className = 'ap-sup-rule-hits' + (hit && hit.open > 0 ? ' ap-sup-rule-hits-open' : '');
+            hitLine.textContent = !state.autopilot.supervisor.data ? 'Loading hit counts…'
+                : (!hit || hit.hits_30d === 0) ? 'No hits in 30 days.'
+                : (hit.open + ' open · ' + hit.hits_30d + ' in 30 days (' + hit.rejected_30d + ' rejected) · last fired ' + autopilotSupervisorAgo(hit.last_fired_at))
+                  + (r.auto_approved ? ' · auto-approved' : ' · needs a human to approve');
+            card.appendChild(hitLine);
+
             section.appendChild(card);
         });
         container.appendChild(section);
@@ -48118,7 +48469,7 @@ function renderAutopilotAutoApproveView() {
     progHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;';
     var progLabel = document.createElement('div');
     progLabel.style.cssText = 'color:#ccc;font-size:0.95rem;font-weight:600;';
-    progLabel.textContent = 'Autonomy progress';
+    progLabel.textContent = 'Detector coverage (allowlist)';
     progHeader.appendChild(progLabel);
     var progPct = document.createElement('div');
     progPct.style.cssText = 'color:#4ade80;font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;';
@@ -48138,6 +48489,10 @@ function renderAutopilotAutoApproveView() {
     progFoot.textContent = progress.auto_approved_surfaces + ' of ' + progress.total_surfaces + ' detection surfaces run unattended · ultimate goal: 100%';
     progressSection.appendChild(progFoot);
     container.appendChild(progressSection);
+
+    // VTID-04282: coverage counts allowlist entries, not outcomes. Show what
+    // actually happens to open findings and this week's executions next to it.
+    container.appendChild(renderAutopilotEffectiveAutonomy());
 
     // Master state cards
     var cardsRow = document.createElement('div');
@@ -48410,53 +48765,48 @@ function renderAutopilotRunsView() {
 // =============================================================================
 
 async function fetchAutopilotLive() {
+    // VTID-04282: this used to read /api/v1/automations/runs(/active) — the
+    // tenant-scoped community AP engine, which 400s without a tenant and has
+    // not run since 2026-08-15 — so "Active Runs" and "Last 10 Runs" could
+    // never show anything. It also updated state on every 10 s poll without
+    // re-rendering, so the screen stayed frozen on its first load. It now
+    // reads the Dev Autopilot executions and re-renders when they change.
     if (state.autopilot.live.loading) return;
-    var isInitialLoad = !state.autopilot.live.engineStatus;
-    state.autopilot.live.loading = true;
-    if (isInitialLoad) renderApp();
+    var live = state.autopilot.live;
+    live.loading = true;
     try {
-        var [activeRes, runsRes, healthRes, devApRes] = await Promise.all([
-            fetch('/api/v1/automations/runs/active', { headers: buildContextHeaders({}) }),
-            fetch('/api/v1/automations/runs?limit=10', { headers: buildContextHeaders({}) }),
-            fetch('/api/v1/automations/health', { headers: buildContextHeaders({}) }),
-            // Dev Autopilot active executions — anything not yet in a terminal
-            // state. The Live view is the canonical home; the developer-page
-            // status strip's "N active runs →" badge links here.
+        var [activeRes, recentRes] = await Promise.all([
             fetch('/api/v1/dev-autopilot/executions?status=active&limit=50', { headers: buildContextHeaders({}) }),
+            fetch('/api/v1/dev-autopilot/executions?status=all&limit=15', { headers: buildContextHeaders({}) }),
         ]);
         if (activeRes.ok) {
-            var data = await activeRes.json();
-            state.autopilot.live.activeRuns = data.runs || [];
+            var activeBody = await activeRes.json();
+            live.devAutopilotExecutions = activeBody.executions || activeBody.data || [];
         } else {
-            state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
+            live.devAutopilotExecutions = live.devAutopilotExecutions || [];
         }
-        if (runsRes.ok) {
-            var data = await runsRes.json();
-            state.autopilot.live.recentRuns = data.runs || [];
+        if (recentRes.ok) {
+            var recentBody = await recentRes.json();
+            live.recentExecutions = recentBody.executions || [];
         } else {
-            state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
+            live.recentExecutions = live.recentExecutions || [];
         }
-        if (healthRes.ok) {
-            state.autopilot.live.engineStatus = await healthRes.json();
-        }
-        if (devApRes.ok) {
-            var data = await devApRes.json();
-            state.autopilot.live.devAutopilotExecutions = data.executions || data.data || [];
-        } else {
-            state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
-        }
+        live.error = (activeRes.ok && recentRes.ok) ? null : ('executions: HTTP ' + (activeRes.ok ? recentRes.status : activeRes.status));
     } catch (err) {
-        console.error('[Autopilot] fetchLive error:', err);
-        state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
-        state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
-        state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
+        live.error = String(err && err.message ? err.message : err);
+        live.devAutopilotExecutions = live.devAutopilotExecutions || [];
+        live.recentExecutions = live.recentExecutions || [];
     } finally {
-        state.autopilot.live.loading = false;
-        // Only full render on initial load; subsequent 10s polls update state
-        // silently. The view refreshes on next user-driven render or tab switch.
-        if (isInitialLoad) {
-            renderApp();
-        }
+        live.loading = false;
+        var sig = JSON.stringify([live.devAutopilotExecutions, live.recentExecutions, live.error].map(function (x) {
+            return Array.isArray(x) ? x.map(function (e) { return e.id + ':' + e.status + ':' + (e.last_event_at || ''); }) : x;
+        }));
+        var changed = sig !== live.signature;
+        live.signature = sig;
+        live.loaded = true;
+        // Keep an open steps transcript / diff panel intact: they are driven
+        // by their own streams, so only re-render when the rows changed.
+        if (changed && state.currentModuleKey === 'autopilot' && state.currentTab === 'live') autopilotSupervisorRerender();
     }
 }
 
@@ -48469,148 +48819,135 @@ function renderAutopilotLiveView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Real-time view of engine status, active runs, and recent completions.';
+    subtitle.textContent = 'Dev Autopilot self-healing executions: what is running now, what just finished and why, and the pipeline gates that feed it.';
     container.appendChild(subtitle);
 
     var live = state.autopilot.live;
 
-    if (!live.engineStatus && !live.loading) {
+    if (!live.loaded && !live.loading) {
         setTimeout(function () { fetchAutopilotLive(); }, 0);
     }
-
-    // Auto-refresh every 10 seconds
-    if (!state.autopilot.live._refreshTimer) {
-        state.autopilot.live._refreshTimer = setInterval(function () {
+    // Auto-refresh every 10 seconds while this tab is open.
+    if (!live._refreshTimer) {
+        live._refreshTimer = setInterval(function () {
             if (state.currentModuleKey === 'autopilot' && state.currentTab === 'live') {
                 fetchAutopilotLive();
             }
         }, 10000);
     }
 
-    if (live.loading && !live.engineStatus) {
-        var loader = document.createElement('div');
-        loader.className = 'loading-indicator';
-        loader.textContent = 'Loading live status...';
-        container.appendChild(loader);
-        return container;
-    }
-
-    // Two-column layout
+    // VTID-04282: pipeline + recent outcomes, from real Dev Autopilot data.
     var grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:320px 1fr;gap:1.5rem;';
+    grid.className = 'ap-live-grid';
 
-    // Left column: Engine Status
-    var leftCol = document.createElement('div');
-
-    var engineCard = document.createElement('div');
-    engineCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-
-    var eng = live.engineStatus || {};
-    engineCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Engine Status</h3>' +
-        '<div style="margin-bottom:0.75rem;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Automations</span>' +
-        '<span style="font-weight:600;">' + (eng.total_automations || 0) + ' total</span></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Executable</span>' +
-        '<span style="color:#4caf50;font-weight:600;">' + (eng.executable || 0) + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Planned</span>' +
-        '<span style="color:#ff9800;font-weight:600;">' + (eng.planned || 0) + '</span></div>' +
-        '</div>';
-
-    leftCol.appendChild(engineCard);
-
-    // Manual controls
-    var controlsCard = document.createElement('div');
-    controlsCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-    controlsCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Manual Controls</h3>';
-
-    var heartbeatBtn = document.createElement('button');
-    heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-    heartbeatBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#e91e6322;color:#e91e63;border:1px solid #e91e6344;cursor:pointer;margin-bottom:8px;font-size:0.85rem;';
-    heartbeatBtn.onclick = function () {
-        heartbeatBtn.disabled = true;
-        heartbeatBtn.textContent = 'Running...';
-        fetch('/api/v1/automations/heartbeat', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({})
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            heartbeatBtn.disabled = false;
-            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-            if (data.ok) {
-                showToast('Heartbeat: ' + (data.executed || []).length + ' executed, ' + (data.skipped || []).length + ' skipped, ' + (data.failed || []).length + ' failed', 'success');
-            } else {
-                showToast('Heartbeat failed: ' + (data.error || 'Unknown'), 'error');
-            }
-            fetchAutopilotLive();
-        }).catch(function (err) {
-            heartbeatBtn.disabled = false;
-            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-            showToast('Error: ' + err.message, 'error');
-        });
-    };
-    controlsCard.appendChild(heartbeatBtn);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
-    refreshBtn.onclick = function () { fetchAutopilotLive(); };
-    controlsCard.appendChild(refreshBtn);
-
-    leftCol.appendChild(controlsCard);
-    grid.appendChild(leftCol);
-
-    // Right column: Active + Recent runs
-    var rightCol = document.createElement('div');
-
-    // Active runs
-    var activeCard = document.createElement('div');
-    activeCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-    activeCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Active Runs <span style="color:#2196f3;">(' + ((live.activeRuns || []).length) + ')</span></h3>';
-
-    if (live.activeRuns && live.activeRuns.length > 0) {
-        live.activeRuns.forEach(function (r) {
-            var item = document.createElement('div');
-            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;';
-            item.innerHTML = '<span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span>' +
-                '<span style="color:#2196f3;font-size:0.8rem;">\u{1F535} running</span>';
-            activeCard.appendChild(item);
-        });
-    } else {
-        var noActive = document.createElement('div');
-        noActive.style.cssText = 'color:#666;text-align:center;padding:1rem;';
-        noActive.textContent = 'No active runs';
-        activeCard.appendChild(noActive);
+    var pipe = document.createElement('section');
+    pipe.className = 'ap-live-card';
+    var pipeH = document.createElement('h3');
+    pipeH.className = 'ap-sup-section-title';
+    pipeH.textContent = 'Pipeline';
+    pipe.appendChild(pipeH);
+    var sd = state.autopilot.supervisor.data;
+    function kv(k, v, tone) {
+        var row = document.createElement('div');
+        row.className = 'ap-live-kv';
+        var kEl = document.createElement('span');
+        kEl.className = 'ap-live-k';
+        kEl.textContent = k;
+        var vEl = document.createElement('span');
+        vEl.className = 'ap-live-v' + (tone ? ' ap-sup-text-' + tone : '');
+        vEl.textContent = v;
+        row.appendChild(kEl);
+        row.appendChild(vEl);
+        pipe.appendChild(row);
     }
-    rightCol.appendChild(activeCard);
-
-    // Recent completed
-    var recentCard = document.createElement('div');
-    recentCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;';
-    recentCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Last 10 Runs</h3>';
-
-    if (live.recentRuns && live.recentRuns.length > 0) {
-        live.recentRuns.forEach(function (r) {
-            var item = document.createElement('div');
-            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;';
-            var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'skipped' ? '\u26A0\uFE0F' : '\u{1F535}';
-            var timeAgo = r.started_at ? new Date(r.started_at).toLocaleTimeString() : '';
-            item.innerHTML = '<span>' + statusIcon + ' <span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span></span>' +
-                '<span style="color:#888;font-size:0.75rem;">' + (r.users_affected || 0) + ' users, ' + (r.actions_taken || 0) + ' actions</span>' +
-                '<span style="color:#666;font-size:0.75rem;">' + timeAgo + '</span>';
-            recentCard.appendChild(item);
-        });
+    if (sd) {
+        kv('Last successful scan', autopilotSupervisorAgo(sd.scan.last_success_at), sd.scan.overdue ? 'bad' : null);
+        kv('Next scheduled scan', new Date(sd.scan.next_scheduled_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC');
+        kv('Scans in 7 days', sd.scan.runs_7d + ' (' + sd.scan.failed_7d + ' failed)', sd.scan.failed_7d > 0 ? 'warn' : null);
+        kv('Executions started (24h)', String(sd.executions.last_24h));
+        kv('Awaiting your approval', String(sd.executions.awaiting_approval), sd.executions.awaiting_approval > 0 ? 'warn' : null);
+        kv('Budget left today', sd.config.budget_left_today + ' / ' + sd.config.daily_budget);
+        kv('Free execution slots', sd.config.concurrency_left + ' / ' + sd.config.concurrency_cap);
+        kv('Kill switch', sd.config.kill_switch ? 'ON' : 'off', sd.config.kill_switch ? 'bad' : null);
+        var reasons = sd.executions.top_failure_reasons || [];
+        if (reasons.length > 0) {
+            var rh = document.createElement('div');
+            rh.className = 'ap-live-subhead';
+            rh.textContent = 'Why executions failed (7 days)';
+            pipe.appendChild(rh);
+            reasons.slice(0, 5).forEach(function (r) {
+                var line = document.createElement('div');
+                line.className = 'ap-live-reason';
+                line.textContent = r.count + '\u00D7  ' + r.reason;
+                pipe.appendChild(line);
+            });
+        }
     } else {
-        var noRecent = document.createElement('div');
-        noRecent.style.cssText = 'color:#666;text-align:center;padding:1rem;';
-        noRecent.textContent = 'No runs yet';
-        recentCard.appendChild(noRecent);
+        var pw = document.createElement('div');
+        pw.className = 'ap-sup-empty';
+        pw.textContent = state.autopilot.supervisor.error ? ('Unavailable: ' + state.autopilot.supervisor.error) : 'Loading…';
+        pipe.appendChild(pw);
     }
-    rightCol.appendChild(recentCard);
+    grid.appendChild(pipe);
 
-    grid.appendChild(rightCol);
+    var recent = document.createElement('section');
+    recent.className = 'ap-live-card';
+    var recentH = document.createElement('h3');
+    recentH.className = 'ap-sup-section-title';
+    recentH.textContent = 'Recent executions';
+    recent.appendChild(recentH);
+    if (live.error) {
+        var le = document.createElement('div');
+        le.className = 'ap-sup-alert ap-sup-sev-critical';
+        le.textContent = 'Could not load executions: ' + live.error;
+        recent.appendChild(le);
+    }
+    var recentRows = live.recentExecutions || [];
+    if (!live.loaded) {
+        var rl = document.createElement('div');
+        rl.className = 'ap-sup-empty';
+        rl.textContent = 'Loading…';
+        recent.appendChild(rl);
+    } else if (recentRows.length === 0) {
+        var re0 = document.createElement('div');
+        re0.className = 'ap-sup-empty';
+        re0.textContent = 'No executions yet.';
+        recent.appendChild(re0);
+    }
+    recentRows.forEach(function (e) {
+        var row = document.createElement('div');
+        row.className = 'ap-live-exec';
+        var st = document.createElement('span');
+        st.className = 'ap-live-status ap-live-status-' + String(e.status || '').replace(/[^a-z_]/g, '');
+        st.textContent = e.status;
+        row.appendChild(st);
+        var body = document.createElement('div');
+        body.className = 'ap-live-exec-body';
+        var t = document.createElement('div');
+        t.className = 'ap-sup-finding-title';
+        t.textContent = (e.recommendation && e.recommendation.title) || ('Execution ' + String(e.id || '').slice(0, 8));
+        body.appendChild(t);
+        var m = document.createElement('div');
+        m.className = 'ap-sup-finding-meta';
+        var err = e.metadata && e.metadata.error ? String(e.metadata.error) : '';
+        var src = e.recommendation && e.recommendation.source_type;
+        var origin = src === 'operator_onramp' ? 'operator-requested' : (e.approved_by ? 'human-approved' : (src ? 'auto-approved (' + src + ')' : 'auto-approved'));
+        m.textContent = [autopilotSupervisorAgo(e.updated_at || e.created_at), origin,
+            e.auto_fix_depth > 0 ? 'self-heal depth ' + e.auto_fix_depth : null, err ? err.slice(0, 140) : null].filter(Boolean).join(' · ');
+        body.appendChild(m);
+        row.appendChild(body);
+        if (e.pr_url) {
+            var pr = document.createElement('a');
+            pr.className = 'ap-live-pr';
+            pr.href = e.pr_url;
+            pr.target = '_blank';
+            pr.rel = 'noopener';
+            pr.textContent = 'PR #' + (e.pr_number || '?');
+            row.appendChild(pr);
+        }
+        recent.appendChild(row);
+    });
+    grid.appendChild(recent);
     container.appendChild(grid);
 
     // Dev Autopilot Active Executions — separate section below the grid.
@@ -49016,8 +49353,10 @@ function renderAutopilotGrowthView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Automation impact metrics, top performers, and user reach.';
+    subtitle.textContent = 'Self-improvement from the Dev Autopilot, and user reach of the community AP-XXXX automations.';
     container.appendChild(subtitle);
+    container.appendChild(renderAutopilotSelfImprovementCard()); // VTID-04282
+    container.appendChild(renderAutopilotCommunityEngineBanner()); // VTID-04282
 
     var growth = state.autopilot.growth;
 

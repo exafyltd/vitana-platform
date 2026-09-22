@@ -808,6 +808,7 @@ export type CicdEventType =
   | 'dev_autopilot.execution.completed'
   | 'dev_autopilot.execution.failed'
   | 'dev_autopilot.execution.auto_archived'
+  | 'dev_autopilot.execution.pr_closed_reconciled' // VTID-04280
   | 'dev_autopilot.batch.first_failure'
   | 'dev_autopilot.kill_switch.activated'
   | 'dev_autopilot.kill_switch.deactivated'
