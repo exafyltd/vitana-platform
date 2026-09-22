@@ -15,10 +15,20 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// VTID-04291: dead-code-scanner-v1 flagged all five exports below because it
+// greps for a bare `\bSymbolName\b` and every call site reaches them through
+// the namespace import `import * as repo from './index-repository'` in
+// capabilities/index.ts (`repo.fetchActiveSocialConnectionProviders(...)`,
+// etc.) — so the symbol names never appear as bare identifiers anywhere the
+// scanner looks. They are live, and the `@public-api` marker below is the
+// scanner's own documented escape hatch for precisely this shape.
+
+// @public-api — reached via `repo.*` in capabilities/index.ts (line 204).
 export async function fetchActiveSocialConnectionProviders(sb: SupabaseClient, userId: string) {
   return sb.from('social_connections').select('provider').eq('user_id', userId).eq('is_active', true);
 }
 
+// @public-api — reached via `repo.*` in capabilities/index.ts (line 232).
 export async function fetchUserCapabilityPreference(sb: SupabaseClient, userId: string, capabilityId: string) {
   return sb
     .from('user_capability_preferences')
@@ -28,10 +38,12 @@ export async function fetchUserCapabilityPreference(sb: SupabaseClient, userId: 
     .maybeSingle();
 }
 
+// @public-api — reached via `repo.*` in capabilities/index.ts (line 307).
 export async function insertCapabilityPlayLog(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('capability_play_log').insert(row);
 }
 
+// @public-api — reached via `repo.*` in capabilities/index.ts (line 330).
 export async function countUserCapabilityPreferences(sb: SupabaseClient, userId: string, capabilityId: string) {
   return sb
     .from('user_capability_preferences')
@@ -40,6 +52,7 @@ export async function countUserCapabilityPreferences(sb: SupabaseClient, userId:
     .eq('capability_id', capabilityId);
 }
 
+// @public-api — reached via `repo.*` in capabilities/index.ts (line 333).
 export async function fetchRecentSuccessfulCapabilityPlays(sb: SupabaseClient, userId: string, capabilityId: string, limit: number) {
   return sb
     .from('capability_play_log')
