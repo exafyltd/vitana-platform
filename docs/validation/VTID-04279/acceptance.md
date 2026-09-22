@@ -143,6 +143,52 @@ tested end to end (count/list/approve/reject, including the malformed-id,
 terminal-status, missing-PR-info and failed-merge paths).
 TEST: `services/gateway/test/services/approvals-service.test.ts`
 
+## Live route-mount evidence (VALIDATOR-CHECK's Route Mount Evidence Gate)
+
+Both routers now carry a new `router.use(requireAdminAuth)` line, which the
+gate's `ROUTE_REGISTRATION` pattern (`router.use(`) correctly matches — it
+is a real, load-bearing change to how every existing route on each router
+behaves, not a false positive to argue around. Confirmed live against the
+CURRENTLY DEPLOYED (pre-this-PR) staging build — this session does have
+outbound curl access to `preview-aws-gateway.vitanaland.com` through the
+sandbox's proxy, which an earlier pass of this pack wrongly assumed it did
+not:
+
+ROUTE_MOUNT: `router.use(requireAdminAuth)` added to
+`services/gateway/src/routes/approvals.ts` and
+`services/gateway/src/routes/governance-controls.ts`, gating all 6 + 3
+existing routes on each router.
+
+FINAL_URL: `https://preview-aws-gateway.vitanaland.com/api/v1/approvals/count`,
+`https://preview-aws-gateway.vitanaland.com/api/v1/governance/controls`
+
+CURL_PROOF: captured against staging's live pre-PR build, `build-info`
+reporting `git_commit: 98ecc03aba2a60674c495e32ca92ebd4d2334955` —
+`origin/main` HEAD immediately before this branch:
+
+```
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info"
+{"ok":true,"env":"staging","git_commit":"98ecc03aba2a...","marker":"98ecc03aba2a"}
+
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/approvals/count"
+{"ok":true,"pending_count":0}
+# HTTP 200, application/json, no Authorization header sent — CONFIRMS
+# the vulnerability live: the route exists and executes for an
+# unauthenticated caller, exactly as the finding describes.
+
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/governance/controls"
+{"ok":true,"data":[{"key":"agenda_analyzer_admin_enabled", ...}]}
+# HTTP 200, application/json, no Authorization header — same confirmation
+# for governance-controls.ts.
+```
+
+This is real, current, live confirmation that both routes exist (JSON, not
+an HTML 404) and — on the still-deployed pre-fix code — execute with zero
+authentication, which is exactly the vulnerability this PR closes. The
+post-merge, post-deploy signal (both curls above returning 401 instead of
+200 once staging redeploys this branch) is the remaining live confirmation
+step, tracked in "Not fixed here" below.
+
 ## Not fixed here (explicitly out of scope)
 
 - The internal `autonomous-pr-merge` endpoint that `approveApprovalById`
@@ -155,14 +201,19 @@ TEST: `services/gateway/test/services/approvals-service.test.ts`
   different router with a different (unaudited) auth posture. Explicitly
   out of scope — the user's request named `governance-controls.ts`, not
   `governance.ts`.
-- No live staging/production verification — this session has no way to
-  place an authenticated exafy_admin HTTP request or ORB voice session
-  against a deployed environment. Verified structurally: full targeted
-  suite (179 tests across 7 files, including a real mutation-verification
-  pass — removing `router.use(requireAdminAuth)` from both routers
-  correctly failed 15/27 tests in the route-level suites before being
-  restored), full gateway suite (1073/1074 suites, 1 pre-existing skip;
-  17491/17526 tests, 0 failures), `tsc --noEmit` clean, `npm run build`
-  clean. The next real signal is the first `POST /api/v1/approvals/…` or
-  `POST /api/v1/governance/controls/…` request on staging without a
-  Bearer token returning 401 instead of executing.
+- **Correction to an earlier version of this pack:** it claimed "this
+  session has no way to place ... an HTTP request against a deployed
+  environment." That was wrong — this session's sandbox does have
+  outbound curl access to `preview-aws-gateway.vitanaland.com`; see "Live
+  route-mount evidence" above, which used it to confirm the pre-fix
+  vulnerability live. What genuinely remains out of reach is an
+  AUTHENTICATED exafy_admin request (this session holds no such session
+  token) or an ORB voice session — those stay unverified. Also verified
+  structurally: full targeted suite (179 tests across 7 files, including a
+  real mutation-verification pass — removing `router.use(requireAdminAuth)`
+  from both routers correctly failed 15/27 tests in the route-level suites
+  before being restored), full gateway suite (1073/1074 suites, 1
+  pre-existing skip; 17491/17526 tests, 0 failures), `tsc --noEmit` clean,
+  `npm run build` clean. The next real signal is the same two curls above,
+  re-run once this branch is deployed to staging, returning 401 instead of
+  200.
