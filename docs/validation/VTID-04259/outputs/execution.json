@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04259",
+  "source": "claude-code-interactive-session",
+  "branch": "claude/gateway-session-timeout-uxbai8",
+  "base_branch": "main",
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04259-session-timeout.test.ts",
+      "action": "create"
+    }
+  ],
+  "test_results": {
+    "command": "npx jest test/command-hub/ test/vtid-04259-session-timeout.test.ts test/scripts/generate-command-hub-symbol-index.test.ts test/console-task-17-cost-badge-tooltip.test.ts",
+    "suites_passed": 20,
+    "suites_total": 20,
+    "tests_passed": 284,
+    "tests_total": 284
+  },
+  "build": {
+    "command": "npm run build",
+    "result": "clean, exit 0"
+  },
+  "generated_at": "2026-09-22T00:00:00Z"
+}
