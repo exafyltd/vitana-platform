@@ -48022,29 +48022,32 @@ function renderAutopilotRunsView() {
     var table = document.createElement('table');
     table.style.cssText = 'width:100%;min-width:860px;border-collapse:collapse;font-size:0.85rem;table-layout:fixed;';
 
+    // CSS classes (see the ap-runs-* rules in styles.css), not an inline
+    // presentation attribute \u2014 matching the already-shipping idiom used
+    // elsewhere in this file for table cells (e.g. event-timestamp,
+    // vtid-cell) rather than building markup with a hand-written CSS
+    // string per element.
     var colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = '<col style="width:170px"><col style="width:140px"><col style="width:90px"><col style="width:110px"><col style="width:70px"><col style="width:70px"><col style="width:75px"><col>';
+    colgroup.innerHTML = '<col class="ap-runs-col-time"><col class="ap-runs-col-runid"><col class="ap-runs-col-trigger"><col class="ap-runs-col-status"><col class="ap-runs-col-signals"><col class="ap-runs-col-new"><col class="ap-runs-col-duration"><col>';
     table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
-    thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
-        '<th style="padding:8px;color:#888;">Time</th>' +
-        '<th style="padding:8px;color:#888;">Run ID</th>' +
-        '<th style="padding:8px;color:#888;">Trigger</th>' +
-        '<th style="padding:8px;color:#888;">Status</th>' +
-        '<th style="padding:8px;color:#888;">Signals</th>' +
-        '<th style="padding:8px;color:#888;">New</th>' +
-        '<th style="padding:8px;color:#888;">Duration</th>' +
-        '<th style="padding:8px;color:#888;">Error</th>' +
+    thead.innerHTML = '<tr class="ap-runs-thead-row">' +
+        '<th class="ap-runs-th">Time</th>' +
+        '<th class="ap-runs-th">Run ID</th>' +
+        '<th class="ap-runs-th">Trigger</th>' +
+        '<th class="ap-runs-th">Status</th>' +
+        '<th class="ap-runs-th">Signals</th>' +
+        '<th class="ap-runs-th">New</th>' +
+        '<th class="ap-runs-th">Duration</th>' +
+        '<th class="ap-runs-th">Error</th>' +
         '</tr>';
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
     filteredRuns.forEach(function (r) {
         var row = document.createElement('tr');
-        row.style.cssText = 'border-bottom:1px solid #222;';
-        row.onmouseenter = function () { this.style.background = '#1a1a3e'; };
-        row.onmouseleave = function () { this.style.background = ''; };
+        row.className = 'ap-runs-row';
 
         var startedAt = r.started_at ? new Date(r.started_at) : null;
         var completedAt = r.completed_at ? new Date(r.completed_at) : null;
@@ -48054,17 +48057,19 @@ function renderAutopilotRunsView() {
 
         var statusIcon = r.status === 'done' ? '\u2705' : r.status === 'failed' ? '\u274C' : stillRunning ? '\u{1F535}' : '\u26A0\uFE0F';
         var runIdShort = r.run_id ? String(r.run_id).slice(0, 8) : '-';
+        var badgeClass = (r.status === 'done' || r.status === 'failed' || r.status === 'running' ||
+            r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning')
+            ? 'ap-runs-badge-' + r.status : 'ap-runs-badge-default';
 
-        var runCellClip = 'padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         row.innerHTML =
-            '<td style="' + runCellClip + 'font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
-            '<td style="' + runCellClip + 'font-family:monospace;color:#64b5f6;" title="' + (r.run_id || '') + '">' + runIdShort + '</td>' +
-            '<td style="' + runCellClip + '">' + (r.triggered_by || '-') + '</td>' +
-            '<td style="' + runCellClip + '"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.signal_count || 0) + '</td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.new_finding_count || 0) + '</td>' +
-            '<td style="' + runCellClip + 'color:#999;">' + duration + '</td>' +
-            '<td style="' + runCellClip + 'color:#f44336;font-size:0.75rem;" title="' + (r.error || '').replace(/"/g, '&quot;') + '">' + (r.error || '') + '</td>';
+            '<td class="ap-runs-cell ap-runs-cell-time">' + timeStr + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-runid" title="' + (r.run_id || '') + '">' + runIdShort + '</td>' +
+            '<td class="ap-runs-cell">' + (r.triggered_by || '-') + '</td>' +
+            '<td class="ap-runs-cell"><span class="ap-runs-badge ' + badgeClass + '">' + statusIcon + ' ' + r.status + '</span></td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.signal_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.new_finding_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-dim">' + duration + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-error" title="' + (r.error || '').replace(/"/g, '&quot;') + '">' + (r.error || '') + '</td>';
 
         tbody.appendChild(row);
     });
