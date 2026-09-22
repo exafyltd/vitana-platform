@@ -418,6 +418,35 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     payload: { run_id: runId, signal_count: input.signals.length, triggered_by: input.triggered_by },
   });
 
+  // Everything below runs against the run row created above. Any throw in
+  // here (a signal with unexpected shape, an unanticipated exception from a
+  // scoring helper, etc.) used to propagate straight out of ingestScan and
+  // leave the row stuck at status='ingesting' forever — no error, no
+  // completed_at, invisible except by noticing new_finding_count never moved.
+  // Wrapping the body means every exit path finalizes the row: 'done' on
+  // success, 'failed' with the real error on any throw.
+  try {
+    return await ingestScanBody(supa, runId, input);
+  } catch (err) {
+    const message = String(err instanceof Error ? err.stack || err.message : err);
+    console.error(`${LOG_PREFIX} ingestScan threw for run ${runId}: ${message}`);
+    const failFinalize = await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error: message.slice(0, 2000),
+      }),
+    });
+    if (!failFinalize.ok) {
+      console.error(`${LOG_PREFIX} run-failure PATCH ALSO failed for ${runId}: ${failFinalize.error}`);
+    }
+    return { ok: false, error: message, run_id: runId };
+  }
+}
+
+async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput): Promise<ScanResult> {
   // 2. Persist raw signals (for audit + dedup traceability) — one row per
   // RAW signal, before rollup. Audit always sees the full pre-collapse list.
   if (input.signals.length > 0) {
@@ -534,9 +563,15 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     if (inserted.ok) newCount++;
   }
 
-  // 4. Finalize run
+  // 4. Finalize run. Previously fired without checking the result, so a
+  // failed PATCH (network blip, transient PostgREST error) left the row
+  // silently stuck at 'ingesting' forever — the run's own status can no
+  // longer be trusted to reflect whether ingestion actually finished. Log
+  // loudly on failure per ALWAYS 10 ("fail loudly"); ingestScan itself still
+  // returns ok:true here since the findings were successfully written —
+  // only the run row's own bookkeeping failed.
   const completedAt = new Date().toISOString();
-  await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
+  const finalize = await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
@@ -546,6 +581,9 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
       updated_finding_count: updatedCount,
     }),
   });
+  if (!finalize.ok) {
+    console.error(`${LOG_PREFIX} run finalize PATCH failed for ${runId} (findings were still written): ${finalize.error}`);
+  }
 
   await emitOasisEvent({
     vtid: SCAN_VTID,

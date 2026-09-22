@@ -1,7 +1,19 @@
 /**
  * Tests for Developer Autopilot Synthesis service — fingerprint + scoring
- * helpers. Ingest itself requires Supabase; covered by integration tests.
+ * helpers, plus ingestScan's run-finalization contract (the fix for
+ * dev_autopilot_runs getting stuck at status='ingesting' forever — see
+ * CLAUDE.md CHANGE LOG under "dev_autopilot_runs never finalizes").
  */
+
+process.env.SUPABASE_URL = 'http://localhost:54321';
+process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
+
+jest.mock('../src/services/oasis-event-service', () => ({
+  emitOasisEvent: jest.fn().mockResolvedValue({ ok: true, event_id: 'evt-1' }),
+}));
+jest.mock('../src/services/dev-autopilot-planning', () => ({
+  eagerlyPlanTopK: jest.fn().mockResolvedValue({ planned: 0, errors: 0 }),
+}));
 
 import {
   fingerprintSignal,
@@ -10,6 +22,8 @@ import {
   domainForPath,
   TYPE_RISK_CLASS,
   DevAutopilotSignal,
+  ingestScan,
+  ScanInput,
 } from '../src/services/dev-autopilot-synthesis';
 
 const signal = (overrides: Partial<DevAutopilotSignal> = {}): DevAutopilotSignal => ({
@@ -117,5 +131,138 @@ describe('TYPE_RISK_CLASS invariant', () => {
     for (const t of types) {
       expect(TYPE_RISK_CLASS[t]).toMatch(/^(low|medium|high)$/);
     }
+  });
+});
+
+// =============================================================================
+// ingestScan — run finalization contract
+//
+// Root cause of "dev_autopilot_runs never finalizes" (observed live: run
+// cf77d23c stuck at status='ingesting' forever): the finalize PATCH at the
+// end of ingestScan fired without checking its result, and nothing wrapped
+// the ingestion body — any thrown exception after the run row was created
+// (step 1) skipped the finalize step entirely with no error recorded
+// anywhere. These tests pin the fix: every exit path finalizes the row.
+// =============================================================================
+
+describe('ingestScan — run finalization', () => {
+  const fetchMock = global.fetch as jest.Mock;
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  function jsonRes(status: number, body: unknown = {}) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  type Handler = (url: string, opts: any) => any | undefined;
+
+  function routeFetch(handler: Handler) {
+    fetchMock.mockImplementation((url: any, opts: any = {}) => {
+      const result = handler(String(url), opts);
+      return Promise.resolve(result !== undefined ? result : jsonRes(200, []));
+    });
+  }
+
+  it('finalizes the run row with status=done on success', async () => {
+    const patchCalls: any[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') {
+        patchCalls.push(JSON.parse(opts.body));
+        return jsonRes(204, {});
+      }
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') return jsonRes(201, {});
+      return undefined;
+    });
+
+    const result = await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    expect(result.ok).toBe(true);
+    expect(result.new_finding_count).toBe(1);
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].status).toBe('done');
+    expect(patchCalls[0].new_finding_count).toBe(1);
+    expect(patchCalls[0].completed_at).toBeDefined();
+  });
+
+  it('finalizes the run row with status=failed (not stuck at ingesting) when ingestion throws after the run row is created', async () => {
+    const patchCalls: any[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') {
+        patchCalls.push(JSON.parse(opts.body));
+        return jsonRes(204, {});
+      }
+      return undefined;
+    });
+
+    // A circular `raw` object makes JSON.stringify throw synchronously while
+    // building the dev_autopilot_signals insert body — the exact "unexpected
+    // exception mid-ingestion" shape the wrapping try/catch exists to catch.
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const badSignal = signal({ raw: circular });
+
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await ingestScan({ triggered_by: 'test', signals: [badSignal] });
+    errSpy.mockRestore();
+
+    expect(result.ok).toBe(false);
+    expect(result.run_id).toBeTruthy();
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].status).toBe('failed');
+    expect(patchCalls[0].completed_at).toBeDefined();
+    expect(typeof patchCalls[0].error).toBe('string');
+    expect(patchCalls[0].error.length).toBeGreaterThan(0);
+  });
+
+  it('still reports ok:true when only the finalize PATCH itself fails (findings were already written)', async () => {
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(500, { message: 'db unavailable' });
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') return jsonRes(201, {});
+      return undefined;
+    });
+
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    // The findings themselves were successfully written; only the run row's
+    // own bookkeeping PATCH failed, and that failure is logged, not silenced.
+    // (Asserted before mockRestore() — restoring clears the spy's call history.)
+    expect(result.ok).toBe(true);
+    expect(result.new_finding_count).toBe(1);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it('returns ok:false without attempting any writes when the initial run-row insert fails', async () => {
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(500, { message: 'insert failed' });
+      return undefined;
+    });
+
+    const result = await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('run insert failed');
+    // No finalize PATCH should have been attempted — there is no row to finalize.
+    const patchCalls = fetchMock.mock.calls.filter(([, opts]) => (opts?.method) === 'PATCH');
+    expect(patchCalls).toHaveLength(0);
   });
 });
