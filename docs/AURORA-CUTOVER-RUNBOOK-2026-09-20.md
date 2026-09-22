@@ -270,7 +270,27 @@ Clone `vitana-fullload-rehearsal-v2`'s exact shape (or reuse it if the
 rehearsal hasn't been consumed) with `TargetTablePrepMode: TRUNCATE_BEFORE_LOAD`
 — never `DROP_AND_CREATE`, which wipes the RLS parity restored in Step 0
 (already done, see status doc's 2026-09-19 addendum: 606 tables / 1,061
-policies, matching Supabase). Start it:
+policies, matching Supabase).
+
+**Use `scripts/aws/aurora-cutover-final-catchup-task.sh` instead of a
+plain clone of `vitana-fullload-rehearsal-v2`** — that task's mapping
+still excludes 10 "exclude-done-*" tables (`ai_memory`, `memory_items`,
+`memory_facts`, `mem_episodes`, `user_intents`, `memory_embeddings`,
+`community_listings`, `calendar_events`, `mem_facts`, `feedback_tickets`)
+on the theory that a separate mechanism keeps them in sync with
+Supabase. The status doc's 2026-09-12 addenda (7) and (11) settled that
+question: those 10 tables have measurably drifted (2-11%) since
+whichever earlier ad-hoc effort first loaded them, and NO code path in
+this repo (nor anything found in tracked DMS tasks) has written to
+Aurora's copies since — the real memory/fact write path
+(`write_fact()`) goes straight to Supabase PostgREST. There is no
+mechanism to protect by excluding them; the new script removes those 10
+rules so Step 5 gives them a genuine final load, same as everything
+else. (`products`/`knowledge_docs`, the OTHER two originally-excluded
+tables, are a separate, already-closed question — see the "2026-09-20 —
+`products`/`knowledge_docs` 'known-broken' question RESOLVED" entry in
+the status doc; the script keeps those two excluded, correctly.) Start
+it:
 
 ```bash
 aws dms start-replication-task --region eu-central-1 \
