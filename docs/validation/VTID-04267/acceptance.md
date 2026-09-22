@@ -71,6 +71,26 @@ recognizes this VTID (branch `claude/vtid-04267-dev-autopilot-spend`, PR
 title carrying `VTID-04267`).
 TEST: services/gateway/test/scripts/command-hub-ownership-guard.test.ts — full file (pre-existing, generic pin — re-run green after the allowlist addition; also verified directly, see commands.log).
 
+## Route evidence
+
+`GET /api/v1/dev-autopilot/spend` is a new route on the existing
+`/api/v1/dev-autopilot` router (`services/gateway/src/routes/dev-autopilot.ts`,
+mounted at `services/gateway/src/index.ts` alongside every other
+`dev-autopilot` route — mount point unchanged by this PR).
+
+ROUTE_MOUNT: `router.get('/spend', requireDevRole, ...)` in
+`services/gateway/src/routes/dev-autopilot.ts`, on the pre-existing
+`/api/v1/dev-autopilot` router.
+FINAL_URL: `GET /api/v1/dev-autopilot/spend`
+CURL_PROOF: not run against a live deployment from this session (no
+staging bearer token / exafy_admin session available here); the route's
+shape (401 unauthenticated, 403 non-admin, 200 with a real
+`summarizeSpendToday` result, 500 on a Supabase query failure, bounded/
+ordered query — never an unbounded scan) is exercised in full by the jest
+suite listed under AC-4, which drives the real Express router with a
+mocked `fetch` — the same pattern this file's sibling `GET /config` route
+is tested with.
+
 ## OASIS Impact
 
 No OASIS event topic, no schema change. `GET /spend` is a new, purely
