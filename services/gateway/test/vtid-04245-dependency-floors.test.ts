@@ -95,13 +95,18 @@ describe('VTID-04245: both lockfiles resolve every floor', () => {
 
 describe('VTID-04245: the MCP SDK 0.x -> 1.x major is inert for the gateway', () => {
   it('no gateway source file imports @modelcontextprotocol/sdk (the bump cannot break runtime code)', () => {
+    // VTID-04261: match real import/require statements, not a bare substring.
+    // The floor-policy module (src/lib/dependency-floor-policy.ts) NAMES this
+    // package as data — a policy row must not read as a code dependency, or
+    // documenting a floor would falsely fail this inert-major check.
     const src = path.join(GATEWAY, 'src');
+    const IMPORT_RE = /(?:from|require\s*\(|import\s*\(?)\s*['"]@modelcontextprotocol\/sdk/;
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
-        else if (/\.(ts|js|mjs|cjs)$/.test(e.name) && fs.readFileSync(p, 'utf8').includes('@modelcontextprotocol/sdk')) hits.push(p);
+        else if (/\.(ts|js|mjs|cjs)$/.test(e.name) && IMPORT_RE.test(fs.readFileSync(p, 'utf8'))) hits.push(p);
       }
     };
     walk(src);
