@@ -23851,6 +23851,51 @@ function renderOperatorExecutionFollow(execId) {
     return panel;
 }
 
+// VTID-04265: the Autopilot Live view's own step/tool-call transcript for a
+// Dev Autopilot execution — reuses the exact SSE stream (followOperatorExecution,
+// GET /executions/:id/stream) and step-frame rendering the Operator Console
+// chat panel already built (VTID-04033), rather than a second implementation
+// of the same transport. Deliberately leaner than renderOperatorExecutionFollow:
+// no "open in Autopilot Live" chip, since the panel already lives on that card.
+function renderAutopilotLiveStepsPanel(execId) {
+    var slot = state.operatorExecFollow[execId] || { steps: [], terminal: null };
+    var panel = document.createElement('div');
+    panel.className = 'chat-exec-follow' + (slot.terminal ? ' chat-exec-follow--done' : ' chat-exec-follow--live');
+
+    var status = document.createElement('div');
+    if (slot.terminal) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--done';
+        status.textContent = OPERATOR_EXEC_TERMINAL_LABELS[slot.terminal] || String(slot.terminal).replace('dev_autopilot.execution.', '');
+    } else if (slot.error) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = slot.error;
+    } else if (slot.streamError) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = 'stream reconnecting…';
+    } else {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--live';
+        status.textContent = 'live · following';
+    }
+    panel.appendChild(status);
+
+    if (slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'chat-tool-activity-line' + (slot.terminal ? '' : ' chat-tool-activity-line--running');
+        empty.textContent = slot.terminal ? 'No step events were recorded.' : String.fromCodePoint(0x2026) + ' Waiting for the executor to pick it up';
+        panel.appendChild(empty);
+    }
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        var st = step && step.status;
+        var isErr = st === 'error' || (step && step.metadata && step.metadata.is_error);
+        line.className = 'chat-tool-activity-line chat-exec-follow-line' + (isErr ? ' chat-tool-activity-line--failed' : st === 'success' ? ' chat-tool-activity-line--ok' : '');
+        line.textContent = describeFollowedStep(step);
+        try { line.title = new Date(step.created_at).toLocaleTimeString(); } catch (_e) { /* no title */ }
+        panel.appendChild(line);
+    });
+    return panel;
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -40291,6 +40336,7 @@ if (!state.devAutopilot) {
         lineages: {},
         expandedExecIds: {},
         expandedDiffExecIds: {}, // VTID-04029: execution ids whose approval diff is open
+        expandedStepsExecIds: {}, // VTID-04265: execution ids whose step/tool-call transcript is open
         diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
         // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
         // { loading, steps[], error, es } where `es` is the live EventSource
@@ -41235,6 +41281,27 @@ function devAutopilotToggleDiff(execId) {
     }
     state.devAutopilot.expandedDiffExecIds[execId] = true;
     ensureExecutionDiffLoaded(execId);
+    renderApp();
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04265: step/tool-call transcript toggle on the Autopilot Live cards —
+// opens the same followOperatorExecution SSE stream the Operator Console
+// chat panel follows (VTID-04033), closes it on collapse (the stream replays
+// full history from the start on every fresh connect, so nothing is lost by
+// re-opening later).
+// ---------------------------------------------------------------------------
+
+function devAutopilotToggleSteps(execId) {
+    state.devAutopilot.expandedStepsExecIds = state.devAutopilot.expandedStepsExecIds || {};
+    if (state.devAutopilot.expandedStepsExecIds[execId]) {
+        delete state.devAutopilot.expandedStepsExecIds[execId];
+        closeOperatorExecutionFollow(execId);
+        renderApp();
+        return;
+    }
+    state.devAutopilot.expandedStepsExecIds[execId] = true;
+    followOperatorExecution(execId);
     renderApp();
 }
 
@@ -48444,6 +48511,18 @@ function renderAutopilotLiveView() {
                 card.appendChild(prLink);
             }
 
+            // VTID-04265: step/tool-call transcript — available on every
+            // status, not only awaiting_approval, so an operator can watch a
+            // running agent's turns instead of waiting for it to finish or
+            // block. Reuses the same SSE stream + rendering as the Operator
+            // Console chat panel (VTID-04033); see devAutopilotToggleSteps.
+            var liveStepsOpen = !!(state.devAutopilot.expandedStepsExecIds || {})[exec.id];
+            var liveStepsBtn = document.createElement('button');
+            liveStepsBtn.textContent = liveStepsOpen ? '▾ Steps' : '▸ Steps';
+            liveStepsBtn.className = 'dev-autopilot-ghost-toggle';
+            liveStepsBtn.onclick = function () { devAutopilotToggleSteps(exec.id); };
+            card.appendChild(liveStepsBtn);
+
             // VTID-04032: a running agent (or a row still cooling) can be
             // cancelled from here — the row is marked cancelled, its ECS task
             // stopped best effort, and the agent stops at its next boundary.
@@ -48492,6 +48571,13 @@ function renderAutopilotLiveView() {
                     liveDiffWrap.appendChild(renderExecutionDiffPanel(exec.id));
                     card.appendChild(liveDiffWrap);
                 }
+            }
+
+            if (liveStepsOpen) {
+                var liveStepsWrap = document.createElement('div');
+                liveStepsWrap.className = 'dev-autopilot-live-diff-wrap';
+                liveStepsWrap.appendChild(renderAutopilotLiveStepsPanel(exec.id));
+                card.appendChild(liveStepsWrap);
             }
             devApSection.appendChild(card);
         });
