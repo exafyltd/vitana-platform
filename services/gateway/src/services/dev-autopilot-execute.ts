@@ -74,6 +74,7 @@ import { recordExecutionOutcomeMemory } from './operator-turn-memory';
 import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
 import {
   STRANDED_PR_FILTER,
+  INFLIGHT_EXECUTION_FILTER,
   PR_CLOSED_UNMERGED_KEY,
   PR_STATE_CHECKED_KEY,
   selectPlanlessCandidates,
@@ -541,6 +542,28 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
       error: `finding ${input.finding_id.slice(0, 8)} already has an unmerged PR `
         + `(${stranded.pr_url || `#${stranded.pr_number}`}) from a prior execution `
         + `(status=${stranded.status}) — close or merge it before re-approving`,
+    };
+  }
+
+  // VTID-04293: one live execution per finding. The partial unique index
+  // excludes awaiting_approval, and only the baseline autoApproveTick pass
+  // checked for it — the impact pass and the manual approve routes did not,
+  // so a finding held for review was re-approved on the next tick.
+  const inflightR = await supa<Array<{ id: string; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${input.finding_id}`
+    + INFLIGHT_EXECUTION_FILTER
+    + `&select=id,status&limit=1`,
+  );
+  if (!inflightR.ok) {
+    return { ok: false, error: `in-flight execution lookup failed: ${inflightR.error || 'unknown'}` };
+  }
+  if (inflightR.data && inflightR.data.length > 0) {
+    const live = inflightR.data[0];
+    return {
+      ok: false,
+      error: `finding ${input.finding_id.slice(0, 8)} already has execution ${live.id.slice(0, 8)} `
+        + `(status=${live.status}) — decide or finish it before approving another`,
     };
   }
 
