@@ -377,3 +377,166 @@ describe('ingestScan — dedup lookup covers activated findings (VTID-04274)', (
     expect(result.new_finding_count).toBe(1);
   });
 });
+
+// =============================================================================
+// System-wide rollup — safety_gap exemption (VTID-04277)
+//
+// Live evidence: autopilot_recommendations rows b0aa6815 (snoozed) and
+// e89e7537 (activated -> VTID-02012) are both a "[rollup] safety-gap-scanner-v1
+// flagged 8 files with the same fix class" finding. safety-gap-scanner-v1
+// (scripts/ci/dev-autopilot-scan.mjs scanSafetyGaps()) emits from a small,
+// fixed catalog of ~10 hand-authored, UNRELATED gaps (a new RLS-write-deny
+// test suite, an admin auth-coverage test, a schema-vs-migrations validator,
+// ...) that happen to share (scanner, type='safety_gap', severity='medium')
+// — the exact key the generic rollup groups on — so >=ROLLUP_THRESHOLD
+// unaddressed gaps collapsed into one finding claiming a shared "fix class"
+// that does not exist, with directory paths (services/gateway/src/routes/admin)
+// listed as if they were files. safety_gap must always pass through
+// individually; every other type's collapse behaviour is unchanged.
+// =============================================================================
+
+describe('ingestScan — safety_gap rollup exemption (VTID-04277)', () => {
+  const fetchMock = global.fetch as jest.Mock;
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  function jsonRes(status: number, body: unknown = {}) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  type Handler = (url: string, opts: any) => any | undefined;
+
+  function routeFetch(handler: Handler) {
+    fetchMock.mockImplementation((url: any, opts: any = {}) => {
+      const result = handler(String(url), opts);
+      return Promise.resolve(result !== undefined ? result : jsonRes(200, []));
+    });
+  }
+
+  const safetyGapSignal = (key: string, filePath: string): DevAutopilotSignal => ({
+    type: 'safety_gap',
+    severity: 'medium',
+    file_path: filePath,
+    line_number: 1,
+    message: `${key} test missing`,
+    suggested_action: `Add the ${key} test. Distinct scope per gap, not a mechanical per-file fix.`,
+    scanner: 'safety-gap-scanner-v1',
+  });
+
+  it('never collapses safety_gap signals into a rollup, even at/above ROLLUP_THRESHOLD', async () => {
+    const postBodies: any[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') {
+        postBodies.push(JSON.parse(opts.body));
+        return jsonRes(201, {});
+      }
+      return undefined;
+    });
+
+    // The scanner's real catalog: 8 of its ~10 hardcoded gaps, each a
+    // distinct source_file (some directory-scoped, some file-scoped) and a
+    // distinct suggested_action — the exact live shape.
+    const signals: DevAutopilotSignal[] = [
+      safetyGapSignal('approvals-integration', 'services/gateway/src/routes/approvals.ts'),
+      safetyGapSignal('autopilot-integration', 'services/gateway/src/routes/autopilot.ts'),
+      safetyGapSignal('route-guard', 'services/gateway/src/index.ts'),
+      safetyGapSignal('admin-auth-coverage', 'services/gateway/src/routes/admin'),
+      safetyGapSignal('schema-vs-migrations', 'services/gateway/src'),
+      safetyGapSignal('rls-write-guard', 'supabase/migrations'),
+      safetyGapSignal('oasis-event-emission', 'services/gateway/src/routes'),
+      safetyGapSignal('e2e-playwright-autopilot', 'e2e/command-hub/roles/developer'),
+    ];
+
+    const result = await ingestScan({ triggered_by: 'test', signals });
+
+    expect(result.ok).toBe(true);
+    // 8 in, 8 individual findings out — never one "[rollup]" finding.
+    expect(result.new_finding_count).toBe(8);
+    expect(postBodies).toHaveLength(8);
+    for (const body of postBodies) {
+      expect(body.summary).not.toMatch(/^\[rollup\]/);
+      expect(body.summary).not.toContain('same fix class');
+      expect(body.spec_snapshot?.rollup).toBeUndefined();
+    }
+    // Each gap's own distinct message survives — nothing was merged.
+    const messages = postBodies.map(b => b.summary).sort();
+    expect(messages).toEqual([
+      'admin-auth-coverage test missing',
+      'approvals-integration test missing',
+      'autopilot-integration test missing',
+      'e2e-playwright-autopilot test missing',
+      'oasis-event-emission test missing',
+      'rls-write-guard test missing',
+      'route-guard test missing',
+      'schema-vs-migrations test missing',
+    ]);
+  });
+
+  it('still collapses a non-exempt type (dead_code) at/above ROLLUP_THRESHOLD — the exemption is scoped to safety_gap only', async () => {
+    const postBodies: any[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') {
+        postBodies.push(JSON.parse(opts.body));
+        return jsonRes(201, {});
+      }
+      return undefined;
+    });
+
+    const signals: DevAutopilotSignal[] = Array.from({ length: 6 }, (_, i) =>
+      signal({ type: 'dead_code', file_path: `services/gateway/src/routes/file${i}.ts`, scanner: 'knip' }),
+    );
+
+    const result = await ingestScan({ triggered_by: 'test', signals });
+
+    expect(result.ok).toBe(true);
+    expect(result.new_finding_count).toBe(1);
+    expect(postBodies).toHaveLength(1);
+    expect(postBodies[0].summary).toMatch(/^\[rollup\] knip flagged 6 files/);
+    expect(postBodies[0].spec_snapshot.rollup).toBe(true);
+    expect(postBodies[0].spec_snapshot.total_files).toBe(6);
+  });
+
+  it('a small safety_gap cluster (below threshold) already passed through unchanged before this fix — still does', async () => {
+    const postBodies: any[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') {
+        postBodies.push(JSON.parse(opts.body));
+        return jsonRes(201, {});
+      }
+      return undefined;
+    });
+
+    const signals: DevAutopilotSignal[] = [
+      safetyGapSignal('governance-gates', 'services/gateway/src/services'),
+      safetyGapSignal('deploy-smoke', '.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'),
+    ];
+
+    const result = await ingestScan({ triggered_by: 'test', signals });
+
+    expect(result.ok).toBe(true);
+    expect(result.new_finding_count).toBe(2);
+    expect(postBodies).toHaveLength(2);
+  });
+});
