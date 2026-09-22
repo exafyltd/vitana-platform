@@ -881,7 +881,8 @@ jobs:
                                                 "OPERATOR_CODEINTEL_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
-                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
+                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
+                                                "NAV_CONTINUATION_BIND") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -900,6 +901,7 @@ jobs:
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
+                          {name:"NAV_CONTINUATION_BIND", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},
