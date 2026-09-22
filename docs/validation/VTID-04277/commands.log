@@ -85,7 +85,13 @@ VTID-04277 — commands run to build and verify this change
     restore. `npx tsc --noEmit` -> clean.
 
 14. `cd services/gateway && node node_modules/.bin/jest --silent` (full
-    suite) — run in background; result recorded in outputs/execution.json.
+    suite) -> 1062/1063 suites (1 pre-existing skip), 17336/17371 tests
+    passing (29 skipped, 6 todo, both pre-existing), 0 failures, 42/42
+    snapshots.
+
+15. `git checkout -- services/gateway/specs/command-hub-symbol-index.json`
+    — reverted the auto-regenerated symbol index (a jest side effect
+    unrelated to this change).
 
 No Supabase or AWS mutation was made from this session for this VTID
 beyond self-allocating the VTID itself. The two live stuck rows
