@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04296",
+  "execution_id": "f034d67f-d394-41d8-9bfc-a136868119ad",
+  "finding_id": "f5a27ce9-7588-4fd7-bf7f-6293654cb244",
+  "plan_version": 1,
+  "branch": "dev-autopilot/f034d67f",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/worker-runner/package-lock.json",
+      "action": "modify"
+    },
+    {
+      "path": "services/worker-runner/package.json",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/worker-runner-path-to-regexp-floor.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-22T22:13:08.108Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
