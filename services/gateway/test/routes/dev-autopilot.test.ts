@@ -196,6 +196,7 @@ describe('requireDevRole governance gate', () => {
     { method: 'get', url: '/api/v1/dev-autopilot/executions' },
     { method: 'get', url: '/api/v1/dev-autopilot/config' },
     { method: 'post', url: '/api/v1/dev-autopilot/config/kill-switch' },
+    { method: 'post', url: '/api/v1/dev-autopilot/config/update', body: { daily_budget: 5 } },
     { method: 'get', url: '/api/v1/dev-autopilot/spend' }, // VTID-04267
   ];
 
@@ -1235,6 +1236,60 @@ describe('POST /config/kill-switch', () => {
   it('returns 500 and does not emit an event when the PATCH fails', async () => {
     setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_config') ? jsonRes(500, {}) : undefined)]);
     const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/kill-switch').send({ armed: true }));
+    expect(res.status).toBe(500);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+});
+
+// POST /config/update — VTID-04268. Only the safe, bounded numeric fields
+// (never allow_scope/deny_scope/kill_switch) are writable.
+describe('POST /config/update', () => {
+  it('patches an accepted field and emits a "config.updated" OASIS event', async () => {
+    let patchedBody: any = null;
+    setFetchRoutes([
+      (url, opts) => {
+        if (url.includes('/rest/v1/dev_autopilot_config')) {
+          patchedBody = JSON.parse(opts.body);
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ daily_budget: 12 }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, config: { daily_budget: 12 } });
+    expect(patchedBody.daily_budget).toBe(12);
+    expect(emitOasisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'dev_autopilot.config.updated', payload: { daily_budget: 12 } }),
+    );
+  });
+
+  it('rejects an unknown field with 400 and does not call Supabase', async () => {
+    let fetchCalled = false;
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_config')) {
+          fetchCalled = true;
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ allow_scope: ['x'] }));
+    expect(res.status).toBe(400);
+    expect(fetchCalled).toBe(false);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an out-of-range value with 400', async () => {
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ concurrency_cap: 999 }));
+    expect(res.status).toBe(400);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 and does not emit an event when the PATCH fails', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_config') ? jsonRes(500, {}) : undefined)]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ daily_budget: 5 }));
     expect(res.status).toBe(500);
     expect(emitOasisEvent).not.toHaveBeenCalled();
   });

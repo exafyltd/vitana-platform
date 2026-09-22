@@ -21,6 +21,7 @@ import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
+import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
@@ -1278,6 +1279,30 @@ router.post('/config/kill-switch', requireDevRole, async (req: Request, res: Res
     message: `Dev Autopilot kill switch ${armed ? 'ARMED' : 'disarmed'}`,
   });
   return res.json({ ok: true, armed });
+});
+
+// VTID-04268: writable config for the safe, bounded numeric knobs only —
+// see services/dev-autopilot-config-update.ts for what's deliberately
+// excluded (allow_scope/deny_scope, kill_switch).
+router.post('/config/update', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const result = validateConfigUpdate(req.body);
+  if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  const r = await supaPatch(supa, `/rest/v1/dev_autopilot_config?id=eq.1`, {
+    ...result.patch,
+    updated_at: new Date().toISOString(),
+  });
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: SCAN_VTID,
+    type: 'dev_autopilot.config.updated',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: `Dev Autopilot config updated: ${Object.keys(result.patch).join(', ')}`,
+    payload: result.patch,
+  });
+  return res.json({ ok: true, config: result.patch });
 });
 
 // =============================================================================
