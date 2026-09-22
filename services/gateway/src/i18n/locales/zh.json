@@ -116,5 +116,7 @@
   "notif.partner_test_status_changed.title": "{partner_name} 的更新",
   "notif.partner_test_status_changed.body": "你的 {test_name} 有新进展。",
   "notif.partner_test_result_ready.title": "你的结果已就绪",
-  "notif.partner_test_result_ready.body": "你的 {test_name} 结果（来自 {partner_name}）已经准备好了。让 Vitana 为你解读。"
+  "notif.partner_test_result_ready.body": "你的 {test_name} 结果（来自 {partner_name}）已经准备好了。让 Vitana 为你解读。",
+  "notif.feedback_resolved.title": "你的反馈已解决",
+  "notif.feedback_resolved.body": "我们已修复你报告的问题（{ticket}）。感谢你帮助我们改进！"
 }

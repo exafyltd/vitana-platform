@@ -2832,6 +2832,19 @@ export async function backgroundExecutorTick(): Promise<void> {
     console.error(`${LOG_PREFIX} feedback-completion reconciler error:`, err);
   }
 
+  // 0c-bis. VTID-04311: replace placeholder specs on spec_ready bug/ux
+  // tickets with a real Devon draft (triage stage). Self-throttled (5 min),
+  // FEEDBACK_SPEC_DRAFT_ENABLED=false disables it.
+  try {
+    const { draftPlaceholderSpecsTick } = await import('./feedback-spec-drafter');
+    const d = await draftPlaceholderSpecsTick(s);
+    if (d.drafted > 0 || d.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-spec-draft: drafted=${d.drafted} failed=${d.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-spec-draft error:`, err);
+  }
+
   // 0d. Auto-archive watchdog: any execution in a terminal-failure state
   // (failed / failed_escalated / reverted / cancelled) whose updated_at is
   // older than AUTO_ARCHIVE_DAYS gets moved to status='auto_archived' so

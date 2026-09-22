@@ -169,6 +169,8 @@ export const TYPE_META: Record<string, TypeMeta> = {
   someone_wants_to_connect:   { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
   // System
   welcome_to_vitana:           { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // VTID-04312: the reporter's support ticket / bug report was resolved.
+  feedback_ticket_resolved:    { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   complete_your_profile:       { channel: 'inapp',          priority: 'p2', category: 'system' },
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },

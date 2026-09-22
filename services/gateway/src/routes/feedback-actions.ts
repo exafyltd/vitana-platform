@@ -64,6 +64,14 @@ function emitFeedbackEvent(type: string, ticket: Record<string, unknown>, payloa
 
 export const adminRouter = Router();
 
+// VTID-04312: tell the member their ticket was resolved (best-effort).
+async function notifyReporter(ticketId: string): Promise<void> {
+  try {
+    const { notifyFeedbackReporter } = await import('../services/feedback-reporter-notify');
+    await notifyFeedbackReporter(ticketId);
+  } catch { /* never blocks the action */ }
+}
+
 const DraftSchema = z.object({ notes: z.string().max(2000).optional() });
 const ReasonSchema = z.object({ reason: z.string().max(500).optional() });
 const DuplicateSchema = z.object({ duplicate_of: z.string().uuid() });
@@ -187,6 +195,7 @@ adminRouter.post('/tickets/:id/send-answer', async (req: Request, res: Response)
   });
   if (error || !data) return res.status(409).json({ ok: false, error: 'NOT_SENDABLE', details: error?.message });
   emitFeedbackEvent('feedback.ticket.resolved', data, { from: 'send-answer', resolver_agent: data.resolver_agent }, actor ?? undefined);
+  void notifyReporter(String(data.id));
   return res.json({ ok: true, ticket: data });
 });
 
@@ -199,6 +208,7 @@ adminRouter.post('/tickets/:id/resolve', async (req: Request, res: Response) => 
   });
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
   emitFeedbackEvent('feedback.ticket.resolved', data, { from: 'manual-resolve' }, actor ?? undefined);
+  void notifyReporter(String(data.id));
   return res.json({ ok: true, ticket: data });
 });
 

@@ -1,0 +1,59 @@
+PASS test/feedback-pipeline.test.ts
+    ✓ user can create a ticket via POST /tickets and read it back via /mine (44 ms)
+    ✓ handoff-detect routes a bug opener to Devon (5 ms)
+    ✓ handoff-detect returns vitana for off-keyword text (4 ms)
+    ✓ full bug-fix lifecycle: handoff → intake → triage → spec → approve → resolve → confirm (342 ms)
+    ✓ support-question lifecycle: Sage drafts answer → supervisor sends (16 ms)
+    ✓ rejection path: supervisor rejects a ticket with reason (5 ms)
+    ✓ reopen path: confirmed ticket can be reopened by the user with priority bump (12 ms)
+    ✓ mark-duplicate links to canonical (6 ms)
+    ✓ all routes return 401 without Bearer token (15 ms)
+PASS test/routes/tenant-specialists.test.ts
+    ✓ GET overrides without a token → 401 UNAUTHENTICATED (10 ms)
+    ✓ GET overrides with an undecodable token → 401 INVALID_TOKEN (3 ms)
+    ✓ rejects an unsigned/forged token that only carries a sub → 401 (2 ms)
+    ✓ verified member who is not a tenant admin → 403, nothing read (2 ms)
+    ✓ verified member with no membership row → 403 (1 ms)
+    ✓ verified tenant admin (active_role=admin in that tenant) passes the gate (3 ms)
+    ✓ PUT overrides without a token → 401 (writes are gated too) (4 ms)
+    ✓ GET overrides → 404 PERSONA_NOT_FOUND for an unknown specialist key (2 ms)
+    ✓ GET overrides scopes every overlay query to the URL tenant and defaults the overlay (3 ms)
+    ✓ PUT overrides rejects invalid bodies → 400 VALIDATION_FAILED (2 ms)
+    ✓ PUT overrides upserts a row stamped with the URL tenant_id, audits, and busts the tenant cache (4 ms)
+    ✓ PUT keywords normalizes keywords, scopes delete+insert to the tenant (2 ms)
+    ✓ DELETE a connection owned by another tenant → 404, and nothing is deleted (2 ms)
+    ✓ POST connections inserts a draft connection stamped with the URL tenant (2 ms)
+    ✓ GET /:tenantId/audit only reads rows for that tenant (2 ms)
+    ✓ GET a ticket whose owner is NOT a member of the tenant → 404 (tenant A cannot see tenant B's ticket) (3 ms)
+    ✓ POST reject on a cross-tenant ticket → 404 and the ticket is never updated (2 ms)
+    ✓ GET a ticket owned by a tenant member succeeds and includes handoffs (5 ms)
+    ✓ approve-all → 404 CUSTOMER_NOT_FOUND for an unknown vitana_id (3 ms)
+    ✓ approve-all refuses to act on a customer outside the tenant → 404 CUSTOMER_NOT_IN_TENANT (2 ms)
+    ✓ approve-all advances a non-dispatchable spec_ready ticket to in_progress with an optimistic lock (3 ms)
+    ✓ approve-all dispatches a spec_ready bug ticket through the bridge (no bare status flip) (2 ms)
+    ✓ approve-all counts a refused dispatch as skipped and leaves the ticket alone (2 ms)
+PASS test/vtid-04312-feedback-reporter-notify.test.ts
+    ✓ sends one translated feedback_ticket_resolved notification to the reporter (2 ms)
+    ✓ uses English for an English reporter (1 ms)
+    ✓ never announces a ticket that is not resolved (needs_more_info is for the supervisor)
+    ✓ never throws (3 ms)
+    ✓ every resolve path notifies the reporter (1 ms)
+    ✓ /mine exposes the resolution only for resolved tickets
+PASS test/vtid-04308-feedback-approve-dispatch.test.ts
+    ✓ allocates a VTID, links it on the ticket, dispatches, then moves to in_progress (4 ms)
+    ✓ reuses a VTID the finding already carries (1 ms)
+    ✓ refuses to dispatch when VTID allocation fails, and leaves the ticket at spec_ready (1 ms)
+    ✓ leaves the ticket at spec_ready when the bridge refuses (e.g. kill switch) (1 ms)
+    ✓ refuses non-dispatchable kinds and non spec_ready tickets
+    ✓ evaluateSafetyGate blocks a feedback-lane finding when the kill switch is armed (1 ms)
+    ✓ the executor tick no longer filters cooling rows to the feedback lane (1 ms)
+    ✓ refuses with spec_placeholder before any allocation or execution (1 ms)
+PASS test/vtid-04311-feedback-spec-drafter.test.ts
+    ✓ flags empty, SQL auto-triage and LLM-fallback placeholders (1 ms)
+    ✓ accepts a real spec, even one that mentions the word lower down
+    ✓ replaces a placeholder spec with a real LLM draft, guarded on spec_ready (2 ms)
+    ✓ keeps the placeholder when the model falls back, and counts the attempt
+    ✓ stops after MAX_DRAFT_ATTEMPTS and skips a freshly claimed ticket (1 ms)
+    ✓ is throttled and can be disabled
+Test Suites: 5 passed, 5 total
+Tests:       52 passed, 52 total

@@ -116,5 +116,7 @@
   "notif.partner_test_status_changed.title": "Ažuriranje od {partner_name}",
   "notif.partner_test_status_changed.body": "Postoji ažuriranje za tvoj {test_name}.",
   "notif.partner_test_result_ready.title": "Tvoji rezultati su stigli",
-  "notif.partner_test_result_ready.body": "Tvoji rezultati {test_name} od {partner_name} su spremni. Zamoli Vitanu da ti ih objasni."
+  "notif.partner_test_result_ready.body": "Tvoji rezultati {test_name} od {partner_name} su spremni. Zamoli Vitanu da ti ih objasni.",
+  "notif.feedback_resolved.title": "Tvoja prijava je rešena",
+  "notif.feedback_resolved.body": "Rešili smo problem koji si prijavio/la ({ticket}). Hvala što nam pomažeš da budemo bolji!"
 }
