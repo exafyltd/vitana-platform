@@ -1,0 +1,66 @@
+# VTID-04266 — commands run by this Claude Code session (interactive),
+# continuing the take-over task list started with VTID-04264.
+
+$ git checkout -B claude/vtid-04266-autonomy-pulse-awaiting-approval origin/main
+# fresh branch from origin/main (independent of the still-open VTID-04264/
+# VTID-04265 PRs, to avoid stacking three unmerged Command Hub PRs)
+
+$ grep -n "Autonomy Pulse|autonomy-pulse|AutonomyPulse" services/gateway/src/frontend/command-hub/app.js
+$ grep -rn "autonomy/pulse|'/pulse'|autonomyPulse" services/gateway/src -i
+# found the real backend route: services/gateway/src/routes/autonomy-pulse.ts
+
+$ cat services/gateway/src/routes/autonomy-pulse.ts
+# fetchExecutions' status filter: status=in.(cooling,running,ci,merging,
+# deploying,verifying) — awaiting_approval (VTID-04029) is missing. Same
+# gap in /pulse/counts. normalizeExecution has no statusLabel entry and no
+# actions branch for awaiting_approval either.
+
+# Fix (backend): added awaiting_approval to both SQL status filters;
+# normalizeExecution now labels it "held for approval — needs a human
+# decision", sets severity=critical unconditionally (outranks the
+# depth-based warning/info split), and offers actions
+# ['approve','reject','view_trace'] instead of the cancel/view_trace set.
+
+# Fix (frontend): autonomyPulseDoAction's autonomous_execution branch
+# gains 'approve'/'reject' cases, calling the exact same
+# POST /api/v1/dev-autopilot/executions/:id/approve|reject routes the
+# Autopilot Live / Dev Autopilot cards already use (confirmed exact paths
+# via services/gateway/src/routes/dev-autopilot.ts and
+# devAutopilotApproveExecution/devAutopilotRejectExecution in app.js).
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+$ node --check scripts/ci/command-hub-ownership-guard.js
+# SYNTAX OK
+
+$ cd services/gateway && npx tsc --noEmit
+# clean
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff3.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff3.txt
+# No CSP pattern hits in added lines.
+# (No new DOM elements/styling — only conditional branches inside an
+# existing function.)
+
+# Added scripts/ci/command-hub-ownership-guard.js allowlist entry for
+# VTID-04266 (own branch, own comment block).
+
+# New/updated tests:
+#   services/gateway/test/autonomy-pulse.test.ts — 3 new cases (backend
+#     aggregator/normalizer + a source-contract check on the SQL filter
+#     string, since fetchExecutions does real network I/O and can't be
+#     unit-tested directly)
+#   services/gateway/test/vtid-04266-autonomy-pulse-awaiting-approval.test.ts
+#     — new file, frontend action-dispatcher wiring pin (matches the
+#     established per-VTID app.js source-check pattern)
+
+$ cd services/gateway && node_modules/.bin/jest \
+    test/vtid-04266-autonomy-pulse-awaiting-approval.test.ts \
+    test/autonomy-pulse.test.ts \
+    test/command-hub/ \
+    test/scripts/command-hub-ownership-guard.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts \
+    test/console-task-17-cost-badge-tooltip.test.ts
+# 23/23 suites, 320/320 tests passing, 0 regressions
+
+$ cd services/gateway && npx tsc --noEmit
+# clean (re-run after all test files added)
