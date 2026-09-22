@@ -11,6 +11,23 @@
  * Otherwise the var reads as undefined in production and the code path
  * silently no-ops. This has happened repeatedly (GCP_PROJECT_ID incident,
  * Appilix push config incident, etc.).
+ *
+ * VTID-04287 — a same-line defensive fallback IS a binding. The rule's own
+ * suggested_action (c) tells people to write `process.env.X ?? 'default'`,
+ * yet the checker only ever looked for the var name in workflow/.env.example
+ * text. A call site that already cannot read as `undefined` was therefore
+ * rejected by the evidence the rule itself asks for — an unsatisfiable gate,
+ * which is exactly the false-positive class that fired the finding this rule
+ * is named in (`HARNESS_URL`, `OUT_DIR`, `TABS` in
+ * docs/validation/VTID-04282/outputs/harness-shoot.js, all three already
+ * written as `process.env.X || '<default>'`).
+ *
+ * So: for each ADDED `process.env.X` reference, X is considered bound when
+ * the same line carries `|| <value>` or `?? <value>` (SAFE_FALLBACK_VALUE
+ * lists what counts as a value). Anything else — including
+ * `process.env.A || process.env.B`, where B may be unset too — is still
+ * reported. A var that appears anywhere in the diff without such a fallback
+ * is still reported, so this cannot become a blanket exemption.
  */
 
 import { extractAddedLines, readFileSafe } from './_shared.mjs';
@@ -24,6 +41,43 @@ export const meta = {
 };
 
 const ENV_VAR_RE = /process\.env\.([A-Z][A-Z0-9_]+)/g;
+
+// The operator that starts a defensive fallback: `a || b` / `a ?? b`.
+const FALLBACK_OP = '(?:\\|\\||\\?\\?)';
+
+// A fallback value that can never be `undefined`: a string/template literal,
+// a number, a boolean, or a plain identifier / member path.
+const SAFE_FALLBACK_VALUE = [
+  "'(?:[^'\\\\]|\\\\.)*'",
+  '"(?:[^"\\\\]|\\\\.)*"',
+  '`(?:[^`\\\\]|\\\\.)*`',
+  '-?\\d+(?:\\.\\d+)?',
+  '(?:true|false)',
+  '[A-Za-z_$][\\w$]*(?:\\.[\\w$]+)*',
+].join('|');
+
+const SAFE_FALLBACK_RE = new RegExp(`^\\s*${FALLBACK_OP}\\s*(?:${SAFE_FALLBACK_VALUE})`);
+
+/**
+ * True when `rest` (everything after a `process.env.X` match on the line)
+ * starts with a defensive fallback for X, i.e. that read can never yield
+ * `undefined`.
+ *
+ * Deliberately NOT a fallback: another `process.env.X` read (X may be unset
+ * too), `undefined` itself, a call (`|| someGetter()`, which may itself return
+ * undefined), a parenthesised expression, and anything else unrecognised —
+ * those stay reported rather than being waved through.
+ */
+export function hasDefensiveFallback(rest) {
+  const m = SAFE_FALLBACK_RE.exec(rest);
+  if (!m) return false;
+  // `|| foo(...)` is a call, not a guaranteed value.
+  if (/^\s*\(/.test(rest.slice(m[0].length))) return false;
+  const value = m[0].replace(new RegExp(`^\\s*${FALLBACK_OP}\\s*`), '').trim();
+  if (value === 'undefined') return false;
+  if (value === 'process.env' || value.startsWith('process.env.')) return false;
+  return true;
+}
 
 // Vars everyone knows are set by the platform — skip these.
 const ALWAYS_BOUND = new Set([
@@ -78,7 +132,10 @@ function collectConfigFiles(repoRoot) {
 export async function check({ diff, repoRoot }) {
   // Only check added lines in source files (not config/test files).
   const added = extractAddedLines(diff, /\.(ts|tsx|mjs|js)$/);
-  const newVars = new Set();
+  // X -> true once ANY added reference to X has no same-line fallback. A var is
+  // only exempt when EVERY reference to it is defensively defaulted, so one
+  // guarded line elsewhere cannot launder an unguarded read.
+  const unguardedVars = new Map();
   for (const l of added) {
     if (/\/(test|tests|__tests__|__mocks__|fixtures)\//.test(l.file)) continue;
     if (/\.(test|spec)\.(ts|tsx|mjs|js)$/.test(l.file)) continue;
@@ -87,9 +144,15 @@ export async function check({ diff, repoRoot }) {
     while ((m = ENV_VAR_RE.exec(l.text)) !== null) {
       const v = m[1];
       if (ALWAYS_BOUND.has(v)) continue;
-      newVars.add(v);
+      const rest = l.text.slice(m.index + m[0].length);
+      const guarded = hasDefensiveFallback(rest);
+      if (!guarded) unguardedVars.set(v, true);
+      else if (!unguardedVars.has(v)) unguardedVars.set(v, false);
     }
   }
+  const newVars = new Set(
+    [...unguardedVars.entries()].filter(([, unguarded]) => unguarded).map(([v]) => v),
+  );
   if (newVars.size === 0) return [];
 
   const configText = collectConfigFiles(repoRoot);

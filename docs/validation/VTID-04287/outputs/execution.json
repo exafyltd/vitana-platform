@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04287",
+  "execution_id": "e4bcee32-1b56-4a96-88e7-6783472f395a",
+  "finding_id": "b560c306-0e05-4698-b909-0a25df8abff2",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e4bcee32",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "scripts/ci/impact-rules/new-env-var-requires-workflow-binding.mjs",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/scripts/env-var-binding-rule.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-22T21:43:57.025Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
