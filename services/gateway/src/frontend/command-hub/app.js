@@ -23851,6 +23851,51 @@ function renderOperatorExecutionFollow(execId) {
     return panel;
 }
 
+// VTID-04265: the Autopilot Live view's own step/tool-call transcript for a
+// Dev Autopilot execution — reuses the exact SSE stream (followOperatorExecution,
+// GET /executions/:id/stream) and step-frame rendering the Operator Console
+// chat panel already built (VTID-04033), rather than a second implementation
+// of the same transport. Deliberately leaner than renderOperatorExecutionFollow:
+// no "open in Autopilot Live" chip, since the panel already lives on that card.
+function renderAutopilotLiveStepsPanel(execId) {
+    var slot = state.operatorExecFollow[execId] || { steps: [], terminal: null };
+    var panel = document.createElement('div');
+    panel.className = 'chat-exec-follow' + (slot.terminal ? ' chat-exec-follow--done' : ' chat-exec-follow--live');
+
+    var status = document.createElement('div');
+    if (slot.terminal) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--done';
+        status.textContent = OPERATOR_EXEC_TERMINAL_LABELS[slot.terminal] || String(slot.terminal).replace('dev_autopilot.execution.', '');
+    } else if (slot.error) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = slot.error;
+    } else if (slot.streamError) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = 'stream reconnecting…';
+    } else {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--live';
+        status.textContent = 'live · following';
+    }
+    panel.appendChild(status);
+
+    if (slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'chat-tool-activity-line' + (slot.terminal ? '' : ' chat-tool-activity-line--running');
+        empty.textContent = slot.terminal ? 'No step events were recorded.' : String.fromCodePoint(0x2026) + ' Waiting for the executor to pick it up';
+        panel.appendChild(empty);
+    }
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        var st = step && step.status;
+        var isErr = st === 'error' || (step && step.metadata && step.metadata.is_error);
+        line.className = 'chat-tool-activity-line chat-exec-follow-line' + (isErr ? ' chat-tool-activity-line--failed' : st === 'success' ? ' chat-tool-activity-line--ok' : '');
+        line.textContent = describeFollowedStep(step);
+        try { line.title = new Date(step.created_at).toLocaleTimeString(); } catch (_e) { /* no title */ }
+        panel.appendChild(line);
+    });
+    return panel;
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -40291,13 +40336,19 @@ if (!state.devAutopilot) {
         lineages: {},
         expandedExecIds: {},
         expandedDiffExecIds: {}, // VTID-04029: execution ids whose approval diff is open
-        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
-        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
-        // { loading, steps[], error, es } where `es` is the live EventSource
-        // (not serializable/renderable — only ever read/closed by the
-        // stream helpers below, never iterated for display).
+        // VTID-04265: execution ids whose step/tool-call transcript is open
+        // on Autopilot Live. Reuses this same key name/purpose that
+        // VTID-03896/03897 originally declared here (`steps[execId]`
+        // holding { loading, steps[], error, es }) but never wired up —
+        // confirmed dead (no other reference anywhere in this file) before
+        // reclaiming it, rather than leaving two same-named, differently-
+        // commented keys in one object literal (the second silently wins
+        // at construction, which is harmless here since both start `{}`,
+        // but is confusing to read). The actual step data now lives in the
+        // pre-existing state.operatorExecFollow bucket (VTID-04033) instead
+        // of a dedicated `steps` map — see renderAutopilotLiveStepsPanel.
         expandedStepsExecIds: {},
-        steps: {},
+        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -40330,11 +40381,15 @@ function fetchDevAutopilotState() {
         fetch('/api/v1/dev-autopilot/queue?status=new&limit=200', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, findings: [] }; }),
         fetch('/api/v1/dev-autopilot/config', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, config: null }; }),
         fetch('/api/v1/dev-autopilot/executions?status=active&limit=100', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, executions: [] }; }),
+        // VTID-04267: today's real agent spend (dollars, from the per-run
+        // cost already recorded on dev_autopilot_outcomes.metadata.agent_runs[]).
+        fetch('/api/v1/dev-autopilot/spend', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         state.devAutopilot.runs = (results[0] && results[0].runs) || [];
         state.devAutopilot.queue = (results[1] && results[1].findings) || [];
         state.devAutopilot.config = (results[2] && results[2].config) || null;
         state.devAutopilot.executions = (results[3] && results[3].executions) || [];
+        state.devAutopilot.spend = (results[4] && results[4].ok) ? results[4] : null;
         state.devAutopilot.fetched = true;
         state.devAutopilot.loading = false;
         state.devAutopilot.error = null;
@@ -40572,15 +40627,22 @@ function renderDevAutopilotView() {
     var cfg = state.devAutopilot.config || {};
     var queueCount = (state.devAutopilot.queue || []).length;
     var activeRuns = (state.devAutopilot.executions || []).length;
+    // VTID-04267: real dollars spent today, from GET /spend (sums the
+    // per-run cost already recorded on dev_autopilot_outcomes.metadata.
+    // agent_runs[]) — a separate axis from the "Budget" chip's daily
+    // APPROVAL-COUNT (dev_autopilot_config.daily_budget).
+    var spend = state.devAutopilot.spend;
     var chips = [
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
+        { label: 'Spend today', value: spend ? ('$' + Number(spend.spend_usd_today || 0).toFixed(4) + ' · ' + spend.runs_today + ' run' + (spend.runs_today === 1 ? '' : 's')) : '—', color: '#f97316', title: TURN_COST_ESTIMATE_NOTE },
         { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
         { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
         { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },
     ];
     chips.forEach(function (c) {
         var el = document.createElement('div');
+        if (c.title) el.title = c.title;
         el.innerHTML = '<span style="color: var(--text-secondary, #888); margin-right: 6px;">' + c.label + ':</span><strong style="color: ' + c.color + ';">' + c.value + '</strong>';
         statusStrip.appendChild(el);
     });
@@ -41410,6 +41472,27 @@ function devAutopilotToggleDiff(execId) {
     renderApp();
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04265: step/tool-call transcript toggle on the Autopilot Live cards —
+// opens the same followOperatorExecution SSE stream the Operator Console
+// chat panel follows (VTID-04033), closes it on collapse (the stream replays
+// full history from the start on every fresh connect, so nothing is lost by
+// re-opening later).
+// ---------------------------------------------------------------------------
+
+function devAutopilotToggleSteps(execId) {
+    state.devAutopilot.expandedStepsExecIds = state.devAutopilot.expandedStepsExecIds || {};
+    if (state.devAutopilot.expandedStepsExecIds[execId]) {
+        delete state.devAutopilot.expandedStepsExecIds[execId];
+        closeOperatorExecutionFollow(execId);
+        renderApp();
+        return;
+    }
+    state.devAutopilot.expandedStepsExecIds[execId] = true;
+    followOperatorExecution(execId);
+    renderApp();
+}
+
 function ensureExecutionDiffLoaded(execId) {
     state.devAutopilot.diffs = state.devAutopilot.diffs || {};
     var slot = state.devAutopilot.diffs[execId];
@@ -42113,6 +42196,12 @@ function autonomyPulseDoAction(item, action) {
         var execId = item.metadata.execution_id;
         if (action === 'cancel') {
             promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/cancel', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'approve') {
+            // VTID-04266: an awaiting_approval execution — same route the
+            // Autopilot Live / Dev Autopilot cards already call.
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/approve', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'reject') {
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/reject', { method: 'POST', headers, body: '{}' });
         }
     }
     // self_healing apply_heal / discard_heal — Self-Healing endpoints live
@@ -48616,6 +48705,18 @@ function renderAutopilotLiveView() {
                 card.appendChild(prLink);
             }
 
+            // VTID-04265: step/tool-call transcript — available on every
+            // status, not only awaiting_approval, so an operator can watch a
+            // running agent's turns instead of waiting for it to finish or
+            // block. Reuses the same SSE stream + rendering as the Operator
+            // Console chat panel (VTID-04033); see devAutopilotToggleSteps.
+            var liveStepsOpen = !!(state.devAutopilot.expandedStepsExecIds || {})[exec.id];
+            var liveStepsBtn = document.createElement('button');
+            liveStepsBtn.textContent = liveStepsOpen ? '▾ Steps' : '▸ Steps';
+            liveStepsBtn.className = 'dev-autopilot-ghost-toggle';
+            liveStepsBtn.onclick = function () { devAutopilotToggleSteps(exec.id); };
+            card.appendChild(liveStepsBtn);
+
             // VTID-04032: a running agent (or a row still cooling) can be
             // cancelled from here — the row is marked cancelled, its ECS task
             // stopped best effort, and the agent stops at its next boundary.
@@ -48665,6 +48766,13 @@ function renderAutopilotLiveView() {
                     card.appendChild(liveDiffWrap);
                 }
             }
+
+            if (liveStepsOpen) {
+                var liveStepsWrap = document.createElement('div');
+                liveStepsWrap.className = 'dev-autopilot-live-diff-wrap';
+                liveStepsWrap.appendChild(renderAutopilotLiveStepsPanel(exec.id));
+                card.appendChild(liveStepsWrap);
+            }
             devApSection.appendChild(card);
         });
     }
@@ -48694,6 +48802,23 @@ function renderAutopilotEngineView() {
     cronCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;';
     cronCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">\u23F0 Cloud Scheduler CRON Jobs</h3>' +
         '<p style="color:#888;font-size:0.8rem;margin-bottom:1rem;">These jobs are managed via scripts/setup-cloud-scheduler.sh and POST to /api/v1/automations/cron/&lt;AP-ID&gt;</p>';
+
+    // VTID-04269: this table was always STATIC reference data copied from
+    // scripts/setup-cloud-scheduler.sh's job list \u2014 no gateway route or DB
+    // table backs it with a live query, and there is no reliable live
+    // source to wire up instead (GCP Cloud Scheduler's own listing API
+    // isn't reachable from this gateway, and GCP billing on the project
+    // that script targets by default was disabled 2026-08-16 \u2014 CLAUDE.md
+    // \u00A71). Per the same repo's own VTID-03676 finding, only the
+    // push-dispatch job has a confirmed AWS EventBridge replacement; these
+    // 10 rows' actual running status today is unconfirmed. Labelling that
+    // honestly rather than presenting the table as live infrastructure
+    // state, per this file's own established remedy for the same defect
+    // shape (VTID-04064's buildGcpStaticViewDisabledNotice()).
+    var cronStaticNotice = document.createElement('div');
+    cronStaticNotice.className = 'autopilot-static-cron-notice';
+    cronStaticNotice.textContent = 'Static reference values from scripts/setup-cloud-scheduler.sh, not a live query. GCP Cloud Scheduler billing was disabled 2026-08-16; only push-dispatch has a confirmed AWS EventBridge replacement (VTID-03676) \u2014 whether these jobs are still actually firing is unconfirmed.';
+    cronCard.appendChild(cronStaticNotice);
 
     var cronJobs = [
         { id: 'AP-0101', name: 'Daily Match Delivery', schedule: '0 8 * * *', tz: 'Europe/Berlin' },

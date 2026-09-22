@@ -1,0 +1,74 @@
+# VTID-04269 — commands run by this Claude Code session (interactive),
+# continuing the take-over task list started with VTID-04264.
+
+$ git checkout -B claude/vtid-04269-engine-config-cron-notice origin/main
+# fresh branch from origin/main (independent of the still-open VTID-04264/
+# 04265/04266/04267 PRs)
+
+$ grep -n "Engine Config|renderAutopilotEngineView|'engine'" services/gateway/src/frontend/command-hub/app.js
+# found renderAutopilotEngineView ("Engine Configuration" tab) — a
+# DIFFERENT subsystem from Dev Autopilot's own config (dev_autopilot_config,
+# VTID-04264/04267): this view belongs to the community-automations
+# engine (AP-* jobs)
+
+$ sed -n '<cronCard section>' services/gateway/src/frontend/command-hub/app.js
+# confirmed cronJobs is a hardcoded array, no fetch, no gateway route
+# backing it
+
+$ grep -n "AP-0101|AP-0501|AP-0505|AP-0502|AP-0506|AP-0105|AP-0107|AP-0210|AP-0305|AP-0604" scripts/setup-cloud-scheduler.sh
+# confirmed byte-for-byte match (schedule/tz) with the hardcoded table —
+# this IS a direct copy of that script's job list, not independently
+# fabricated data
+
+$ sed -n '1,30p' scripts/setup-cloud-scheduler.sh
+# confirmed PROJECT defaults to lovable-vitana-vers1 (the permanently
+# decommissioned GCP project per CLAUDE.md §1) — this script would fail
+# outright if run today against its own default
+
+# Cross-referenced CLAUDE.md §1 (GCP decommission) and the 2026-08-18
+# VTID-03676 CHANGE LOG row: GCP billing disabled 2026-08-16, only
+# push-dispatch confirmed migrated to AWS EventBridge, the other ~25 GCP
+# Cloud Scheduler jobs (including these 10) "should be assumed broken
+# until someone confirms otherwise."
+
+$ grep -n "static reference|not live|hardcoded|GCP-era" services/gateway/src/frontend/command-hub/app.js
+# found the exact precedent: VTID-04064's buildGcpStaticViewDisabledNotice()
+# / GCP_STATIC_VIEW_DISABLED_TEXT, built for the identical defect shape
+# elsewhere in this file (fabricated GCP-era infra data with no live
+# backing). That precedent fully replaces the view; here the schedule data
+# still has reference value, so this VTID adds an inline notice above the
+# table instead of removing the section.
+
+# Added cronStaticNotice (new div, CSS class not inline style) inside
+# cronCard, before the cronJobs table is built. New CSS class
+# .autopilot-static-cron-notice in styles.css (amber warning box, styled
+# consistently with the file's existing warning-pill convention).
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+$ node --check scripts/ci/command-hub-ownership-guard.js
+# SYNTAX OK
+
+$ cd services/gateway && npx tsc --noEmit
+# clean
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff8.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff8.txt
+# No CSP pattern hits in added lines.
+# (Deliberately used a CSS class, not .style.cssText, for the new notice
+# element — this file's own precedent for a new UI element under this gate.)
+
+# Added scripts/ci/command-hub-ownership-guard.js allowlist entry for
+# VTID-04269 (own branch, own comment block).
+
+# New test file: services/gateway/test/vtid-04269-engine-config-cron-notice.test.ts
+
+$ cd services/gateway && node_modules/.bin/jest \
+    test/vtid-04269-engine-config-cron-notice.test.ts \
+    test/command-hub/ \
+    test/scripts/command-hub-ownership-guard.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts \
+    test/console-task-17-cost-badge-tooltip.test.ts
+# 22/22 suites, 304/304 tests passing, 0 regressions
+
+$ cd services/gateway && npx tsc --noEmit
+# clean (re-run after all test files added)

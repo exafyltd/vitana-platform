@@ -1,0 +1,33 @@
+{
+  "vtid": "VTID-04266",
+  "title": "Autonomy Pulse surfaces awaiting_approval executions",
+  "executor": "claude-code-session",
+  "origin": "operator-console-onramp-took-over-on-failure",
+  "part_of": "VTID-04262 CHANGE LOG task list (kill-switch button VTID-04264, tool-call transcript VTID-04265, this item, spend surfacing VTID-04267, writable config VTID-04268, CRON tables VTID-04269)",
+  "files_changed": [
+    "services/gateway/src/routes/autonomy-pulse.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/autonomy-pulse.test.ts",
+    "services/gateway/test/vtid-04266-autonomy-pulse-awaiting-approval.test.ts",
+    "docs/validation/VTID-04266/acceptance.md",
+    "docs/validation/VTID-04266/commands.log",
+    "docs/validation/VTID-04266/outputs/execution.json"
+  ],
+  "backend_changed": true,
+  "new_routes": false,
+  "test_suites_run": [
+    "services/gateway/test/vtid-04266-autonomy-pulse-awaiting-approval.test.ts",
+    "services/gateway/test/autonomy-pulse.test.ts",
+    "services/gateway/test/command-hub/",
+    "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts",
+    "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts"
+  ],
+  "test_result": "23 suites passed, 320 tests passed, 0 regressions",
+  "tsc_noemit": "clean",
+  "csp_gate": "No CSP pattern hits in added lines.",
+  "deployed": false,
+  "not_verified_live": "The next real dev_autopilot_executions row in awaiting_approval on staging after this deploys is the exercise — confirm it appears in GET /api/v1/autonomy/pulse as severity=critical with approve/reject actions, and that clicking Approve/Reject in Autonomy Pulse actually opens/rejects the PR."
+}

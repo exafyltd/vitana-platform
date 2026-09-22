@@ -20,7 +20,7 @@ import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopi
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { recordOutcome } from '../services/dev-autopilot-outcomes';
+import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
 import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
@@ -1303,6 +1303,31 @@ router.post('/config/update', requireDevRole, async (req: Request, res: Response
     payload: result.patch,
   });
   return res.json({ ok: true, config: result.patch });
+});
+
+// =============================================================================
+// GET /spend — VTID-04267: today's real Dev Autopilot agent spend, read
+// from the per-run cost/token data already recorded on
+// dev_autopilot_outcomes.metadata.agent_runs[] (VTID-04017). The Command
+// Hub Dev Autopilot panel's "Budget" chip only ever showed the daily
+// APPROVAL-COUNT budget (dev_autopilot_config.daily_budget) — this is a
+// different axis, real dollars actually spent today.
+// =============================================================================
+
+router.get('/spend', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  // dev_autopilot_outcomes has no updated_at column to filter on server
+  // side (a run-append PATCH doesn't touch created_at), so this fetches a
+  // bounded recent window and filters by each run's own recorded_at in
+  // application code — see summarizeSpendToday's own header comment.
+  const r = await supaGet<Array<{ metadata: unknown }>>(
+    supa,
+    `/rest/v1/dev_autopilot_outcomes?select=metadata&order=created_at.desc&limit=200`,
+  );
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const summary = summarizeSpendToday(r.data || []);
+  return res.json({ ok: true, ...summary });
 });
 
 export default router;
