@@ -8119,6 +8119,12 @@ body {
   color: var(--color-text-primary);
 }
 
+/* VTID-04264: Dev Autopilot kill-switch toggle button (spacing only —
+   color comes from .btn-success/.btn-danger, sizing from .btn) */
+.dev-autopilot-kill-switch-btn {
+  margin-left: 8px;
+}
+
 /* DEV-COMHU-2025-0013: Muted fingerprint line (non-disruptive) */
 
 

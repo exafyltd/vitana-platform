@@ -1,6 +1,16 @@
 # AWS-STAGING-VALIDATION — black-box parity validation of the new AWS
 # staging environment against the existing GCP staging environment.
 #
+# VTID-04263: GCP is fully decommissioned (billing disabled 2026-08-16,
+# VTID-03599/VTID-03649) — there is no GCP staging left to compare against.
+# The `gcp_gateway_url`/`gcp_frontend_url` defaults below used to point at
+# the real GCP staging hosts; both now return permanent errors (dead Cloud
+# Run services). Defaults are blanked (required, no default) so a manual
+# dispatch can no longer silently snapshot a dead host and produce a
+# misleading parity report — this workflow is dormant, GCP-cutover-era
+# scaffolding kept only as a historical record; it is `workflow_dispatch`-
+# only and never fires on its own.
+#
 # Manually dispatched with the AWS URLs as inputs. Runs entirely from the
 # Actions runner (open egress; no GCP/AWS credentials needed — every probed
 # endpoint is auth-free by design, see docs/STAGING.md §8).
@@ -26,13 +36,13 @@ on:
         required: false
         default: ''
       gcp_gateway_url:
-        description: 'GCP staging gateway base URL (reference)'
+        description: 'GCP staging gateway base URL (reference) — GCP is decommissioned; there is no live host to default to. Leave blank unless you have a specific archival reason to run this.'
         required: false
-        default: 'https://preview-gateway.vitanaland.com'
+        default: ''
       gcp_frontend_url:
-        description: 'GCP staging frontend base URL (reference)'
+        description: 'GCP staging frontend base URL (reference) — GCP is decommissioned; there is no live host to default to. Leave blank unless you have a specific archival reason to run this.'
         required: false
-        default: 'https://preview.vitanaland.com'
+        default: ''
 
 permissions:
   contents: read
