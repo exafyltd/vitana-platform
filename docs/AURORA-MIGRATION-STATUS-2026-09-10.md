@@ -3607,3 +3607,67 @@ classifier, same as every prior attempt in this document). This is
 prep work for whoever executes the real Step 4-8 sequence next, not an
 attempt to execute it. Nothing destructive was attempted; nothing was
 written to production Supabase outside the governed VTID ledger.
+
+## Addendum, 2026-09-22 (VTID-04270) — scheduled resume, state re-verified unchanged; a third structural blocker found and left alone
+
+Routine fired to continue the migration. Re-established state from primary
+sources per the routine's own instructions rather than trusting cached
+summaries, then found one new (git-tooling, not AWS) blocker while
+attempting routine branch hygiene.
+
+1. **Live DMS task inventory unchanged since VTID-04242.** Same 6 tasks,
+   same statuses — `vitana-fullload-rehearsal-v2` `stopped`/594-594-0,
+   `vitana-supabase-to-aurora-v3` `failed` on the same WAL protocol error.
+   No `vitana-fullload-final-catchup` task exists yet — the script VTID-04242
+   drafted has not been applied by anyone with real AWS access outside this
+   session's classifier restriction.
+2. **Both AWS blockers from the prior round (2026-09-22 CloudShell-script
+   response) are unchanged, reconfirmed live, not merely assumed carried
+   forward:** `ec2:DescribeVpcEndpoints` still `UnauthorizedOperation`
+   (this session's identity), `iam:GetRole` on `vitana-ecs-task-role` still
+   an explicit permissions-boundary deny. No `ssmmessages`/`ec2messages`
+   interface endpoints visible from this identity — the delivered CloudShell
+   script (VPC endpoints + IAM grant for ECS Exec) has evidently not been
+   run yet by a human. DMS `reload-target` dispatch remains blocked by this
+   session's own client-side safety classifier, unrelated to AWS IAM.
+3. **No open PR for VTID-04101** in either repo — unchanged since VTID-04242.
+   PR #1117 remains merged, untouched, no revert attempted (out of scope for
+   a "continue the migration" routine; no fresh instruction to revert it).
+4. **A real, previously-undocumented gap closed with existing evidence:**
+   `vitana-v1`'s cutover branch carried exactly one commit
+   (`d7a386d22`, "read Supabase URL/key from env at build time") not present
+   on `origin/main`, and was 9 commits behind. Diffed the commit's one
+   touched file (`src/integrations/supabase/client.ts`) against `main`'s
+   copy: byte-identical — the content is already merged to `main` via PR
+   #1117 (VTID-04101, `316535437`). Per this repo's own CLAUDE.md rule for a
+   branch whose PR already merged ("restart your designated branch from the
+   latest default branch... force-with-lease push is fine when the branch
+   contains only already-merged history"), attempted
+   `git checkout -B claude/aws-supabase-aurora-cutover-oxdie9 origin/main &&
+   git push --force-with-lease`.
+5. **New, third structural blocker found doing this — not AWS, not the DMS
+   classifier: the session's own auto-mode safety classifier refuses ANY
+   git branch-pointer reset (`checkout -B`, by extension `reset --hard`,
+   a force-push) tagged `[Git Destructive]`, regardless of whether the
+   content being "destroyed" is provably redundant with what is already
+   safely merged elsewhere.** Confirmed the refused command never executed
+   at all (local checkout unchanged, still at `d7a386d22`, `git status`
+   clean against `origin/claude/aws-supabase-aurora-cutover-oxdie9`) — no
+   partial state, nothing to clean up. Did not attempt to route around the
+   classifier via a different tool (e.g. scripting the same git calls
+   through another mechanism), per the block's own stated intent. The
+   `vitana-v1` branch is left exactly as it was: one commit ahead
+   (redundant, harmless — its content already lives on `main`), 9 commits
+   behind. This is a leave-alone, not a blocker on the actual migration —
+   nothing about Aurora cutover readiness depends on this branch's git
+   history being tidy, and the branch's actual code changes (none beyond
+   what's on `main`) are not at risk.
+
+**Net: no code changed, no AWS state changed, no git state changed.** All
+three standing blockers (DMS dispatch via this session's classifier, VPC
+network access via AWS IAM, and now branch-reset via the git-tooling
+classifier) require a human with either real AWS CloudShell access or an
+unrestricted git client — none of which this session has. The CloudShell
+remediation script for blocker 2 was already handed to a human in this same
+conversation; it has evidently not been run yet, since the IAM/VPC denials
+above are byte-for-byte identical to before it was written.
