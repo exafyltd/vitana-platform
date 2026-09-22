@@ -8,17 +8,23 @@
  * and `firebase-admin` pull them in), so the canonical fix is an `overrides`
  * floor, not a direct-dependency bump.
  *
+ * VTID-04295 is the `sharp` pass: CVE-2026-33327 / -33328 / -35590 / -35591
+ * are all libvips advisories, and sharp ships its own prebuilt libvips, so the
+ * fix is a bump of the DIRECT dependency `sharp` from `^0.34.5` to `^0.35.0`
+ * (patched libvips) plus lockfile regeneration. `direct: true` marks it so the
+ * evaluator never looks for an `overrides` entry that should not exist.
+ *
  * WHY THIS MODULE EXISTS, NOT JUST THE MANIFEST EDIT
  * --------------------------------------------------
  * The actual `services/gateway/package.json` + lockfile edit is outside the
- * Dev Autopilot executor's `allow_scope` (same wall VTID-04237 and VTID-04163
- * hit for the previous floors). The durable pattern that came out of those
- * runs — and that `test/vtid-04245-dependency-floors.test.ts` still follows —
- * is: the floors are declared here as data, a pure evaluator reports whether
- * the live manifest actually enforces them, and the jest suite pins both. The
- * manifest bump stays a manual, reviewable hand-off; this module means the
- * hand-off cannot be forgotten or silently regressed, and the pending state is
- * a machine-readable fact rather than a PR comment.
+ * Dev Autopilot executor's `allow_scope` (same wall VTID-04237, VTID-04163 and
+ * VTID-04295 hit for the previous floors). The durable pattern that came out of
+ * those runs — and that `test/vtid-04245-dependency-floors.test.ts` still
+ * follows — is: the floors are declared here as data, a pure evaluator reports
+ * whether the live manifest actually enforces them, and the jest suite pins
+ * both. The manifest bump stays a manual, reviewable hand-off; this module
+ * means the hand-off cannot be forgotten or silently regressed, and the pending
+ * state is a machine-readable fact rather than a PR comment.
  *
  * The gateway image installs with `npm` (see the Dockerfile) while CI/dev use
  * `pnpm`, so a floor is only actually applied when BOTH `overrides` (npm) and
@@ -43,9 +49,16 @@ export interface DependencyFloor {
 
 /**
  * Every gateway dependency floor the npm-audit scanner has produced. Ordered
- * newest-first so the current pass (VTID-04261) reads first.
+ * newest-first so the current pass (VTID-04295) reads first.
  */
 export const DEPENDENCY_FLOORS: readonly DependencyFloor[] = [
+  {
+    name: 'sharp',
+    floor: '0.35.0',
+    direct: true,
+    vulnerable: '<0.35.0',
+    source: 'npm-audit-scanner-v1',
+  },
   {
     name: 'fast-xml-builder',
     floor: '1.2.0',
