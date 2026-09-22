@@ -3504,6 +3504,16 @@ export async function autoApproveTick(): Promise<void> {
  */
 const LAZY_PLAN_BATCH_SIZE = 3;
 const LAZY_PLAN_RISK_CLASSES = ['low', 'medium'];
+// VTID-04283: how many impact-ranked candidates a tick looks at before
+// giving up. Must be wide enough to see past a backlog of already-planned,
+// still-`status=new` findings (an operator_onramp finding waiting on human
+// review, say) sitting ahead of genuinely-unplanned lower-impact ones —
+// see the starvation this replaced, documented at its call site below.
+const LAZY_PLAN_CANDIDATE_LIMIT = Number.parseInt(
+  process.env.DEV_AUTOPILOT_LAZY_PLAN_CANDIDATE_LIMIT || '200', 10,
+) || 200;
+/** PostgREST 'in.(...)' filter is a flat comma list — chunk it to keep URLs bounded. */
+const PLAN_CHECK_CHUNK_SIZE = 60;
 
 // ---------------------------------------------------------------------------
 // VTID-03579: retry backoff for plan generation.
@@ -3603,9 +3613,43 @@ export async function lazyPlanTick(): Promise<void> {
     s,
     `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})`
     + `&status=eq.new&risk_class=in.${riskFilter}`
-    + `&order=impact_score.desc&limit=${LAZY_PLAN_BATCH_SIZE * 4}&select=id`,
+    + `&order=impact_score.desc&limit=${LAZY_PLAN_CANDIDATE_LIMIT}&select=id`,
   );
-  if (!findingsR.ok || !findingsR.data) return;
+  if (!findingsR.ok || !findingsR.data || findingsR.data.length === 0) return;
+
+  // VTID-04283: batch-check which candidates already have a plan, in ONE
+  // (chunked) query up front — NOT one query per candidate inside the loop
+  // below, the way this used to work. That per-row check is why a large,
+  // stuck-but-already-planned backlog (confirmed live: 25+ `operator_onramp`
+  // findings sitting at status='new' with a plan since 2026-09-13, never
+  // approved) could permanently occupy every slot of a small fetch window —
+  // the old `limit=${LAZY_PLAN_BATCH_SIZE * 4}` (12) ordered by
+  // impact_score.desc returned nothing but already-planned rows every single
+  // tick, so `generated` stayed 0 forever no matter how many ticks ran, and
+  // genuinely-unplanned lower-impact findings (dead_code/stale_flag/
+  // missing_tests/todo, impact_score 3-6) never got reached at all. Filtering
+  // the plan check out of the loop means a wide candidate window is cheap
+  // (one extra query total, not one per candidate) and the starvation can't
+  // recur regardless of how large the already-planned backlog grows.
+  const candidateIds = findingsR.data.map(f => f.id);
+  const plannedIds = new Set<string>();
+  for (let i = 0; i < candidateIds.length; i += PLAN_CHECK_CHUNK_SIZE) {
+    const chunk = candidateIds.slice(i, i + PLAN_CHECK_CHUNK_SIZE);
+    const plannedR = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=in.(${chunk.join(',')})&select=finding_id`,
+    );
+    // Fail open per-chunk: a failed read just means this chunk's candidates
+    // fall through to the per-candidate generatePlanVersion call below,
+    // which itself is safe to call again on an already-planned finding (it
+    // writes a new version, it does not error) — no worse than the
+    // pre-existing per-row behaviour, never a stalled tick.
+    if (plannedR.ok) {
+      for (const row of plannedR.data ?? []) plannedIds.add(row.finding_id);
+    }
+  }
+  const unplannedFindings = findingsR.data.filter(f => !plannedIds.has(f.id));
+  if (unplannedFindings.length === 0) return;
 
   // VTID-03579: read plan_gen failure history ONCE per tick, not once per
   // finding — this loop already costs 2 round-trips per candidate and the whole
@@ -3634,14 +3678,8 @@ export async function lazyPlanTick(): Promise<void> {
   let generated = 0;
   let skippedBackoff = 0;
   let skippedExhausted = 0;
-  for (const f of findingsR.data) {
+  for (const f of unplannedFindings) {
     if (generated >= LAZY_PLAN_BATCH_SIZE) break;
-    // Skip if a plan already exists for this finding.
-    const planR = await supa<Array<{ version: number }>>(
-      s,
-      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&limit=1`,
-    );
-    if (planR.ok && planR.data && planR.data.length > 0) continue;
     // Skip if a plan task for this finding is already pending/running
     // (defense in depth — the global guard above usually covers this,
     // but a tick mid-claim could still race).

@@ -1,0 +1,136 @@
+VTID-04283 — commands run to build and verify this change
+
+1. User reported live (urgent): "why does it still show 30 new findings
+   since so many hours. not one single of the new findings has started to
+   be processed." Screenshot of Command Hub Autopilot Runs page.
+
+2. Queried live production `autopilot_recommendations` for the current
+   `source_type='dev_autopilot' status='new'` rows (via Supabase MCP
+   execute_sql, read-only): 9 rows, all `[rollup]` findings from the
+   already-flagged stuck run `cf77d23c` (2026-09-21). Confirmed
+   `raw.affected_files`/`spec_snapshot.affected_files` DOES carry real
+   per-file data (19-726 files depending on the finding) — ruled out the
+   initial hypothesis that ROLLUP_EXEMPT_TYPES needed widening; the data
+   was never missing.
+
+3. Queried `dev_autopilot_plan_versions` for those 9 finding ids: only 3
+   had ever been planned (one of them, `efec84e4`, is the same finding
+   already fixed by VTID-04279's PR, replanned same-day after the fix).
+   6 had zero plan versions; of those, 2 are `large_file`/risk_class=high
+   (correctly excluded from lazy planning by design) and 4 are
+   low/medium risk (dead_code, stale_flag, missing_tests, todo) and
+   should have been lazy-planned.
+
+4. Queried `self_healing_log` for those 4 findings' `VTID-DA-FIND-*` keys:
+   zero rows — never even attempted, not failing-and-backing-off.
+
+5. Read `lazyPlanTick()` in full
+   (services/gateway/src/services/dev-autopilot-execute.ts). Confirmed it
+   is scheduled every 30s via `startBackgroundExecutor()`
+   (services/gateway/src/index.ts:1796-1798), gated only on
+   `DEV_AUTOPILOT_EXECUTOR_ENABLED !== 'false'`.
+
+6. Queried `dev_autopilot_worker_queue` for stuck kind=plan
+   pending/running rows (the tick's own global guard) — none found, ruling
+   out that as the blocker.
+
+7. Queried the live impact-ranked candidate set directly:
+   ```sql
+   select ar.id, ar.source_type, ar.risk_class, ar.impact_score,
+     (select count(*) from dev_autopilot_plan_versions pv
+      where pv.finding_id=ar.id) as n_plans
+   from autopilot_recommendations ar
+   where ar.status='new' and ar.risk_class in ('low','medium')
+   order by ar.impact_score desc, ar.created_at asc
+   limit 30;
+   ```
+   Found 25+ `operator_onramp` findings (impact_score=5, created
+   2026-09-13..2026-09-18, ALL already with n_plans=1) filling the entire
+   top of the ranking. Confirmed `operator_onramp` is in
+   `executableSourceTypesPostgrestIn()`'s allowlist, so it's a real
+   candidate for `lazyPlanTick`'s query.
+
+8. Root cause confirmed by reading the exact query
+   (`limit=${LAZY_PLAN_BATCH_SIZE * 4}` = 12) and the loop body: it
+   checked "does a plan exist?" ONE ROW AT A TIME via a per-candidate
+   `dev_autopilot_plan_versions` query, `continue`-ing past planned rows.
+   With 25+ already-planned rows ranked ahead of the 4 real candidates,
+   every one of the 12 fetched rows on every tick was already-planned —
+   `generated` stayed 0 forever, confirmed by the live evidence in steps
+   3-4.
+
+9. Fix: services/gateway/src/services/dev-autopilot-execute.ts —
+   - New constants LAZY_PLAN_CANDIDATE_LIMIT (200, env-tunable via
+     DEV_AUTOPILOT_LAZY_PLAN_CANDIDATE_LIMIT) and PLAN_CHECK_CHUNK_SIZE
+     (60).
+   - Candidate query limit raised from `LAZY_PLAN_BATCH_SIZE * 4` (12) to
+     LAZY_PLAN_CANDIDATE_LIMIT (200).
+   - New batch step: chunk candidateIds into groups of <=60, one
+     `dev_autopilot_plan_versions?finding_id=in.(...)` query per chunk,
+     union into a `plannedIds` Set. Fails open per chunk (a failed chunk's
+     candidates fall through, not dropped).
+   - `unplannedFindings = findingsR.data.filter(f => !plannedIds.has(f.id))`
+     computed once, before the loop.
+   - The loop below now iterates `unplannedFindings` and the old per-row
+     `dev_autopilot_plan_versions` existence check inside it was removed
+     (now redundant — done in batch above). The inflight-queue check and
+     `planRetryDecision` backoff/exhaustion check are unchanged.
+
+10. Self-allocated VTID-04283 via `allocate_global_vtid` (Supabase MCP
+    execute_sql), title/summary/status=in_progress/spec_status=approved
+    set (user's live, urgent report directly instructed this work).
+
+11. `git fetch origin main && git checkout -b
+    claude/vtid-04283-lazy-plan-starvation origin/main` — fresh
+    origin/main at 98ecc03 (this branch created after a separate,
+    unrelated VTID-04279 branch was already in progress; stashed and
+    re-applied only this VTID's changes onto a clean base).
+
+12. Wrote services/gateway/test/vtid-04283-lazy-plan-starvation.test.ts —
+    5 tests: the exact live starvation shape (25 already-planned
+    candidates ahead of 1 real one), the widened candidate window, the
+    chunked batch-check, fail-open-per-chunk, and the unchanged per-tick
+    batch-size cap.
+
+13. `cd services/gateway && node node_modules/.bin/jest
+    test/vtid-04283-lazy-plan-starvation.test.ts` -> first run: 1 failure
+    ("chunks the batch..." test) — a test-authoring bug, not a source bug:
+    candidate ids `cand-0`..`cand-129` collided under substring matching
+    (`cand-1` matches `cand-10`..`cand-19`, `cand-100`..`cand-129`) when
+    counting ids-per-chunk-URL. Fixed by zero-padding ids to fixed width
+    (`cand-000`..`cand-129`) so no id is a substring of another. Second
+    run: 5/5 passing.
+
+14. Mutation verification: `cp
+    src/services/dev-autopilot-execute.ts /tmp/dev-autopilot-execute.ts.bak`;
+    edited the fixed line to `const unplannedFindings = findingsR.data;`
+    (batch filter defeated); re-ran the new test file -> 2/5 correctly
+    failed (AC-1's live-shape test, AC-3's fail-open test) for exactly the
+    right reason (generatePlanVersion called on already-planned candidates
+    instead of the real one, or called at all when it shouldn't be);
+    restored from backup, `diff -q` confirmed byte-identical to the fixed
+    version.
+
+15. `node node_modules/.bin/jest
+    test/vtid-04283-lazy-plan-starvation.test.ts
+    test/lazy-plan-retry-backoff.test.ts test/dev-autopilot-synthesis.test.ts`
+    -> 39/39 passing after restore (3 suites).
+
+16. `npx tsc --noEmit` -> clean.
+
+17. `node node_modules/.bin/jest --silent` (full suite) -> 1074/1075
+    suites (1 pre-existing skip), 17497/17532 tests passing (29 skipped,
+    6 todo, both pre-existing), 0 failures, 42/42 snapshots.
+
+18. `npm run build` -> clean (tsc + copy-frontend + copy-data all
+    succeed).
+
+19. `git checkout -- services/gateway/specs/command-hub-symbol-index.json`
+    — reverted the jest-run side effect on this auto-regenerated file,
+    same as every prior VTID's commands.log in this repo records.
+
+No Supabase mutation was made from this session for this VTID beyond
+self-allocating the VTID itself (step 10) — every other query in steps
+2-8 was read-only. No live deploy/staging verification was performed —
+this session has no way to place a live request against a deployed
+gateway. See acceptance.md's "Not fixed here" section.
