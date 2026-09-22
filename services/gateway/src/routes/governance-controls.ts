@@ -7,14 +7,15 @@
  * - GET /api/v1/governance/controls/:key/history - Get audit history
  *
  * HARD GOVERNANCE:
- * - Role gate: only Dev Admin or Governance Admin can modify controls
+ * - Role gate (VTID-04279): every route requires a real, verified
+ *   exafy_admin session (requireAdminAuth) — not a client-suppliable header
  * - Reason is mandatory for all changes
- * - Duration is mandatory for arming (except "until manually off" for specific roles)
- * - All changes are audited and emit OASIS events
+ * - All changes are audited (verified caller identity) and emit OASIS events
  */
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   getAllSystemControls,
   getSystemControl,
@@ -24,32 +25,30 @@ import {
 
 const router = Router();
 
-// =============================================================================
-// Role Validation
-// =============================================================================
+// SECURITY (VTID-04279): this router arms/disarms system kill-switches
+// (EXECUTION_DISARMED, AUTOPILOT_LOOP_ENABLED, ...). It previously trusted
+// caller-supplied x-user-id/x-user-role headers with no signature
+// verification at all — `x-user-role: admin` on any request was sufficient
+// to modify a control, matching the exact pre-hardening shape
+// feedback-admin.ts's own SECURITY note describes for a different route.
+// requireAdminAuth verifies the JWT signature and requires
+// app_metadata.exafy_admin, the same pattern admin-navigator.ts /
+// feedback-admin.ts / specialists-admin.ts already use.
+router.use(requireAdminAuth);
 
-const ALLOWED_ROLES = ['dev_admin', 'governance_admin', 'admin', 'operator'];
+// =============================================================================
+// Verified identity (VTID-04279: no longer a client-suppliable header)
+// =============================================================================
 
 /**
- * Extract and validate user role from request headers.
- * In production, this would come from authenticated session.
+ * Verified user id + role for the audit trail. requireAdminAuth has already
+ * run by the time any handler below executes, so req.identity is always
+ * present and its exafy_admin claim already checked — read from there, never
+ * from a header a caller could set to anything.
  */
 function getUserInfo(req: Request): { userId: string; role: string } {
-  // For now, accept role from headers (would be from auth middleware in production)
-  const userId = req.headers['x-user-id']?.toString() || req.headers['x-operator-id']?.toString() || 'unknown';
-  const role = req.headers['x-user-role']?.toString() || 'operator';
-  return { userId, role };
-}
-
-/**
- * Check if user has permission to modify controls.
- * In dev environment, all authenticated users can modify controls.
- * In production, this would be restricted to specific roles.
- */
-function canModifyControls(role: string): boolean {
-  // For now, allow all authenticated users (dev environment)
-  // TODO: In production, restrict to: ['dev_admin', 'governance_admin', 'admin']
-  return ALLOWED_ROLES.includes(role.toLowerCase());
+  const identity = (req as AuthenticatedRequest).identity;
+  return { userId: identity?.user_id ?? 'unknown', role: 'exafy_admin' };
 }
 
 // =============================================================================
@@ -131,24 +130,19 @@ router.get('/:key', async (req: Request, res: Response) => {
  * }
  *
  * Rules:
- * - enabled=true (arming) requires duration_minutes unless role is dev_admin
- * - enabled=false (disarming) does not require duration
+ * - duration_minutes is optional on any change (an exafy_admin caller may
+ *   arm a control indefinitely)
  * - reason is always required
  */
 router.post('/:key', async (req: Request, res: Response) => {
   try {
     const { key } = req.params;
+    // VTID-04279: role gating is now requireAdminAuth (router.use above) —
+    // every request reaching this handler already verified exafy_admin, so
+    // there is no longer a separate role check here, and no reason to
+    // require a fixed duration for arming a control (the old allowlist's
+    // "trusted operator" tiers are a strict subset of exafy_admin).
     const { userId, role } = getUserInfo(req);
-
-    // Role check
-    if (!canModifyControls(role)) {
-      console.warn(`[VTID-01181] Unauthorized control update attempt by ${userId} (role: ${role})`);
-      return res.status(403).json({
-        ok: false,
-        error: 'forbidden',
-        message: 'Only Dev Admin or Governance Admin can modify system controls',
-      });
-    }
 
     // Validate request body
     const parseResult = UpdateControlSchema.safeParse(req.body);
@@ -161,17 +155,6 @@ router.post('/:key', async (req: Request, res: Response) => {
     }
 
     const { enabled, reason, duration_minutes } = parseResult.data;
-
-    // Additional validation: enabling requires duration (unless dev_admin/admin/operator in dev)
-    // In dev environment, allow indefinite enabling for convenience
-    const canUseIndefinite = ['dev_admin', 'admin', 'operator'].includes(role.toLowerCase());
-    if (enabled && !duration_minutes && !canUseIndefinite) {
-      return res.status(400).json({
-        ok: false,
-        error: 'validation_failed',
-        message: 'Duration is required when enabling a control',
-      });
-    }
 
     // Update the control
     const result = await updateSystemControl(key, {

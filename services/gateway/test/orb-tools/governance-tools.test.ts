@@ -13,6 +13,7 @@ import {
   dev_update_proposal,
   dev_get_control,
   dev_set_control,
+  dev_get_control_history,
 } from '../../src/services/orb-tools/governance-tools';
 
 const DEV_ID: OrbToolIdentity = { user_id: 'u-dev', tenant_id: 't-1', role: 'developer' };
@@ -134,5 +135,52 @@ describe('dev_get_control / dev_set_control', () => {
   it('dev_set_control requires confirmation', async () => {
     const r = await dev_set_control({ key: 'vtid_allocator_enabled', enabled: false, reason: 'incident' }, DEV_ID, makeSb());
     expect((r as { result: { requires_confirmation: boolean } }).result.requires_confirmation).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-04279: governance-controls.ts now requires a real exafy_admin
+// bearer JWT (requireAdminAuth). Previously adminHeaders() sent
+// x-user-id/x-user-role, which that route trusted with no signature
+// verification at all — confirm the control-key tools now forward the
+// caller's own user_jwt instead, and never the old spoofable headers.
+// ---------------------------------------------------------------------------
+
+describe('governance-controls self-call — real bearer auth (VTID-04279)', () => {
+  const JWT_ID: OrbToolIdentity = { user_id: 'u-dev', tenant_id: 't-1', role: 'developer', user_jwt: 'signed.jwt.token' };
+
+  it('dev_governance_status forwards Authorization: Bearer <user_jwt>, never x-user-role', async () => {
+    const fetchFn = mockFetch(200, { ok: true, data: [] });
+    await dev_governance_status({}, JWT_ID, makeSb());
+    const headers = fetchFn.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe('Bearer signed.jwt.token');
+    expect(headers['x-user-role']).toBeUndefined();
+    expect(headers['x-user-id']).toBeUndefined();
+  });
+
+  it('dev_get_control forwards Authorization: Bearer <user_jwt>', async () => {
+    const fetchFn = mockFetch(200, { ok: true, data: { enabled: true } });
+    await dev_get_control({ key: 'vtid_allocator_enabled' }, JWT_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('dev_set_control forwards Authorization: Bearer <user_jwt> on the write call', async () => {
+    const fetchFn = mockFetch(200, { ok: true, data: {} });
+    await dev_set_control({ key: 'vtid_allocator_enabled', enabled: true, reason: 'incident', confirm: true }, JWT_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('dev_get_control_history forwards Authorization: Bearer <user_jwt>', async () => {
+    const fetchFn = mockFetch(200, { ok: true, data: [] });
+    await dev_get_control_history({ key: 'vtid_allocator_enabled' }, JWT_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('sends no Authorization header (never x-user-role) when the identity has no user_jwt', async () => {
+    const fetchFn = mockFetch(200, { ok: true, data: [] });
+    await dev_governance_status({}, DEV_ID, makeSb());
+    const headers = fetchFn.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['x-user-role']).toBeUndefined();
   });
 });

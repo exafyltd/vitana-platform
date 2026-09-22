@@ -6,6 +6,14 @@
  * (services/orb-tools/governance-tools.ts) already call — just gated to
  * admin/exafy_admin instead of developer/admin/exafy_admin, and headed
  * for admin_* naming per the plan. No new backend behaviour.
+ *
+ * VTID-04279: governance-controls.ts now requires a real, verified
+ * exafy_admin session (requireAdminAuth) — admin_governance_status /
+ * admin_get_control_key / admin_set_control_key forward the caller's own
+ * bearer JWT for the internal self-call (the same authHeaders() pattern
+ * governance-tools.ts's sibling handlers now use), instead of the
+ * x-user-id/x-user-role headers that route previously trusted with no
+ * signature verification at all.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
@@ -19,7 +27,7 @@ type Handler = (
 ) => Promise<OrbToolResult>;
 
 function adminHeaders(id: OrbToolIdentity): Record<string, string> {
-  return { 'x-user-id': id.user_id, 'x-user-role': 'admin' };
+  return id.user_jwt ? { Authorization: `Bearer ${id.user_jwt}` } : {};
 }
 
 // ---------------------------------------------------------------------------

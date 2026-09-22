@@ -316,6 +316,50 @@ describe('dev_reject_pr', () => {
 });
 
 // ---------------------------------------------------------------------------
+// VTID-04279: routes/approvals.ts now requires a real exafy_admin bearer
+// JWT (requireAdminAuth). Previously these four tools sent NO auth at all
+// on the internal self-call — confirm they now forward the caller's own
+// user_jwt, and that the absence of one degrades to no header (never a
+// thrown error) rather than silently inventing a credential.
+// ---------------------------------------------------------------------------
+
+describe('approvals self-call — real bearer auth (VTID-04279)', () => {
+  const JWT_ID: OrbToolIdentity = { user_id: 'u-dev', tenant_id: 't-1', role: 'developer', user_jwt: 'signed.jwt.token' };
+
+  it('dev_count_approvals forwards Authorization: Bearer <user_jwt>', async () => {
+    const fetchFn = mockFetch(200, { ok: true, pending_count: 1 });
+    await dev_count_approvals({}, JWT_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('dev_list_pending_approvals forwards Authorization: Bearer <user_jwt>', async () => {
+    const fetchFn = mockFetch(200, { ok: true, items: [] });
+    await dev_list_pending_approvals({}, JWT_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('dev_approve_pr forwards Authorization: Bearer <user_jwt> on the approve call', async () => {
+    const fetchFn = mockFetch(200, { ok: true, result: { merged: true } });
+    const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
+    await dev_approve_pr({ vtid: 'VTID-02700', confirm: true }, JWT_ID, sb);
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('dev_reject_pr forwards Authorization: Bearer <user_jwt> on the reject call', async () => {
+    const fetchFn = mockFetch(200, { ok: true });
+    const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
+    await dev_reject_pr({ vtid: 'VTID-02700', reason: 'x', confirm: true }, JWT_ID, sb);
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bearer signed.jwt.token');
+  });
+
+  it('sends no Authorization header (never a fabricated one) when the identity has no user_jwt', async () => {
+    const fetchFn = mockFetch(200, { ok: true, pending_count: 0 });
+    await dev_count_approvals({}, DEV_ID, makeSb());
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // dev_list_voice_sessions
 // ---------------------------------------------------------------------------
 

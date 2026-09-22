@@ -2,11 +2,18 @@
  * Developer voice tools — Governance (Wave 2, plan section C2).
  *
  * Thin dispatch layer over routes/governance.ts and routes/governance-controls.ts.
- * Those routes trust caller-supplied x-tenant-id / x-user-id / x-user-role
- * headers rather than enforcing real per-request auth (see
- * governance-controller.ts / governance-controls.ts) — handlers here forward
- * an 'admin' role header for the internal self-call since developerGate()
- * has already restricted the caller to developer/admin/exafy_admin.
+ *
+ * VTID-04279: governance-controls.ts now requires a real, verified
+ * exafy_admin session (requireAdminAuth) — the four control-key handlers
+ * below (dev_governance_status/dev_get_control/dev_set_control/
+ * dev_get_control_history) forward the caller's own bearer JWT for the
+ * internal self-call, the same authHeaders() pattern already used by
+ * admin-feedback-tools.ts / admin-users-rbac-tools.ts / etc. Previously this
+ * sent x-user-id/x-user-role headers, which governance-controls.ts trusted
+ * with no signature verification at all — the developerGate() check below
+ * only ever restricted THIS tool layer, never the route it called.
+ * routes/governance.ts (evaluate/rules/violations/enforcements/feed/
+ * proposals — every other handler in this file) is unrelated and untouched.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
@@ -19,7 +26,7 @@ type Handler = (
 ) => Promise<OrbToolResult>;
 
 function adminHeaders(id: OrbToolIdentity): Record<string, string> {
-  return { 'x-user-id': id.user_id, 'x-user-role': 'admin' };
+  return id.user_jwt ? { Authorization: `Bearer ${id.user_jwt}` } : {};
 }
 
 // ---------------------------------------------------------------------------

@@ -124,11 +124,26 @@ export async function gatewayApiCall(
   return { ok: res.ok, status: res.status, body };
 }
 
+/**
+ * VTID-04279: approvals.ts now requires a real, verified exafy_admin
+ * session (requireAdminAuth) — forward the caller's own bearer JWT, the
+ * same authHeaders() pattern already used by admin-feedback-tools.ts,
+ * admin-users-rbac-tools.ts, observability-tools.ts and others for calling
+ * an auth-gated route internally. Previously this sent NO auth at all.
+ */
+function authHeaders(id: OrbToolIdentity): Record<string, string> {
+  return id.user_jwt ? { Authorization: `Bearer ${id.user_jwt}` } : {};
+}
+
 async function approvalsApi(
   path: string,
+  id: OrbToolIdentity,
   init?: { method?: string; body?: unknown },
 ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
-  return gatewayApiCall(`/api/v1/approvals${path}`, init);
+  return gatewayApiCall(`/api/v1/approvals${path}`, {
+    ...init,
+    headers: authHeaders(id),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +253,7 @@ export const dev_list_pending_approvals: Handler = async (args, id) => {
   if (denied) return denied;
   const limit = clampLimit(args.limit, 5, 20);
   try {
-    const { ok, status, body } = await approvalsApi(`/pending?limit=${limit}`);
+    const { ok, status, body } = await approvalsApi(`/pending?limit=${limit}`, id);
     if (!ok || body.ok !== true) {
       return { ok: false, error: `approvals queue unavailable (${status}): ${String(body.error ?? 'unknown')}` };
     }
@@ -264,7 +279,7 @@ export const dev_count_approvals: Handler = async (_args, id) => {
   const denied = developerGate(id);
   if (denied) return denied;
   try {
-    const { ok, status, body } = await approvalsApi('/count');
+    const { ok, status, body } = await approvalsApi('/count', id);
     if (!ok || body.ok !== true) {
       return { ok: false, error: `approvals count unavailable (${status}): ${String(body.error ?? 'unknown')}` };
     }
@@ -321,7 +336,7 @@ export const dev_approve_pr: Handler = async (args, id, sb) => {
         text: `Approving ${target.vtid} will merge its PR into main and trigger the staging deploy. Ask the developer to confirm, then call dev_approve_pr again with confirm=true.`,
       };
     }
-    const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/approve`, {
+    const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/approve`, id, {
       method: 'POST',
       body: {},
     });
@@ -362,7 +377,7 @@ export const dev_reject_pr: Handler = async (args, id, sb) => {
         text: `Ready to reject ${target.vtid} with reason "${reason}". Ask the developer to confirm, then call dev_reject_pr again with confirm=true.`,
       };
     }
-    const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/reject`, {
+    const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/reject`, id, {
       method: 'POST',
       body: { reason },
     });

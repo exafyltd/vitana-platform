@@ -1,0 +1,196 @@
+VTID-04279 — commands run to build and verify this change
+
+1. User-approved backlog security investigation surfaced two findings from
+   route-auth-scanner-v1's missing_auth finding (efec84e4): approvals.ts
+   and governance-controls.ts had zero real auth. User explicitly
+   approved: "fix approvals.ts and governance-controls.ts now (add real
+   auth, same pattern as their working siblings) in one careful,
+   well-tested PR".
+
+2. `grep -rn "router\.use(requireAdminAuth" services/gateway/src/routes/*.ts`
+   -> confirmed the established sibling pattern: admin-navigator.ts:55,
+   feedback-admin.ts:33, specialists-admin.ts:46.
+
+3. Read requireAdminAuth (auth-supabase-jwt.ts:643-697) — requireAuth
+   (Bearer JWT signature verify) + requireExafyAdmin
+   (app_metadata.exafy_admin===true, 403 otherwise).
+
+4. Read approvals.ts and governance-controls.ts in full. Confirmed:
+   - approvals.ts: no auth import at all, on any of 6 routes; write routes
+     call the internal autonomous-pr-merge endpoint with automerge:true.
+   - governance-controls.ts: getUserInfo() read x-user-id/x-user-role
+     straight off req.headers, zero signature verification;
+     canModifyControls() checked that unverified role string against an
+     allowlist. Confirmed app.js:9427 sends exactly this spoofable header
+     from a plain client-side JS variable.
+
+5. Before editing, audited EVERY internal same-process caller of both
+   routes (not just the routes themselves), per the "careful" instruction:
+   - grep "adminHeaders(id)" -> governance-tools.ts, admin-governance-
+     tools.ts: sent { 'x-user-id': id.user_id, 'x-user-role': 'admin' } —
+     the exact spoofable shape the route used to trust.
+   - grep "approvalsApi(" -> developer-tools.ts: sent NO headers at all.
+   - Compared against the established, correct pattern already used by
+     admin-feedback-tools.ts/admin-users-rbac-tools.ts/observability-
+     tools.ts/etc: authHeaders(id) = id.user_jwt ?
+     {Authorization:`Bearer ${id.user_jwt}`} : {}.
+   - grep "/api/v1/approvals|/api/v1/governance/controls" across
+     services/gateway/src -> found a THIRD internal caller not part of the
+     ORB voice tool layer: services/gemini-operator.ts's Operator Console
+     "Developer Assistant" approval tools (executeDevListApprovals/
+     executeDevApprovalCount/executeDevApproveItem/executeDevRejectItem)
+     — calling routes/approvals.ts over HTTP with
+     `Authorization: Bearer ${SUPABASE_SERVICE_ROLE}` (a real Supabase DB
+     credential, not a user JWT).
+   - Read verifyAndExtractIdentity()/extractIdentity() (auth-supabase-
+     jwt.ts) to confirm precisely what would happen: the service-role JWT
+     is signed with the same SUPABASE_JWT_SECRET, so requireAuth's
+     signature check PASSES, but extractIdentity() reads
+     app_metadata.exafy_admin from the payload — absent on a service-role
+     token, so exafy_admin resolves false and requireExafyAdmin 403s it.
+     Confirmed this caller would silently break once requireAdminAuth was
+     added, unless fixed in the same PR.
+   - Checked whether gemini-operator.ts's tool dispatcher has access to
+     the real caller's raw JWT at the point these 4 functions run: no —
+     only `args`/`threadId` are threaded through (confirmed by reading the
+     ~3985 case-statement call sites); the VTID-03851 getThreadAuth(
+     threadId) store only keeps {user_id, exafy_admin: boolean}, not the
+     raw token, by design.
+
+6. Self-allocated VTID-04279 via allocate_global_vtid (Supabase MCP
+   execute_sql), title/description/status/spec_status set to
+   in_progress/approved (user directly instructed this work).
+
+7. `git fetch origin main && git checkout -b
+   claude/vtid-04279-approvals-governance-auth origin/main` — fresh
+   origin/main at 98ecc03 (VTID-04268, already merged).
+
+8. Edited services/gateway/src/routes/approvals.ts: added
+   `import { requireAdminAuth, AuthenticatedRequest } from
+   '../middleware/auth-supabase-jwt'` + `router.use(requireAdminAuth)`
+   before any route; the decision audit now records
+   `(req as AuthenticatedRequest).identity?.user_id ?? null` as the
+   decider, never a client-suppliable value.
+
+9. Extracted the count/list/approve/reject logic (previously inline in
+   the Express handlers) into new services/approvals-service.ts —
+   byte-for-byte the same code, refactored into 4 exported functions each
+   returning {status, body}; route handlers became thin wrappers. This
+   was necessary (not just tidy) so gemini-operator.ts could call the
+   logic in-process instead of self-calling the now-gated HTTP route with
+   the wrong credential.
+
+10. Edited services/gateway/src/routes/governance-controls.ts: added the
+    same requireAdminAuth import + router.use(); rewrote getUserInfo() to
+    read (req as AuthenticatedRequest).identity (verified) instead of
+    req.headers['x-user-id']/['x-user-role']; deleted the now-redundant
+    canModifyControls()/ALLOWED_ROLES (every caller reaching a handler is
+    already exafy_admin, verified by requireAdminAuth); dropped the
+    duration_minutes role-based indefinite-arming carve-out (exafy_admin
+    is a strict superset of the old allowlist's trusted-operator tiers).
+
+11. Edited services/gateway/src/services/orb-tools/developer-tools.ts:
+    added authHeaders(id) (the established pattern) and threaded it
+    through approvalsApi(); updated its 4 call sites (dev_list_pending_
+    approvals/dev_count_approvals/dev_approve_pr/dev_reject_pr) to pass
+    `id`.
+
+12. Edited services/gateway/src/services/orb-tools/governance-tools.ts
+    and admin-governance-tools.ts: rewrote adminHeaders(id) to forward
+    `id.user_jwt` as a real Bearer token instead of the spoofable
+    x-user-id/x-user-role headers — no call-site changes needed, since all
+    4+3 call sites already passed `id` to adminHeaders(id).
+
+13. Edited services/gateway/src/services/gemini-operator.ts: imported the
+    4 approvals-service functions; rewrote executeDevListApprovals/
+    executeDevApprovalCount to call getPendingApprovals(limit)/
+    getPendingApprovalCount() directly (no fetch, no bearer token needed
+    for an in-process call); rewrote executeDevApproveItem/
+    executeDevRejectItem to call approveApprovalById/rejectApprovalById
+    directly, AND added the isExecuteTaskAuthorized(getThreadAuth(
+    threadId)) gate VTID-03851 already requires for autopilot_execute_task
+    — a live gap this investigation surfaced (these tools merge/reject a
+    real PR with no per-caller admin check at the operator-chat dispatch
+    layer) and fixed in the same pass rather than left open, since it was
+    already in the exact code being touched.
+
+14. `cd services/gateway && npx tsc --noEmit` -> clean.
+
+15. Wrote 5 new test files:
+    - test/routes/approvals.test.ts (supertest against the real router
+      with requireAdminAuth mocked, plus source-wiring assertions)
+    - test/routes/governance-controls.test.ts (same pattern, plus a
+      dedicated "spoofed x-user-role header alone no longer grants write
+      access" regression test for the exact pre-fix bypass)
+    - test/services/approvals-service.test.ts (direct unit tests of the
+      extracted logic against a mocked global.fetch + mocked
+      emitOasisEvent, covering count/list/approve/reject incl.
+      malformed-id/terminal-status/missing-PR-info/failed-merge paths)
+    - test/vtid-04279-approvals-governance-controls-auth.test.ts
+      (source-inspection tests for gemini-operator.ts, matching the
+      existing methodology test/vtid-03851-execute-task-requires-auth.
+      test.ts already established for this same file, since it's not a
+      route module a request can be built against)
+    Extended 3 existing files: test/orb-tools/developer-tools.test.ts,
+    governance-tools.test.ts, admin-governance-tools.test.ts — new
+    describe blocks asserting the real Authorization: Bearer <user_jwt>
+    header is now sent (and gracefully absent, never fabricated, when the
+    identity carries no JWT).
+
+16. `cd services/gateway && node node_modules/.bin/jest
+    test/services/approvals-service.test.ts test/routes/approvals.test.ts
+    test/routes/governance-controls.test.ts
+    test/orb-tools/developer-tools.test.ts
+    test/orb-tools/governance-tools.test.ts
+    test/orb-tools/admin-governance-tools.test.ts
+    test/vtid-04279-approvals-governance-controls-auth.test.ts` -> first
+    run: 3 failures, all in this session's own new tests, all
+    over-broad assertions (asserting "SUPABASE_SERVICE_ROLE" never
+    appears at all in gemini-operator.ts's list/count functions, when the
+    legitimate !SUPABASE_URL||!SUPABASE_SERVICE_ROLE config-presence guard
+    is correctly still there; asserting "x-user-role" never appears at all
+    in governance-controls.ts, when it legitimately appears in this
+    session's own SECURITY comment). Narrowed both assertions to the exact
+    code shape that must be gone (Bearer ${SUPABASE_SERVICE_ROLE}; the
+    literal req.headers['x-user-role'] read). Second run: 179/179 passing
+    across 7 suites.
+
+17. Mutation verification (cp backup, not git checkout — this session's
+    established practice): `cp services/gateway/src/routes/approvals.ts
+    /tmp/approvals.ts.bak` and same for governance-controls.ts; `sed -i`
+    commented out both `router.use(requireAdminAuth);` lines; re-ran
+    test/routes/approvals.test.ts + governance-controls.test.ts ->
+    15/27 tests correctly failed (every 401/403 assertion and the
+    dedicated spoofed-header regression test); restored both files from
+    the backups, `diff` confirmed byte-identical to the fixed versions.
+
+18. `cd services/gateway && node node_modules/.bin/jest
+    test/services/approvals-service.test.ts test/routes/approvals.test.ts
+    test/routes/governance-controls.test.ts
+    test/orb-tools/developer-tools.test.ts
+    test/orb-tools/governance-tools.test.ts
+    test/orb-tools/admin-governance-tools.test.ts
+    test/vtid-04279-approvals-governance-controls-auth.test.ts` -> 179/179
+    passing again after restore.
+
+19. `cd services/gateway && npx tsc --noEmit` -> clean (second run, after
+    test edits).
+
+20. `cd services/gateway && node node_modules/.bin/jest --silent` (full
+    suite) -> 1073/1074 suites (1 pre-existing skip), 17491/17526 tests
+    passing (29 skipped, 6 todo, both pre-existing), 0 failures, 42/42
+    snapshots.
+
+21. `cd services/gateway && npm run build` -> clean (tsc + copy-frontend +
+    copy-data all succeed).
+
+22. `git checkout -- services/gateway/specs/command-hub-symbol-index.json`
+    — reverted the auto-regenerated symbol index (a jest side effect
+    unrelated to this change, same as VTID-04277's own commands.log
+    records for this repo).
+
+No Supabase or AWS mutation was made from this session for this VTID
+beyond self-allocating the VTID itself. No live deploy/staging
+verification was performed — this session has no way to place an
+authenticated exafy_admin HTTP request or ORB voice session against a
+deployed environment. See acceptance.md's "Not fixed here" section.

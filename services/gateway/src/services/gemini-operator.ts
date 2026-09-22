@@ -43,6 +43,18 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+// VTID-04279: routes/approvals.ts now requires a real exafy_admin bearer
+// JWT (requireAdminAuth) — the dev_list_approvals/dev_approval_count/
+// dev_approve_item/dev_reject_item tools below used to call that route
+// over HTTP with SUPABASE_SERVICE_ROLE as a bearer token, which the new
+// gate correctly rejects (valid signature, no exafy_admin claim). Calling
+// the extracted service functions in-process needs no bearer token at all.
+import {
+  getPendingApprovals,
+  getPendingApprovalCount,
+  approveApprovalById,
+  rejectApprovalById,
+} from './approvals-service';
 // VTID-03820: DeepSeek-powered execution on-ramp
 import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
@@ -5313,17 +5325,9 @@ async function executeDevListApprovals(
   }
 
   try {
-    const gatewayPort = process.env.PORT || '8080';
     const limit = args.limit || 50;
-    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/pending?limit=${limit}`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-    });
-
-    const result = await resp.json() as any;
-    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Failed to fetch approvals') };
+    const { status, body } = await getPendingApprovals(limit);
+    return { ok: status >= 200 && status < 300, data: body, error: body.ok ? undefined : String(body.error || 'Failed to fetch approvals') };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }
@@ -5338,16 +5342,8 @@ async function executeDevApprovalCount(threadId: string): Promise<ToolExecutionR
   }
 
   try {
-    const gatewayPort = process.env.PORT || '8080';
-    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/count`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-    });
-
-    const result = await resp.json() as any;
-    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Failed to get count') };
+    const { status, body } = await getPendingApprovalCount();
+    return { ok: status >= 200 && status < 300, data: body, error: body.ok ? undefined : String(body.error || 'Failed to get count') };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }
@@ -5360,20 +5356,20 @@ async function executeDevApproveItem(
   args: { approval_id: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
+  // VTID-04279: same authorization the on-ramp's autopilot_execute_task
+  // already requires (VTID-03851) — this tool merges a real PR, so it
+  // deserves the same "verified exafy_admin, not merely an authenticated
+  // caller" gate, not just whatever governance the /chat route itself ran.
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason) };
+  }
   try {
-    const gatewayPort = process.env.PORT || '8080';
-    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/approve`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-    });
+    const decidedBy = getThreadAuth(threadId)?.user_id ?? null;
+    const { status, body } = await approveApprovalById(args.approval_id, decidedBy);
+    const ok = status >= 200 && status < 300;
 
-    const result = await resp.json() as any;
-
-    if (resp.ok) {
+    if (ok) {
       await emitOasisEvent({
         vtid: 'VTID-DEV-ASSIST',
         type: 'dev_assist.approval.approved',
@@ -5384,7 +5380,7 @@ async function executeDevApproveItem(
       }).catch(() => {});
     }
 
-    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Approve failed') };
+    return { ok, data: body, error: body.ok ? undefined : String(body.error || 'Approve failed') };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }
@@ -5397,21 +5393,18 @@ async function executeDevRejectItem(
   args: { approval_id: string; reason?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
+  // VTID-04279: same rationale as executeDevApproveItem above.
+  const authz = isExecuteTaskAuthorized(getThreadAuth(threadId));
+  if (!authz.ok) {
+    return { ok: false, error: describeExecuteTaskRefusal(authz.reason) };
+  }
   try {
-    const gatewayPort = process.env.PORT || '8080';
-    const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/reject`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-      body: JSON.stringify({ reason: args.reason || 'Rejected via developer assistant' }),
-    });
+    const decidedBy = getThreadAuth(threadId)?.user_id ?? null;
+    const reason = args.reason || 'Rejected via developer assistant';
+    const { status, body } = await rejectApprovalById(args.approval_id, reason, decidedBy);
+    const ok = status >= 200 && status < 300;
 
-    const result = await resp.json() as any;
-
-    if (resp.ok) {
+    if (ok) {
       await emitOasisEvent({
         vtid: 'VTID-DEV-ASSIST',
         type: 'dev_assist.approval.rejected',
@@ -5422,7 +5415,7 @@ async function executeDevRejectItem(
       }).catch(() => {});
     }
 
-    return { ok: resp.ok, data: result, error: resp.ok ? undefined : (result.error || 'Reject failed') };
+    return { ok, data: body, error: body.ok ? undefined : String(body.error || 'Reject failed') };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }
