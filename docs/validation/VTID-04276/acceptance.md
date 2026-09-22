@@ -19,7 +19,7 @@ operator actually provisions the credential — this session has neither
 `secretsmanager:CreateSecret` on AWS nor the ability to add a GitHub
 Actions repository secret) and ships the provisioning script for staging.
 
-## AC-1 — Staging wires `ROUTINE_INGEST_TOKEN` optionally, describe-secret-gated
+AC-1 — Staging wires `ROUTINE_INGEST_TOKEN` optionally, describe-secret-gated
 
 Same pattern as `OPERATOR_SQL_READONLY_DATABASE_URL` /
 `OPERATOR_MACHINE_AUTH_TOKEN`: absent secret → deploy unaffected, routes
@@ -32,7 +32,7 @@ describe-secret call, the empty-string-not-exit-1 absent branch, the strip
 before re-add, the conditional-only wiring, and that it is never
 unconditional).
 
-## AC-2 — Prod wires `ROUTINE_INGEST_TOKEN` as a plain env var sourced from a GitHub Actions secret
+AC-2 — Prod wires `ROUTINE_INGEST_TOKEN` as a plain env var sourced from a GitHub Actions secret
 
 The prod deploy role has no `secretsmanager:Describe*` (VTID-03880,
 documented in `AWS-PROD-DEPLOY-GATEWAY.yml`'s own header comment for
@@ -49,7 +49,7 @@ TEST: same file, "prod wires ROUTINE_INGEST_TOKEN as a plain env var..."
 `valueFrom`), and no `describe-secret` call for it anywhere in the prod
 workflow.
 
-## AC-3 — Both workflow files stay valid bash and under the GitHub Actions per-step size limit
+AC-3 — Both workflow files stay valid bash and under the GitHub Actions per-step size limit
 
 VTID-03788's own regression guard (`bash -n` on every `run:` step across
 both files, plus the 20,000-char cap that GitHub Actions actually enforces)
@@ -58,7 +58,7 @@ re-run clean after this change, including the two edited steps.
 TEST: `services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`
 — re-run in full, 7/7 passing (both edited steps included).
 
-## AC-4 — The staging jq pipeline was exercised end to end against a mocked AWS CLI, not just parsed
+AC-4 — The staging jq pipeline was exercised end to end against a mocked AWS CLI, not just parsed
 
 Beyond `bash -n` (syntax only), the exact staging "Register task-definition
 revision" script was run against a fake `aws`/`jq` toolchain seeded with a
@@ -73,7 +73,7 @@ already behave exactly as documented above; this VTID changes only what
 value they see in the environment). See `outputs/mock-aws-run.txt` for the
 full transcript of both runs.
 
-## AC-5 — `scripts/aws/setup-routine-ingest-token-secret.sh` follows the established provisioning-script contract
+AC-5 — `scripts/aws/setup-routine-ingest-token-secret.sh` follows the established provisioning-script contract
 
 Dry-run by default (`provision`/`status` actions), `--env staging|prod`,
 `--apply` requires `ROUTINE_INGEST_TOKEN_VALUE` in the environment, never
