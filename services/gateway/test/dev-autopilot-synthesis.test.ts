@@ -266,3 +266,114 @@ describe('ingestScan — run finalization', () => {
     expect(patchCalls).toHaveLength(0);
   });
 });
+
+describe('ingestScan — dedup lookup covers activated findings (VTID-04274)', () => {
+  // Live evidence: autopilot_recommendations rows 9e1bdb97 (status=activated,
+  // VTID-04250) and 7a93bca4 (status=new, VTID-04261) share the identical
+  // signal_fingerprint 42c32f9e7e689576 — the SAME npm-audit signal spawned a
+  // second, fully duplicate finding + VTID + execution because the dedup
+  // lookup filtered status=in.(new,snoozed), excluding 'activated'. A finding
+  // that already has a VTID and an in-flight execution is still the same
+  // live problem, not a resolved one.
+  const fetchMock = global.fetch as jest.Mock;
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+  });
+
+  function jsonRes(status: number, body: unknown = {}) {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  type Handler = (url: string, opts: any) => any | undefined;
+
+  function routeFetch(handler: Handler) {
+    fetchMock.mockImplementation((url: any, opts: any = {}) => {
+      const result = handler(String(url), opts);
+      return Promise.resolve(result !== undefined ? result : jsonRes(200, []));
+    });
+  }
+
+  it('the dedup GET query includes activated alongside new/snoozed', async () => {
+    const getUrls: string[] = [];
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') {
+        getUrls.push(url);
+        return jsonRes(200, []);
+      }
+      if (url.includes('/autopilot_recommendations') && method === 'POST') return jsonRes(201, {});
+      return undefined;
+    });
+
+    await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    expect(getUrls).toHaveLength(1);
+    expect(getUrls[0]).toContain('status=in.(new,snoozed,activated)');
+    expect(getUrls[0]).not.toContain('status=in.(new,snoozed)&');
+  });
+
+  it('bumps seen_count on an existing ACTIVATED finding instead of inserting a duplicate', async () => {
+    const patchBodies: any[] = [];
+    let postCount = 0;
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') {
+        // Simulate the live-bug scenario: the existing row is 'activated',
+        // not 'new'/'snoozed'.
+        return jsonRes(200, [{ id: 'existing-activated-id', seen_count: 3, last_seen_at: '2026-09-21T00:00:00Z', status: 'activated' }]);
+      }
+      if (url.includes('/autopilot_recommendations') && method === 'POST') {
+        postCount++;
+        return jsonRes(201, {});
+      }
+      if (url.includes('/autopilot_recommendations') && method === 'PATCH') {
+        patchBodies.push(JSON.parse(opts.body));
+        return jsonRes(204, {});
+      }
+      return undefined;
+    });
+
+    const result = await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    expect(result.ok).toBe(true);
+    // The whole point: no new finding/VTID is created for an already-live one.
+    expect(postCount).toBe(0);
+    expect(result.new_finding_count).toBe(0);
+    expect(patchBodies).toHaveLength(1);
+    expect(patchBodies[0].seen_count).toBe(4);
+  });
+
+  it('still inserts a new finding when no live (new/snoozed/activated) match exists', async () => {
+    let postCount = 0;
+    routeFetch((url, opts) => {
+      const method = opts.method || 'GET';
+      if (url.includes('/dev_autopilot_runs') && method === 'POST') return jsonRes(201, {});
+      if (url.includes('/dev_autopilot_runs') && method === 'PATCH') return jsonRes(204, {});
+      if (url.includes('/dev_autopilot_signals')) return jsonRes(201, {});
+      if (url.includes('/autopilot_recommendations') && method === 'GET') return jsonRes(200, []);
+      if (url.includes('/autopilot_recommendations') && method === 'POST') {
+        postCount++;
+        return jsonRes(201, {});
+      }
+      return undefined;
+    });
+
+    const result = await ingestScan({ triggered_by: 'test', signals: [signal()] });
+
+    expect(result.ok).toBe(true);
+    expect(postCount).toBe(1);
+    expect(result.new_finding_count).toBe(1);
+  });
+});
