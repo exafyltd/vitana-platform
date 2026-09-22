@@ -40336,14 +40336,19 @@ if (!state.devAutopilot) {
         lineages: {},
         expandedExecIds: {},
         expandedDiffExecIds: {}, // VTID-04029: execution ids whose approval diff is open
-        expandedStepsExecIds: {}, // VTID-04265: execution ids whose step/tool-call transcript is open
-        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
-        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
-        // { loading, steps[], error, es } where `es` is the live EventSource
-        // (not serializable/renderable — only ever read/closed by the
-        // stream helpers below, never iterated for display).
+        // VTID-04265: execution ids whose step/tool-call transcript is open
+        // on Autopilot Live. Reuses this same key name/purpose that
+        // VTID-03896/03897 originally declared here (`steps[execId]`
+        // holding { loading, steps[], error, es }) but never wired up —
+        // confirmed dead (no other reference anywhere in this file) before
+        // reclaiming it, rather than leaving two same-named, differently-
+        // commented keys in one object literal (the second silently wins
+        // at construction, which is harmless here since both start `{}`,
+        // but is confusing to read). The actual step data now lives in the
+        // pre-existing state.operatorExecFollow bucket (VTID-04033) instead
+        // of a dedicated `steps` map — see renderAutopilotLiveStepsPanel.
         expandedStepsExecIds: {},
-        steps: {},
+        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
