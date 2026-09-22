@@ -826,6 +826,20 @@ jobs:
           else
             echo "  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true"
           fi
+          # VTID-04276: shared token for Claude Code Remote Routine calls to
+          # /api/v1/routines/* and /api/v1/routines/audits/* (routines.ts,
+          # routine-audits.ts — X-Routine-Token header, requireRoutineToken()).
+          # Same optional, describe-secret-gated pattern as SEC_SQL_RO/
+          # SEC_MACHINE_AUTH above: absent => untouched, the routes keep
+          # returning 503 "ROUTINE_INGEST_TOKEN env var not configured"
+          # exactly as they do today; present => wired as a secret.
+          SEC_ROUTINE_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/routine-ingest-token --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_ROUTINE_TOKEN" ] || [ "$SEC_ROUTINE_TOKEN" = "None" ]; then
+            SEC_ROUTINE_TOKEN=""
+            echo "  routine-ingest-token secret absent - ROUTINE_INGEST_TOKEN not wired (VTID-04276; run scripts/aws/setup-routine-ingest-token-secret.sh)"
+          else
+            echo "  resolved vitana/gateway/staging/routine-ingest-token -> ROUTINE_INGEST_TOKEN wired"
+          fi
           [ -n "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" ] || echo "::warning::DEV_AUTOPILOT_SCAN_TOKEN repo secret empty (VTID-04225)"
           GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
@@ -851,6 +865,7 @@ jobs:
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg SEC_SQL_RO "$SEC_SQL_RO" \
                  --arg SEC_MACHINE_AUTH "$SEC_MACHINE_AUTH" \
+                 --arg SEC_ROUTINE_TOKEN "$SEC_ROUTINE_TOKEN" \
                  --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
@@ -957,6 +972,7 @@ jobs:
                                                 "AURORA_RLS_DATABASE_URL",
                                                 "GITHUB_SAFE_MERGE_TOKEN","OPERATOR_SQL_READONLY_DATABASE_URL",
                                                 "OPERATOR_MACHINE_AUTH_TOKEN",
+                                                "ROUTINE_INGEST_TOKEN",
                                                 "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
@@ -997,6 +1013,11 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_TOKEN") | not) ]
                             + [ {name:"OPERATOR_MACHINE_AUTH_TOKEN", valueFrom:$SEC_MACHINE_AUTH} ] ) )
+                    else . end )
+                | ( if $SEC_ROUTINE_TOKEN != "" then
+                      ( .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("ROUTINE_INGEST_TOKEN") | not) ]
+                            + [ {name:"ROUTINE_INGEST_TOKEN", valueFrom:$SEC_ROUTINE_TOKEN} ] ) )
                     else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')

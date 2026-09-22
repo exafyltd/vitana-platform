@@ -1,0 +1,46 @@
+=== RUN 1: routine-ingest-token secret PRESENT ===
+Current task definition: arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:1
+  resolved vitana/supabase/prod/jwt-secret
+  resolved vitana/supabase/prod/anon-key
+  resolved vitana/gateway/staging/google-gemini-api-key
+  resolved vitana/gateway/staging/openai-api-key
+  resolved vitana/gateway/staging/deepseek-api-key
+  resolved vitana/gateway/staging/fish-api-key
+  resolved vitana/aurora/prod/database-url
+  resolved vitana/aurora/prod/postgrest-authenticator-uri
+  resolved vitana/github/token
+  resolved vitana/supabase/prod/service-role-key
+  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=http://erp-bridge.vitana.internal:8080
+  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true
+  resolved internal-token
+  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true
+  resolved vitana/gateway/staging/routine-ingest-token -> ROUTINE_INGEST_TOKEN wired
+Bedrock activation on staging: BEDROCK_ROLE_ARN=arn:aws:iam::123456789012:role/vitana-ecs-task-role
+  [parsed NEW_DEF] total secrets: 17; ROUTINE_INGEST_TOKEN entries: [{'name': 'ROUTINE_INGEST_TOKEN', 'valueFrom': 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:vitana/gateway/staging/routine-ingest-token-abc123'}]
+Registered arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:2
+Waiting for service to stabilize (up to ~10 min)…
+Service stable on arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:2
+exit=0
+=== RUN 2: routine-ingest-token secret ABSENT ===
+Current task definition: arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:1
+  resolved vitana/supabase/prod/jwt-secret
+  resolved vitana/supabase/prod/anon-key
+  resolved vitana/gateway/staging/google-gemini-api-key
+  resolved vitana/gateway/staging/openai-api-key
+  resolved vitana/gateway/staging/deepseek-api-key
+  resolved vitana/gateway/staging/fish-api-key
+  resolved vitana/aurora/prod/database-url
+  resolved vitana/aurora/prod/postgrest-authenticator-uri
+  resolved vitana/github/token
+  resolved vitana/supabase/prod/service-role-key
+  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=http://erp-bridge.vitana.internal:8080
+  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true
+  resolved internal-token
+  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true
+  routine-ingest-token secret absent - ROUTINE_INGEST_TOKEN not wired (VTID-04276; run scripts/aws/setup-routine-ingest-token-secret.sh)
+Bedrock activation on staging: BEDROCK_ROLE_ARN=arn:aws:iam::123456789012:role/vitana-ecs-task-role
+  [parsed NEW_DEF] total secrets: 16; ROUTINE_INGEST_TOKEN entries: []
+Registered arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:2
+Waiting for service to stabilize (up to ~10 min)…
+Service stable on arn:aws:ecs:eu-central-1:123456789012:task-definition/vitana-gateway:2
+exit=0

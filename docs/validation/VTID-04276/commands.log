@@ -1,0 +1,74 @@
+VTID-04276 — commands run this session, in order.
+
+1. Live confirmation of the root cause (read-only, both hosts):
+   curl -s -X POST https://gateway.vitanaland.com/api/v1/routines/self-healing-triage/runs \
+     -H 'Content-Type: application/json' -H 'X-Routine-Token: x' -d '{}'
+   -> 503 {"ok":false,"error":"ROUTINE_INGEST_TOKEN env var not configured"}
+
+   curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/routines/self-healing-triage/runs \
+     -H 'Content-Type: application/json' -H 'X-Routine-Token: x' -d '{}'
+   -> 503 {"ok":false,"error":"ROUTINE_INGEST_TOKEN env var not configured"}
+
+2. New provisioning script:
+   scripts/aws/setup-routine-ingest-token-secret.sh (dry-run by default;
+   modelled on scripts/aws/setup-fish-audio-secret.sh)
+
+3. Workflow wiring:
+   .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml — added SEC_ROUTINE_TOKEN
+     describe-secret resolution + conditional secrets wiring (ERP-bridge
+     style, same as OPERATOR_SQL_READONLY_DATABASE_URL /
+     OPERATOR_MACHINE_AUTH_TOKEN)
+   .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml — added
+     ROUTINE_INGEST_TOKEN_VALUE (from secrets.ROUTINE_INGEST_TOKEN) +
+     unconditional plain-env pin (same pattern as MARKETPLACE_SYNC_SECRET)
+
+4. YAML parse check:
+   python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+   python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))"
+   -> both OK
+
+5. VTID-03788 regression guard (bash -n + 20,000-char cap + apostrophe check
+   on both deploy workflows), re-run after the edit:
+   cd services/gateway && node_modules/.bin/jest \
+     test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+   -> 7/7 passing (this run caught a real regression: the first version of
+      the prod edit pushed the "Build task-definition (1/2...)" step to
+      20,160 chars, over the 20,000 cap; trimmed the in-run comment and
+      moved the detail to the YAML-level comment above the step's `env:`
+      key, which is outside the `run:` scalar the cap measures)
+
+6. Isolated jq semantics check (standalone, no bash-script context):
+   echo '{"containerDefinitions":[{"environment":[{"name":"ROUTINE_INGEST_TOKEN","value":"old"}]}]}' \
+     | jq --arg S "newtoken" '.containerDefinitions[0].environment |= ( [ .[] | select(.name != "ROUTINE_INGEST_TOKEN") ] + [ {name:"ROUTINE_INGEST_TOKEN", value:$S} ] )'
+   -> {"containerDefinitions":[{"environment":[{"name":"ROUTINE_INGEST_TOKEN","value":"newtoken"}]}]}
+
+7. Full end-to-end mock run of the staging "Register task-definition
+   revision" step against a fake aws/jq toolchain (real bash, real jq,
+   mocked `aws` CLI returning canned ECS/Secrets Manager responses), once
+   with the secret present and once absent — see outputs/mock-aws-run.txt
+   for the full transcript.
+
+8. New regression test:
+   services/gateway/test/vtid-04276-routine-ingest-token-wiring.test.ts
+   cd services/gateway && node_modules/.bin/jest \
+     test/vtid-04276-routine-ingest-token-wiring.test.ts
+   -> 8/8 passing
+
+9. Full sibling sweep — every test file that reads either gateway deploy
+   workflow (24 suites, listed via `grep -rl "AWS-STAGE-DEPLOY-GATEWAY.yml\|
+   AWS-PROD-DEPLOY-GATEWAY.yml" test/`):
+   cd services/gateway && node_modules/.bin/jest <24 files listed>
+   -> 24/24 suites, 248/248 tests passing, 0 regressions
+
+10. cd services/gateway && npx tsc --noEmit
+    -> clean, 0 errors (no .ts source touched by this VTID; ran anyway
+       since the new test file is TypeScript)
+
+11. Self-allocated VTID via the governed endpoint:
+    POST https://gateway.vitanaland.com/api/v1/vtid/allocate
+      {"source":"claude-code","layer":"CICDL","module":"ROUTINES"}
+    -> {"ok":true,"vtid":"VTID-04276", ...}
+    followed by a direct Supabase UPDATE vtid_ledger setting title/summary/
+    status='in_progress'/spec_status='approved' (the user's own "Build
+    them so they work properly" is the explicit instruction per Part 1
+    rule 2b).

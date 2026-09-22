@@ -480,6 +480,17 @@ jobs:
         # "$..._INPUT" ]` conditional override block).
         env:
           MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
+          # VTID-04276: same "declared here, owner adds the GH secret" pattern
+          # as MARKETPLACE_SYNC_SECRET_VALUE above — the prod deploy role has
+          # no secretsmanager:Describe* (VTID-03880, see this step's own
+          # comment below), so an AWS-Secrets-Manager reference can never be
+          # resolved from this workflow the way staging's optional
+          # describe-secret pattern does. Sourced from the GitHub Actions
+          # repository secret ROUTINE_INGEST_TOKEN instead; empty until the
+          # owner adds it, which resolves to an empty env var — the gateway's
+          # requireRoutineToken() already treats an empty/unset value as
+          # "not configured" (503), never a failed deploy.
+          ROUTINE_INGEST_TOKEN_VALUE: ${{ secrets.ROUTINE_INGEST_TOKEN }}
         # VTID-04230 — Operator Console / Dev Autopilot capability flags,
         # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
         # 4: "production runs a different operator than staging — rev 114
@@ -734,6 +745,12 @@ jobs:
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name != "MARKETPLACE_SYNC_SECRET") ]
                 + [ {name:"MARKETPLACE_SYNC_SECRET", value:$S} ] )')
+
+          # VTID-04276: ROUTINE_INGEST_TOKEN, same pattern as above (see env: block).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$ROUTINE_INGEST_TOKEN_VALUE" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "ROUTINE_INGEST_TOKEN") ]
+                + [ {name:"ROUTINE_INGEST_TOKEN", value:$S} ] )')
 
           # VTID-03584: the new-day greeting was suppressed on 100% of
           # authenticated production sessions from 2026-08-04 onward. Measured:
