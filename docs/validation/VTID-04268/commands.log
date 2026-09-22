@@ -95,3 +95,13 @@ VTID-04268 — commands run to build and verify this change
     -> empty (the generator test's auto-regeneration side effect, seen on
     every one of the prior five branches, did not fire this time — nothing
     to revert).
+
+20. Pushed, opened draft PR #3574. `validate-pr` (VALIDATOR-CHECK.yml)
+    failed at "Require PR markers" (exit 12, missing SCOPE_ALLOWLIST:) —
+    the PR body had VTID:/VALIDATION_PROFILE: but not the other four
+    required markers (SCOPE_ALLOWLIST:/ACCEPTANCE:/MERGE_PAYLOAD_PREVIEW:/
+    OASIS_IMPACT:). Fixed by updating the PR body to include all four, and
+    added an OASIS_PROOF: entry to this acceptance.md (OASIS_IMPACT: yes,
+    since this change adds a new CicdEventType member and emits it —
+    matching the VTID-03683/VTID-03932 precedent for "adds one new
+    event/reason, alters none").

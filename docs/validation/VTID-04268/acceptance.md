@@ -77,6 +77,17 @@ full by the jest suite listed under AC-3/AC-4, which drives the real
 Express router with a mocked `fetch` — the same pattern this file's
 sibling `GET /config` / `POST /config/kill-switch` routes are tested with.
 
+## OASIS evidence
+
+OASIS_PROOF: this change adds one new `CicdEventType` member,
+`dev_autopilot.config.updated`, and alters none of the existing
+`dev_autopilot.*` events. It is emitted exactly once, from
+`POST /config/update`, only on a validated-and-applied patch (never on a
+400/500 — see AC-4), carrying the changed field names in `payload`. Verify
+post-merge:
+`SELECT type, message, payload FROM oasis_events WHERE type = 'dev_autopilot.config.updated' ORDER BY created_at DESC LIMIT 5;`
+(empty until the first real save from the Command Hub panel).
+
 ## Not yet independently confirmed against live traffic
 
 The next real signal is a staging Command Hub session opening the
