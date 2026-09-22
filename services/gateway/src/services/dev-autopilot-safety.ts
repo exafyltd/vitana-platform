@@ -50,16 +50,11 @@ export interface SafetyContext {
   /** For self-heal children: depth of the proposed execution (0 for root). */
   auto_fix_depth: number;
   /**
-   * VTID-02676: when this context represents a feedback-bridged finding
-   * (source_type=dev_autopilot AND source_ref LIKE 'feedback_ticket:%'),
-   * the global kill_switch is BYPASSED. Every other rule (allow_scope,
-   * deny_scope, tests_missing, daily_budget, max_auto_fix_depth, risk
-   * class) still applies. Justification: the feedback lane has three
-   * independent guardrails the kill_switch was originally meant to
-   * compensate for — Devon's codebase-aware system prompt, bridge
-   * pre-flight scope check, and planner LOCKED file list. The kill
-   * switch stays armed for non-feedback lanes (where the unfixed
-   * plan-vs-diff validator gap still applies).
+   * VTID-02676 once used this to let feedback-bridged findings bypass the
+   * kill switch. VTID-04308 removed that exemption: a support ticket is one
+   * more intake source and obeys the same kill switch as every other lane.
+   * Kept on the type (informational, still set by the executor) so callers
+   * and telemetry that pass it keep compiling.
    */
   is_feedback_lane?: boolean;
 
@@ -263,13 +258,9 @@ export function applyScannerOverrides(
 export function evaluateSafetyGate(plan: SafetyPlan, ctx: SafetyContext): SafetyDecision {
   const violations: SafetyViolation[] = [];
 
-  // 1. Kill switch — VTID-02676: feedback lane bypasses this single rule.
-  //    The kill switch was originally armed to contain a planner-
-  //    hallucination + duplicate-PR class of incidents that don't apply
-  //    to feedback-bridged findings (Devon prompt + bridge pre-flight +
-  //    planner LOCKED file list are the dedicated guardrails). All other
-  //    gate rules below still apply to feedback lane.
-  if (ctx.config.kill_switch && !ctx.is_feedback_lane) {
+  // 1. Kill switch — applies to every lane, feedback tickets included
+  //    (VTID-04308 removed the VTID-02676 feedback-lane exemption).
+  if (ctx.config.kill_switch) {
     violations.push({
       code: 'kill_switch_engaged',
       message: 'Dev Autopilot kill switch is armed. Disarm it before approving new executions.',

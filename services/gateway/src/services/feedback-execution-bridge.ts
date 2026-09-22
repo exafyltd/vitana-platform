@@ -31,6 +31,7 @@
  */
 
 import { bridgeActivationToExecution } from './dev-autopilot-execute';
+import { allocateAndRegisterFindingVtid } from './dev-autopilot-vtid-allocate';
 
 const VTID = 'VTID-02665';
 
@@ -58,6 +59,8 @@ export interface BridgeResult {
   ok: boolean;
   recommendation_id?: string;
   execution_id?: string;
+  /** VTID-04308: the VTID the dispatched ticket runs under. */
+  vtid?: string;
   skipped?: string;
   error?: string;
   // VTID-02669: structured violations (safety gate or local pre-flight) so
@@ -201,6 +204,57 @@ function preflightFiles(files: string[], cfg: SafetyConfigSummary): {
 }
 
 /**
+ * VTID-04308: every dispatched ticket gets a real VTID before its execution
+ * exists — the same rule VTID-04246 applied to auto-approved findings. The
+ * PR contract (VTID-04002) takes the VTID from the finding's
+ * `activated_vtid`; without one the PR ships as `VTID-DA-<exec8>` and
+ * VALIDATOR-CHECK rejects it. The VTID is mirrored onto
+ * `feedback_tickets.linked_vtid` so the ticket and the ledger point at each
+ * other (it was never set before: 0 of 134 tickets had one).
+ *
+ * Returns the VTID, or an error string — the caller refuses to dispatch on
+ * error rather than run an execution that cannot produce a mergeable PR.
+ */
+async function ensureTicketVtid(
+  s: SupaConfig,
+  ticket: FeedbackTicketRow,
+  findingId: string,
+): Promise<{ ok: true; vtid: string } | { ok: false; error: string }> {
+  let vtid: string | null = null;
+  try {
+    const r = await fetch(
+      `${s.url}/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=activated_vtid&limit=1`,
+      { headers: s.headers },
+    );
+    const rows = (await r.json().catch(() => [])) as Array<{ activated_vtid?: string | null }>;
+    vtid = rows[0]?.activated_vtid ?? null;
+  } catch { /* fall through to allocation */ }
+
+  if (!vtid) {
+    const headline = extractProblemHeadline(ticket.spec_md, ticket.raw_transcript);
+    const alloc = await allocateAndRegisterFindingVtid(s, {
+      findingId,
+      title: `Feedback ${ticket.ticket_number ?? ticket.id.slice(0, 8)}: ${shortenForTitle(headline, 150)}`,
+      summary: `Support ticket ${ticket.ticket_number ?? ticket.id} (${ticket.kind}) dispatched to Dev Autopilot`,
+      scanner: 'feedback_pipeline',
+      source: 'feedback-ticket',
+      module: 'feedback-ticket',
+      purpose: 'support/bug ticket dispatched to Dev Autopilot (feedback-execution-bridge)',
+      extraMetadata: { ticket_id: ticket.id, ticket_number: ticket.ticket_number ?? null },
+    });
+    if (!alloc.ok) return { ok: false, error: alloc.error };
+    vtid = alloc.vtid;
+  }
+
+  await fetch(`${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}`, {
+    method: 'PATCH',
+    headers: { ...s.headers, Prefer: 'return=minimal' },
+    body: JSON.stringify({ linked_vtid: vtid }),
+  }).catch(() => { /* non-blocking: the ledger + finding already carry it */ });
+  return { ok: true, vtid };
+}
+
+/**
  * Dispatch a feedback ticket through the dev autopilot pipeline.
  *
  * Idempotent: if linked_finding_id is already set, the existing
@@ -275,6 +329,11 @@ export async function dispatchFeedbackTicket(
     // Bridge the existing finding to a fresh execution. The bridge itself
     // is idempotent on inflight executions, so a re-Activate during cooling
     // returns the same execution; otherwise it generates a new one.
+    const vtidR = await ensureTicketVtid(s, ticket, existingFindingId);
+    if (!vtidR.ok) {
+      return { ok: false, recommendation_id: existingFindingId, error: vtidR.error,
+        violations: [{ code: 'vtid_allocation_failed', message: vtidR.error }] };
+    }
     const bridgeR = await bridgeActivationToExecution(existingFindingId, approvedBy ?? null);
     if (!bridgeR.ok) {
       const decision = (bridgeR.decision ?? null) as { violations?: BridgeViolation[] } | null;
@@ -292,6 +351,7 @@ export async function dispatchFeedbackTicket(
       ok: true,
       recommendation_id: existingFindingId,
       execution_id: bridgeR.execution_id,
+      vtid: vtidR.vtid,
       skipped: ticket.linked_finding_id ? 'already_linked' : 'reused_orphan',
     };
   }
@@ -479,6 +539,16 @@ export async function dispatchFeedbackTicket(
   // 4. Bridge to execution. This generates the plan if missing, creates
   //    the dev_autopilot_executions row, and sets execute_after=now so
   //    the next backgroundExecutorTick claims it (~30s).
+  const vtidR = await ensureTicketVtid(s, ticket, findingId);
+  if (!vtidR.ok) {
+    await fetch(`${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}`, {
+      method: 'PATCH',
+      headers: { ...s.headers, Prefer: 'return=minimal' },
+      body: JSON.stringify({ linked_finding_id: null }),
+    }).catch(() => { /* non-blocking */ });
+    return { ok: false, recommendation_id: findingId, error: vtidR.error,
+      violations: [{ code: 'vtid_allocation_failed', message: vtidR.error }] };
+  }
   const bridge = await bridgeActivationToExecution(findingId, approvedBy ?? null);
   if (!bridge.ok) {
     // VTID-02669: surface decision.violations[] from the safety gate so the
@@ -516,5 +586,53 @@ export async function dispatchFeedbackTicket(
     ok: true,
     recommendation_id: findingId,
     execution_id: bridge.execution_id,
+    vtid: vtidR.vtid,
   };
+}
+
+/**
+ * VTID-04308: the one approve-and-dispatch path for a bug / ux_issue ticket.
+ *
+ * Command Hub "Approve & Fix" (POST /api/v1/admin/feedback/tickets/:id/approve)
+ * and the tenant bulk approve-all used to only flip `spec_ready → in_progress`.
+ * Nothing was dispatched, the ticket had no linked_finding_id so the
+ * completion reconciler never closed it, and Activate then refused it as
+ * ALREADY_IN_PROGRESS — stuck forever. Both now come through here: load the
+ * ticket, dispatch it (recommendation + VTID + execution), and only then move
+ * it to in_progress with the finding linked. A dispatch refusal leaves the
+ * ticket where it was, so the operator can revise and retry.
+ */
+export const DISPATCHABLE_KINDS = new Set(['bug', 'ux_issue']);
+
+export async function approveAndDispatchTicket(
+  ticketId: string,
+  approvedBy?: string | null,
+): Promise<BridgeResult & { ticket?: Record<string, unknown> }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+
+  const r = await fetch(
+    `${s.url}/rest/v1/feedback_tickets?id=eq.${encodeURIComponent(ticketId)}`
+      + '&select=id,ticket_number,kind,status,spec_md,supervisor_notes,raw_transcript,vitana_id,screen_path,app_version,linked_finding_id,resolver_agent&limit=1',
+    { headers: s.headers },
+  );
+  const rows = (await r.json().catch(() => [])) as Array<FeedbackTicketRow & { resolver_agent?: string | null }>;
+  const ticket = rows[0];
+  if (!ticket) return { ok: false, error: 'NOT_FOUND' };
+  if (!DISPATCHABLE_KINDS.has(ticket.kind)) return { ok: false, error: `kind=${ticket.kind} is not dispatchable` };
+  if (ticket.status !== 'spec_ready') return { ok: false, error: `NOT_APPROVABLE: status=${ticket.status}` };
+
+  const dispatch = await dispatchFeedbackTicket(ticket, approvedBy ?? null);
+  if (!dispatch.ok || dispatch.skipped?.startsWith('kind=')) return dispatch;
+
+  const up = await fetch(
+    `${s.url}/rest/v1/feedback_tickets?id=eq.${ticket.id}&status=eq.spec_ready`,
+    {
+      method: 'PATCH',
+      headers: { ...s.headers, Prefer: 'return=representation' },
+      body: JSON.stringify({ status: 'in_progress', linked_finding_id: dispatch.recommendation_id ?? null }),
+    },
+  );
+  const updated = (await up.json().catch(() => [])) as Array<Record<string, unknown>>;
+  return { ...dispatch, ticket: updated[0] ?? { ...ticket, status: 'in_progress' } };
 }

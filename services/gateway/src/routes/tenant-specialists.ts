@@ -25,6 +25,7 @@ import * as tenantRepo from '../services/specialists/tenant-specialists-reposito
 import { RepositoryError } from '../services/specialists/tenant-specialists-repository';
 import { clearTenantPersonaCache } from '../services/persona-registry';
 import * as ticketsRepo from './tenant-specialists-tickets-repository';
+import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'VTID-02655';
@@ -39,40 +40,38 @@ function getBearerToken(req: Request): string | null {
   return h && h.startsWith('Bearer ') ? h.slice(7) : null;
 }
 
-function decodeJwtSub(token: string): string | null {
-  try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub ?? null; }
-  catch { return null; }
-}
-
-// VTID-02661: Loosened to match the auth pattern of the existing
-// /api/v1/admin/feedback/tenants/:tenantId/tickets list endpoint
-// (services/gateway/src/routes/feedback-admin.ts). That endpoint uses just
-// ensureAuth and notes:
-//   "Per-tenant authorization (caller must be admin of that tenant) is
-//    enforced by the consuming UI's tenant context but should be hardened
-//    with an explicit middleware check in a follow-up."
-//
-// The original ensureTenantAdmin here required a user_tenants row for the
-// SPECIFIC requested tenant, which blocks legitimate users (e.g. an Exafy
-// super-admin viewing a tenant they don't have a user_tenants row in).
-// Tenant scoping is preserved by:
-//   - Read endpoints: ticket ownership check via loadTicketIfTenantOwned
-//   - Write endpoints (overrides/kb/keywords/connections): the underlying
-//     tables have tenant_id columns so any write specifies the tenant
-//     explicitly and RLS policies + the audit trail capture the actor.
-// Hardening to a real admin-role middleware is a follow-up.
-async function ensureTenantAdmin(req: Request, _res: Response, _tenantId: string): Promise<string | null> {
+// VTID-04307: ensureTenantAdmin used to base64-decode the JWT `sub` claim
+// WITHOUT verifying the signature (VTID-02661 relaxed it and left the
+// hardening as a follow-up). Any `Authorization: Bearer <forged>` was
+// therefore accepted — including on POST /tickets/:id/activate, which
+// dispatches a Dev Autopilot code execution. The caller is now verified
+// (verifyAndExtractIdentity — the same check requireAuth uses) and must be:
+//   (a) exafy_admin (Command Hub operator, every tenant — the case
+//       VTID-02661 loosened the old check for), or
+//   (b) active_role = 'admin' in a user_tenants row for the requested
+//       tenant.
+async function ensureTenantAdmin(req: Request, res: Response, tenantId: string): Promise<string | null> {
   const token = getBearerToken(req);
   if (!token) {
-    _res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     return null;
   }
-  const userId = decodeJwtSub(token);
-  if (!userId) {
-    _res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+  const verified = await verifyAndExtractIdentity(token);
+  if (!verified || !verified.identity?.user_id) {
+    res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
     return null;
   }
-  return userId;
+  const { identity } = verified;
+  if (identity.exafy_admin) return identity.user_id;
+
+  try {
+    const { data } = await ticketsRepo.fetchCallerTenantRole(getServiceClient(), identity.user_id, tenantId);
+    if ((data as { active_role?: string } | null)?.active_role === 'admin') return identity.user_id;
+  } catch (err) {
+    console.error(`[${VTID}] tenant admin lookup failed:`, err);
+  }
+  res.status(403).json({ ok: false, error: 'FORBIDDEN', message: 'Tenant admin or exafy_admin required' });
+  return null;
 }
 
 async function resolvePersonaId(key: string): Promise<string | null> {
@@ -388,7 +387,18 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
   }
 
   for (const t of tickets ?? []) {
-    if (t.status === 'spec_ready') {
+    if (t.status === 'spec_ready' && (t.kind === 'bug' || t.kind === 'ux_issue')) {
+      // VTID-04308: dispatch, don't just flip the status (that stranded the
+      // ticket at in_progress with nothing running).
+      const { approveAndDispatchTicket } = await import('../services/feedback-execution-bridge');
+      const d = await approveAndDispatchTicket(t.id, userId);
+      if (!d.ok || !d.ticket) { skipped++; continue; }
+      approved++;
+      results.push({ ticket_number: String(d.ticket.ticket_number ?? t.ticket_number), from: 'spec_ready', to: 'in_progress' });
+      await emit('feedback.ticket.status_changed', d.ticket, {
+        new_status: 'in_progress', from: 'bulk-approve', dispatched: true, vtid: d.vtid, execution_id: d.execution_id,
+      });
+    } else if (t.status === 'spec_ready') {
       const { data: updated, error: upErr } = await ticketsRepo.advanceSpecReadyTicketToInProgress(supabase, t.id);
       if (upErr || !updated) { skipped++; continue; }
       approved++;

@@ -8,7 +8,7 @@
  *     POST /tickets/:id/draft-spec       Devon placeholder
  *     POST /tickets/:id/draft-resolution Mira/Atlas placeholder
  *     POST /tickets/:id/send-answer      flips to resolved
- *     POST /tickets/:id/approve          flips to in_progress
+ *     POST /tickets/:id/approve          bug/ux: dispatch to Dev Autopilot (VTID-04308); others: flips to in_progress
  *     POST /tickets/:id/resolve          flips to resolved
  *     POST /tickets/:id/reject           flips to rejected
  *     POST /tickets/:id/mark-duplicate   links to canonical
@@ -153,6 +153,24 @@ adminRouter.post('/tickets/:id/draft-resolution', async (req: Request, res: Resp
 adminRouter.post('/tickets/:id/approve', async (req: Request, res: Response) => {
   const token = getBearerToken(req); if (!token) return res.status(401).json({ ok: false });
   const actor = decodeJwtSub(token);
+  // VTID-04308: a bug / ux_issue ticket is dispatched to Dev Autopilot here
+  // (recommendation + VTID + execution). Approving used to only flip the
+  // status, which stranded the ticket at in_progress with nothing running.
+  const snap = await loadTicketSnapshot(req.params.id);
+  const { DISPATCHABLE_KINDS, approveAndDispatchTicket } = await import('../services/feedback-execution-bridge');
+  if (snap && DISPATCHABLE_KINDS.has(String((snap as { kind?: string }).kind))) {
+    const d = await approveAndDispatchTicket(req.params.id, actor);
+    if (!d.ok) {
+      return res.status(409).json({ ok: false, error: 'DISPATCH_BLOCKED', details: d.error, violations: d.violations ?? [] });
+    }
+    emitFeedbackEvent('feedback.ticket.status_changed', d.ticket ?? (snap as Record<string, unknown>), {
+      new_status: 'in_progress', from: 'approve', dispatched: true,
+      recommendation_id: d.recommendation_id, execution_id: d.execution_id, vtid: d.vtid,
+    }, actor ?? undefined);
+    return res.json({ ok: true, ticket: d.ticket, dispatch: {
+      recommendation_id: d.recommendation_id, execution_id: d.execution_id, vtid: d.vtid,
+    } });
+  }
   const { data, error } = await repo.approveTicket(getServiceClient(), req.params.id);
   if (error || !data) return res.status(409).json({ ok: false, error: 'NOT_APPROVABLE', details: error?.message });
   emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'in_progress', from: 'approve' }, actor ?? undefined);

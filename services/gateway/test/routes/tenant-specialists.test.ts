@@ -75,6 +75,27 @@ jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: unknown[]) => mockEmitOasisEvent(...args),
 }));
 
+// VTID-04307: the route now verifies the token. Tokens shaped
+// `verified:<sub>:<exafy|member>` verify; anything else (including an
+// unsigned header.payload.sig forgery) does not.
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  verifyAndExtractIdentity: jest.fn(async (token: string) => {
+    const m = /^verified:([^:]+):(exafy|member)$/.exec(token);
+    if (!m) return null;
+    return {
+      identity: { user_id: m[1], exafy_admin: m[2] === 'exafy' },
+      claims: { sub: m[1] },
+      auth_source: 'platform',
+    };
+  }),
+}));
+
+const mockApproveAndDispatch = jest.fn();
+jest.mock('../../src/services/feedback-execution-bridge', () => ({
+  approveAndDispatchTicket: (...args: unknown[]) => mockApproveAndDispatch(...args),
+  DISPATCHABLE_KINDS: new Set(['bug', 'ux_issue']),
+}));
+
 import router from '../../src/routes/tenant-specialists';
 
 const app = express();
@@ -85,10 +106,15 @@ app.use('/', router);
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Unsigned JWT whose payload carries the given sub (the route only decodes). */
-function tokenFor(sub: string): string {
+/** Unsigned JWT whose payload carries the given sub — a forgery (VTID-04307). */
+function forgedTokenFor(sub: string): string {
   const payload = Buffer.from(JSON.stringify({ sub })).toString('base64');
   return `header.${payload}.sig`;
+}
+
+/** A token the mocked verifier accepts (see jest.mock above). */
+function tokenFor(sub: string, kind: 'exafy' | 'member' = 'exafy'): string {
+  return `verified:${sub}:${kind}`;
 }
 
 const TENANT_A = 'tenant-a';
@@ -123,6 +149,46 @@ describe('tenant-specialists routes', () => {
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ ok: false, error: 'INVALID_TOKEN' });
     expect(mockClient.from).not.toHaveBeenCalled();
+  });
+
+  // --- VTID-04307: signature + role are enforced ---------------------------
+
+  it('rejects an unsigned/forged token that only carries a sub → 401', async () => {
+    const res = await request(app)
+      .post(`/${TENANT_A}/tickets/t-1/activate`)
+      .set('Authorization', `Bearer ${forgedTokenFor('admin-user-a')}`);
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ ok: false, error: 'INVALID_TOKEN' });
+    expect(mockClient.from).not.toHaveBeenCalled();
+  });
+
+  it('verified member who is not a tenant admin → 403, nothing read', async () => {
+    chainFor('user_tenants').mockResolvedValueOnce({ data: { active_role: 'community' }, error: null });
+    const res = await request(app)
+      .post(`/${TENANT_A}/tickets/t-1/activate`)
+      .set('Authorization', `Bearer ${tokenFor('member-1', 'member')}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('FORBIDDEN');
+    expect(mockClient.from).toHaveBeenCalledTimes(1);
+    expect(mockClient.from).toHaveBeenCalledWith('user_tenants');
+    expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('tenant_id', TENANT_A);
+  });
+
+  it('verified member with no membership row → 403', async () => {
+    const res = await request(app)
+      .get(`/${TENANT_A}/specialists/coach/overrides`)
+      .set('Authorization', `Bearer ${tokenFor('stranger', 'member')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('verified tenant admin (active_role=admin in that tenant) passes the gate', async () => {
+    chainFor('user_tenants').mockResolvedValueOnce({ data: { active_role: 'admin' }, error: null });
+    mockPersonaFound();
+    const res = await request(app)
+      .get(`/${TENANT_A}/specialists/coach/overrides`)
+      .set('Authorization', `Bearer ${tokenFor('tenant-admin', 'member')}`);
+    expect(res.status).not.toBe(401);
+    expect(res.status).not.toBe(403);
   });
 
   it('PUT overrides without a token → 401 (writes are gated too)', async () => {
@@ -388,18 +454,18 @@ describe('tenant-specialists routes', () => {
     expect(chainFor('feedback_tickets').update).not.toHaveBeenCalled();
   });
 
-  it('approve-all advances a spec_ready ticket to in_progress with an optimistic lock', async () => {
+  it('approve-all advances a non-dispatchable spec_ready ticket to in_progress with an optimistic lock', async () => {
     chainFor('app_users').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
     chainFor('user_tenants').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
     const tickets = chainFor('feedback_tickets');
     // Actionable tickets query
     tickets.mockResolvedValueOnce({
-      data: [{ id: 'tk-9', ticket_number: 'T-9', kind: 'bug', status: 'spec_ready', vitana_id: 'VIT-1', resolver_agent: null }],
+      data: [{ id: 'tk-9', ticket_number: 'T-9', kind: 'account_issue', status: 'spec_ready', vitana_id: 'VIT-1', resolver_agent: null }],
       error: null,
     });
     // The status-guarded update
     tickets.mockResolvedValueOnce({
-      data: { id: 'tk-9', ticket_number: 'T-9', kind: 'bug', status: 'in_progress', vitana_id: 'VIT-1', resolver_agent: null },
+      data: { id: 'tk-9', ticket_number: 'T-9', kind: 'account_issue', status: 'in_progress', vitana_id: 'VIT-1', resolver_agent: null },
       error: null,
     });
 
@@ -423,5 +489,47 @@ describe('tenant-specialists routes', () => {
     expect(chainFor('agent_audit_log').insert).toHaveBeenCalledWith(
       expect.objectContaining({ tenant_id: TENANT_A, actor_user_id: 'admin-user-a' }),
     );
+  });
+
+  // VTID-04308: a bug / ux_issue ticket is DISPATCHED, not just flipped.
+  it('approve-all dispatches a spec_ready bug ticket through the bridge (no bare status flip)', async () => {
+    chainFor('app_users').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
+    chainFor('user_tenants').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
+    const tickets = chainFor('feedback_tickets');
+    tickets.mockResolvedValueOnce({
+      data: [{ id: 'tk-7', ticket_number: 'T-7', kind: 'bug', status: 'spec_ready', vitana_id: 'VIT-1', resolver_agent: null }],
+      error: null,
+    });
+    mockApproveAndDispatch.mockResolvedValueOnce({
+      ok: true, recommendation_id: 'rec-1', execution_id: 'ex-1', vtid: 'VTID-09999',
+      ticket: { id: 'tk-7', ticket_number: 'T-7', status: 'in_progress' },
+    });
+
+    const res = await request(app)
+      .post(`/${TENANT_A}/customers/VIT-1/approve-all`)
+      .set('Authorization', `Bearer ${ADMIN_A}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ approved: 1, skipped: 0, results: [{ ticket_number: 'T-7', to: 'in_progress' }] });
+    expect(mockApproveAndDispatch).toHaveBeenCalledWith('tk-7', 'admin-user-a');
+    expect(tickets.update).not.toHaveBeenCalled();
+  });
+
+  it('approve-all counts a refused dispatch as skipped and leaves the ticket alone', async () => {
+    chainFor('app_users').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
+    chainFor('user_tenants').mockResolvedValueOnce({ data: { user_id: 'cust-1' }, error: null });
+    const tickets = chainFor('feedback_tickets');
+    tickets.mockResolvedValueOnce({
+      data: [{ id: 'tk-8', ticket_number: 'T-8', kind: 'ux_issue', status: 'spec_ready', vitana_id: 'VIT-1', resolver_agent: null }],
+      error: null,
+    });
+    mockApproveAndDispatch.mockResolvedValueOnce({ ok: false, error: 'bridge failed: kill_switch_engaged' });
+
+    const res = await request(app)
+      .post(`/${TENANT_A}/customers/VIT-1/approve-all`)
+      .set('Authorization', `Bearer ${ADMIN_A}`);
+
+    expect(res.body).toMatchObject({ approved: 0, skipped: 1 });
+    expect(tickets.update).not.toHaveBeenCalled();
   });
 });
