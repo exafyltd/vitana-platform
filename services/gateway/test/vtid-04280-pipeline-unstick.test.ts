@@ -28,6 +28,7 @@ import {
 } from '../src/services/dev-autopilot-pipeline-guards';
 import { lazyPlanTick, closedPrReconcileTick } from '../src/services/dev-autopilot-execute';
 import { generatePlanVersion } from '../src/services/dev-autopilot-planning';
+import { emitOasisEvent } from '../src/services/oasis-event-service';
 
 type Route = { match: (url: string, init?: RequestInit) => boolean; body: unknown };
 const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -150,6 +151,9 @@ describe('VTID-04280 closedPrReconcileTick', () => {
     expect(byId('e2').metadata.pr_state).toBe('merged');
     expect(byId('e3').metadata.pr_closed_unmerged_at).toBeUndefined();
     expect(byId('e3').metadata.pr_state_checked_at).toBe('2026-09-22T20:00:00.000Z');
+    const emitted = (emitOasisEvent as jest.Mock).mock.calls.map((c) => c[0]);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toMatchObject({ type: 'dev_autopilot.execution.pr_closed_reconciled', payload: { execution_id: 'e1', pr_number: 3544 } });
   });
 
   it('is rate-limited to once per 5 minutes', async () => {

@@ -40,6 +40,9 @@ ROUTE_MOUNT: `router.get('/supervisor', requireDevRole, ...)` in `services/gatew
 FINAL_URL: `GET /api/v1/dev-autopilot/supervisor`
 CURL_PROOF: pre-merge staging — `404 text/html` (route not yet deployed) while sibling `/api/v1/dev-autopilot/spend` returns `401 application/json` (router mounted, dev-role gate live). Post-merge expectation: `/supervisor` → `401 application/json` unauthenticated. Recorded after the staging deploy in commands.log.
 
+OASIS_PROOF: one new event type, `dev_autopilot.execution.pr_closed_reconciled` (added to the `CicdEventType` union in `services/gateway/src/types/cicd.ts`), emitted by `closedPrReconcileTick()` once per execution whose PR GitHub reports closed-unmerged, payload `{ execution_id, pr_number }`, `status: info`, source `dev-autopilot`. Never emitted for merged or open PRs, and never per poll (a state transition only, not a heartbeat).
+TEST: services/gateway/test/vtid-04280-pipeline-unstick.test.ts — "stamps closed-unmerged PRs, records merged/open PRs without unblocking them" asserts exactly one emission with that type and payload for the one closed-unmerged row of three. Live signal after merge: rows with this topic in `oasis_events` on staging.
+
 ## Not done here, stated plainly
 
 - **Community AP engine (Registry/Growth/Engine) is still not running.** Its triggers were GCP Cloud Scheduler jobs; moving them to EventBridge needs `scheduler:*`/`lambda:*` IAM this session does not have (same wall as VTID-04226), and re-enabling them sends real notifications to members — a product decision. The screens now say so instead of showing empty cards.
