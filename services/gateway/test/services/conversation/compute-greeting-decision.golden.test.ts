@@ -726,6 +726,72 @@ describe('computeGreetingDecision — VTID-03607 new-day briefing on the normal 
 });
 
 // ---------------------------------------------------------------------------
+// VTID-04255 — live report: "every new day greeting now is nonstop." Traced
+// via oasis_events to a real production user getting the full
+// safe_fast_newday_overview 3x in 21h, including once on bucket=reconnect
+// (seconds after the prior turn) — because the durable once-per-day stamp
+// write was failing (`permission denied for table user_journey`, a broken
+// AWS credential, not a code bug) and NEITHER shouldAttemptNewdayOverview NOR
+// tryDayCloseRung had ever checked ctx.bucket at all. The sibling
+// `silent_reconnect` defense (openDecision.mode==='silent') is a DIFFERENT,
+// transport-level signal (native WS resume) that a fresh reconnect-bucketed
+// session never sets — confirmed by grep: no pre-existing test in this file
+// combines bucket:'reconnect' with a stale lastFullBriefingDate. This locks
+// the fix so it can never silently regress again, independent of whether the
+// DB write is healthy.
+// ---------------------------------------------------------------------------
+describe('computeGreetingDecision — VTID-04255 reconnect must never open a fresh briefing', () => {
+  const staleBriefing = {
+    lastFullBriefingDate: '2026-06-29', // stale → briefingDue would be true
+    newdayOverview: richPayload({ messages_unread: 3 }),
+  };
+
+  test('safe-fast ladder: bucket=reconnect + briefing due + rich payload → NOT safe_fast_newday_overview', () => {
+    const d = computeGreetingDecision(safeFastCtx({ ...staleBriefing, bucket: 'reconnect' }));
+    expect(d.wakeOpener).not.toBe('safe_fast_newday_overview');
+  });
+
+  test('normal ladder: bucket=reconnect + briefing due + rich payload → NOT newday_overview', () => {
+    const d = computeGreetingDecision(
+      ctx({ ...staleBriefing, bucket: 'reconnect', openDecision: { mode: 'speak', source: 'baseline_lead', line: 'x' } }),
+    );
+    expect(d.wakeOpener).not.toBe('newday_overview');
+  });
+
+  test('the SAME context one bucket wider (same_day) still fires the briefing — this is a bucket check, not a broader regression', () => {
+    const d = computeGreetingDecision(safeFastCtx({ ...staleBriefing, bucket: 'same_day' }));
+    expect(d.wakeOpener).toBe('safe_fast_newday_overview');
+  });
+
+  test('day_close: bucket=reconnect at night, stamp never written → does NOT fire', () => {
+    const d = computeGreetingDecision(
+      ctx({ bucket: 'reconnect', localHour: 22, lastDayCloseDate: null, isAnonymous: false, newdayOverview: null }),
+    );
+    expect(d.wakeOpener).not.toBe('day_close');
+  });
+
+  test('day_close: the SAME context one bucket wider (same_day) at night still fires once', () => {
+    const d = computeGreetingDecision(
+      ctx({ bucket: 'same_day', localHour: 22, lastDayCloseDate: null, isAnonymous: false, newdayOverview: null }),
+    );
+    expect(d.wakeOpener).toBe('day_close');
+  });
+
+  test('a genuine day-boundary crossing that happens to land in the reconnect window is not lost — it fires on the next session once the gap widens', () => {
+    // 23:58 close, 00:02 reopen: bucket is 'reconnect' (temporally close), so
+    // THIS session stays quiet by design — but nothing about that session
+    // stamps or consumes the once-per-day due-ness, so the very next session
+    // (bucket widened past reconnect, stamp still stale) gets it normally.
+    const suppressed = computeGreetingDecision(safeFastCtx({ ...staleBriefing, bucket: 'reconnect' }));
+    expect(suppressed.wakeOpener).not.toBe('safe_fast_newday_overview');
+    expect(suppressed.effects.stampBriefingDate).toBeUndefined();
+
+    const nextSession = computeGreetingDecision(safeFastCtx({ ...staleBriefing, bucket: 'today' }));
+    expect(nextSession.wakeOpener).toBe('safe_fast_newday_overview');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // VTID-03724 — a tapped guided topic outranks day_close/newday_overview on
 // BOTH ladders. Live report: "tapping a session starts my new day greeting
 // overview... it does not start the session." Confirmed via oasis_events —

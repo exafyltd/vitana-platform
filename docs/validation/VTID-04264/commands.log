@@ -1,0 +1,83 @@
+# VTID-04264 — commands run by this Claude Code session (interactive,
+# taking over after the Operator Console on-ramp's agent execution
+# (autopilot_run_task, this same self-allocated VTID) exhausted its
+# 120-turn cap without making an edit — confirmed via dev_query_oasis_events
+# against `dev_autopilot.agent.tool`/`dev_autopilot.agent.llm` events for
+# that execution: every turn was read_file/search_text against the 2.6MB
+# app.js, zero write_file/edit_file calls).
+
+$ git checkout -B claude/vtid-04264-kill-switch-button origin/main
+# confirmed clean, up to date, includes the just-merged VTID-04262
+
+$ grep -n "kill-switch\|kill_switch" services/gateway/src/routes/dev-autopilot.ts
+# confirmed GET /config and POST /config/kill-switch already fully
+# implemented — no backend change needed
+
+$ grep -n "Autopilot Live|autopilot-live|renderDevAutopilotExecutionCard|kill.switch" \
+    services/gateway/src/frontend/command-hub/app.js
+# found the read-only "Kill switch" chip in renderDevAutopilotView's status
+# strip (line ~40407) and the self-healing kill-switch button pattern to
+# copy (line ~45989)
+
+# Added a toggle button in the Dev Autopilot panel header, next to Refresh,
+# reusing the self-healing panel's own kill-switch button structure
+# (buildContextHeaders, confirm() before a disruptive ARM, showToast on
+# failure, re-fetch on success).
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+# SYNTAX OK
+
+$ cd services/gateway && npx tsc --noEmit
+# clean, no output
+
+$ node_modules/.bin/jest test/scripts/command-hub-ownership-guard.test.ts
+# 12/12 tests passing (before the ALLOWED_VTID_PATTERN addition — generic,
+# unaffected)
+
+# First attempt used killSwitchBtn.style.cssText for spacing — re-ran the
+# CSP scan and found it would be flagged:
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+# REJECTED: CSP pattern hit in an added line :: /\.style\b/
+#   killSwitchBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; margin-left: 8px;';
+# (matches this repo's own established fix for the same defect shape on
+# VTID-04033 — "classes only, CSP gate re-run clean")
+
+# Fix: removed .style.cssText, added a small dedicated CSS class
+# (.dev-autopilot-kill-switch-btn { margin-left: 8px; }) to styles.css,
+# reusing the pre-existing .btn/.btn-success/.btn-danger classes for
+# sizing/color.
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+# SYNTAX OK
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+# No CSP pattern hits in added lines.
+
+# Added scripts/ci/command-hub-ownership-guard.js allowlist entry for
+# VTID-04264 (own branch, own comment block, following the file's
+# established per-VTID convention).
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+# OK
+
+$ node -e "
+const guard = require('./scripts/ci/command-hub-ownership-guard.js');
+console.log(JSON.stringify(guard.evaluateMarkerAuthorization(
+  'claude/vtid-04264-kill-switch-button',
+  'VTID-04264: Dev Autopilot kill-switch button on Command Hub'
+)));
+"
+# {"allowed":true,"reason":"allowlisted-marker"}
+
+# New test file added: services/gateway/test/vtid-04264-kill-switch-button.test.ts
+$ cd services/gateway && node_modules/.bin/jest test/vtid-04264-kill-switch-button.test.ts \
+    test/command-hub/ \
+    test/scripts/command-hub-ownership-guard.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts \
+    test/console-task-17-cost-badge-tooltip.test.ts
+# 22/22 suites, 305/305 tests passing, 0 regressions
+
+$ cd services/gateway && npx tsc --noEmit
+# clean (re-run after the CSS/class fix)

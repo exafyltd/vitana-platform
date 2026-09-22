@@ -15655,7 +15655,7 @@ router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedR
       source: 'orb-live',
       status: 'info',
       message: `audio pipeline ready ack for session ${sessionId}`,
-      payload: { session_id: sessionId, user_id: userId, ok: r.ok },
+      payload: { session_id: sessionId, user_id: userId, ok: r.ok, reason: r.reason },
       actor_id: userId,
       surface: 'orb',
     }).catch(() => {});
