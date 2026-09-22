@@ -68,6 +68,7 @@ import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-aut
 import { hasTurnCapFailure } from './dev-autopilot-retry-breaker';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
 import { recordExecutionOutcomeMemory } from './operator-turn-memory';
 import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
@@ -1353,6 +1354,14 @@ function buildExecutionPrompt(
    * fetched here so this builder stays pure and synchronous.
    */
   watcherRemindersBlock?: string,
+  /**
+   * VTID-04224 Phase 2: pre-rendered file-scoped dev_agent_memory block
+   * (see dev-agent-memory-file-recall.ts). Passed in, not fetched here, for
+   * the same reason as watcherRemindersBlock -- keeps this builder pure.
+   * '' when the flag is off or nothing was recalled -- byte-identical to
+   * before this phase in that case.
+   */
+  devMemoryBlock?: string,
 ): string {
   const lines: string[] = [];
   // VTID-02692: LOCKED file list at the very top. The executor LLM (Gemini
@@ -1430,6 +1439,8 @@ function buildExecutionPrompt(
   // validation history above. Empty string when the flag is off, so the
   // prompt is byte-identical to before.
   if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
+  if (devMemoryBlock) lines.push(devMemoryBlock, ``);
 
   if (fileCtx.length > 0) {
     lines.push(
@@ -1759,7 +1770,18 @@ export async function runExecutionSession(
       watcherBlock = '';
     }
   }
-  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
+  // VTID-04224 Phase 2: flag-gated file-scoped dev_agent_memory recall,
+  // same fail-open posture as the Watcher block above — a recall failure
+  // must never stall or fail an execution.
+  let devMemoryBlock = '';
+  if (isWorkerMemoryRecallEnabled()) {
+    try {
+      devMemoryBlock = await buildFileScopedMemoryBlock(planFiles, 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock, devMemoryBlock);
   const startedAt = Date.now();
   // VTID-03820: an execution queued with an llm_on_ramp_override (e.g. the
   // operator DeepSeek execution on-ramp) ALWAYS takes the callRoutedLlm

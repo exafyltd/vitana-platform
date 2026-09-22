@@ -260,6 +260,78 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### dev_agent_memory — file-scoped recall + stage provenance — APPLIED 2026-09-21 (VTID-04224)
+**Purpose:** extends `dev_agent_memory` (VTID-03889, Operator Console engineering
+memory) with two additive columns so the Planner/Worker/Validator LLM
+routing stages can eventually read/write it too — previously only the
+`memory` extraction stage (Operator Console turns) and the Dev Autopilot
+executor's outcome writer touched this table.
+
+- `file_paths text[]` (+ GIN index) — concrete repo-relative files a row
+  is about (changed files on write, target files on read); matched by
+  plain `&&` array overlap, no glob matching needed since both sides are
+  concrete paths.
+- `stage text` (`operator`/`planner`/`worker`/`validator`, nullable) —
+  provenance only; never restricts which stage may recall a row.
+
+`write_dev_memory()` gained two new trailing defaulted params
+(`p_file_paths`, `p_stage`) — every existing caller works unchanged. New
+sibling RPC `recall_dev_memory_by_files(p_repo, p_files, p_category?,
+p_limit?)` — deterministic recall by file overlap, no embedding call.
+
+**Status:** migration `20260921120000_bootstrap_dev_agent_memory_file_scope.sql`
+**applied to the live project 2026-09-21** via the Supabase MCP
+(`apply_migration`) — `write_dev_memory()` had to be DROPPED and
+RECREATED rather than CREATE-OR-REPLACEd (Postgres treats a different
+argument list as a new overload, which briefly left two co-existing
+`write_dev_memory` functions and made any unqualified reference to the
+name ambiguous — `42725 function name is not unique`). Round-trip
+verified live post-apply: `write_dev_memory()` with a placeholder
+embedding, `recall_dev_memory_by_files()` found the row by `file_paths`
+overlap, then the test row was deleted.
+
+**Used by:** `services/gateway/src/services/dev-agent-memory.ts`
+(`recallDevMemoryByFiles`), `operator-turn-memory.ts`'s
+`buildExecutionOutcomeMemory` (stamps `stage:'worker'`, threads
+`filePaths` through the executor's existing `task_outcome`/`gotcha`
+writes).
+
+**Phases 2-4 (same VTID-04224, same PR): read-side wiring into every
+autopilot LLM stage.** New `dev-agent-memory-file-recall.ts` —
+`buildFileScopedMemoryBlock(files, repo)` (fetch + render in one call,
+fails open to `''` on any error) plus three independent, exact-string
+`'true'` kill switches, each defaulting OFF (ships inert, same posture as
+every other opt-in feature in this file's CHANGE LOG):
+
+- `DEV_AUTOPILOT_WORKER_MEMORY_ENABLED` — both Worker executors (the
+  single-shot path's `buildExecutionPrompt` in `dev-autopilot-execute.ts`,
+  and the agentic path's `buildAgentTaskPrompt`/`buildFixModeTaskPrompt` in
+  `autopilot-agent/run-agent-execution.ts` + `agent-prompt.ts`), recalled
+  against the plan's `files_referenced` (or the PR's changed files in fix
+  mode).
+- `DEV_AUTOPILOT_VALIDATOR_MEMORY_ENABLED` — the pre-merge LLM review
+  (`dev-autopilot-llm-review.ts`'s `runLlmMergeReview`/`buildReviewPrompt`),
+  recalled against the PR's changed filenames.
+- `DEV_AUTOPILOT_PLANNER_MEMORY_ENABLED` — plan generation
+  (`dev-autopilot-planning.ts`'s `buildPlanningPrompt`), recalled against
+  the finding's `spec_snapshot.file_path` plus, for the feedback-bridge
+  lane, `proposed_files`.
+
+Every call site follows the same shape: gate check → `try { await
+buildFileScopedMemoryBlock(...) } catch { '' }` → spliced into the
+prompt only if non-empty. All four prompt builders are pure/synchronous
+and are byte-identical to their pre-Phase-2 output when the block is `''`
+or omitted (pinned by tests). **Phase 1's real (non-empty) file-list
+wiring into `dev-autopilot-execute.ts`'s two `recordExecutionOutcomeMemory`
+call sites remains an explicit follow-up, not done here** — that file's
+own change-log history flags it repeatedly as high-churn and
+cancellation-sensitive, and Phase 2-4's read side does not depend on it
+(the Worker's outcome WRITES still land with `file_paths: []` until that
+follow-up ships; the new recall reads are keyed off the PLAN's/PR's own
+file list instead, which was always populated).
+
+---
+
 ### operator_threads / operator_messages — APPLIED 2026-09-17 (VTID-04022)
 **Purpose:** server-side record of the Command Hub Operator Console (W4b of
 `docs/OPERATOR-AGENT-BUILD-PLAN.md`, gap analysis §4.3). Until this, the

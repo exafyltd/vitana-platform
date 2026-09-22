@@ -29,6 +29,7 @@ import type { LLMProvider, LLMRouterMessage } from '../llm-router';
 import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
+import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
@@ -268,13 +269,25 @@ export async function runAgentExecutionSession(
 
     const repoDirChanged = async () => (fixMode ? listChangedFilesSince(repoDir, baseSha) : listChangedFiles(repoDir));
     let changed = await repoDirChanged();
+    // VTID-04224 Phase 2: flag-gated file-scoped dev_agent_memory recall,
+    // fail-open — a recall failure must never stall or fail an execution.
+    let devMemoryBlock = '';
+    if (isWorkerMemoryRecallEnabled()) {
+      try {
+        const memFiles = fixMode ? changed.map((c) => c.path) : (plan.files_referenced || []);
+        devMemoryBlock = await buildFileScopedMemoryBlock(memFiles, 'vitana-platform');
+      } catch {
+        devMemoryBlock = '';
+      }
+    }
     let prompt = fixMode
       ? buildFixModeTaskPrompt({
         vtid: telemetryVtid, planMarkdown: plan.plan_markdown, prUrl: fixMode.pr_url, branch, prFiles: changed.map((c) => c.path),
         ciEvidence: priorFailure || '', attempt: (exec.auto_fix_depth || 0) + 1, maxAttempts: (exec.auto_fix_depth || 0) + 1 + AGENT_MAX_FIX_ROUNDS,
+        devMemoryBlock,
         mergeBase: mergeBase ? { status: mergeBase.status, conflicts: mergeBase.conflicts, baseBranch: GITHUB_BASE_BRANCH } : undefined,
       })
-      : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
+      : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded, devMemoryBlock });
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;

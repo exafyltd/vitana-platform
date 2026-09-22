@@ -26,6 +26,8 @@ export type DevMemoryCategory =
   | 'task_outcome'
   | 'gotcha';
 export type DevMemorySource = 'session' | 'autopilot' | 'manual' | 'backfill';
+/** Which LLM routing stage produced a row. Provenance only -- see the migration header. */
+export type DevMemoryStage = 'operator' | 'planner' | 'worker' | 'validator';
 
 export interface WriteDevMemoryInput {
   repo: DevMemoryRepo;
@@ -37,6 +39,9 @@ export interface WriteDevMemoryInput {
   source: DevMemorySource;
   tags?: string[];
   supersedes?: string;
+  /** Concrete repo-relative files this memory is about (e.g. the diff's changed files). */
+  filePaths?: string[];
+  stage?: DevMemoryStage;
 }
 
 export interface DevMemoryHit {
@@ -50,6 +55,21 @@ export interface DevMemoryHit {
   tags: string[];
   created_at: string;
   similarity: number;
+}
+
+/** A file-scoped recall hit (recall_dev_memory_by_files) -- no similarity score, since there's no query embedding. */
+export interface DevMemoryFileHit {
+  id: string;
+  vtid: string | null;
+  category: DevMemoryCategory;
+  title: string;
+  content: string;
+  importance: number;
+  source: DevMemorySource;
+  tags: string[];
+  file_paths: string[];
+  stage: DevMemoryStage | null;
+  created_at: string;
 }
 
 /**
@@ -89,6 +109,8 @@ export async function writeDevMemory(
         p_source: input.source,
         p_tags: input.tags ?? [],
         p_supersedes: input.supersedes ?? null,
+        p_file_paths: input.filePaths ?? [],
+        p_stage: input.stage ?? null,
       }),
     },
   );
@@ -127,6 +149,40 @@ export async function recallDevMemory(
       p_query_embedding: `[${embedRes.embedding.join(',')}]`,
       p_limit: opts.limit ?? 8,
       p_category: opts.category ?? null,
+    }),
+  });
+
+  if (!r.ok) return { ok: false, error: r.error || `http_${r.status}` };
+  return { ok: true, hits: r.data ?? [] };
+}
+
+/**
+ * Recall dev_agent_memory rows whose file_paths overlap `files` -- a
+ * deterministic, embedding-free counterpart to `recallDevMemory`. Meant
+ * for a caller that already knows concrete target files (a plan's
+ * files_referenced, a PR's changed files) and wants the gotchas/incidents
+ * tied to exactly those paths, not merely the semantically nearest text.
+ *
+ * Returns `{ok:true, hits:[]}` (not an error) for an empty `files` list --
+ * there is nothing to overlap against, which is a normal state (e.g. an
+ * open-ended task with no files named yet), not a failure to search.
+ */
+export async function recallDevMemoryByFiles(
+  files: string[],
+  repo: DevMemoryRepo,
+  opts: { limit?: number; category?: DevMemoryCategory } = {},
+): Promise<{ ok: true; hits: DevMemoryFileHit[] } | { ok: false; error: string }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'supabase_not_configured' };
+  if (!files.length) return { ok: true, hits: [] };
+
+  const r = await supa<DevMemoryFileHit[]>(s, '/rest/v1/rpc/recall_dev_memory_by_files', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_repo: repo,
+      p_files: files,
+      p_category: opts.category ?? null,
+      p_limit: opts.limit ?? 8,
     }),
   });
 

@@ -82,6 +82,12 @@ export interface AgentTaskPromptInput {
   /** VTID-04007: open-ended intake — the "plan" is the user's request in
    *  their own words and no files were pre-selected. */
   openEnded?: boolean;
+  /**
+   * VTID-04224 Phase 2: pre-rendered file-scoped dev_agent_memory block
+   * (dev-agent-memory-file-recall.ts). '' when the flag is off or nothing
+   * was recalled — byte-identical to before this phase in that case.
+   */
+  devMemoryBlock?: string;
 }
 
 export function buildAgentTaskPrompt(i: AgentTaskPromptInput): string {
@@ -97,6 +103,7 @@ export function buildAgentTaskPrompt(i: AgentTaskPromptInput): string {
       `2. Make the smallest change that fully addresses the request. Do not add features, refactors or requirements the request did not ask for.`,
       `3. If the request is genuinely ambiguous in a way that changes what should be built, take the reading a maintainer of this repository would take, and say which reading you took (and why) in the PR body.`,
       i.priorFailure ? `\n## A previous attempt failed — evidence\n${i.priorFailure.trim()}\n\nAddress the root cause shown above; do not repeat the same change.` : '',
+      i.devMemoryBlock ? `\n${i.devMemoryBlock}\n` : '',
       ``,
       `Begin by searching for the code the request refers to.`,
     ].join('\n');
@@ -111,6 +118,7 @@ export function buildAgentTaskPrompt(i: AgentTaskPromptInput): string {
     `## Files the plan names (start here; read them first)`,
     files,
     i.priorFailure ? `\n## A previous attempt failed — evidence\n${i.priorFailure.trim()}\n\nAddress the root cause shown above; do not repeat the same change.` : '',
+    i.devMemoryBlock ? `\n${i.devMemoryBlock}\n` : '',
     ``,
     `Begin by reading the named files.`,
   ].join('\n');
@@ -150,6 +158,8 @@ export interface FixModeTaskPromptInput {
   /** 1-based attempt number and the cap (auto_fix_depth / max). */
   attempt: number;
   maxAttempts: number;
+  /** VTID-04224 Phase 2: see AgentTaskPromptInput.devMemoryBlock. */
+  devMemoryBlock?: string;
   /**
    * VTID-04217: what `mergeBaseIntoBranch` did before this run started.
    * `conflict` lists the files the runner left with conflict markers for the
@@ -192,6 +202,7 @@ export function buildFixModeTaskPrompt(i: FixModeTaskPromptInput): string {
     buildMergeConflictSection(i.mergeBase),
     `## CI failure evidence (the failing jobs' own log excerpts)`,
     i.ciEvidence.trim() || '(no evidence captured — run run_check tsc and the paired jest suites to reproduce)',
+    i.devMemoryBlock ? `\n${i.devMemoryBlock}\n` : '',
     ``,
     `## How to proceed`,
     `1. Read the failing output above carefully and locate the exact cause in the files on this branch. Reproduce it with run_check (tsc / jest on the failing suite) before changing anything.`,

@@ -26,7 +26,7 @@ jest.mock('../../src/services/dev-memory-embedding', () => ({
 }));
 
 import { generateDevMemoryEmbedding } from '../../src/services/dev-memory-embedding';
-import { writeDevMemory, recallDevMemory } from '../../src/services/dev-agent-memory';
+import { writeDevMemory, recallDevMemory, recallDevMemoryByFiles } from '../../src/services/dev-agent-memory';
 
 const mockGenerateEmbedding = generateDevMemoryEmbedding as jest.Mock;
 
@@ -106,6 +106,8 @@ describe('writeDevMemory', () => {
       p_source: 'session',
       p_tags: ['memory', 'bedrock'],
       p_supersedes: null,
+      p_file_paths: [],
+      p_stage: null,
     });
   });
 
@@ -255,5 +257,100 @@ describe('recallDevMemory', () => {
     const result = await recallDevMemory('nothing relevant yet', 'vitana-platform');
     expect(result.ok).toBe(true);
     expect(result.ok && result.hits).toEqual([]);
+  });
+});
+
+describe('writeDevMemory — file_paths/stage passthrough', () => {
+  beforeEach(() => {
+    mockGenerateEmbedding.mockReset();
+    mockGenerateEmbedding.mockResolvedValue({
+      ok: true,
+      embedding: [0.1],
+      model: 'amazon.titan-embed-text-v2:0',
+      latency_ms: 1,
+    });
+  });
+
+  it('forwards filePaths/stage as p_file_paths/p_stage when given', async () => {
+    let capturedBody: any;
+    global.fetch = jest.fn(async (_url: any, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => 'a3f9e1c0-0000-0000-0000-000000000000' } as any;
+    }) as any;
+
+    await writeDevMemory({
+      repo: 'vitana-platform',
+      category: 'gotcha',
+      title: 'tsc needs more heap on this file',
+      content: 'Bump NODE_OPTIONS before re-running the check.',
+      source: 'autopilot',
+      filePaths: ['services/gateway/src/routes/orb-live.ts'],
+      stage: 'worker',
+    });
+
+    expect(capturedBody.p_file_paths).toEqual(['services/gateway/src/routes/orb-live.ts']);
+    expect(capturedBody.p_stage).toBe('worker');
+  });
+});
+
+describe('recallDevMemoryByFiles', () => {
+  it('never calls the RPC and returns ok:true with no hits for an empty file list', async () => {
+    global.fetch = jest.fn() as any;
+    const result = await recallDevMemoryByFiles([], 'vitana-platform');
+    expect(result).toEqual({ ok: true, hits: [] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('posts the exact recall_dev_memory_by_files RPC shape and returns the hits verbatim', async () => {
+    const hits = [
+      {
+        id: 'h1',
+        vtid: 'VTID-04016',
+        category: 'gotcha',
+        title: 'tsc needs more heap on this file',
+        content: 'Bump NODE_OPTIONS before re-running the check.',
+        importance: 55,
+        source: 'autopilot',
+        tags: ['dev-autopilot', 'execution', 'failed'],
+        file_paths: ['services/gateway/src/routes/orb-live.ts'],
+        stage: 'worker',
+        created_at: '2026-09-17T00:00:00Z',
+      },
+    ];
+    let capturedUrl = '';
+    let capturedBody: any;
+    global.fetch = jest.fn(async (url: any, opts: any) => {
+      capturedUrl = String(url);
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => hits } as any;
+    }) as any;
+
+    const result = await recallDevMemoryByFiles(
+      ['services/gateway/src/routes/orb-live.ts'],
+      'vitana-platform',
+      { limit: 4, category: 'gotcha' },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.hits).toEqual(hits);
+    expect(capturedUrl).toBe('https://test-project.supabase.co/rest/v1/rpc/recall_dev_memory_by_files');
+    expect(capturedBody).toEqual({
+      p_repo: 'vitana-platform',
+      p_files: ['services/gateway/src/routes/orb-live.ts'],
+      p_category: 'gotcha',
+      p_limit: 4,
+    });
+  });
+
+  it('defaults limit to 8 and category to null when not specified', async () => {
+    let capturedBody: any;
+    global.fetch = jest.fn(async (_url: any, opts: any) => {
+      capturedBody = JSON.parse(opts.body);
+      return { ok: true, status: 200, json: async () => [] } as any;
+    }) as any;
+
+    await recallDevMemoryByFiles(['some/file.ts'], 'vitana-v1');
+    expect(capturedBody.p_limit).toBe(8);
+    expect(capturedBody.p_category).toBeNull();
   });
 });
