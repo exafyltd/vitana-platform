@@ -47,6 +47,11 @@ jest.mock('../../src/services/oasis-event-service', () => ({
 }));
 jest.mock('../../src/services/dev-autopilot-outcomes', () => ({
   recordOutcome: jest.fn().mockResolvedValue(undefined),
+  // VTID-04267: summarizeSpendToday is pure (no Supabase/network dependency)
+  // and already unit-tested directly in dev-autopilot-outcomes.test.ts — use
+  // the real implementation here so this file's GET /spend tests exercise
+  // real route-to-summary wiring, not a second hand-written stub of it.
+  summarizeSpendToday: jest.requireActual('../../src/services/dev-autopilot-outcomes').summarizeSpendToday,
 }));
 
 import { ingestScan } from '../../src/services/dev-autopilot-synthesis';
@@ -191,6 +196,7 @@ describe('requireDevRole governance gate', () => {
     { method: 'get', url: '/api/v1/dev-autopilot/executions' },
     { method: 'get', url: '/api/v1/dev-autopilot/config' },
     { method: 'post', url: '/api/v1/dev-autopilot/config/kill-switch' },
+    { method: 'get', url: '/api/v1/dev-autopilot/spend' }, // VTID-04267
   ];
 
   it.each(protectedEndpoints)(
@@ -1201,5 +1207,73 @@ describe('POST /config/kill-switch', () => {
     const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/kill-switch').send({ armed: true }));
     expect(res.status).toBe(500);
     expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// GET /spend (VTID-04267) — today's real Dev Autopilot agent spend, summed
+// from dev_autopilot_outcomes.metadata.agent_runs[] via summarizeSpendToday
+// (unit-tested directly in test/services/dev-autopilot-outcomes.test.ts).
+// This suite only covers the route's own plumbing: querying the right
+// table/columns and passing the result through.
+// =============================================================================
+
+describe('GET /spend', () => {
+  it('sums agent_runs[] recorded today across the fetched outcome rows', async () => {
+    const todayIso = new Date().toISOString();
+    setFetchRoutes([
+      (url) =>
+        url.includes('/rest/v1/dev_autopilot_outcomes')
+          ? jsonRes(200, [
+              { metadata: { agent_runs: [{ cost_usd: 0.01, input_tokens: 100, output_tokens: 10, recorded_at: todayIso }] } },
+              { metadata: { agent_runs: [{ cost_usd: 0.02, input_tokens: 200, output_tokens: 20, recorded_at: todayIso }] } },
+            ])
+          : undefined,
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      spend_usd_today: 0.03,
+      input_tokens_today: 300,
+      output_tokens_today: 30,
+      runs_today: 2,
+    });
+  });
+
+  it('returns all zeros, not an error, when there are no outcome rows yet', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined)]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      spend_usd_today: 0,
+      input_tokens_today: 0,
+      output_tokens_today: 0,
+      runs_today: 0,
+    });
+  });
+
+  it('returns 500 when the Supabase query itself fails', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(500, {}) : undefined)]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('queries only recent rows (bounded, ordered) — no unbounded table scan', async () => {
+    let queriedUrl = '';
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_outcomes')) {
+          queriedUrl = url;
+          return jsonRes(200, []);
+        }
+        return undefined;
+      },
+    ]);
+    await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(queriedUrl).toContain('order=created_at.desc');
+    expect(queriedUrl).toMatch(/limit=\d+/);
   });
 });

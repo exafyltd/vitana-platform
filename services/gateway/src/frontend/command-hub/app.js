@@ -40323,11 +40323,15 @@ function fetchDevAutopilotState() {
         fetch('/api/v1/dev-autopilot/queue?status=new&limit=200', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, findings: [] }; }),
         fetch('/api/v1/dev-autopilot/config', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, config: null }; }),
         fetch('/api/v1/dev-autopilot/executions?status=active&limit=100', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, executions: [] }; }),
+        // VTID-04267: today's real agent spend (dollars, from the per-run
+        // cost already recorded on dev_autopilot_outcomes.metadata.agent_runs[]).
+        fetch('/api/v1/dev-autopilot/spend', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         state.devAutopilot.runs = (results[0] && results[0].runs) || [];
         state.devAutopilot.queue = (results[1] && results[1].findings) || [];
         state.devAutopilot.config = (results[2] && results[2].config) || null;
         state.devAutopilot.executions = (results[3] && results[3].executions) || [];
+        state.devAutopilot.spend = (results[4] && results[4].ok) ? results[4] : null;
         state.devAutopilot.fetched = true;
         state.devAutopilot.loading = false;
         state.devAutopilot.error = null;
@@ -40403,15 +40407,22 @@ function renderDevAutopilotView() {
     var cfg = state.devAutopilot.config || {};
     var queueCount = (state.devAutopilot.queue || []).length;
     var activeRuns = (state.devAutopilot.executions || []).length;
+    // VTID-04267: real dollars spent today, from GET /spend (sums the
+    // per-run cost already recorded on dev_autopilot_outcomes.metadata.
+    // agent_runs[]) — a separate axis from the "Budget" chip's daily
+    // APPROVAL-COUNT (dev_autopilot_config.daily_budget).
+    var spend = state.devAutopilot.spend;
     var chips = [
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
+        { label: 'Spend today', value: spend ? ('$' + Number(spend.spend_usd_today || 0).toFixed(4) + ' · ' + spend.runs_today + ' run' + (spend.runs_today === 1 ? '' : 's')) : '—', color: '#f97316', title: TURN_COST_ESTIMATE_NOTE },
         { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
         { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
         { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },
     ];
     chips.forEach(function (c) {
         var el = document.createElement('div');
+        if (c.title) el.title = c.title;
         el.innerHTML = '<span style="color: var(--text-secondary, #888); margin-right: 6px;">' + c.label + ':</span><strong style="color: ' + c.color + ';">' + c.value + '</strong>';
         statusStrip.appendChild(el);
     });
