@@ -1,0 +1,66 @@
+VTID-04262 — commands run to build and verify this change
+
+1. Read the merged VTID-04133 code and its own provisioning script
+   (scripts/aws/setup-operator-machine-auth-secret.sh) to confirm the
+   ERP-bridge / SQL-readonly optional-secret wiring pattern this change
+   follows.
+
+2. `aws secretsmanager describe-secret --region eu-central-1 \
+     --secret-id vitana/gateway/staging/operator-machine-auth-token`
+   -> MISSING, before the platform owner provisioned it.
+
+3. Platform owner ran, from their own AWS admin session (not this one —
+   this session's IAM identity `claude-code-aws-agent` returned a real
+   `AccessDeniedException` on `secretsmanager:CreateSecret`, confirmed
+   directly):
+     `bash scripts/aws/setup-operator-machine-auth-secret.sh --env staging provision --apply`
+   -> Created vitana/gateway/staging/operator-machine-auth-token.
+
+4. Edited .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:
+   - Added a `describe-secret` probe for the new secret, mirroring the
+     existing `SEC_SQL_RO` block (lines ~808-817 before this change).
+   - Added `--arg SEC_MACHINE_AUTH "$SEC_MACHINE_AUTH"` to the jq argument
+     list.
+   - Added `OPERATOR_MACHINE_AUTH_ENABLED` to the environment strip list
+     and `OPERATOR_MACHINE_AUTH_TOKEN` to the secrets strip list.
+   - Added a conditional `if $SEC_MACHINE_AUTH != "" then ... end` block
+     that sets `OPERATOR_MACHINE_AUTH_ENABLED=true` (environment) and
+     `OPERATOR_MACHINE_AUTH_TOKEN` (secrets, `valueFrom`).
+
+5. Wrote services/gateway/test/vtid-04262-staging-operator-machine-auth-wiring.test.ts
+   (6 tests) pinning: the describe-secret probe exists; it degrades to ""
+   rather than failing the deploy; both env/secrets strip lists include the
+   new names; the conditional gate wraps the activation (never
+   unconditional); the token is wired as `secrets`, not `environment`; the
+   prod workflow is untouched.
+
+6. `cd services/gateway && node node_modules/.bin/jest test/vtid-04262-staging-operator-machine-auth-wiring.test.ts`
+   -> 6/6 passing.
+
+7. `cd services/gateway && node node_modules/.bin/jest \
+     test/vtid-03820-onramp-staging-flag-pinned.test.ts \
+     test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts \
+     test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts \
+     test/orb/live/upstream/staging-fast-start-brain-cache-flags-pinned.test.ts \
+     test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts \
+     test/orb/live/upstream/staging-cascade-flag-pinned.test.ts \
+     test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts \
+     test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts \
+     test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts \
+     test/orb/live/upstream/staging-latency-telemetry-flag-pinned.test.ts \
+     test/vtid-04037-staging-operator-agent-flags-pinned.test.ts \
+     test/vtid-03850-staging-executor-dispatch-pinned.test.ts \
+     test/vtid-04006-staging-onramp-executor-pinned.test.ts`
+   -> 13 suites, 91/91 passing, no regressions from every other pin test
+      touching the same workflow file.
+
+8. `cd services/gateway && node node_modules/.bin/jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`
+   -> 7/7 passing (VTID-03788 bash -n + size guard still holds after the edit).
+
+9. `cd services/gateway && npx tsc --noEmit`
+   -> clean, no output.
+
+No AWS API mutation was made from this session for this VTID — only the
+earlier, separately-logged (and IAM-denied) attempt for VTID-04133's own
+secret creation, superseded by the platform owner's own successful run
+(step 3 above).
