@@ -811,6 +811,7 @@ export type CicdEventType =
   | 'dev_autopilot.batch.first_failure'
   | 'dev_autopilot.kill_switch.activated'
   | 'dev_autopilot.kill_switch.deactivated'
+  | 'dev_autopilot.config.updated'
   // VITANA-BRAIN: Unified Brain Events
   | 'brain.turn.received'
   | 'brain.turn.processed'

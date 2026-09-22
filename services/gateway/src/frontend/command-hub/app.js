@@ -40312,6 +40312,13 @@ if (!state.devAutopilot) {
         // Active setInterval ids keyed by findingId, so the generation
         // progress card re-renders every second with live elapsed + %.
         generationTimers: {},
+        // VTID-04268: Advanced config panel — draft edits (field → string
+        // as typed), save-in-flight flag, and the last save error (if any).
+        // Draft is separate from state.devAutopilot.config so an in-flight
+        // edit survives the 10s poll re-render without being clobbered.
+        configDraft: {},
+        configSaving: false,
+        configSaveError: null,
     };
 }
 
@@ -40337,6 +40344,133 @@ function fetchDevAutopilotState() {
         state.devAutopilot.loading = false;
         renderApp();
     });
+}
+
+// VTID-04268: safe, bounded numeric config knobs. Kept in sync with the
+// server-side allowlist in services/dev-autopilot-config-update.ts — never
+// includes allow_scope/deny_scope (executor file-access scope, too
+// security-sensitive for a text field) or kill_switch (its own control).
+var DEV_AUTOPILOT_CONFIG_FIELDS = [
+    { key: 'daily_budget', label: 'Daily budget ($)', min: 0, max: 1000 },
+    { key: 'cooldown_minutes', label: 'Cooldown (minutes)', min: 0, max: 1440 },
+    { key: 'concurrency_cap', label: 'Concurrency cap', min: 1, max: 50 },
+    { key: 'auto_archive_days', label: 'Auto-archive (days)', min: 1, max: 365 },
+    { key: 'reject_suppression_days', label: 'Reject suppression (days)', min: 0, max: 365 },
+    { key: 'eager_plan_top_k', label: 'Eager plan top K', min: 1, max: 100 },
+    { key: 'select_all_cap', label: 'Select-all cap', min: 1, max: 500 },
+    { key: 'max_auto_fix_depth', label: 'Max auto-fix depth', min: 0, max: 20 },
+    { key: 'post_deploy_verification_window_minutes', label: 'Post-deploy verification window (minutes)', min: 1, max: 1440 },
+];
+
+function devAutopilotSaveConfig() {
+    var cfg = state.devAutopilot.config || {};
+    var patch = {};
+    var invalid = null;
+    DEV_AUTOPILOT_CONFIG_FIELDS.forEach(function (f) {
+        if (invalid) return;
+        var draftVal = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, f.key)
+            ? state.devAutopilot.configDraft[f.key]
+            : cfg[f.key];
+        if (draftVal === undefined || draftVal === null || draftVal === '') return;
+        var n = Number(draftVal);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+            invalid = f.label + ' must be a whole number';
+            return;
+        }
+        if (n < f.min || n > f.max) {
+            invalid = f.label + ' must be between ' + f.min + ' and ' + f.max;
+            return;
+        }
+        if (n !== cfg[f.key]) patch[f.key] = n;
+    });
+    if (invalid) {
+        state.devAutopilot.configSaveError = invalid;
+        renderApp();
+        return;
+    }
+    if (Object.keys(patch).length === 0) {
+        state.devAutopilot.configSaveError = 'No changes to save';
+        renderApp();
+        return;
+    }
+    state.devAutopilot.configSaving = true;
+    state.devAutopilot.configSaveError = null;
+    renderApp();
+    var headers = buildContextHeaders({ 'Content-Type': 'application/json' });
+    fetch('/api/v1/dev-autopilot/config/update', { method: 'POST', headers: headers, body: JSON.stringify(patch) })
+        .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
+        .then(function (res) {
+            state.devAutopilot.configSaving = false;
+            if (!res.body || res.body.ok !== true) {
+                state.devAutopilot.configSaveError = (res.body && res.body.error) || ('HTTP ' + res.status);
+                renderApp();
+                return;
+            }
+            state.devAutopilot.configDraft = {};
+            showToast('Config updated: ' + Object.keys(patch).join(', '), 'success');
+            fetchDevAutopilotState();
+        })
+        .catch(function (err) {
+            state.devAutopilot.configSaving = false;
+            state.devAutopilot.configSaveError = err && err.message ? err.message : String(err);
+            renderApp();
+        });
+}
+
+function renderDevAutopilotConfigPanel() {
+    var section = document.createElement('details');
+    section.className = 'dev-autopilot-config-panel';
+    var summary = document.createElement('summary');
+    summary.className = 'dev-autopilot-config-summary';
+    summary.textContent = 'Advanced config';
+    section.appendChild(summary);
+
+    var body = document.createElement('div');
+    body.className = 'dev-autopilot-config-body';
+    var cfg = state.devAutopilot.config || {};
+
+    DEV_AUTOPILOT_CONFIG_FIELDS.forEach(function (f) {
+        var wrap = document.createElement('label');
+        wrap.className = 'dev-autopilot-config-field';
+        wrap.textContent = f.label;
+        var input = document.createElement('input');
+        input.type = 'number';
+        input.min = String(f.min);
+        input.max = String(f.max);
+        input.step = '1';
+        input.className = 'dev-autopilot-config-input';
+        var current = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, f.key)
+            ? state.devAutopilot.configDraft[f.key]
+            : cfg[f.key];
+        input.value = current === undefined || current === null ? '' : current;
+        input.disabled = !!state.devAutopilot.configSaving;
+        input.oninput = function (e) {
+            state.devAutopilot.configDraft[f.key] = e.target.value;
+        };
+        wrap.appendChild(input);
+        body.appendChild(wrap);
+    });
+
+    section.appendChild(body);
+
+    if (state.devAutopilot.configSaveError) {
+        var errEl = document.createElement('div');
+        errEl.className = 'dev-autopilot-config-error';
+        errEl.textContent = state.devAutopilot.configSaveError;
+        section.appendChild(errEl);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'dev-autopilot-config-actions';
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary dev-autopilot-config-save-btn';
+    saveBtn.textContent = state.devAutopilot.configSaving ? 'Saving…' : 'Save config';
+    saveBtn.disabled = !!state.devAutopilot.configSaving;
+    saveBtn.onclick = function () { devAutopilotSaveConfig(); };
+    actions.appendChild(saveBtn);
+    section.appendChild(actions);
+
+    return section;
 }
 
 function renderDevAutopilotView() {
@@ -40448,6 +40582,9 @@ function renderDevAutopilotView() {
     }
     runsSection.appendChild(runsBody);
     container.appendChild(runsSection);
+
+    // VTID-04268: writable config for the safe numeric knobs.
+    container.appendChild(renderDevAutopilotConfigPanel());
 
     // Filter toolbar
     container.appendChild(renderDevAutopilotToolbar());

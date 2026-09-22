@@ -17318,3 +17318,46 @@ border-bottom: 1px solid var(--color-border, #333);
   font-size: 12px;
   margin: 8px 0 12px;
 }
+
+/* VTID-04268: Dev Autopilot "Advanced config" panel — the writable
+   numeric-knob editor. Classes only, not inline style.cssText, per the CSP
+   gate (see the .vp-hint-text comment above for why). */
+.dev-autopilot-config-panel {
+  margin-bottom: 16px;
+}
+.dev-autopilot-config-summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  background: var(--card-bg, rgba(255, 255, 255, 0.04));
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-color, #fff);
+}
+.dev-autopilot-config-body {
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dev-autopilot-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  min-width: 160px;
+}
+.dev-autopilot-config-input {
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.dev-autopilot-config-error {
+  padding: 8px 12px;
+  color: #ef4444;
+  font-size: 12px;
+}
+.dev-autopilot-config-actions {
+  padding: 0 12px 12px;
+  display: flex;
+  gap: 8px;
+}

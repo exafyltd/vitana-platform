@@ -1,0 +1,97 @@
+VTID-04268 — commands run to build and verify this change
+
+1. Read the live `dev_autopilot_config` table schema
+   (supabase/migrations/20260416100000_dev_autopilot.sql, lines 213-244)
+   to confirm the 9 safe numeric columns plus the two JSONB scope arrays
+   and kill_switch this change deliberately excludes.
+
+2. Read the pre-existing GET /config and POST /config/kill-switch routes
+   (services/gateway/src/routes/dev-autopilot.ts, ~L1250-1277) as the
+   precedent pattern for auth gate, supaPatch usage, and OASIS event shape.
+
+3. Ran `grep -n "^export function\|^export const"
+   services/gateway/src/routes/dev-autopilot.ts` — empty. Decided to put
+   the pure validator in a new service module
+   (services/dev-autopilot-config-update.ts) rather than inline in the
+   route file, matching this repo's general services/ vs routes/ split.
+
+4. Wrote services/gateway/src/services/dev-autopilot-config-update.ts —
+   CONFIG_NUMERIC_FIELDS (9 fields with min/max bounds) and the pure
+   validateConfigUpdate(body) function.
+
+5. Added the `dev_autopilot.config.updated` event type to
+   services/gateway/src/types/cicd.ts's CicdEventType union.
+
+6. Added `POST /config/update` to
+   services/gateway/src/routes/dev-autopilot.ts: requireDevRole gate,
+   validateConfigUpdate, supaPatch on a rejected==false short-circuit,
+   emitOasisEvent on success.
+
+7. Wrote services/gateway/test/vtid-04268-dev-autopilot-config-writable.test.ts
+   (20 tests) — pure validator: bounds, unknown-field rejection (incl.
+   allow_scope/deny_scope/kill_switch by name), non-integer/non-finite
+   rejection, empty/non-object body rejection, a parametrized min/max
+   sweep over every field.
+
+8. Added route-level tests to services/gateway/test/routes/dev-autopilot.test.ts
+   (4 new tests + 1 governance-gate row): 200+PATCH+event on a valid
+   patch, 400+no-fetch on an unknown field, 400 on an out-of-range value,
+   500+no-event on a Supabase PATCH failure.
+
+9. `cd services/gateway && node node_modules/.bin/jest
+   test/vtid-04268-dev-autopilot-config-writable.test.ts
+   test/vtid-04268-command-hub-config-panel-wiring.test.ts
+   test/routes/dev-autopilot.test.ts`
+   -> 3 suites, 188/188 passing.
+
+10. Added the Command Hub "Advanced config" panel to
+    services/gateway/src/frontend/command-hub/app.js
+    (DEV_AUTOPILOT_CONFIG_FIELDS, devAutopilotSaveConfig,
+    renderDevAutopilotConfigPanel, wired into renderDevAutopilotView()).
+    First draft used `.style.cssText` (this repo's older convention) —
+    caught by re-reading VTID-03970's own styles.css comment on this
+    exact trap before running the gate, and rewrote to CSS classes
+    up front rather than discovering the CSP rejection the hard way.
+
+11. Added the 7 new classes to
+    services/gateway/src/frontend/command-hub/styles.css.
+
+12. `git diff -- services/gateway/src/frontend/ > /tmp/csp-diff.txt &&
+    node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp-diff.txt`
+    -> "No CSP pattern hits in added lines." exit 0.
+
+13. Wrote services/gateway/test/vtid-04268-command-hub-config-panel-wiring.test.ts
+    (source-text pin, matching the established app.js-has-no-build-step
+    test pattern) — field allowlist mirrors the server-side one, panel is
+    mounted, save POSTs to /config/update, re-fetches on success, inputs
+    disable while saving, no `.style` usage, every CSS class exists in
+    styles.css.
+
+14. Bumped the cache-bust marker in index.html
+    (?v=20260922-vtid-04268-config-writable, both app.js and styles.css,
+    matching per CLAUDE.md §16 IF-THEN 25 / t-h1-cache-bust-parity).
+
+15. Added `VTID-04268` to `ALLOWED_VTID_PATTERN` in
+    scripts/ci/command-hub-ownership-guard.js.
+
+16. `cd services/gateway && npx tsc --noEmit` -> clean.
+
+17. `cd services/gateway && node node_modules/.bin/jest
+    test/routes/dev-autopilot.test.ts
+    test/vtid-04268-dev-autopilot-config-writable.test.ts
+    test/vtid-04268-command-hub-config-panel-wiring.test.ts
+    test/command-hub test/scripts/command-hub-ownership-guard.test.ts
+    test/vtid-04033-operator-execution-follow.test.ts
+    test/vtid-04136-single-format-relative-time.test.ts`
+    -> 25 suites, 513/513 passing.
+
+18. `cd services/gateway && node node_modules/.bin/jest --testPathPattern
+    "dev-autopilot|oasis-event-service|cicd"`
+    -> 28 suites, 661/661 passing (confirms the new CicdEventType member
+    and the new route don't regress any neighbouring dev-autopilot or
+    OASIS-event suite).
+
+19. `git status --short services/gateway/specs/command-hub-symbol-index.json`
+    -> empty (the generator test's auto-regeneration side effect, seen on
+    every one of the prior five branches, did not fire this time — nothing
+    to revert).
