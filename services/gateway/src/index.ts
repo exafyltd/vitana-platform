@@ -9,6 +9,72 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // =============================================================================
+// VTID-04290: FEATURE-FLAG PREFLIGHT
+// =============================================================================
+// stale-feature-flag-scanner-v1 flagged FEATURE_INTENT_ENGINE_A: it gates the
+// Intent Engine routers (the `intentEngineEnabled` reads below are the only
+// thing that mounts them) but the var appears in no deploy config, so staging
+// and prod boot with it implicit-undefined and those routers silently never
+// mount — indistinguishable from a deliberate "off". Reading the raw value and
+// reporting which state we booted in makes that gap visible to whoever reads
+// the boot log (same posture as the OAuth preflight further down). Adding the
+// var to the deploy config itself is out of scope here: the workflows are
+// operator-owned.
+export type FeatureFlagPreflightState = 'enabled' | 'explicitly_disabled' | 'implicit_undefined';
+export type FeatureFlagPreflightLevel = 'info' | 'warn';
+
+export interface FeatureFlagPreflightOutcome {
+  state: FeatureFlagPreflightState;
+  level: FeatureFlagPreflightLevel;
+  message: string;
+}
+
+/**
+ * Pure: build the preflight outcome for a boolean feature-flag env var.
+ * Comparison is exact against `'true'` / `'false'` — the same literal check the
+ * gateway's own flag reads use (`process.env.X === 'true'`) — so the preflight
+ * can never report `enabled` for a value that actually leaves the gate closed.
+ * Anything else, including a value that was never set, is reported as
+ * implicit-undefined.
+ */
+export function featureFlagPreflight(envVar: string, rawValue: string | undefined): FeatureFlagPreflightOutcome {
+  if (rawValue === 'true') {
+    return {
+      state: 'enabled',
+      level: 'info',
+      message: `✅ Feature-flag preflight: ${envVar}=true — enabled.`,
+    };
+  }
+  if (rawValue === 'false') {
+    return {
+      state: 'explicitly_disabled',
+      level: 'info',
+      message: `⏸️ Feature-flag preflight: ${envVar}=false — explicitly disabled.`,
+    };
+  }
+  const detail = rawValue
+    ? `${envVar}="${rawValue}" is not a recognized true/false value`
+    : `${envVar} is not set`;
+  return {
+    state: 'implicit_undefined',
+    level: 'warn',
+    message: `⚠️ Feature-flag preflight: ${detail} (implicit-undefined) — the code path it gates stays disabled. Set it to "true" or "false" explicitly in the deploy config to silence this warning.`,
+  };
+}
+
+/** Log a `featureFlagPreflight` outcome at the level it reports. */
+export function logFeatureFlagPreflight(
+  envVar: string,
+  rawValue: string | undefined,
+  sink: Pick<Console, 'log' | 'warn'> = console,
+): FeatureFlagPreflightOutcome {
+  const outcome = featureFlagPreflight(envVar, rawValue);
+  if (outcome.level === 'warn') sink.warn(outcome.message);
+  else sink.log(outcome.message);
+  return outcome;
+}
+
+// =============================================================================
 // DEV-COMHU-2025-0013: ULTRA-EARLY BOOT BRANCH FOR vitana-dev-gateway
 // =============================================================================
 // If running on vitana-dev-gateway, act as a minimal redirector ONLY.
@@ -1545,6 +1611,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       console.log(`✅ OAuth preflight: ${key} present.`);
     }
   }
+
+  // VTID-04290: Intent Engine feature-flag preflight, immediately after the
+  // OAuth one above. `FEATURE_INTENT_ENGINE_A` gates nine routers (see the
+  // `intentEngineEnabled` reads) but appears in no deploy config, so on AWS
+  // staging/prod it is implicit-undefined and those routers never mount. The
+  // warning below makes that state visible in the boot log instead of being
+  // indistinguishable from a deliberate opt-out.
+  logFeatureFlagPreflight('FEATURE_INTENT_ENGINE_A', process.env.FEATURE_INTENT_ENGINE_A);
 
   // Start server
   if (process.env.NODE_ENV !== 'test') {
