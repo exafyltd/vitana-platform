@@ -706,20 +706,9 @@ jobs:
                     {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
                     {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
                     {name:"OPERATOR_PLANNER_ENABLED", value:"true"} ] )')
-          # VTID-04258 — NAV_CONTINUATION_BIND (assistant-continuation/acceptance-gate.ts),
-          # prod parity with staging, declared not dispatched (same posture as the
-          # VTID-04230 block above). Root cause of the recurring "offers to navigate,
-          # user says yes, nothing happens, loops" report: this deterministic accept
-          # gate already exists and is already wired into the turn handler, but no
-          # deploy workflow had ever set the flag that activates it — it showed up
-          # as a bare env var NAME on the live task def (docs/AWS-PRODUCTION-HANDOVER.md)
-          # with no confirmed value, and AWS-STAGE-DEPLOY-GATEWAY.yml's own checklist
-          # comment said it "should" be set while the jq block never actually set it.
-          # Fail-open by construction (maybeBindAcceptance swallows every error to
-          # null) and one-shot consumed, so this is safe to declare unconditionally.
-          # This block runs on every prod dispatch — nothing changes on prod until an
-          # owner dispatches this workflow (IF-THEN 26). Pinned by
-          # test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts.
+          # VTID-04258 — NAV_CONTINUATION_BIND, prod parity, declared not
+          # dispatched (see docs/validation/VTID-04258/). Fail-open, one-shot
+          # accept gate; pinned by test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("NAV_CONTINUATION_BIND") | not) ]
