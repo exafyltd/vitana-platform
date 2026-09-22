@@ -24,6 +24,7 @@
  *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
+import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
 import type { Response } from 'express';
 import { resolveOrbSurface, isWorkSurface } from '../surface';
 import type WebSocket from 'ws';
@@ -1527,6 +1528,14 @@ export async function handleLiveSessionStart(
       console.log(`[VTID-SESSION-LIMIT] Terminated ${terminatedCount} existing session(s) for user=${orbIdentity.user_id.substring(0, 8)}... before starting ${sessionId}`);
     }
   }
+
+  // VTID-04309: bind a Command Hub voice session to the Operator Console
+  // thread on screen (validated UUID, command-hub surface only).
+  const operatorThreadId = resolveOperatorThreadIdForVoice(
+    (body as any).operator_thread_id,
+    typeof (body as any).current_route === 'string' ? (body as any).current_route : null,
+  );
+  if (operatorThreadId) session.operator_thread_id = operatorThreadId;
 
   // VTID-02020: pin the conversation_id + mark resumed-from-history
   session.conversation_id = resolvedConversationId;

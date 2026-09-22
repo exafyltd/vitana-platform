@@ -23,6 +23,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools + per-surface catalog gating.
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
+import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -118,7 +119,8 @@ export function buildLiveApiTools(
  * before; on the admin and backoffice surfaces only the tools that belong to
  * that surface survive, and community/developer tools are ABSENT (not merely
  * discouraged in prose). backoffice additionally gains its own four tools.
- * vitanaland and command-hub are byte-for-byte unchanged.
+ * vitanaland is byte-for-byte unchanged; command-hub is gated by
+ * applyCommandHubGate (VTID-04310).
  */
 const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
 // Computed lazily: the declaration arrays come from modules that some route
@@ -131,7 +133,57 @@ function surfaceAllowlist(surface: 'admin' | 'backoffice'): Set<string> {
     : new Set<string>(namesOf(BACKOFFICE_TOOL_SCHEMAS));
 }
 
+/**
+ * VTID-04310 — the Command Hub developer voice catalog.
+ *
+ * The command-hub surface used to get the full community catalog (~290
+ * declarations, diary/water/journey tools included) with the developer
+ * tools appended last — so the tool-catalog byte budget (VTID-04026/04097)
+ * almost certainly trimmed the developer tools away. It now gets the
+ * navigation tools, memory/knowledge search, the developer read tools, and
+ * `operator_delegate` — the one way voice queues work (same Operator turn,
+ * approval hold and exafy_admin gate as the Operator Console).
+ *
+ * The legacy lifecycle tools below wrote to /api/v1/vtid/* and the worker
+ * orchestrator directly, outside the Operator on-ramp; they are retired from
+ * voice (their handlers stay for any other caller).
+ */
+export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
+  'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
+  'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
+]);
+const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME]);
+function commandHubAllowlist(): Set<string> {
+  return new Set<string>([
+    ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
+    ...COMMAND_HUB_EXTRA_TOOLS,
+  ]);
+}
+
+function applyCommandHubGate(tools: object[]): object[] {
+  const allowed = commandHubAllowlist();
+  const out: object[] = [];
+  let delegateAdded = false;
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
+        const name = typeof d?.name === 'string' ? d.name : '';
+        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+      });
+      if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
+        kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });
+      }
+      delegateAdded = true;
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    } else {
+      out.push(group);
+    }
+  }
+  return out;
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
+  if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;
   if (mode !== 'authenticated') return tools; // anonymous sessions already get the narrow navigator-only set
   const allowed = surfaceAllowlist(surface);

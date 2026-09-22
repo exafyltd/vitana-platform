@@ -2203,6 +2203,15 @@ body {
   color: white;
 }
 
+/* VTID-04309: Operator Console turns spoken with the voice assistant */
+.message-voice-tag {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
 .message-reply {
   align-self: flex-start;
   background-color: #2a2a2a;

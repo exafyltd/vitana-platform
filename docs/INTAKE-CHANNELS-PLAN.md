@@ -68,10 +68,10 @@ report-back reconciler.
 
 | # | VTID | Step | Status |
 |---|------|------|--------|
-| 1 | VTID-04307 | Verify JWT signature on the ticket admin endpoints (`ensureTenantAdmin`) | pending |
-| 2 | VTID-04308 | "Approve & Fix" dispatches; VTID per dispatched ticket (`linked_vtid`); feedback lane obeys the kill switch | pending |
-| 3 | VTID-04309 | Command Hub voice turns recorded into the Operator Console thread; not copied into the community inbox | pending |
-| 4 | VTID-04310 | Command Hub voice: one operator-delegation tool (same gate + hold as `autopilot_run_task`), surface-gated developer catalog, persona prompt update | pending |
+| 1 | VTID-04307 | Verify JWT signature on the ticket admin endpoints (`ensureTenantAdmin`) | done — PR #3595 (`a24a674`) |
+| 2 | VTID-04308 | "Approve & Fix" dispatches; VTID per dispatched ticket (`linked_vtid`); feedback lane obeys the kill switch | done — PR #3595 (`a24a674`) |
+| 3 | VTID-04309 | Command Hub voice turns recorded into the Operator Console thread; not copied into the community inbox | in review (steps 3+4 PR) |
+| 4 | VTID-04310 | Command Hub voice: one operator-delegation tool (same gate + hold as `autopilot_run_task`), surface-gated developer catalog, persona prompt update | in review (steps 3+4 PR) |
 | 5 | VTID-04311 | LLM spec drafting at triage for bug/ux; dispatch refuses placeholder specs | pending |
 | 6 | VTID-04312 | Notify the reporter on resolved / needs-more-info (tt() catalog); resolution in `/mine` | pending |
 | 7 | VTID-04313 | Diary recorders → `feedback_tickets`, retire `user_feedback_reports`; root-cause the intake silence since 2026-07-11 | pending |
@@ -118,3 +118,16 @@ report-back reconciler.
 - Never write as the test user; never create community content to test.
 - Supabase MCP SQL (reads, writes, migrations) is standing-approved by the
   platform owner — no per-call prompts.
+
+## Progress notes
+
+- **2026-09-22, steps 1-2 merged (#3595).** Not yet exercised live: no ticket
+  approved on staging from a session (it would start a real execution for a
+  real member's report).
+- **Step 3 finding:** the Operator Console never sent its thread id with a
+  chat turn, so the server made a new random thread every request — 144 of
+  152 live `operator_threads` rows had exactly one turn and rolling summaries
+  never accrued. Fixed in step 3 (`threadId` on the chat payload).
+- **Step 3/4 residual:** the Command Hub voice-turn sync runs after each
+  spoken turn and when the overlay closes; a console opened in a
+  second tab sees voice turns only when that thread is (re)opened.

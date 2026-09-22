@@ -1223,6 +1223,9 @@ export interface GeminiLiveSession {
   // VTID-NAV: Current page URL the user is on when the orb session opened.
   // Used by navigator_consult to exclude the current screen from recommendations.
   current_route?: string;
+  // VTID-04309: Operator Console thread this Command Hub voice session writes
+  // its turns into (validated UUID; only set on the command-hub surface).
+  operator_thread_id?: string;
   // VTID-NAV: Last few routes the user visited (newest first), pushed by the
   // host React Router via VTOrb.updateContext before the session started.
   recent_routes?: string[];
@@ -6607,6 +6610,13 @@ async function executeLiveApiToolInner(
           success: true,
           result: 'Conversation is ending. Your farewell line was the final thing — the overlay is now closing, do not speak further.',
         };
+      }
+
+      // VTID-04310: Command Hub voice → the Operator turn (same thread,
+      // tools, exafy_admin gate and approval hold as the Operator Console).
+      case 'operator_delegate': {
+        const { runOperatorDelegate } = await import('../orb/live/tools/operator-delegate');
+        return await runOperatorDelegate(session, args ?? {});
       }
 
       case 'record_journey_answer': {

@@ -809,7 +809,75 @@ function startNewOperatorThread() {
     state.operatorChatHistory = [];
     state.chatMessages = [];
     saveOperatorThreadHistory(thread.id, []);
+    notifyOrbOperatorThread();
     renderApp();
+}
+
+/**
+ * VTID-04309: Command Hub voice turns are recorded server-side into the
+ * active Operator Console thread (the widget sends operator_thread_id at
+ * session start). Tell the widget which thread is on screen.
+ */
+function notifyOrbOperatorThread() {
+    if (window.VitanaOrb && typeof window.VitanaOrb.updateContext === 'function' && state.operatorActiveThreadId) {
+        window.VitanaOrb.updateContext({ operator_thread_id: state.operatorActiveThreadId });
+    }
+}
+
+/**
+ * VTID-04309: pull voice turns recorded server-side for the active thread
+ * into the console transcript (and its saved history), newest after the
+ * last one already merged. Called after each voice turn, when a voice
+ * session ends, and when a thread is opened. Never throws.
+ */
+var _operatorVoiceSyncInFlight = false;
+async function syncOperatorVoiceTurns() {
+    var threadId = state.operatorActiveThreadId;
+    if (!threadId || _operatorVoiceSyncInFlight || !state.authToken) return;
+    _operatorVoiceSyncInFlight = true;
+    try {
+        var history = state.operatorChatHistory || [];
+        var seen = {};
+        var lastVoiceIso = null;
+        history.forEach(function (h) {
+            if (h.serverMessageId) seen[h.serverMessageId] = true;
+            if (h.serverCreatedAt && (!lastVoiceIso || h.serverCreatedAt > lastVoiceIso)) lastVoiceIso = h.serverCreatedAt;
+        });
+        var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
+            + (lastVoiceIso ? '?since=' + encodeURIComponent(lastVoiceIso) : '');
+        var res = await fetch(url, { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
+        var added = 0;
+        (body.messages || []).forEach(function (m) {
+            // voice = spoken turns; voice_delegate = the Operator turn the
+            // voice assistant handed a request to (VTID-04310).
+            var channel = m && m.meta ? m.meta.channel : null;
+            if (!m || seen[m.id] || (channel !== 'voice' && channel !== 'voice_delegate')) return;
+            if (m.role !== 'user' && m.role !== 'assistant') return;
+            var ts = Date.parse(m.created_at) || Date.now();
+            history.push({ role: m.role, content: m.content, ts: ts, channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+            state.chatMessages.push({
+                type: m.role === 'user' ? 'user' : 'system',
+                content: m.content,
+                timestamp: new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: ts,
+                channel: channel
+            });
+            added++;
+        });
+        if (added > 0) {
+            state.operatorChatHistory = history;
+            saveOperatorThreadHistory(threadId, history);
+            touchActiveOperatorThread();
+            renderApp();
+        }
+    } catch (e) {
+        console.warn('[VTID-04309] voice turn sync failed:', e);
+    } finally {
+        _operatorVoiceSyncInFlight = false;
+    }
 }
 
 /** Switch the active thread and restore its history into the UI. */
@@ -833,11 +901,14 @@ function switchOperatorThread(threadId) {
             content: msg.content,
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             ts: msg.ts,
-            followExecIds: msg.followExecIds
+            followExecIds: msg.followExecIds,
+            channel: msg.channel
         };
     });
     reattachFollowedExecutions(state.chatMessages);
+    notifyOrbOperatorThread();
     renderApp();
+    syncOperatorVoiceTurns();
 }
 
 /**
@@ -23232,6 +23303,16 @@ function renderOperatorChat() {
                 bubbleClasses += ' message-error';
             }
             bubble.className = bubbleClasses;
+            // VTID-04309: turns spoken with the voice assistant are marked.
+            if (msg.channel === 'voice' || msg.channel === 'voice_delegate') {
+                bubble.classList.add('message-voice');
+                const voiceTag = document.createElement('div');
+                voiceTag.className = 'message-voice-tag';
+                voiceTag.textContent = msg.channel === 'voice_delegate'
+                    ? (isSent ? 'Handed to Operator (voice)' : 'Operator')
+                    : (isSent ? 'You (voice)' : 'Vitana (voice)');
+                bubble.appendChild(voiceTag);
+            }
             // VTID-03822: render markdown (bold/links/lists/headings) instead of
             // plain text — replies routinely come back with markdown, which
             // rendered as a wall of literal asterisks/backticks before this.
@@ -24083,6 +24164,10 @@ async function sendChatMessage() {
         // back to the one-shot /chat reply when streaming is unavailable.
         const result = await requestOperatorTurn({
             message: messageText,
+            // VTID-04309: the server-side thread is the console thread. Without
+            // it every request got a random thread (144 of 152 live threads
+            // had exactly one turn), so rolling summaries never accrued.
+            threadId: state.operatorActiveThreadId || undefined,
             conversation_id: state.operatorConversationId,
             context: context.length > 0 ? context : undefined,
             attachments: attachments.length > 0 ? attachments : undefined
@@ -38979,11 +39064,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.VitanaOrb.init({
                 authToken: state.authToken || '',
                 showFab: false, // Command Hub has its own sidebar trigger
-                initialContext: { current_route: window.location.pathname },
+                initialContext: {
+                    current_route: window.location.pathname,
+                    // VTID-04309: voice turns land in this Operator Console thread.
+                    operator_thread_id: state.operatorActiveThreadId || ''
+                },
                 onClose: function () {
                     state.orb.overlayVisible = false;
                     renderApp();
+                    syncOperatorVoiceTurns();
                 },
+                // VTID-04309: show each spoken turn in the Operator Console.
+                onTurnComplete: function () { syncOperatorVoiceTurns(); },
+                onConversationEnd: function () { syncOperatorVoiceTurns(); },
                 // VITANA-BRAIN: Handle ORB navigation directives with SPA routing.
                 // Surface scoping: Command Hub serves /command-hub/* only. If the
                 // Navigator ever returns a non-Command-Hub route (it shouldn't —
