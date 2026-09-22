@@ -65,12 +65,7 @@ async function ensureTenantAdmin(req: Request, res: Response, tenantId: string):
   if (identity.exafy_admin) return identity.user_id;
 
   try {
-    const { data } = await getServiceClient()
-      .from('user_tenants')
-      .select('active_role')
-      .eq('user_id', identity.user_id)
-      .eq('tenant_id', tenantId)
-      .maybeSingle();
+    const { data } = await ticketsRepo.fetchCallerTenantRole(getServiceClient(), identity.user_id, tenantId);
     if ((data as { active_role?: string } | null)?.active_role === 'admin') return identity.user_id;
   } catch (err) {
     console.error(`[${VTID}] tenant admin lookup failed:`, err);
@@ -392,7 +387,18 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
   }
 
   for (const t of tickets ?? []) {
-    if (t.status === 'spec_ready') {
+    if (t.status === 'spec_ready' && (t.kind === 'bug' || t.kind === 'ux_issue')) {
+      // VTID-04308: dispatch, don't just flip the status (that stranded the
+      // ticket at in_progress with nothing running).
+      const { approveAndDispatchTicket } = await import('../services/feedback-execution-bridge');
+      const d = await approveAndDispatchTicket(t.id, userId);
+      if (!d.ok || !d.ticket) { skipped++; continue; }
+      approved++;
+      results.push({ ticket_number: String(d.ticket.ticket_number ?? t.ticket_number), from: 'spec_ready', to: 'in_progress' });
+      await emit('feedback.ticket.status_changed', d.ticket, {
+        new_status: 'in_progress', from: 'bulk-approve', dispatched: true, vtid: d.vtid, execution_id: d.execution_id,
+      });
+    } else if (t.status === 'spec_ready') {
       const { data: updated, error: upErr } = await ticketsRepo.advanceSpecReadyTicketToInProgress(supabase, t.id);
       if (upErr || !updated) { skipped++; continue; }
       approved++;

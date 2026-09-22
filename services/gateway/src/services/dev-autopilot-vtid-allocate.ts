@@ -50,6 +50,14 @@ export type FindingVtidInput = {
   title: string;
   summary: string;
   scanner: string | null;
+  /**
+   * VTID-04308: other producers (feedback tickets) reuse this allocator.
+   * Defaults keep the auto-approve ledger shape byte-identical.
+   */
+  source?: string;
+  module?: string;
+  purpose?: string;
+  extraMetadata?: Record<string, unknown>;
 };
 
 export type FindingVtidResult = { ok: true; vtid: string } | { ok: false; error: string };
@@ -70,7 +78,7 @@ export async function allocateAndRegisterFindingVtid(s: SupaConfig, input: Findi
     const rpc = await fetch(`${s.url}/rest/v1/rpc/allocate_global_vtid`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: s.key, Authorization: `Bearer ${s.key}` },
-      body: JSON.stringify({ p_source: 'dev-autopilot', p_layer: 'DEV', p_module: 'auto-approve' }),
+      body: JSON.stringify({ p_source: 'dev-autopilot', p_layer: 'DEV', p_module: input.module ?? 'auto-approve' }),
     });
     if (!rpc.ok) {
       return { ok: false, error: `vtid_allocation_failed: ${rpc.status} ${(await rpc.text()).slice(0, 200)}` };
@@ -88,11 +96,12 @@ export async function allocateAndRegisterFindingVtid(s: SupaConfig, input: Findi
         spec_status: 'approved',
         updated_at: new Date().toISOString(),
         metadata: {
-          source: 'dev-autopilot-auto-approve',
-          allocated_by: 'autoApproveTick',
+          source: input.source ?? 'dev-autopilot-auto-approve',
+          allocated_by: input.source ? input.source : 'autoApproveTick',
           finding_id: input.findingId,
           scanner: input.scanner,
-          purpose: 'auto-approved Dev Autopilot execution (dev_autopilot_config.auto_approve_enabled)',
+          purpose: input.purpose ?? 'auto-approved Dev Autopilot execution (dev_autopilot_config.auto_approve_enabled)',
+          ...(input.extraMetadata ?? {}),
         },
     });
     if (!ledger.ok) {

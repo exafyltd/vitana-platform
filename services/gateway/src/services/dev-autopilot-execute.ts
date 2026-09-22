@@ -2866,14 +2866,12 @@ export async function backgroundExecutorTick(): Promise<void> {
     console.error(`${LOG_PREFIX} auto-archive error:`, err);
   }
 
-  // 1. Honor kill switch — VTID-02676: feedback-lane executions bypass it.
-  //    The kill switch was armed against an unrelated planner-hallucination
-  //    incident that doesn't apply to feedback findings (Devon prompt +
-  //    bridge pre-flight + planner LOCKED file list are dedicated guards).
-  //    When kill_switch=true, we still run the tick but post-filter cooling
-  //    rows to feedback-lane only.
+  // 1. Honor kill switch — every lane. VTID-04308 removed the VTID-02676
+  //    feedback-lane exemption: a support ticket is one more intake source
+  //    and stops with the rest when the kill switch is armed.
   const cfg = await loadConfig(s);
   if (!cfg) return;
+  if (cfg.kill_switch) return;
 
   // 2. Concurrency cap
   const running = await countRunningExecutions(s);
@@ -2881,31 +2879,14 @@ export async function backgroundExecutorTick(): Promise<void> {
   if (slots === 0) return;
 
   // 3. Pick cooling executions past execute_after, oldest first.
-  //    Embed the recommendation so we can filter to feedback-lane when
-  //    kill_switch is armed. Over-fetch (slots * 4) to ensure enough
-  //    feedback rows survive the JS filter.
   const now = new Date().toISOString();
-  const fetchLimit = cfg.kill_switch ? slots * 4 : slots;
-  const readyR = await supa<Array<ExecutionRow & {
-    recommendation?: { source_type?: string; source_ref?: string } | null;
-  }>>(
+  const readyR = await supa<ExecutionRow[]>(
     s,
-    `/rest/v1/dev_autopilot_executions?status=eq.cooling&execute_after=lte.${encodeURIComponent(now)}&order=execute_after.asc&limit=${fetchLimit}`
-    + `&select=id,finding_id,plan_version,auto_fix_depth,metadata,recommendation:autopilot_recommendations!finding_id(source_type,source_ref)`,
+    `/rest/v1/dev_autopilot_executions?status=eq.cooling&execute_after=lte.${encodeURIComponent(now)}&order=execute_after.asc&limit=${slots}`
+    + `&select=id,finding_id,plan_version,auto_fix_depth,metadata`,
   );
   if (!readyR.ok || !readyR.data || readyR.data.length === 0) return;
-
-  const isFeedbackLane = (rec: { source_type?: string; source_ref?: string } | null | undefined) =>
-    rec?.source_type === 'dev_autopilot'
-    && typeof rec?.source_ref === 'string'
-    && rec.source_ref.startsWith('feedback_ticket:');
-  const filteredRows = cfg.kill_switch
-    ? (readyR.data || []).filter(r => isFeedbackLane(r.recommendation ?? null)).slice(0, slots)
-    : (readyR.data || []).slice(0, slots);
-  if (filteredRows.length === 0) return;
-  if (cfg.kill_switch) {
-    console.log(`${LOG_PREFIX} kill_switch armed — claiming ${filteredRows.length} feedback-lane cooling execution(s)`);
-  }
+  const filteredRows = readyR.data;
 
   for (const exec of filteredRows) {
     // Atomic claim: transition cooling → running only if still cooling
