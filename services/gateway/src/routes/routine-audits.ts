@@ -262,6 +262,113 @@ routineAuditsRouter.get(
 );
 
 // =============================================================================
+// GET /api/v1/routines/audits/dev-autopilot-daily
+// Used by: autopilot-rec-quality (daily "new findings / fixes executed" line)
+// =============================================================================
+
+export interface DevAutopilotFindingRow {
+  id: string;
+  title: string | null;
+  risk_class: string | null;
+  created_at: string;
+}
+
+export interface DevAutopilotExecutionRow {
+  id: string;
+  finding_id: string;
+  status: string;
+  pr_url: string | null;
+  pr_number: number | null;
+  parent_execution_id: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+const FIX_DONE_STATUSES = new Set(['completed', 'self_healed']);
+const FIX_FAILED_STATUSES = new Set(['failed', 'failed_escalated', 'reverted']);
+const FIX_IN_FLIGHT_STATUSES = new Set(['cooling', 'running', 'ci', 'merging', 'deploying', 'verifying']);
+
+export function summariseDevAutopilotDay(
+  findings: DevAutopilotFindingRow[],
+  executions: DevAutopilotExecutionRow[],
+  sinceIso: string,
+) {
+  const since = Date.parse(sinceIso);
+  const inWindow = (iso: string | null) => iso != null && Date.parse(iso) >= since;
+
+  const byRisk: Record<string, number> = {};
+  for (const f of findings) {
+    const k = f.risk_class || 'unclassified';
+    byRisk[k] = (byRisk[k] || 0) + 1;
+  }
+
+  const started = executions.filter((e) => inWindow(e.created_at));
+  // A fix counts on the day it finished; completed_at is the authority, updated_at the fallback for rows that never stamped it.
+  const fixed = executions.filter(
+    (e) => FIX_DONE_STATUSES.has(e.status) && inWindow(e.completed_at ?? e.updated_at),
+  );
+  const failed = executions.filter((e) => FIX_FAILED_STATUSES.has(e.status) && inWindow(e.updated_at));
+  const cancelled = executions.filter((e) => e.status === 'cancelled' && inWindow(e.updated_at));
+
+  return {
+    new_findings: findings.length,
+    new_findings_by_risk: byRisk,
+    new_findings_sample: findings.slice(0, 10).map((f) => ({ id: f.id, title: f.title, risk_class: f.risk_class })),
+    executions_started: started.length,
+    self_heal_retries_started: started.filter((e) => e.parent_execution_id).length,
+    prs_opened: started.filter((e) => e.pr_url).length,
+    fixes_completed: fixed.length,
+    fixes_failed: failed.length,
+    fixes_cancelled: cancelled.length,
+    in_flight_now: executions.filter((e) => FIX_IN_FLIGHT_STATUSES.has(e.status)).length,
+    awaiting_approval_now: executions.filter((e) => e.status === 'awaiting_approval').length,
+    fixes: fixed.slice(0, 20).map((e) => ({
+      execution_id: e.id,
+      finding_id: e.finding_id,
+      status: e.status,
+      pr_url: e.pr_url,
+      completed_at: e.completed_at ?? e.updated_at,
+    })),
+  };
+}
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/dev-autopilot-daily',
+  requireRoutineToken,
+  async (req: Request, res: Response) => {
+    try {
+      const windowHours = Math.min(parseInt(req.query.window_hours as string) || 24, 24 * 14);
+      const since = hoursAgoIso(windowHours);
+
+      const findings = await supaFetch<DevAutopilotFindingRow[]>(
+        `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&created_at=gte.${since}` +
+          `&select=id,title,risk_class,created_at&order=created_at.desc&limit=2000`
+      );
+      // Rows touched in the window, plus every row still held or in flight whatever its age.
+      const executions = await supaFetch<DevAutopilotExecutionRow[]>(
+        `/rest/v1/dev_autopilot_executions?or=(updated_at.gte.${since},` +
+          `status.in.(awaiting_approval,cooling,running,ci,merging,deploying,verifying))` +
+          `&select=id,finding_id,status,pr_url,pr_number,parent_execution_id,created_at,updated_at,completed_at` +
+          `&order=updated_at.desc&limit=2000`
+      );
+      if (findings === null || executions === null) {
+        return res.status(502).json({ ok: false, error: 'Supabase read failed (findings or executions)' });
+      }
+
+      return res.json({
+        ok: true,
+        window: { since, window_hours: windowHours },
+        ...summariseDevAutopilotDay(findings, executions, since),
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} dev-autopilot-daily error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
+
+// =============================================================================
 // GET /api/v1/routines/audits/vitana-index
 // Used by: vitana-index-health
 // =============================================================================

@@ -1,0 +1,7 @@
+# Read-only probes, 2026-09-22, X-Routine-Token header sent (value redacted).
+GET https://gateway.vitanaland.com/api/v1/routines/audits/autopilot-recs
+  -> {"ok":false,"error":"ROUTINE_INGEST_TOKEN env var not configured"}
+GET https://preview-aws-gateway.vitanaland.com/api/v1/routines/audits/autopilot-recs
+  -> {"ok":false,"error":"ROUTINE_INGEST_TOKEN env var not configured"}
+GET <both>/api/v1/routines/audits/dev-autopilot-daily -> 404 text/html (route not deployed yet)
+Previous routine run (stored prompt): POST https://gateway-q74ibpv6ia-uc.a.run.app/... -> curl (56) CONNECT tunnel failed, 403 (GCP decommissioned 2026-08-16)

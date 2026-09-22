@@ -1,0 +1,7 @@
+# VTID-04292 commands (sandbox; npm registry returns 403, so jest/tsc run in CI)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04292
+curl -H 'X-Routine-Token: <redacted>' <gateway>/api/v1/routines/audits/autopilot-recs   # both gateways: token not configured
+node --experimental-strip-types s.ts   # summariseDevAutopilotDay smoke run, counts as expected
+bash -n <extracted AWS-STAGE-DEPLOY-GATEWAY task-def step>   # bash-ok, run: step 15,802 chars (< 20,000 cap)
+jq -f <extracted jq program> on a task def carrying a stale ROUTINE_INGEST_TOKEN   # stale value stripped, new value set once
+ROUTINE_GATEWAY_URL=http://127.0.0.1:8765 ROUTINE_TOKEN=t bash scripts/routines/autopilot-rec-quality.sh   # against a local mock -> outputs/mock-run-patch-body.json
