@@ -177,6 +177,25 @@ export interface ApprovalInput {
    *  manually activate never also widens what gets auto-approved with no
    *  human in the loop. */
   allowManualSourceTypes?: boolean;
+  /** VTID-04254: `bridgeActivationToExecution()` calls
+   *  `activate_autopilot_recommendation` FIRST — which flips the finding
+   *  new -> activated, allocates its VTID — and only THEN calls this
+   *  function to create the execution. The status guard below rejects
+   *  anything but 'new', so that sequence rejected its own immediately-
+   *  prior write on every single call: every human "Activate" click (the
+   *  Command Hub button and the Operator Console's
+   *  autopilot_activate_recommendation tool both go through this same
+   *  bridge) allocated a VTID and then silently failed to start execution,
+   *  stranding the finding at status='activated' with no path forward.
+   *  Reproduced live 2026-09-22 against finding 9e1bdb97
+   *  ("CVE: package.json") -> VTID-04250, error verbatim: "finding status
+   *  is 'activated' — only 'new' findings can be approved".
+   *  This flag lets exactly that one caller's own prior write through;
+   *  autoApproveTick() never sets it and still requires status='new'
+   *  (it approves straight from its own status=eq.new query, with no
+   *  pre-activation step, so its behavior is unchanged by this flag's
+   *  existence). */
+  alsoAllowStatus?: string;
 }
 
 export interface ApprovalResult {
@@ -493,7 +512,7 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // duplicate PRs — exactly the failure mode that forced the 2026-04-30
   // sweep (6 identical admin-notification-categories middleware refactors
   // closed in one batch).
-  if (rec.status !== 'new') {
+  if (rec.status !== 'new' && rec.status !== input.alsoAllowStatus) {
     return {
       ok: false,
       error: `finding status is '${rec.status}' — only 'new' findings can be approved`,
@@ -852,6 +871,11 @@ export async function bridgeActivationToExecution(
     // community/health recommendations — see isManuallyBridgeableSourceType's
     // own doc comment for why this must never be set from an autonomous path.
     allowManualSourceTypes: true,
+    // VTID-04254: this function's own step 1 above already flipped the
+    // finding new -> activated via activate_autopilot_recommendation —
+    // let that expected, immediately-prior write through instead of
+    // rejecting it as a stale/foreign status change.
+    alsoAllowStatus: 'activated',
   });
   if (!approval.ok || !approval.execution) {
     // VTID-02669: surface decision.violations[] so the caller (and the UI)

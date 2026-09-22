@@ -232,7 +232,28 @@ describe('VTID-04111 activate — fresh activation', () => {
 });
 
 describe('VTID-04111 activate — idempotent on an already-activated recommendation', () => {
-  it('does not emit an OASIS event and does not attempt to bridge', async () => {
+  // VTID-04254: this describe block used to pin a real defect. The RPC's
+  // own first step (activate_autopilot_recommendation) flips new ->
+  // activated; bridgeActivationToExecution() -> approveAutoExecute() then
+  // required status='new' and rejected that same write, stranding the
+  // finding — and because this tool used to gate its ENTIRE bridge attempt
+  // on `!already_activated`, a second "activate" click never even retried.
+  // Reproduced live 2026-09-22 against finding 9e1bdb97 ("CVE:
+  // package.json") -> VTID-04250: "Activation succeeded but starting the
+  // execution failed: finding status is 'activated' — only 'new' findings
+  // can be approved". Fixed at the root: approveAutoExecute() now accepts
+  // 'activated' for this one caller (dev-autopilot-execute.ts's own
+  // alsoAllowStatus), and both human-facing activation paths (this tool
+  // and the Command Hub route) retry the bridge on EVERY call, not only
+  // the first — bridgeActivationToExecution()'s own inflight check keeps
+  // a repeat call safe once an execution is already running.
+
+  it('does not re-emit the OASIS event, but DOES retry the bridge — this is what recovers a stranded finding', async () => {
+    mockedSupa.mockImplementation(async (_s: unknown, p: string) => {
+      if (p.startsWith('/rest/v1/autopilot_recommendations?id=eq.')) return { ok: true, status: 200, data: [{ source_type: 'community' }] };
+      return { ok: false, status: 404, error: `unexpected ${p}` };
+    });
+    mockedBridge.mockResolvedValue({ ok: true, execution_id: 'e2222222-2222-2222-2222-222222222222' });
     const activateRpc = jest.fn(async () => ({
       ok: true,
       data: { ok: true, vtid: 'VTID-04999', already_activated: true, activated_at: '2026-09-18T00:00:00Z' },
@@ -241,12 +262,35 @@ describe('VTID-04111 activate — idempotent on an already-activated recommendat
     const r = await executeActivateRecommendation({ recommendation_id: REC }, ADMIN, { s: S, activateRpc });
 
     expect(r.ok).toBe(true);
-    expect(r.data).toMatchObject({ vtid: 'VTID-04999', already_activated: true });
-    expect((r.data!.message as string)).toBe('Already activated as VTID-04999.');
+    expect(r.data).toMatchObject({
+      vtid: 'VTID-04999',
+      already_activated: true,
+      execution_id: 'e2222222-2222-2222-2222-222222222222',
+    });
+    expect((r.data!.message as string)).toMatch(/Already activated as VTID-04999\./);
+    expect((r.data!.message as string)).toMatch(/execution.*has been started/);
+    // Not re-emitted — this is still idempotent for the activation event itself.
     expect(mockedEmit).not.toHaveBeenCalled();
-    expect(mockedBridge).not.toHaveBeenCalled();
-    // No source_type lookup either — bridging was never attempted.
-    expect(mockedSupa).not.toHaveBeenCalled();
+    // But the bridge IS retried, using the same source_type lookup the fresh-activation path uses.
+    expect(mockedBridge).toHaveBeenCalledWith(REC, 'u-admin');
+  });
+
+  it('a repeat call on an already-running execution is a safe no-op (bridge reports "skipped", nothing duplicated)', async () => {
+    mockedSupa.mockImplementation(async (_s: unknown, p: string) => {
+      if (p.startsWith('/rest/v1/autopilot_recommendations?id=eq.')) return { ok: true, status: 200, data: [{ source_type: 'dev_autopilot' }] };
+      return { ok: false, status: 404, error: `unexpected ${p}` };
+    });
+    mockedBridge.mockResolvedValue({ ok: true, execution_id: 'e3333333-3333-3333-3333-333333333333', skipped: 'running execution' });
+    const activateRpc = jest.fn(async () => ({
+      ok: true,
+      data: { ok: true, vtid: 'VTID-04998', already_activated: true },
+    }));
+
+    const r = await executeActivateRecommendation({ recommendation_id: REC }, ADMIN, { s: S, activateRpc });
+
+    expect(r.ok).toBe(true);
+    expect((r.data!.message as string)).toMatch(/already .*running execution.*for this recommendation/);
+    expect(mockedEmit).not.toHaveBeenCalled();
   });
 });
 

@@ -1,0 +1,48 @@
+$ npx tsc --noEmit
+exit: 0
+
+$ npx jest test/vtid-04254-activation-status-guard.test.ts --silent
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/claude-0/-home-user/37ed95d6-5b04-5b45-b572-abe58a75fe19/scratchpad/wt-04241/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-04254-activation-status-guard.test.ts
+  approveAutoExecute — the status guard (VTID-04254)
+    ✓ still rejects status="activated" when the caller does not opt in — this is autoApproveTick's unchanged behavior (4 ms)
+    ✓ accepts status="activated" when the caller passes alsoAllowStatus: "activated" — the actual fix (4 ms)
+    ✓ alsoAllowStatus does not become a wildcard — a status that is neither "new" nor the passed value is still rejected (1 ms)
+    ✓ status="new" still works with no opt-in at all — the common, unaffected path (2 ms)
+  bridgeActivationToExecution — recovers a finding the RPC already moved to activated (VTID-04254)
+    ✓ reproduces and closes the exact live failure: a finding already at status=activated now bridges to a real execution instead of "only new findings can be approved" (1 ms)
+  bridgeActivationToExecution source contract — passes alsoAllowStatus, and only that value
+    ✓ passes alsoAllowStatus: 'activated' to approveAutoExecute, alongside the existing allowManualSourceTypes (1 ms)
+  autoApproveTick — never opts into alsoAllowStatus (the invariant this VTID exists to protect)
+    ✓ its own approveAutoExecute call sites pass no alsoAllowStatus — still gated on status=new only (1 ms)
+  the two human-facing activation callers retry the bridge on every call, not only the first
+    ✓ routes/autopilot-recommendations.ts no longer gates the bridge attempt on !response.already_activated (1 ms)
+    ✓ the alignment-telemetry and draft-spec side effects in the SAME route stay gated on !already_activated (unchanged — idempotent side effects, not the bridge)
+    ✓ operator-recommendation-tools.ts no longer gates the bridge attempt on !response.already_activated
+    ✓ the OASIS activation-event emission in the SAME tool stays gated on !already_activated (unchanged — never re-emitted on a retry)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.668 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit: 0
+$ npx jest <39 related suites> --silent
+    ✓ callMessagesApi was renamed to callRoutedLlm
+    ✓ callRoutedLlm still dispatches through callViaRouter, not a raw fetch to api.anthropic.com (1 ms)
+
+PASS test/vtid-03818-reaper-terminal-flag.test.ts
+  allocatedOrphanReaperTick terminal-flag regression (VTID-03818)
+    ✓ sets is_terminal: true on the tombstoning PATCH (1 ms)
+    ✓ sets terminal_outcome: 'deleted' on the tombstoning PATCH
+    ✓ still sets status: deleted (unchanged behavior) (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 41 passed, 41 total
+Tests:       457 passed, 457 total
+Snapshots:   0 total
+Time:        3.188 s, estimated 7 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit: 0

@@ -167,8 +167,16 @@ export async function executeActivateRecommendation(
   // there because a slow LLM plan generation shouldn't block the HTTP
   // response; here we're already off the model's turn once this resolves,
   // so awaiting it lets the tool report the real outcome instead of "maybe".
+  //
+  // VTID-04254: deliberately NOT gated on `!response.already_activated` —
+  // see the matching comment in routes/autopilot-recommendations.ts. The
+  // RPC one step above already moved new -> activated; requiring "not
+  // already activated" here meant this exact tool call's own prior write,
+  // one line up, always disqualified the bridge attempt that followed it.
+  // Retrying is safe: bridgeActivationToExecution()'s own inflight check
+  // makes a repeat call a no-op once an execution is running.
   let bridge: { ok: boolean; execution_id?: string; error?: string; skipped?: string } | null = null;
-  if (!response.already_activated && response.vtid) {
+  if (response.vtid) {
     try {
       const srcR = await supa<Array<{ source_type: string }>>(
         s,
@@ -204,8 +212,13 @@ export async function executeActivateRecommendation(
       already_activated: response.already_activated === true,
       activated_at: response.activated_at ?? null,
       execution_id: bridge?.ok ? bridge.execution_id ?? null : null,
+      // VTID-04254: an already-activated finding still gets its own
+      // executionNote now (the bridge above runs regardless of
+      // already_activated), so say what actually happened this call
+      // instead of always claiming a bare "already activated" even when
+      // this call just recovered a stranded finding.
       message: response.already_activated
-        ? `Already activated as ${response.vtid}.`
+        ? `Already activated as ${response.vtid}.${executionNote}`
         : `Activated as ${response.vtid}.${executionNote}`,
     },
   };

@@ -1600,7 +1600,20 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // dev-autopilot-execute.ts catches any failures from this fire-and-forget
     // call. Fire-and-forget on purpose so a slow LLM plan generation doesn't
     // block the activate response.
-    if (!response.already_activated && response.vtid) {
+    //
+    // VTID-04254: deliberately NOT gated on `!response.already_activated`.
+    // bridgeActivationToExecution() -> approveAutoExecute() used to require
+    // status='new', which this same activate call had just changed to
+    // 'activated' one step earlier — every fresh activation rejected its
+    // own prior write and stranded the finding at status='activated' with
+    // no execution, and a second "Activate" click hit this early-return and
+    // never even retried. approveAutoExecute() now also accepts 'activated'
+    // for this one caller; bridgeActivationToExecution()'s own inflight
+    // check already makes a repeat call a safe no-op when an execution is
+    // already running, so retrying on every click (not just the first) is
+    // what turns a stranded finding back into forward progress instead of
+    // a dead end.
+    if (response.vtid) {
       try {
         const supabaseUrl = process.env.SUPABASE_URL;
         const svcKey = process.env.SUPABASE_SERVICE_ROLE;
