@@ -28,7 +28,7 @@
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
@@ -82,6 +82,10 @@ import {
 } from '../services/aws-gateway-admin';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
 import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import {
+  OPERATOR_MACHINE_AUTH_HEADER,
+  resolveOperatorMachineIdentity,
+} from '../services/operator-machine-auth';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -98,6 +102,25 @@ import { executeWithOasisContract, OperatorActionContext } from '../services/ope
 import { OperatorActionResult, OasisWriteFailedError } from '../types/cicd';
 
 const router = Router();
+
+/**
+ * VTID-04133 — resolves the machine credential ONLY when optionalAuth found
+ * no real identity, so a human JWT always wins and this can never override
+ * one. A wrong/absent machine token is a silent no-op (req.identity stays
+ * whatever optionalAuth left it), matching optionalAuth's own "never reject"
+ * contract — the actual refusal still happens downstream in
+ * isExecuteTaskAuthorized(), same as an anonymous browser request today.
+ */
+function operatorMachineAuth(req: Request, _res: Response, next: NextFunction): void {
+  const authedReq = req as AuthenticatedRequest;
+  if (!authedReq.identity) {
+    const machineIdentity = resolveOperatorMachineIdentity(req.headers[OPERATOR_MACHINE_AUTH_HEADER]);
+    if (machineIdentity) {
+      authedReq.identity = machineIdentity as unknown as AuthenticatedRequest['identity'];
+    }
+  }
+  next();
+}
 
 // VTID-01018: Helper to extract operator ID from request (default to 'system' for now)
 function getOperatorId(req: Request): string {
@@ -568,7 +591,11 @@ async function runOperatorChatTurn(
   }
 }
 
-router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
+router.post('/chat', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+  // calls emitOasisEvent() internally for the real state transitions this
+  // turn produces — the impact scanner's line-level pattern can't see
+  // through the function-call boundary from this handler body.
   const outcome = await runOperatorChatTurn(req);
   return res.status(outcome.status).json(outcome.body);
 });
@@ -602,7 +629,7 @@ function writeSseFrame(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
   const validation = OperatorChatMessageSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({
@@ -635,6 +662,10 @@ router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) =>
   writeSseFrame(res, 'turn.started', { threadId, started_at: new Date().toISOString() });
 
   try {
+    // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+    // calls emitOasisEvent() internally for the real state transitions this
+    // turn produces — the impact scanner's line-level pattern can't see
+    // through the function-call boundary from this handler body.
     const outcome = await runOperatorChatTurn(req, {
       threadId,
       onEvent: (event) => {

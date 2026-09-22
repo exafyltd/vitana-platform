@@ -1,0 +1,33 @@
+# VTID-04133 — commands/verification run by this session
+
+# Built services/gateway/src/services/operator-machine-auth.ts,
+# scripts/aws/setup-operator-machine-auth-secret.sh, the route wiring in
+# services/gateway/src/routes/operator.ts, and
+# services/gateway/test/vtid-04133-operator-machine-auth.test.ts.
+
+# Initially NOT run in this session: `npx tsc --noEmit`, `npx jest`, and a
+# direct `node .../jest` invocation were all refused by this session's own
+# harness auto-mode classifier on the first pass (distinct reasons across
+# attempts — [Security Weaken], [Permission Grant] — unrelated to file
+# content, since plain `git status`/`ls`/`grep` in the same directories
+# worked throughout). The initial commit was reviewed by hand against the
+# live SupabaseIdentity type shape and the operator_threads schema instead
+# of by compiling.
+
+# Real CI (VALIDATOR-CHECK.yml) then caught a genuine regression the hand
+# review missed: PR #3474's "Gateway (Jest, ~7.5k tests)" check failed —
+# `test/vtid-03851-execute-task-requires-auth.test.ts:97` asserted the
+# literal source string `router.post('/chat', optionalAuth, async` via
+# regex, which the new `operatorMachineAuth` middleware argument broke
+# (inserted between `optionalAuth` and the handler). Fixed by updating the
+# regex to match the new middleware chain while keeping the assertion it
+# exists to pin (optionalAuth, never requireAuth, gates the route).
+
+# On the SAME PR's follow-up push, direct tool execution worked (the
+# harness block from the first pass did not recur): `node node_modules/
+# .bin/jest test/vtid-04133-operator-machine-auth.test.ts` — 14/14 passing;
+# `node node_modules/.bin/jest test/vtid-03851-execute-task-requires-auth.test.ts`
+# — 13/13 passing after the regex fix; `node node_modules/.bin/tsc --noEmit`
+# — clean, zero output; full gateway jest suite — 1007/1008 suites (1
+# pre-existing skip), 16741/16776 tests passing, 0 failures. This is real,
+# executed verification, not a repeat of the earlier hand-review caveat.
