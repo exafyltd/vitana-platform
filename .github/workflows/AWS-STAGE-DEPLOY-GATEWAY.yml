@@ -815,6 +815,17 @@ jobs:
           SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
           [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
           [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
+          # VTID-04133: Operator Console machine-to-machine auth token — optional,
+          # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
+          # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
+          # task def, never forced off); present => enabled + wired as a secret.
+          SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_MACHINE_AUTH" ] || [ "$SEC_MACHINE_AUTH" = "None" ]; then
+            SEC_MACHINE_AUTH=""
+            echo "  operator machine-auth secret absent - OPERATOR_MACHINE_AUTH_ENABLED not wired (VTID-04133; run scripts/aws/setup-operator-machine-auth-secret.sh)"
+          else
+            echo "  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true"
+          fi
           [ -n "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" ] || echo "::warning::DEV_AUTOPILOT_SCAN_TOKEN repo secret empty (VTID-04225)"
           GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
@@ -839,6 +850,7 @@ jobs:
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg SEC_SQL_RO "$SEC_SQL_RO" \
+                 --arg SEC_MACHINE_AUTH "$SEC_MACHINE_AUTH" \
                  --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
@@ -873,6 +885,7 @@ jobs:
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
+                                                "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
@@ -881,7 +894,8 @@ jobs:
                                                 "OPERATOR_CODEINTEL_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
-                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
+                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
+                                                "NAV_CONTINUATION_BIND") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -900,6 +914,7 @@ jobs:
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
+                          {name:"NAV_CONTINUATION_BIND", value:"true"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},
@@ -941,6 +956,7 @@ jobs:
                                                 "AURORA_DATABASE_URL",
                                                 "AURORA_RLS_DATABASE_URL",
                                                 "GITHUB_SAFE_MERGE_TOKEN","OPERATOR_SQL_READONLY_DATABASE_URL",
+                                                "OPERATOR_MACHINE_AUTH_TOKEN",
                                                 "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
@@ -973,6 +989,14 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_DATABASE_URL") | not) ]
                             + [ {name:"OPERATOR_SQL_READONLY_DATABASE_URL", valueFrom:$SEC_SQL_RO} ] ) )
+                    else . end )
+                | ( if $SEC_MACHINE_AUTH != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_ENABLED") | not) ]
+                            + [ {name:"OPERATOR_MACHINE_AUTH_ENABLED", value:"true"} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_TOKEN") | not) ]
+                            + [ {name:"OPERATOR_MACHINE_AUTH_TOKEN", valueFrom:$SEC_MACHINE_AUTH} ] ) )
                     else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')

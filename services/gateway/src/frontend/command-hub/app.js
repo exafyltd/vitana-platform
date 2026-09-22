@@ -32,21 +32,40 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 // expired token.
 //
 // This interceptor wraps window.fetch BEFORE any other code runs. For any
-// non-/auth/* request that comes back 401 in a developer session, it tries
-// /api/v1/auth/refresh once (concurrent calls share a single in-flight
+// non-/auth/* request that comes back 401 in an extended-session role, it
+// tries /api/v1/auth/refresh once (concurrent calls share a single in-flight
 // promise so the single-use refresh token isn't burned twice), then replays
 // the original request with a fresh Authorization header. The caller never
 // sees the 401, so the existing "401 → doLogout()" handlers stay untouched
 // and only fire when refresh genuinely fails.
 //
-// Non-developer roles (community, admin, staff, professional, patient) still
-// get their original 401 → doLogout() flow because the interceptor short-
-// circuits when active_role !== 'developer'.
+// VTID-04259: this used to gate strictly on active_role === 'developer'.
+// Command Hub access itself is granted to developer/admin/infra/staff (see
+// the "Access control" block further down this file) — of those, only
+// literal 'developer' ever got the 6h idle/refresh treatment. Everyone else
+// who could actually reach the Command Hub (which is only ~3 real people
+// today) fell straight through to the strict "log out the instant the JWT
+// exp passes, no refresh" path below, at whatever the Supabase project's
+// JWT lifetime is (often well under a day) — this is why real operators
+// were getting logged out every 10-20 minutes instead of staying in for a
+// full workday. The gate now covers every role the Command Hub itself
+// admits, via EXTENDED_SESSION_ROLES (shared with the idle-logout monitor
+// further down), not just one of the four.
+//
+// Roles OUTSIDE the Command Hub (community, professional, patient) still
+// get the original 401 → doLogout() flow, since the interceptor short-
+// circuits when active_role is not one of EXTENDED_SESSION_ROLES.
 // ===========================================================================
 (function installAuthFetchInterceptor() {
     if (!window.fetch) return;
     if (window.__vitanaFetchInterceptorInstalled) return;
     window.__vitanaFetchInterceptorInstalled = true;
+
+    // VTID-04259: same role set the Command Hub's own access-control check
+    // (further down this file) admits — developer/admin/infra/staff. Shared
+    // via window so the later idle-logout monitor uses the identical list.
+    var EXTENDED_SESSION_ROLES = window.__VITANA_EXTENDED_SESSION_ROLES ||
+        (window.__VITANA_EXTENDED_SESSION_ROLES = ['developer', 'admin', 'infra', 'staff']);
 
     var origFetch = window.fetch.bind(window);
     var refreshingPromise = null;
@@ -55,11 +74,33 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
         var s = window.__vitana_state;
         return (s && s.meContext && s.meContext.active_role) || null;
     }
+    function isExtendedSessionRole(role) {
+        return EXTENDED_SESSION_ROLES.indexOf(role) !== -1;
+    }
     function getRefreshToken() {
         var s = window.__vitana_state;
         if (s && s.refreshToken) return s.refreshToken;
         try { return localStorage.getItem('vitana.refreshToken'); } catch (_) { return null; }
     }
+
+    // VTID-04259: Supabase rotates the refresh token on every use. With
+    // Command Hub open in more than one tab (routine for 3 people juggling
+    // it), two tabs holding the same stored refresh token will race — the
+    // loser's refresh fails with an invalid/already-used token and used to
+    // fall straight through to doLogout(), which read as a random early
+    // logout unrelated to idle time. When ANOTHER tab refreshes and writes
+    // new tokens to localStorage, pick them up here instead of trying to
+    // reuse the one this tab already knows is stale.
+    try {
+        window.addEventListener('storage', function (ev) {
+            if (ev.key !== 'vitana.authToken' && ev.key !== 'vitana.refreshToken') return;
+            if (!ev.newValue) return;
+            var s = window.__vitana_state;
+            if (!s) return;
+            if (ev.key === 'vitana.authToken') s.authToken = ev.newValue;
+            if (ev.key === 'vitana.refreshToken') s.refreshToken = ev.newValue;
+        });
+    } catch (_) {}
 
     function performRefresh() {
         if (refreshingPromise) return refreshingPromise;
@@ -121,7 +162,7 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
         var resp = await origFetch(input, init);
         if (resp.status !== 401) return resp;
-        if (getActiveRole() !== 'developer') return resp;
+        if (!isExtendedSessionRole(getActiveRole())) return resp;
 
         var newToken = await performRefresh();
         if (!newToken) return resp;
@@ -38788,26 +38829,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2): session monitor.
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2) + VTID-04259: session monitor.
         //
         // The actual JWT refresh is now handled by the global fetch interceptor
-        // installed at the top of this file (it catches any 401 in a developer
-        // session, refreshes via /api/v1/auth/refresh, and replays the request
-        // transparently). This loop has two remaining jobs:
+        // installed at the top of this file (it catches any 401 in an
+        // extended-session role, refreshes via /api/v1/auth/refresh, and
+        // replays the request transparently). This loop has two remaining jobs:
         //
-        //   1. For developer sessions: enforce a 6-hour idle-logout — if the
-        //      user hasn't done anything (mousedown/keydown/scroll/touchstart)
-        //      in 6h, log them out. We also proactively top up the token a
-        //      few minutes before expiry so polling fetches don't have to eat
-        //      a 401 round-trip.
-        //   2. For non-developer roles: keep the previous "logout when JWT
-        //      exp passes" behavior so community/admin/staff sessions still
-        //      end at the 1h Supabase expiry as before.
-        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;   // 6 hours
+        //   1. For Command Hub roles (developer/admin/infra/staff — the same
+        //      set the access-control check above already admits): enforce a
+        //      24-hour idle-logout — if the user hasn't done anything
+        //      (mousedown/keydown/scroll/touchstart) in 24h (a full workday),
+        //      log them out. We also proactively top up the token a few
+        //      minutes before expiry so polling fetches don't have to eat a
+        //      401 round-trip. VTID-04259: was previously 6h AND gated on
+        //      active_role === 'developer' only — every other Command Hub
+        //      role (admin/infra/staff) fell through to branch 2 below and
+        //      got logged out the instant the raw Supabase JWT expired
+        //      (often well under an hour), which is why real operators were
+        //      seeing repeated logouts every 10-20 minutes rather than
+        //      staying in for a full day as intended.
+        //   2. For roles that can't reach the Command Hub at all (community,
+        //      professional, patient — this code only runs after the
+        //      Command Hub's own 403 gate above already passed, so this
+        //      branch is effectively unreachable here, kept only as a
+        //      defensive fallback): keep the previous "logout when JWT exp
+        //      passes" behavior.
+        var DEV_IDLE_LOGOUT_MS = 24 * 60 * 60 * 1000;  // 24 hours (VTID-04259: was 6h)
         var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;      // top up if <5m left
 
         function isDeveloperSession() {
-            return (state.meContext && state.meContext.active_role === 'developer');
+            // VTID-04259: widened from a literal 'developer' check to every
+            // role the Command Hub itself admits — see EXTENDED_SESSION_ROLES
+            // at the top of this file (the fetch interceptor's own copy).
+            var role = state.meContext && state.meContext.active_role;
+            var roles = window.__VITANA_EXTENDED_SESSION_ROLES || ['developer', 'admin', 'infra', 'staff'];
+            return roles.indexOf(role) !== -1;
         }
         function markActivity() { state.lastActivityAt = Date.now(); }
         ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
