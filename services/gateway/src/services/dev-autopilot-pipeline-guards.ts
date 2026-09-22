@@ -35,6 +35,22 @@ export const STRANDED_PR_FILTER =
   + '&status=not.in.(completed,self_healed,auto_archived)'
   + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`;
 
+/**
+ * VTID-04293: execution statuses that still own their finding. Mirrors the
+ * autoApproveTick baseline pass. `awaiting_approval` is deliberately here
+ * even though the partial unique index
+ * `dev_autopilot_executions_finding_inflight_uniq` does not cover it: a held
+ * run waits for a human, and without this the impact pass re-approved the
+ * same finding every time the prior run reached the hold (staging,
+ * 2026-09-22: finding b560c306 approved at 21:03, 21:09 and 21:24).
+ */
+export const INFLIGHT_EXECUTION_STATUSES = [
+  'cooling', 'running', 'awaiting_approval', 'ci', 'merging', 'deploying', 'verifying',
+] as const;
+
+/** PostgREST filter fragment (leading '&') for an in-flight execution. */
+export const INFLIGHT_EXECUTION_FILTER = `&status=in.(${INFLIGHT_EXECUTION_STATUSES.join(',')})`;
+
 /** Keep candidate order; drop ids that already have a plan. */
 export function selectPlanlessCandidates<T extends { id: string }>(
   candidates: T[],
