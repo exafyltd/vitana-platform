@@ -72,6 +72,16 @@ import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-a
 import { recordShown } from './watcher/feedback';
 import { recordExecutionOutcomeMemory } from './operator-turn-memory';
 import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
+import {
+  STRANDED_PR_FILTER,
+  PR_CLOSED_UNMERGED_KEY,
+  PR_STATE_CHECKED_KEY,
+  selectPlanlessCandidates,
+  selectPlannedCandidates,
+  classifyPrState,
+  chunkIds,
+  prNumberOf,
+} from './dev-autopilot-pipeline-guards';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -520,8 +530,8 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   const openPrR = await supa<Array<{ id: string; pr_url: string | null; pr_number: number | null; status: string }>>(
     s,
     `/rest/v1/dev_autopilot_executions?finding_id=eq.${input.finding_id}`
-    + `&pr_url=not.is.null`
-    + `&status=not.in.(completed,self_healed,auto_archived)`
+    // VTID-04280: a PR recorded as closed-unmerged no longer blocks.
+    + STRANDED_PR_FILTER
     + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
   );
   if (openPrR.ok && openPrR.data && openPrR.data.length > 0) {
@@ -1612,8 +1622,10 @@ export async function runExecutionSession(
     s,
     `/rest/v1/dev_autopilot_executions?finding_id=eq.${exec.finding_id}`
     + `&id=neq.${executionId}`
-    + `&pr_url=not.is.null`
-    + `&status=not.in.(completed,self_healed,auto_archived)`
+    // VTID-04280: a PR recorded as closed-unmerged no longer blocks — the
+    // bridge closes a CI-failed parent's PR itself, and this guard used to
+    // refuse that parent's own self-heal child.
+    + STRANDED_PR_FILTER
     + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
   );
   if (priorOpenR.ok && priorOpenR.data && priorOpenR.data.length > 0 && priorPrBlocksExecution(exec.metadata, priorOpenR.data[0])) {
@@ -3249,22 +3261,24 @@ export async function autoApproveTick(): Promise<void> {
       + `&risk_class=in.(${riskList})`
       + `&effort_score=lte.${maxEffort}`
       + `&spec_snapshot->>scanner=in.(${scannerList})`
-      + `&order=impact_score.desc.nullslast,created_at.asc&limit=${slots * 2}`
+      // VTID-04280: a window of slots*2 (≤10) was filled by blocked
+      // higher-impact rows, so eligible findings further down were never
+      // considered. Read a wide window and pre-filter to planned rows in
+      // one batch query instead of one lookup per candidate.
+      + `&order=impact_score.desc.nullslast,created_at.asc&limit=${AUTO_APPROVE_CANDIDATE_WINDOW}`
       + `&select=id,risk_class,effort_score,impact_score,spec_snapshot,activated_vtid`,
   );
   if (!findingsR.ok || !findingsR.data || findingsR.data.length === 0) return;
 
-  let approved = 0;
-  for (const f of findingsR.data) {
-    if (approved >= slots) break;
+  // Only approve findings that already have a plan (approveAutoExecute
+  // errors otherwise). The lazy planner fills in the rest.
+  const plannedIds = await fetchPlannedFindingIds(s, findingsR.data.map(f => f.id));
+  if (plannedIds === null) return;
+  const plannedFindings = selectPlannedCandidates(findingsR.data, plannedIds);
 
-    // Only approve findings that already have a plan. approveAutoExecute
-    // will error otherwise; short-circuit with a cheap HEAD-style lookup.
-    const planR = await supa<Array<{ version: number }>>(
-      s,
-      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&order=version.desc&limit=1`,
-    );
-    if (!planR.ok || !planR.data || planR.data.length === 0) continue;
+  let approved = 0;
+  for (const f of plannedFindings) {
+    if (approved >= slots) break;
 
     // Dedup: skip findings that already have a non-terminal execution.
     // Without this, every tick approves a NEW execution row even though
@@ -3288,8 +3302,7 @@ export async function autoApproveTick(): Promise<void> {
     const strandedPrR = await supa<Array<{ id: string }>>(
       s,
       `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
-      + `&pr_url=not.is.null`
-      + `&status=not.in.(completed,self_healed,auto_archived)`
+      + STRANDED_PR_FILTER
       + `&select=id&limit=1`,
     );
     if (strandedPrR.ok && strandedPrR.data && strandedPrR.data.length > 0) continue;
@@ -3504,6 +3517,29 @@ export async function autoApproveTick(): Promise<void> {
  */
 const LAZY_PLAN_BATCH_SIZE = 3;
 const LAZY_PLAN_RISK_CLASSES = ['low', 'medium'];
+/** VTID-04280: candidate rows read per lazy-plan tick before the plan filter. */
+const LAZY_PLAN_CANDIDATE_WINDOW = 200;
+/** VTID-04280: candidate rows read per auto-approve tick before the plan filter. */
+const AUTO_APPROVE_CANDIDATE_WINDOW = 50;
+
+/**
+ * VTID-04280: which of `ids` already have at least one plan version. One
+ * query per 50 ids. Returns null on a read failure so callers skip the tick
+ * rather than act on a wrong answer.
+ */
+async function fetchPlannedFindingIds(s: SupaConfig, ids: string[]): Promise<Set<string> | null> {
+  const planned = new Set<string>();
+  for (const chunk of chunkIds(ids)) {
+    if (chunk.length === 0) continue;
+    const r = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=in.(${chunk.join(',')})&select=finding_id`,
+    );
+    if (!r.ok || !r.data) return null;
+    for (const row of r.data) planned.add(row.finding_id);
+  }
+  return planned;
+}
 
 // ---------------------------------------------------------------------------
 // VTID-03579: retry backoff for plan generation.
@@ -3599,13 +3635,20 @@ export async function lazyPlanTick(): Promise<void> {
   // also receive lazy plans. Without this, autoApproveTick can never approve
   // them — they sit at status='new' with no plan forever.
   const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
-  const findingsR = await supa<Array<{ id: string }>>(
+  const candidatesR = await supa<Array<{ id: string }>>(
     s,
     `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})`
     + `&status=eq.new&risk_class=in.${riskFilter}`
-    + `&order=impact_score.desc&limit=${LAZY_PLAN_BATCH_SIZE * 4}&select=id`,
+    // VTID-04280: the window used to be 12 rows and planned rows were
+    // skipped inside it, so once 12 higher-impact rows were planned the
+    // planless ones below were never reached. Wide window + one batch
+    // plan lookup; nullslast so an unscored finding is still planned.
+    + `&order=impact_score.desc.nullslast,created_at.asc&limit=${LAZY_PLAN_CANDIDATE_WINDOW}&select=id`,
   );
-  if (!findingsR.ok || !findingsR.data) return;
+  if (!candidatesR.ok || !candidatesR.data) return;
+  const alreadyPlanned = await fetchPlannedFindingIds(s, candidatesR.data.map(f => f.id));
+  if (alreadyPlanned === null) return;
+  const findingsR = { data: selectPlanlessCandidates(candidatesR.data, alreadyPlanned) };
 
   // VTID-03579: read plan_gen failure history ONCE per tick, not once per
   // finding — this loop already costs 2 round-trips per candidate and the whole
@@ -3636,12 +3679,6 @@ export async function lazyPlanTick(): Promise<void> {
   let skippedExhausted = 0;
   for (const f of findingsR.data) {
     if (generated >= LAZY_PLAN_BATCH_SIZE) break;
-    // Skip if a plan already exists for this finding.
-    const planR = await supa<Array<{ version: number }>>(
-      s,
-      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&limit=1`,
-    );
-    if (planR.ok && planR.data && planR.data.length > 0) continue;
     // Skip if a plan task for this finding is already pending/running
     // (defense in depth — the global guard above usually covers this,
     // but a tick mid-claim could still race).
@@ -3811,6 +3848,75 @@ async function allocatedOrphanReaperTick(): Promise<void> {
   }
 }
 
+// =============================================================================
+// VTID-04280: closed-PR reconciler
+// =============================================================================
+// The PR-flood guard excludes executions stamped `pr_closed_unmerged_at`.
+// The bridge stamps it when it closes a CI-failed PR itself; this tick
+// backfills rows that predate that stamp (and PRs a human closed after the
+// row went terminal) by asking GitHub. A still-open PR is re-checked after
+// CLOSED_PR_RECHECK_MS; a merged PR is recorded but never stamped as closed
+// — a merged change still blocks a duplicate attempt.
+const CLOSED_PR_RECONCILE_EVERY_MS = 5 * 60 * 1000;
+const CLOSED_PR_RECHECK_MS = 60 * 60 * 1000;
+const CLOSED_PR_BATCH = 10;
+let lastClosedPrReconcileMs = 0;
+
+export async function closedPrReconcileTick(nowMs: number = Date.now()): Promise<{ checked: number; stamped: number }> {
+  if (nowMs - lastClosedPrReconcileMs < CLOSED_PR_RECONCILE_EVERY_MS) return { checked: 0, stamped: 0 };
+  lastClosedPrReconcileMs = nowMs;
+  const s = getSupabase();
+  if (!s || !getGithubToken()) return { checked: 0, stamped: 0 };
+
+  const recheckBefore = new Date(nowMs - CLOSED_PR_RECHECK_MS).toISOString();
+  const rowsR = await supa<Array<{ id: string; pr_number: number | null; pr_url: string | null; metadata: Record<string, unknown> | null }>>(
+    s,
+    // pr_url, not pr_number: some rows (e.g. a self-heal parent) carry only the URL.
+    `/rest/v1/dev_autopilot_executions?pr_url=not.is.null`
+    + `&status=in.(failed,reverted,failed_escalated,cancelled)`
+    + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`
+    + `&or=(metadata->>${PR_STATE_CHECKED_KEY}.is.null,metadata->>${PR_STATE_CHECKED_KEY}.lt.${encodeURIComponent(recheckBefore)})`
+    + `&select=id,pr_number,pr_url,metadata&order=updated_at.desc&limit=${CLOSED_PR_BATCH}`,
+  );
+  if (!rowsR.ok || !rowsR.data) return { checked: 0, stamped: 0 };
+
+  let stamped = 0;
+  for (const row of rowsR.data) {
+    const prNumber = prNumberOf(row);
+    if (!prNumber) continue;
+    const prR = await githubRequest<{ state: string; merged: boolean; closed_at: string | null }>(
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${prNumber}`,
+    );
+    if (!prR.ok || !prR.data) continue;
+    const lifecycle = classifyPrState(prR.data);
+    const nowIso = new Date(nowMs).toISOString();
+    const metadata: Record<string, unknown> = { ...(row.metadata || {}), [PR_STATE_CHECKED_KEY]: nowIso, pr_state: lifecycle };
+    if (lifecycle === 'closed_unmerged') {
+      metadata[PR_CLOSED_UNMERGED_KEY] = prR.data.closed_at || nowIso;
+      stamped++;
+    }
+    // Metadata only; status and updated_at are left alone (the status is
+    // the execution's own outcome, not the PR's).
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${row.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ metadata }),
+    });
+    if (lifecycle === 'closed_unmerged') {
+      await emitOasisEvent({
+        vtid: EXEC_VTID,
+        type: 'dev_autopilot.execution.pr_closed_reconciled',
+        source: 'dev-autopilot',
+        status: 'info',
+        message: `Execution ${row.id.slice(0, 8)} PR #${prNumber} is closed unmerged — no longer blocks its finding`,
+        payload: { execution_id: row.id, pr_number: prNumber },
+      });
+    }
+  }
+  if (stamped > 0) console.log(`${LOG_PREFIX} closed-PR reconcile: ${stamped}/${rowsR.data.length} rows unblocked`);
+  return { checked: rowsR.data.length, stamped };
+}
+
 let backgroundTickerStarted = false;
 export function startBackgroundExecutor(): void {
   if (backgroundTickerStarted) return;
@@ -3831,6 +3937,9 @@ export function startBackgroundExecutor(): void {
     });
     allocatedOrphanReaperTick().catch((err) => {
       console.error(`${LOG_PREFIX} allocated-orphan-reaper tick error:`, err);
+    });
+    closedPrReconcileTick().catch((err) => {
+      console.error(`${LOG_PREFIX} closed-PR reconcile tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }

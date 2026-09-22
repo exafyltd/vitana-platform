@@ -40,6 +40,7 @@ import {
 import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 import { createRevertPullRequest, mergePullRequest } from './github-service';
+import { isRealCiClose, PR_CLOSED_UNMERGED_KEY } from './dev-autopilot-pipeline-guards';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -736,6 +737,11 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       bridge_confidence: report.confidence,
       bridge_reason_decision: canRetry ? 'child_spawned' : 'escalated',
       bridge_fix_mode: !!fixMode,
+      // VTID-04280: the bridge closed this PR itself — record it so the
+      // PR-flood guard does not refuse this row's own self-heal child.
+      ...(isRealCiClose(input.failure_stage, revert.revert_pr_url)
+        ? { [PR_CLOSED_UNMERGED_KEY]: new Date().toISOString() }
+        : {}),
     },
   };
 

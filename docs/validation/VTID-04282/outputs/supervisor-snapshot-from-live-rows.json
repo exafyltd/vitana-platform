@@ -1,0 +1,490 @@
+{
+  "ok": true,
+  "generated_at": "2026-09-22T20:34:05.062Z",
+  "config": {
+    "kill_switch": false,
+    "baseline_auto_approve": true,
+    "impact_auto_approve": true,
+    "daily_budget": 500,
+    "budget_left_today": 500,
+    "concurrency_cap": 4,
+    "concurrency_left": 4
+  },
+  "scan": {
+    "schedule": "GitHub Actions cron 07:00 + 19:00 UTC (often delayed by hours)",
+    "last_run": {
+      "run_id": "f4875fd9-bd28-4186-a418-1089d829a432",
+      "triggered_by": "github-actions",
+      "status": "done",
+      "signal_count": 2346,
+      "new_finding_count": 1,
+      "started_at": "2026-09-22T12:21:57.354+00:00",
+      "completed_at": "2026-09-22T12:22:02.446+00:00",
+      "error": null
+    },
+    "last_success_at": "2026-09-22T12:21:57.354+00:00",
+    "hours_since_success": 8.2,
+    "overdue": false,
+    "next_scheduled_at": "2026-09-23T07:00:00.000Z",
+    "runs_7d": 5,
+    "failed_7d": 0,
+    "new_findings_7d": 1,
+    "stuck_runs": [
+      {
+        "run_id": "cf77d23c-380c-4833-bbf4-158d70551939",
+        "status": "ingesting",
+        "started_at": "2026-09-21T15:21:13.538+00:00"
+      }
+    ]
+  },
+  "executions": {
+    "window_days": 7,
+    "total_7d": 135,
+    "last_24h": 10,
+    "by_status_7d": {
+      "failed": 88,
+      "cancelled": 7,
+      "completed": 16,
+      "reverted": 18,
+      "failed_escalated": 5,
+      "self_healed": 1
+    },
+    "succeeded_7d": 17,
+    "failed_7d": 111,
+    "success_rate_7d": 13,
+    "auto_approved_7d": 17,
+    "human_approved_7d": 118,
+    "by_origin_7d": {
+      "operator": {
+        "total": 118,
+        "succeeded": 17,
+        "failed": 94
+      },
+      "scanner": {
+        "total": 17,
+        "succeeded": 0,
+        "failed": 17
+      }
+    },
+    "prs_opened_7d": 43,
+    "active": 0,
+    "active_by_status": {},
+    "awaiting_approval": 0,
+    "last_execution_at": "2026-09-22T17:03:22.486557+00:00",
+    "top_failure_reasons": [
+      {
+        "reason": "agent hit the 120-turn cap without calling finish",
+        "count": 54
+      },
+      {
+        "reason": "(no error recorded)",
+        "count": 17
+      },
+      {
+        "reason": "model answered with text 3 times in a row without calling finish",
+        "count": 7
+      },
+      {
+        "reason": "finding <id> already has an unmerged PR <url> from execution <id> (status=reverted); refusing to open a duplicate. Close or merge the prior ",
+        "count": 7
+      },
+      {
+        "reason": "reconciler: no deploy success event observed after 30m in deploying",
+        "count": 4
+      },
+      {
+        "reason": "reconciler: PR mergeable_state=dirty after 30m",
+        "count": 4
+      },
+      {
+        "reason": "agent hit the 60-turn cap without calling finish",
+        "count": 4
+      },
+      {
+        "reason": "finding <id> already has an unmerged PR <url> from execution <id> (status=failed); refusing to open a duplicate. Close or merge the prior PR",
+        "count": 4
+      }
+    ]
+  },
+  "findings": {
+    "open": 11,
+    "by_actor": {
+      "moving": 4,
+      "human": 2,
+      "system": 3,
+      "waiting": 2
+    },
+    "by_code": {
+      "awaiting_plan": 4,
+      "risk_too_high": 2,
+      "stranded_pr": 3,
+      "snoozed": 2
+    },
+    "items": [
+      {
+        "id": "cd05643c-4463-4812-8313-1c62beaf731e",
+        "title": "Stale feature flag — index.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "stale-feature-flag-scanner-v1",
+        "file_path": "services/gateway/src/index.ts",
+        "risk_class": "low",
+        "effort_score": 2,
+        "impact_score": 3,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "awaiting_plan",
+          "actor": "moving",
+          "label": "Queued for planning",
+          "detail": "The lazy planner plans up to 3 findings every 30 s."
+        }
+      },
+      {
+        "id": "8caa3710-2ed0-4f4b-9945-0dbd7c742a1a",
+        "title": "Address TODO/FIXME in dev-autopilot-scan.mjs",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "todo-scanner-v1",
+        "file_path": "scripts/ci/dev-autopilot-scan.mjs",
+        "risk_class": "medium",
+        "effort_score": 3,
+        "impact_score": 3,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "awaiting_plan",
+          "actor": "moving",
+          "label": "Queued for planning",
+          "detail": "The lazy planner plans up to 3 findings every 30 s."
+        }
+      },
+      {
+        "id": "a726d525-8235-41aa-a87a-1c79ec130f13",
+        "title": "Refactor large file governance-controller.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "large-file-scanner-v1",
+        "file_path": "services/gateway/src/controllers/governance-controller.ts",
+        "risk_class": "high",
+        "effort_score": 7,
+        "impact_score": 6,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "risk_too_high",
+          "actor": "human",
+          "label": "Needs approval (risk high)",
+          "detail": "Auto-approve only takes risk low/medium."
+        }
+      },
+      {
+        "id": "41e2d7d4-9603-421b-804f-e77df05017ed",
+        "title": "Refactor large file app.js",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "large-file-scanner-v1",
+        "file_path": "services/gateway/src/frontend/command-hub/app.js",
+        "risk_class": "high",
+        "effort_score": 7,
+        "impact_score": 8,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "risk_too_high",
+          "actor": "human",
+          "label": "Needs approval (risk high)",
+          "detail": "Auto-approve only takes risk low/medium."
+        }
+      },
+      {
+        "id": "e8cb7fae-fe1c-47df-95c8-1474f37adb52",
+        "title": "Add missing tests for admin-aurora-memory-health.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "missing-tests-scanner-v1",
+        "file_path": "services/gateway/src/routes/admin-aurora-memory-health.ts",
+        "risk_class": "medium",
+        "effort_score": 4,
+        "impact_score": 6,
+        "has_plan": true,
+        "age_days": 1,
+        "attempts": 2,
+        "blocker": {
+          "code": "stranded_pr",
+          "actor": "system",
+          "label": "Blocked by PR #3544",
+          "detail": "A prior execution (reverted) left PR #3544 not recorded as closed. The closed-PR reconciler clears this within minutes once GitHub reports it closed."
+        }
+      },
+      {
+        "id": "e367b3a1-62dd-4e52-b6c1-276cd0c26368",
+        "title": "Add missing tests for action-executors.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "missing-tests-scanner-v1",
+        "file_path": "services/gateway/src/services/action-executors.ts",
+        "risk_class": "medium",
+        "effort_score": 4,
+        "impact_score": 3,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "awaiting_plan",
+          "actor": "moving",
+          "label": "Queued for planning",
+          "detail": "The lazy planner plans up to 3 findings every 30 s."
+        }
+      },
+      {
+        "id": "b0aa6815-67e0-4662-8f64-0943038f045d",
+        "title": "[rollup] safety-gap-scanner-v1 flagged 8 files with the same fix class (safety_g",
+        "status": "snoozed",
+        "source_type": "dev_autopilot",
+        "detector": "safety-gap-scanner-v1",
+        "file_path": "e2e/command-hub/roles/developer",
+        "risk_class": "medium",
+        "effort_score": 6,
+        "impact_score": 6,
+        "has_plan": true,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "snoozed",
+          "actor": "waiting",
+          "label": "Snoozed until 2026-09-28",
+          "detail": "Snoozed by an operator or a retry breaker."
+        }
+      },
+      {
+        "id": "1b7d874a-b928-486a-9e42-fe0a7d3e5127",
+        "title": "Schema drift in server-locale-repository.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "schema-drift-scanner-v1",
+        "file_path": "services/gateway/src/i18n/server-locale-repository.ts",
+        "risk_class": "medium",
+        "effort_score": 5,
+        "impact_score": 8,
+        "has_plan": true,
+        "age_days": 1,
+        "attempts": 2,
+        "blocker": {
+          "code": "stranded_pr",
+          "actor": "system",
+          "label": "Blocked by PR #3548",
+          "detail": "A prior execution (reverted) left PR #3548 not recorded as closed. The closed-PR reconciler clears this within minutes once GitHub reports it closed."
+        }
+      },
+      {
+        "id": "efec84e4-6d75-49b2-ac91-5b623e671019",
+        "title": "Missing auth middleware in admin-health.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "route-auth-scanner-v1",
+        "file_path": "services/gateway/src/routes/admin-health.ts",
+        "risk_class": "medium",
+        "effort_score": 4,
+        "impact_score": 8,
+        "has_plan": true,
+        "age_days": 1,
+        "attempts": 2,
+        "blocker": {
+          "code": "stranded_pr",
+          "actor": "system",
+          "label": "Blocked by PR #3547",
+          "detail": "A prior execution (reverted) left PR #3547 not recorded as closed. The closed-PR reconciler clears this within minutes once GitHub reports it closed."
+        }
+      },
+      {
+        "id": "9975d092-66a6-41d9-aedd-03a0e023d78c",
+        "title": "Remove dead code in index-repository.ts",
+        "status": "new",
+        "source_type": "dev_autopilot",
+        "detector": "dead-code-scanner-v1",
+        "file_path": "services/gateway/src/capabilities/index-repository.ts",
+        "risk_class": "low",
+        "effort_score": 2,
+        "impact_score": 3,
+        "has_plan": false,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "awaiting_plan",
+          "actor": "moving",
+          "label": "Queued for planning",
+          "detail": "The lazy planner plans up to 3 findings every 30 s."
+        }
+      },
+      {
+        "id": "b869c955-f2c6-42a8-80f5-a8ba58421be5",
+        "title": "Missing RLS policy on 20251209000000_add_task_stage.sql",
+        "status": "snoozed",
+        "source_type": "dev_autopilot",
+        "detector": "rls-policy-scanner-v1",
+        "file_path": "supabase/migrations/20251209000000_add_task_stage.sql",
+        "risk_class": "medium",
+        "effort_score": 5,
+        "impact_score": 8,
+        "has_plan": true,
+        "age_days": 1,
+        "attempts": 0,
+        "blocker": {
+          "code": "snoozed",
+          "actor": "waiting",
+          "label": "Snoozed until 2026-09-28",
+          "detail": "Snoozed by an operator or a retry breaker."
+        }
+      }
+    ]
+  },
+  "autonomy": {
+    "config_coverage_percent": 70,
+    "covered_surfaces": 16,
+    "total_surfaces": 23,
+    "open_findings_autonomous_percent": 82,
+    "executions_auto_approved_percent": 13
+  },
+  "impact_rules": [
+    {
+      "rule": "new-signal-type-requires-registry",
+      "title": "New SignalType needs a scanner registry entry",
+      "severity": "blocker",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-scanner-needs-seed-migration",
+      "title": "New scanner file needs a DB seed migration",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-impact-rule-needs-seed-migration",
+      "title": "New impact rule file needs a DB seed migration",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-oasis-event-requires-union",
+      "title": "emitOasisEvent({ type: X }) must have X in the OasisEventType union",
+      "severity": "blocker",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "migration-requires-code-touch",
+      "title": "Migration added without any gateway code change",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-env-var-requires-workflow-binding",
+      "title": "New process.env.X without a binding in any workflow / .env.example",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-route-needs-test",
+      "title": "New gateway route without a sibling test",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "duplicate-route-registration",
+      "title": "New route path collides with an existing registration",
+      "severity": "blocker",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "duplicate-table-name",
+      "title": "New CREATE TABLE matches an existing table name",
+      "severity": "blocker",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-route-without-auth-middleware",
+      "title": "New gateway route without auth middleware",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    },
+    {
+      "rule": "new-mutation-without-oasis-emit",
+      "title": "New state-mutating route without an emitOasisEvent call",
+      "severity": "warning",
+      "open": 0,
+      "hits_30d": 0,
+      "rejected_30d": 0,
+      "last_fired_at": null
+    }
+  ],
+  "community_engine": {
+    "last_run_at": "2026-08-15T19:00:30.295+00:00",
+    "days_since_last_run": 38
+  },
+  "alerts": [
+    {
+      "severity": "warning",
+      "text": "1 scan run(s) never finalized.",
+      "tab": "runs"
+    },
+    {
+      "severity": "critical",
+      "text": "Only 13% of finished executions succeeded in 7 days — top cause: \"agent hit the 120-turn cap without calling finish\" (54×).",
+      "tab": "live"
+    },
+    {
+      "severity": "critical",
+      "text": "Self-healing: 0 of 17 executions started from scanner/impact findings succeeded in 7 days.",
+      "tab": "live"
+    },
+    {
+      "severity": "warning",
+      "text": "3 open finding(s) stuck on a system blocker.",
+      "tab": "scanners"
+    },
+    {
+      "severity": "info",
+      "text": "2 open finding(s) need a human decision (not eligible for auto-approve).",
+      "tab": "auto-approve"
+    },
+    {
+      "severity": "critical",
+      "text": "Community automation engine (AP-XXXX) has not run for 38 days — its Cloud Scheduler triggers died with GCP.",
+      "tab": "registry"
+    }
+  ]
+}
