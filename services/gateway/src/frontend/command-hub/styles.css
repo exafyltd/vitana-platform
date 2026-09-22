@@ -1369,6 +1369,116 @@ body {
   color: #ef4444;
 }
 
+/* --- Autopilot Runs table (VTID-04260) --- */
+.ap-runs-thead-row {
+  border-bottom: 1px solid #333;
+  text-align: left;
+}
+
+.ap-runs-th {
+  padding: 8px;
+  color: #888;
+}
+
+.ap-runs-row {
+  border-bottom: 1px solid #222;
+}
+
+.ap-runs-row:hover {
+  background: #1a1a3e;
+}
+
+.ap-runs-cell {
+  padding: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-runs-cell-time {
+  color: #999;
+  font-size: 0.8rem;
+}
+
+.ap-runs-cell-runid {
+  font-family: monospace;
+  color: #64b5f6;
+}
+
+.ap-runs-cell-center {
+  text-align: center;
+}
+
+.ap-runs-cell-dim {
+  color: #999;
+}
+
+.ap-runs-cell-error {
+  color: #f44336;
+  font-size: 0.75rem;
+}
+
+.ap-runs-col-time {
+  width: 170px;
+}
+
+.ap-runs-col-runid {
+  width: 140px;
+}
+
+.ap-runs-col-trigger {
+  width: 90px;
+}
+
+.ap-runs-col-status {
+  width: 110px;
+}
+
+.ap-runs-col-signals {
+  width: 70px;
+}
+
+.ap-runs-col-new {
+  width: 70px;
+}
+
+.ap-runs-col-duration {
+  width: 75px;
+}
+
+.ap-runs-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.ap-runs-badge-done {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+
+.ap-runs-badge-failed {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+}
+
+.ap-runs-badge-running,
+.ap-runs-badge-ingesting {
+  background: rgba(33, 150, 243, 0.15);
+  color: #2196f3;
+}
+
+.ap-runs-badge-ranking,
+.ap-runs-badge-planning {
+  background: rgba(255, 152, 0, 0.15);
+  color: #ff9800;
+}
+
+.ap-runs-badge-default {
+  background: rgba(136, 136, 136, 0.15);
+  color: #888;
+}
+
 /* --- Toast Notifications (VTID-0517) --- */
 
 .toast-container {

@@ -1,0 +1,66 @@
+VTID-04260 — commands.log
+==========================
+
+Context: single-shot Claude Code session, no ECS agent executor. Direct
+repo edits + jest run in the checked-out working tree.
+
+1) Located the RUNS tab's fetch/render pair and the sibling tabs' backend
+   routes to establish which system "Runs" should actually read from:
+     grep -n "renderAutopilotRunsView|Autopilot.*Runs" services/gateway/src/frontend/command-hub/app.js
+     grep -n "router.get|router.post" services/gateway/src/routes/automations.ts
+     grep -n "router.get|router.post" services/gateway/src/routes/dev-autopilot.ts
+   -> confirmed GET /api/v1/dev-autopilot/runs exists (dev_autopilot_runs
+      table), and every sibling Autopilot tab already reads /api/v1/dev-autopilot/*.
+
+2) Edited services/gateway/src/frontend/command-hub/app.js:
+   - fetchAutopilotRuns(): '/api/v1/automations/runs' -> '/api/v1/dev-autopilot/runs',
+     dropped the automation_id query param.
+   - renderAutopilotRunsView(): rewrote summary cards, status filter,
+     table columns and row rendering to the real dev_autopilot_runs shape.
+   - autopilotStatusColor(): added ingesting/ranking/planning/done cases.
+   - state.autopilot.runs.filters default: removed automation_id.
+
+3) Bumped cache-bust on both app.js and styles.css in index.html (repo
+   convention, pinned by dead-code-execution-card-removed.test.ts).
+
+4) Syntax check:
+     node --check services/gateway/src/frontend/command-hub/app.js
+   -> "SYNTAX OK"
+
+5) Added new regression test:
+     services/gateway/test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts
+
+6) Ran the new test:
+     cd services/gateway && node node_modules/.bin/jest test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts --silent
+   -> Test Suites: 1 passed, 1 total
+      Tests:       7 passed, 7 total
+
+7) Mutation verification (proves the test actually catches the defect):
+     cp src/frontend/command-hub/app.js /tmp/app.js.orig
+     sed -i "s#fetch('/api/v1/dev-autopilot/runs?#fetch('/api/v1/automations/runs?#" src/frontend/command-hub/app.js
+     node node_modules/.bin/jest test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts --silent
+   -> Tests: 1 failed, 6 passed, 7 total
+      (failing assertion: "fetchAutopilotRuns() calls /api/v1/dev-autopilot/runs, not /api/v1/automations/runs")
+     cp /tmp/app.js.orig src/frontend/command-hub/app.js   # restored
+
+8) Full regression run, whole command-hub suite:
+     cd services/gateway && node node_modules/.bin/jest test/command-hub/ --silent
+   -> Test Suites: 18 passed, 18 total
+      Tests:       266 passed, 266 total
+
+9) Baseline comparison (confirms no pre-existing failures were hidden by
+   my own new test file, and that the cache-bust pairing test
+   (dead-code-execution-card-removed.test.ts) genuinely required the
+   styles.css bump, not just app.js):
+     git stash                       # reverts app.js + index.html only (new test file is untracked, stays)
+     node node_modules/.bin/jest test/command-hub/ --silent
+   -> Test Suites: 1 failed, 17 passed, 18 total
+      Tests:       6 failed, 260 passed, 266 total
+      (all 6 failures are the new VTID-04260 test's own assertions,
+       correctly failing against the reverted/old app.js — i.e. the test
+       is real, not tautological)
+     git stash pop                   # restored the fix
+
+Model/provider: this session ran directly (Claude via the Claude Code
+harness), not through the gateway's llm_routing_policy — no LLM call was
+routed through Bedrock/DeepSeek for this change.

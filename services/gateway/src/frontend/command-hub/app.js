@@ -47063,7 +47063,7 @@ if (!state.autopilot) {
         scanners: { loading: false, data: null, filter: { category: '', maturity: '' } },
         impactRules: { loading: false, data: null, filter: { category: '', severity: '' } },
         autoApprove: { loading: false, data: null },
-        runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
+        runs: { loading: false, data: null, filters: { status: '', limit: 50 } },
         live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
         growth: { loading: false, metrics: null, period: '7d' },
@@ -47081,8 +47081,12 @@ function autopilotStatusColor(status) {
         case 'PLANNED': return '#ff9800';
         case 'DEPRECATED': return '#666';
         case 'completed': return '#4caf50';
+        case 'done': return '#4caf50';
         case 'failed': return '#f44336';
         case 'running': return '#2196f3';
+        case 'ingesting': return '#2196f3';
+        case 'ranking': return '#ff9800';
+        case 'planning': return '#ff9800';
         case 'skipped': return '#999';
         default: return '#888';
     }
@@ -47402,6 +47406,16 @@ function renderAutopilotRegistryView() {
 // =============================================================================
 // Tab 2: Run History
 // =============================================================================
+// Surfaces GET /api/v1/dev-autopilot/runs — the Dev Autopilot scan run
+// history (dev_autopilot_runs table): each row is one scanner sweep
+// (github_actions | manual | api triggered), not a consumer AP-XXXX
+// automation execution. This tab used to call /api/v1/automations/runs,
+// a different subsystem entirely (the VTID-01250 tenant-scoped consumer
+// automation engine) that 400s here with "tenant_id required" since the
+// Command Hub sends no tenant context — every sibling Autopilot tab
+// (Scanners, Impact Rules, Auto Approve, Live) already reads from
+// /api/v1/dev-autopilot/*, so this was the one tab pointed at the wrong
+// backend and rendering permanently empty.
 
 async function fetchAutopilotRuns() {
     if (state.autopilot.runs.loading) return;
@@ -47409,10 +47423,9 @@ async function fetchAutopilotRuns() {
     renderApp();
     try {
         var params = new URLSearchParams();
-        if (state.autopilot.runs.filters.automation_id) params.set('automation_id', state.autopilot.runs.filters.automation_id);
         if (state.autopilot.runs.filters.limit) params.set('limit', String(state.autopilot.runs.filters.limit));
 
-        var res = await fetch('/api/v1/automations/runs?' + params.toString(), { headers: buildContextHeaders({}) });
+        var res = await fetch('/api/v1/dev-autopilot/runs?' + params.toString(), { headers: buildContextHeaders({}) });
         if (res.ok) {
             var data = await res.json();
             state.autopilot.runs.data = data.runs || [];
@@ -47989,11 +48002,11 @@ function renderAutopilotRunsView() {
     container.style.padding = '1.5rem';
 
     var title = document.createElement('h2');
-    title.textContent = 'Automation Runs';
+    title.textContent = 'Dev Autopilot \u2014 Scan Runs';
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Execution history of all autopilot automations with status, timing, and user impact.';
+    subtitle.textContent = 'History of scanner sweeps (github_actions | manual | api triggered) that feed the autopilot finding queue, with status, signal/finding counts, and timing.';
     container.appendChild(subtitle);
 
     var runs = state.autopilot.runs;
@@ -48012,40 +48025,37 @@ function renderAutopilotRunsView() {
 
     if (!runs.data) return container;
 
-    // Summary
-    var completed = runs.data.filter(function (r) { return r.status === 'completed'; }).length;
+    // Summary \u2014 statuses match dev_autopilot_runs.status:
+    // running | ingesting | ranking | planning | done | failed
+    var done = runs.data.filter(function (r) { return r.status === 'done'; }).length;
     var failed = runs.data.filter(function (r) { return r.status === 'failed'; }).length;
-    var running = runs.data.filter(function (r) { return r.status === 'running'; }).length;
-    var skipped = runs.data.filter(function (r) { return r.status === 'skipped'; }).length;
+    var inProgress = runs.data.filter(function (r) {
+        return r.status === 'running' || r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning';
+    }).length;
+    var totalFindings = runs.data.reduce(function (sum, r) { return sum + (r.new_finding_count || 0); }, 0);
 
     var summaryRow = document.createElement('div');
     summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     summaryRow.appendChild(createSummaryCard('Total', runs.data.length, '#fff'));
-    summaryRow.appendChild(createSummaryCard('Completed', completed, '#4caf50'));
+    summaryRow.appendChild(createSummaryCard('Done', done, '#4caf50'));
     summaryRow.appendChild(createSummaryCard('Failed', failed, '#f44336'));
-    summaryRow.appendChild(createSummaryCard('Running', running, '#2196f3'));
-    summaryRow.appendChild(createSummaryCard('Skipped', skipped, '#999'));
+    summaryRow.appendChild(createSummaryCard('In Progress', inProgress, '#2196f3'));
+    summaryRow.appendChild(createSummaryCard('New Findings', totalFindings, '#ff9800'));
     container.appendChild(summaryRow);
 
     // Filters
     var filtersRow = document.createElement('div');
     filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
 
-    var automationFilter = document.createElement('input');
-    automationFilter.type = 'text';
-    automationFilter.placeholder = 'Filter by AP-XXXX...';
-    automationFilter.value = runs.filters.automation_id;
-    automationFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;width:160px;';
-    automationFilter.onchange = function () {
-        runs.filters.automation_id = this.value;
-        state.autopilot.runs.data = null;
-        fetchAutopilotRuns();
-    };
-    filtersRow.appendChild(automationFilter);
-
     var statusFilter = document.createElement('select');
     statusFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
-    statusFilter.innerHTML = '<option value="">All Statuses</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="running">Running</option><option value="skipped">Skipped</option>';
+    statusFilter.innerHTML = '<option value="">All Statuses</option>' +
+        '<option value="done">Done</option>' +
+        '<option value="failed">Failed</option>' +
+        '<option value="running">Running</option>' +
+        '<option value="ingesting">Ingesting</option>' +
+        '<option value="ranking">Ranking</option>' +
+        '<option value="planning">Planning</option>';
     statusFilter.value = runs.filters.status || '';
     statusFilter.onchange = function () { runs.filters.status = this.value; renderApp(); };
     filtersRow.appendChild(statusFilter);
@@ -48069,47 +48079,54 @@ function renderAutopilotRunsView() {
     var table = document.createElement('table');
     table.style.cssText = 'width:100%;min-width:860px;border-collapse:collapse;font-size:0.85rem;table-layout:fixed;';
 
+    // CSS classes (see the ap-runs-* rules in styles.css), not an inline
+    // presentation attribute \u2014 matching the already-shipping idiom used
+    // elsewhere in this file for table cells (e.g. event-timestamp,
+    // vtid-cell) rather than building markup with a hand-written CSS
+    // string per element.
     var colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = '<col style="width:170px"><col style="width:90px"><col style="width:85px"><col style="width:110px"><col style="width:65px"><col style="width:70px"><col style="width:75px"><col>';
+    colgroup.innerHTML = '<col class="ap-runs-col-time"><col class="ap-runs-col-runid"><col class="ap-runs-col-trigger"><col class="ap-runs-col-status"><col class="ap-runs-col-signals"><col class="ap-runs-col-new"><col class="ap-runs-col-duration"><col>';
     table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
-    thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
-        '<th style="padding:8px;color:#888;">Time</th>' +
-        '<th style="padding:8px;color:#888;">AP ID</th>' +
-        '<th style="padding:8px;color:#888;">Trigger</th>' +
-        '<th style="padding:8px;color:#888;">Status</th>' +
-        '<th style="padding:8px;color:#888;">Users</th>' +
-        '<th style="padding:8px;color:#888;">Actions</th>' +
-        '<th style="padding:8px;color:#888;">Duration</th>' +
-        '<th style="padding:8px;color:#888;">Error</th>' +
+    thead.innerHTML = '<tr class="ap-runs-thead-row">' +
+        '<th class="ap-runs-th">Time</th>' +
+        '<th class="ap-runs-th">Run ID</th>' +
+        '<th class="ap-runs-th">Trigger</th>' +
+        '<th class="ap-runs-th">Status</th>' +
+        '<th class="ap-runs-th">Signals</th>' +
+        '<th class="ap-runs-th">New</th>' +
+        '<th class="ap-runs-th">Duration</th>' +
+        '<th class="ap-runs-th">Error</th>' +
         '</tr>';
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
     filteredRuns.forEach(function (r) {
         var row = document.createElement('tr');
-        row.style.cssText = 'border-bottom:1px solid #222;';
-        row.onmouseenter = function () { this.style.background = '#1a1a3e'; };
-        row.onmouseleave = function () { this.style.background = ''; };
+        row.className = 'ap-runs-row';
 
         var startedAt = r.started_at ? new Date(r.started_at) : null;
         var completedAt = r.completed_at ? new Date(r.completed_at) : null;
-        var duration = (startedAt && completedAt) ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : (r.status === 'running' ? '...' : '-');
+        var stillRunning = r.status === 'running' || r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning';
+        var duration = (startedAt && completedAt) ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : (stillRunning ? '...' : '-');
         var timeStr = startedAt ? startedAt.toLocaleString() : '-';
 
-        var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'running' ? '\u{1F535}' : '\u26A0\uFE0F';
+        var statusIcon = r.status === 'done' ? '\u2705' : r.status === 'failed' ? '\u274C' : stillRunning ? '\u{1F535}' : '\u26A0\uFE0F';
+        var runIdShort = r.run_id ? String(r.run_id).slice(0, 8) : '-';
+        var badgeClass = (r.status === 'done' || r.status === 'failed' || r.status === 'running' ||
+            r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning')
+            ? 'ap-runs-badge-' + r.status : 'ap-runs-badge-default';
 
-        var runCellClip = 'padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         row.innerHTML =
-            '<td style="' + runCellClip + 'font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
-            '<td style="' + runCellClip + 'font-family:monospace;color:#64b5f6;">' + r.automation_id + '</td>' +
-            '<td style="' + runCellClip + '">' + (r.trigger_type || '-') + '</td>' +
-            '<td style="' + runCellClip + '"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.users_affected || 0) + '</td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.actions_taken || 0) + '</td>' +
-            '<td style="' + runCellClip + 'color:#999;">' + duration + '</td>' +
-            '<td style="' + runCellClip + 'color:#f44336;font-size:0.75rem;" title="' + (r.error_message || '').replace(/"/g, '&quot;') + '">' + (r.error_message || '') + '</td>';
+            '<td class="ap-runs-cell ap-runs-cell-time">' + timeStr + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-runid" title="' + (r.run_id || '') + '">' + runIdShort + '</td>' +
+            '<td class="ap-runs-cell">' + (r.triggered_by || '-') + '</td>' +
+            '<td class="ap-runs-cell"><span class="ap-runs-badge ' + badgeClass + '">' + statusIcon + ' ' + r.status + '</span></td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.signal_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.new_finding_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-dim">' + duration + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-error" title="' + (r.error || '').replace(/"/g, '&quot;') + '">' + (r.error || '') + '</td>';
 
         tbody.appendChild(row);
     });
@@ -48120,7 +48137,7 @@ function renderAutopilotRunsView() {
     if (filteredRuns.length === 0) {
         var empty = document.createElement('div');
         empty.style.cssText = 'text-align:center;color:#666;padding:2rem;';
-        empty.textContent = 'No automation runs found.';
+        empty.textContent = 'No scan runs found.';
         container.appendChild(empty);
     }
 
