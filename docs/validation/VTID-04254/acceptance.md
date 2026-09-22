@@ -133,6 +133,9 @@ TEST: services/gateway/test/vtid-04254-activation-status-guard.test.ts — "the 
 AC-9 The pre-existing operator-tool integration suite (`vtid-04111-operator-activate-recommendation.test.ts`), which previously pinned the BUGGY "does not attempt to bridge on an already-activated finding" behavior, now asserts the bridge retries and recovers, and a repeat call on an already-running execution is a safe no-op.
 TEST: services/gateway/test/vtid-04111-operator-activate-recommendation.test.ts — "does not re-emit the OASIS event, but DOES retry the bridge" / "a repeat call on an already-running execution is a safe no-op"
 
+AC-9b The pre-existing Command Hub `/activate` route suite (`test/routes/autopilot-recommendations.test.ts`), which also pinned the BUGGY "exactly 1 fetch call — the bridge never attempted" behavior for an already-activated recommendation, now asserts the bridge IS retried (a second fetch call, the bridge's own lookup) while the alignment-telemetry and draft-spec side effects (oasis_specs POST, vtid_ledger PATCH) stay skipped. Found by CI on the real PR — not caught by the local sweep that ran the sibling suites (vtid-04108/04111) but missed this one, the base route test file itself.
+TEST: services/gateway/test/routes/autopilot-recommendations.test.ts — "already_activated: skips alignment/spec side effects, but DOES retry the bridge (VTID-04254)"
+
 AC-10 No regression across the full related sweep (execution/onramp/watcher/reaper/source-type-allowlist suites that touch `dev-autopilot-execute.ts`, `autopilot-recommendations.ts`, or `operator-recommendation-tools.ts`, plus this fix's own two suites).
 TEST: full local run, see commands.log — 41 suites, 457 tests, 0 failures.
 

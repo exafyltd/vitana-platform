@@ -853,7 +853,7 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       );
     });
 
-    it('already_activated: skips alignment/spec/bridge side effects', async () => {
+    it('already_activated: skips alignment/spec side effects, but DOES retry the bridge (VTID-04254)', async () => {
       stubFetch(
         and(methodIs('POST'), urlHas('/rpc/activate_autopilot_recommendation')),
         { ok: true, vtid: 'VTID-09999', recommendation_id: REC_ID, title: 'Improve caching', status: 'activated', already_activated: true },
@@ -864,8 +864,22 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.already_activated).toBe(true);
-      // Only the RPC call itself — no id=eq.<id> GET lookups for alignment/spec/bridge.
-      expect(mockFetch).toHaveBeenCalledTimes(1);
+      // VTID-04254: the bridge attempt is no longer gated on
+      // `!response.already_activated` — this is what recovers a finding
+      // stranded at status='activated' by the pre-fix bug instead of
+      // reporting "Already activated" forever with no retry. The
+      // alignment-telemetry and draft-spec side effects stay gated (they
+      // are genuinely idempotency-sensitive — re-running them would
+      // duplicate a real side effect), so no oasis_specs POST or
+      // vtid_ledger PATCH fires here.
+      const calls = mockFetch.mock.calls.map(([url, init]: [any, any]) => `${(init?.method || 'GET').toUpperCase()} ${String(url)}`);
+      expect(calls.filter((c: string) => c.includes('/rpc/activate_autopilot_recommendation'))).toHaveLength(1);
+      expect(calls.some((c: string) => c.includes('/rest/v1/oasis_specs'))).toBe(false);
+      expect(calls.some((c: string) => c.startsWith('PATCH') && c.includes('/rest/v1/vtid_ledger'))).toBe(false);
+      // The bridge's own (unstubbed, so it fails gracefully) lookup is the
+      // second call — proof the retry was actually attempted, not just
+      // that the response looks unchanged.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('creates an oasis_specs draft from the recommendation snapshot on fresh activation', async () => {

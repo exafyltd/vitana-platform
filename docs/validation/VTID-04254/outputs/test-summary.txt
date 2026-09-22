@@ -46,3 +46,30 @@ Snapshots:   0 total
 Time:        3.188 s, estimated 7 s
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
 exit: 0
+
+$ npx jest test/routes/autopilot-recommendations.test.ts --silent  # fixed after CI caught the missed pre-existing suite
+    ✓ 400 when the rec is not in a completable state (2 ms)
+    ✓ 500 on RPC transport failure (2 ms)
+  GET /api/v1/autopilot/recommendations/health
+    ✓ always returns ok:true with the endpoint inventory (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       66 passed, 66 total
+Snapshots:   0 total
+Time:        0.77 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+$ npx jest test/routes/autopilot-recommendations.test.ts test/vtid-04254-activation-status-guard.test.ts test/vtid-04111-operator-activate-recommendation.test.ts test/vtid-04108-manual-activation-call-sites.test.ts --silent
+    ✓ its own approveAutoExecute call sites pass no allowManualSourceTypes flag (1 ms)
+  routes/autopilot-recommendations.ts — the /activate route bridge trigger matches what bridgeActivationToExecution itself accepts
+    ✓ imports isManuallyBridgeableSourceType from the shared allowlist module
+    ✓ no longer hardcodes the old two-value dev_autopilot/dev_autopilot_impact check
+
+Test Suites: 4 passed, 4 total
+Tests:       101 passed, 101 total
+Snapshots:   0 total
+Time:        1.177 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+$ npx tsc --noEmit  # re-run after the test fix
+exit: 0
