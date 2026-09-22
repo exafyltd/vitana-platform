@@ -2212,6 +2212,9 @@
         if (_tz) startPayload.client_timezone = _tz;
       } catch (e) { /* Intl unavailable — gateway falls back to geo-IP */ }
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
+      // VTID-04309: Command Hub binds the voice session to the Operator
+      // Console thread on screen, so voice turns land in that thread.
+      if (_s.operatorThreadId) startPayload.operator_thread_id = _s.operatorThreadId;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
       // VTID-03300: "My Journey" next-step focus. When the host opens the orb
@@ -5354,6 +5357,10 @@
             .slice(0, 5);
         }
         // VTID-03300: optional one-shot journey-step focus (see focusJourneyStep).
+        // VTID-04309: Operator Console thread for Command Hub voice turns.
+        if (typeof opts.initialContext.operator_thread_id === 'string') {
+          _s.operatorThreadId = opts.initialContext.operator_thread_id || null;
+        }
         if (typeof opts.initialContext.journey_focus_step === 'string') {
           _s.journeyFocus = opts.initialContext.journey_focus_step || null;
         }
@@ -5575,6 +5582,10 @@
         _s.recentRoutes = ctx.recent_routes
           .filter(function (r) { return typeof r === 'string'; })
           .slice(0, 5);
+      }
+      // VTID-04309: the host switched Operator Console threads.
+      if (typeof ctx.operator_thread_id === 'string') {
+        _s.operatorThreadId = ctx.operator_thread_id || null;
       }
       // VTID-03300: pre-arm a one-shot journey-step focus from the host. Set
       // only when present, so the per-route updateContext stream (which never

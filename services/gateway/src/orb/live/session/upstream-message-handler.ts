@@ -32,6 +32,7 @@
  *      changes.
  */
 
+import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
 import {
   navigationDispatchedThisTurn,
@@ -964,7 +965,10 @@ export function createUpstreamLiveMessageHandler(
             // VTID-CHAT-BRIDGE: Write voice transcripts to chat_messages so they appear
             // as a Vitana DM conversation. Fire-and-forget to avoid blocking the voice pipeline.
             // Explicit created_at timestamps ensure user message always sorts before Vitana reply.
-            if (session.identity?.user_id && session.identity?.tenant_id) {
+            // VTID-04309: a Command Hub (developer) voice turn goes to its
+            // Operator Console thread instead, never the community inbox.
+            if (!recordCommandHubVoiceTurn(session as any, chatBridgeUserText, chatBridgeAssistantText)
+                && session.identity?.user_id && session.identity?.tenant_id) {
               const bridgeSupabase = getSupabase();
               if (bridgeSupabase) {
                 const bridgeUserId = session.identity.user_id;
@@ -2550,7 +2554,9 @@ export function handleTurnComplete(
   }
 
   // VTID-CHAT-BRIDGE: voice transcripts → chat_messages (fire-and-forget).
-  if (session.identity?.user_id && session.identity?.tenant_id) {
+  // VTID-04309: Command Hub voice → Operator Console thread instead.
+  if (!recordCommandHubVoiceTurn(session as any, chatBridgeUserText, chatBridgeAssistantText)
+      && session.identity?.user_id && session.identity?.tenant_id) {
     const bridgeSupabase = getSupabase();
     if (bridgeSupabase) {
       const bridgeUserId = session.identity.user_id;

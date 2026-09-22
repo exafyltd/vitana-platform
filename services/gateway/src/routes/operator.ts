@@ -34,7 +34,7 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
+import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages } from '../services/operator-threads';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -249,9 +249,12 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
-async function runOperatorChatTurn(
+export async function runOperatorChatTurn(
   req: Request,
-  opts: { onEvent?: OperatorTurnEventSink; threadId?: string } = {},
+  // VTID-04310: `channel` tags the recorded thread messages (e.g.
+  // 'voice_delegate' when the Command Hub voice assistant hands a request
+  // to the Operator) so the console can show where the turn came from.
+  opts: { onEvent?: OperatorTurnEventSink; threadId?: string; channel?: string } = {},
 ): Promise<OperatorChatTurnOutcome> {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
@@ -490,7 +493,7 @@ async function runOperatorChatTurn(
         userText: message,
         reply: geminiResult.reply,
         tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
-        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null },
+        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null, ...(opts.channel ? { channel: opts.channel } : {}) },
       })
         .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
         .catch((err) => console.warn('[VTID-04022] operator thread record failed:', err instanceof Error ? err.message : err));
@@ -686,6 +689,27 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
     if (!closed) writeSseFrame(res, 'done', { threadId });
     if (!res.writableEnded) res.end();
   }
+});
+
+/**
+ * GET /threads/:threadId/messages → /api/v1/operator/threads/:threadId/messages
+ * VTID-04309: the server-side thread transcript (operator_threads /
+ * operator_messages), so turns recorded outside the browser — Command Hub
+ * voice turns — appear in the Operator Console. exafy_admin only; a thread
+ * owned by someone else reads as 404. `?since=<iso>` returns newer messages.
+ */
+router.get('/threads/:threadId/messages', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { threadId } = req.params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_THREAD_ID' });
+  }
+  const since = typeof req.query.since === 'string' && !Number.isNaN(Date.parse(req.query.since)) ? req.query.since : null;
+  const r = await listOperatorThreadMessages(threadId.toLowerCase(), { userId: req.identity?.user_id ?? null, sinceIso: since });
+  if (!r.ok) {
+    const status = r.error === 'not_found' ? 404 : r.error === 'disabled' ? 200 : 503;
+    return res.status(status).json({ ok: r.error === 'disabled', error: r.error, messages: [] });
+  }
+  return res.json({ ok: true, messages: r.messages });
 });
 
 /**

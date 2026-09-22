@@ -103,7 +103,10 @@ describe('A0.1 characterization: buildLiveSystemInstruction', () => {
       expect(cmdhub).not.toContain('Use get_recommendations to get personalized event, group, and match suggestions');
       // And the dev_orb tools_section must explicitly call out platform topics.
       expect(cmdhub).toContain('VTID status');
-      expect(cmdhub).toContain('Command Hub Vitana is the engineering assistant');
+      // VTID-04310: intent, not a scripted line (NEVER rule 41), and the
+      // one way voice starts work.
+      expect(cmdhub).toContain('this is the engineering assistant');
+      expect(cmdhub).toContain('Use operator_delegate whenever the developer wants something DONE');
     });
 
     it('mobile + Command Hub route still resolves to community (mobile override wins)', () => {
