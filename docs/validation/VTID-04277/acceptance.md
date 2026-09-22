@@ -48,29 +48,29 @@ exactly as before.
 
 ## Acceptance Criteria
 
-- **AC-1**: A cluster of `safety_gap` signals at/above `ROLLUP_THRESHOLD`
-  never collapses into a `[rollup]` finding — each gap is inserted as its
-  own finding with its own distinct `summary`.
-  TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "never
-  collapses safety_gap signals into a rollup, even at/above
-  ROLLUP_THRESHOLD"
+AC-1 — A cluster of `safety_gap` signals at/above `ROLLUP_THRESHOLD`
+never collapses into a `[rollup]` finding — each gap is inserted as its
+own finding with its own distinct `summary`.
+TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "never
+collapses safety_gap signals into a rollup, even at/above
+ROLLUP_THRESHOLD"
 
-- **AC-2**: A `safety_gap` cluster below `ROLLUP_THRESHOLD` — which was
-  already passed through unchanged before this fix (the old code path
-  routed sub-threshold clusters to passthrough too) — still passes
-  through unchanged after this fix, i.e. the exemption is a strict
-  widening, not a behaviour change for the already-correct case.
-  TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "a
-  small safety_gap cluster (below threshold) already passed through
-  unchanged before this fix — still does"
+AC-2 — A `safety_gap` cluster below `ROLLUP_THRESHOLD` — which was
+already passed through unchanged before this fix (the old code path
+routed sub-threshold clusters to passthrough too) — still passes
+through unchanged after this fix, i.e. the exemption is a strict
+widening, not a behaviour change for the already-correct case.
+TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "a
+small safety_gap cluster (below threshold) already passed through
+unchanged before this fix — still does"
 
-- **AC-3**: The exemption is scoped to `safety_gap` only — a non-exempt
-  type (`dead_code`) still collapses into one `[rollup]` finding at/above
-  `ROLLUP_THRESHOLD`, with `raw.rollup=true` and the correct
-  `total_files` count, exactly as before this change.
-  TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "still
-  collapses a non-exempt type (dead_code) at/above ROLLUP_THRESHOLD — the
-  exemption is scoped to safety_gap only"
+AC-3 — The exemption is scoped to `safety_gap` only — a non-exempt
+type (`dead_code`) still collapses into one `[rollup]` finding at/above
+`ROLLUP_THRESHOLD`, with `raw.rollup=true` and the correct
+`total_files` count, exactly as before this change.
+TEST: `services/gateway/test/dev-autopilot-synthesis.test.ts` — "still
+collapses a non-exempt type (dead_code) at/above ROLLUP_THRESHOLD — the
+exemption is scoped to safety_gap only"
 
 ## Not fixed here (explicitly out of scope)
 
