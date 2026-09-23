@@ -1,7 +1,7 @@
 // VTID-04354: screenshot Autopilot › Orchestrator against the local harness at
 // 1400x900 and 390x844, then click the first plane card and a status filter.
 const { chromium } = require('/home/user/vitana-platform/services/gateway/node_modules/playwright');
-const BASE = process.env.HARNESS_URL || 'http://127.0.0.1:18483';
+const BASE = 'http://127.0.0.1:18483'; // matches harness-server.js's default port
 const OUT = __dirname;
 async function run(viewport, tag) {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
