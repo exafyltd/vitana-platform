@@ -50,6 +50,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 
 // Must be declared before /:id/... so "android-contacts/import" is not read as an app action.
 router.post('/android-contacts/import', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the hub records this transition (connected_app.* events in services/connected-apps/hub.ts).
   const m = member(req);
   if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   try {
@@ -63,6 +64,7 @@ router.post('/android-contacts/import', async (req: AuthenticatedRequest, res: R
 });
 
 router.post('/:id/connect', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the hub records this transition (connected_app.* events in services/connected-apps/hub.ts).
   const m = member(req);
   if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   if (!knownApp(req.params.id)) return res.status(404).json({ ok: false, error: 'unknown_app' });
@@ -81,6 +83,7 @@ router.post('/:id/connect', async (req: AuthenticatedRequest, res: Response) => 
 });
 
 router.post('/:id/disconnect', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the hub records this transition (connected_app.* events in services/connected-apps/hub.ts).
   const m = member(req);
   if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   if (!knownApp(req.params.id)) return res.status(404).json({ ok: false, error: 'unknown_app' });
@@ -95,6 +98,7 @@ router.post('/:id/disconnect', async (req: AuthenticatedRequest, res: Response) 
 });
 
 router.post('/:id/sync', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: a sync is not an on/off transition — its result lands on connected_app_settings, and a failure emits connected_app.sync_failed in the hub.
   const m = member(req);
   if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   if (!knownApp(req.params.id)) return res.status(404).json({ ok: false, error: 'unknown_app' });

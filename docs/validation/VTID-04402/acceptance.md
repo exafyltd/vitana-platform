@@ -106,7 +106,8 @@ TEST: services/gateway/test/vtid-04402-connected-apps.test.ts › iCloud parsing
 
 AC-12: The routes need a verified member, act only for the caller and refuse to sync an app that is off.
 The API is mounted, the loop starts at boot, and the refresher covers microsoft.
-TEST: services/gateway/test/vtid-04402-connected-apps.test.ts › routes
+TEST: services/gateway/test/routes/connected-apps.test.ts › connected-apps routes
+TEST: services/gateway/test/vtid-04402-connected-apps.test.ts › wiring
 
 AC-13: The migration is correct.
 - The new tables are service-role only.

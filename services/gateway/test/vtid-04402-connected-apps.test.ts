@@ -522,55 +522,10 @@ describe('iCloud parsing', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Routes + wiring
+// Wiring (route handlers are in test/routes/connected-apps.test.ts)
 // ---------------------------------------------------------------------------
 
-describe('routes', () => {
-  function app(identity: any, hubMock: Record<string, jest.Mock>) {
-    jest.resetModules();
-    jest.doMock('../src/middleware/auth-supabase-jwt', () => ({
-      requireAuth: (req: any, res: any, next: any) => {
-        if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-        req.identity = identity;
-        next();
-      },
-    }));
-    jest.doMock('../src/services/connected-apps/hub', () => hubMock);
-    const router = require('../src/routes/connected-apps').default;
-    const a = express();
-    a.use(express.json());
-    a.use('/x', router);
-    return a;
-  }
-  afterEach(() => {
-    jest.dontMock('../src/middleware/auth-supabase-jwt');
-    jest.dontMock('../src/services/connected-apps/hub');
-  });
-
-  it('needs a verified member', async () => {
-    const r = await request(app(null, {})).get('/x');
-    expect(r.status).toBe(401);
-  });
-
-  it('acts only for the caller, rejects unknown apps, passes Apple credentials through', async () => {
-    const connectApp = jest.fn(async () => ({ ok: true, status: 'on' }));
-    const listApps = jest.fn(async () => [{ id: 'gmail', status: 'on' }]);
-    const a = app({ user_id: 'me', tenant_id: 't1' }, { connectApp, listApps, disconnectApp: jest.fn(), syncApp: jest.fn(), importDeviceContacts: jest.fn() });
-    expect((await request(a).post('/x/nope/connect')).status).toBe(404);
-    const r = await request(a).post('/x/apple-mail/connect').send({ apple_id: 'me@icloud.com', app_password: 'p', user_id: 'victim' });
-    expect(r.status).toBe(200);
-    expect(connectApp).toHaveBeenCalledWith('me', 't1', 'apple-mail', expect.objectContaining({ appleId: 'me@icloud.com', appPassword: 'p' }));
-    expect((await request(a).get('/x')).body).toEqual({ ok: true, apps: [{ id: 'gmail', status: 'on' }] });
-  });
-
-  it('sync refuses an app that is off', async () => {
-    const syncApp = jest.fn();
-    const a = app({ user_id: 'me' }, { listApps: jest.fn(async () => [{ id: 'google-contacts', status: 'off' }]), syncApp, connectApp: jest.fn(), disconnectApp: jest.fn(), importDeviceContacts: jest.fn() });
-    const r = await request(a).post('/x/google-contacts/sync');
-    expect(r.status).toBe(409);
-    expect(syncApp).not.toHaveBeenCalled();
-  });
-
+describe('wiring', () => {
   it('is mounted, its loop starts at boot, and the resolver consults the toggles', () => {
     const idx = fs.readFileSync(path.join(SRC, 'index.ts'), 'utf8');
     expect(idx).toContain("'/api/v1/connected-apps'");
