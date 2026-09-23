@@ -1519,6 +1519,8 @@ export async function handleLiveSessionStart(
     // voice". The widget sends it on the first start only; the greeting
     // ladder opens with the support-report intake while no turn has run.
     support_report: (body as any).support_report === true,
+    // VTID-04430: the host app's build stamp; voice-filed tickets store it.
+    app_version: normalizeAppVersion((body as any).app_version),
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -2771,4 +2773,12 @@ export async function handleLiveStreamSend(
     console.error(`[VTID-01155] Stream send error:`, error);
     return res.status(500).json({ ok: false, error: error.message });
   }
+}
+
+/** VTID-04430 — a short build stamp from the client, or null. Never trusted beyond length/charset. */
+export function normalizeAppVersion(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!v || v.length > 64 || !/^[A-Za-z0-9._+-]+$/.test(v)) return null;
+  return v;
 }

@@ -44,8 +44,9 @@ function jsonRes(status: number, body: unknown) {
   } as any;
 }
 
+// VTID-04429: the ledger close may retry once, so allow extra microtask hops.
 async function flush() {
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  for (let i = 0; i < 30; i++) await Promise.resolve();
 }
 
 describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSideEffects)', () => {
