@@ -19,8 +19,10 @@ TEST: services/gateway/test/orb/live/commerce-surface.test.ts
 AC-3: The `commerce_orb` persona exists as a valid ai_personality_config
 surface key with voice_* intent fields only (no scripted spoken line,
 NEVER rule 41), and the personal brain context is withheld on commerce the
-same way it is on admin and backoffice.
+same way it is on admin and backoffice (behavioural test on the built
+instruction; mutation-verified: disabling the commerce branch fails 2 cases).
 TEST: services/gateway/test/orb/live/commerce-surface.test.ts
+TEST: services/gateway/test/orb/live/instruction/work-surface-overlays.test.ts
 
 AC-4: The existing surfaces are unchanged (surface resolution, persona keys,
 navigator roles, tool gates for vitanaland/admin/backoffice/command-hub).

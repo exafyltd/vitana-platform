@@ -82,8 +82,7 @@ describe('commerce persona and context', () => {
     expect(JSON.stringify(p)).not.toMatch(/Say exactly/i);
   });
 
-  test('the personal brain context is withheld on the commerce surface', () => {
-    const src = fs.readFileSync(path.join(__dirname, '../../../src/orb/live/instruction/live-system-instruction.ts'), 'utf8');
-    expect(src).toMatch(/resolvedSurface === 'commerce'\) \? '' : bootstrapContext/);
-  });
+  // Brain-context withholding is tested behaviourally in
+  // instruction/work-surface-overlays.test.ts (commerce surface).
+
 });
