@@ -2,8 +2,8 @@
 // local thread, wait for the two server-only threads to join the sidebar,
 // open the phone thread and screenshot its loaded transcript. 1400x900 + 390x844.
 const { chromium } = require('/home/user/vitana-platform/services/gateway/node_modules/playwright');
-const BASE = process.env.HARNESS_URL || 'http://127.0.0.1:18437';
-const OUT = process.env.OUT_DIR || __dirname;
+const BASE = process.argv[2] || 'http://127.0.0.1:18437';
+const OUT = process.argv[3] || __dirname;
 
 async function run(viewport, tag) {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
