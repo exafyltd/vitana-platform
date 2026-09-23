@@ -5959,6 +5959,12 @@ export interface VertexLikeToolResult {
   success: boolean;
   result: string;
   error?: string;
+  /**
+   * VTID-04385: the handler's structured result, untouched, for callers that
+   * need more than the LLM-facing string (e.g. the ticket a typed feedback
+   * tool just filed). Never sent to the model.
+   */
+  data?: unknown;
 }
 
 export async function dispatchOrbToolForVertex(
@@ -6003,5 +6009,5 @@ export async function dispatchOrbToolForVertex(
   } else {
     resultStr = '';
   }
-  return { success: true, result: resultStr };
+  return { success: true, result: resultStr, data: r.result };
 }

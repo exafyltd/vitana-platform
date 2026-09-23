@@ -140,6 +140,8 @@ export type WakeOpener =
    *  fact this VTID exists to make measurable, and collapsing them would hide it. */
   | 'newday_overview'
   | 'override_v2'
+  /** VTID-04395 — the member opened the ORB from Support to report a problem. */
+  | 'support_report'
   | 'silenced_on_cadence'
   | 'legacy_default';
 
@@ -294,6 +296,12 @@ export interface GreetingDecisionContext {
   // --- wake-brief / cadence ------------------------------------------------
   /** !!session.guidedTopicNarrationContent — switches override_v2 to teach mode. */
   guidedTopicNarrationContent: string | null;
+  /**
+   * VTID-04395: true when the member opened the ORB from Support → "report by
+   * voice" (session-start body `support_report: true`, one-shot). The
+   * support-report rung then opens as an intake instead of any briefing.
+   */
+  supportReportOpen?: boolean;
   /** One-shot: true only on the resend that follows a `day_close` open getting
    *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
    *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
@@ -811,6 +819,42 @@ export function buildGuidedTopicOpenTrigger(): string {
   );
 }
 
+/**
+ * VTID-04395 — the member tapped Support → "report by voice". They opened the
+ * ORB to tell us about a problem, so turn 1 is an intake, not a briefing.
+ *
+ * Written as an English INTENT (NEVER-rule 41 / §13b): the model composes
+ * the words in the member's language. No quoted dialogue — the shape the
+ * Nova content filter has repeatedly reacted to (VTID-03674 / VTID-03797).
+ * Filing still goes through report_to_specialist and its STATUS contract
+ * (VTID-04332); this rung only changes how the conversation opens.
+ */
+export function buildSupportReportOpenTrigger(): string {
+  return (
+    `The member opened voice from the Support screen because they want to report a problem or get help.\n` +
+    `Open with ONE short, warm sentence in the member's own language that invites them to describe what happened. ` +
+    `Skip any daily briefing, news or suggestions in this turn.\n` +
+    `When they have described it, file it with report_to_specialist using a concrete summary in their own words, ` +
+    `then follow the result it returns. Compose every sentence yourself. Then stop and listen.`
+  );
+}
+
+function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.supportReportOpen || ctx.isAnonymous) return null;
+  const trigger = buildSupportReportOpenTrigger();
+  return {
+    wakeOpener: 'support_report',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'support_report',
+      decision_id: ctx.wakeBriefDecisionId || null,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
   const od = ctx.openDecision;
@@ -843,6 +887,11 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // the day-close/newday-overview rungs this ladder is about to try. See
   // tryGuidedTopicRung's own comment for the full root-cause trace. This
   // ladder previously had no guided-topic handling at all.
+  // VTID-04395 — Support "report by voice" is an explicit request, like a
+  // tapped topic: it outranks every briefing rung.
+  const supportFast = trySupportReportRung(ctx);
+  if (supportFast) return supportFast;
+
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
 
@@ -1076,6 +1125,11 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // tryGuidedTopicRung's own comment for the full root-cause trace: this is
   // the exact defect reported live ("tapping a session starts the new-day
   // overview instead").
+  // VTID-04395 — same position as the guided rung: below silent_reconnect,
+  // above day_close / newday_overview.
+  const supportNormal = trySupportReportRung(ctx);
+  if (supportNormal) return supportNormal;
+
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;
 
