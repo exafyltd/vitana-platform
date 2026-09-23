@@ -98,7 +98,7 @@ export const CONNECTED_APPS: ConnectedAppDef[] = [
     kind: 'mail',
     method: 'app_password',
     scopes: [],
-    capabilities: ['email.read'],
+    capabilities: ['email.read', 'email.send'],
     sync: null,
   },
   {
