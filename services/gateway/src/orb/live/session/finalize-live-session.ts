@@ -14,6 +14,10 @@
  *    deduplicated fact extraction, forced) — the same helper LiveKit uses;
  *  - writes the voice session summary through recordSessionSummary()
  *    (`memory` routing stage, upsert on user_id + session_id);
+ *  - writes the open threads and promises the session left behind through
+ *    recordSessionContinuity() (user_open_threads / assistant_promises);
+ *  - emits exactly one `conversation.session.finalized` OASIS event per run,
+ *    after the summary and continuity writes settle, with what they produced;
  *  - runs at most once per transcript length: the session records how many
  *    turns it last finalized, so a second end path on the same transcript is a
  *    no-op, while a session that gained turns after an earlier finalize (the
@@ -24,6 +28,7 @@
  */
 
 import { commitSessionMemory } from '../../../services/session-memory-commit';
+import { isSessionContinuityWriteEnabled } from '../../../services/continuity/session-continuity-writer';
 
 export interface FinalizableLiveSession {
   sessionId?: string;
@@ -44,6 +49,52 @@ export interface FinalizeLiveSessionResult {
   memory_committed: boolean;
   memory_skip_reason?: string;
   summary_queued: boolean;
+  continuity_queued: boolean;
+  /** Settles after the async writes and the finalized event; tests await it. */
+  settled: Promise<FinalizedEventPayload | null>;
+}
+
+export interface FinalizedEventPayload {
+  session_id: string;
+  reason: string;
+  turns: number;
+  user_turns: number;
+  duration_ms: number | null;
+  memory_committed: boolean;
+  memory_skip_reason?: string;
+  summary_written: boolean;
+  threads_written: number;
+  threads_touched: number;
+  promises_written: number;
+}
+
+type RecordContinuityFn = (input: {
+  tenant_id: string;
+  user_id: string;
+  session_id: string;
+  transcript_turns: Array<{ role: 'user' | 'assistant'; text: string }>;
+}) => Promise<{ ok: boolean; threads_written: number; threads_touched: number; promises_written: number }>;
+
+async function defaultRecordContinuity(input: Parameters<RecordContinuityFn>[0]) {
+  const { recordSessionContinuity } = await import('../../../services/continuity/session-continuity-writer');
+  return recordSessionContinuity(input);
+}
+
+type EmitFinalizedFn = (payload: FinalizedEventPayload, actorId: string | null) => Promise<unknown>;
+
+async function defaultEmitFinalized(payload: FinalizedEventPayload, actorId: string | null): Promise<unknown> {
+  const { emitOasisEvent } = await import('../../../services/oasis-event-service');
+  return emitOasisEvent({
+    vtid: 'VTID-04353',
+    type: 'conversation.session.finalized',
+    source: 'orb-live',
+    status: 'info',
+    message: `ORB session finalized (${payload.reason})`,
+    payload: payload as unknown as Record<string, unknown>,
+    actor_id: actorId ?? undefined,
+    actor_role: actorId ? 'user' : 'system',
+    surface: 'orb',
+  });
 }
 
 export function isVoiceSessionSummaryEnabled(
@@ -65,6 +116,15 @@ async function defaultRecordSummary(input: Parameters<RecordSummaryFn>[0]): Prom
   return recordSessionSummary(input);
 }
 
+/** Start an async write synchronously; a synchronous throw becomes a rejection. */
+function startNow<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return fn();
+  } catch (err) {
+    return Promise.reject(err);
+  }
+}
+
 export function finalizeLiveSession(
   session: FinalizableLiveSession,
   opts: {
@@ -72,12 +132,20 @@ export function finalizeLiveSession(
     reason: string;
     /** Test seams. */
     recordSummary?: RecordSummaryFn;
+    recordContinuity?: RecordContinuityFn;
+    emitFinalized?: EmitFinalizedFn;
     commitMemory?: typeof commitSessionMemory;
     nowMs?: number;
   },
 ): FinalizeLiveSessionResult {
   const turns = Array.isArray(session.transcriptTurns) ? session.transcriptTurns.length : 0;
-  const base = { turns, memory_committed: false, summary_queued: false };
+  const base = {
+    turns,
+    memory_committed: false,
+    summary_queued: false,
+    continuity_queued: false,
+    settled: Promise.resolve(null) as Promise<FinalizedEventPayload | null>,
+  };
 
   if (turns === 0) return { ...base, ran: false, reason: 'empty_transcript' };
   if ((session.finalizedTurnCount ?? 0) >= turns) {
@@ -120,28 +188,83 @@ export function finalizeLiveSession(
 
   // A summary needs a real user and at least one thing the user said —
   // a greeting-only session has nothing to summarize.
-  let summaryQueued = false;
   const hasUserTurn = cleanTurns.some((t) => t.role === 'user');
+  const userTurns = cleanTurns.filter((t) => t.role === 'user').length;
+  const durationMs = session.createdAt
+    ? Math.max(0, (opts.nowMs ?? Date.now()) - session.createdAt.getTime())
+    : null;
+
+  let summaryQueued = false;
+  let summaryPromise: Promise<boolean> = Promise.resolve(false);
   if (userId && hasUserTurn && isVoiceSessionSummaryEnabled()) {
-    const durationMs = session.createdAt
-      ? Math.max(0, (opts.nowMs ?? Date.now()) - session.createdAt.getTime())
-      : null;
     summaryQueued = true;
-    void (opts.recordSummary ?? defaultRecordSummary)({
-      user_id: userId,
-      session_id: opts.sessionId,
-      channel: 'voice',
-      transcript_turns: cleanTurns,
-      duration_ms: durationMs,
-    }).catch((err: unknown) => {
-      console.warn(
-        `[VTID-04353] voice session summary failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+    summaryPromise = startNow(() =>
+      (opts.recordSummary ?? defaultRecordSummary)({
+        user_id: userId,
+        session_id: opts.sessionId,
+        channel: 'voice',
+        transcript_turns: cleanTurns,
+        duration_ms: durationMs,
+      }),
+    )
+      .then((r: any) => !!(r && (r.success === true || r.success === undefined)))
+      .catch((err: unknown) => {
+        console.warn(
+          `[VTID-04353] voice session summary failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return false;
+      });
   }
 
+  let continuityQueued = false;
+  let continuityPromise: Promise<{ threads_written: number; threads_touched: number; promises_written: number }> =
+    Promise.resolve({ threads_written: 0, threads_touched: 0, promises_written: 0 });
+  if (userId && tenantId && hasUserTurn && isSessionContinuityWriteEnabled()) {
+    continuityQueued = true;
+    continuityPromise = startNow(() =>
+      (opts.recordContinuity ?? defaultRecordContinuity)({
+        tenant_id: tenantId,
+        user_id: userId,
+        session_id: opts.sessionId,
+        transcript_turns: cleanTurns,
+      }),
+    )
+      .catch((err: unknown) => {
+        console.warn(
+          `[VTID-04353] continuity write failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return { threads_written: 0, threads_touched: 0, promises_written: 0 };
+      });
+  }
+
+  const settled: Promise<FinalizedEventPayload | null> = Promise.all([summaryPromise, continuityPromise])
+    .then(async ([summaryWritten, continuity]) => {
+      const payload: FinalizedEventPayload = {
+        session_id: opts.sessionId,
+        reason: opts.reason,
+        turns,
+        user_turns: userTurns,
+        duration_ms: durationMs,
+        memory_committed: memoryCommitted,
+        memory_skip_reason: memorySkipReason,
+        summary_written: summaryWritten,
+        threads_written: continuity.threads_written,
+        threads_touched: continuity.threads_touched,
+        promises_written: continuity.promises_written,
+      };
+      try {
+        await (opts.emitFinalized ?? defaultEmitFinalized)(payload, userId || null);
+      } catch (err) {
+        console.warn(
+          `[VTID-04353] finalized event failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return payload;
+    })
+    .catch(() => null);
+
   console.log(
-    `[VTID-04353] finalized ${opts.sessionId} (${opts.reason}): turns=${turns} memory=${memoryCommitted ? 'committed' : memorySkipReason} summary=${summaryQueued ? 'queued' : 'skipped'}`,
+    `[VTID-04353] finalized ${opts.sessionId} (${opts.reason}): turns=${turns} memory=${memoryCommitted ? 'committed' : memorySkipReason} summary=${summaryQueued ? 'queued' : 'skipped'} continuity=${continuityQueued ? 'queued' : 'skipped'}`,
   );
 
   return {
@@ -150,5 +273,7 @@ export function finalizeLiveSession(
     memory_committed: memoryCommitted,
     memory_skip_reason: memorySkipReason,
     summary_queued: summaryQueued,
+    continuity_queued: continuityQueued,
+    settled,
   };
 }

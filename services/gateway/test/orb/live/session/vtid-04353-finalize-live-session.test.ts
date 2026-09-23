@@ -32,6 +32,10 @@ function seams() {
   return {
     commitMemory: jest.fn(() => ({ committed: true, cognee_queued: false })),
     recordSummary: jest.fn(() => Promise.resolve({ success: true })),
+    recordContinuity: jest.fn(() =>
+      Promise.resolve({ ok: true, threads_written: 1, threads_touched: 0, promises_written: 1 }),
+    ),
+    emitFinalized: jest.fn(() => Promise.resolve({ ok: true })),
   };
 }
 
@@ -43,9 +47,12 @@ const convo: Array<['user' | 'assistant', string]> = [
 
 describe('finalizeLiveSession (VTID-04353)', () => {
   const OLD = process.env.ORB_VOICE_SESSION_SUMMARY_ENABLED;
+  const OLD_CONT = process.env.ORB_SESSION_CONTINUITY_WRITE_ENABLED;
   afterEach(() => {
     if (OLD === undefined) delete process.env.ORB_VOICE_SESSION_SUMMARY_ENABLED;
     else process.env.ORB_VOICE_SESSION_SUMMARY_ENABLED = OLD;
+    if (OLD_CONT === undefined) delete process.env.ORB_SESSION_CONTINUITY_WRITE_ENABLED;
+    else process.env.ORB_SESSION_CONTINUITY_WRITE_ENABLED = OLD_CONT;
   });
 
   it('commits memory and queues a voice summary with the full transcript', () => {
@@ -65,6 +72,79 @@ describe('finalizeLiveSession (VTID-04353)', () => {
       transcript_turns: convo.map(([role, text]) => ({ role, text })),
       duration_ms: 90_000,
     });
+  });
+
+  it('writes continuity and emits exactly one finalized event carrying what the writes produced', async () => {
+    const x = seams();
+    const r = finalizeLiveSession(session(convo), { sessionId: 'live-1', reason: 'ws_stop', nowMs: T0 + 90_000, ...x });
+    expect(r.continuity_queued).toBe(true);
+    const payload = await r.settled;
+    expect(x.recordContinuity).toHaveBeenCalledWith({
+      tenant_id: 't1',
+      user_id: 'u1',
+      session_id: 'live-1',
+      transcript_turns: convo.map(([role, text]) => ({ role, text })),
+    });
+    expect(x.emitFinalized).toHaveBeenCalledTimes(1);
+    expect(payload).toEqual({
+      session_id: 'live-1',
+      reason: 'ws_stop',
+      turns: 3,
+      user_turns: 1,
+      duration_ms: 90_000,
+      memory_committed: true,
+      memory_skip_reason: undefined,
+      summary_written: true,
+      threads_written: 1,
+      threads_touched: 0,
+      promises_written: 1,
+    });
+    expect((x.emitFinalized.mock.calls[0] as any[])[1]).toBe('u1');
+  });
+
+  it('the finalized event reports a failed summary and continuity honestly', async () => {
+    const x = seams();
+    x.recordSummary.mockImplementationOnce(() => Promise.resolve({ success: false, error: 'router down' }) as any);
+    x.recordContinuity.mockImplementationOnce(() => Promise.reject(new Error('db down')));
+    const payload = await finalizeLiveSession(session(convo), { sessionId: 'live-1', reason: 'test', ...x }).settled;
+    expect(payload).toMatchObject({ summary_written: false, threads_written: 0, promises_written: 0 });
+    expect(x.emitFinalized).toHaveBeenCalledTimes(1);
+  });
+
+  it('a skipped finalize emits no event', async () => {
+    const x = seams();
+    const s = session(convo);
+    await finalizeLiveSession(s, { sessionId: 'live-1', reason: 'a', ...x }).settled;
+    const r2 = finalizeLiveSession(s, { sessionId: 'live-1', reason: 'b', ...x });
+    expect(await r2.settled).toBeNull();
+    expect(x.emitFinalized).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failing event emit never throws out of settled', async () => {
+    const x = seams();
+    x.emitFinalized.mockImplementationOnce(() => Promise.reject(new Error('oasis down')));
+    await expect(finalizeLiveSession(session(convo), { sessionId: 'live-1', reason: 't', ...x }).settled).resolves.toMatchObject({
+      session_id: 'live-1',
+    });
+  });
+
+  it('ORB_SESSION_CONTINUITY_WRITE_ENABLED=false turns off only the continuity write', async () => {
+    process.env.ORB_SESSION_CONTINUITY_WRITE_ENABLED = 'false';
+    const x = seams();
+    const r = finalizeLiveSession(session(convo), { sessionId: 'live-1', reason: 't', ...x });
+    await r.settled;
+    expect(r).toMatchObject({ continuity_queued: false, summary_queued: true, memory_committed: true });
+    expect(x.recordContinuity).not.toHaveBeenCalled();
+    expect(x.emitFinalized).toHaveBeenCalledTimes(1);
+  });
+
+  it('an anonymous session writes no continuity', async () => {
+    const x = seams();
+    x.commitMemory.mockReturnValueOnce({ committed: false, cognee_queued: false, reason: 'missing_identity' } as any);
+    const r = finalizeLiveSession(session(convo, null), { sessionId: 'live-1', reason: 't', ...x });
+    await r.settled;
+    expect(r.continuity_queued).toBe(false);
+    expect(x.recordContinuity).not.toHaveBeenCalled();
   });
 
   it('a second end path on the same transcript is a no-op', () => {
@@ -138,7 +218,7 @@ describe('finalizeLiveSession (VTID-04353)', () => {
     x.recordSummary.mockImplementationOnce(() => Promise.reject(new Error('router down')));
     const r = finalizeLiveSession(session(convo), { sessionId: 'live-1', reason: 'test', ...x });
     expect(r).toMatchObject({ ran: true, memory_committed: false, memory_skip_reason: 'commit_threw', summary_queued: true });
-    await new Promise((resolve) => setImmediate(resolve));
+    await r.settled;
   });
 });
 

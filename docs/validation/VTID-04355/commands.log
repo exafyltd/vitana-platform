@@ -3,19 +3,20 @@ VTID-04355 — commands run
 1. Allocated VTID-04355 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
    set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
 
-2. Read the gate and both call sites:
-   - services/gateway/src/services/assistant-continuation/acceptance-gate.ts (maybeBindAcceptance)
-   - services/gateway/src/orb/live/session/upstream-message-handler.ts ~L669, ~L2343:
-     both `if (!bound || bound.tool !== 'navigate_to_screen') return;` and
-     `if (!p.screen_id || !p.route) return;` -> the gate cleared and dropped every other offer.
-   - pending_cta producers: tool_offer_action (orb-tools-shared.ts), wake-brief-wiring.ts onYesTool.
-   - pending_cta consumer fallback: activate_recommendation (discovery-tools.ts).
+2. Read the gate, both call sites and every pending_cta reader/writer:
+   - acceptance-gate.ts maybeBindAcceptance
+   - upstream-message-handler.ts ~L669, ~L2343 (navigate_to_screen with screen_id+route only)
+   - writers: tool_offer_action, navigator ambiguous branch, navigator reopened branch
+     (orb-tools-shared.ts), wake-brief-wiring.ts onYesTool
+   - readers: activate_recommendation fallback (orb-tools-shared.ts, discovery-tools.ts)
 
-3. Typecheck: node_modules/.bin/tsc --noEmit -p .  (services/gateway) -> exit 0
+3. Added assistant-continuation/offer-outcomes.ts; routed all four writers through
+   recordPendingOffer(); gate emits accepted/declined; dispatchOrbTool settles an
+   accepted model-run offer on tool success.
 
-4. Tests (services/gateway):
-   node_modules/.bin/jest test/acceptance-gate.test.ts test/offer-action.test.ts \
-     test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts
-   -> 3 suites, 69 tests passed
-   node_modules/.bin/jest <all suites referencing offer_action/pending_cta/acceptance-gate> test/orb
-   -> 229 suites passed, 3898 tests passed, 6 todo
+4. tsc --noEmit (services/gateway) -> exit 0
+
+5. Tests (services/gateway):
+   jest acceptance-gate, offer-action, vtid-04355-offer-outcomes, voice-activate-recommendation-shared,
+        continuity, finalize, flag-pin, nav-guided-journey -> 13 suites, 252 tests passed
+   full gateway suite -> 1089 suites passed (1 skipped), 17703 tests passed, 0 failed

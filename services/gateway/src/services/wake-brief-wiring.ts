@@ -793,15 +793,18 @@ export async function decideWakeBriefForSession(
     ) {
       const onYesTool = (selCta as { onYesTool: string }).onYesTool;
       const ctaPayload = (selCta as { payload?: Record<string, unknown> }).payload ?? {};
-      void import('./orb/orb-session-state')
-        .then(({ writeOrbSessionState }) =>
-          writeOrbSessionState(
-            args.supabase!,
-            args.userId!,
-            'pending_cta',
-            { tool: onYesTool, payload: ctaPayload, offered_at: new Date().toISOString() },
-            5, // minutes — the offer is only live for the immediate follow-up
-          ),
+      // VTID-04355: the one pending_cta writer — records the offer, its
+      // provider and dedupe key, and the offer lifecycle events.
+      void import('./assistant-continuation/offer-outcomes')
+        .then(({ recordPendingOffer }) =>
+          recordPendingOffer(args.supabase!, args.userId!, {
+            tool: onYesTool,
+            payload: ctaPayload,
+            source: 'wake_brief',
+            provider: (sel as { kind?: string } | null)?.kind ?? null,
+            key: sel?.dedupeKey ?? null,
+            ttlMinutes: 5, // the offer is only live for the immediate follow-up
+          }),
         )
         .catch(() => { /* pending-CTA persistence is best-effort */ });
     }

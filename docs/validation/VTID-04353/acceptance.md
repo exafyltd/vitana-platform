@@ -40,6 +40,31 @@ New `orb/live/session/finalize-live-session.ts` — `finalizeLiveSession(session
     updates the same row.
 - **Never throws and never awaits the model call.**
 
+### Added after the first review against Plan v1
+
+Plan v1 WS-0.4 also asks for open threads and promises, and for one
+`conversation.session.finalized` event. Both were missing from the first commit:
+
+- **Open threads and promises.** `user_open_threads` and `assistant_promises`
+  (VTID-02932) are read by the continuity compiler on every session start, but
+  nothing in the codebase wrote either table. New
+  `services/continuity/session-continuity-writer.ts`:
+  - One `memory`-stage call returns JSON with at most 3 open threads and 3
+    promises. Routing decides the provider, which is never named in code.
+  - The reply is parsed tolerantly, clamped, and deduplicated by normalized topic.
+  - A topic the user already has open is touched (`session_id_last`,
+    `last_mentioned_at`, summary) rather than duplicated.
+  - Promises are inserted as `owed`, with any spoken time hint kept in the text
+    rather than guessed into a timestamp.
+  - Never throws.
+  - `ORB_SESSION_CONTINUITY_WRITE_ENABLED=false` turns off only this write.
+- **`conversation.session.finalized`.** Exactly one event per finalize run,
+  emitted after the summary and continuity writes settle. It carries turns,
+  user turns, duration, `memory_committed`, `summary_written`, and the thread
+  and promise counts. A skipped finalize (empty or already finalized) emits
+  nothing. `finalizeLiveSession()` returns a `settled` promise so tests can
+  observe the event; the end paths never await it.
+
 Wired into: WS stop frame, WS socket cleanup, `POST /live/session/stop`
 (transcript branch; the `memory_items` fallback for an empty transcript is
 unchanged), SSE close, the idle sweep, the Vertex genuine disconnect.
@@ -82,5 +107,11 @@ TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.te
 AC-5: All six end paths call finalizeLiveSession; the controller no longer carries its own forced transcript extraction.
 TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
 
-AC-6 (post-deploy, staging): after a real voice session ends on staging, a `user_session_summaries` row with `channel='voice'` and the live session id exists, and the gateway log shows exactly one `[VTID-04353] finalized` line with `ran` for that session.
+AC-7: A finalized session writes its open threads and promises and emits exactly one `conversation.session.finalized` event reporting what was written; failures are reported as false/0, never thrown; the continuity kill switch turns off only that write.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-8: The continuity writer parses the model reply tolerantly, dedupes topics, touches an existing open thread instead of duplicating it, inserts promises as owed, and refuses (without a model call) when identity, a user turn or storage is missing.
+TEST: services/gateway/test/services/continuity/vtid-04353-session-continuity-writer.test.ts
+
+AC-6 (post-deploy, staging): after a real voice session ends on staging, a `user_session_summaries` row with `channel='voice'` and the live session id exists, and the gateway log shows exactly one `[VTID-04353] finalized` line with `ran` for that session; one `conversation.session.finalized` OASIS event exists for it.
 UI: staging voice session by the owner (this session does not write as the test account — CLAUDE.md rule 31).
