@@ -369,7 +369,7 @@ import {
 // (payloads/ledger, gated by the brain's own shouldAttempt* / newdayHasContent
 // guards so the I/O short-circuit can't diverge from the pure rung), then renders.
 import {
-  computeGreetingDecision,
+  type computeGreetingDecision,
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
@@ -379,6 +379,8 @@ import {
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
 import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
+// VTID-04416 (WS-1.4): every opening decision goes through the brain entry point.
+import { decideOpeningFlow } from '../services/conversation/decide-conversation-flow';
 
 // VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
 // decision.ts for the full incident writeup): Bedrock's content filter
@@ -10582,12 +10584,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             if (ws.readyState !== WebSocket.OPEN) return;
 
             // DECIDE — one brain, with the gathered payloads + ledger.
-            const _sfDecision = computeGreetingDecision({
+            const _sfDecision = decideOpeningFlow({
               ..._baseCtxSF,
               newdayOverview: _newdayOverviewSF,
               resumeOverview: _resumeOverviewSF,
               greetingLedger: _ledgerSF,
-            });
+            }, { transport: 'vertex', role: session.active_role ?? null });
 
             // RENDER + perform effects (greetingSent / markOpeningDelivered were
             // already claimed synchronously above; do NOT re-apply here).
@@ -11132,11 +11134,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
-            const _decisionNS = computeGreetingDecision({
+            const _decisionNS = decideOpeningFlow({
               ..._ctxNS,
               newdayOverview: _overviewNS,
               greetingLedger: _ledgerNS,
-            });
+            }, { transport: 'vertex', role: session.active_role ?? null });
 
             // VTID-03609 — the three ways this can still not fire, named apart.
             emitDiag(session, 'newday_briefing_eval', {
@@ -11263,13 +11265,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             lang,
           });
           if (ws.readyState !== WebSocket.OPEN) return;
-          const _fallbackNS = computeGreetingDecision(_ctxNS);
+          const _fallbackNS = decideOpeningFlow(_ctxNS, { transport: 'vertex', role: session.active_role ?? null });
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
           _renderSync(_fallbackNS);
           // VTID-03604 — this IS the path a routine evening takes: the user
           // already got their morning briefing, so briefingDue() is false and
           // shouldAttemptNewdayOverview rejected above, but the day-close rung
-          // still runs inside computeGreetingDecision(_ctxNS) and outranks
+          // still runs inside the brain decision on _ctxNS and outranks
           // everything below it.
           // VTID-03743 review fix — deferred until delivery is confirmed,
           // see schedulePersistDayCloseStamp's doc.
@@ -11294,7 +11296,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           });
           try {
             if (ws.readyState !== WebSocket.OPEN) return;
-            const _recoverNS = computeGreetingDecision(_baseCtxSync);
+            const _recoverNS = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
             if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_recoverNS);
             // VTID-03743 review fix — this recovery path renders through the
@@ -11320,7 +11322,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       return true;
     }
 
-    const _syncDecision = computeGreetingDecision(_baseCtxSync);
+    const _syncDecision = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
     // legacy_default historically did NOT advance the opening state machine; the
     // other rungs did. Preserve that exactly.
     if (_syncDecision.wakeOpener !== 'legacy_default') {
@@ -14800,7 +14802,13 @@ router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, r
 
     // 2. Invoke the SAME bootstrap path the voice ORB uses ------------------
     const debugSessionId = `debug-awareness-${Date.now()}`;
-    const bootstrapResult = await buildBootstrapContextPack(identity, debugSessionId);
+    // VTID-04417: the shared builder, so this shows what a real session gets
+    // (the brain when vitana_brain_orb_enabled is on), not the legacy pack.
+    const { buildBaseSessionContext, resolveBrainRole } = await import('../orb/live/session/session-context-builder');
+    const bootstrapResult = await buildBaseSessionContext(
+      { identity, sessionId: debugSessionId, brainRole: resolveBrainRole({ identityRole: (identity as { active_role?: string | null }).active_role ?? null }) },
+      { legacy: buildBootstrapContextPack },
+    );
 
     const contextInstruction = bootstrapResult.contextInstruction || '';
     checks.context_injected = contextInstruction.length > 0;
@@ -14924,6 +14932,7 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
   }
   try {
     const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+    // brain-parity-allow: debug endpoint that renders the brain instruction itself.
     const { instruction } = await buildBrainSystemInstruction({
       user_id: userId,
       tenant_id: tenantId,
@@ -15297,8 +15306,13 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
   console.log(`[VTID-01225] Testing context bootstrap for user=${userId.substring(0, 8)}..., tenant=${tenantId.substring(0, 8)}...`);
 
   try {
-    // Call the exact same function used by Live sessions
-    const bootstrapResult = await buildBootstrapContextPack(testIdentity, testSessionId);
+    // Call the exact same builder used by Live sessions (VTID-04417: the
+    // shared session-context builder, brain when enabled).
+    const { buildBaseSessionContext } = await import('../orb/live/session/session-context-builder');
+    const bootstrapResult = await buildBaseSessionContext(
+      { identity: testIdentity, sessionId: testSessionId, brainRole: 'community' },
+      { legacy: buildBootstrapContextPack },
+    );
 
     // Extract memory items from context pack for detailed response
     const memoryItems = bootstrapResult.contextPack?.memory_hits?.map(hit => ({
@@ -15775,6 +15789,7 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   if (!identity?.user_id || !identity?.tenant_id) {
     return res.json({ ok: true, prewarm: 'skipped_anonymous' });
   }
+  // brain-parity-allow: cache pre-warm of the legacy fallback; builds nothing for a session.
   void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
     .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
   // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —

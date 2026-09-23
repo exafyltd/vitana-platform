@@ -105,6 +105,12 @@ export interface ConversationDecision {
   effects: GreetingEffects;
   /** Offer/confirmation contract (Step 2). Null in Step 1b. */
   offer: OfferContract | null;
+  /**
+   * VTID-04416 (Plan v1 WS-1.4): the full opening decision the transport
+   * renders today. Carried so the live paths can go through this entry point
+   * without changing what they render (the golden snapshots pin it).
+   */
+  greeting: GreetingDecision;
 }
 
 /**
@@ -125,6 +131,7 @@ function greetingToConversationDecision(
     diag: g.diag,
     effects: g.effects,
     offer: null, // Step 2
+    greeting: g,
   };
 }
 
@@ -136,4 +143,19 @@ function greetingToConversationDecision(
 export function decideConversationFlow(ctx: ConversationContext): ConversationDecision {
   const greeting = computeGreetingDecision(ctx.greeting);
   return greetingToConversationDecision(ctx.transport, greeting);
+}
+
+/**
+ * VTID-04416 (Plan v1 WS-1.4): the opening decision for a live transport.
+ * Every voice opening goes through `decideConversationFlow` — the one brain
+ * entry point — and gets back the same `GreetingDecision` it rendered before,
+ * so this is behaviour-identical by construction. Transports must call this,
+ * never `computeGreetingDecision` directly (the transport-flow-parity rule
+ * enforces it, VTID-04417).
+ */
+export function decideOpeningFlow(
+  greeting: GreetingDecisionContext,
+  meta: { transport: ConversationTransport; role?: string | null },
+): GreetingDecision {
+  return decideConversationFlow({ transport: meta.transport, role: meta.role ?? null, greeting }).greeting;
 }

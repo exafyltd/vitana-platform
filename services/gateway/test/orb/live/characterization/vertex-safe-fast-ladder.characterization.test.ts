@@ -51,10 +51,11 @@ describe('VTID-03366 / 1c: safe-fast ladder lives in the brain; transport gather
     expect(orbLive).toMatch(/newdayHasContent\(_newdayOverviewSF\)/);
   });
 
-  it('orb-live.ts delegates the safe-fast opening to computeGreetingDecision and renders effects', () => {
+  it('orb-live.ts delegates the safe-fast opening to the brain and renders effects', () => {
     // Gather → decide → render. The adapter builds the ctx, calls the brain, and
     // renders directive + the durable stamp / NBA / ledger effects.
-    expect(orbLive).toMatch(/const _sfDecision = computeGreetingDecision\(\{/);
+    // VTID-04416 (WS-1.4): through the brain entry point decideConversationFlow.
+    expect(orbLive).toMatch(/const _sfDecision = decideOpeningFlow\(\{/);
     expect(orbLive).toMatch(/_sfDecision\.directive !== null/);
     expect(orbLive).toMatch(/_sfDecision\.effects\.stampBriefingDate/);
     expect(orbLive).toMatch(/_sfDecision\.effects\.recordNbaKey/);
