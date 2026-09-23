@@ -881,7 +881,63 @@ async function runOwnPostMemoryCapture(ctx: AutomationContext) {
   return { usersAffected: affectedUsers.size, actionsTaken };
 }
 
+// ── AP-0914: Daily Learning Episode (VTID-04391) ─────────────
+// One `daily_learning` memory_items episode per active user per local day,
+// written in the user's own evening (DAILY_LEARNING_LOCAL_HOUR). Small batch
+// + time budget, the AP-0911 pattern: users not reached this run are picked
+// up on the next hourly pass within the same local hour or skipped for the
+// day (the digest is a convenience, not a record).
+const DAILY_LEARNING_BATCH = 25;
+const DAILY_LEARNING_BUDGET_MS = 4 * 60 * 1000;
+
+async function runDailyLearningEpisodes(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const now = new Date();
+  const started = Date.now();
+  const dl = await import('../memory/daily-learning');
+  let candidates: string[] = [];
+  try {
+    candidates = await dl.findActiveUsers(supabase, tenantId, now);
+  } catch (err: any) {
+    ctx.log(`daily learning candidate scan failed: ${err?.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const counts: Record<string, number> = {};
+  let processed = 0;
+  let written = 0;
+  for (const userId of candidates) {
+    if (processed >= DAILY_LEARNING_BATCH || Date.now() - started > DAILY_LEARNING_BUDGET_MS) break;
+    try {
+      const tz = await getUserTimezone(supabase, userId, tenantId);
+      if (userLocalHour(now, tz) !== dl.DAILY_LEARNING_LOCAL_HOUR) continue;
+      const date = dl.localDate(now, tz);
+      if (await dl.hasDailyLearning(supabase, userId, date)) continue;
+      processed++;
+      const identity = { tenant_id: tenantId, user_id: userId };
+      const items = await dl.gatherDay(supabase, identity, date, tz, now);
+      const locale = await getUserLocale(supabase, userId);
+      const out = await dl.writeDailyLearning(supabase, identity, date, items, {
+        locale,
+        shadow: ctx.deliveryMode === 'shadow',
+      });
+      counts[out.status] = (counts[out.status] ?? 0) + 1;
+      if (out.status === 'written') written++;
+    } catch (err: any) {
+      counts.error = (counts.error ?? 0) + 1;
+      ctx.log(`daily learning failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+  await ctx.emitEvent('autopilot.memory.daily_learning_written', {
+    candidates: candidates.length,
+    processed,
+    written,
+    outcomes: counts,
+  });
+  return { usersAffected: written, actionsTaken: written };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
+  registerHandler('runDailyLearningEpisodes', runDailyLearningEpisodes);
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);
   registerHandler('runRelationshipGraphProjection', runRelationshipGraphProjection);

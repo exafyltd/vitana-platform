@@ -296,18 +296,22 @@ export async function editGardenEpisode(
   identity: GardenIdentity,
   id: string,
   content: string,
+  category?: GardenCategory,
 ): Promise<GardenWriteResult> {
   const text = (content || '').trim();
   if (!text || text.length > MAX_NOTE_CHARS) return { ok: false, status: 400, error: 'INVALID_CONTENT' };
+  const patch: Record<string, unknown> = {
+    content: text,
+    embedding: null,
+    embedding_updated_at: null,
+    provenance_source: 'user_edited',
+    provenance_confidence: 1.0,
+  };
+  // The user may also move an episode to another Garden category.
+  if (category) patch.category_key = itemCategoryKeyForGarden(category);
   const { data, error } = await client
     .from('memory_items')
-    .update({
-      content: text,
-      embedding: null,
-      embedding_updated_at: null,
-      provenance_source: 'user_edited',
-      provenance_confidence: 1.0,
-    })
+    .update(patch)
     .eq('id', id)
     .eq('tenant_id', identity.tenant_id)
     .eq('user_id', identity.user_id)

@@ -157,6 +157,20 @@ describe('writes', () => {
     expect(upd).toMatchObject({ content: 'new text', embedding: null });
   });
 
+  it('an episode can be moved to another category', async () => {
+    let upd: any = null;
+    const c = client({ memory_items: (calls) => { upd = calls.find((x: any) => x.m === 'update')?.args[0]; return { data: [{ id: 'e1', content_json: {} }], error: null }; } });
+    expect(await editGardenEpisode(c, ID, 'e1', 'text', 'future_plans')).toEqual({ ok: true, id: 'e1' });
+    expect(upd.category_key).toBe('future_plans');
+  });
+
+  it('editing a diary episode updates its diary row too', async () => {
+    const c = client({ memory_items: { data: [{ id: 'e1', content_json: { diary_entry_id: 'd7' } }], error: null } });
+    await editGardenEpisode(c, ID, 'e1', 'new diary text');
+    const diary = c.log.find((l: any) => l.table === 'diary_entries');
+    expect(diary.calls).toEqual(expect.arrayContaining([{ m: 'update', args: [{ text: 'new diary text' }] }, { m: 'eq', args: ['id', 'd7'] }]));
+  });
+
   it('forgetting a fact deletes every row of its key for this user only', async () => {
     const deletes: any[] = [];
     const c = client({

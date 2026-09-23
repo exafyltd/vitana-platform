@@ -885,6 +885,17 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runOwnPostMemoryCapture',
   },
+  {
+    // VTID-04391: one daily_learning episode per active user per local day
+    // (diary + session summaries + new facts, condensed by the memory
+    // stage). Hourly; each user is processed in their own local 22:xx hour,
+    // at most once per date (unique index), 25 users / 4 minutes per run.
+    id: 'AP-0914', name: 'Daily Learning Episode', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '45 * * * *' }, // hourly at :45
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningEpisodes',
+  },
 ];
 
 // =============================================================================

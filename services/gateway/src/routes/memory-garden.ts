@@ -11,6 +11,9 @@
  *   POST   /api/v1/memory/diary/entries        save (diary row + episode + Index)
  *   DELETE /api/v1/memory/diary/entries/:id    delete (diary row + episode)
  *
+ * VTID-04391: the Daily summary screen.
+ *   GET    /api/v1/memory/daily-learning?limit=  the user's daily learnings
+ *
  * Auth: requireAuthWithTenant; tenant and user come from the JWT only. Every
  * read and write is filtered by both, so a caller can never touch another
  * user's memory even with a guessed id.
@@ -33,6 +36,7 @@ import {
   type GardenWriteResult,
 } from '../services/memory/garden';
 import { normalizeDiaryInput, saveDiaryEntry, deleteDiaryEntry } from '../services/memory/diary';
+import { listDailyLearnings } from '../services/memory/daily-learning';
 
 const router = Router();
 const VTID = 'VTID-04388';
@@ -130,9 +134,13 @@ router.patch('/memory/garden/entries/:kind/:id', requireAuthWithTenant, async (r
   const sb = getSupabase();
   if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED', vtid: VTID });
   const value = String((req.body ?? {}).content ?? '');
+  const category = (req.body ?? {}).category;
+  if (category !== undefined && !isGardenCategory(category)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_CATEGORY', vtid: VTID });
+  }
   const r = kind === 'fact'
     ? await editGardenFact(sb, identity, req.params.id, value)
-    : await editGardenEpisode(sb, identity, req.params.id, value);
+    : await editGardenEpisode(sb, identity, req.params.id, value, category);
   if (r.ok) emitWrite(identity, 'edited', kind, r.id);
   return sendWrite(res, r);
 });
@@ -184,6 +192,21 @@ router.delete('/memory/diary/entries/:id', requireAuthWithTenant, async (req: Au
   const r = await deleteDiaryEntry(sb, identity, req.params.id);
   if (!r.ok) return res.status(r.status ?? 502).json({ ok: false, error: r.error, vtid: 'VTID-04390' });
   return res.json({ ok: true, vtid: 'VTID-04390' });
+});
+
+router.get('/memory/daily-learning', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = identityOf(req);
+  if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: 'VTID-04391' });
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED', vtid: 'VTID-04391' });
+  const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
+  try {
+    const learnings = await listDailyLearnings(sb, identity, Number.isFinite(limit) ? limit : 14);
+    return res.json({ ok: true, learnings, vtid: 'VTID-04391' });
+  } catch (err: any) {
+    console.error(`[VTID-04391] daily learning read failed: ${err?.message ?? err}`);
+    return res.status(502).json({ ok: false, error: 'READ_FAILED', vtid: 'VTID-04391' });
+  }
 });
 
 export default router;
