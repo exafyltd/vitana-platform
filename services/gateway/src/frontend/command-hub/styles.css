@@ -17647,3 +17647,232 @@ border-bottom: 1px solid var(--color-border, #333);
   .ap-sup-finding { flex-direction: column; gap: 0.4rem; }
   .ap-sup-chip { max-width: 100%; }
 }
+
+/* ==========================================================================
+   VTID-04334: member ticket <-> VTID <-> fix run. Feedback drawer "Pipeline"
+   chips, inbox VTID column, supervisor actions, and the "Member report FB-…"
+   badge on Autopilot rows (docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.1).
+   ========================================================================== */
+/* The Feedback drawer and inbox read --color-surface-primary/-secondary and
+   --color-border-subtle, which no stylesheet ever defined — so the drawer
+   panel rendered transparent over whatever was behind it. Define them in the
+   Feedback scope only (never on :root, where other views rely on their own
+   fallbacks). */
+#feedback-ticket-drawer,
+.fb-inbox {
+  --color-surface-primary: #0f172a;
+  --color-surface-secondary: #1e293b;
+  --color-border-subtle: #1e293b;
+}
+#feedback-ticket-drawer {
+  color: var(--color-text-primary, #f8fafc);
+}
+
+.fb-pipeline {
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border, #333);
+  border-radius: 0.375rem;
+  background: var(--color-surface-secondary, rgba(255, 255, 255, 0.03));
+}
+.fb-pipeline-head {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary, #9aa0a6);
+  margin-bottom: 0.5rem;
+}
+.fb-pipeline-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.fb-chip {
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-decoration: none;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+}
+a.fb-chip,
+button.fb-chip:not(:disabled) {
+  cursor: pointer;
+}
+a.fb-chip:hover,
+button.fb-chip:not(:disabled):hover {
+  background: rgba(59, 130, 246, 0.14);
+}
+a.fb-chip:focus-visible,
+button.fb-chip:focus-visible,
+.fb-member-badge:focus-visible,
+.fb-action-btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+.fb-chip-k {
+  padding: 0.2rem 0.45rem;
+  background: rgba(96, 165, 250, 0.16);
+  color: var(--color-text-secondary, #9aa0a6);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fb-chip-v {
+  padding: 0.2rem 0.55rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #93c5fd;
+  overflow-wrap: anywhere;
+}
+.fb-chip--empty {
+  border-style: dashed;
+  border-color: var(--color-border, #444);
+}
+.fb-chip--empty .fb-chip-k { background: transparent; }
+.fb-chip--empty .fb-chip-v { color: var(--color-text-secondary, #777); }
+
+.fb-chip--ok .fb-chip-v { color: #4ade80; }
+
+.fb-chip--live .fb-chip-v { color: #c084fc; }
+
+.fb-chip--bad .fb-chip-v { color: #f87171; }
+
+.fb-chip--warn .fb-chip-v { color: #fbbf24; }
+
+.fb-action-btn {
+  border: none;
+  border-radius: 0.25rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+}
+.fb-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.fb-action-btn--neutral { background: #475569; }
+.fb-action-btn--danger { background: #b45309; }
+
+/* The inbox table is wider than a phone; scroll it inside the view instead
+   of wrapping FB-numbers one segment per line. */
+.fb-inbox {
+  overflow-x: auto;
+}
+.fb-inbox tbody td:first-child,
+.fb-inbox tbody td > span {
+  white-space: nowrap;
+}
+.fb-inbox-th {
+  padding: 0.5rem 0.75rem;
+}
+.fb-inbox-vtid {
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  color: #93c5fd;
+}
+.fb-inbox-vtid--empty { color: var(--color-text-secondary, #777); }
+
+.fb-member-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 3px 0;
+  padding: 1px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+  cursor: pointer;
+}
+.fb-member-badge:hover { background: rgba(245, 158, 11, 0.22); }
+
+@media (max-width: 640px) {
+  .fb-chip { font-size: 0.72rem; }
+  .fb-action-btn { padding: 0.45rem 0.7rem; }
+}
+
+/* =============================================================================
+   VTID-04354 — Autopilot › Orchestrator (read-only, Orchestrator v2 P7 v0)
+   ========================================================================== */
+.orch-container { padding: 1.5rem; color: var(--color-text-primary); min-width: 0; }
+.orch-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.orch-header h2 { margin: 0 0 0.25rem; }
+.orch-controls, .orch-filter-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.orch-filter-row { margin-bottom: 0.75rem; }
+.orch-filter-btn {
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+  background: var(--color-sidebar-bg); color: var(--color-text-secondary); border: 1px solid var(--color-border);
+}
+.orch-filter-btn:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
+.orch-filter-btn.is-active { background: var(--color-accent); color: var(--color-text-primary); border-color: var(--color-accent); }
+.orch-filter-btn:disabled { opacity: 0.6; cursor: default; }
+.orch-section { border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; min-width: 0; }
+.orch-section-title { margin: 0 0 0.75rem; font-size: 1rem; }
+.orch-muted { color: var(--color-text-secondary); font-size: 0.8rem; margin: 0.25rem 0; }
+.orch-error {
+  background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.85rem; overflow-wrap: anywhere;
+}
+.orch-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+.orch-nowrap { white-space: nowrap; }
+.orch-plane-grid, .orch-agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+.orch-plane-card {
+  display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch;
+  text-align: start; cursor: pointer; padding: 0.75rem; border-radius: 8px; font: inherit;
+  background: var(--color-sidebar-bg); border: 1px solid var(--color-border); color: var(--color-text-primary);
+}
+.orch-plane-card:hover, .orch-plane-card.is-active { border-color: var(--color-accent); }
+.orch-plane-name { font-size: 0.8rem; color: var(--color-text-secondary); }
+.orch-plane-total { font-size: 1.6rem; font-weight: 600; margin: 0.15rem 0 0.4rem; }
+.orch-plane-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.orch-pill {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem;
+  border: 1px solid var(--color-border); color: var(--color-text-secondary); white-space: nowrap;
+}
+.orch-pill--succeeded, .orch-pill--active, .orch-pill--healthy { color: #34d399; border-color: rgba(52, 211, 153, 0.5); }
+.orch-pill--failed, .orch-pill--disabled { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+.orch-pill--running, .orch-pill--queued { color: #60a5fa; border-color: rgba(96, 165, 250, 0.5); }
+.orch-pill--awaiting_approval, .orch-pill--waiting_signal { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.orch-table-wrap { overflow-x: auto; max-width: 100%; }
+.orch-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.orch-table th, .orch-table td { text-align: start; padding: 6px 8px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.orch-table th { color: var(--color-text-secondary); font-weight: 500; white-space: nowrap; }
+.orch-title-cell { min-width: 200px; overflow-wrap: anywhere; }
+.orch-run-error { color: #f87171; font-size: 0.75rem; margin-top: 2px; }
+.orch-agent-card { padding: 0.75rem; border-radius: 8px; background: var(--color-sidebar-bg); border: 1px solid var(--color-border); min-width: 0; }
+.orch-agent-card.is-disabled { opacity: 0.6; }
+.orch-agent-top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+.orch-agent-name { font-weight: 600; overflow-wrap: anywhere; }
+.orch-agent-desc { font-size: 0.8rem; margin: 0.35rem 0; color: var(--color-text-secondary); }
+.orch-agent-meta { display: grid; gap: 2px; margin-top: 0.35rem; }
+.orch-kv { display: flex; gap: 0.5rem; font-size: 0.75rem; }
+.orch-k { color: var(--color-text-secondary); min-width: 64px; }
+.orch-v { overflow-wrap: anywhere; }
+.orch-policy-table tr.is-current td { background: rgba(96, 165, 250, 0.08); }
+.orch-tier { text-align: center; white-space: nowrap; }
+.orch-tier--none { color: rgba(148, 163, 184, 0.55); }
+.orch-policy-table td.orch-mono { white-space: nowrap; overflow-wrap: normal; }
+.orch-tier--read { color: #60a5fa; }
+.orch-tier--draft { color: #fbbf24; }
+.orch-tier--commit { color: #34d399; }
+.orch-tier--org { color: var(--color-text-secondary); font-style: italic; }
+.orch-footer { margin-top: 0.5rem; }
+@media (max-width: 600px) {
+  .orch-container { padding: 1rem; }
+  .orch-plane-grid, .orch-agent-grid { grid-template-columns: 1fr; }
+}

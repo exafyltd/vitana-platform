@@ -58,6 +58,10 @@ const AUTH_NAMES = [
   // 'F'), so this name needs its own explicit entry. It IS auth — strictly
   // the same requireDevRole check, just with an extra token source.
   'requireDevRoleForStream',
+  // requireInternalOrAdmin (routes/automations.ts, VTID-04349): the
+  // scheduler's X-Gateway-Internal token or a verified exafy_admin session,
+  // the same contract as test-contracts-scheduled.ts. It IS auth.
+  'requireInternalOrAdmin',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

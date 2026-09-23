@@ -22,6 +22,7 @@ import { parseFixMode } from '../dev-autopilot-bridge';
 import { recordAgentRunUsage, type AgentRunUsage } from '../dev-autopilot-outcomes';
 import { estimateCost } from '../../constants/llm-defaults';
 import { applyPrContract } from '../dev-autopilot-pr-contract';
+import { resolveFeedbackTicketRef } from '../feedback-ticket-ref';
 import { fixRoundTurnBudget, resolveFixRoundMinTurns } from './fix-round-budget';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
@@ -145,8 +146,8 @@ export async function runAgentExecutionSession(
   if (!planR.ok || !planR.data || planR.data.length === 0) return { ok: false, error: 'plan version not found', session_id: sessionId };
   const plan = planR.data[0];
 
-  const findR = await supa<Array<{ activated_vtid: string | null; spec_snapshot: Record<string, unknown> | null }>>(
-    s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot&limit=1`,
+  const findR = await supa<Array<{ activated_vtid: string | null; spec_snapshot: Record<string, unknown> | null; source_ref?: string | null }>>(
+    s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot,source_ref&limit=1`,
   );
   const activatedVtid = findR.ok && findR.data && findR.data[0]?.activated_vtid ? String(findR.data[0].activated_vtid) : null;
   // VTID-04007: open-ended intake — no pre-selected files; the task prompt
@@ -371,8 +372,10 @@ export async function runAgentExecutionSession(
     if (!finished) return finish({ ok: false, error: 'agent did not finish', session_id: sessionId, branch });
 
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
+    // VTID-04333: a feedback-ticket finding carries its FB-… number on the PR.
+    const ticketRef = await resolveFeedbackTicketRef(s, findR.ok && findR.data ? findR.data[0] : null);
     const contract = applyPrContract({
-      vtid: activatedVtid, title: finished.pr_title,
+      vtid: activatedVtid, ticketNumber: ticketRef?.ticket_number ?? null, title: finished.pr_title,
       body: `${finished.pr_body}\n\n---\n_Agent executor (VTID-04006): ${totalTurns} turn(s), provider ${provider || override.provider}, model ${model || override.model}${fallbackUsed ? ', fallback used' : ''}; ${usage.inputTokens} in / ${usage.outputTokens} out tokens. Runner re-verified tsc + jest before this PR was opened._`,
       files: changed.map((c) => ({ path: c.path, action: c.action })),
       executionId, findingId: exec.finding_id, planVersion: exec.plan_version, branch, baseBranch: GITHUB_BASE_BRANCH,

@@ -61,6 +61,8 @@ export interface BridgeResult {
   execution_id?: string;
   /** VTID-04308: the VTID the dispatched ticket runs under. */
   vtid?: string;
+  /** VTID-04333: the member-facing ticket number, echoed for callers' events. */
+  ticket_number?: string | null;
   skipped?: string;
   error?: string;
   // VTID-02669: structured violations (safety gate or local pre-flight) so
@@ -221,13 +223,15 @@ async function ensureTicketVtid(
   findingId: string,
 ): Promise<{ ok: true; vtid: string } | { ok: false; error: string }> {
   let vtid: string | null = null;
+  let specSnapshot: Record<string, unknown> | null = null;
   try {
     const r = await fetch(
-      `${s.url}/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=activated_vtid&limit=1`,
+      `${s.url}/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=activated_vtid,spec_snapshot&limit=1`,
       { headers: s.headers },
     );
-    const rows = (await r.json().catch(() => [])) as Array<{ activated_vtid?: string | null }>;
+    const rows = (await r.json().catch(() => [])) as Array<{ activated_vtid?: string | null; spec_snapshot?: Record<string, unknown> | null }>;
     vtid = rows[0]?.activated_vtid ?? null;
+    specSnapshot = rows[0]?.spec_snapshot && typeof rows[0].spec_snapshot === 'object' ? rows[0].spec_snapshot : null;
   } catch { /* fall through to allocation */ }
 
   if (!vtid) {
@@ -251,8 +255,74 @@ async function ensureTicketVtid(
     headers: { ...s.headers, Prefer: 'return=minimal' },
     body: JSON.stringify({ linked_vtid: vtid }),
   }).catch(() => { /* non-blocking: the ledger + finding already carry it */ });
+
+  // VTID-04333: the recommendation's feedback block names the ticket VTID and
+  // number too, so every Dev Autopilot surface can show "from member report
+  // FB-… (VTID-…)" without a second lookup.
+  await stampTicketRefOnFinding(s, findingId, specSnapshot, ticket.ticket_number ?? null, vtid);
   return { ok: true, vtid };
 }
+
+/** Exported for tests. Best-effort, never throws. */
+export async function stampTicketRefOnFinding(
+  s: SupaConfig,
+  findingId: string,
+  specSnapshot: Record<string, unknown> | null,
+  ticketNumber: string | null,
+  vtid: string,
+): Promise<void> {
+  if (!specSnapshot) return;
+  const fb = (specSnapshot.feedback && typeof specSnapshot.feedback === 'object'
+    ? specSnapshot.feedback : {}) as Record<string, unknown>;
+  if (fb.linked_vtid === vtid && (fb.ticket_number || !ticketNumber)) return;
+  const next = {
+    ...specSnapshot,
+    feedback: { ...fb, ticket_number: fb.ticket_number ?? ticketNumber, linked_vtid: vtid },
+  };
+  await fetch(`${s.url}/rest/v1/autopilot_recommendations?id=eq.${findingId}`, {
+    method: 'PATCH',
+    headers: { ...s.headers, Prefer: 'return=minimal' },
+    body: JSON.stringify({ spec_snapshot: next }),
+  }).catch(() => { /* non-blocking */ });
+}
+
+/**
+ * VTID-04333: one OASIS event per successful dispatch, filed under the
+ * ticket's own VTID with the member ticket number, so the ledger row's event
+ * trail starts at the moment the fix was started. Best-effort.
+ */
+async function emitTicketDispatched(
+  ticket: FeedbackTicketRow,
+  result: { recommendation_id?: string; execution_id?: string; vtid?: string; skipped?: string },
+  approvedBy: string | null,
+): Promise<void> {
+  if (!result.vtid) return;
+  try {
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    await emitOasisEvent({
+      vtid: result.vtid,
+      type: 'feedback.ticket.dispatched',
+      source: 'feedback-execution-bridge',
+      status: 'info',
+      message: `Feedback ticket ${ticket.ticket_number ?? ticket.id} dispatched to Dev Autopilot (execution ${(result.execution_id ?? '').slice(0, 8) || 'pending'})`,
+      payload: {
+        ticket_id: ticket.id,
+        ticket_number: ticket.ticket_number ?? null,
+        linked_vtid: result.vtid,
+        kind: ticket.kind,
+        recommendation_id: result.recommendation_id ?? null,
+        execution_id: result.execution_id ?? null,
+        approved_by: approvedBy,
+        auto_dispatch: approvedBy === AUTO_DISPATCH_ACTOR,
+        reused: result.skipped ?? null,
+      },
+      vitana_id: ticket.vitana_id ?? undefined,
+    });
+  } catch { /* non-blocking */ }
+}
+
+/** VTID-04333: the actor recorded for a ticket dispatched without a click. */
+export const AUTO_DISPATCH_ACTOR = 'auto-dispatch';
 
 /**
  * Dispatch a feedback ticket through the dev autopilot pipeline.
@@ -354,13 +424,16 @@ export async function dispatchFeedbackTicket(
         violations,
       };
     }
-    return {
+    const reused: BridgeResult = {
       ok: true,
       recommendation_id: existingFindingId,
       execution_id: bridgeR.execution_id,
       vtid: vtidR.vtid,
+      ticket_number: ticket.ticket_number ?? null,
       skipped: ticket.linked_finding_id ? 'already_linked' : 'reused_orphan',
     };
+    await emitTicketDispatched(ticket, reused, approvedBy ?? null);
+    return reused;
   }
 
   // 2. Pre-flight scope check + auto-retry (VTID-02671). Parse Devon's
@@ -513,6 +586,8 @@ export async function dispatchFeedbackTicket(
         screen_path: ticket.screen_path ?? null,
         app_version: ticket.app_version ?? null,
         reporter_vitana_id: ticket.vitana_id ?? null,
+        // VTID-04333: stamped by ensureTicketVtid once the VTID exists.
+        linked_vtid: null,
       },
     },
   };
@@ -589,12 +664,15 @@ export async function dispatchFeedbackTicket(
   }
 
   console.log(`[${VTID}] dispatched ${ticket.ticket_number} → finding=${findingId.slice(0, 8)} execution=${(bridge.execution_id ?? '').slice(0, 8)}`);
-  return {
+  const dispatched: BridgeResult = {
     ok: true,
     recommendation_id: findingId,
     execution_id: bridge.execution_id,
     vtid: vtidR.vtid,
+    ticket_number: ticket.ticket_number ?? null,
   };
+  await emitTicketDispatched(ticket, dispatched, approvedBy ?? null);
+  return dispatched;
 }
 
 /**

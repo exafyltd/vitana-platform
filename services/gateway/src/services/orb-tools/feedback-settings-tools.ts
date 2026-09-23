@@ -160,7 +160,12 @@ async function createTypedTicket(
           lang: id.lang ?? null,
         },
         sb,
-        { gate_input: summary, source: TICKET_SOURCE, screen_path: screenPath },
+        {
+          gate_input: summary,
+          source: TICKET_SOURCE,
+          screen_path: screenPath,
+          session_id: id.session_id ?? null,
+        },
       );
       switch (result.decision) {
         case 'failed':
@@ -755,7 +760,9 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       'The summary must be a concrete description of at least 15 words in the',
       'user\'s own words — which screen, what happened, what was expected.',
       'AFTER: speak the ticket number once and say the team will follow up.',
-      'For live handoff to a specialist use report_to_specialist instead.',
+      'Prefer report_to_specialist, which files the same ticket AND hands the',
+      'user to tech support; use this only when the user wants it logged',
+      'without talking to support.',
     ].join('\n'),
     parameters: {
       type: 'object',

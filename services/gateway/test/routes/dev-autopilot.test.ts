@@ -686,9 +686,27 @@ describe('GET /pending-approvals', () => {
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals'));
     expect(res.status).toBe(200);
-    expect(res.body.recommendations).toEqual([{ id: 'a1' }]);
+    // VTID-04333: every row carries feedback_ticket (null when not from a ticket).
+    expect(res.body.recommendations).toEqual([{ id: 'a1', feedback_ticket: null }]);
     expect(seenUrl).toContain('auto_exec_eligible=not.is.true');
     expect(seenUrl).toContain('status=eq.new');
+    expect(seenUrl).toContain('source_ref');
+  });
+
+  it('VTID-04333: a finding from a member ticket carries { ticket_id, ticket_number, linked_vtid }', async () => {
+    const tid = '11111111-2222-3333-4444-555555555555';
+    setFetchRoutes([
+      (url) => (url.includes('/rest/v1/autopilot_recommendations')
+        ? jsonRes(200, [{
+          id: 'a2', source_ref: `feedback_ticket:${tid}`, activated_vtid: 'VTID-04800',
+          spec_snapshot: { feedback: { ticket_id: tid, ticket_number: 'FB-2026-09-000055' } },
+        }])
+        : undefined),
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals'));
+    expect(res.body.recommendations[0].feedback_ticket).toEqual({
+      ticket_id: tid, ticket_number: 'FB-2026-09-000055', linked_vtid: 'VTID-04800',
+    });
   });
 });
 
@@ -787,7 +805,7 @@ describe('GET /findings/:id', () => {
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/findings/f1'));
     expect(res.status).toBe(200);
-    expect(res.body.finding).toEqual({ id: 'f1' });
+    expect(res.body.finding).toEqual({ id: 'f1', feedback_ticket: null });
     expect(res.body.plan_versions).toEqual([{ version: 1 }]);
   });
 });
@@ -1127,6 +1145,32 @@ describe('GET /executions/:id/lineage', () => {
 // =============================================================================
 
 describe('GET /executions', () => {
+  it('VTID-04333: attaches feedback_ticket from the finding (null when not from a ticket)', async () => {
+    const tid = '11111111-2222-3333-4444-555555555555';
+    let recUrl = '';
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_executions')) {
+          return jsonRes(200, [{ id: 'e1', finding_id: 'r1' }, { id: 'e2', finding_id: 'r2' }]);
+        }
+        if (url.includes('/rest/v1/autopilot_recommendations')) {
+          recUrl = url;
+          return jsonRes(200, [
+            { id: 'r1', title: '[FB-2026-09-000066] x', source_type: 'dev_autopilot', source_ref: `feedback_ticket:${tid}`,
+              activated_vtid: 'VTID-04801', spec_snapshot: { feedback: { ticket_number: 'FB-2026-09-000066' } } },
+            { id: 'r2', title: 'y', source_type: 'dev_autopilot', source_ref: null, activated_vtid: null, spec_snapshot: {} },
+          ]);
+        }
+        return jsonRes(200, []);
+      },
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/executions'));
+    expect(recUrl).toContain('source_ref');
+    const byId = Object.fromEntries(res.body.executions.map((e: any) => [e.id, e]));
+    expect(byId.e1.feedback_ticket).toEqual({ ticket_id: tid, ticket_number: 'FB-2026-09-000066', linked_vtid: 'VTID-04801' });
+    expect(byId.e2.feedback_ticket).toBeNull();
+  });
+
   it('defaults to the active-status clause', async () => {
     let seenUrl = '';
     setFetchRoutes([

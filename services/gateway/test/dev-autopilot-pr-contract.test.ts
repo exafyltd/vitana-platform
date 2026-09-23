@@ -200,3 +200,55 @@ describe('VTID-04002 applyPrContract — edge cases', () => {
     expect(isTestFile('services/gateway/src/services/testimonials.ts')).toBe(false);
   });
 });
+
+describe('VTID-04333 the member ticket number travels with the VTID', () => {
+  const FB = 'FB-2026-09-000123';
+
+  it('stamps the FB number next to the VTID on the title', () => {
+    const t = stampVtidOnTitle('Fix the diary save button', 'VTID-04333', FB);
+    expect(t).toBe(`Fix the diary save button (${FB}, VTID-04333)`);
+    expect(VTID_TITLE_RE.test(t)).toBe(true);
+  });
+
+  it('adds only the id the title is missing', () => {
+    expect(stampVtidOnTitle(`[${FB}] Fix x`, 'VTID-04333', FB)).toBe(`[${FB}] Fix x (VTID-04333)`);
+    expect(stampVtidOnTitle('Fix x (VTID-04333)', 'VTID-04333', FB)).toBe(`Fix x (VTID-04333) (${FB})`);
+    expect(stampVtidOnTitle(`Fix x (${FB}, VTID-04333)`, 'VTID-04333', FB)).toBe(`Fix x (${FB}, VTID-04333)`);
+  });
+
+  it('ignores a value that is not a ticket number', () => {
+    expect(stampVtidOnTitle('Fix x', 'VTID-04333', 'feedback')).toBe('Fix x (VTID-04333)');
+    expect(stampVtidOnTitle('Fix x', 'VTID-04333', null)).toBe('Fix x (VTID-04333)');
+  });
+
+  it('keeps a long title under the length cap with both ids', () => {
+    const t = stampVtidOnTitle('x'.repeat(400), 'VTID-04333', FB);
+    expect(t.length).toBeLessThanOrEqual(240);
+    expect(t.endsWith(`(${FB}, VTID-04333)`)).toBe(true);
+  });
+
+  it('carries "Member report: FB-…" in the body and still passes the validator text gates', () => {
+    const out = applyPrContract(baseInput({ vtid: 'VTID-04333', ticketNumber: FB }));
+    expect(out.title).toContain(FB);
+    expect(out.title).toContain('VTID-04333');
+    expect(out.body).toContain(`Member report: ${FB}`);
+    expect(out.body.match(/Member report:/g)).toHaveLength(1);
+    expect(VTID_BODY_LINE_RE.test(out.body)).toBe(true);
+    expect(PROFILE_RE.test(out.body)).toBe(true);
+    const rec = JSON.parse(out.evidenceFiles.find((f) => f.path.endsWith('execution.json'))!.content);
+    expect(rec.ticket_number).toBe(FB);
+  });
+
+  it('adds the member line to a model body that already carried the validator tokens', () => {
+    const body = 'VTID: VTID-04333\nVALIDATION_PROFILE: gateway_backend\nSCOPE_ALLOWLIST: x\nACCEPTANCE: y\nMERGE_PAYLOAD_PREVIEW: z\nOASIS_IMPACT: no\n';
+    const out = applyPrContract(baseInput({ vtid: 'VTID-04333', ticketNumber: FB, body }));
+    expect(out.body.startsWith(`Member report: ${FB}\n\n`)).toBe(true);
+    expect(VTID_BODY_LINE_RE.test(out.body)).toBe(true);
+  });
+
+  it('a non-ticket execution is unchanged', () => {
+    const out = applyPrContract(baseInput());
+    expect(out.body).not.toContain('Member report:');
+    expect(out.title).not.toContain('FB-');
+  });
+});

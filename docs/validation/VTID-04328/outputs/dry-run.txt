@@ -1,0 +1,28 @@
+$ scripts/aws/setup-cost-budgets.sh --email owner@example.invalid
+account 472838866351  operating=6000 USD  ceiling=10000 USD  bedrock=2500 USD  apply=false
+DRY RUN: aws budgets create-budget --account-id 472838866351 --budget $'{"BudgetName":"vitana-monthly-operating","BudgetLimit":{"Amount":"6000","Unit":"USD"},\n "TimeUnit":"MONTHLY","BudgetType":"COST","CostFilters":{},\n "CostTypes":{"IncludeTax":true,"IncludeSubscription":true,"UseBlended":false,"IncludeRefund":false,"IncludeCredit":false,"IncludeUpfront":true,"IncludeRecurring":true,"IncludeOtherSubscription":true,"IncludeSupport":true,"IncludeDiscount":true,"UseAmortized":false}}' --notifications-with-subscribers $'[{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":50,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"FORECASTED","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]}]'
+would create vitana-monthly-operating -> 6000 USD
+DRY RUN: aws budgets create-budget --account-id 472838866351 --budget $'{"BudgetName":"vitana-monthly-hard-ceiling","BudgetLimit":{"Amount":"10000","Unit":"USD"},\n "TimeUnit":"MONTHLY","BudgetType":"COST","CostFilters":{},\n "CostTypes":{"IncludeTax":true,"IncludeSubscription":true,"UseBlended":false,"IncludeRefund":false,"IncludeCredit":false,"IncludeUpfront":true,"IncludeRecurring":true,"IncludeOtherSubscription":true,"IncludeSupport":true,"IncludeDiscount":true,"UseAmortized":false}}' --notifications-with-subscribers $'[{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":90,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"FORECASTED","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]}]'
+would create vitana-monthly-hard-ceiling -> 10000 USD
+DRY RUN: aws budgets create-budget --account-id 472838866351 --budget $'{"BudgetName":"vitana-monthly-bedrock","BudgetLimit":{"Amount":"2500","Unit":"USD"},\n "TimeUnit":"MONTHLY","BudgetType":"COST","CostFilters":{"Service":["Amazon Bedrock"]},\n "CostTypes":{"IncludeTax":true,"IncludeSubscription":true,"UseBlended":false,"IncludeRefund":false,"IncludeCredit":false,"IncludeUpfront":true,"IncludeRecurring":true,"IncludeOtherSubscription":true,"IncludeSupport":true,"IncludeDiscount":true,"UseAmortized":false}}' --notifications-with-subscribers $'[{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]}]'
+would create vitana-monthly-bedrock -> 2500 USD
+dry run only — re-run with --apply to create the budgets
+exit=0
+
+$ scripts/aws/setup-cost-budgets.sh --email owner@example.invalid --bedrock-services "Amazon Bedrock, Claude Sonnet 4.6 (Amazon Bedrock Edition)"
+account 472838866351  operating=6000 USD  ceiling=10000 USD  bedrock=2500 USD  apply=false
+DRY RUN: aws budgets create-budget --account-id 472838866351 --budget $'{"BudgetName":"vitana-monthly-bedrock","BudgetLimit":{"Amount":"2500","Unit":"USD"},\n "TimeUnit":"MONTHLY","BudgetType":"COST","CostFilters":{"Service":["Amazon Bedrock","Claude Sonnet 4.6 (Amazon Bedrock Edition)"]},\n "CostTypes":{"IncludeTax":true,"IncludeSubscription":true,"UseBlended":false,"IncludeRefund":false,"IncludeCredit":false,"IncludeUpfront":true,"IncludeRecurring":true,"IncludeOtherSubscription":true,"IncludeSupport":true,"IncludeDiscount":true,"UseAmortized":false}}' --notifications-with-subscribers $'[{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":80,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]},{"Notification":{"NotificationType":"ACTUAL","ComparisonOperator":"GREATER_THAN","Threshold":100,"ThresholdType":"PERCENTAGE"},\n "Subscribers":[{"SubscriptionType":"EMAIL","Address":"owner@example.invalid"}]}]'
+would create vitana-monthly-bedrock -> 2500 USD
+exit=0
+
+$ scripts/aws/setup-cost-budgets.sh --email x --limit 12000
+refused: --limit 12000 is above the owner's ceiling of 10000 USD
+exit=2
+
+$ scripts/aws/setup-cost-budgets.sh --email x --bedrock-limit 7000
+refused: --bedrock-limit 7000 is above the operating limit 6000
+exit=2
+
+$ scripts/aws/setup-cost-budgets.sh
+--email is required (budget alerts go there)
+exit=2

@@ -46,7 +46,7 @@ describe('draftPlaceholderSpecsTick', () => {
   it('replaces a placeholder spec with a real LLM draft, guarded on spec_ready', async () => {
     const draft = jest.fn().mockResolvedValue({ markdown: '## Problem\nreal spec\n', provider: 'llm' });
     const r = await draftPlaceholderSpecsTick(S, { draft, force: true });
-    expect(r).toEqual({ drafted: 1, failed: 0, skipped: 0 });
+    expect(r).toEqual({ drafted: 1, failed: 0, skipped: 0, dispatched: 0, dispatch_failed: 0 });
     const write = calls.filter((c) => c.method === 'PATCH').pop()!;
     expect(write.url).toContain('status=eq.spec_ready');
     expect(write.body.spec_md).toBe('## Problem\nreal spec\n');
