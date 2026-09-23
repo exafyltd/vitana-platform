@@ -1481,15 +1481,13 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
     }
 
     // Clean up timers
-    if (existingSession.upstreamPingInterval) {
-      clearInterval(existingSession.upstreamPingInterval);
-      existingSession.upstreamPingInterval = undefined;
-    }
-    if (existingSession.silenceKeepaliveInterval) {
-      clearInterval(existingSession.silenceKeepaliveInterval);
-      existingSession.silenceKeepaliveInterval = undefined;
-    }
+    clearUpstreamKeepalive(existingSession); // VTID-04418: one keepalive teardown
     clearResponseWatchdog(existingSession);
+
+    // VTID-04418: a session superseded by a newer one is an end path too. It
+    // used to close with no memory commit, summary or continuity write — the
+    // one end path VTID-04353 missed. Finalize is idempotent and fire-and-forget.
+    finalizeLiveSession(existingSession, { sessionId: sid, reason: 'superseded_by_new_session' });
 
     existingSession.active = false;
     terminated++;
@@ -1943,7 +1941,7 @@ import {
   isVertexSerbianBridgeLanguage,
   resolveVertexLivePersonaVoice,
 } from '../orb/live/upstream/vertex-serbian-bridge';
-import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
+import { bindUpstreamSessionHandlers, isVertexSharedHandlersEnabled } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
 // NOTE: `getVoiceConfig` is already imported above (line ~92).
@@ -9473,6 +9471,39 @@ async function connectToLiveAPI(
     // envelope builder, sends the envelope, and resolves on setup_complete.
     // After it resolves, the raw ws is available via `vertex.getSocket()`
     // so the legacy message + error + close handlers attach as before.
+    // VTID-04418 (Plan v1 WS-1.6): one set of upstream handlers for every
+    // provider. With ORB_VERTEX_SHARED_HANDLERS=true the Vertex path binds the
+    // same provider-neutral handlers Nova and the cascade use, BEFORE connect
+    // (UpstreamLiveClient contract), and the raw frame handler below is not
+    // registered. The route keeps its raw socket error/close handlers, so the
+    // shared ones are bound without connection events.
+    const useSharedVertexHandlers = isVertexSharedHandlersEnabled();
+    if (useSharedVertexHandlers) {
+      bindUpstreamSessionHandlers({
+        session,
+        client: vertex,
+        callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+        deps: {
+          clearResponseWatchdog,
+          detectAuthIntent,
+          detectStillHereComplaint,
+          dispatchEndConversationDirective,
+          emitDiag,
+          emitLiveSessionEvent,
+          executeLiveApiTool,
+          isDevSandbox,
+          sendAudioToLiveAPI,
+          sendFunctionResponseToLiveAPI,
+          sendWsMessage,
+          startResponseWatchdog,
+          markVoiceLatency,
+          finalizeVoiceTurnLatency,
+        },
+        options: { enableSilenceKeepalive: true, bindConnectionEvents: false },
+      });
+      emitDiag(session, 'upstream_handlers_bound', { path: 'shared', provider: 'vertex' });
+    }
+
     let ws: WebSocket;
     try {
       await vertex.connect({
@@ -9559,8 +9590,12 @@ async function connectToLiveAPI(
       },
     });
 
-    // A8.3a.1: register the named handler.
-    ws.on('message', handleUpstreamLiveMessage);
+    // A8.3a.1: register the named handler — only when the shared handlers
+    // were not bound above (VTID-04418). Both at once would process every
+    // frame twice (audio, tools, memory, chat bridge).
+    if (!useSharedVertexHandlers) {
+      ws.on('message', handleUpstreamLiveMessage);
+    }
 
     // Handle WebSocket errors
     ws.on('error', (error) => {
@@ -9568,14 +9603,7 @@ async function connectToLiveAPI(
       emitDiag(session, 'upstream_ws_error', { error: (error as any)?.message || String(error) });
       clearTimeout(connectionTimeout);
       // VTID-STREAM-KEEPALIVE: Clear ping interval on error too
-      if (session.upstreamPingInterval) {
-        clearInterval(session.upstreamPingInterval);
-        session.upstreamPingInterval = undefined;
-      }
-      if (session.silenceKeepaliveInterval) {
-        clearInterval(session.silenceKeepaliveInterval);
-        session.silenceKeepaliveInterval = undefined;
-      }
+      clearUpstreamKeepalive(session); // VTID-04418: one keepalive teardown
       // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
       // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
       // the watchdog will fire later as a backup.
@@ -9667,14 +9695,7 @@ async function connectToLiveAPI(
       clearTimeout(connectionTimeout);
 
       // VTID-STREAM-KEEPALIVE: Clear upstream ping interval
-      if (session.upstreamPingInterval) {
-        clearInterval(session.upstreamPingInterval);
-        session.upstreamPingInterval = undefined;
-      }
-      if (session.silenceKeepaliveInterval) {
-        clearInterval(session.silenceKeepaliveInterval);
-        session.silenceKeepaliveInterval = undefined;
-      }
+      clearUpstreamKeepalive(session); // VTID-04418: one keepalive teardown
       // VTID-03273 Pillar B — a proactive GoAway timer for THIS connection is
       // moot once it's closing; the reconnect (if any) arms a fresh one.
       if ((session as any)._goAwayTimer) {

@@ -50,6 +50,7 @@ import {
   resolveBrainRole,
   type ContextBuilderKind,
 } from './session-context-builder';
+import { clearUpstreamKeepalive } from './upstream-keepalive';
 import { SESSION_TIMEOUT_MS, VERTEX_PROJECT_ID } from '../config';
 import { VERTEX_LIVE_MODEL } from '../protocol';
 import {
@@ -328,14 +329,7 @@ export function cleanupWsSession(
     clientSession.liveSession.active = false;
 
     // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on cleanup
-    if (clientSession.liveSession.upstreamPingInterval) {
-      clearInterval(clientSession.liveSession.upstreamPingInterval);
-      clientSession.liveSession.upstreamPingInterval = undefined;
-    }
-    if (clientSession.liveSession.silenceKeepaliveInterval) {
-      clearInterval(clientSession.liveSession.silenceKeepaliveInterval);
-      clientSession.liveSession.silenceKeepaliveInterval = undefined;
-    }
+    clearUpstreamKeepalive(clientSession.liveSession); // VTID-04418: one keepalive teardown
     // VTID-WATCHDOG: Clear response watchdog on cleanup
     deps.clearResponseWatchdog(clientSession.liveSession);
 
@@ -2409,14 +2403,7 @@ export async function handleLiveSessionStop(
   }
 
   // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
-  if (session.upstreamPingInterval) {
-    clearInterval(session.upstreamPingInterval);
-    session.upstreamPingInterval = undefined;
-  }
-  if (session.silenceKeepaliveInterval) {
-    clearInterval(session.silenceKeepaliveInterval);
-    session.silenceKeepaliveInterval = undefined;
-  }
+  clearUpstreamKeepalive(session); // VTID-04418: one keepalive teardown
   // VTID-WATCHDOG: Clear response watchdog on session stop
   deps.clearResponseWatchdog(session);
 
