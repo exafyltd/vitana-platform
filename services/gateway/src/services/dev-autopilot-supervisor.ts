@@ -22,6 +22,7 @@
  * (autoApproveTick / lazyPlanTick / the PR-flood guard); keep them in step.
  */
 import { getSupabase, supa, planRetryDecision, findingVtid } from './dev-autopilot-execute';
+import { describeLoopOwnership } from './dev-autopilot-loop-owner';
 import { chunkIds } from './dev-autopilot-pipeline-guards';
 
 type Supa = NonNullable<ReturnType<typeof getSupabase>>;
@@ -325,9 +326,13 @@ export function buildAlerts(input: {
   blockers: Record<string, number>;
   communityEngineLastRunAt: string | null;
   nowMs: number;
+  loop?: { owner_env: string; this_env: string; active_here: boolean };
 }): SupervisorAlert[] {
   const a: SupervisorAlert[] = [];
   if (input.cfg.kill_switch) a.push({ severity: 'critical', text: 'Kill switch is ON — no autonomous execution.', tab: 'auto-approve' });
+  if (input.loop && !input.loop.active_here) {
+    a.push({ severity: 'info', text: `This gateway (${input.loop.this_env}) does not run the autopilot loop — ${input.loop.owner_env} claims, approves and plans for both.`, tab: 'live' });
+  }
   if (input.scan.overdue) {
     a.push({ severity: 'critical', text: input.scan.hours_since_success === null
       ? 'No successful scan on record.'
@@ -479,6 +484,7 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
   const totalSurfaces = scannerList.length + ruleList.length;
   const eligibleOpen = diagnosed.filter((f) => f.blocker.actor !== 'human').length;
   const communityEngineLastRunAt = engineLast && engineLast[0] ? engineLast[0].started_at : null;
+  const loop = describeLoopOwnership();
 
   return {
     ok: true as const,
@@ -492,6 +498,8 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       concurrency_cap: cfg.concurrency_cap,
       concurrency_left: concurrencyLeft,
     },
+    /** VTID-04363: which gateway runs the claim / approve / plan loop. */
+    loop,
     scan,
     executions: execSummary,
     findings: {
@@ -514,6 +522,6 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       last_run_at: communityEngineLastRunAt,
       days_since_last_run: communityEngineLastRunAt ? Math.floor((nowMs - Date.parse(communityEngineLastRunAt)) / 86400000) : null,
     },
-    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs }),
+    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs, loop }),
   };
 }

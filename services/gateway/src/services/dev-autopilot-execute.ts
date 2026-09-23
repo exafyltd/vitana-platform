@@ -63,6 +63,7 @@ import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from
 import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
 import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
+import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-owner';
 // VTID-04006: single-shot vs agent executor selection.
 import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
 import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-autopilot-vtid-allocate';
@@ -3945,6 +3946,14 @@ let backgroundTickerStarted = false;
 export function startBackgroundExecutor(): void {
   if (backgroundTickerStarted) return;
   backgroundTickerStarted = true;
+  // VTID-04363: one loop owner across the shared table. The other gateway
+  // runs no claim / auto-approve / plan / reaper tick; its watchers still
+  // finish anything it claimed before (VTID-04005 ownership filter).
+  const loop = describeLoopOwnership();
+  if (!loop.active_here) {
+    console.log(`${LOG_PREFIX} background loop NOT started: env=${loop.this_env}, loop owner=${loop.owner_env} (${LOOP_OWNER_ENV_VAR})`);
+    return;
+  }
   console.log(`${LOG_PREFIX} starting background executor (tick=${BACKGROUND_TICK_MS}ms, dry_run=${DRY_RUN})`);
   setInterval(() => {
     backgroundExecutorTick().catch((err) => {
