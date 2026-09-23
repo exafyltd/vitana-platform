@@ -24,19 +24,19 @@ The Command Hub Orchestrator view v0 is a separate PR that consumes these routes
 ## Acceptance criteria
 
 AC-1 `resolveAgentContext` returns one context (role, role source, orgs, surface, channel) and a failed read leaves only that field empty.
-TEST: services/gateway/test/vtid-04319-orchestrator-p1.test.ts
+TEST: services/gateway/test/routes/orchestrator.test.ts
 
 AC-2 Run query normalisation bounds the limit and rejects unknown statuses; per-plane summary counts are correct.
-TEST: services/gateway/test/vtid-04319-orchestrator-p1.test.ts
+TEST: services/gateway/test/routes/orchestrator.test.ts
 
 AC-3 `/context` requires a signed-in user; `/runs`, `/runs/summary`, `/agents` require exafy_admin; no handler writes.
-TEST: services/gateway/test/vtid-04319-orchestrator-p1.test.ts
+TEST: services/gateway/test/routes/orchestrator.test.ts
 
 AC-4 The migration is additive, the ledger tables and view are service-role only, the view is `security_invoker`, and it covers every existing run plane.
-TEST: services/gateway/test/vtid-04319-orchestrator-p1.test.ts
+TEST: services/gateway/test/routes/orchestrator.test.ts
 
 AC-5 Live, after apply: the view unifies the existing runs of all three planes; `anon`/`authenticated` have no SELECT; RLS is on.
-TEST: services/gateway/test/vtid-04319-orchestrator-p1.test.ts
+TEST: services/gateway/test/routes/orchestrator.test.ts
 
 ## Route evidence
 

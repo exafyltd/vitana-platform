@@ -16,7 +16,7 @@ import request from 'supertest';
 
 const identity: { current: any } = { current: null };
 
-jest.mock('../src/middleware/auth-supabase-jwt', () => ({
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: jest.fn(async (req: any, res: any, next: any) => {
     if (!identity.current) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     req.identity = identity.current;
@@ -47,11 +47,11 @@ function stubSupabase() {
   } as any;
 }
 
-jest.mock('../src/lib/supabase', () => ({ getSupabase: () => stubSupabase() }));
+jest.mock('../../src/lib/supabase', () => ({ getSupabase: () => stubSupabase() }));
 
-import { buildAgentContext, normalizeChannel, resolveAgentContext } from '../src/services/orchestrator/context';
-import { normalizeRunQuery, summarizeRunRows, RUN_LIST_MAX_LIMIT } from '../src/services/orchestrator/run-ledger';
-import orchestratorRouter from '../src/routes/orchestrator';
+import { buildAgentContext, normalizeChannel, resolveAgentContext } from '../../src/services/orchestrator/context';
+import { normalizeRunQuery, summarizeRunRows, RUN_LIST_MAX_LIMIT } from '../../src/services/orchestrator/run-ledger';
+import orchestratorRouter from '../../src/routes/orchestrator';
 
 function app() {
   const a = express();
@@ -184,7 +184,7 @@ describe('routes', () => {
 
 describe('migration', () => {
   const sql = fs.readFileSync(
-    path.join(__dirname, '..', '..', '..', 'supabase', 'migrations', '20260923120000_vtid_04319_orchestrator_run_ledger.sql'),
+    path.join(__dirname, '..', '..', '..', '..', 'supabase', 'migrations', '20260923120000_vtid_04319_orchestrator_run_ledger.sql'),
     'utf8',
   );
   test('is additive: no DROP / TRUNCATE / DELETE', () => {
