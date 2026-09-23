@@ -195,12 +195,44 @@ export async function synthesizeUserModel(
   return { ok: true, written: true };
 }
 
-/** Read the stored narrative (null when absent/stale-schema/error). */
+/**
+ * VTID-04340: a narrative older than this is not injected. The profile is
+ * presented to the model as current understanding of the user, so a months-old
+ * one (the AP-0911 cron stopped in July) misrepresents who they are today.
+ */
+export const DEFAULT_NARRATIVE_MAX_AGE_DAYS = 7;
+
+export function resolveNarrativeMaxAgeDays(
+  raw: string | undefined = process.env.PROFILE_NARRATIVE_MAX_AGE_DAYS,
+): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_NARRATIVE_MAX_AGE_DAYS;
+}
+
+/** Human age label for the injected section header, e.g. "5 hours", "3 days". */
+export function describeNarrativeAge(ageMs: number): string {
+  const hours = Math.max(0, Math.floor(ageMs / 3_600_000));
+  if (hours < 1) return 'less than an hour';
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'}`;
+  return `${Math.floor(hours / 24)} days`;
+}
+
+export interface StoredProfileNarrative {
+  narrative: string;
+  generated_at: string;
+  age_ms: number;
+}
+
+/**
+ * Read the stored narrative. Null when absent, stale-schema, errored, missing
+ * or unparseable `generated_at`, or older than the max age (VTID-04340).
+ */
 export async function readUserProfileNarrative(
   supabase: SupabaseClient,
   tenantId: string,
   userId: string,
-): Promise<{ narrative: string; generated_at: string } | null> {
+  opts: { nowMs?: number; maxAgeDays?: number } = {},
+): Promise<StoredProfileNarrative | null> {
   try {
     const { data, error } = await repo.fetchExistingProfileNarrativeState(
       supabase,
@@ -210,13 +242,14 @@ export async function readUserProfileNarrative(
     );
     if (error || !data) return null;
     const v = (data as { value?: { narrative?: unknown; generated_at?: unknown } }).value;
-    if (v && typeof v.narrative === 'string' && v.narrative.trim()) {
-      return {
-        narrative: v.narrative,
-        generated_at: typeof v.generated_at === 'string' ? v.generated_at : '',
-      };
-    }
-    return null;
+    if (!v || typeof v.narrative !== 'string' || !v.narrative.trim()) return null;
+    if (typeof v.generated_at !== 'string') return null;
+    const generatedMs = Date.parse(v.generated_at);
+    if (!Number.isFinite(generatedMs)) return null;
+    const ageMs = Math.max(0, (opts.nowMs ?? Date.now()) - generatedMs);
+    const maxAgeDays = opts.maxAgeDays ?? resolveNarrativeMaxAgeDays();
+    if (ageMs > maxAgeDays * 86_400_000) return null;
+    return { narrative: v.narrative, generated_at: v.generated_at, age_ms: ageMs };
   } catch {
     return null;
   }

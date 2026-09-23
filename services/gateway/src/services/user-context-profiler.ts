@@ -978,7 +978,11 @@ export async function getUserContextSummary(
     (cfg && !cfg.isEnabled('profile.narrative.enabled')) || !opts.tenantId
       ? Promise.resolve(null)
       : import('./user-model-synthesis')
-          .then((m) => m.readUserProfileNarrative(client, opts.tenantId!, userId))
+          .then((m) =>
+            m.readUserProfileNarrative(client, opts.tenantId!, userId).then((n) =>
+              n ? { ...n, age_label: m.describeNarrativeAge(n.age_ms) } : null,
+            ),
+          )
           .catch(() => null);
 
   // VTID-03037: account/tenure fetch. Always in the batch — no awareness-
@@ -1004,7 +1008,7 @@ export async function getUserContextSummary(
       VitanaIndexFetchResult | null,
       { ok: boolean; facts: any[] },
       AccountRow,
-      { narrative: string; generated_at: string } | null,
+      (import('./user-model-synthesis').StoredProfileNarrative & { age_label: string }) | null,
     ],
     'getUserContextSummary.mainFetch',
   );
@@ -1017,8 +1021,10 @@ export async function getUserContextSummary(
     buildAccountSection(account, now),
     // Synthesized narrative FIRST after account — it's the connected picture;
     // the sections below are its raw evidence.
+    // VTID-04340: label the real age instead of claiming "nightly" — the
+    // reader already drops narratives past the max age.
     narrative
-      ? `[PROFILE SYNTHESIS — nightly, connect-the-dots summary]\n${narrative.narrative}`
+      ? `[PROFILE SYNTHESIS — generated ${narrative.age_label} ago, connect-the-dots summary]\n${narrative.narrative}`
       : '',
     (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
     (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',
