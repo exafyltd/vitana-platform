@@ -32,20 +32,23 @@ built on these endpoints until this is fixed.
 
 ## Acceptance criteria
 
-- **AC-1:** A signed state round-trips. The following are all rejected: an
-  unsigned state (the old format), a tampered body or signature, an expired
-  state, another key's state, and garbage. With no key, it fails closed.
-  TEST: `vtid-04401-connected-apps-auth.test.ts` › signed OAuth state.
-- **AC-2:** A forged token naming another user gets 401 on
-  `/social-accounts/connections`, `/connect/google` and
-  `/capabilities/:capability`, and the victim's id never reaches a query.
-  TEST: › routers trust only the verified identity.
-- **AC-3:** An unsigned state never reaches the token exchange. A state
-  signed for another provider is refused.
-  TEST: › callbacks reject forged state.
-- **AC-4:** Neither router decodes a token by hand any more. The wearables
-  route signs and verifies its state.
-  TEST: › source guards.
+AC-1: A signed state round-trips. An unsigned state (the old format), a
+tampered body or signature, an expired state, another key's state and
+garbage are all rejected. With no key it fails closed.
+TEST: services/gateway/test/vtid-04401-connected-apps-auth.test.ts › signed OAuth state
+
+AC-2: A forged token naming another user gets 401 on
+`/social-accounts/connections`, `/connect/google` and
+`/capabilities/:capability`, and the victim's id never reaches a query.
+TEST: services/gateway/test/vtid-04401-connected-apps-auth.test.ts › routers trust only the verified identity
+
+AC-3: An unsigned state never reaches the token exchange; a state signed for
+another provider is refused.
+TEST: services/gateway/test/vtid-04401-connected-apps-auth.test.ts › callbacks reject forged state
+
+AC-4: Neither router decodes a token by hand any more; the wearables route
+signs and verifies its state.
+TEST: services/gateway/test/vtid-04401-connected-apps-auth.test.ts › no route decodes a token by hand / wearables
 
 ## Not changed, reported
 
