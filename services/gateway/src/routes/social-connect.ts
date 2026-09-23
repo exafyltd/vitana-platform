@@ -55,7 +55,7 @@ const APP_URL = process.env.APP_URL || 'https://vitana.app';
 // YouTube is surfaced in the Music & Video section of /settings/connected-apps,
 // so its callback lands there too.
 function callbackRedirectPath(provider: string): string {
-  if (provider === 'google' || provider === 'youtube') return '/settings/connected-apps';
+  if (provider === 'google' || provider === 'youtube' || provider === 'microsoft') return '/settings/connected-apps';
   return '/settings/social';
 }
 
@@ -305,7 +305,20 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   // VTID-01928: Skip social enrichment for Google — it's a data-access connector,
   // not a profile-scraping one. Social providers (Instagram/Facebook/TikTok/etc.)
   // still run the enrichment pipeline for interest/topic extraction.
-  if (result.connection_id && provider !== 'google') {
+  // VTID-04402: a toggle on the Connected Apps screen started this grant —
+  // switch that app on and run its first sync now, so one tap is enough.
+  let enabledApp: string | undefined;
+  if (stateData.enableApp) {
+    try {
+      const { onGrantReturned } = await import('../services/connected-apps/hub');
+      const r = await onGrantReturned(stateData.userId, stateData.tenantId, stateData.enableApp);
+      if (r.ok) enabledApp = stateData.enableApp;
+    } catch (err: any) {
+      console.warn(`${LOG_PREFIX} enabling ${stateData.enableApp} after grant failed: ${err?.message}`);
+    }
+  }
+
+  if (result.connection_id && provider !== 'google' && provider !== 'microsoft') {
     enrichProfileFromSocial(supabase, stateData.userId, stateData.tenantId, result.connection_id)
       .then(enrichResult => {
         console.log(`${LOG_PREFIX} Enrichment for ${provider}: ${enrichResult.enrichments.join(', ') || 'none'}`);
@@ -319,6 +332,7 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
     status: 'ok',
     connected: provider,
     username: profile.username,
+    ...(enabledApp ? { app: enabledApp } : {}),
   }));
 });
 

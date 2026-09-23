@@ -839,6 +839,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const capabilitiesRouter = require('./routes/capabilities').default;
   mountRouterSync(app, '/api/v1/capabilities', capabilitiesRouter, { owner: 'capabilities' });
 
+  // VTID-04402: Connected Apps hub — one toggle per mail / calendar /
+  // contacts app (Google, Microsoft, Apple iCloud, Android contacts).
+  const connectedAppsRouter = require('./routes/connected-apps').default;
+  mountRouterSync(app, '/api/v1/connected-apps', connectedAppsRouter, { owner: 'connected-apps' });
+
   // VTID-01942: Vitana Media Hub search — backs the vitana_hub connector
   // (music / podcast / shorts capability routing falls back here when the
   // user has no external provider connected).
@@ -1700,6 +1705,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Calendar Google sync loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04402: Connected Apps background sync — Outlook / iCloud busy
+      // times every 15 min, Google / iCloud contacts daily. Only touches apps a
+      // member switched on. Off with CONNECTED_APPS_SYNC_LOOP=false.
+      try {
+        const { startConnectedAppsLoop } = require('./services/connected-apps/hub');
+        if (startConnectedAppsLoop()) console.log('🔗 Connected Apps sync loop started');
+      } catch (error) {
+        console.warn('⚠️ Connected Apps sync loop initialization failed (non-fatal):', error);
       }
 
       // VTID-03107: Billing v1 — trial lifecycle notification worker.

@@ -414,13 +414,14 @@ router.get('/events/window', async (req: Request, res: Response) => {
       ? (await listWorkItems(userId, lenses, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() }))
           .map((it) => ({ ...it, display_emoji: it.event?.emoji ?? '📌', reminders: [] as unknown[] }))
       : [];
-    // VTID-04372: busy times pulled from the member's Google calendar — times only.
+    // VTID-04372: busy times pulled from the member's external calendars —
+    // times only. VTID-04402: Google, Outlook and iCloud all write the same
+    // table, and only while that app is switched on (turning it off deletes
+    // its rows), so no per-provider gate is needed here.
     let external: any[] = [];
     if (includeBusy) {
-      const { googleSyncAvailability, listExternalBusy } = await import('../services/calendar-google-sync');
-      if (googleSyncAvailability() === 'ready') {
-        external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
-      }
+      const { listExternalBusy } = await import('../services/calendar-google-sync');
+      external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
     }
     const merged = mergeWorkItems<any>([...data, ...external], work);
     return res.json({ ok: true, data: merged, count: merged.length, timezone: userTimezone ?? null, work_lenses: lenses });
