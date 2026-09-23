@@ -2883,7 +2883,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   { screen_id: 'DEVHUB.INTELLIGENCE.MEMORY_VAULT', route: '/command-hub/intelligence-memory-dev/memory-vault/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Memory Vault', description: 'Memory items and fact storage inspector.', when_to_visit: 'When asking about memory vault, memory dev, stored memories, or memory inspector.' } } },
   { screen_id: 'DEVHUB.INTELLIGENCE.KNOWLEDGE_GRAPH', route: '/command-hub/intelligence-memory-dev/knowledge-graph/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'Knowledge Graph', description: 'Knowledge graph visualization and cognee data.', when_to_visit: 'When asking about knowledge graph, cognee, graph visualization, or entity relationships.' } } },
+    i18n: { en: { title: 'Knowledge Graph', description: 'Knowledge graph visualization and relationship data.', when_to_visit: 'When asking about knowledge graph, graph visualization, or entity relationships.' } } },
   { screen_id: 'DEVHUB.INTELLIGENCE.EMBEDDINGS', route: '/command-hub/intelligence-memory-dev/embeddings/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Embeddings', description: 'Embedding vectors and similarity search tools.', when_to_visit: 'When asking about embeddings, vectors, similarity search, or embedding inspector.' } } },
 

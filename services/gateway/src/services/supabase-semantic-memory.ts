@@ -38,12 +38,11 @@ import * as repo from './supabase-semantic-memory-repository';
 const VTID = 'VTID-01184';
 const SERVICE_NAME = 'supabase-semantic-memory';
 
-// Embedding dimensions (must match memory_items.embedding column = vector(1536)
-// and OpenAI text-embedding-3-small). VTID-01978: corrected from 768.
-const EMBEDDING_DIMENSIONS = 1536;
+// Embedding dimensions — must match memory_items.embedding.
+const EMBEDDING_DIMENSIONS = 1024; // VTID-04342: Titan V2, memory_items.embedding vector(1024)
 
 // Default embedding model
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
+const DEFAULT_EMBEDDING_MODEL = 'amazon.titan-embed-text-v2:0';
 
 // =============================================================================
 // Supabase Client Factory

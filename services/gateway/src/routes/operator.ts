@@ -34,7 +34,7 @@ import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages } from '../services/operator-threads';
+import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -689,6 +689,21 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
     if (!closed) writeSseFrame(res, 'done', { threadId });
     if (!res.writableEnded) res.end();
   }
+});
+
+/**
+ * GET /threads → /api/v1/operator/threads
+ * VTID-04409: the caller's own server-side Operator threads (newest
+ * activity first, summary clipped), so the console can list and reopen a
+ * thread started on another device or by voice. exafy_admin only.
+ */
+router.get('/threads', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
+  const r = await listOperatorThreads({ userId: req.identity?.user_id ?? null, limit: Number.isFinite(limit) ? limit : undefined });
+  if (!r.ok) {
+    return res.status(r.error === 'disabled' ? 200 : 503).json({ ok: r.error === 'disabled', error: r.error, threads: [] });
+  }
+  return res.json({ ok: true, threads: r.threads });
 });
 
 /**

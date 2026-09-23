@@ -42,7 +42,8 @@ const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const TENANT_B = '22222222-2222-2222-2222-222222222222';
 const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
-const EMBEDDING_1536 = new Array(1536).fill(0.001);
+// VTID-04342: memory_items.embedding is vector(1024) (Titan V2).
+const EMBEDDING_1024 = new Array(1024).fill(0.001);
 
 function lensFor(tenant: string, user: string, opts?: Partial<ContextLens>): ContextLens {
   return createContextLens(tenant, user, { workspace_scope: 'product', ...opts });
@@ -68,7 +69,7 @@ describe('semanticSearch()', () => {
   it('rejects an invalid Context Lens without touching Supabase', async () => {
     const result = await svc.semanticSearch({
       query: 'q',
-      query_embedding: EMBEDDING_1536,
+      query_embedding: EMBEDDING_1024,
       lens: { tenant_id: '', user_id: USER_A, workspace_scope: 'product' } as ContextLens,
     });
 
@@ -90,14 +91,14 @@ describe('semanticSearch()', () => {
       lens: lensFor(TENANT_A, USER_A),
     });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('1536');
+    expect(result.error).toContain('1024');
   });
 
   it('returns "Supabase not configured" when env vars are missing', async () => {
     delete process.env.SUPABASE_URL;
     const result = await svc.semanticSearch({
       query: 'q',
-      query_embedding: EMBEDDING_1536,
+      query_embedding: EMBEDDING_1024,
       lens: lensFor(TENANT_A, USER_A),
     });
     expect(result.ok).toBe(false);
@@ -109,7 +110,7 @@ describe('semanticSearch()', () => {
 
     const result = await svc.semanticSearch({
       query: 'q',
-      query_embedding: EMBEDDING_1536,
+      query_embedding: EMBEDDING_1024,
       lens: lensFor(TENANT_A, USER_A),
     });
 
@@ -122,7 +123,7 @@ describe('semanticSearch()', () => {
 
     const result = await svc.semanticSearch({
       query: 'q',
-      query_embedding: EMBEDDING_1536,
+      query_embedding: EMBEDDING_1024,
       lens: lensFor(TENANT_A, USER_A),
     });
 
@@ -157,7 +158,7 @@ describe('semanticSearch()', () => {
 
     const result = await svc.semanticSearch({
       query: 'hobbies',
-      query_embedding: EMBEDDING_1536,
+      query_embedding: EMBEDDING_1024,
       lens: lensFor(TENANT_A, USER_A, { active_role: 'community' }),
     });
 
@@ -178,12 +179,12 @@ describe('semanticSearch()', () => {
   it('formats the embedding as a Postgres vector literal and applies request/lens defaults', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
-    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1536, lens: lensFor(TENANT_A, USER_A) });
+    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1024, lens: lensFor(TENANT_A, USER_A) });
 
     expect(mockRpc).toHaveBeenCalledWith(
       'memory_semantic_search',
       expect.objectContaining({
-        p_query_embedding: `[${EMBEDDING_1536.join(',')}]`,
+        p_query_embedding: `[${EMBEDDING_1024.join(',')}]`,
         p_top_k: 10, // default
         p_visibility_scope: 'private', // lens default
         p_recency_boost: true, // request default
@@ -199,7 +200,7 @@ describe('semanticSearch()', () => {
   it('forwards tenant A / user A identity to the RPC for a tenant-A lens', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
-    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1536, lens: lensFor(TENANT_A, USER_A) });
+    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1024, lens: lensFor(TENANT_A, USER_A) });
 
     expect(mockRpc).toHaveBeenCalledWith(
       'memory_semantic_search',
@@ -210,7 +211,7 @@ describe('semanticSearch()', () => {
   it('forwards tenant B / user B identity to the RPC for a tenant-B lens — never tenant A\'s', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
-    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1536, lens: lensFor(TENANT_B, USER_B) });
+    await svc.semanticSearch({ query: 'q', query_embedding: EMBEDDING_1024, lens: lensFor(TENANT_B, USER_B) });
 
     const [, params] = mockRpc.mock.calls[0];
     expect(params.p_tenant_id).toBe(TENANT_B);
@@ -252,7 +253,7 @@ describe('writeMemoryItem()', () => {
       content: 'hello',
       source: 'orb_text',
       lens: lensFor(TENANT_A, USER_A),
-      embedding: EMBEDDING_1536,
+      embedding: EMBEDDING_1024,
     });
 
     expect(result.ok).toBe(true);
@@ -262,8 +263,8 @@ describe('writeMemoryItem()', () => {
         p_payload: expect.objectContaining({
           tenant_id: TENANT_A,
           user_id: USER_A,
-          embedding: `[${EMBEDDING_1536.join(',')}]`,
-          embedding_model: 'text-embedding-3-small',
+          embedding: `[${EMBEDDING_1024.join(',')}]`,
+          embedding_model: 'amazon.titan-embed-text-v2:0',
         }),
       })
     );
@@ -383,7 +384,7 @@ describe('getItemsNeedingEmbeddings()', () => {
 describe('updateEmbeddings()', () => {
   it('returns "Supabase not configured" and preserves requested_count when env vars are missing', async () => {
     delete process.env.SUPABASE_URL;
-    const result = await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1536, embedding_model: 'm' }]);
+    const result = await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1024, embedding_model: 'm' }]);
     expect(result.ok).toBe(false);
     expect(result.requested_count).toBe(1);
     expect(result.updated_count).toBe(0);
@@ -392,11 +393,11 @@ describe('updateEmbeddings()', () => {
   it('formats each embedding into a Postgres vector literal before calling the RPC', async () => {
     mockRpc.mockResolvedValue({ data: { ok: true, updated_count: 1, requested_count: 1 }, error: null });
 
-    await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1536, embedding_model: 'text-embedding-3-small' }]);
+    await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1024, embedding_model: 'text-embedding-3-small' }]);
 
     expect(mockRpc).toHaveBeenCalledWith(
       'memory_update_embeddings',
-      { p_updates: [{ id: 'i1', embedding: `[${EMBEDDING_1536.join(',')}]`, embedding_model: 'text-embedding-3-small' }] }
+      { p_updates: [{ id: 'i1', embedding: `[${EMBEDDING_1024.join(',')}]`, embedding_model: 'text-embedding-3-small' }] }
     );
   });
 
@@ -404,8 +405,8 @@ describe('updateEmbeddings()', () => {
     mockRpc.mockResolvedValue({ data: { ok: true, updated_count: 2, requested_count: 2 }, error: null });
 
     const result = await svc.updateEmbeddings([
-      { id: 'i1', embedding: EMBEDDING_1536, embedding_model: 'm' },
-      { id: 'i2', embedding: EMBEDDING_1536, embedding_model: 'm' },
+      { id: 'i1', embedding: EMBEDDING_1024, embedding_model: 'm' },
+      { id: 'i2', embedding: EMBEDDING_1024, embedding_model: 'm' },
     ]);
 
     expect(result).toEqual({ ok: true, updated_count: 2, requested_count: 2 });
@@ -414,7 +415,7 @@ describe('updateEmbeddings()', () => {
 
   it('reports a migration-required error when the RPC does not exist', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'function ... does not exist' } });
-    const result = await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1536, embedding_model: 'm' }]);
+    const result = await svc.updateEmbeddings([{ id: 'i1', embedding: EMBEDDING_1024, embedding_model: 'm' }]);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/migration required/i);
   });
@@ -466,7 +467,7 @@ describe('buildSemanticContext()', () => {
   it('propagates a failed semanticSearch as ok:false with empty context', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
 
     expect(result.ok).toBe(false);
     expect(result.context).toBe('');
@@ -476,7 +477,7 @@ describe('buildSemanticContext()', () => {
   it('returns an empty context string when there are no results', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
 
     expect(result.ok).toBe(true);
     expect(result.context).toBe('');
@@ -514,7 +515,7 @@ describe('buildSemanticContext()', () => {
       error: null,
     });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
 
     const healthIdx = result.context.indexOf('Health & Wellness');
     const convoIdx = result.context.indexOf('Recent Conversations');
@@ -532,7 +533,7 @@ describe('buildSemanticContext()', () => {
       error: null,
     });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
 
     expect(result.context).toMatch(/\* \[.*\] run a marathon/);
     expect(result.context).toMatch(/- \[.*\] maybe read more/);
@@ -542,7 +543,7 @@ describe('buildSemanticContext()', () => {
     const longContent = 'x'.repeat(400);
     mockRpc.mockResolvedValue({ data: [row({ category_key: 'notes', content: longContent })], error: null });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
 
     expect(result.context).toContain('x'.repeat(297) + '...');
     expect(result.context).not.toContain(longContent);
@@ -554,7 +555,7 @@ describe('buildSemanticContext()', () => {
       error: null,
     });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
     expect(result.context).toContain('just now');
   });
 
@@ -565,14 +566,14 @@ describe('buildSemanticContext()', () => {
       error: null,
     });
 
-    const result = await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A));
+    const result = await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A));
     expect(result.context).toContain('3d ago');
   });
 
   it('forwards the caller-provided topK as the search top_k', async () => {
     mockRpc.mockResolvedValue({ data: [], error: null });
 
-    await svc.buildSemanticContext('q', EMBEDDING_1536, lensFor(TENANT_A, USER_A), 3);
+    await svc.buildSemanticContext('q', EMBEDDING_1024, lensFor(TENANT_A, USER_A), 3);
 
     expect(mockRpc).toHaveBeenCalledWith('memory_semantic_search', expect.objectContaining({ p_top_k: 3 }));
   });
@@ -624,7 +625,7 @@ describe('exported constants', () => {
   it('match the documented pgvector / embedding-model contract', () => {
     expect(svc.VTID).toBe('VTID-01184');
     expect(svc.SERVICE_NAME).toBe('supabase-semantic-memory');
-    expect(svc.EMBEDDING_DIMENSIONS).toBe(1536);
-    expect(svc.DEFAULT_EMBEDDING_MODEL).toBe('text-embedding-3-small');
+    expect(svc.EMBEDDING_DIMENSIONS).toBe(1024);
+    expect(svc.DEFAULT_EMBEDDING_MODEL).toBe('amazon.titan-embed-text-v2:0');
   });
 });

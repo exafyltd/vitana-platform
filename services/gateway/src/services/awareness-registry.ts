@@ -138,9 +138,9 @@ const M: AwarenessSignal[] = [
       { key: 'count', label: 'Turn count', type: 'int', default: 3, min: 1, max: 10, step: 1 },
   ]},
 
-  { key: 'memory.relationships.nodes',   tier: 'memory', subcategory: 'Cognee relationship graph (VTID-01087)', label: 'Relationship nodes',   description: 'PERSON / LOCATION / ORG entities extracted from conversations.', default_on: true, enforcement_status: 'pending' },
-  { key: 'memory.relationships.edges',   tier: 'memory', subcategory: 'Cognee relationship graph (VTID-01087)', label: 'Relationship edges',   description: 'knows / works_for / attends / following relations.',              default_on: true, enforcement_status: 'pending' },
-  { key: 'memory.relationships.signals', tier: 'memory', subcategory: 'Cognee relationship graph (VTID-01087)', label: 'Relationship signals', description: 'Computed interaction signals from the graph.',                    default_on: true, enforcement_status: 'pending' },
+  { key: 'memory.relationships.nodes',   tier: 'memory', subcategory: 'Relationship graph (VTID-01087)', label: 'Relationship nodes',   description: 'PERSON / LOCATION / ORG entities extracted from conversations.', default_on: true, enforcement_status: 'pending' },
+  { key: 'memory.relationships.edges',   tier: 'memory', subcategory: 'Relationship graph (VTID-01087)', label: 'Relationship edges',   description: 'knows / works_for / attends / following relations.',              default_on: true, enforcement_status: 'pending' },
+  { key: 'memory.relationships.signals', tier: 'memory', subcategory: 'Relationship graph (VTID-01087)', label: 'Relationship signals', description: 'Computed interaction signals from the graph.',                    default_on: true, enforcement_status: 'pending' },
 
   // ─── 3. ACTIVITY ─────────────────────────────────────────────────────────
   { key: 'activity.summary.enabled', tier: 'activity', subcategory: 'Counted summary', label: '[ACTIVITY_14D] block', description: 'One-line counted summary across the activity window.', default_on: true, params: [

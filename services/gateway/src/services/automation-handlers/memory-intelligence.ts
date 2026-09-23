@@ -18,6 +18,7 @@ import {
 import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
 import { getUserTimezone, userLocalHour } from '../daily-pace-service';
 import * as repo from './memory-intelligence-repository';
+import { rememberFact } from '../memory/remember'; // VTID-04364
 
 // ── AP-0901: Memory-Informed Matching ───────────────────────
 // On a positive match reaction, look up the user's most recent self-facts
@@ -320,16 +321,21 @@ async function runBehaviorPreferenceInference(ctx: AutomationContext) {
     let wroteAny = false;
     for (const [factKey, value] of derived.get(userId)!) {
       if (existing.get(`${userId}:${factKey}`) === value) continue;
-      const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
-        p_tenant_id: tenantId,
-        p_user_id: userId,
-        p_fact_key: factKey,
-        p_fact_value: value,
-        p_entity: 'self',
-        p_fact_value_type: 'text',
-        p_provenance_source: 'behavior_inferred',
-        p_provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
-      });
+      const written = await rememberFact(
+        {
+          tenant_id: tenantId,
+          user_id: userId,
+          fact_key: factKey,
+          fact_value: value,
+          entity: 'self',
+          fact_value_type: 'text',
+          provenance_source: 'behavior_inferred',
+          provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
+          actor: 'memory-intelligence',
+        },
+        { client: supabase },
+      );
+      const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
       if (rpcErr) {
         ctx.log(`write_fact ${factKey} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
         continue;
@@ -530,62 +536,80 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
 }
 
 // ── AP-0910: Memory Embedding Backfill ──────────────────────
-// Only ~4% of live memory_facts carried embeddings (the inline extractor's
-// REST write path never embedded), leaving tier-2 semantic fact retrieval
-// blind. New writes now embed inline (inline-fact-extractor); this backfill
-// drains the historical backlog and catches any write-path misses. Hourly,
-// bounded, no-ops cheaply once the backlog is empty.
+// VTID-04342: drains BOTH canonical memory stores — memory_facts (current
+// facts) and memory_items (episodes) — with the single memory embedder,
+// Amazon Titan Text Embeddings V2 (1024-dim, memory-embedding.ts). Until
+// VTID-04342 this called OpenAI → Gemini, neither of which has a key on AWS,
+// so nothing had been embedded since 2026-04-28 and semantic recall fell back
+// to recency. Hourly, bounded, and a cheap no-op once the backlog is empty; a
+// row whose embedding fails stays NULL and is retried on the next run.
 const EMBED_BACKFILL_BATCH = 100;
 
 async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
-
-  const { data: rows, error } = await repo.fetchFactsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
-  if (error) {
-    ctx.log(`backlog scan failed: ${error.message}`);
-    return { usersAffected: 0, actionsTaken: 0 };
-  }
-  if (!rows?.length) return { usersAffected: 0, actionsTaken: 0 };
-
-  // BOOTSTRAP-MEMORY-DAILY-LEARNING: memory_facts.embedding is a fixed
-  // vector(768) column (confirmed via pg_attribute on staging) — a
-  // DIFFERENT dimension from memory_items' vector(1536). Must use the
-  // dedicated 768-dim generator, never embedding-service.ts's
-  // generateBatchEmbeddings (hardcoded 1536 for memory_items — every
-  // write from that path was silently rejected by Postgres's dimension
-  // check; confirmed on staging: 100 valid 1536d vectors generated,
-  // 0 stored).
-  const { generateFactEmbeddings } = await import('../memory-facts-service');
-  const texts = (rows as Array<{ fact_key: string; fact_value: string }>).map(
-    (r) => `${r.fact_key}: ${r.fact_value}`,
-  );
-  const batch = await generateFactEmbeddings(texts);
-  if (!batch.ok || !batch.embeddings) {
-    ctx.log(`batch embedding failed: ${batch.error}`);
-    return { usersAffected: 0, actionsTaken: 0 };
-  }
-
-  let embedded = 0;
+  const { embedMemoryTexts, toPgVector } = await import('../memory-embedding');
   const nowIso = new Date().toISOString();
-  for (let i = 0; i < rows.length; i++) {
-    const vec = batch.embeddings[i];
-    if (!Array.isArray(vec)) continue;
-    const { error: upErr } = await repo.updateFactEmbedding(supabase, (rows[i] as { id: string }).id, {
-      embedding: JSON.stringify(vec),
-      embedding_model: batch.model || 'text-embedding-3-small',
-      embedding_updated_at: nowIso,
-    });
-    if (upErr) {
-      ctx.log(`embedding store failed for ${(rows[i] as { id: string }).id}: ${upErr.message}`);
-      continue;
-    }
-    embedded++;
-  }
 
-  await ctx.emitEvent('autopilot.memory.embeddings_backfilled', {
-    scanned: rows.length,
-    embedded,
-  });
+  const embedAndStore = async (
+    rows: Array<{ id: string; text: string }>,
+    store: (id: string, patch: { embedding: string; embedding_model: string; embedding_updated_at: string }) => Promise<{ error: { message: string } | null }>,
+    label: string,
+  ): Promise<{ embedded: number; failed: number }> => {
+    if (rows.length === 0) return { embedded: 0, failed: 0 };
+    const batch = await embedMemoryTexts(rows.map((r) => r.text));
+    if (!batch.ok || !batch.embeddings) {
+      ctx.log(`${label}: batch embedding failed: ${batch.error}`);
+      return { embedded: 0, failed: rows.length };
+    }
+    let embedded = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const vec = batch.embeddings[i];
+      if (!Array.isArray(vec)) continue;
+      const { error: upErr } = await store(rows[i].id, {
+        embedding: toPgVector(vec),
+        embedding_model: batch.model || 'amazon.titan-embed-text-v2:0',
+        embedding_updated_at: nowIso,
+      });
+      if (upErr) {
+        ctx.log(`${label}: embedding store failed for ${rows[i].id}: ${upErr.message}`);
+        continue;
+      }
+      embedded++;
+    }
+    return { embedded, failed: rows.length - embedded };
+  };
+
+  const { data: factRows, error: factErr } = await repo.fetchFactsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
+  if (factErr) ctx.log(`fact backlog scan failed: ${factErr.message}`);
+  const facts = await embedAndStore(
+    ((factRows ?? []) as Array<{ id: string; fact_key: string; fact_value: string }>).map((r) => ({
+      id: r.id,
+      text: `${r.fact_key}: ${r.fact_value}`,
+    })),
+    (id, patch) => repo.updateFactEmbedding(supabase, id, patch) as any,
+    'memory_facts',
+  );
+
+  const { data: itemRows, error: itemErr } = await repo.fetchMemoryItemsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
+  if (itemErr) ctx.log(`memory_items backlog scan failed: ${itemErr.message}`);
+  const items = await embedAndStore(
+    ((itemRows ?? []) as Array<{ id: string; content: string | null }>)
+      .filter((r) => (r.content ?? '').trim().length > 0)
+      .map((r) => ({ id: r.id, text: r.content as string })),
+    (id, patch) => repo.updateMemoryItemEmbedding(supabase, id, patch) as any,
+    'memory_items',
+  );
+
+  const embedded = facts.embedded + items.embedded;
+  if (embedded > 0 || facts.failed + items.failed > 0) {
+    await ctx.emitEvent('autopilot.memory.embeddings_backfilled', {
+      model: 'amazon.titan-embed-text-v2:0',
+      facts_embedded: facts.embedded,
+      facts_failed: facts.failed,
+      items_embedded: items.embedded,
+      items_failed: items.failed,
+    });
+  }
   return { usersAffected: 0, actionsTaken: embedded };
 }
 
@@ -688,16 +712,21 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   }
 
   const writeInsight = async (userId: string, key: string, value: string) => {
-    const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
-      p_tenant_id: tenantId,
-      p_user_id: userId,
-      p_fact_key: key,
-      p_fact_value: value,
-      p_entity: 'self',
-      p_fact_value_type: 'text',
-      p_provenance_source: 'system_observed',
-      p_provenance_confidence: 0.9,
-    });
+    const written = await rememberFact(
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        fact_key: key,
+        fact_value: value,
+        entity: 'self',
+        fact_value_type: 'text',
+        provenance_source: 'system_observed',
+        provenance_confidence: 0.9,
+        actor: 'memory-intelligence',
+      },
+      { client: supabase },
+    );
+    const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
     if (rpcErr) {
       ctx.log(`insight write ${key} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
       return false;
@@ -852,7 +881,63 @@ async function runOwnPostMemoryCapture(ctx: AutomationContext) {
   return { usersAffected: affectedUsers.size, actionsTaken };
 }
 
+// ── AP-0914: Daily Learning Episode (VTID-04391) ─────────────
+// One `daily_learning` memory_items episode per active user per local day,
+// written in the user's own evening (DAILY_LEARNING_LOCAL_HOUR). Small batch
+// + time budget, the AP-0911 pattern: users not reached this run are picked
+// up on the next hourly pass within the same local hour or skipped for the
+// day (the digest is a convenience, not a record).
+const DAILY_LEARNING_BATCH = 25;
+const DAILY_LEARNING_BUDGET_MS = 4 * 60 * 1000;
+
+async function runDailyLearningEpisodes(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const now = new Date();
+  const started = Date.now();
+  const dl = await import('../memory/daily-learning');
+  let candidates: string[] = [];
+  try {
+    candidates = await dl.findActiveUsers(supabase, tenantId, now);
+  } catch (err: any) {
+    ctx.log(`daily learning candidate scan failed: ${err?.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const counts: Record<string, number> = {};
+  let processed = 0;
+  let written = 0;
+  for (const userId of candidates) {
+    if (processed >= DAILY_LEARNING_BATCH || Date.now() - started > DAILY_LEARNING_BUDGET_MS) break;
+    try {
+      const tz = await getUserTimezone(supabase, userId, tenantId);
+      if (userLocalHour(now, tz) !== dl.DAILY_LEARNING_LOCAL_HOUR) continue;
+      const date = dl.localDate(now, tz);
+      if (await dl.hasDailyLearning(supabase, userId, date)) continue;
+      processed++;
+      const identity = { tenant_id: tenantId, user_id: userId };
+      const items = await dl.gatherDay(supabase, identity, date, tz, now);
+      const locale = await getUserLocale(supabase, userId);
+      const out = await dl.writeDailyLearning(supabase, identity, date, items, {
+        locale,
+        shadow: ctx.deliveryMode === 'shadow',
+      });
+      counts[out.status] = (counts[out.status] ?? 0) + 1;
+      if (out.status === 'written') written++;
+    } catch (err: any) {
+      counts.error = (counts.error ?? 0) + 1;
+      ctx.log(`daily learning failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+  await ctx.emitEvent('autopilot.memory.daily_learning_written', {
+    candidates: candidates.length,
+    processed,
+    written,
+    outcomes: counts,
+  });
+  return { usersAffected: written, actionsTaken: written };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
+  registerHandler('runDailyLearningEpisodes', runDailyLearningEpisodes);
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);
   registerHandler('runRelationshipGraphProjection', runRelationshipGraphProjection);

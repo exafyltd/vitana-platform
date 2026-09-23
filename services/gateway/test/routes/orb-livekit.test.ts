@@ -366,7 +366,7 @@ describe('orb-livekit routes', () => {
     mockGetSupabase.mockReturnValue(mockSupabase as any);
     mockToJwt.mockResolvedValue('mock.livekit.jwt');
     mockEmitOasisEvent.mockResolvedValue({ ok: true });
-    mockCommitSessionMemory.mockReturnValue({ committed: true, cognee_queued: true });
+    mockCommitSessionMemory.mockReturnValue({ committed: true });
     mockGetLiveKitCanaryConfig.mockResolvedValue({ enabled: false, allowedTenants: [], allowedUsers: [] });
     mockGetLiveKitAgentReadiness.mockResolvedValue({ enabled: false });
     mockBuildLiveSystemInstruction.mockReturnValue('MOCK_SYSTEM_INSTRUCTION');
@@ -1581,7 +1581,7 @@ describe('orb-livekit routes', () => {
     it('commits and emits an info-status OASIS event when the transcript is long enough', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
-      mockCommitSessionMemory.mockReturnValue({ committed: true, cognee_queued: true });
+      mockCommitSessionMemory.mockReturnValue({ committed: true });
 
       const res = await request(app)
         .post('/api/v1/orb/session/commit-memory')
@@ -1602,7 +1602,7 @@ describe('orb-livekit routes', () => {
     it('reports committed=false with a warning-status OASIS event for a too-short transcript', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
-      mockCommitSessionMemory.mockReturnValue({ committed: false, cognee_queued: false, reason: 'transcript_too_short' });
+      mockCommitSessionMemory.mockReturnValue({ committed: false, reason: 'transcript_too_short' });
 
       const res = await request(app)
         .post('/api/v1/orb/session/commit-memory')
@@ -1617,7 +1617,7 @@ describe('orb-livekit routes', () => {
       );
     });
 
-    it('defaults session_id to a userId-derived value when omitted', async () => {
+    it('defaults session_id to a unique userId-derived value when omitted (VTID-04365)', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
       const res = await request(app)
@@ -1626,7 +1626,11 @@ describe('orb-livekit routes', () => {
         .send({ transcript: 'A'.repeat(80) });
       expect(res.status).toBe(200);
       expect(mockCommitSessionMemory).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: `livekit-${uid.slice(0, 8)}` }),
+        expect.objectContaining({
+          sessionId: expect.stringMatching(new RegExp(`^livekit-${uid.slice(0, 8)}-\\d+$`)),
+          channel: 'livekit',
+          trigger: 'livekit_commit_memory',
+        }),
       );
     });
 
@@ -1647,7 +1651,7 @@ describe('orb-livekit routes', () => {
     it('treats a missing/non-string transcript as empty rather than throwing', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
-      mockCommitSessionMemory.mockReturnValue({ committed: false, cognee_queued: false, reason: 'transcript_too_short' });
+      mockCommitSessionMemory.mockReturnValue({ committed: false, reason: 'transcript_too_short' });
       const res = await request(app)
         .post('/api/v1/orb/session/commit-memory')
         .set('Authorization', `Bearer ${token}`)

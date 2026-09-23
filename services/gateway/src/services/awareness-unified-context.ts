@@ -24,7 +24,7 @@
 export type FirstNameSource = 'memory_facts' | 'app_users' | 'email' | 'none';
 
 export interface ResolveSpokenFirstNameInput {
-  /** memory_facts.user_name — the name the user told the assistant (Cognee). */
+  /** memory_facts.user_name — the name the user told the assistant (extracted fact). */
   memoryFactUserName?: string | null;
   /** app_users.display_name — provisioned at signup. */
   displayName?: string | null;

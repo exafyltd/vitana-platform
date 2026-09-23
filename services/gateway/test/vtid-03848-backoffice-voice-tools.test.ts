@@ -7,6 +7,9 @@ jest.mock('../src/services/backoffice/command-orchestrator', () => {
   const actual = jest.requireActual('../src/services/backoffice/command-orchestrator');
   return { ...actual, submitCommand: (...a: any[]) => mockSubmit(...a) };
 });
+const mockRecallCustomer = jest.fn();
+jest.mock('../src/services/memory/customer', () => ({ recallCustomerMemory: (...a: any[]) => mockRecallCustomer(...a) }));
+jest.mock('../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
 jest.mock('../src/services/backoffice/command-store', () => ({ getCommandStore: () => ({ listApprovals: (...a: any[]) => mockListApprovals(...a) }) }));
 
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES, BACKOFFICE_TOOL_SCHEMAS, type BackOfficeToolContext } from '../src/services/backoffice-voice-tools';
@@ -85,4 +88,27 @@ test('pending_approvals is read-only and marks the caller\'s own requests', asyn
 test('my_access reports capabilities and the voice ceiling', async () => {
   mockResolve.mockResolvedValue(access(['accounting.view'], 'admin'));
   expect(JSON.parse((await BACKOFFICE_TOOL_HANDLERS.backoffice_my_access(ctx(), {})).result)).toEqual({ role: 'admin', is_exafy_admin: false, capabilities: ['accounting.view'], voice_ceiling: 'draft' });
+});
+
+describe('VTID-04411 backoffice_customer_memory', () => {
+  const recall = mockRecallCustomer;
+  beforeEach(() => recall.mockReset());
+
+  test('needs a customer and crm.view or sales.view', async () => {
+    expect(await BACKOFFICE_TOOL_HANDLERS.backoffice_customer_memory(ctx(), {})).toMatchObject({ success: false, error: 'customer_required' });
+    mockResolve.mockResolvedValue(access(['finance.view']));
+    expect(await BACKOFFICE_TOOL_HANDLERS.backoffice_customer_memory(ctx(), { customer: 'Acme' })).toMatchObject({ success: false, error: expect.stringContaining('capability_required') });
+    expect(recall).not.toHaveBeenCalled();
+  });
+
+  test('reads the tenant\'s customer memory and says so when nothing is recorded', async () => {
+    mockResolve.mockResolvedValue(access(['crm.view']));
+    recall.mockResolvedValue([{ id: 'a', content: 'crm.task.create — Acme', command_type: 'crm.task.create', customer_key: 'customer:C1', occurred_at: '2026-09-23' }]);
+    const r = await BACKOFFICE_TOOL_HANDLERS.backoffice_customer_memory(ctx(), { customer: 'Acme', limit: 5 });
+    expect(r.success).toBe(true);
+    expect(JSON.parse(r.result)).toMatchObject({ customer: 'Acme', count: 1, entries: [{ when: '2026-09-23', what: 'crm.task.create — Acme' }] });
+    expect(recall.mock.calls[0].slice(1)).toEqual(['t1', 'Acme', { limit: 5 }]);
+    recall.mockResolvedValue([]);
+    expect(JSON.parse((await BACKOFFICE_TOOL_HANDLERS.backoffice_customer_memory(ctx(), { customer: 'Nobody' })).result).note).toContain('Nothing recorded');
+  });
 });

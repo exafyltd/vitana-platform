@@ -102,7 +102,7 @@
   },
   "dependencies": {
     "vtid_01155": "orb_live_vertex_pipeline (sibling)",
-    "vtid_01225": "cognee_extractor (transcript ingest)",
+    "vtid_01230": "session-end memory commit via POST /api/v1/orb/session/commit-memory (deduplicated fact extraction)",
     "voice_pipeline_spec": "voice-pipeline-spec/spec.json (parity contract)",
     "gateway_endpoints": [
       "GET /api/v1/orb/context-bootstrap",

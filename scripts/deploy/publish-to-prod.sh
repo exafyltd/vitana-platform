@@ -25,7 +25,7 @@
 # Options:
 #   --service <name>   Cloud Run service to deploy. Default: gateway.
 #                      Supported: gateway, oasis-operator, oasis-projector,
-#                      vitana-verification-engine, cognee-extractor, worker-runner.
+#                      vitana-verification-engine, worker-runner.
 #   --vtid <id>        VTID for governance. Use a real VTID-NNNNN when one
 #                      exists; otherwise BOOTSTRAP-<DESC> to bypass the ledger
 #                      existence check (e.g. BOOTSTRAP-PROD-HOTFIX).

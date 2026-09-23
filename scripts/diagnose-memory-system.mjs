@@ -60,8 +60,7 @@ async function diagnoseMemorySystem(userEmail) {
   } else if (!facts || facts.length === 0) {
     console.log(`❌ NO FACTS FOUND in memory_facts table`);
     console.log(`   This means:`);
-    console.log(`   - Cognee extraction may be disabled`);
-    console.log(`   - Cognee extraction may be failing`);
+    console.log(`   - Inline fact extraction (deduplicatedExtract) may be failing`);
     console.log(`   - write_fact() RPC may be failing\n`);
   } else {
     console.log(`✅ Found ${facts.length} structured facts:\n`);
@@ -97,36 +96,8 @@ async function diagnoseMemorySystem(userEmail) {
     console.log('');
   }
 
-  // Step 4: Check OASIS events for cognee extraction
-  console.log('📋 Step 4: Checking OASIS events for Cognee extraction...');
-  const { data: cogneeEvents, error: eventsError } = await supabase
-    .from('oasis_events')
-    .select('type, status, message, created_at, payload')
-    .like('type', '%cognee%')
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (eventsError) {
-    console.error(`❌ Error querying oasis_events: ${eventsError.message}\n`);
-  } else if (!cogneeEvents || cogneeEvents.length === 0) {
-    console.log(`❌ NO COGNEE EXTRACTION EVENTS FOUND`);
-    console.log(`   This strongly suggests Cognee extraction is DISABLED`);
-    console.log(`   Check if COGNEE_EXTRACTOR_URL environment variable is set in Gateway\n`);
-  } else {
-    console.log(`✅ Found ${cogneeEvents.length} recent Cognee events:\n`);
-    cogneeEvents.slice(0, 10).forEach((e, i) => {
-      console.log(`   ${i + 1}. [${e.status}] ${e.type}`);
-      console.log(`      ${e.message}`);
-      console.log(`      ${e.created_at}`);
-      if (e.payload) {
-        console.log(`      Payload: ${JSON.stringify(e.payload).substring(0, 100)}...`);
-      }
-    });
-    console.log('');
-  }
-
-  // Step 5: Check recent memory-related OASIS events
-  console.log('📋 Step 5: Checking OASIS events for memory operations...');
+  // Step 4: Check recent memory-related OASIS events
+  console.log('📋 Step 4: Checking OASIS events for memory operations...');
   const { data: memoryEvents, error: memEventsError } = await supabase
     .from('oasis_events')
     .select('type, status, message, created_at, payload')
@@ -148,8 +119,8 @@ async function diagnoseMemorySystem(userEmail) {
     console.log('');
   }
 
-  // Step 6: Check relationship graph (nodes and edges)
-  console.log('📋 Step 6: Checking relationship graph...');
+  // Step 5: Check relationship graph (nodes and edges)
+  console.log('📋 Step 5: Checking relationship graph...');
   const { data: nodes, error: nodesError } = await supabase
     .from('relationship_nodes')
     .select('id, node_type, title, domain, created_at')
@@ -161,7 +132,7 @@ async function diagnoseMemorySystem(userEmail) {
     console.error(`❌ Error querying relationship_nodes: ${nodesError.message}\n`);
   } else if (!nodes || nodes.length === 0) {
     console.log(`❌ NO RELATIONSHIP NODES FOUND`);
-    console.log(`   This confirms Cognee extraction is not persisting data\n`);
+    console.log(`   The nightly relationship-graph projection (AP-0909) has not produced nodes\n`);
   } else {
     console.log(`✅ Found ${nodes.length} relationship nodes:\n`);
     nodes.slice(0, 10).forEach((n, i) => {
@@ -178,39 +149,25 @@ async function diagnoseMemorySystem(userEmail) {
 
   const hasFacts = facts && facts.length > 0;
   const hasItems = items && items.length > 0;
-  const hasCogneeEvents = cogneeEvents && cogneeEvents.length > 0;
   const hasNodes = nodes && nodes.length > 0;
 
-  if (!hasFacts && !hasItems && !hasCogneeEvents && !hasNodes) {
+  if (!hasFacts && !hasItems && !hasNodes) {
     console.log('🔴 CRITICAL ISSUE: NO MEMORY DATA FOUND AT ALL');
     console.log('\nLikely causes:');
-    console.log('  1. COGNEE_EXTRACTOR_URL is not set in Gateway Cloud Run service');
-    console.log('  2. User has never had a conversation through Gateway');
-    console.log('  3. Memory persistence is completely broken');
+    console.log('  1. User has never had a conversation through Gateway');
+    console.log('  2. Memory persistence is completely broken');
     console.log('\nNext steps:');
-    console.log('  1. Check Cloud Run environment variables for Gateway');
+    console.log('  1. Check the Gateway ECS task definition environment');
     console.log('  2. Verify user is actually using the Gateway API (not direct frontend)');
     console.log('  3. Check Gateway logs for extraction errors');
-  } else if (!hasFacts && hasCogneeEvents) {
-    console.log('🟡 WARNING: Cognee extraction is running but NOT persisting facts');
+  } else if (!hasFacts) {
+    console.log('🟡 WARNING: memory items exist but NO facts are being persisted');
     console.log('\nLikely causes:');
     console.log('  1. write_fact() RPC is failing (check Supabase logs)');
-    console.log('  2. Cognee extractor is returning empty results');
-    console.log('  3. Persistence logic has bugs');
+    console.log('  2. inline-fact-extractor is returning empty results or its LLM stage is failing');
     console.log('\nNext steps:');
-    console.log('  1. Check OASIS events for "cognee.extraction.persisted" failures');
+    console.log('  1. Check Gateway logs for [VTID-01230] / inline-fact-extractor errors');
     console.log('  2. Check Supabase logs for write_fact() RPC errors');
-    console.log('  3. Review cognee-extractor-client.ts persistExtractionResults()');
-  } else if (!hasFacts && !hasCogneeEvents) {
-    console.log('🔴 CRITICAL: Cognee extraction is DISABLED or NOT RUNNING');
-    console.log('\nLikely causes:');
-    console.log('  1. COGNEE_EXTRACTOR_URL environment variable is not set');
-    console.log('  2. Cognee extractor service is down');
-    console.log('  3. Extraction is silently failing before HTTP call');
-    console.log('\nNext steps:');
-    console.log('  1. Set COGNEE_EXTRACTOR_URL in Gateway Cloud Run environment');
-    console.log('  2. Deploy Cognee extractor service if not deployed');
-    console.log('  3. Check Gateway logs for "Cognee Extractor URL not configured"');
   } else if (hasFacts) {
     console.log('🟢 Memory facts ARE being persisted correctly');
     console.log('\nPossible issues:');

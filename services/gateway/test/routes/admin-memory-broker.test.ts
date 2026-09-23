@@ -331,7 +331,8 @@ describe('GET /admin/memory/health', () => {
     const res = await request(app).get('/admin/memory/health').set('Authorization', 'Bearer valid-admin-token');
     expect(res.body.flags.memory_broker_enabled).toBe(true);
     expect(res.body.flags.consolidator_enabled).toBeNull();
-    expect(res.body.flags.cognee_extraction_enabled).toBe(false);
+    expect(res.body.flags.index_delta_learner_enabled).toBe(false);
+    expect(res.body.flags).not.toHaveProperty('cognee_extraction_enabled');
   });
 });
 

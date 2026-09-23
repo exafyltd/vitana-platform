@@ -70,9 +70,7 @@ import { getPersonalityConfigSync } from '../services/ai-personality-service';
 // Memory auto-write for conversation turns
 import { classifyCategory } from './memory';
 import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
-// VTID-01225: Cognee entity extraction from conversation turns
-import { cogneeExtractorClient } from '../services/cognee-extractor-client';
-// VTID-01225: Inline fact extraction fallback when Cognee is unavailable
+// VTID-01225: Inline fact extraction (sole extraction path since VTID-04344)
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01230: Session buffer for short-term memory + extraction dedup
 import { addTurn as addSessionTurn } from '../services/session-memory-buffer';
@@ -704,25 +702,9 @@ ${channelInstructions}`;
     }
 
     // Step 6: VTID-01225 - Fire-and-forget fact extraction from conversation
-    // Primary: Cognee extractor service (full entity/relationship/signal extraction)
-    // Fallback: Inline Gemini extraction (structured facts only, no graph)
+    // via the deduplicated inline extractor (structured facts).
     const conversationText = `User: ${message.text}\nAssistant: ${reply}`;
     if (conversationText.length > 50) {
-      if (cogneeExtractorClient.isEnabled()) {
-        try {
-          cogneeExtractorClient.extractAsync({
-            transcript: conversationText,
-            tenant_id,
-            user_id,
-            session_id: thread.thread_id,
-            active_role: role,
-          });
-          console.log(`[VTID-01225] Cognee extraction queued for conversation turn: ${thread.thread_id}`);
-        } catch (cogneeError: any) {
-          console.warn(`[VTID-01225] Cognee extraction trigger failed:`, cogneeError.message);
-        }
-      }
-
       // VTID-01230: Deduplicated inline fact extraction (replaces raw extractAndPersistFacts)
       // Prevents redundant Gemini API calls when the same text is processed multiple times
       const extractResult = deduplicatedExtract({
@@ -984,15 +966,6 @@ Instructions:
 
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
-        if (cogneeExtractorClient.isEnabled()) {
-          cogneeExtractorClient.extractAsync({
-            transcript: streamedText,
-            tenant_id: input.tenant_id,
-            user_id: input.user_id,
-            session_id: thread.thread_id,
-            active_role: input.role,
-          });
-        }
         deduplicatedExtract({
           conversationText: streamedText,
           tenant_id: input.tenant_id,

@@ -1,92 +1,85 @@
 /**
- * memory-facts-service — 768-dim fact-embedding generator
- * (BOOTSTRAP-MEMORY-DAILY-LEARNING)
+ * VTID-04342 — fact embeddings use the single memory embedder:
+ * Amazon Titan Text Embeddings V2 (1024-dim) via Bedrock.
  *
- * memory_facts.embedding is a FIXED vector(768) column (confirmed via
- * pg_attribute.atttypmod on staging 2026-07-06) — a different dimension
- * from memory_items.embedding's vector(1536) (embedding-service.ts,
- * VTID-01978). Before this fix, generateFactEmbeddingAsync reused the
- * shared 1536-dim embedding-service, and every OpenAI-generated embedding
- * was silently rejected by Postgres's vector-dimension check on write —
- * confirmed on staging: a batch of 100 valid 1536d vectors generated, 0
- * stored. These tests lock in the dimension-correct behavior: OpenAI is
- * requested at native 768d (the `dimensions` param), Gemini's
- * text-embedding-004 (native 768d) is the fallback.
+ * Replaces the BOOTSTRAP-MEMORY-DAILY-LEARNING OpenAI → Gemini 768-dim path.
+ * Neither key exists on AWS, so no fact had been embedded since 2026-04-28,
+ * and the Gemini leg was a standing Google-dependency violation. These tests
+ * pin: Titan is the only provider, no OpenAI/Google HTTP call is ever made,
+ * and a per-text failure comes back as a null slot (so AP-0910 stores the
+ * rest and retries that one) rather than failing the batch.
  */
 
-process.env.OPENAI_API_KEY = 'test-openai-key';
-process.env.GOOGLE_GEMINI_API_KEY = 'test-gemini-key';
+const mockDevEmbed = jest.fn();
+jest.mock('../../src/services/dev-memory-embedding', () => ({
+  generateDevMemoryEmbedding: (...args: unknown[]) => mockDevEmbed(...args),
+}));
 
-const fetchCalls: Array<{ url: string; body: any }> = [];
-let openaiOk = true;
-let openaiEmbeddings = [[0.1, 0.2, 0.3]];
-
-global.fetch = jest.fn(async (url: any, opts: any) => {
-  const body = opts?.body ? JSON.parse(opts.body) : undefined;
-  fetchCalls.push({ url: String(url), body });
-
-  if (String(url).includes('api.openai.com/v1/embeddings')) {
-    if (!openaiOk) return { ok: false, status: 500, text: async () => 'openai down' } as any;
-    return {
-      ok: true,
-      json: async () => ({ data: openaiEmbeddings.map((embedding) => ({ embedding })) }),
-    } as any;
-  }
-  if (String(url).includes('generativelanguage.googleapis.com')) {
-    return {
-      ok: true,
-      json: async () => ({ embedding: { values: [0.9, 0.8, 0.7] } }),
-    } as any;
-  }
+const fetchCalls: string[] = [];
+global.fetch = jest.fn(async (url: any) => {
+  fetchCalls.push(String(url));
   return { ok: false, status: 404, text: async () => 'not found' } as any;
 }) as any;
 
 import { generateFactEmbeddings } from '../../src/services/memory-facts-service';
+import {
+  embedMemoryText,
+  MEMORY_EMBEDDING_DIMENSIONS,
+  MEMORY_EMBEDDING_MODEL,
+} from '../../src/services/memory-embedding';
 
-describe('generateFactEmbeddings', () => {
+const vec = (v: number) => new Array(1024).fill(v);
+
+describe('generateFactEmbeddings (Titan V2)', () => {
   beforeEach(() => {
     fetchCalls.length = 0;
-    openaiOk = true;
-    openaiEmbeddings = [[0.1, 0.2, 0.3]];
+    mockDevEmbed.mockReset();
+    mockDevEmbed.mockResolvedValue({ ok: true, embedding: vec(0.1), model: MEMORY_EMBEDDING_MODEL, latency_ms: 5 });
   });
 
-  it('requests native 768-dim output from OpenAI (not a post-hoc truncation)', async () => {
-    const result = await generateFactEmbeddings(['user_name: Dragan']);
+  it('pins the model and dimension', () => {
+    expect(MEMORY_EMBEDDING_MODEL).toBe('amazon.titan-embed-text-v2:0');
+    expect(MEMORY_EMBEDDING_DIMENSIONS).toBe(1024);
+  });
+
+  it('embeds with Titan and never calls OpenAI or Google', async () => {
+    const result = await generateFactEmbeddings(['user_name: Dragan', 'child_name: Mia']);
     expect(result.ok).toBe(true);
-    expect(result.model).toBe('text-embedding-3-small');
-    const call = fetchCalls.find((c) => c.url.includes('api.openai.com'));
-    expect(call).toBeDefined();
-    expect(call!.body.dimensions).toBe(768);
-    expect(call!.body.model).toBe('text-embedding-3-small');
+    expect(result.model).toBe('amazon.titan-embed-text-v2:0');
+    expect(result.embeddings).toHaveLength(2);
+    expect(mockDevEmbed).toHaveBeenCalledWith('user_name: Dragan');
+    expect(mockDevEmbed).toHaveBeenCalledWith('child_name: Mia');
+    expect(fetchCalls.filter((u) => /openai|googleapis/.test(u))).toEqual([]);
   });
 
   it('returns [] immediately for an empty input array without calling any provider', async () => {
     const result = await generateFactEmbeddings([]);
     expect(result).toEqual({ ok: true, embeddings: [] });
-    expect(fetchCalls.length).toBe(0);
+    expect(mockDevEmbed).not.toHaveBeenCalled();
   });
 
-  it('falls back to Gemini text-embedding-004 (native 768d) when OpenAI fails', async () => {
-    openaiOk = false;
-    const result = await generateFactEmbeddings(['user_name: Dragan']);
+  it('keeps order and returns null for the one text that failed', async () => {
+    mockDevEmbed
+      .mockResolvedValueOnce({ ok: true, embedding: vec(0.1), model: MEMORY_EMBEDDING_MODEL, latency_ms: 5 })
+      .mockResolvedValueOnce({ ok: false, error: 'invoke_failed', message: 'throttled' })
+      .mockResolvedValueOnce({ ok: true, embedding: vec(0.3), model: MEMORY_EMBEDDING_MODEL, latency_ms: 5 });
+    const result = await generateFactEmbeddings(['a', 'b', 'c']);
     expect(result.ok).toBe(true);
-    expect(result.model).toBe('text-embedding-004');
-    expect(result.embeddings).toEqual([[0.9, 0.8, 0.7]]);
+    expect(result.embeddings![0]![0]).toBe(0.1);
+    expect(result.embeddings![1]).toBeNull();
+    expect(result.embeddings![2]![0]).toBe(0.3);
   });
 
-  it('reports failure when both providers fail', async () => {
-    openaiOk = false;
-    process.env.GOOGLE_GEMINI_API_KEY = '';
-    const result = await generateFactEmbeddings(['x']);
+  it('reports failure when every text fails (e.g. Bedrock not configured)', async () => {
+    mockDevEmbed.mockResolvedValue({ ok: false, error: 'not_configured', message: 'BEDROCK_ROLE_ARN env var not set' });
+    const result = await generateFactEmbeddings(['x', 'y']);
     expect(result.ok).toBe(false);
-    process.env.GOOGLE_GEMINI_API_KEY = 'test-gemini-key';
+    expect(result.error).toContain('not_configured');
   });
 
-  it('fails when OpenAI returns fewer embeddings than requested texts', async () => {
-    openaiEmbeddings = [[0.1, 0.2, 0.3]]; // only 1, but we ask for 2
-    const result = await generateFactEmbeddings(['a', 'b']);
-    // Falls through to Gemini (looped one-by-one) since the OpenAI count mismatched.
-    expect(result.ok).toBe(true);
-    expect(result.model).toBe('text-embedding-004');
+  it('embedMemoryText rejects empty text without calling Bedrock', async () => {
+    const result = await embedMemoryText('   ');
+    expect(result.ok).toBe(false);
+    expect(mockDevEmbed).not.toHaveBeenCalled();
   });
 });

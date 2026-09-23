@@ -748,7 +748,8 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runMemoryInformedMatching',
   },
   {
-    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts)
+    // Audit-only: the real extraction pipeline (inline-fact-extractor.ts via
+    // extraction-dedup-manager deduplicatedExtract)
     // already runs outside the registry per session end; no
     // 'orb.session.ended' event is dispatched to trigger this today.
     id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',
@@ -883,6 +884,17 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     triggerConfig: { cronExpression: '15 * * * *' }, // hourly at :15
     targetRoles: [...MEMBER_ROLES],
     handler: 'runOwnPostMemoryCapture',
+  },
+  {
+    // VTID-04391: one daily_learning episode per active user per local day
+    // (diary + session summaries + new facts, condensed by the memory
+    // stage). Hourly; each user is processed in their own local 22:xx hour,
+    // at most once per date (unique index), 25 users / 4 minutes per run.
+    id: 'AP-0914', name: 'Daily Learning Episode', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '45 * * * *' }, // hourly at :45
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningEpisodes',
   },
 ];
 

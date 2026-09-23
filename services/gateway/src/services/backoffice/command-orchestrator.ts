@@ -17,8 +17,28 @@ import { getErpBridgeClient, type BridgeResult } from './erp-bridge-client';
 import { resolveEntities } from './entity-resolution';
 import { getCommandStore, type CommandRow, type CommandStore } from './command-store';
 import { emitOasisEvent } from '../oasis-event-service';
+import { getSupabase } from '../../lib/supabase';
+import { recordCustomerEpisode } from '../memory/customer';
 
 const VTID = 'VTID-03842';
+
+/**
+ * VTID-04411: an executed CRM/sales command about a customer leaves a
+ * customer-scoped memory episode. Fire-and-forget; never affects the result.
+ */
+function rememberForCustomer(done: CommandRow): void {
+  if (done.status !== 'executed') return;
+  void (async () => {
+    try {
+      const sb = getSupabase();
+      if (!sb) return;
+      const out = await recordCustomerEpisode(sb, done);
+      if (out.status === 'write_failed') console.warn(`[backoffice] customer memory write failed for ${done.id}: ${out.error}`);
+    } catch (err) {
+      console.warn('[backoffice] customer memory write threw:', err instanceof Error ? err.message : err);
+    }
+  })();
+}
 
 export interface OrchestratorCaller {
   user_id: string;
@@ -202,6 +222,7 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
   const row = await store.insertCommand({ ...base, status: 'failed', reason: 'in_progress' });
   const outcome = await runOnBridge(row, params);
   const done = await store.updateCommand(row.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? new Date().toISOString() : null });
+  rememberForCustomer(done);
   await audit(store, caller, access, channel, outcome.status === 'executed' ? 'command.executed' : 'command.failed', row.id, null, { type: spec.type, tier: decision.tier, escalations: decision.escalations, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }
@@ -232,6 +253,7 @@ export async function decideApproval(caller: OrchestratorCaller, access: Effecti
   await store.updateApproval(approval.id, { status: 'approved', decided_by: caller.user_id, decided_at: now, decision_note: note });
   const outcome = await runOnBridge(command, (command.resolved_payload ?? command.payload) as Record<string, unknown>, { id: approval.id, approver: caller.user_id, requester: approval.requester_id });
   const done = await store.updateCommand(command.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? now : null });
+  rememberForCustomer(done);
   await audit(store, caller, access, channel, 'approval.approved', command.id, approval.id, { note, requester_id: approval.requester_id, outcome: outcome.status, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }

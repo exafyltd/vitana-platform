@@ -156,9 +156,9 @@ function memFactRow(overrides: Record<string, any> = {}) {
     fact_value: 'blue',
     fact_value_type: 'text',
     entity: 'self',
-    confidence: 0.95,
-    actor_id: 'user_stated',
-    asserted_at: '2026-07-01T00:00:00Z',
+    provenance_confidence: 0.95,
+    provenance_source: 'user_stated',
+    extracted_at: '2026-07-01T00:00:00Z',
     ...overrides,
   };
 }
@@ -353,9 +353,9 @@ describe('memory-broker IDENTITY block (fetchIdentityBlock)', () => {
 // ---------------------------------------------------------------------------
 
 describe('memory-broker SEMANTIC block (fetchSemanticBlock)', () => {
-  it('maps mem_facts rows into SemanticFact entries', async () => {
-    supabaseMock.setTable('mem_facts', {
-      data: [memFactRow(), memFactRow({ id: 'fact-2', fact_key: 'user_pet', fact_value: 'dog', confidence: null })],
+  it('maps memory_facts rows into SemanticFact entries (VTID-04366)', async () => {
+    supabaseMock.setTable('memory_facts', {
+      data: [memFactRow(), memFactRow({ id: 'fact-2', fact_key: 'user_pet', fact_value: 'dog', provenance_confidence: null })],
       error: null,
     });
 
@@ -363,7 +363,7 @@ describe('memory-broker SEMANTIC block (fetchSemanticBlock)', () => {
     const block = pack.blocks.SEMANTIC as any;
 
     expect(block).toBeDefined();
-    expect(block.source).toBe('mem_facts');
+    expect(block.source).toBe('memory_facts');
     expect(block.facts).toHaveLength(2);
     expect(block.facts[0]).toEqual({
       id: 'fact-1',
@@ -379,21 +379,21 @@ describe('memory-broker SEMANTIC block (fetchSemanticBlock)', () => {
     expect(block.facts[1].confidence).toBe(1.0);
   });
 
-  it('only reads active (valid_to IS NULL) facts', async () => {
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+  it('only reads current (superseded_at IS NULL) facts', async () => {
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     await getMemoryContext({ ...BASE_INPUT, required_blocks: ['SEMANTIC'] });
 
-    const call = supabaseMock.calls.find((c) => c.table === 'mem_facts');
+    const call = supabaseMock.calls.find((c) => c.table === 'memory_facts');
     expect(call?.filters).toMatchObject({
       tenant_id: TENANT_A,
       user_id: USER_B,
-      valid_to: null,
+      superseded_at: null,
     });
   });
 
   it('omits the SEMANTIC block on error without marking the pack degraded', async () => {
-    supabaseMock.setTable('mem_facts', { data: null, error: { message: 'timeout' } });
+    supabaseMock.setTable('memory_facts', { data: null, error: { message: 'timeout' } });
 
     const pack = await getMemoryContext({ ...BASE_INPUT, required_blocks: ['SEMANTIC'] });
 
@@ -402,7 +402,7 @@ describe('memory-broker SEMANTIC block (fetchSemanticBlock)', () => {
   });
 
   it('returns an empty (not missing) SEMANTIC block when the user has no facts yet', async () => {
-    supabaseMock.setTable('mem_facts', { data: [], error: null });
+    supabaseMock.setTable('memory_facts', { data: [], error: null });
 
     const pack = await getMemoryContext({ ...BASE_INPUT, required_blocks: ['SEMANTIC'] });
     const block = pack.blocks.SEMANTIC as any;
@@ -419,7 +419,7 @@ describe('memory-broker SEMANTIC block (fetchSemanticBlock)', () => {
 describe('memory-broker tenant/user isolation', () => {
   it('two different tenants for the same user_id produce independently-scoped reads', async () => {
     supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     await getMemoryContext({
       ...BASE_INPUT,
@@ -435,13 +435,13 @@ describe('memory-broker tenant/user isolation', () => {
     });
 
     const appUsersCalls = supabaseMock.calls.filter((c) => c.table === 'app_users');
-    const factsCalls = supabaseMock.calls.filter((c) => c.table === 'mem_facts');
+    const factsCalls = supabaseMock.calls.filter((c) => c.table === 'memory_facts');
     expect(appUsersCalls.map((c) => c.filters.tenant_id)).toEqual(['tenant-1', 'tenant-2']);
     expect(factsCalls.map((c) => c.filters.tenant_id)).toEqual(['tenant-1', 'tenant-2']);
   });
 
   it('never queries with a merged/undefined tenant_id or user_id', async () => {
-    supabaseMock.setTable('mem_facts', { data: [], error: null });
+    supabaseMock.setTable('memory_facts', { data: [], error: null });
 
     await getMemoryContext({
       ...BASE_INPUT,
@@ -450,7 +450,7 @@ describe('memory-broker tenant/user isolation', () => {
       required_blocks: ['SEMANTIC'],
     });
 
-    const call = supabaseMock.calls.find((c) => c.table === 'mem_facts');
+    const call = supabaseMock.calls.find((c) => c.table === 'memory_facts');
     expect(call?.filters.tenant_id).toBe('tenant-only');
     expect(call?.filters.user_id).toBe('user-only');
     expect(call?.filters.tenant_id).not.toBeUndefined();
@@ -465,7 +465,7 @@ describe('memory-broker tenant/user isolation', () => {
 describe('memory-broker pack composition', () => {
   it('default block selection for the "identity" intent is exactly IDENTITY + SEMANTIC', async () => {
     supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     const pack = await getMemoryContext({ ...BASE_INPUT, intent: 'identity' });
 
@@ -475,7 +475,7 @@ describe('memory-broker pack composition', () => {
 
   it('required_blocks overrides the intent default — unrequested blocks are never fetched', async () => {
     supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     const pack = await getMemoryContext({
       ...BASE_INPUT,
@@ -488,7 +488,7 @@ describe('memory-broker pack composition', () => {
   });
 
   it('pack_size_bytes reflects the exact serialized size of the returned blocks', async () => {
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     const pack = await getMemoryContext({ ...BASE_INPUT, required_blocks: ['SEMANTIC'] });
 
@@ -498,14 +498,14 @@ describe('memory-broker pack composition', () => {
 
   it('streams_hit lists the underlying source name for every block actually returned', async () => {
     supabaseMock.setTable('app_users', { data: appUsersRow(), error: null });
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     const pack = await getMemoryContext({
       ...BASE_INPUT,
       required_blocks: ['IDENTITY', 'SEMANTIC'],
     });
 
-    expect(pack.meta.streams_hit.sort()).toEqual(['app_users', 'mem_facts']);
+    expect(pack.meta.streams_hit.sort()).toEqual(['app_users', 'memory_facts']);
   });
 
   it('a block whose fetch exceeds latency_budget_ms is dropped and the pack is marked degraded', async () => {
@@ -526,7 +526,7 @@ describe('memory-broker pack composition', () => {
 
   it('a fast block still succeeds even when another required block times out', async () => {
     supabaseMock.setTable('app_users', { data: appUsersRow(), error: null }, 150);
-    supabaseMock.setTable('mem_facts', { data: [memFactRow()], error: null });
+    supabaseMock.setTable('memory_facts', { data: [memFactRow()], error: null });
 
     const pack = await getMemoryContext({
       ...BASE_INPUT,

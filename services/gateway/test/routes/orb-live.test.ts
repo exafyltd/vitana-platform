@@ -47,7 +47,7 @@ jest.mock('../../src/services/orb-memory-bridge', () => ({
   getDebugSnapshot: jest.fn(),
   writeDevMemoryItem: jest.fn(),
   writeMemoryItemWithIdentity: jest.fn().mockResolvedValue({ ok: true }),
-  fetchRecentConversationForCognee: jest.fn(),
+  fetchRecentConversationTranscript: jest.fn(),
   fetchRecentOrbUserTurns: jest.fn().mockResolvedValue([]),
   formatRecentTurnsBlock: jest.fn(() => ''),
   DEV_IDENTITY: {
