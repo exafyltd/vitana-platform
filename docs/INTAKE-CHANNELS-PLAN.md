@@ -72,9 +72,9 @@ report-back reconciler.
 | 2 | VTID-04308 | "Approve & Fix" dispatches; VTID per dispatched ticket (`linked_vtid`); feedback lane obeys the kill switch | done — PR #3595 (`a24a674`) |
 | 3 | VTID-04309 | Command Hub voice turns recorded into the Operator Console thread; not copied into the community inbox | done — PR #3596 (`7763609`) |
 | 4 | VTID-04310 | Command Hub voice: one operator-delegation tool (same gate + hold as `autopilot_run_task`), surface-gated developer catalog, persona prompt update | done — PR #3596 (`7763609`) |
-| 5 | VTID-04311 | LLM spec drafting at triage for bug/ux; dispatch refuses placeholder specs | in review (steps 5+6 PR) |
-| 6 | VTID-04312 | Notify the reporter on resolved (tt() catalog); resolution in `/mine` | in review (steps 5+6 PR) |
-| 7 | VTID-04313 | Diary recorders → `feedback_tickets`, retire `user_feedback_reports`; root-cause the intake silence since 2026-07-11 | pending |
+| 5 | VTID-04311 | LLM spec drafting at triage for bug/ux; dispatch refuses placeholder specs | done — PR #3597 (`471f154`) |
+| 6 | VTID-04312 | Notify the reporter on resolved (tt() catalog); resolution in `/mine` | done — PR #3597 (`471f154`) |
+| 7 | VTID-04313 | Diary recorders → `feedback_tickets`, retire `user_feedback_reports`; root-cause the intake silence since 2026-07-11 | code done — `exafyltd/vitana-v1` PR #1125 (`80e87e6`); legacy-row copy and live verification open (see notes) |
 
 ### Step details
 
@@ -137,4 +137,32 @@ report-back reconciler.
   EN/DE fallback until its catalog is translated through the audit workflow
   (the catalog guard requires `ar` to stay honestly incomplete).
 - **Step 6 frontend follow-up (step 7 PR, `exafyltd/vitana-v1`):** Talk to
-  Vitana should render `resolution_md` / `answer_md` from `/mine`.
+  Vitana should render `resolution_md` / `answer_md` from `/mine`. Done in
+  #1125.
+- **Step 7, what shipped (#1125):** the diary recorder and the capture card
+  post to `POST /api/v1/feedback/tickets` (kind `bug`/`ux_issue`, severity and
+  attachments in `structured_fields`); the report list reads both the legacy
+  rows and `feedback_tickets`; Talk to Vitana shows the answer/resolution.
+- **Step 7, intake silence, what was found (read-only):** every one of the 42
+  recent tickets is `surface=community` and came from voice; there has never
+  been a `support`-surface ticket; `report_to_specialist` was called 0 times
+  in the last 60 days out of about 140 logged voice tool calls. DB
+  constraints and RLS accept inserts; staging has `SUPABASE_ANON_KEY`, prod
+  is unverified. One real contributor was fixed: Talk to Vitana crashed for
+  anyone with a ticket (`t is not a function` — the ticket map shadowed the
+  translate function; `tsc` on `main` already reported it), so reporters
+  never saw their tickets. Not reproduced end to end: posting a ticket as the
+  test user would write to production (CLAUDE.md rule 31).
+- **Step 7, open:** the 5 legacy `user_feedback_reports` rows were NOT copied
+  into `feedback_tickets` — they are real members' reports, and a copied bug
+  ticket could be approved into a real execution; the owner decides.
+- **2026-09-22 ~22:26 UTC — AWS account block.** Staging ECS `vitana-gateway`
+  cannot place tasks ("unable to place a task because your account is
+  currently blocked"); stage deploy runs #548-#550 failed, staging still
+  serves `e09eb26`, so steps 3-6 are merged but NOT live on staging (the new
+  `/operator/threads/:id/messages` route returns an HTML 404 there). Prod
+  gateway and community app were running 1/1 but cannot replace a task while
+  the block lasts. Needs the account owner (AWS billing/support). After it
+  clears: confirm staging build-info on the merge commit and a JSON 401 from
+  `GET /api/v1/operator/threads/<uuid>/messages`, then terminalize
+  VTID-04306..04313.
