@@ -321,6 +321,7 @@ Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by 
   - `ai_memory` and diary entries copied into `memory_items` (applied live).
   - Category counting fixed (D4, D5).
   - The Garden no longer calls the Gemini edge functions. `ai-chat` (health coach) still uses them: part of D12 remains.
+- [x] **Forgetting sticks (VTID-04441).** Deleting a fact in the Garden first records one `memory_fact_forgotten` marker per value (sha256 of the normalised value; the value is not kept). `rememberFact()` refuses an inferred write of a forgotten value, still learns a different value for the key, and clears the marker when the user states it again. A marker store that fails lets the write through and logs.
 - [x] All 5 diary writers go through one endpoint, `POST /api/v1/memory/diary/entries`: diary row, memory episode and Index sync (VTID-04390).
 - [x] Nightly `daily_learning` episode per active user (AP-0914, the user's local 22:00), and the real "Daily summary" screen replacing the mock (VTID-04391). The scheduler is the owner-run EventBridge `--apply`.
 - [x] Raw transcripts go to `memory_transcript_turns` with a 90-day pg_cron purge; the last 90 days were backfilled (VTID-04387).

@@ -40,7 +40,10 @@ describe('rememberFact', () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => 'fact-1' });
     const r = await rememberFact(base, { embed: false });
     expect(r).toEqual({ ok: true, fact_id: 'fact-1' });
-    const [url, init] = mockFetch.mock.calls[0];
+    // VTID-04441: the forgotten-marker read comes first; the write is the RPC call.
+    const call = mockFetch.mock.calls.find(([u]: any[]) => String(u).endsWith('/rpc/write_fact'));
+    expect(call).toBeDefined();
+    const [url, init] = call!;
     expect(url).toBe('http://localhost:54321/rest/v1/rpc/write_fact');
     expect(init.headers).toMatchObject({ apikey: 'svc-key', Authorization: 'Bearer svc-key' });
     expect(JSON.parse(init.body)).toEqual(buildWriteFactPayload(base));
