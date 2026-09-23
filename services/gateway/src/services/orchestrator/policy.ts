@@ -73,6 +73,12 @@ export const ORG_ROLE_CEILINGS: Readonly<Record<string, PolicyTier>> = Object.fr
   owner: 'commit',
   admin: 'commit',
   member: 'draft',
+  // VTID-04400: the roles partner_organization_members actually stores
+  // (routes/partner-orgs.ts ORG_ROLES). Without them every real membership
+  // resolved to 'none' and no commerce agent could ever run.
+  org_admin: 'commit',
+  staff: 'draft',
+  professional: 'draft',
 });
 
 function minTier(a: PolicyTier, b: PolicyTier): PolicyTier {

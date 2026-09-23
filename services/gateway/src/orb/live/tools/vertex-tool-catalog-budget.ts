@@ -166,6 +166,8 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
  */
 export const FLAG_GATED_PRIORITY_TOOLS: readonly string[] = [
   'ask_support_specialist',
+  // VTID-04400: the business ORB's commerce specialist (ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED).
+  'ask_commerce_specialist',
   'get_delegation_result',
   'cancel_delegation',
 ];

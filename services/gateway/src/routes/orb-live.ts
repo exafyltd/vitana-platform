@@ -6729,6 +6729,12 @@ async function executeLiveApiToolInner(
         return await runAskSupportSpecialist(session, args ?? {});
       }
 
+      // VTID-04400: business ORB → the commerce onboarding specialist.
+      case 'ask_commerce_specialist': {
+        const { runAskCommerceSpecialist } = await import('../orb/live/tools/delegation-tools');
+        return await runAskCommerceSpecialist(session, args ?? {});
+      }
+
       case 'get_delegation_result': {
         const { runGetDelegationResult } = await import('../orb/live/tools/delegation-tools');
         return runGetDelegationResult(session, args ?? {});
