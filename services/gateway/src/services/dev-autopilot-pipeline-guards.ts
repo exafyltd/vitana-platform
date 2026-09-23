@@ -103,3 +103,48 @@ export function chunkIds(ids: string[], size = 50): string[][] {
   for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
   return out;
 }
+
+/**
+ * VTID-04376: the concurrency cap bounds agent tasks, not the post-merge tail.
+ *
+ * `countRunningExecutions` counted running + ci + merging + deploying +
+ * verifying against `dev_autopilot_config.concurrency_cap` (default 2), so two
+ * rows parked in `verifying` (a 5-minute window) or waiting on CI blocked every
+ * new dispatch (recovery doc 2026-09-21, item 10). The cap exists to bound
+ * agent runs and LLM spend; CI, merges and deploys cost neither. The tail keeps
+ * its own, larger bound so a burst of merges cannot pile onto `main` unchecked.
+ */
+export const POST_MERGE_TAIL_STATUSES = ['ci', 'merging', 'deploying', 'verifying'] as const;
+export const DEFAULT_TAIL_CAP = 8;
+
+export function resolveTailCap(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.DEV_AUTOPILOT_TAIL_CAP);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_TAIL_CAP;
+}
+
+export interface PipelineCounts { cooling: number; running: number; tail: number }
+
+export function countPipelineStatuses(rows: Array<{ status: string }> | null | undefined): PipelineCounts {
+  const c: PipelineCounts = { cooling: 0, running: 0, tail: 0 };
+  for (const r of rows || []) {
+    if (r.status === 'cooling') c.cooling++;
+    else if (r.status === 'running') c.running++;
+    else if ((POST_MERGE_TAIL_STATUSES as readonly string[]).includes(r.status)) c.tail++;
+  }
+  return c;
+}
+
+/**
+ * Free slots for a tick. `claim` counts only agents already running (a cooling
+ * row is what gets claimed); `approve` also counts the cooling queue so
+ * auto-approve does not stack more work than the cap can run.
+ */
+export function pipelineSlots(
+  kind: 'claim' | 'approve',
+  counts: PipelineCounts,
+  concurrencyCap: number,
+  tailCap: number = DEFAULT_TAIL_CAP,
+): number {
+  const agents = kind === 'claim' ? counts.running : counts.running + counts.cooling;
+  return Math.max(0, Math.min(concurrencyCap - agents, tailCap - counts.tail));
+}

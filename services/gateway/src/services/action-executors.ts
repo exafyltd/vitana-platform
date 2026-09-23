@@ -9,6 +9,7 @@ import { registerActionExecutor } from './consent-gate';
 import { getSupabase } from '../lib/supabase';
 import { emitClickOutbound } from './reward-events';
 import * as repo from './action-executors-repository';
+import { CALENDAR_EVENT_TYPES } from '../types/calendar';
 
 export function registerAllActionExecutors(): void {
   // ---- shopping_add_to_list ----
@@ -124,13 +125,21 @@ export function registerAllActionExecutors(): void {
     const duration_minutes = typeof args.duration_minutes === 'number' ? args.duration_minutes : 30;
     const end_time = new Date(new Date(start_time).getTime() + duration_minutes * 60000).toISOString();
 
+    // VTID-04321: calendar_events has no tenant_id column (writing one made
+    // every insert fail), and event_type is CHECK-constrained, so an
+    // unrecognised value falls back to wellness_nudge instead of a 400.
+    const event_type =
+      typeof args.event_type === 'string' && (CALENDAR_EVENT_TYPES as readonly string[]).includes(args.event_type)
+        ? args.event_type
+        : 'wellness_nudge';
+
     const { data, error } = await repo.insertCalendarEvent(supabase, {
-      tenant_id: ctx.tenant_id,
       user_id: ctx.user_id,
       title,
       start_time,
       end_time,
-      event_type: typeof args.event_type === 'string' ? args.event_type : 'wellness_nudge',
+      event_type,
+      source_type: 'assistant',
       wellness_tags: Array.isArray(args.wellness_tags) ? args.wellness_tags : [],
     });
 

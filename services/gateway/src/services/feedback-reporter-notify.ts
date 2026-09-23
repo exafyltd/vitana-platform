@@ -67,7 +67,13 @@ export async function notifyFeedbackReporter(
     const r = await (deps.notify ?? notifyUser)(t.user_id, tenantId, 'feedback_ticket_resolved', {
       title: tt('notif.feedback_resolved.title', lc),
       body: tt('notif.feedback_resolved.body', lc, { ticket: ticketLabel }),
-      data: { type: 'feedback_ticket_resolved', ticket_id: t.id, url: '/comm/talk-to-vitana' },
+      // VTID-04383: the push tap opens data.url as-is (service worker), so the
+      // ticket must be in the url itself, not only in ticket_id.
+      data: {
+        type: 'feedback_ticket_resolved',
+        ticket_id: t.id,
+        url: `/comm/talk-to-vitana?ticket=${encodeURIComponent(t.id)}`,
+      },
       tag: `feedback_resolved:${t.id}`,
     }, sb);
     return { sent: r.inapp || r.pushed > 0, reason: r.suppressed };

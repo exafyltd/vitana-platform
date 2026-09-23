@@ -184,6 +184,12 @@ export interface OrbToolIdentity {
    * `session.upstreamProvider` wherever a session is in hand.
    */
   upstream_provider?: string | null;
+  /**
+   * VTID-04382 — the screen the member was on when the tool fired
+   * (session.current_route). The typed feedback tools file their ticket on
+   * the surface this resolves to, the way report_to_specialist does.
+   */
+  current_route?: string | null;
 }
 
 export type OrbToolResult =
@@ -5954,6 +5960,8 @@ export interface VertexLikeIdentity {
   lang?: string | null;
   is_anonymous?: boolean | null;
   is_mobile?: boolean | null;
+  /** VTID-04382: forwarded so the typed feedback tools pick the surface. */
+  current_route?: string | null;
 }
 
 export interface VertexLikeToolResult {
@@ -5984,6 +5992,7 @@ export async function dispatchOrbToolForVertex(
       lang: identity.lang ?? null,
       is_anonymous: identity.is_anonymous ?? null,
       is_mobile: identity.is_mobile ?? null,
+      current_route: identity.current_route ?? null,
     },
     sb,
   );

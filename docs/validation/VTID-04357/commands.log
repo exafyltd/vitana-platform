@@ -1,0 +1,12 @@
+# live reads (read-only) that sized the sources
+select topic, count(*) from oasis_events where created_at > now()-interval '14 days' and topic like '%deploy%completed%' group by 1;
+  -> staging.deploy.completed 217, prod.deploy.completed 16
+select status, count(*) from dev_autopilot_executions where created_at > now()-interval '14 days' group by 1;   -> awaiting_approval 1
+select status, count(*) from erp_approvals group by 1;  -> (none)
+select pg_get_constraintdef(...) feedback_tickets_status_check / erp_approvals_status_check  -> closed-status set taken from the live CHECK
+
+# gateway
+npx jest test/vtid-04357-calendar-work-lenses.test.ts test/vtid-04338-* test/vtid-04331-* test/vtid-04321-* test/vtid-04356-*
+  -> 5 suites, 96 tests passed
+npx tsc --noEmit -p .   -> clean
+npx jest (full gateway) -> run 1: 1 failure (did not recur), run 2: 1105 suites, 17941 passed, 0 failed

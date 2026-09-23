@@ -646,6 +646,14 @@ jobs:
 #     rolling summary; the tables were applied live 2026-09-17.
 #   OPERATOR_TURN_MEMORY_ENABLED (VTID-04025) -- durable facts extracted
 #     from each console turn into dev_agent_memory (fail-open).
+#   REMINDERS_INPROCESS_DISPATCH_ENABLED (VTID-04320) -- the reminders tick
+#     and sweeper run in-process; no external scheduler has called
+#     /reminders-tick since GCP was shut down, so no reminder fired. The
+#     claim RPC uses SKIP LOCKED, so several tasks (or prod too) are safe.
+#   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338) -- every calendar entry
+#     gets default reminders (reconciled into `reminders` every minute).
+#   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
+#     Autopilot/journey suggestions + 6-hourly priority refresh, in-process.
 # Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
 # if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
 # gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
@@ -903,6 +911,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
@@ -915,7 +924,7 @@ jobs:
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
-                                                "NAV_CONTINUATION_BIND","VITANA_ENV",
+                                                "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
                                                 "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -937,6 +946,7 @@ jobs:
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
                           {name:"VITANA_ENV", value:"staging"},
+                          {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
@@ -963,6 +973,9 @@ jobs:
                           {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
                           {name:"OPERATOR_THREADS_ENABLED", value:"true"},
                           {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                          {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"},
+                          {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                          {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},

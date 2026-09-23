@@ -966,6 +966,11 @@ CREATE TABLE my_new_table (
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
+| 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
+| 2026-09-23 | `calendar_events`: `rrule`, `timezone`, `reminder_offsets`, `emoji` + CHECKs; role_context adds `professional`; source_type adds six producer types. Also applied the never-applied 2026-04-28 `pillar`/`contribution_vector` migration. | Claude | VTID-04331 |
+| 2026-09-23 | Producer triggers on `goal_plan_steps`, `goal_plans`, `user_health_plans`, `provider_appointments`, `lab_test_orders`, `live_room_sessions`, `live_room_access_grants` → `calendar_events` through one SQL upsert (`calendar_upsert_from_source`); future-only backfill (555 goal-plan entries, 3 health-plan series). No table/column change. | Claude | VTID-04356 |
+| 2026-09-23 | New table `calendar_feed_tokens` (one private iCalendar subscription token per user, SHA-256 hash only; RLS on, no policies, no browser grants). | Claude | VTID-04358 |
+| 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1021,6 +1026,98 @@ CREATE INDEX idx_calendar_events_pillar_upcoming
 **Backfill:** the migration extracts the first `pillar:<key>` entry from `wellness_tags` into the new `pillar` column for legacy rows that already had the heuristic tag, using `UNNEST(...) WITH ORDINALITY` + `DISTINCT ON` so the choice is deterministic when an event has multiple pillar tags.
 
 **Notes:** the frontend's `derivePillar` helper now reads `event.pillar` first; falls back to the existing `wellness_tags` and `event_type` heuristic when both new columns are null.
+
+### calendar_events — recurrence, reminders, emoji, lenses (VTID-04331)
+
+Migration `20260923130000_vtid_04331_calendar_data_model.sql`, applied live 2026-09-23.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `rrule` | TEXT | RFC 5545 RRULE body without DTSTART (`FREQ=DAILY\|WEEKLY\|MONTHLY`, `INTERVAL`, `COUNT`, `UNTIL` in UTC, `BYDAY`). `start_time` is DTSTART; every occurrence has `end_time - start_time` duration. Expanded by the gateway (`services/calendar-recurrence.ts`). CHECK `valid_rrule`. |
+| `timezone` | TEXT | IANA zone the rule is expanded in; NULL = the user's zone. |
+| `reminder_offsets` | INTEGER[] | Minutes before start to remind; NULL = category default, `{}` = none. ≤5 values, 0..40320. CHECK `valid_reminder_offsets`. |
+| `emoji` | TEXT | Display emoji; NULL = category default. CHECK `valid_emoji`. |
+
+`valid_role_context` now allows `community, professional, admin, developer, personal`; `valid_source_type` adds `health_plan, lab_order, appointment, live_room, goal_plan, guided_journey`. Index `idx_calendar_events_recurring (user_id) WHERE rrule IS NOT NULL AND status <> 'cancelled'`.
+
+**Note (2026-09-23):** the `pillar` / `contribution_vector` columns documented above were not present in the live database until VTID-04331 applied `20260428000000_calendar_pillar_contribution_vector.sql`; its backfill matched 0 rows.
+
+### reminders ← calendar_events (VTID-04338 default reminders)
+
+Migration `20260923140000_vtid_04338_calendar_default_reminders.sql`, applied live 2026-09-23.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `calendar_occurrence_start` | TIMESTAMPTZ | Start of the calendar occurrence this reminder is for (a recurring entry has many). NULL for voice/UI reminders. |
+| `reminder_offset_minutes` | INTEGER | Minutes before `calendar_occurrence_start` the reminder fires. |
+
+Unique index `uniq_reminders_calendar_occurrence_offset (calendar_event_id, calendar_occurrence_start, reminder_offset_minutes)` — deliberately not partial, so PostgREST `on_conflict` can upsert against it; voice/UI rows have NULLs there and never collide. Index `idx_reminders_calendar_pending (calendar_event_id) WHERE calendar_event_id IS NOT NULL AND status = 'pending'`.
+
+Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAULT_REMINDERS_ENABLED=true`, every 60 s): one `created_via='system'` row per (entry, occurrence in the next 36 h, offset). Defaults: meeting/event 10 min, workout 30 min, lab test the evening before at 19:00 local + 1 h before, habit/nutrition/autopilot at start; an entry's own `reminder_offsets` win and `{}` means none. Pending rows whose entry moved, was cancelled, completed or deleted are cancelled on the next pass. Delivery is the existing reminders tick.
+
+### calendar_events ← global_event_participants (VTID-04321 triggers)
+
+**Purpose:** community event sign-ups land in the calendar on every path (web, voice `rsvp_event`, tickets). Migration `20260923120000_vtid_04321_rsvp_calendar_global_events.sql`, applied live 2026-09-23.
+
+- `trg_event_participation_calendar` — AFTER INSERT / UPDATE OF status / DELETE on `global_event_participants` → `fn_event_participation_to_calendar()`. Joining (`status='attending'`) inserts one row: `event_type='community'`, `source_type='community_rsvp'`, `source_ref_id=<event id>`, `source_ref_type='community_event'`, `metadata={meetup_id, meetup_slug}`, `end_time` defaulting to start + 1 h; skipped when a live row for that user+event exists; a cancelled one is reactivated. Leaving cancels every live row matching `source_ref` or `metadata.meetup_id`.
+- `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
+- The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
+
+### calendar_feed_tokens (VTID-04358)
+
+**Purpose:** the private iCalendar subscription link (`GET /api/v1/calendar/feed/<token>.ics`) that lets Apple/Google/Outlook subscribe to a user's Vitanaland calendar. Migration `20260923170000_vtid_04358_calendar_feed_tokens.sql`, applied live 2026-09-23.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | FK `auth.users(id)` ON DELETE CASCADE — one link per user; a new link replaces the old |
+| `token_hash` | text UNIQUE NOT NULL | SHA-256 hex of the 256-bit token (`CHECK ~ '^[0-9a-f]{64}$'`); the plain token is returned once and never stored |
+| `created_at` | timestamptz | when the current link was made |
+| `last_used_at` | timestamptz | last feed fetch (best effort) |
+
+RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated` — the gateway (service role) is the only reader/writer. The feed carries the user's own entries (title, time, place only — no descriptions, no alarms); work-lens items are not rows and never appear.
+
+### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
+
+**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+
+`calendar_google_sync` — one row per member:
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | FK `auth.users(id)` ON DELETE CASCADE |
+| `enabled` | boolean NOT NULL default false | member turned sync on |
+| `google_calendar_id` | text | the app-created Vitanaland calendar; NULL = create on next run |
+| `last_push_at`, `last_pull_at` | timestamptz | last successful run |
+| `last_error` | text | last failure, cleared on success |
+| `created_at`, `updated_at` | timestamptz | |
+
+`calendar_google_links` — one row per pushed entry: `id` uuid PK, `user_id` uuid FK, `calendar_event_id` uuid UNIQUE FK `calendar_events(id)` **ON DELETE SET NULL** (a deleted entry's Google copy is removed on the next run, then the row), `google_event_id` text, `pushed_hash` text (SHA-256 of the pushed event body; unchanged → no write), `pushed_at`.
+
+`calendar_external_busy` — busy intervals, replaced wholesale per pull: `id` uuid PK, `user_id` uuid FK, `source` text CHECK in (`google`), `start_time`, `end_time` (CHECK end > start), `fetched_at`. Times only — no titles, no attendees. Index `(user_id, start_time)`.
+
+All three: RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated` — the gateway (service role) is the only reader/writer.
+
+### calendar_events ← plans, bookings, orders, rooms (VTID-04356 triggers)
+
+**Purpose:** every accepted plan, paid booking, lab order and live-room ticket lands in the owner's calendar, whichever path wrote it (gateway, edge function, Stripe webhook, frontend). Migration `20260923160000_vtid_04356_calendar_source_producers.sql`, applied live 2026-09-23.
+
+Helpers (SECURITY DEFINER, `EXECUTE` revoked from `anon`/`authenticated`/`PUBLIC`):
+- `calendar_upsert_from_source(user, source_type, ref_type, ref_id, title, start, end, event_type, description, location, emoji, rrule, timezone, pillar, role_context, metadata)` — idempotent on `idx_calendar_events_source_ref`; never changes a completed entry; reactivates a cancelled one; does not rewrite an unchanged one.
+- `calendar_cancel_source(user, ref_type, ref_id)`, `calendar_complete_source(user, ref_type, ref_id, done)`.
+- `calendar_user_timezone(user)` — `profiles.timezone`, else `Europe/Berlin`.
+- `calendar_sync_goal_plan_step`, `calendar_sync_health_plan`, `calendar_sync_appointment`, `calendar_sync_lab_order`, `calendar_sync_live_room_entry` — one per source.
+
+| Source table | Trigger | Entry | `source_type` / `source_ref_type` |
+|---|---|---|---|
+| `goal_plan_steps` | `trg_goal_plan_step_calendar` | milestone/checkpoint → 09:00 local on `scheduled_date`; habit → daily series 08:00 local (+30 min per earlier habit) from plan start to target; done ↔ completed (not for habits); `calendar_event_id` set on the step | `goal_plan` / `goal_plan_step` |
+| `goal_plans` | `trg_goal_plan_calendar` | leaving `active` cancels the steps' open entries; returning to `active` restores them | — |
+| `user_health_plans` | `trg_health_plan_calendar` | active → daily series (`COUNT` from `plan_data.duration`, default 28) at a time fitting `plan_type`; inactive/deleted → cancelled | `health_plan` / `user_health_plan` |
+| `provider_appointments` | `trg_appointment_calendar` | `scheduled`/`confirmed` → entry; `pending` (unpaid checkout) never shows; `completed` → completed; anything else → cancelled | `appointment` / `provider_appointment` |
+| `lab_test_orders` | `trg_lab_order_calendar` | `confirmed` with `scheduled_date` → lab entry (lab reminder rules); `sample_collected`/`processing`/`completed` → completed; `cancelled`/`pending` → cancelled | `lab_order` / `lab_test_order` |
+| `live_room_sessions` | `trg_live_room_session_calendar` | host + every valid ticket holder; moving/renaming updates all; `cancelled` cancels all; `ended` left as is | `live_room` / `live_room_session` |
+| `live_room_access_grants` | `trg_live_room_grant_calendar` | valid ticket → the session in the holder's calendar; revoked/invalid/deleted → cancelled unless another valid ticket remains | `live_room` / `live_room_session` |
+
+Every trigger body catches its own errors (`RAISE WARNING`) so a calendar failure never fails the source write. Backfill at apply time wrote future items only: 555 goal-plan entries for 22 users (61 habit series) and 3 health-plan series; no appointments, lab orders or live-room sessions were in the future. `partner_health_test_orders` is not connected (no appointment time exists).
 
 ---
 

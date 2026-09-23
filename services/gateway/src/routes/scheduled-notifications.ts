@@ -11,7 +11,7 @@
  *   POST /api/v1/scheduled-notifications/weekly-digest
  *   POST /api/v1/scheduled-notifications/weekly-summary
  *   POST /api/v1/scheduled-notifications/weekly-reflection
- *   POST /api/v1/scheduled-notifications/meetup-reminders
+ *   POST /api/v1/scheduled-notifications/meetup-reminders   (retired, no-op — VTID-04374)
  *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
@@ -31,6 +31,8 @@ import {
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
 import * as repo from './scheduled-notifications-repository';
+import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
+import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
 const router = Router();
 
@@ -943,76 +945,18 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /meetup-reminders — Every 15 minutes
+// POST /meetup-reminders — RETIRED (VTID-04374)
 // =============================================================================
-router.post('/meetup-reminders', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
-
-  const supa = await getServiceClient();
-  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
-  const now = new Date();
-  const in15min = new Date(now.getTime() + 15 * 60 * 1000);
-  const in5min = new Date(now.getTime() + 5 * 60 * 1000);
-
-  let dispatched = 0;
-
-  // Meetups starting in ~15 minutes (meetup_starting_soon)
-  const { data: soonMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
-    tenantId,
-    from: now.toISOString(),
-    to: in15min.toISOString(),
-  });
-
-  for (const meetup of soonMeetups || []) {
-    // Get RSVP'd users
-    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
-    if (rsvpsErr) {
-      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_soon): ${rsvpsErr.message}`);
-    }
-
-    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
-    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
-    for (const { user_id } of rsvpList) {
-      const lc = locales.get(user_id);
-      notifyUserAsync(user_id, tenantId, 'meetup_starting_soon', {
-        title: tt('notif.meetup_starting_soon.title', lc),
-        body: tt('notif.meetup_starting_soon.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
-        data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
-      }, supa);
-      dispatched++;
-    }
-  }
-
-  // Meetups starting in ~5 minutes (meetup_starting_now)
-  const { data: nowMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
-    tenantId,
-    from: now.toISOString(),
-    to: in5min.toISOString(),
-  });
-
-  for (const meetup of nowMeetups || []) {
-    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
-    if (rsvpsErr) {
-      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_now): ${rsvpsErr.message}`);
-    }
-
-    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
-    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
-    for (const { user_id } of rsvpList) {
-      const lc = locales.get(user_id);
-      notifyUserAsync(user_id, tenantId, 'meetup_starting_now', {
-        title: tt('notif.meetup_starting_now.title', lc),
-        body: tt('notif.meetup_starting_now.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
-        data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
-      }, supa);
-      dispatched++;
-    }
-  }
-
-  console.log(`[Scheduled] meetup_reminders → ${dispatched} notifications`);
-  return res.status(200).json({ ok: true, dispatched });
+// It read community_meetup_attendance, a table that does not exist, over
+// community_meetups, which has never had a row — so it never sent a
+// notification. Community events a member signs up for reach the calendar
+// (global_event_participants → calendar_events, VTID-04321) and get the
+// calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
+// gets a clear answer instead of a 404.
+// Retired no-op: it reads and writes nothing, so there is nothing to protect.
+router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-route
+  // impact-allow-no-oasis — retired: no state change at all (VTID-04374)
+  return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
 });
 
 // =============================================================================
@@ -1033,18 +977,14 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
+  // VTID-04321: "today" is each user's local day, not the gateway's (UTC).
+  // Fetch a window that contains every timezone's today, then keep per user
+  // the first event on their local date, with the time in their zone.
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
-
-  // Calendar events: fetch every user's events for today in one query so we
-  // don't N+1 per user. Sort ascending so each user's first scheduled event
-  // surfaces first.
+  const span = wideTodayWindow(now);
   const { data: events, error } = await repo.fetchTodaysCalendarEvents(supa, {
-    todayStart: todayStart.toISOString(),
-    todayEnd: todayEnd.toISOString(),
+    todayStart: span.from,
+    todayEnd: span.to,
   });
 
   if (error) {
@@ -1052,25 +992,24 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  // Deduplicate to one notification per user (their first event of the day).
-  // Multiple events on the same day would otherwise spam the lock screen.
-  const seenUsers = new Set<string>();
-  const dedupedEvents = ((events || []) as Array<any>).filter((ev) => {
-    if (seenUsers.has(ev.user_id)) return false;
-    seenUsers.add(ev.user_id);
-    return true;
-  });
-  const locales = await bulkGetUserLocales(supa, dedupedEvents.map((e) => e.user_id));
+  const rows = (events || []) as Array<{ id: string; user_id: string; title?: string | null; start_time: string }>;
+  const { getUserTimezone } = await import('../services/daily-pace-service');
+  const userIds = [...new Set(rows.map((e) => e.user_id))];
+  const tzByUser = new Map<string, string>();
+  for (const uid of userIds) {
+    tzByUser.set(uid, await getUserTimezone(supa, uid, tenantId));
+  }
+  const picks = pickFirstEventTodayPerUser(rows, (uid) => tzByUser.get(uid) as string, now);
+
+  const locales = await bulkGetUserLocales(supa, picks.map((p) => p.event.user_id));
   let dispatched = 0;
 
-  for (const ev of dedupedEvents) {
-    const start = new Date(ev.start_time);
-    const hhmm = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
+  for (const { event: ev, localTime } of picks) {
     const lc = locales.get(ev.user_id);
 
     notifyUserAsync(ev.user_id, tenantId, 'upcoming_event_today', {
       title: tt('notif.event_today.title', lc),
-      body: tt('notif.event_today.body', lc, { title: ev.title || tt('notif.fallback_app_name', lc), time: hhmm }),
+      body: tt('notif.event_today.body', lc, { title: ev.title || tt('notif.fallback_app_name', lc), time: localTime }),
       data: { url: '/calendar', entity_id: ev.id, event_id: ev.id, start_time: ev.start_time },
     }, supa);
     dispatched++;
@@ -1364,247 +1303,35 @@ router.post('/recommendation-cleanup', async (_req: Request, res: Response) => {
 });
 
 // =============================================================================
-// VTID-02601 — POST /reminders-tick — every 30 seconds (Cloud Scheduler)
+// VTID-02601 — POST /reminders-tick and /reminders-sweeper
 //
-// Picks up reminders whose next_fire_at is within 15 seconds, atomically
-// claims them via FOR UPDATE SKIP LOCKED, marks them 'fired', and lets the
-// LISTEN/NOTIFY trigger fan out to SSE subscribers (PR-2 wires consumers).
-// FCM fallback (PR-4) is scheduled at fire+5s if the row stays unacked.
+// The logic lives in services/reminders-dispatch.ts (VTID-04320) so the same
+// code also runs in-process via startRemindersDispatchLoop(). These routes stay
+// for an external scheduler or a manual kick.
 // =============================================================================
 router.post('/reminders-tick', async (_req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
   try {
-    // Atomic claim + mark dispatching. Look-ahead window: 15s. Limit batch
-    // size to avoid runaway under load — operators should run this every
-    // 30s so the worst-case fire latency stays under ~30s late / ~15s early.
-    const { data: claimed, error: claimErr } = await repo.rpcClaimDueReminders(supa, {
-      lookaheadSeconds: 15,
-      limit: 200,
-    });
-
-    // RPC may not exist on older DBs — fall back to a non-atomic UPDATE for
-    // dev. In production the migration creates the RPC. The fallback is best-
-    // effort and will deliver-at-most-once across pods due to status filter.
-    let rows: any[] = [];
-    if (claimErr) {
-      const lookahead = new Date(Date.now() + 15_000).toISOString();
-      const { data: fallback, error: fallbackErr } = await repo.fallbackClaimDueReminders(supa, {
-        lookahead,
-        dispatchStartedAt: new Date().toISOString(),
-        limit: 200,
-      });
-      if (fallbackErr) {
-        console.error('[reminders-tick] claim fallback failed:', fallbackErr.message);
-        return res.status(500).json({ ok: false, error: fallbackErr.message });
-      }
-      rows = fallback || [];
-    } else {
-      rows = claimed || [];
-    }
-
-    if (!rows.length) {
-      return res.status(200).json({ ok: true, fired: 0, message: 'no due reminders' });
-    }
-
-    let fired = 0;
-    let failed = 0;
-
-    for (const row of rows) {
-      try {
-        // Mark fired — this triggers pg_notify('reminder_fired', ...) for any
-        // SSE pod that is LISTENing. PR-2 wires the listener.
-        const { error: fireErr } = await repo.markReminderFired(supa, { reminderId: row.id, firedAt: new Date().toISOString() });
-        if (fireErr) {
-          console.error(`[reminders-tick] mark fired failed for ${row.id}:`, fireErr.message);
-          failed++;
-          continue;
-        }
-
-        // Emit OASIS event for observability — one row per fire.
-        try {
-          const { emitOasisEvent } = await import('../services/oasis-event-service');
-          await emitOasisEvent({
-            type: 'reminder.fired' as any,
-            source: 'gateway',
-            vtid: 'VTID-REMINDER',
-            status: 'info',
-            message: `Reminder fired`,
-            payload: {
-              reminder_id: row.id,
-              user_id: row.user_id,
-              tenant_id: row.tenant_id,
-              scheduled_for: row.next_fire_at,
-              latency_ms: Date.now() - new Date(row.next_fire_at).getTime(),
-            },
-          });
-        } catch {}
-
-        // VTID-02601 / BOOTSTRAP-REMINDERS-CRON: 5s after fire, always send an
-        // OS-level push (FCM + Appilix) so the reminder reaches the lock screen
-        // regardless of whether the in-app SSE banner already showed on web.
-        // Best-effort, fully detached — does not block the tick.
-        scheduleReminderFcmPush(supa, row).catch((e) =>
-          console.warn(`[reminders-tick] FCM push schedule failed for ${row.id}:`, e?.message),
-        );
-
-        fired++;
-      } catch (err: any) {
-        console.error(`[reminders-tick] error firing ${row.id}:`, err?.message);
-        failed++;
-      }
-    }
-
-    console.log(`[reminders-tick] fired=${fired} failed=${failed} total=${rows.length}`);
-    return res.status(200).json({ ok: true, fired, failed, total: rows.length });
+    const result = await runRemindersTick(supa);
+    return res.status(result.ok ? 200 : 500).json(result);
   } catch (err: any) {
     console.error('[reminders-tick] error:', err?.message);
     return res.status(500).json({ ok: false, error: err?.message || 'internal' });
   }
 });
 
-// =============================================================================
-// VTID-02601 — POST /reminders-sweeper — every 5 minutes (Cloud Scheduler)
-//
-// Recovers rows stuck in 'dispatching' for >2min (pod crash mid-fire).
-// Resets to 'pending' with attempts++. Circuit-break at attempts>=5 → 'failed'.
-// =============================================================================
 router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
   try {
-    const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-
-    // First find stuck rows so we can decide attempts++ vs 'failed' per row.
-    const { data: stuck, error: queryErr } = await repo.fetchStuckDispatchingReminders(supa, { cutoff, limit: 500 });
-    if (queryErr) throw new Error(queryErr.message);
-    if (!stuck?.length) {
-      return res.status(200).json({ ok: true, recovered: 0, failed: 0 });
-    }
-
-    let recovered = 0;
-    let exhausted = 0;
-    for (const r of stuck) {
-      const attempts = (r.dispatch_attempts || 0) + 1;
-      const newStatus = attempts >= 5 ? 'failed' : 'pending';
-      const { error: updErr } = await repo.updateReminderRecoveryStatus(supa, { reminderId: r.id, newStatus, attempts });
-      if (updErr) {
-        console.error(`[reminders-sweeper] update ${r.id} failed:`, updErr.message);
-        continue;
-      }
-      if (newStatus === 'pending') recovered++;
-      else exhausted++;
-    }
-
-    console.log(`[reminders-sweeper] recovered=${recovered} exhausted=${exhausted} total=${stuck.length}`);
-    return res.status(200).json({ ok: true, recovered, exhausted, total: stuck.length });
+    const result = await runRemindersSweeper(supa);
+    return res.status(result.ok ? 200 : 500).json(result);
   } catch (err: any) {
     console.error('[reminders-sweeper] error:', err?.message);
     return res.status(500).json({ ok: false, error: err?.message || 'internal' });
   }
 });
-
-// =============================================================================
-// VTID-02601 — scheduleReminderFcmPush
-//
-// 5 seconds after a reminder is marked 'fired', send the mobile/web push
-// (FCM + Appilix native). Always fires regardless of SSE ack — product
-// decision (BOOTSTRAP-REMINDERS-CRON): a reminder should always reach the
-// lock screen even if the user already saw the in-app banner on web, because
-// they may dismiss the web banner, walk away, and rely on the phone. The web
-// overlay's seen-set dedups so a user with both surfaces open never sees the
-// same fire rendered twice.
-//
-// The 5-second delay stays as a small grace window (lets the SSE banner land
-// first when the app is open) and to keep the Cloud Run instance warm. Worst
-// case (instance scales to zero) the push is dropped and the next tick poll
-// re-picks it via the fired+unacked SSE flow.
-//
-// Title is localized (CLAUDE.md §13b) so German users don't see English on
-// the lock screen; the body is the user's own reminder text (not translated).
-// =============================================================================
-async function scheduleReminderFcmPush(
-  supa: any,
-  row: { id: string; user_id: string; tenant_id: string; action_text: string; spoken_message: string | null }
-): Promise<void> {
-  await new Promise((r) => setTimeout(r, 5000));
-
-  const locale = await getUserLocale(supa, row.user_id);
-  const payload = {
-    title: tt('notif.reminder.title', locale),
-    body: row.action_text,
-    data: {
-      type: 'reminder.fire',
-      reminder_id: row.id,
-      // Deep-link to the reminder action overlay (Mark done / Snooze /
-      // Dismiss) rather than the bare list — the frontend opens
-      // ReminderInterruptOverlay when the fire id is present, matching the
-      // in-app SSE behaviour on a push click. Path-based, not query-string —
-      // Appilix's Android in-app browser silently fails to launch
-      // notification URLs containing a query string (see App.tsx's
-      // BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
-      url: `/reminders/fire/${row.id}`,
-      spoken_message: row.spoken_message || '',
-    },
-  };
-
-  try {
-    const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
-
-    // Avoid double-notifying. Mirrors notifyUser()'s FCM/Appilix coexistence
-    // rule: if the user has an Appilix-wrapped native token (device_label
-    // 'Appilix %'), FCM-direct already delivered to the installed app, so
-    // sending Appilix too would surface a second identical lock-screen
-    // notification. Only fire Appilix when there's no native token, or as a
-    // last resort when FCM reached zero devices (e.g. web-only token that
-    // opens the browser, not the app).
-    //
-    // VTID-03481: only count devices this user still OWNS, and skip Appilix
-    // altogether once they are signed out on every known device — otherwise a
-    // reminder for the account that left a shared phone still buzzes it.
-    let appilixSent = false;
-    const appilixSuppressed = await isSignedOutOnAllKnownDevices(row.user_id, supa);
-    const { count: nativeMobileCount } = await repo.countAppilixNativeDeviceTokens(supa, {
-      userId: row.user_id,
-      tenantId: row.tenant_id,
-    });
-    if (!nativeMobileCount && !appilixSuppressed) {
-      appilixSent = await sendAppilixPush(row.user_id, payload);
-    }
-    if (fcmSent === 0 && !appilixSent && !appilixSuppressed) {
-      appilixSent = await sendAppilixPush(row.user_id, payload);
-    }
-    console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent} nativeTokens=${nativeMobileCount || 0}`);
-
-    // Mark delivery_via=fcm if we sent at least one push and the row is still
-    // unacked. The SSE flow may still race-deliver later — that's fine, the
-    // overlay's seen-set dedups so the user never sees the same fire twice.
-    if (fcmSent > 0 || appilixSent) {
-      await repo.markReminderDeliveredViaFcm(supa, row.id);
-    }
-
-    try {
-      const { emitOasisEvent } = await import('../services/oasis-event-service');
-      await emitOasisEvent({
-        type: 'reminder.fcm_fallback' as any,
-        source: 'gateway',
-        vtid: 'VTID-REMINDER',
-        status: 'info',
-        message: `Reminder FCM fallback sent`,
-        payload: {
-          reminder_id: row.id,
-          user_id: row.user_id,
-          fcm_devices: fcmSent,
-          appilix_sent: !!appilixSent,
-        },
-      });
-    } catch {}
-  } catch (err: any) {
-    console.error(`[reminders-tick] FCM fallback error for ${row.id}:`, err?.message);
-  }
-}
 
 // =============================================================================
 // POST /night-push — Hourly UTC (VTID-03604, surface 2 of the ORB day-close)

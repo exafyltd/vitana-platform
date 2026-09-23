@@ -1651,6 +1651,60 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04320: in-process reminder dispatch (tick every 30s, sweeper every
+      // 5min). Nothing external has called /reminders-tick since the GCP
+      // scheduler went away, so reminders stopped firing entirely.
+      try {
+        const { startRemindersDispatchLoop } = require('./services/reminders-dispatch');
+        if (startRemindersDispatchLoop()) {
+          console.log('⏰ Reminder dispatch loop started (in-process)');
+        } else {
+          console.log('⏸️ Reminder dispatch loop disabled — set REMINDERS_INPROCESS_DISPATCH_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04338: default reminders for calendar entries — reconciles the
+      // reminders table against upcoming entries every minute.
+      try {
+        const { startCalendarRemindersLoop } = require('./services/calendar-reminders');
+        if (startCalendarRemindersLoop()) {
+          console.log('📅 Calendar default-reminders loop started');
+        } else {
+          console.log('⏸️ Calendar default-reminders loop disabled — set CALENDAR_DEFAULT_REMINDERS_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions
+      // the user did not get to (hourly) and refreshes priority scores (6-hourly).
+      // Its only caller used to be GCP Cloud Scheduler, which is gone.
+      try {
+        const { startCalendarMaintenanceLoop } = require('./services/calendar-rescheduler');
+        if (startCalendarMaintenanceLoop()) {
+          console.log('🗓️ Calendar maintenance loop started');
+        } else {
+          console.log('⏸️ Calendar maintenance loop disabled — set CALENDAR_MAINTENANCE_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar maintenance loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04372: Google Calendar two-way sync — built, switched off. Starts
+      // only with CALENDAR_GOOGLE_SYNC_ENABLED=true and the Google OAuth client.
+      try {
+        const { startGoogleSyncLoop } = require('./services/calendar-google-sync');
+        if (startGoogleSyncLoop()) {
+          console.log('🗓️ Calendar Google sync loop started');
+        } else {
+          console.log('⏸️ Calendar Google sync loop off — needs CALENDAR_GOOGLE_SYNC_ENABLED=true and GOOGLE_OAUTH_CLIENT_ID/SECRET');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar Google sync loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {

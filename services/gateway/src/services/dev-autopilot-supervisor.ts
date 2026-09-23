@@ -24,7 +24,7 @@
 import { getSupabase, supa, planRetryDecision, findingVtid } from './dev-autopilot-execute';
 import { describeLoopOwnership } from './dev-autopilot-loop-owner';
 import { detectProviderOutage, isProviderOutageFailure, type OutageState } from './dev-autopilot-retry-breaker';
-import { chunkIds } from './dev-autopilot-pipeline-guards';
+import { chunkIds, countPipelineStatuses, pipelineSlots, resolveTailCap } from './dev-autopilot-pipeline-guards';
 
 type Supa = NonNullable<ReturnType<typeof getSupabase>>;
 
@@ -445,8 +445,8 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
   const execRows: ExecRow[] = (execs || []).map((e) => ({ ...e, source_type: e.source_type ?? e.finding?.source_type ?? null }));
   const execSummary = summarizeExecutions(execRows, nowMs);
   const budgetLeft = Math.max(0, cfg.daily_budget - (approvedToday || []).length);
-  const running = execRows.filter((e) => ['running', 'ci', 'merging', 'deploying', 'verifying'].includes(e.status)).length;
-  const concurrencyLeft = Math.max(0, cfg.concurrency_cap - running);
+  // VTID-04376: same rule as the claim tick — agents count, the tail has its own bound.
+  const concurrencyLeft = pipelineSlots('claim', countPipelineStatuses(execRows), cfg.concurrency_cap, resolveTailCap());
 
   const diagnosed = open.map((f) => {
     const d = diagnoseFinding(f, {

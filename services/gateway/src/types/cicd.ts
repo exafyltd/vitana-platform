@@ -802,6 +802,7 @@ export type CicdEventType =
   | 'dev_autopilot.execution.pr_opened'
   | 'dev_autopilot.execution.ci_running'
   | 'dev_autopilot.execution.ci_passed'
+  | 'dev_autopilot.execution.branch_updated'
   | 'dev_autopilot.execution.ci_failed'
   | 'dev_autopilot.execution.pr_merged'
   | 'dev_autopilot.execution.auto_merge_declined'

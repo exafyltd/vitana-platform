@@ -1,0 +1,6 @@
+select to_regclass('public.calendar_feed_tokens')  -> null (new table)
+apply_migration vtid_04358_calendar_feed_tokens   -> success
+post-check: rls=true rows=0 anon_sel=false auth_sel=false policies=0
+npx jest test/vtid-04358-* + 5 other calendar suites -> 113 passed
+npx tsc --noEmit -p .                                -> clean
+npx jest (full gateway) -> 1106 suites passed, 17959 tests, 0 failures

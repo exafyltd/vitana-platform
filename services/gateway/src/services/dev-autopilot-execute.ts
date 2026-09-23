@@ -84,6 +84,11 @@ import {
   classifyPrState,
   chunkIds,
   prNumberOf,
+  POST_MERGE_TAIL_STATUSES,
+  countPipelineStatuses,
+  pipelineSlots,
+  resolveTailCap,
+  type PipelineCounts,
 } from './dev-autopilot-pipeline-guards';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
@@ -435,12 +440,13 @@ async function countApprovedToday(s: SupaConfig): Promise<number> {
   return r.ok && Array.isArray(r.data) ? r.data.length : 0;
 }
 
-async function countRunningExecutions(s: SupaConfig): Promise<number> {
-  const r = await supa<unknown[]>(
+// VTID-04376: one read for the cap and the post-merge tail bound.
+async function countPipeline(s: SupaConfig): Promise<PipelineCounts> {
+  const r = await supa<Array<{ status: string }>>(
     s,
-    `/rest/v1/dev_autopilot_executions?status=in.(running,ci,merging,deploying,verifying)&select=id`,
+    `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,${POST_MERGE_TAIL_STATUSES.join(',')})&select=status`,
   );
-  return r.ok && Array.isArray(r.data) ? r.data.length : 0;
+  return countPipelineStatuses(r.ok && Array.isArray(r.data) ? r.data : []);
 }
 
 // =============================================================================
@@ -2139,8 +2145,11 @@ export function applyExecTerminalSideEffects(
   // terminal outcomes this is — separate from the completed/failed-only
   // outcome-bookkeeping block below, which has its own narrower, historical
   // reason for excluding 'cancelled' (see its own docstring).
-  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
-    void terminalizeVtidLedgerForExecution(s, executionId, status);
+  // VTID-04378: `failed_escalated` (the bridge's give-up state) closes the
+  // ledger as failed; `reverted` does not — a self-heal child continues it.
+  const ledgerStatus = ledgerStatusForExecution(status);
+  if (ledgerStatus) {
+    void terminalizeVtidLedgerForExecution(s, executionId, ledgerStatus);
   }
   if (status !== 'completed' && status !== 'failed') return;
   void (async () => {
@@ -2227,6 +2236,16 @@ export function applyExecTerminalSideEffects(
  * that's somehow patched twice — per IF-THEN rule 3 ("is_terminal=true →
  * do not modify task"), not just as a defensive habit.
  */
+/**
+ * VTID-04378: which execution statuses close the finding's ledger VTID, and
+ * as what. Pure; exported for tests.
+ */
+export function ledgerStatusForExecution(status: string): 'completed' | 'failed' | 'cancelled' | null {
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') return status;
+  if (status === 'failed_escalated') return 'failed';
+  return null;
+}
+
 async function terminalizeVtidLedgerForExecution(
   s: SupaConfig,
   executionId: string,
@@ -2258,8 +2277,10 @@ async function terminalizeVtidLedgerForExecution(
       },
     );
     if (!patchR.ok) {
-      console.warn(
-        `${LOG_PREFIX} vtid_ledger terminalize failed for ${vtid} (execution ${executionId.slice(0, 8)}): ${patchR.error}`,
+      // VTID-04378: loud, not a warning — a failed write leaves the task
+      // IN PROGRESS on the board with nothing else that will ever close it.
+      console.error(
+        `${LOG_PREFIX} vtid_ledger terminalize FAILED for ${vtid} (execution ${executionId.slice(0, 8)}, ${status}): ${patchR.error}`,
       );
       return;
     }
@@ -2278,7 +2299,7 @@ async function terminalizeVtidLedgerForExecution(
       );
     }
   } catch (err) {
-    console.warn(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
+    console.error(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
   }
 }
 
@@ -2853,6 +2874,20 @@ export async function backgroundExecutorTick(): Promise<void> {
     console.error(`${LOG_PREFIX} feedback-spec-draft error:`, err);
   }
 
+  // 0c-ter. VTID-04384: replace placeholder Sage answers on answer_ready
+  // support questions with a real draft for supervisor review. Never sends
+  // anything to the member. Self-throttled (5 min),
+  // FEEDBACK_ANSWER_DRAFT_ENABLED=false disables it.
+  try {
+    const { draftPlaceholderAnswersTick } = await import('./feedback-answer-drafter');
+    const a = await draftPlaceholderAnswersTick(s);
+    if (a.drafted > 0 || a.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-answer-draft: drafted=${a.drafted} failed=${a.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-answer-draft error:`, err);
+  }
+
   // 0d. Auto-archive watchdog: any execution in a terminal-failure state
   // (failed / failed_escalated / reverted / cancelled) whose updated_at is
   // older than AUTO_ARCHIVE_DAYS gets moved to status='auto_archived' so
@@ -2896,8 +2931,8 @@ export async function backgroundExecutorTick(): Promise<void> {
 
   // 2. Concurrency cap — and VTID-04368: claim nothing during an LLM
   //    provider outage (cooling rows wait), one at a time while probing.
-  const running = await countRunningExecutions(s);
-  const slots = slotsUnderOutage(await loadOutageState(s), Math.max(0, cfg.concurrency_cap - running));
+  const pipeline = await countPipeline(s);
+  const slots = slotsUnderOutage(await loadOutageState(s), pipelineSlots('claim', pipeline, cfg.concurrency_cap, resolveTailCap()));
   if (slots === 0) return;
 
   // 3. Pick cooling executions past execute_after, oldest first.
@@ -3326,9 +3361,8 @@ export async function autoApproveTick(): Promise<void> {
   const maxEffort = cfg.auto_approve_max_effort ?? 5;
 
   const approvedToday = await countApprovedToday(s);
-  const running = await countRunningExecutions(s);
   const budgetSlots = Math.max(0, cfg.daily_budget - approvedToday);
-  const concurrencySlots = Math.max(0, cfg.concurrency_cap - running);
+  const concurrencySlots = pipelineSlots('approve', await countPipeline(s), cfg.concurrency_cap, resolveTailCap());
   // Cap per-tick to avoid bursts when auto-approve is flipped on after a
   // backlog has accumulated.
   const PER_TICK_CAP = 5;

@@ -159,27 +159,6 @@ export function markFeatureAnnouncementNotified(sb: any, args: { announcementId:
 }
 
 // ---------------------------------------------------------------------------
-// /meetup-reminders — shared shape for both the 15min and 5min windows
-// ---------------------------------------------------------------------------
-
-export function fetchMeetupsStartingBetween(sb: any, args: { tenantId: string; from: string; to: string }) {
-  return sb
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', args.tenantId)
-    .gte('starts_at', args.from)
-    .lte('starts_at', args.to);
-}
-
-export function fetchMeetupRsvps(sb: any, meetupId: string) {
-  return sb
-    .from('community_meetup_attendance')
-    .select('user_id')
-    .eq('meetup_id', meetupId)
-    .eq('status', 'rsvp');
-}
-
-// ---------------------------------------------------------------------------
 // /upcoming-events
 // ---------------------------------------------------------------------------
 
@@ -307,6 +286,17 @@ export function fallbackClaimDueReminders(sb: any, args: { lookahead: string; di
     .lte('next_fire_at', args.lookahead)
     .select('*')
     .limit(args.limit);
+}
+
+// VTID-04320: close pending reminders that are too far past their fire time
+// to be worth a push (see services/reminders-dispatch.ts, stale guard).
+export function closeStalePendingReminders(sb: any, args: { cutoff: string }) {
+  return sb
+    .from('reminders')
+    .update({ status: 'failed', delivery_via: 'stale_skipped' })
+    .eq('status', 'pending')
+    .lt('next_fire_at', args.cutoff)
+    .select('id, user_id, next_fire_at');
 }
 
 export function markReminderFired(sb: any, args: { reminderId: string; firedAt: string }) {

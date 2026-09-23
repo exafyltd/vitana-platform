@@ -4480,6 +4480,7 @@ async function executeLiveApiToolInner(
 
         try {
           const { createCalendarEvent, checkConflicts } = await import('../services/calendar-service');
+          const { toWritableRoleContext } = await import('../types/calendar');
 
           // Check for conflicts first
           const effectiveEndTime = eventEnd || new Date(new Date(eventStart).getTime() + 60 * 60 * 1000).toISOString();
@@ -4494,7 +4495,9 @@ async function executeLiveApiToolInner(
             event_type: eventType as any,
             status: 'confirmed',
             priority: 'medium',
-            role_context: role === 'developer' ? 'developer' : role === 'admin' ? 'admin' : 'community',
+            // VTID-04356: one mapping for every writer — professional and
+            // backoffice used to fall through to the community view here.
+            role_context: toWritableRoleContext(role),
             source_type: 'assistant',
             priority_score: 50,
             wellness_tags: [],
@@ -6741,6 +6744,12 @@ async function executeLiveApiToolInner(
         return await runOperatorDelegateAsync(session, args ?? {});
       }
 
+      // VTID-04397: member ORB → the support specialist (agent-as-tool).
+      case 'ask_support_specialist': {
+        const { runAskSupportSpecialist } = await import('../orb/live/tools/delegation-tools');
+        return await runAskSupportSpecialist(session, args ?? {});
+      }
+
       case 'get_delegation_result': {
         const { runGetDelegationResult } = await import('../orb/live/tools/delegation-tools');
         return runGetDelegationResult(session, args ?? {});
@@ -6846,6 +6855,9 @@ async function executeLiveApiToolInner(
                 turn_number: session.turn_count,
                 session_started_iso: session.createdAt.toISOString(),
                 lang: session.lang ?? null,
+                // VTID-04382: the typed feedback tools file on this surface.
+                current_route: session.current_route ?? null,
+                is_mobile: session.is_mobile === true,
               },
               supabase,
             );
