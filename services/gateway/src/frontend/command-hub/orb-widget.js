@@ -2216,6 +2216,13 @@
       // Console thread on screen, so voice turns land in that thread.
       if (_s.operatorThreadId) startPayload.operator_thread_id = _s.operatorThreadId;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
+      // VTID-04430: the host app's build stamp (<meta name="vitana-app-version">),
+      // so a ticket filed by voice carries the app version like a typed one.
+      try {
+        var _appVerMeta = document.querySelector('meta[name="vitana-app-version"]');
+        var _appVer = _appVerMeta && _appVerMeta.getAttribute('content');
+        if (_appVer && _appVer.charAt(0) !== '%' && _appVer.length <= 64) startPayload.app_version = _appVer;
+      } catch (_) { /* no DOM meta — leave unset */ }
 
       // VTID-03300: "My Journey" next-step focus. When the host opens the orb
       // by tapping a specific Foundation step (VitanaOrb.focusJourneyStep), the
