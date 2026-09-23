@@ -23,6 +23,7 @@ TEST: services/gateway/test/command-hub/vtid-04354-orchestrator-view.test.ts
 TEST: services/gateway/test/command-hub/vtid-04334-feedback-pipeline-links.test.ts
 
 AC-6: Visually verified at 1400×900 and 390×844 against a local harness fed by live rows read (read-only) from `agent_runs_unified` / `agents_registry`: no page errors, no horizontal page overflow, plane filter works (`outputs/*.png`, `outputs/shoot-result.json`). Two defects found this way and fixed before commit: plane-card content vertically centred (button default), and role names breaking mid-word in the grant table on a phone.
+UI: docs/validation/VTID-04354/outputs/orchestrator-desktop.png, orchestrator-mobile.png, orchestrator-grants-mobile.png, orchestrator-filtered-plane-desktop.png
 
 ## Not verified
 
