@@ -6714,8 +6714,20 @@ async function executeLiveApiToolInner(
       // VTID-04310: Command Hub voice → the Operator turn (same thread,
       // tools, exafy_admin gate and approval hold as the Operator Console).
       case 'operator_delegate': {
-        const { runOperatorDelegate } = await import('../orb/live/tools/operator-delegate');
-        return await runOperatorDelegate(session, args ?? {});
+        // VTID-04386: through the orchestrator dispatcher — acks within the
+        // 1.5 s voice window instead of blocking up to 25 s.
+        const { runOperatorDelegateAsync } = await import('../orb/live/tools/delegation-tools');
+        return await runOperatorDelegateAsync(session, args ?? {});
+      }
+
+      case 'get_delegation_result': {
+        const { runGetDelegationResult } = await import('../orb/live/tools/delegation-tools');
+        return runGetDelegationResult(session, args ?? {});
+      }
+
+      case 'cancel_delegation': {
+        const { runCancelDelegation } = await import('../orb/live/tools/delegation-tools');
+        return runCancelDelegation(session, args ?? {});
       }
 
       case 'record_journey_answer': {
@@ -6813,6 +6825,9 @@ async function executeLiveApiToolInner(
                 turn_number: session.turn_count,
                 session_started_iso: session.createdAt.toISOString(),
                 lang: session.lang ?? null,
+                // VTID-04382: the typed feedback tools file on this surface.
+                current_route: session.current_route ?? null,
+                is_mobile: session.is_mobile === true,
               },
               supabase,
             );
