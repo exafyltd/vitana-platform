@@ -28,9 +28,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import {
   executeReportToSpecialist,
+  feedbackSurfaceForOrb,
   isVagueSummary,
   REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS,
 } from '../report-to-specialist-core';
+import { resolveOrbSurface } from '../../orb/live/surface';
 import { GATEWAY_LOCALES, type GatewayLocale } from '../../i18n/catalog';
 import {
   pickPersonaForKind,
@@ -141,6 +143,14 @@ async function createTypedTicket(
   }
 
   const screenPath = String(args.screen ?? '').trim() || DEFAULT_SCREEN_PATH;
+  // VTID-04382: the same surface / correlation fields report_to_specialist
+  // writes, on both the routed and the unrouted path.
+  const surface = feedbackSurfaceForOrb(
+    resolveOrbSurface({ currentRoute: id.current_route ?? null, isMobile: id.is_mobile ?? null }),
+  );
+  const sessionId = id.session_id ?? null;
+  const language = id.lang ?? null;
+  const currentRoute = id.current_route ?? null;
 
   // Same registry resolution the pipeline uses. Only status='active'
   // personas resolve (VTID-03044: devon only), so this cannot route to a
@@ -169,7 +179,9 @@ async function createTypedTicket(
           gate_input: summary,
           source: TICKET_SOURCE,
           screen_path: screenPath,
-          session_id: id.session_id ?? null,
+          session_id: sessionId,
+          surface,
+          current_route: currentRoute,
         },
       );
       switch (result.decision) {
@@ -215,6 +227,7 @@ async function createTypedTicket(
       vitana_id: id.vitana_id ?? null,
       kind,
       status: 'new',
+      surface,
       raw_transcript: summary,
       intake_messages: [
         { agent: 'vitana', role: 'user', content: summary, ts: new Date().toISOString() },
@@ -223,6 +236,10 @@ async function createTypedTicket(
         specialist_hint: null,
         voice_origin: true,
         source: TICKET_SOURCE,
+        tenant_id: id.tenant_id ?? null,
+        language,
+        session_id: sessionId,
+        current_route: currentRoute,
         ...extraFields,
       },
       screen_path: screenPath,
@@ -252,6 +269,9 @@ async function createTypedTicket(
           specialist: null,
           voice_origin: true,
           source: TICKET_SOURCE,
+          surface,
+          language,
+          session_id: sessionId,
         },
         actor_id: id.user_id,
         actor_role: 'user',

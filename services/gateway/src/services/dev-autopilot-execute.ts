@@ -2853,6 +2853,20 @@ export async function backgroundExecutorTick(): Promise<void> {
     console.error(`${LOG_PREFIX} feedback-spec-draft error:`, err);
   }
 
+  // 0c-ter. VTID-04384: replace placeholder Sage answers on answer_ready
+  // support questions with a real draft for supervisor review. Never sends
+  // anything to the member. Self-throttled (5 min),
+  // FEEDBACK_ANSWER_DRAFT_ENABLED=false disables it.
+  try {
+    const { draftPlaceholderAnswersTick } = await import('./feedback-answer-drafter');
+    const a = await draftPlaceholderAnswersTick(s);
+    if (a.drafted > 0 || a.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-answer-draft: drafted=${a.drafted} failed=${a.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-answer-draft error:`, err);
+  }
+
   // 0d. Auto-archive watchdog: any execution in a terminal-failure state
   // (failed / failed_escalated / reverted / cancelled) whose updated_at is
   // older than AUTO_ARCHIVE_DAYS gets moved to status='auto_archived' so
