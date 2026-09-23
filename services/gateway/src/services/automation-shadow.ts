@@ -41,7 +41,7 @@ export const SHADOW_UNSAFE_HANDLERS: ReadonlySet<string> = new Set([
   // community-groups: recommendation-engine (own client)
   'runWelcomeSquad',
   // engagement-events: POSTs to /scheduled-notifications/*, milestone-service
-  'runGraduatedReminders',
+  // (runGraduatedReminders left the list: a logging no-op since VTID-04374)
   'runMorningBriefing',
   'runWeeklyCommunityDigest',
   'runMilestoneCelebration',
