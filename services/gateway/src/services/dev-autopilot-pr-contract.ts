@@ -71,6 +71,10 @@ export interface PrContractInput {
     /** false when AGENT_SKIP_TSC disabled the runner's tsc. */
     tscRun: boolean;
   };
+  /** VTID-04333: the member-facing ticket number (`FB-YYYY-MM-NNNNNN`) when
+   *  the execution came from a feedback ticket. Carried next to the VTID on
+   *  the PR title and as a `Member report:` line in the body. */
+  ticketNumber?: string | null;
 }
 
 export interface PrContractOutput {
@@ -83,6 +87,7 @@ export interface PrContractOutput {
 }
 
 const VTID_RE = /VTID-[0-9]{4,5}/;
+const TICKET_NUMBER_RE = /^FB-\d{4}-\d{2}-\d{4,}$/;
 /** GitHub rejects titles over 256 chars; keep a margin for the suffix. */
 const MAX_TITLE_LEN = 240;
 const VALIDATION_PROFILE = 'gateway_backend';
@@ -101,13 +106,28 @@ export function isTestFile(path: string): boolean {
  * `VTID-NNNNN` is left alone — replacing it could point the evidence gate at
  * a different VTID than the one the author meant.
  */
-export function stampVtidOnTitle(title: string, vtid: string): string {
+export function stampVtidOnTitle(title: string, vtid: string, ticketNumber?: string | null): string {
   const t = (title || '').trim();
-  if (VTID_RE.test(t)) return t;
-  const suffix = ` (${vtid})`;
+  // VTID-04333: the member ticket number rides next to the VTID. Each id is
+  // added only when the title does not already carry it.
+  const tn = ticketNumber && TICKET_NUMBER_RE.test(ticketNumber.trim()) ? ticketNumber.trim() : null;
+  const parts: string[] = [];
+  if (tn && !t.includes(tn)) parts.push(tn);
+  if (!VTID_RE.test(t)) parts.push(vtid);
+  if (parts.length === 0) return t;
+  const suffix = ` (${parts.join(', ')})`;
   const room = MAX_TITLE_LEN - suffix.length;
   const base = t.length > room ? t.slice(0, room - 1).trimEnd() + '…' : t;
   return `${base}${suffix}`;
+}
+
+/** VTID-04333: the body line that names the member report. */
+export function memberReportLine(ticketNumber: string): string {
+  return `Member report: ${ticketNumber}`;
+}
+
+function validTicketNumber(v: string | null | undefined): string | null {
+  return v && TICKET_NUMBER_RE.test(v.trim()) ? v.trim() : null;
 }
 
 function describeFiles(files: PrContractInput['files']): string {
@@ -132,8 +152,10 @@ export function buildValidatorMarkerBlock(input: PrContractInput & { vtid: strin
     .filter((f) => f.action !== 'delete')
     .map((f, i) => `AC-${i + 1} (${f.path})`)
     .join(', ');
+  const tn = validTicketNumber(input.ticketNumber);
   return [
     `VTID: ${input.vtid}`,
+    ...(tn ? [memberReportLine(tn)] : []),
     ``,
     `## Validator tokens`,
     ``,
@@ -279,6 +301,7 @@ export function buildOutputsRecord(input: PrContractInput & { vtid: string }): s
       branch: input.branch,
       base_branch: input.baseBranch,
       llm: { provider: input.provider || null, model: input.model || null },
+      ticket_number: validTicketNumber(input.ticketNumber),
       files: input.files.map((f) => ({ path: f.path, action: f.action })),
       generated_at: input.now || new Date().toISOString(),
       generated_by: 'dev-autopilot-execute (VTID-04002 PR contract)',
@@ -308,11 +331,15 @@ export function applyPrContract(input: PrContractInput): PrContractOutput {
   const bodyHasVtidLine = /^\s*VTID:\s*VTID-[0-9]{4,5}/m.test(input.body);
   const bodyHasMarkers = ['VALIDATION_PROFILE:', 'SCOPE_ALLOWLIST:', 'ACCEPTANCE:', 'MERGE_PAYLOAD_PREVIEW:', 'OASIS_IMPACT:']
     .every((m) => input.body.includes(m));
-  const body = bodyHasVtidLine && bodyHasMarkers
+  let body = bodyHasVtidLine && bodyHasMarkers
     ? input.body
     : buildValidatorMarkerBlock(withVtid) + input.body.trimStart();
+  // VTID-04333: a model-authored body that already carried the validator
+  // tokens still gets the member report line.
+  const tn = validTicketNumber(input.ticketNumber);
+  if (tn && !body.includes(memberReportLine(tn))) body = `${memberReportLine(tn)}\n\n${body}`;
   return {
-    title: stampVtidOnTitle(input.title, input.vtid),
+    title: stampVtidOnTitle(input.title, input.vtid, tn),
     body,
     evidenceFiles: [
       { path: `${evidenceDir}/acceptance.md`, content: buildAcceptanceMarkdown(withVtid) },

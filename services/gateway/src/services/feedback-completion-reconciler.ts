@@ -65,6 +65,19 @@ interface FeedbackTicketLite {
   ticket_number: string | null;
   status: string;
   supervisor_notes: string | null;
+  /** VTID-04308: the ticket's own VTID (allocated at dispatch). */
+  linked_vtid?: string | null;
+}
+
+/** VTID-04333: fallback only when the ticket never got its own VTID. */
+export const RECONCILER_FALLBACK_VTID = 'VTID-02669';
+
+/** VTID-04333: OASIS events for a ticket are filed under the ticket's own
+ *  VTID so the ledger row, the PR and the events line up. */
+export function eventVtidForTicket(tk: { linked_vtid?: string | null }): string {
+  return typeof tk.linked_vtid === 'string' && /^VTID-\d{4,5}$/.test(tk.linked_vtid)
+    ? tk.linked_vtid
+    : RECONCILER_FALLBACK_VTID;
 }
 
 const LOG_PREFIX = '[VTID-02669 feedback-completion]';
@@ -160,7 +173,7 @@ export async function reconcileCompletedFeedbackTickets(s: SupaConfig): Promise<
     // 3. Load the ticket. Skip if already terminal — idempotent.
     const tkR = await supaGet<FeedbackTicketLite[]>(
       s,
-      `/rest/v1/feedback_tickets?id=eq.${ticketId}&select=id,ticket_number,status,supervisor_notes&limit=1`,
+      `/rest/v1/feedback_tickets?id=eq.${ticketId}&select=id,ticket_number,status,supervisor_notes,linked_vtid&limit=1`,
     );
     if (!tkR.ok || !tkR.data || !tkR.data[0]) continue;
     const tk = tkR.data[0];
@@ -187,14 +200,15 @@ export async function reconcileCompletedFeedbackTickets(s: SupaConfig): Promise<
         try {
           const { emitOasisEvent } = await import('./oasis-event-service');
           await emitOasisEvent({
-            vtid: 'VTID-02669',
-            type: 'feedback.ticket.resolved' as any,
+            vtid: eventVtidForTicket(tk),
+            type: 'feedback.ticket.resolved',
             source: 'feedback-completion-reconciler',
             status: 'success',
             message: `Auto-closed feedback ticket ${tk.ticket_number} after dev autopilot execution ${exec.id.slice(0, 8)} completed`,
             payload: {
               ticket_id: tk.id,
               ticket_number: tk.ticket_number,
+              linked_vtid: tk.linked_vtid ?? null,
               execution_id: exec.id,
               pr_url: exec.pr_url,
               playwright_verified: verified,
@@ -219,6 +233,30 @@ export async function reconcileCompletedFeedbackTickets(s: SupaConfig): Promise<
       if (upR.ok) {
         failed++;
         console.log(`${LOG_PREFIX} reopened ${tk.ticket_number} for review (autopilot ${exec.status} at ${exec.failure_stage ?? 'unknown'})`);
+        // VTID-04333: the failure branch is a real state transition too —
+        // before this it left no OASIS trace, so a ticket whose fix failed
+        // was only visible by opening its drawer.
+        try {
+          const { emitOasisEvent } = await import('./oasis-event-service');
+          await emitOasisEvent({
+            vtid: eventVtidForTicket(tk),
+            type: 'feedback.ticket.fix_failed',
+            source: 'feedback-completion-reconciler',
+            status: 'warning',
+            message: `Dev Autopilot fix for feedback ticket ${tk.ticket_number} ${exec.status} at ${exec.failure_stage ?? 'unknown stage'} (execution ${exec.id.slice(0, 8)}); ticket reopened for review`,
+            payload: {
+              ticket_id: tk.id,
+              ticket_number: tk.ticket_number,
+              linked_vtid: tk.linked_vtid ?? null,
+              execution_id: exec.id,
+              execution_status: exec.status,
+              failure_stage: exec.failure_stage ?? null,
+              pr_url: exec.pr_url,
+              new_status: 'needs_more_info',
+              via: 'dev_autopilot',
+            },
+          });
+        } catch { /* non-blocking */ }
       }
     }
   }

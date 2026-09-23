@@ -1576,6 +1576,11 @@ VERTEX_TOOL_CATALOG_BYTE_BUDGET=49152
 # product reason to ever set this on prod.
 OPERATOR_MACHINE_AUTH_ENABLED=true
 OPERATOR_MACHINE_AUTH_TOKEN=xxx
+# Auto-dispatch of member bug / ux_issue tickets with a real spec to Dev
+# Autopilot, no Approve & Fix click (VTID-04333, owner decision 2026-09-23).
+# Exact 'true' enables; kill switch + PR-approval hold still apply. Pinned on
+# staging only; off-switch is 'false'.
+FEEDBACK_AUTO_DISPATCH_ENABLED=true
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
