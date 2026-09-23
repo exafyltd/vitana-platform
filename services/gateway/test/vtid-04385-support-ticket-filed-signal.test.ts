@@ -63,7 +63,9 @@ describe('wiring', () => {
     expect(widget).toContain("case 'support_ticket_filed':");
     expect(widget).toContain("new CustomEvent('vitana:support-ticket-filed'");
   });
-  it('the Command Hub cache-bust was bumped for the widget change', () => {
-    expect(read('src/frontend/command-hub/index.html')).toContain('orb-widget.js?v=20260923-vtid-04385-ticket-filed');
+  it('the Command Hub cache-bust was bumped at or after this widget change', () => {
+    const m = read('src/frontend/command-hub/index.html').match(/orb-widget\.js\?v=(\d{8})-vtid-(\d{5})/);
+    expect(m).not.toBeNull();
+    expect(Number(m![2])).toBeGreaterThanOrEqual(4385);
   });
 });

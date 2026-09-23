@@ -1258,6 +1258,8 @@ export interface GeminiLiveSession {
   // turn-1 audio was already delivered before this reconnect (resuming a
   // lesson in progress) — see guided-topic-narration.ts's isResume doc.
   guided_topic_resume?: boolean;
+  /** VTID-04395: opened from Support → "report by voice" (support-report intake). */
+  support_report?: boolean;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -10449,6 +10451,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               menuPhrases: pickShortGapGreetings(greetLang, 6),
               openDecision: { mode: 'speak', source: 'safe_fast', line: null },
               guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+              // VTID-04395: only before the first turn — a transparent reconnect
+              // later in the report must not re-open the intake.
+              supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
               wakeBriefDecisionId: null,
               silenceOnSkipEnabled: false,
               wakeBriefHasSelectedContinuation: false,
@@ -10789,6 +10794,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       menuPhrases: pickShortGapGreetings(lang, 6),
       openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
       guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      // VTID-04395: only before the first turn — a transparent reconnect
+      // later in the report must not re-open the intake.
+      supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
       // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
       // the permanent default, not merely a Nova-validation-block retry
       // fallback. `_dayCloseReducedRetry` (cleared above) still exists to
