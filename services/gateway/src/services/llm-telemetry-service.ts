@@ -13,6 +13,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { buildGenAISpan } from './llm-genai-semconv';
 import { estimateCost } from '../constants/llm-defaults';
 import { VITANA_ENV } from '../env';
 import {
@@ -103,6 +104,16 @@ export async function startLLMCall(params: {
     prompt_hash: promptHash,
     agent_config_version: params.agentConfigVersion,
     created_at: new Date().toISOString(),
+    otel: buildGenAISpan({
+      phase: 'started',
+      traceId,
+      provider: params.provider,
+      requestModel: params.model,
+      service: params.service,
+      stage: params.stage,
+      vtid: params.vtid,
+      threadId: params.threadId,
+    }),
   };
 
   await emitOasisEvent({
@@ -163,6 +174,22 @@ export async function completeLLMCall(
     agent_config_version: context.agentConfigVersion,
     prompt_hash: context.promptHash,
     created_at: new Date().toISOString(),
+    otel: buildGenAISpan({
+      phase: 'completed',
+      traceId: context.traceId,
+      provider: context.provider,
+      requestModel: context.model,
+      responseModel: result.fallbackUsed && result.fallbackTo ? result.fallbackTo : context.model,
+      service: context.service,
+      stage: context.stage,
+      vtid: context.vtid,
+      threadId: context.threadId,
+      requestId: result.requestId,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      latencyMs,
+      fallbackUsed: result.fallbackUsed,
+    }),
   };
 
   await emitOasisEvent({
@@ -210,6 +237,20 @@ export async function failLLMCall(
     error_code: error.code,
     error_message: error.message,
     created_at: new Date().toISOString(),
+    otel: buildGenAISpan({
+      phase: 'failed',
+      traceId: context.traceId,
+      provider: context.provider,
+      requestModel: context.model,
+      responseModel: error.fallbackUsed && error.fallbackTo ? error.fallbackTo : context.model,
+      service: context.service,
+      stage: context.stage,
+      vtid: context.vtid,
+      threadId: context.threadId,
+      latencyMs,
+      fallbackUsed: error.fallbackUsed,
+      errorCode: error.code,
+    }),
   };
 
   await emitOasisEvent({
