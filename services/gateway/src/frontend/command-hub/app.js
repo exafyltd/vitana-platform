@@ -49760,8 +49760,22 @@ function orchSectionShell(title, section) {
     return { box: box, ok: true };
 }
 
+// Literal class names (not built by concatenation) so the dead-CSS scan
+// (scripts/find-dead-css-classes.mjs) can see every rule is used.
+var ORCH_PILL_CLASS = {
+    succeeded: 'orch-pill--succeeded', active: 'orch-pill--active', healthy: 'orch-pill--healthy',
+    failed: 'orch-pill--failed', disabled: 'orch-pill--disabled',
+    running: 'orch-pill--running', queued: 'orch-pill--queued',
+    awaiting_approval: 'orch-pill--awaiting_approval', waiting_signal: 'orch-pill--waiting_signal',
+};
+var ORCH_TIER_CLASS = {
+    none: 'orch-tier--none', read: 'orch-tier--read', draft: 'orch-tier--draft',
+    commit: 'orch-tier--commit', high: 'orch-tier--commit', org: 'orch-tier--org',
+};
+
 function orchStatusPill(status) {
-    return orchEl('span', 'orch-pill orch-pill--' + String(status || 'unknown').replace(/[^a-z_]/g, ''), status || 'unknown');
+    var extra = ORCH_PILL_CLASS[status] ? ' ' + ORCH_PILL_CLASS[status] : '';
+    return orchEl('span', 'orch-pill' + extra, status || 'unknown');
 }
 
 function renderOrchestratorSummary(section, o) {
@@ -49904,7 +49918,7 @@ function renderOrchestratorPolicy(section) {
         tr.appendChild(orchEl('td', 'orch-mono', role));
         domains.forEach(function (dm) {
             var tier = (roles[role] && roles[role][dm]) || (dm === 'commerce' ? 'org' : 'none');
-            tr.appendChild(orchEl('td', 'orch-tier orch-tier--' + tier, tier));
+            tr.appendChild(orchEl('td', 'orch-tier ' + (ORCH_TIER_CLASS[tier] || ORCH_TIER_CLASS.none), tier));
         });
         tbody.appendChild(tr);
     });
