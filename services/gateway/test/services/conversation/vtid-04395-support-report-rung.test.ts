@@ -106,7 +106,9 @@ describe('wiring', () => {
     expect(w).toContain('startSupportReport: function ()');
     expect(w).toContain('startPayload.support_report = true;\n        _s.supportReport = false;');
   });
-  test('the Command Hub cache-bust names this change', () => {
-    expect(read('src/frontend/command-hub/index.html')).toContain('orb-widget.js?v=20260923-vtid-04395-support-report');
+  test('the Command Hub orb-widget cache-bust is this change or later', () => {
+    const m = read('src/frontend/command-hub/index.html').match(/orb-widget\.js\?v=(\d{8})-vtid-(\d{4,5})/);
+    expect(m).not.toBeNull();
+    expect(m![1] >= '20260923').toBe(true);
   });
 });

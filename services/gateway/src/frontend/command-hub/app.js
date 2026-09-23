@@ -49711,6 +49711,10 @@ var ORCH_ENDPOINTS = {
     },
     agents: function () { return '/api/v1/orchestrator/agents'; },
     policy: function () { return '/api/v1/orchestrator/policy'; },
+    // VTID-04396: the P2/P3 read sides.
+    shadow: function () { return '/api/v1/orchestrator/policy/shadow'; },
+    budgets: function () { return '/api/v1/orchestrator/budgets'; },
+    delegations: function () { return '/api/v1/orchestrator/delegations'; },
 };
 
 var ORCH_RUN_STATUSES = ['queued', 'running', 'waiting_signal', 'awaiting_approval', 'succeeded', 'failed', 'cancelled'];
@@ -49767,6 +49771,8 @@ var ORCH_PILL_CLASS = {
     failed: 'orch-pill--failed', disabled: 'orch-pill--disabled',
     running: 'orch-pill--running', queued: 'orch-pill--queued',
     awaiting_approval: 'orch-pill--awaiting_approval', waiting_signal: 'orch-pill--waiting_signal',
+    allow: 'orch-pill--allow', escalate: 'orch-pill--escalate', deny: 'orch-pill--deny',
+    over: 'orch-pill--deny', cancelled: 'orch-pill--disabled',
 };
 var ORCH_TIER_CLASS = {
     none: 'orch-tier--none', read: 'orch-tier--read', draft: 'orch-tier--draft',
@@ -49929,13 +49935,148 @@ function renderOrchestratorPolicy(section) {
     return s.box;
 }
 
+function fmtUsd(n) {
+    var v = Number(n) || 0;
+    return '$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+}
+
+// VTID-04396: today's LLM spend against the P2 budgets (VTID-04370).
+function renderOrchestratorBudgets(section) {
+    var s = orchSectionShell('LLM spend today vs budgets (shadow — nothing is blocked yet)', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var spend = d.spend || {};
+    var env = d.envelope || {};
+    var limits = d.limits || {};
+    var platformLimit = Number(limits.platform_per_day_usd) || 0;
+    var head = orchEl('div', 'orch-budget-head');
+    head.appendChild(orchEl('div', 'orch-budget-total', fmtUsd(spend.platform_usd) + ' of ' + fmtUsd(platformLimit) + ' today'));
+    var bar = orchEl('progress', 'orch-budget-bar');
+    bar.max = 100;
+    bar.value = platformLimit > 0 ? Math.min(100, (Number(spend.platform_usd) || 0) / platformLimit * 100) : 0;
+    head.appendChild(bar);
+    s.box.appendChild(head);
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Envelope ' + fmtUsd(env.monthly_usd) + '/month (cap ' + fmtUsd(env.monthly_cap_usd) + '). ' +
+        (spend.calls || 0) + ' calls since ' + fmtOrchTime(d.since) + '; ' + (spend.repriced_calls || 0) + ' repriced from tokens, ' +
+        (spend.unpriced_calls || 0) + ' with no known price.' + (d.truncated ? ' Truncated: more rows than one read returns.' : '')));
+    var deny = d.would_deny || [];
+    s.box.appendChild(orchEl('div', deny.length ? 'orch-error' : 'orch-muted',
+        deny.length ? deny.length + ' budget line(s) over limit — enforcement would deny: ' + deny.map(function (l) { return l.key; }).join(', ')
+                    : 'No budget line is over its limit.'));
+    var lines = (d.lines || []).slice(0, 15);
+    if (!lines.length) return s.box;
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var hr = orchEl('tr');
+    ['Scope', 'Key', 'Spent', 'Limit', 'Used'].forEach(function (h) { hr.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(hr); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    lines.forEach(function (l) {
+        var tr = orchEl('tr', l.over ? 'is-over' : null);
+        tr.appendChild(orchEl('td', null, l.scope));
+        tr.appendChild(orchEl('td', 'orch-mono', l.key));
+        tr.appendChild(orchEl('td', 'orch-nowrap', fmtUsd(l.spent_usd)));
+        tr.appendChild(orchEl('td', 'orch-nowrap', fmtUsd(l.limit_usd)));
+        var used = orchEl('td');
+        used.appendChild(l.over ? orchStatusPill('over') : orchEl('span', null, (l.used_pct || 0) + '%'));
+        tr.appendChild(used);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+// VTID-04396: what the capability policy WOULD decide for real ORB tool calls (VTID-04362).
+function renderOrchestratorShadow(section) {
+    var s = orchSectionShell('Policy shadow — what enforcement would change', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var sh = d.shadow || {};
+    var by = sh.by_decision || {};
+    var chips = orchEl('div', 'orch-plane-chips');
+    ['allow', 'escalate', 'deny'].forEach(function (k) {
+        var c = orchStatusPill(k);
+        c.textContent = k + ' ' + (by[k] || 0);
+        chips.appendChild(c);
+    });
+    s.box.appendChild(chips);
+    s.box.appendChild(orchEl('div', 'orch-muted', (sh.total_calls || 0) + ' ORB tool calls since ' + fmtOrchTime(sh.since) +
+        ' on this gateway task (the window resets on deploy).' + (d.catalog ? ' Catalog: ' + d.catalog.tools + ' tools, ' +
+        (d.catalog.unclassified || []).length + ' unclassified.' : '')));
+    var rows = (sh.aggregates || []).filter(function (a) { return a.decision !== 'allow'; }).slice(0, 20);
+    if (!rows.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No call so far would have been escalated or denied.'));
+        return s.box;
+    }
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var hr = orchEl('tr');
+    ['Role', 'Tool', 'Domain / tier', 'Would', 'Calls', 'Why'].forEach(function (h) { hr.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(hr); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    rows.forEach(function (a) {
+        var tr = orchEl('tr');
+        tr.appendChild(orchEl('td', 'orch-mono', a.role));
+        tr.appendChild(orchEl('td', 'orch-mono', a.tool));
+        tr.appendChild(orchEl('td', null, a.domain + ' / ' + a.tier));
+        var w = orchEl('td'); w.appendChild(orchStatusPill(a.decision)); tr.appendChild(w);
+        tr.appendChild(orchEl('td', null, a.count));
+        tr.appendChild(orchEl('td', 'orch-title-cell', a.reason));
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+// VTID-04396: delegation targets and in-memory job counts (VTID-04375/04386).
+function renderOrchestratorDelegations(section) {
+    var s = orchSectionShell('Delegation targets', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var jobs = (d.jobs && d.jobs.by_agent) || {};
+    var targets = d.targets || [];
+    if (!targets.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No delegation targets registered.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-agent-grid');
+    targets.forEach(function (t) {
+        var card = orchEl('div', 'orch-agent-card');
+        var top = orchEl('div', 'orch-agent-top');
+        top.appendChild(orchEl('span', 'orch-agent-name', t.agent_id));
+        var tierPill = orchEl('span', 'orch-tier ' + (ORCH_TIER_CLASS[t.tier] || ORCH_TIER_CLASS.none), t.domain + ' / ' + t.tier);
+        top.appendChild(tierPill);
+        card.appendChild(top);
+        if (t.description) card.appendChild(orchEl('div', 'orch-agent-desc', t.description));
+        card.appendChild(orchEl('div', 'orch-muted', 'Surfaces: ' + (t.surfaces || []).join(', ')));
+        var j = jobs[t.agent_id];
+        var chips = orchEl('div', 'orch-plane-chips');
+        ['running', 'succeeded', 'failed', 'cancelled'].forEach(function (k) {
+            var n = j && j[k];
+            if (!n) return;
+            var c = orchStatusPill(k);
+            c.textContent = k + ' ' + n;
+            chips.appendChild(c);
+        });
+        if (!chips.children.length) chips.appendChild(orchEl('span', 'orch-muted', 'No jobs on this gateway task.'));
+        card.appendChild(chips);
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
 function renderAutopilotOrchestratorView() {
     var o = state.autopilot.orchestrator;
     var container = orchEl('div', 'orch-container');
     var header = orchEl('div', 'orch-header');
     var tb = orchEl('div');
     tb.appendChild(orchEl('h2', null, 'Orchestrator'));
-    tb.appendChild(orchEl('p', 'section-subtitle', 'One read-only view across every agent plane: what ran, which agents exist, and the default grants each role gets. Nothing on this page changes behaviour.'));
+    tb.appendChild(orchEl('p', 'section-subtitle', 'One read-only view across every agent plane: what ran, what it cost against the budgets, what the policy would change, which agents can be delegated to, and the default grants each role gets. Nothing on this page changes behaviour.'));
     header.appendChild(tb);
     var controls = orchEl('div', 'orch-controls');
     [1, 7, 30].forEach(function (days) {
@@ -49959,6 +50100,9 @@ function renderAutopilotOrchestratorView() {
     container.appendChild(renderOrchestratorSummary(sec.summary, o));
     container.appendChild(renderOrchestratorRuns(sec.runs, o));
     container.appendChild(renderOrchestratorAgents(sec.agents));
+    container.appendChild(renderOrchestratorBudgets(sec.budgets));
+    container.appendChild(renderOrchestratorShadow(sec.shadow));
+    container.appendChild(renderOrchestratorDelegations(sec.delegations));
     container.appendChild(renderOrchestratorPolicy(sec.policy));
     if (o.fetchedAt) container.appendChild(orchEl('div', 'orch-muted orch-footer', 'Fetched ' + fmtOrchTime(o.fetchedAt)));
     return container;

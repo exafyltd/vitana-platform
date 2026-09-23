@@ -915,7 +915,7 @@ jobs:
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
-                                                "NAV_CONTINUATION_BIND","VITANA_ENV",
+                                                "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
                                                 "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -937,6 +937,7 @@ jobs:
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
                           {name:"VITANA_ENV", value:"staging"},
+                          {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},

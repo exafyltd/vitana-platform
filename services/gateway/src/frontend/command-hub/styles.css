@@ -17852,6 +17852,7 @@ button.fb-chip:focus-visible,
 .orch-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .orch-table th, .orch-table td { text-align: start; padding: 6px 8px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
 .orch-table th { color: var(--color-text-secondary); font-weight: 500; white-space: nowrap; }
+.orch-table td.orch-mono { white-space: nowrap; overflow-wrap: normal; }
 .orch-title-cell { min-width: 200px; overflow-wrap: anywhere; }
 .orch-run-error { color: #f87171; font-size: 0.75rem; margin-top: 2px; }
 .orch-agent-card { padding: 0.75rem; border-radius: 8px; background: var(--color-sidebar-bg); border: 1px solid var(--color-border); min-width: 0; }
@@ -17872,6 +17873,14 @@ button.fb-chip:focus-visible,
 .orch-tier--commit { color: #34d399; }
 .orch-tier--org { color: var(--color-text-secondary); font-style: italic; }
 .orch-footer { margin-top: 0.5rem; }
+/* VTID-04396: budget, policy shadow and delegation panels */
+.orch-pill--allow { color: #34d399; border-color: rgba(52, 211, 153, 0.5); }
+.orch-pill--escalate { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.orch-pill--deny { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+.orch-budget-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; }
+.orch-budget-total { font-size: 1.2rem; font-weight: 600; white-space: nowrap; }
+.orch-budget-bar { flex: 1 1 200px; min-width: 0; height: 10px; accent-color: #60a5fa; }
+.orch-table tr.is-over td { background: rgba(248, 113, 113, 0.08); }
 @media (max-width: 600px) {
   .orch-container { padding: 1rem; }
   .orch-plane-grid, .orch-agent-grid { grid-template-columns: 1fr; }

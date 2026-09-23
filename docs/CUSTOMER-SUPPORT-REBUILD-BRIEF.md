@@ -327,8 +327,8 @@ Follow-ups after the merge:
   event → app toast with a link).
 - **VTID-04395 (vitana-v1 + platform):** Support → "report by voice" opens
   the ORB as a support intake — a greeting rung that outranks every
-  briefing, written as an intent, only before the first turn. The mobile
-  Support screen still has dictation only.
+  briefing, written as an intent, only before the first turn. Desktop and
+  mobile Support screens both open it (vitana-v1 #1131).
 - **VTID-04360 (vitana-v1):** translate the admin drawer labels, drop the
   retired `NewTicketPopup` from `docs/SCREEN_REGISTRY.md`, show the report
   text in the member ticket list.

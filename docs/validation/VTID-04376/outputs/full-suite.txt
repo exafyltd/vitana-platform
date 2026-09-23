@@ -1,0 +1,2 @@
+Full gateway suite before the VTID-03895 assertion update: 1109 passed, 1 failed (VTID-03895, 2 tests — both intended behaviour changes, updated), 1 skipped; 17932 tests passed.
+After update: vtid-03895 + vtid-04378 13/13.
