@@ -1,0 +1,24 @@
+VTID-04352 — commands run
+
+1. Allocated VTID-04352 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
+   set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
+
+2. Checked which memory jobs touch members:
+   grep -n "notify" services/gateway/src/services/automation-handlers/memory-intelligence.ts
+   -> only the memory-informed matching handler (runMemoryInformedMatching, not in this group)
+      and AP-0907 (daily learning digest).
+
+3. bash -n scripts/aws/setup-eventbridge-cron-migration.sh -> OK
+
+4. Dry runs (no AWS call is made in --dry-run):
+   --only autopilot-memory- --dry-run         -> 8 jobs, exit 0
+   seven --only <full name> --dry-run          -> 7 jobs, exit 0
+   --only nope- --dry-run                      -> "matches none of the 27 jobs", exit 1
+   --only                                      -> exit 1
+   --dry-run                                   -> 27 jobs, exit 0
+   --delete --only autopilot-memory- --dry-run -> 8 "would delete", Lambda/roles kept
+
+5. Tests:
+   node_modules/.bin/jest test/vtid-04352-eventbridge-only-filter.test.ts \
+     test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+   -> 2 suites, 18 tests passed
