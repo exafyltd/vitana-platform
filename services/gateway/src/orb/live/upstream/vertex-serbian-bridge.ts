@@ -44,3 +44,46 @@ export function isVertexSerbianBridgeLanguage(lang: string | null | undefined): 
   const normalized = (lang || '').toLowerCase().split(/[-_]/)[0];
   return normalized === 'sr';
 }
+
+/**
+ * VTID-04336 — Gemini Live's prebuilt voice names (the only values its
+ * `speech_config.voice_config.prebuilt_voice_config.voice_name` accepts).
+ * Kept here, next to the only live Vertex path left (the Serbian bridge),
+ * because the persona registry's `voice_id` is shared by every provider: a
+ * registry row pointed at a Nova or Polly id (`matthew`, `Daniel`, …) would
+ * reach this setup verbatim and fail the hand-off reconnect.
+ */
+export const GEMINI_LIVE_PREBUILT_VOICES: ReadonlySet<string> = new Set([
+  'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe',
+  'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux',
+  'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima',
+  'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel',
+  'Vindemiatrix', 'Zephyr', 'Zubenelgenubi',
+]);
+
+/**
+ * VTID-04336 — the specialist's Gemini voice when the registry voice is not
+ * a Gemini prebuilt voice. `Charon` is Devon's own registry voice
+ * (`20260501100000_vtid_02651_persona_voice_greeting.sql`), the male
+ * counterpart of the receptionist voice, so the member still hears a
+ * different colleague pick up.
+ */
+export const VERTEX_SPECIALIST_FALLBACK_VOICE = 'Charon';
+
+/**
+ * VTID-04336 — the voice a Vertex Live setup may carry for `persona`.
+ * Returns the registry voice when Gemini knows it, the specialist fallback
+ * when a SPECIALIST's registry voice is not a Gemini voice, and null when
+ * there is no usable persona voice (the caller then uses the language voice,
+ * exactly as before). Never returns a non-Gemini name.
+ */
+export function resolveVertexLivePersonaVoice(
+  voice: string | null | undefined,
+  persona: string | null | undefined,
+): string | null {
+  const v = (voice || '').trim();
+  if (v && GEMINI_LIVE_PREBUILT_VOICES.has(v)) return v;
+  const p = (persona || '').trim().toLowerCase();
+  if (v && p && p !== 'vitana') return VERTEX_SPECIALIST_FALLBACK_VOICE;
+  return null;
+}
