@@ -9,6 +9,9 @@
  *   GET /api/v1/orchestrator/policy         — default grants + the caller's own ceilings,
  *                                             optional ?domain=&tier= dry evaluation (VTID-04325,
  *                                             shadow: nothing enforces it yet)
+ *   GET /api/v1/orchestrator/policy/shadow  — what the policy WOULD have decided for real ORB
+ *                                             tool calls since this process started, plus the
+ *                                             tool catalog summary (VTID-04362, exafy_admin)
  *
  * Nothing here writes or changes any plane's behaviour.
  */
@@ -30,6 +33,8 @@ import {
   isPolicyTier,
   policyDefaults,
 } from '../services/orchestrator/policy';
+import { shadowSnapshot } from '../services/orchestrator/policy-shadow';
+import { buildToolCatalog, summarizeCatalog } from '../services/orchestrator/tool-catalog';
 
 const router = Router();
 
@@ -100,6 +105,23 @@ router.get('/agents', requireDevRole, async (_req: Request, res: Response) => {
   const { agents, error } = await listAgentCards(sb);
   if (error) return res.status(502).json({ ok: false, error });
   return res.json({ ok: true, data: { agents } });
+});
+
+router.get('/policy/shadow', requireDevRole, async (_req: Request, res: Response) => {
+  let catalog: { tools: number; unclassified: string[]; by_domain_tier: Record<string, Record<string, number>> } | null = null;
+  try {
+    // Loaded lazily: the ORB tool registry is large and this route is rarely hit.
+    const { ORB_TOOL_NAMES } = await import('../services/orb-tools-shared');
+    const built = buildToolCatalog(ORB_TOOL_NAMES);
+    catalog = {
+      tools: ORB_TOOL_NAMES.length,
+      unclassified: Object.entries(built).filter(([, c]) => c.source === 'default').map(([n]) => n),
+      by_domain_tier: summarizeCatalog(built),
+    };
+  } catch (e: unknown) {
+    console.warn('[orchestrator] tool catalog unavailable:', e instanceof Error ? e.message : e);
+  }
+  return res.json({ ok: true, data: { shadow: shadowSnapshot(), catalog } });
 });
 
 router.get('/policy', requireAuth as any, async (req: Request, res: Response) => {

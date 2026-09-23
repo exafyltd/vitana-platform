@@ -9,6 +9,8 @@
  * AC-4 migration: additive, service-role only, view is security_invoker.
  * VTID-04325 AC-5 /policy: any signed-in user sees the defaults, their own
  *      ceilings and an optional dry evaluation; bad input is a 400.
+ * VTID-04362 AC-6 /policy/shadow: exafy_admin only; returns the shadow window
+ *      and the tool catalog summary; enforced is false.
  */
 
 import * as fs from 'fs';
@@ -50,6 +52,7 @@ function stubSupabase() {
 }
 
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: () => stubSupabase() }));
+jest.mock('../../src/services/orb-tools-shared', () => ({ ORB_TOOL_NAMES: ['log_water', 'dev_recent_events', 'dev_publish_to_prod'] }));
 
 import { buildAgentContext, normalizeChannel, resolveAgentContext } from '../../src/services/orchestrator/context';
 import { normalizeRunQuery, summarizeRunRows, RUN_LIST_MAX_LIMIT } from '../../src/services/orchestrator/run-ledger';
@@ -186,6 +189,20 @@ describe('routes', () => {
     expect(res.body.data.evaluation).toMatchObject({ decision: 'escalate', domain: 'community', requested: 'commit' });
     expect((await request(app()).get('/api/v1/orchestrator/policy?domain=nope')).status).toBe(400);
     expect((await request(app()).get('/api/v1/orchestrator/policy?domain=dev&tier=root')).status).toBe(400);
+  });
+
+  test('/policy/shadow: 403 for a member; window + catalog for an admin (VTID-04362)', async () => {
+    const { recordToolDecision, resetShadow } = await import('../../src/services/orchestrator/policy-shadow');
+    resetShadow();
+    identity.current = member;
+    expect((await request(app()).get('/api/v1/orchestrator/policy/shadow')).status).toBe(403);
+    recordToolDecision({ tool: 'dev_recent_events', role: 'community' });
+    identity.current = admin;
+    const res = await request(app()).get('/api/v1/orchestrator/policy/shadow');
+    expect(res.status).toBe(200);
+    expect(res.body.data.shadow).toMatchObject({ enforced: false, total_calls: 1, by_decision: { deny: 1 } });
+    expect(res.body.data.catalog).toMatchObject({ tools: 3, unclassified: [] });
+    expect(res.body.data.catalog.by_domain_tier.dev).toEqual({ read: 1, high: 1 });
   });
 
   test('/agents returns agent cards; a read error is a 502, not a crash', async () => {

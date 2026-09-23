@@ -27,6 +27,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
@@ -5880,6 +5881,11 @@ export async function dispatchOrbTool(
   if (!handler) {
     return { ok: false, error: `unknown tool: ${name}` };
   }
+
+  // VTID-04362 (Orchestrator v2 P2, shadow): record what the capability
+  // policy WOULD decide for this call. Never blocks; recordToolDecision
+  // swallows its own errors. Read the window at GET /api/v1/orchestrator/policy/shadow.
+  recordToolDecision({ tool: name, role: identity.role, channel: 'voice', session_id: identity.session_id ?? null });
 
   // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
   //
