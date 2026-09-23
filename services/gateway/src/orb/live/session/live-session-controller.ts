@@ -106,6 +106,7 @@ import {
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
 import { cogneeExtractorClient } from '../../../services/cognee-extractor-client';
+import { finalizeLiveSession } from './finalize-live-session';
 import {
   sessions,
   liveSessions,
@@ -309,17 +310,9 @@ export function cleanupWsSession(
     // the socket id would leave the live session in the map forever (and
     // scope extraction/buffer teardown to a key nothing else uses).
     const liveSessionKey = ls.sessionId || sessionId;
+    // VTID-04353: memory + voice summary through the one idempotent finalize.
+    finalizeLiveSession(ls, { sessionId: liveSessionKey, reason: `ws_cleanup_${reason}` });
     if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
-      const fullTranscript = ls.transcriptTurns
-        .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: ls.identity.tenant_id,
-        user_id: ls.identity.user_id,
-        session_id: liveSessionKey,
-        force: true,
-      });
       destroySessionBuffer(liveSessionKey);
       clearExtractionState(liveSessionKey);
     }
@@ -2435,31 +2428,9 @@ export async function handleLiveSessionStop(
     const userId = session.identity.user_id;
 
     if (session.transcriptTurns.length > 0) {
-      const fullTranscript = session.transcriptTurns
-        .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
-        .join('\n');
-
-      if (fullTranscript.length > 50) {
-        if (cogneeExtractorClient.isEnabled()) {
-          cogneeExtractorClient.extractAsync({
-            transcript: fullTranscript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id,
-            active_role: session.active_role || 'community',
-          });
-          console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
-        }
-
-        // VTID-01230: Deduplicated extraction (force on session end)
-        deduplicatedExtract({
-          conversationText: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id,
-          force: true,
-        });
-      }
+      // VTID-04353: memory + voice summary through the one idempotent finalize
+      // (a second end path on the same transcript is a no-op).
+      finalizeLiveSession(session, { sessionId: session_id, reason: 'live_session_stop' });
     } else {
       // Fallback: query memory_items if no in-memory transcript available
       fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())

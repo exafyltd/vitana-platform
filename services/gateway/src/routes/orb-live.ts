@@ -175,6 +175,7 @@ import { handleIdentityIntent } from '../services/identity-intent-handler';
 // VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (multi-instance safe; dual-write w/ in-process buffer)
 import { addTurnRedis, destroySessionBufferRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
+import { finalizeLiveSession } from '../orb/live/session/finalize-live-session';
 // VTID-01149: Unified Task-Creation Intake
 import {
   detectTaskCreationIntent,
@@ -951,6 +952,10 @@ export interface GeminiLiveSession {
   // stopped" and for "never successfully started" — two states that need
   // opposite answers here.
   stopEventEmitted?: boolean;
+  // VTID-04353: transcript turns covered by the last finalizeLiveSession() —
+  // makes the end-of-session memory commit + summary idempotent across the
+  // several end paths that can fire for one conversation.
+  finalizedTurnCount?: number;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
   // 'vitana' is the default; report_to_specialist tool flips this to a
   // specialist key, then triggers a transparent reconnect of the upstream
@@ -1352,6 +1357,9 @@ setInterval(() => {
       // Nova item 6: this is the abandoned-session sweep, not a user action —
       // distinguish it from user_stop / client_disconnect in telemetry.
       if (s.upstreamWs) { try { s.upstreamWs.close(1000, `zombie_sweep_${closeReason}`); } catch (_) { /* ignore */ } }
+      // VTID-04353: an abandoned session (stop POST lost, tab killed) used to
+      // be reaped with no memory commit at all.
+      finalizeLiveSession(s, { sessionId: sid, reason: `idle_sweep_${closeReason}` });
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -9586,17 +9594,9 @@ async function connectToLiveAPI(
 
         // Fire final extraction on genuine disconnect
         if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-          const allText = session.transcriptTurns
-            .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-            .join('\n');
-          // VTID-01230: Force extraction on disconnect (session end)
-          deduplicatedExtract({
-            conversationText: allText,
-            tenant_id: session.identity.tenant_id,
-            user_id: session.identity.user_id,
-            session_id: session.sessionId,
-            force: true,
-          });
+          // VTID-04353: through the one idempotent finalize — the client's
+          // own stop that follows is then a no-op on the same transcript.
+          finalizeLiveSession(session, { sessionId: session.sessionId, reason: 'upstream_disconnect' });
           // Clean up session buffer and extraction state
           destroySessionBuffer(session.sessionId);
           clearExtractionState(session.sessionId);
@@ -16183,19 +16183,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session.sseResponse = null;
     }
 
-    // VTID-01230: Deduplicated extraction on SSE disconnect
-    if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-      const fullTranscript = session.transcriptTurns
-        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: session.identity.tenant_id,
-        user_id: session.identity.user_id,
-        session_id: sessionId,
-        force: true,
-      });
-    }
+    // VTID-04353: memory + voice summary through the one idempotent finalize
+    // (was a separate forced extraction racing POST /live/session/stop).
+    finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
@@ -18150,6 +18140,14 @@ function handleWsStopSession(clientSession: WsClientSession): void {
 
   if (liveSession) {
     liveSession.active = false;
+
+    // VTID-04353: commit memory + summary here too — this handler nulls
+    // clientSession.liveSession, so the socket-close cleanup that follows
+    // can no longer reach the transcript.
+    finalizeLiveSession(liveSession, {
+      sessionId: liveSession.sessionId || sessionId,
+      reason: 'ws_stop',
+    });
 
     // VTID-03616: mirror terminateExistingSessionsForUser's teardown — clear
     // the response watchdog and both keepalive intervals BEFORE dropping the

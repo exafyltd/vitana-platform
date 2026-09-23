@@ -1,0 +1,86 @@
+# VTID-04353 — Conversation rebuild WS-0.4: one finalize step for every ORB session end path
+
+Plan v1 (Conversation Intelligence Rebuild), Phase 0, workstream WS-0.4.
+Ships in PR #3614 as a companion to VTID-04339 (one VTID per PR gate;
+VTID-04246 precedent).
+
+## What was wrong (read from the code, file:line on the pre-change tree)
+
+- **No live voice session wrote a session summary.** `recordSessionSummary`
+  was only reached from the legacy `POST /end-session`, which reads the
+  `orbTranscripts` map filled by the old `/chat` and `/session/append` routes —
+  never by a live WebSocket/SSE turn. The next session's "since we last spoke"
+  context therefore had nothing from voice.
+- **End-of-session memory extraction was copy-pasted across end paths, each
+  with `force: true`** (which bypasses the extraction dedup):
+  - WS socket cleanup (controller `cleanupWsSession`)
+  - `POST /live/session/stop` (controller `handleLiveSessionStop`)
+  - SSE `req.on('close')` on `/live/stream`
+  - Vertex genuine upstream disconnect
+- **Resulting double and missing work:**
+  - A clean SSE stop raced the close handler against the stop POST and extracted twice.
+  - A Vertex disconnect followed by the client stop extracted twice.
+  - The WS stop frame nulled `clientSession.liveSession`, so the socket
+    cleanup never saw the transcript; memory then depended on a fire-and-forget POST.
+  - When that POST was lost, the idle sweep reaped the session with no extraction at all.
+
+## Fix
+
+New `orb/live/session/finalize-live-session.ts` — `finalizeLiveSession(session, {sessionId, reason})`:
+- **Memory:** commits through the existing `commitSessionMemory()`, the same helper
+  LiveKit already used (Cognee when enabled, plus deduplicated extraction, forced).
+- **Summary:** writes the voice summary through the existing `recordSessionSummary()`
+  (`memory` routing stage, upsert on user_id + session_id).
+  - Only for a real user and at least one user turn.
+  - `ORB_VOICE_SESSION_SUMMARY_ENABLED=false` turns the summary off; the memory commit stays on.
+- **Idempotency:** the session records `finalizedTurnCount`.
+  - Same transcript again: no-op.
+  - More turns since the last finalize (the Vertex disconnect branch keeps the
+    session alive): runs again on the longer transcript. The summary upsert
+    updates the same row.
+- **Never throws and never awaits the model call.**
+
+Wired into: WS stop frame, WS socket cleanup, `POST /live/session/stop`
+(transcript branch; the `memory_items` fallback for an empty transcript is
+unchanged), SSE close, the idle sweep, the Vertex genuine disconnect.
+`POST /end-session`, `/session/finalize` and the LiveKit commit route are unchanged.
+
+## Deliberately not changed here
+
+- **Duplicate `vtid.live.session.stop` events.** The WS stop frame emits under
+  the socket id and `/live/session/stop` under the live id, and the idle sweep
+  ignores the latch.
+  - `fetchLastSessionInfo` reads these events, so changing them moves the next
+    session's greeting.
+  - This needs its own VTID with a before/after check of the greeting ledger.
+- **Per-turn unforced extraction** (the last 4 turns) is untouched.
+
+## Behaviour notes
+
+- **Short transcripts:** the WS-cleanup and SSE-close paths used to extract
+  regardless of length. They now follow `commitSessionMemory`'s 50-character
+  minimum, the rule `/live/session/stop` already applied.
+- **Cognee on WS/SSE:** those paths also reach Cognee when it is enabled. It is
+  off by default (`cognee_extraction_enabled`).
+- **New LLM call:** one `memory`-stage call per finished voice session with a
+  user turn (Bedrock, per policy v17). Before this there were none for live voice.
+
+## Acceptance criteria
+
+AC-1: A finished session commits memory once and queues one voice summary with the full transcript.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-2: A second end path on the same transcript does nothing; a longer transcript runs again.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-3: Empty, greeting-only and anonymous sessions write no summary; the kill switch disables only the summary.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-4: A throwing commit or a rejecting summary never propagates.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-5: All six end paths call finalizeLiveSession; the controller no longer carries its own forced transcript extraction.
+TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+
+AC-6 (post-deploy, staging): after a real voice session ends on staging, a `user_session_summaries` row with `channel='voice'` and the live session id exists, and the gateway log shows exactly one `[VTID-04353] finalized` line with `ran` for that session.
+UI: staging voice session by the owner (this session does not write as the test account — CLAUDE.md rule 31).

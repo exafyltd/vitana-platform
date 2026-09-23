@@ -1,0 +1,23 @@
+VTID-04353 — commands run
+
+1. Allocated VTID-04353 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
+   set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
+
+2. Mapped every ORB session end path (read-only code search): WS stop frame,
+   WS close/cleanupWsSession, POST /live/session/stop, SSE close, idle sweep,
+   superseded session, Vertex/Nova upstream close, stall watchdog,
+   end_conversation directive, LiveKit commit-memory, legacy /end-session and
+   /session/finalize. Findings summarized in acceptance.md.
+
+3. Checked the reused writers:
+   - services/guide/session-summaries.ts recordSessionSummary: callViaRouter('memory'),
+     heuristic fallback, upsert on (user_id, session_id).
+   - services/session-memory-commit.ts commitSessionMemory: >50 chars + identity,
+     Cognee (flag-gated) + deduplicatedExtract force, never throws.
+
+4. Typecheck: node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .  -> exit 0
+
+5. Tests:
+   node_modules/.bin/jest test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+   -> 16 passed
+   Full gateway suite: see outputs/test-summary.txt
