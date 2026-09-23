@@ -131,24 +131,6 @@ describe('scheduled-notifications-repository', () => {
     });
   });
 
-  describe('meetup-reminders helpers', () => {
-    it('fetchMeetupsStartingBetween scopes tenant + window', async () => {
-      const sb = makeSupabaseStub({ data: [] });
-      await repo.fetchMeetupsStartingBetween(sb as any, { tenantId: 't1', from: 'A', to: 'B' });
-      expect(sb.from).toHaveBeenCalledWith('community_meetups');
-      expect(sb.calls).toContainEqual({ method: 'gte', args: ['starts_at', 'A'] });
-      expect(sb.calls).toContainEqual({ method: 'lte', args: ['starts_at', 'B'] });
-    });
-
-    it('fetchMeetupRsvps filters by meetup + rsvp status', async () => {
-      const sb = makeSupabaseStub({ data: [] });
-      await repo.fetchMeetupRsvps(sb as any, 'm1');
-      expect(sb.from).toHaveBeenCalledWith('community_meetup_attendance');
-      expect(sb.calls).toContainEqual({ method: 'eq', args: ['meetup_id', 'm1'] });
-      expect(sb.calls).toContainEqual({ method: 'eq', args: ['status', 'rsvp'] });
-    });
-  });
-
   describe('fetchTodaysCalendarEvents', () => {
     it('excludes cancelled and orders ascending', async () => {
       const sb = makeSupabaseStub({ data: [] });

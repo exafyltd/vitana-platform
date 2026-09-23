@@ -11,7 +11,7 @@
  *   POST /api/v1/scheduled-notifications/weekly-digest
  *   POST /api/v1/scheduled-notifications/weekly-summary
  *   POST /api/v1/scheduled-notifications/weekly-reflection
- *   POST /api/v1/scheduled-notifications/meetup-reminders
+ *   POST /api/v1/scheduled-notifications/meetup-reminders   (retired, no-op — VTID-04374)
  *   POST /api/v1/scheduled-notifications/upcoming-events
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
@@ -945,76 +945,16 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /meetup-reminders — Every 15 minutes
+// POST /meetup-reminders — RETIRED (VTID-04374)
 // =============================================================================
-router.post('/meetup-reminders', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
-
-  const supa = await getServiceClient();
-  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
-
-  const now = new Date();
-  const in15min = new Date(now.getTime() + 15 * 60 * 1000);
-  const in5min = new Date(now.getTime() + 5 * 60 * 1000);
-
-  let dispatched = 0;
-
-  // Meetups starting in ~15 minutes (meetup_starting_soon)
-  const { data: soonMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
-    tenantId,
-    from: now.toISOString(),
-    to: in15min.toISOString(),
-  });
-
-  for (const meetup of soonMeetups || []) {
-    // Get RSVP'd users
-    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
-    if (rsvpsErr) {
-      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_soon): ${rsvpsErr.message}`);
-    }
-
-    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
-    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
-    for (const { user_id } of rsvpList) {
-      const lc = locales.get(user_id);
-      notifyUserAsync(user_id, tenantId, 'meetup_starting_soon', {
-        title: tt('notif.meetup_starting_soon.title', lc),
-        body: tt('notif.meetup_starting_soon.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
-        data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
-      }, supa);
-      dispatched++;
-    }
-  }
-
-  // Meetups starting in ~5 minutes (meetup_starting_now)
-  const { data: nowMeetups } = await repo.fetchMeetupsStartingBetween(supa, {
-    tenantId,
-    from: now.toISOString(),
-    to: in5min.toISOString(),
-  });
-
-  for (const meetup of nowMeetups || []) {
-    const { data: rsvps, error: rsvpsErr } = await repo.fetchMeetupRsvps(supa, meetup.id);
-    if (rsvpsErr) {
-      console.warn(`[scheduled-notifications] fetchMeetupRsvps failed for meetup=${meetup.id} (meetup_starting_now): ${rsvpsErr.message}`);
-    }
-
-    const rsvpList = (rsvps || []) as Array<{ user_id: string }>;
-    const locales = await bulkGetUserLocales(supa, rsvpList.map((r) => r.user_id));
-    for (const { user_id } of rsvpList) {
-      const lc = locales.get(user_id);
-      notifyUserAsync(user_id, tenantId, 'meetup_starting_now', {
-        title: tt('notif.meetup_starting_now.title', lc),
-        body: tt('notif.meetup_starting_now.body', lc, { title: meetup.title || tt('notif.fallback_app_name', lc) }),
-        data: { url: `/community/meetups/${meetup.id}`, meetup_id: meetup.id, entity_id: meetup.id },
-      }, supa);
-      dispatched++;
-    }
-  }
-
-  console.log(`[Scheduled] meetup_reminders → ${dispatched} notifications`);
-  return res.status(200).json({ ok: true, dispatched });
+// It read community_meetup_attendance, a table that does not exist, over
+// community_meetups, which has never had a row — so it never sent a
+// notification. Community events a member signs up for reach the calendar
+// (global_event_participants → calendar_events, VTID-04321) and get the
+// calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
+// gets a clear answer instead of a 404.
+router.post('/meetup-reminders', (_req: Request, res: Response) => {
+  return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
 });
 
 // =============================================================================

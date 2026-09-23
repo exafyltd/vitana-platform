@@ -36,6 +36,9 @@ import {
   softDeleteEvent,
   toSummary,
   listCalendarWindow,
+  moveBlockReason,
+  getOwnCalendarEvent,
+  rescheduleEvent,
 } from '../services/calendar-service';
 import { completeSourceForCalendarEvent } from '../services/calendar-producers';
 
@@ -316,7 +319,13 @@ router.get('/events/window', async (req: Request, res: Response) => {
     const { reminderRules, entryEmoji } = await import('../services/calendar-reminders');
     const data = items.map((it) =>
       it.event
-        ? { ...it, display_emoji: entryEmoji(it.event as any), reminders: reminderRules(it.event as any) }
+        ? {
+            ...it,
+            display_emoji: entryEmoji(it.event as any),
+            reminders: reminderRules(it.event as any),
+            // VTID-04374: may this member move it from the entry screen?
+            movable: !it.busy && it.occurrence_index === null && moveBlockReason(it.event as any) === null,
+          }
         : it,
     );
     // VTID-04357: developer/admin work lenses — computed live, read-only,
@@ -545,6 +554,61 @@ router.patch('/events/:id', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// POST /events/:id/move — a member moves their own entry (VTID-04374)
+//   body: { start_time, end_time? } — end_time defaults to the same length.
+//   409 { error: 'NOT_MOVABLE', reason } when the entry belongs to its source
+//   (booking, lab order, invite, plan step…), is done, cancelled or a series.
+// =============================================================================
+const MOVE_MAX_AHEAD_MS = 400 * 86_400_000;
+
+router.post('/events/:id/move', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { id } = req.params;
+    if (id.startsWith('work:')) return res.status(400).json({ ok: false, error: 'WORK_ITEM_READ_ONLY' });
+
+    const startMs = Date.parse(String(req.body?.start_time ?? ''));
+    const endRaw = req.body?.end_time;
+    const endMs = endRaw == null ? NaN : Date.parse(String(endRaw));
+    if (Number.isNaN(startMs)) return res.status(400).json({ ok: false, error: 'start_time must be an ISO timestamp' });
+    if (endRaw != null && (Number.isNaN(endMs) || endMs <= startMs)) {
+      return res.status(400).json({ ok: false, error: 'end_time must be after start_time' });
+    }
+    if (startMs < Date.now() - 86_400_000 || startMs > Date.now() + MOVE_MAX_AHEAD_MS) {
+      return res.status(400).json({ ok: false, error: 'start_time out of range' });
+    }
+
+    const event = await getOwnCalendarEvent(id, userId);
+    if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
+    const blocked = moveBlockReason(event);
+    if (blocked) return res.status(409).json({ ok: false, error: 'NOT_MOVABLE', reason: blocked });
+
+    const oldStart = Date.parse(event.start_time);
+    const oldEnd = event.end_time ? Date.parse(event.end_time) : NaN;
+    const duration = Number.isNaN(oldEnd) || oldEnd < oldStart ? 30 * 60_000 : oldEnd - oldStart;
+    const newEnd = Number.isNaN(endMs) ? startMs + duration : endMs;
+
+    const moved = await rescheduleEvent(id, userId, new Date(startMs).toISOString(), new Date(newEnd).toISOString());
+    if (!moved) return res.status(500).json({ ok: false, error: 'Move failed' });
+
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.event.moved' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar entry moved by its owner',
+      payload: { event_id: id, user_id: userId, from: event.start_time, to: moved.start_time },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: moved });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/:id/move error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
 // POST /events/:id/complete — Mark event as completed/skipped/partial
 // =============================================================================
 router.post('/events/:id/complete', async (req: Request, res: Response) => {
@@ -659,9 +723,19 @@ router.post('/journey/initialize', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /reschedule — Run smart rescheduler (called by Cloud Scheduler)
+// POST /reschedule — Run smart rescheduler (staff only; normally in-process)
 // =============================================================================
-router.post('/reschedule', async (_req: Request, res: Response) => {
+// VTID-04374: these run a job over EVERY user's calendar, so a signed-in
+// member must not be able to trigger them. Exafy staff only; the in-process
+// maintenance loop (CALENDAR_MAINTENANCE_ENABLED) is the normal caller.
+function requireStaff(req: Request, res: Response): boolean {
+  if ((req as AuthenticatedRequest).identity?.exafy_admin === true) return true;
+  res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  return false;
+}
+
+router.post('/reschedule', async (req: Request, res: Response) => {
+  if (!requireStaff(req, res)) return;
   try {
     const { rescheduleUnactivatedTasks } = await import('../services/calendar-rescheduler');
     const result = await rescheduleUnactivatedTasks();
@@ -673,9 +747,10 @@ router.post('/reschedule', async (_req: Request, res: Response) => {
 });
 
 // =============================================================================
-// POST /reprioritize — Run dynamic prioritizer (called by Cloud Scheduler)
+// POST /reprioritize — Run dynamic prioritizer (staff only; normally in-process)
 // =============================================================================
-router.post('/reprioritize', async (_req: Request, res: Response) => {
+router.post('/reprioritize', async (req: Request, res: Response) => {
+  if (!requireStaff(req, res)) return;
   try {
     const { reprioritizeAllUsers } = await import('../services/calendar-prioritizer');
     const result = await reprioritizeAllUsers();

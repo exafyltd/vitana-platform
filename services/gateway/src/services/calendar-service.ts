@@ -378,6 +378,47 @@ export async function rescheduleEvent(
   });
 }
 
+// =============================================================================
+// VTID-04374 — who may move an entry
+// =============================================================================
+
+/**
+ * Why a member may NOT move this entry themselves, or null when they may.
+ *
+ * Only entries the member (or Vitana on their behalf) put there move: a
+ * booked appointment, a lab order, a live room, an invite or a plan step is
+ * owned by its source, and moving the calendar copy would be wrong (the
+ * other party still expects the old time) and short-lived (the next source
+ * update moves it back). A recurring series moves as a whole from where it
+ * was made, never from one occurrence here.
+ */
+export type MoveBlockReason = 'cancelled' | 'completed' | 'recurring' | 'owned_by_source';
+
+export function moveBlockReason(
+  e: Pick<CalendarEvent, 'status' | 'completed_at' | 'rrule' | 'source_type' | 'source_ref_type'>,
+): MoveBlockReason | null {
+  if (e.status === 'cancelled') return 'cancelled';
+  if (e.completed_at) return 'completed';
+  if (e.rrule) return 'recurring';
+  const src = e.source_type ?? 'manual';
+  if (src === 'manual' || src === 'assistant') return null;
+  if (src === 'autopilot' && (e.source_ref_type ?? 'autopilot_recommendation') === 'autopilot_recommendation') return null;
+  if (src === 'journey' && e.source_ref_type === 'journey_task') return null;
+  return 'owned_by_source';
+}
+
+export async function getOwnCalendarEvent(eventId: string, userId: string): Promise<CalendarEvent | null> {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+  const resp = await fetch(
+    `${config.url}/rest/v1/calendar_events?id=eq.${encodeURIComponent(eventId)}&user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`,
+    { headers: headers(config.key) },
+  );
+  if (!resp.ok) return null;
+  const rows = (await resp.json()) as CalendarEvent[];
+  return rows[0] ?? null;
+}
+
 export async function markEventActivated(
   eventId: string,
   userId: string,

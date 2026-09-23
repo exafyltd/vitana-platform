@@ -63,7 +63,7 @@ export function parseRRule(rule: string): ParsedRRule | null {
 
 interface LocalParts { y: number; mo: number; d: number; h: number; mi: number; s: number }
 
-function localParts(epochMs: number, tz: string): LocalParts {
+export function localParts(epochMs: number, tz: string): LocalParts {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone: tz, hourCycle: 'h23',
     year: 'numeric', month: '2-digit', day: '2-digit',

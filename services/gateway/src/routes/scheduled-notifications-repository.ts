@@ -159,27 +159,6 @@ export function markFeatureAnnouncementNotified(sb: any, args: { announcementId:
 }
 
 // ---------------------------------------------------------------------------
-// /meetup-reminders — shared shape for both the 15min and 5min windows
-// ---------------------------------------------------------------------------
-
-export function fetchMeetupsStartingBetween(sb: any, args: { tenantId: string; from: string; to: string }) {
-  return sb
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', args.tenantId)
-    .gte('starts_at', args.from)
-    .lte('starts_at', args.to);
-}
-
-export function fetchMeetupRsvps(sb: any, meetupId: string) {
-  return sb
-    .from('community_meetup_attendance')
-    .select('user_id')
-    .eq('meetup_id', meetupId)
-    .eq('status', 'rsvp');
-}
-
-// ---------------------------------------------------------------------------
 // /upcoming-events
 // ---------------------------------------------------------------------------
 

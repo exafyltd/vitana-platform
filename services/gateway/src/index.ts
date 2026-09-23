@@ -1675,6 +1675,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions
+      // the user did not get to (hourly) and refreshes priority scores (6-hourly).
+      // Its only caller used to be GCP Cloud Scheduler, which is gone.
+      try {
+        const { startCalendarMaintenanceLoop } = require('./services/calendar-rescheduler');
+        if (startCalendarMaintenanceLoop()) {
+          console.log('🗓️ Calendar maintenance loop started');
+        } else {
+          console.log('⏸️ Calendar maintenance loop disabled — set CALENDAR_MAINTENANCE_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar maintenance loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {
