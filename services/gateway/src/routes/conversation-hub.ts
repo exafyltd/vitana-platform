@@ -45,6 +45,7 @@ import {
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
 import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } from '../services/conversation/session-brain-inspector';
+import { readOfferOutcomeStats, OFFER_STATS_MAX_DAYS } from '../services/conversation/offer-outcome-stats';
 import {
   summarizeConversationMetrics,
   buildMetricSeries,
@@ -355,6 +356,26 @@ router.get('/admin/conversation/sessions', ...adminOnly, async (req: Authenticat
     return res.json({ ok: true, data: { hours, count: sessions.length, sessions } });
   } catch (e) {
     return jsonError(res, 500, e instanceof Error ? e.message : 'sessions read failed');
+  }
+});
+
+/**
+ * VTID-04421 (WS-2.4): GET /admin/conversation/offer-outcomes
+ * Per-provider counts of offers made, accepted, declined, ignored and still
+ * open, from conversation_offer_outcomes. Optional user_id narrows to one user.
+ */
+router.get('/admin/conversation/offer-outcomes', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 7, 1), OFFER_STATS_MAX_DAYS);
+  const userId = typeof req.query.user_id === 'string' && req.query.user_id.trim() ? req.query.user_id.trim() : null;
+  if (userId && !isValidUserId(userId)) return jsonError(res, 400, 'user_id must be a UUID');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { rows, error } = await readOfferOutcomeStats(supabase, { days, userId });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: { days, user_id: userId, providers: rows } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'offer outcomes read failed');
   }
 });
 

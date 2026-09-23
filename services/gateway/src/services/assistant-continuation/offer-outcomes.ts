@@ -55,7 +55,99 @@ export type EmitOfferEventFn = (
   detail?: OfferEventDetail,
 ) => Promise<unknown>;
 
+// ---------------------------------------------------------------------------
+// VTID-04421 (WS-2.4): one row per offer in conversation_offer_outcomes.
+// ---------------------------------------------------------------------------
+
+export type OfferOutcomeWrite =
+  | {
+      op: 'insert';
+      row: {
+        offer_id: string;
+        user_id: string;
+        source: string;
+        provider: string;
+        offer_key: string | null;
+        tool: string;
+        offered_at: string;
+        outcome: 'made';
+      };
+    }
+  | {
+      op: 'settle';
+      offer_id: string;
+      patch: { outcome: Exclude<OfferOutcome, 'made'>; outcome_at: string; outcome_reason: string | null; updated_at: string };
+    };
+
+/**
+ * The table write for one lifecycle event, or null when the offer cannot be
+ * tracked (legacy rows without an offer_id). `made` inserts the row; the first
+ * accepted/declined/ignored settles it — later outcomes for a settled offer
+ * are ignored by the `outcome = 'made'` guard on the update.
+ */
+export function buildOfferOutcomeWrite(
+  outcome: OfferOutcome,
+  userId: string,
+  offer: PendingOffer,
+  detail: OfferEventDetail = {},
+  nowIso: string = new Date().toISOString(),
+): OfferOutcomeWrite | null {
+  if (!offer.offer_id || !userId) return null;
+  if (outcome === 'made') {
+    return {
+      op: 'insert',
+      row: {
+        offer_id: offer.offer_id,
+        user_id: userId,
+        source: String(offer.source ?? 'unknown'),
+        provider: String(offer.provider ?? offer.source ?? 'unknown'),
+        offer_key: offer.key ?? null,
+        tool: offer.tool,
+        offered_at: offer.offered_at ?? nowIso,
+        outcome: 'made',
+      },
+    };
+  }
+  return {
+    op: 'settle',
+    offer_id: offer.offer_id,
+    patch: { outcome, outcome_at: nowIso, outcome_reason: detail.reason ?? null, updated_at: nowIso },
+  };
+}
+
+/** Apply one table write. Never throws; the conversation never waits on it. */
+export async function applyOfferOutcomeWrite(sb: SupabaseClient, w: OfferOutcomeWrite): Promise<{ ok: boolean; reason?: string }> {
+  try {
+    if (w.op === 'insert') {
+      const { error } = await sb.from('conversation_offer_outcomes').upsert(w.row, { onConflict: 'offer_id', ignoreDuplicates: true });
+      return error ? { ok: false, reason: error.message } : { ok: true };
+    }
+    const { error } = await sb
+      .from('conversation_offer_outcomes')
+      .update(w.patch)
+      .eq('offer_id', w.offer_id)
+      .eq('outcome', 'made');
+    return error ? { ok: false, reason: error.message } : { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function writeOfferOutcomeRow(outcome: OfferOutcome, userId: string, offer: PendingOffer, detail: OfferEventDetail): Promise<void> {
+  const w = buildOfferOutcomeWrite(outcome, userId, offer, detail);
+  if (!w) return;
+  const { getSupabase } = await import('../../lib/supabase');
+  const sb = getSupabase();
+  if (!sb) return;
+  const r = await applyOfferOutcomeWrite(sb, w);
+  if (!r.ok) console.warn(`[VTID-04421] offer ${outcome} row write failed: ${r.reason}`);
+}
+
 export const defaultEmitOfferEvent: EmitOfferEventFn = async (outcome, userId, offer, detail = {}) => {
+  // VTID-04421: the outcomes table row, independent of the OASIS emit below.
+  void writeOfferOutcomeRow(outcome, userId, offer, detail).catch((err) =>
+    console.warn(`[VTID-04421] offer ${outcome} row write failed: ${err instanceof Error ? err.message : String(err)}`),
+  );
   const { emitOasisEvent } = await import('../oasis-event-service');
   return emitOasisEvent({
     vtid: 'VTID-04355',

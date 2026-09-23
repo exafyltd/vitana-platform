@@ -430,6 +430,41 @@ CREATE TABLE conversation_metrics_hourly (
   no context; value = empty, sample_count = measured), `context_setup_source`
   (dimension `source:fresh|snapshot|none|unknown`) and `diag_core_snapshot_used`.
 
+### conversation_offer_outcomes — APPLIED 2026-09-23 (VTID-04421)
+
+One row per action Vitana offered (`pending_cta`), settled by its first
+outcome. Migration `20260923190000_vtid_04421_conversation_offer_outcomes.sql`,
+applied to the live project 2026-09-23 (Supabase MCP `apply_migration`,
+additive, table empty at apply).
+
+```sql
+CREATE TABLE conversation_offer_outcomes (
+  offer_id       UUID        PRIMARY KEY,           -- pending_cta.offer_id
+  user_id        UUID        NOT NULL,
+  source         TEXT        NOT NULL,              -- offer_action | navigator_* | wake_brief
+  provider       TEXT        NOT NULL,              -- producing provider (falls back to source)
+  offer_key      TEXT,                              -- the suggestion's dedupe key
+  tool           TEXT        NOT NULL,              -- the tool acceptance runs
+  offered_at     TIMESTAMPTZ NOT NULL,
+  outcome        TEXT        NOT NULL DEFAULT 'made',  -- made | accepted | declined | ignored
+  outcome_at     TIMESTAMPTZ,
+  outcome_reason TEXT,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- idx_conversation_offer_outcomes_user_offered (user_id, offered_at DESC)
+-- idx_conversation_offer_outcomes_provider_offered (provider, offered_at DESC)
+```
+
+- Written only by the gateway (`offer-outcomes.ts`, the default offer-event
+  emitter): `made` inserts (idempotent on `offer_id`), the first
+  accepted/declined/ignored settles the row (`WHERE outcome = 'made'`).
+- `conversation_offer_outcome_stats(p_since, p_ignored_after = 1 day, p_user_id)`
+  returns per-provider made/accepted/declined/ignored/open; an offer still
+  `made` after `p_ignored_after` counts as ignored. service_role only.
+- RLS on, no policies; `anon`/`authenticated` revoked. Read by
+  `GET /api/v1/admin/conversation/offer-outcomes` (exafy_admin).
+
 #### user_assistant_state signal `brain_core_snapshot_v1` (VTID-04399)
 
 No schema change — a new `signal_name` on the existing table, one row per
@@ -947,6 +982,7 @@ CREATE TABLE my_new_table (
 | 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
+| 2026-09-23 | Added `conversation_offer_outcomes` (one row per offered action, settled by its first outcome) and `conversation_offer_outcome_stats()`. Migration `20260923190000_vtid_04421_conversation_offer_outcomes.sql` **applied to the live project 2026-09-23** (additive; empty at apply; RLS on, anon/authenticated verified without SELECT). | Claude | VTID-04421 |
 | 2026-09-23 | `conversation_metrics_rollup_hour()` gains `context_setup_empty` / `context_setup_source` / `diag_core_snapshot_used` (migration `20260923160000`, applied live, 168 h re-rolled; baseline 52 of 157 signed-in sessions set up with no context). New `user_assistant_state` signal `brain_core_snapshot_v1` (no schema change). | Claude | VTID-04399 |
 | 2026-09-23 | Added `conversation_metrics_hourly` plus `conversation_metrics_rollup_hour()` / `conversation_metrics_backfill()` and the pg_cron job `conversation-metrics-hourly`. Migration `20260923140000_vtid_04371_conversation_metrics_hourly.sql` **applied to the live project 2026-09-23**; 168 h backfilled in 1.3 s; the heaviest part (24 h opener-repeat join) measured at 3.4 ms on index range scans. | Claude | VTID-04371 |
 | 2026-09-23 | Added `agent_runs` / `agent_run_steps` / `agent_run_signals` and the `agent_runs_unified` projection view; `agents_registry` agent-card columns + seed. Migration `20260923120000_vtid_04319_orchestrator_run_ledger.sql` **applied to the live project 2026-09-23** (additive; view unions 4,442 existing runs; anon/authenticated verified without SELECT). | Claude | VTID-04319 |

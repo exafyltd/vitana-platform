@@ -7682,12 +7682,59 @@ function _convRenderPerformance(host, hours) {
     }).catch(function (err) { _convError(body, err); });
 }
 
+// VTID-04421 (WS-2.4): suggestion outcomes per provider, from
+// conversation_offer_outcomes (one row per offer, settled by its first outcome).
+var CONV_OFFER_DAYS = [1, 7, 30];
+
+function _convRenderOfferOutcomes(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Suggestion outcomes'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderOfferOutcomes(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/offer-outcomes?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        var rows = d.providers || [];
+        var tot = rows.reduce(function (a, r) {
+            a.made += r.made; a.accepted += r.accepted; a.declined += r.declined; a.ignored += r.ignored; a.open += r.open; return a;
+        }, { made: 0, accepted: 0, declined: 0, ignored: 0, open: 0 });
+        var settled = tot.accepted + tot.declined + tot.ignored;
+        body.appendChild(_convTileGrid([
+            _convTile('Suggestions made', String(tot.made), 'last ' + d.days + ' day(s)'),
+            _convTile('Accepted', settled ? Math.round(tot.accepted / settled * 1000) / 10 + '%' : '—', tot.accepted + ' of ' + settled + ' settled'),
+            _convTile('Declined', String(tot.declined)),
+            _convTile('Ignored', String(tot.ignored), 'replaced, or unanswered for a day'),
+            _convTile('Still open', String(tot.open))
+        ]));
+        body.appendChild(_convTable(
+            [{ key: 'provider', label: 'Provider' }, { key: 'made', label: 'Made' }, { key: 'accepted', label: 'Accepted' },
+             { key: 'declined', label: 'Declined' }, { key: 'ignored', label: 'Ignored' }, { key: 'open', label: 'Open' }, { key: 'rate', label: 'Acceptance' }],
+            rows.map(function (r) {
+                return { provider: r.provider, made: r.made, accepted: r.accepted, declined: r.declined, ignored: r.ignored, open: r.open,
+                    rate: r.acceptance_rate == null ? '—' : Math.round(r.acceptance_rate * 1000) / 10 + '%' };
+            })
+        ));
+        if (!rows.length) body.appendChild(_convEl('div', { text: 'No suggestions recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
 function renderConversationMonitorView() {
     var ui = _convPanel('Conversation · Monitor', 'Performance from the hourly rollup, then the most recent greeting decisions (oasis_events greeting_sent).');
     ui.body.innerHTML = '';
     var perf = _convEl('div', { cls: 'conv-metric-section' });
     ui.body.appendChild(perf);
     _convRenderPerformance(perf, 24);
+    var offers = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(offers);
+    _convRenderOfferOutcomes(offers, 7);
     var feed = _convEl('div', { cls: 'conv-metric-section' });
     feed.appendChild(_convHeading('Recent greeting decisions'));
     var feedBody = _convEl('div');

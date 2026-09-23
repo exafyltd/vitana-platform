@@ -103,6 +103,20 @@ GET /api/v1/admin/conversation/decisions -> 401 application/json; charset=utf-8 
 
 Post-merge expectation: both return `401 application/json` anonymously.
 
+**Added by VTID-04421 (WS-2.4), same PR.** One more `router.get(...)` handler on
+the same `conversation-hub` router, same `requireAuth` + `requireExafyAdmin`:
+
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/offer-outcomes`
+
+Pre-merge, anonymous, staging, 2026-09-23:
+
+```
+GET /api/v1/admin/conversation/offer-outcomes -> 404 text/html; charset=utf-8   (not deployed yet)
+GET /api/v1/admin/conversation/decisions      -> 401 application/json; charset=utf-8   (same router: mounted, admin gate live)
+```
+
+Post-merge expectation: `401 application/json` anonymously.
+
 ### Post-deploy check (AC-6)
 
 ```
@@ -144,6 +158,14 @@ or heartbeat:
 - No new topic for VTID-04419: `builder`, `brain_error` and `chars` fields on
   the existing `orb.live.context.bootstrap` event; the inspector only reads.
   TEST: services/gateway/test/services/conversation/vtid-04419-session-brain-inspector.test.ts
+- No new topic for VTID-04420: `candidate_provider`, `candidate_kind`,
+  `candidate_key`, `candidate_spoken`, `candidate_outranked_by` and
+  `candidates_returned` fields on the existing `greeting_sent` diag.
+  TEST: services/gateway/test/services/conversation/vtid-04420-brain-candidates.test.ts
+- No new topic for VTID-04421: the existing `conversation.offer.*` events are
+  unchanged; the default emitter also writes one `conversation_offer_outcomes`
+  row per offer.
+  TEST: services/gateway/test/services/conversation/vtid-04421-offer-outcomes-table.test.ts
 
 Live signal after merge (staging): rows with these topics in `oasis_events`.
 
