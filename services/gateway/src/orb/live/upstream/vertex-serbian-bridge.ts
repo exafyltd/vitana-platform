@@ -36,6 +36,8 @@
  *     turn-shaping gets fixed instead.
  */
 
+import { isVoiceGender, personaVoiceGender } from '../voice/persona-voice-gender';
+
 export function isVertexSerbianBridgeEnabled(): boolean {
   return (process.env.VERTEX_SERBIAN_BRIDGE_ENABLED || '').trim() === 'true';
 }
@@ -86,4 +88,28 @@ export function resolveVertexLivePersonaVoice(
   const p = (persona || '').trim().toLowerCase();
   if (v && p && p !== 'vitana') return VERTEX_SPECIALIST_FALLBACK_VOICE;
   return null;
+}
+
+/**
+ * VTID-04445 — Vitana's Gemini voice when a resolved voice breaks the
+ * persona voice-gender rule (`persona-voice-gender.ts`). `Aoede` is the
+ * Serbian bridge's own language voice (`voice.live_api.voice.sr`).
+ */
+export const VERTEX_VITANA_FALLBACK_VOICE = 'Aoede';
+
+/**
+ * VTID-04445 — last gate before a Gemini voice reaches `speech_config`:
+ * Vitana speaks with a female voice, Devon with a male one, whatever a
+ * registry row or a per-language policy row says. A voice the rule does not
+ * accept for the persona is replaced (Devon → `Charon`, Vitana → `Aoede`)
+ * and the swap is logged, so a bad row is visible instead of audible.
+ */
+export function enforceVertexVoiceGender(voice: string, persona: string | null | undefined): string {
+  const required = personaVoiceGender(persona);
+  if (!required || isVoiceGender('gemini', voice, required)) return voice;
+  const replacement = required === 'male' ? VERTEX_SPECIALIST_FALLBACK_VOICE : VERTEX_VITANA_FALLBACK_VOICE;
+  console.warn(
+    `[VTID-04445] Gemini voice "${voice}" is not ${required} — persona "${persona || 'vitana'}" speaks with "${replacement}"`,
+  );
+  return replacement;
 }
