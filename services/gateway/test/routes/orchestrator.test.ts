@@ -7,6 +7,8 @@
  * AC-3 routes: /context needs any signed-in user; /runs, /runs/summary and
  *      /agents need exafy_admin; nothing writes.
  * AC-4 migration: additive, service-role only, view is security_invoker.
+ * VTID-04325 AC-5 /policy: any signed-in user sees the defaults, their own
+ *      ceilings and an optional dry evaluation; bad input is a 400.
  */
 
 import * as fs from 'fs';
@@ -171,6 +173,19 @@ describe('routes', () => {
     const res = await request(app()).get('/api/v1/orchestrator/runs/summary?days=3');
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ days: 3, truncated: false, planes: [{ plane: 'self_healing', total: 1 }] });
+  });
+
+  test('/policy: 401 anonymous; own ceilings and a dry evaluation for a member (VTID-04325)', async () => {
+    expect((await request(app()).get('/api/v1/orchestrator/policy')).status).toBe(401);
+    identity.current = member;
+    tables.user_tenants = { data: [{ active_role: 'community' }] };
+    const res = await request(app()).get('/api/v1/orchestrator/policy?channel=voice&domain=community&tier=commit');
+    expect(res.status).toBe(200);
+    expect(res.body.data.defaults.enforced).toBe(false);
+    expect(res.body.data.ceilings).toMatchObject({ community: 'draft', admin: 'none' });
+    expect(res.body.data.evaluation).toMatchObject({ decision: 'escalate', domain: 'community', requested: 'commit' });
+    expect((await request(app()).get('/api/v1/orchestrator/policy?domain=nope')).status).toBe(400);
+    expect((await request(app()).get('/api/v1/orchestrator/policy?domain=dev&tier=root')).status).toBe(400);
   });
 
   test('/agents returns agent cards; a read error is a 502, not a crash', async () => {
