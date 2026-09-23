@@ -31,6 +31,10 @@ TEST: services/gateway/test/services/vtid-04410-genai-semconv.test.ts
 AC-6 After a fallback, `gen_ai.response.model` is the model that actually served the call.
 TEST: services/gateway/test/services/vtid-04410-genai-semconv.test.ts
 
+## OASIS
+
+OASIS_PROOF: the three emitters' real `emitOasisEvent` payloads are asserted in AC-5/AC-6 (services/gateway/test/services/vtid-04410-genai-semconv.test.ts, output in outputs/jest-vtid-04410.txt): same topics (`llm.call.started` / `.completed` / `.failed`), every pre-existing field unchanged, plus `otel` with one shared trace/span id. No topic, type, status or source changes. Live proof after the next staging deploy: `select topic, payload->'otel'->>'trace_id', payload->'otel'->'attributes'->>'gen_ai.provider.name' from oasis_events where topic like 'llm.call.%' order by created_at desc limit 5`.
+
 ## Not verified live
 
 Staging still serves `e09eb26` (the AWS account block stops ECS from placing
