@@ -23,6 +23,7 @@
  */
 import { getSupabase, supa, planRetryDecision, findingVtid } from './dev-autopilot-execute';
 import { describeLoopOwnership } from './dev-autopilot-loop-owner';
+import { detectProviderOutage, isProviderOutageFailure, type OutageState } from './dev-autopilot-retry-breaker';
 import { chunkIds } from './dev-autopilot-pipeline-guards';
 
 type Supa = NonNullable<ReturnType<typeof getSupabase>>;
@@ -327,9 +328,13 @@ export function buildAlerts(input: {
   communityEngineLastRunAt: string | null;
   nowMs: number;
   loop?: { owner_env: string; this_env: string; active_here: boolean };
+  providerOutage?: { state: string; failures_7d: number; last_error: string | null };
 }): SupervisorAlert[] {
   const a: SupervisorAlert[] = [];
   if (input.cfg.kill_switch) a.push({ severity: 'critical', text: 'Kill switch is ON — no autonomous execution.', tab: 'auto-approve' });
+  if (input.providerOutage && input.providerOutage.state !== 'clear') {
+    a.push({ severity: 'critical', text: `LLM providers are failing every execution — approving and claiming ${input.providerOutage.state === 'outage' ? 'paused' : 'one at a time (probing)'}${input.providerOutage.last_error ? `: "${input.providerOutage.last_error}"` : ''}.`, tab: 'live' });
+  }
   if (input.loop && !input.loop.active_here) {
     a.push({ severity: 'info', text: `This gateway (${input.loop.this_env}) does not run the autopilot loop — ${input.loop.owner_env} claims, approves and plans for both.`, tab: 'live' });
   }
@@ -485,6 +490,17 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
   const eligibleOpen = diagnosed.filter((f) => f.blocker.actor !== 'human').length;
   const communityEngineLastRunAt = engineLast && engineLast[0] ? engineLast[0].started_at : null;
   const loop = describeLoopOwnership();
+  // VTID-04368: LLM provider outage, derived from the same execution rows.
+  const terminalFailures = (execs || [])
+    .filter((e) => ['failed', 'failed_escalated', 'reverted'].includes(e.status))
+    .sort((x, y) => Date.parse(y.updated_at) - Date.parse(x.updated_at))
+    .map((e) => ({ updated_at: e.updated_at, metadata: { error: e.error ?? null } }));
+  const providerOutage = {
+    state: detectProviderOutage(terminalFailures, nowMs) as OutageState,
+    failures_7d: terminalFailures.filter((r) => isProviderOutageFailure(r.metadata)).length,
+    last_error: terminalFailures[0] && isProviderOutageFailure(terminalFailures[0].metadata)
+      ? String(terminalFailures[0].metadata.error).slice(0, 200) : null,
+  };
 
   return {
     ok: true as const,
@@ -500,6 +516,7 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
     },
     /** VTID-04363: which gateway runs the claim / approve / plan loop. */
     loop,
+    provider_outage: providerOutage,
     scan,
     executions: execSummary,
     findings: {
@@ -522,6 +539,6 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       last_run_at: communityEngineLastRunAt,
       days_since_last_run: communityEngineLastRunAt ? Math.floor((nowMs - Date.parse(communityEngineLastRunAt)) / 86400000) : null,
     },
-    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs, loop }),
+    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs, loop, providerOutage }),
   };
 }
