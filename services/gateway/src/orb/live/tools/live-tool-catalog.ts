@@ -24,6 +24,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
+import { commerceDelegationTools, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -152,7 +153,7 @@ export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
   'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
   'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
 ]);
-const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME]);
+const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
 function commandHubAllowlist(): Set<string> {
   return new Set<string>([
     ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
@@ -172,6 +173,10 @@ function applyCommandHubGate(tools: object[]): object[] {
       });
       if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
         kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });
+        // VTID-04386: the async companions — result on a later turn, and cancel.
+        for (const t of DELEGATION_COMPANION_TOOLS) {
+          if (!kept.some((d) => d.name === t.name)) kept.push(t as { name?: unknown });
+        }
       }
       delegateAdded = true;
       if (kept.length > 0) out.push({ ...group, function_declarations: kept });
@@ -186,14 +191,22 @@ function applyCommandHubGate(tools: object[]): object[] {
  * VTID-04326 — the commerce surface gets the navigation tools and knowledge
  * search only. Community, health, diary, memory and developer tools are
  * absent, so nothing personal can be read or written from business mode.
- * Commerce-specific read tools (org, team, order inbox) are a later slice.
+ * VTID-04400 adds the commerce onboarding specialist (read-only, flag-gated).
  */
 function applyCommerceGate(tools: object[]): object[] {
   const out: object[] = [];
+  // VTID-04400: the commerce onboarding specialist (+ async companions),
+  // added to the first declaration group, only when its flag is 'true'.
+  let extra = commerceDelegationTools() as Array<{ name?: unknown }>;
   for (const group of tools as Array<Record<string, unknown>>) {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
         NAVIGATION_TOOL_NAMES.has(typeof d?.name === 'string' ? d.name : ''));
+      if (extra.length > 0) {
+        const present = new Set(kept.map((d) => String(d?.name ?? '')));
+        kept.push(...extra.filter((t) => !present.has(String(t.name))));
+        extra = [];
+      }
       if (kept.length > 0) out.push({ ...group, function_declarations: kept });
     }
     // google_search grounding is dropped on commerce: answers come from the
@@ -202,7 +215,26 @@ function applyCommerceGate(tools: object[]): object[] {
   return out;
 }
 
+/**
+ * VTID-04397 — the member ORB gets the support specialist (and the async
+ * companions) when ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is 'true'. Off:
+ * the catalog is returned untouched, byte for byte.
+ */
+function applyMemberDelegation(tools: object[]): object[] {
+  const extra = memberDelegationTools() as Array<{ name?: unknown }>;
+  if (extra.length === 0) return tools;
+  let added = false;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (added || !Array.isArray(group.function_declarations)) return group;
+    added = true;
+    const decls = group.function_declarations as Array<{ name?: unknown }>;
+    const present = new Set(decls.map((d) => String(d?.name ?? '')));
+    return { ...group, function_declarations: [...decls, ...extra.filter((t) => !present.has(String(t.name)))] };
+  });
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
+  if (surface === 'vitanaland') return mode === 'authenticated' ? applyMemberDelegation(tools) : tools;
   if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
   if (surface === 'commerce') return mode === 'authenticated' ? applyCommerceGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;

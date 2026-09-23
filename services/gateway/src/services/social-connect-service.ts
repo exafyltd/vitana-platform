@@ -18,6 +18,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { signOAuthState, verifyOAuthState } from '../lib/oauth-state';
 import * as repo from './social-connect-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -141,13 +142,20 @@ export type OAuthReturnMode = 'web' | 'mobile';
  * minimal — Phase 4 (incremental consent) covers extra scopes (e.g.
  * gmail.send) on demand.
  */
-export type GoogleSubService = 'gmail' | 'calendar' | 'contacts' | 'youtube';
+export type GoogleSubService = 'gmail' | 'calendar' | 'contacts' | 'youtube' | 'calendar_sync';
 
 export const GOOGLE_SUB_SCOPES: Record<GoogleSubService, string[]> = {
   gmail: ['https://www.googleapis.com/auth/gmail.readonly'],
   calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
   contacts: ['https://www.googleapis.com/auth/contacts.readonly'],
   youtube: ['https://www.googleapis.com/auth/youtube.readonly'],
+  // VTID-04372: Vitanaland <-> Google sync. calendar.app.created only reaches
+  // calendars this app created (the member's "Vitanaland" calendar);
+  // calendar.freebusy reads busy times of their other calendars, no details.
+  calendar_sync: [
+    'https://www.googleapis.com/auth/calendar.app.created',
+    'https://www.googleapis.com/auth/calendar.freebusy',
+  ],
 };
 
 /** Default unified bundle when no `include` is passed. */
@@ -155,7 +163,7 @@ export const GOOGLE_DEFAULT_INCLUDE: GoogleSubService[] = ['gmail', 'calendar', 
 
 export function parseGoogleInclude(raw: string | undefined): GoogleSubService[] | null {
   if (!raw) return null;
-  const valid = new Set<GoogleSubService>(['gmail', 'calendar', 'contacts', 'youtube']);
+  const valid = new Set<GoogleSubService>(['gmail', 'calendar', 'contacts', 'youtube', 'calendar_sync']);
   const parsed = raw
     .split(',')
     .map((s) => s.trim().toLowerCase())
@@ -193,9 +201,14 @@ export function getOAuthUrl(
   }
 
   const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
-  const state = Buffer.from(
-    JSON.stringify({ userId, tenantId, provider, returnMode, includeServices }),
-  ).toString('base64url');
+  // VTID-04401: signed, expiring state — the callback has no bearer token,
+  // so this is the only proof of which user the provider account belongs to.
+  let state: string;
+  try {
+    state = signOAuthState({ userId, tenantId, provider, returnMode, includeServices });
+  } catch {
+    return { url: '', error: 'OAuth state signing is not configured.' };
+  }
 
   // Phase 3: when the unified Google flow passes includeServices, replace
   // the provider's default scope list with the union of the selected
@@ -257,11 +270,10 @@ export function parseOAuthState(state: string): {
   returnMode?: OAuthReturnMode;
   includeServices?: GoogleSubService[];
 } | null {
-  try {
-    return JSON.parse(Buffer.from(state, 'base64url').toString());
-  } catch {
-    return null;
-  }
+  // VTID-04401: unsigned, tampered or expired state is rejected.
+  const parsed = verifyOAuthState<Record<string, unknown>>(state);
+  if (!parsed || typeof parsed.userId !== 'string' || typeof parsed.provider !== 'string') return null;
+  return parsed as any;
 }
 
 /**

@@ -51,6 +51,9 @@ describe('notifyFeedbackReporter', () => {
     expect(payload.title).toBe('Deine Meldung ist erledigt');
     expect(payload.body).toContain('FB-7');
     expect(payload.tag).toBe('feedback_resolved:tk-1');
+    // VTID-04383: the push tap opens data.url verbatim — it must name the ticket.
+    expect(payload.data.url).toBe('/comm/talk-to-vitana?ticket=tk-1');
+    expect(payload.data.ticket_id).toBe('tk-1');
   });
 
   it('uses English for an English reporter', async () => {

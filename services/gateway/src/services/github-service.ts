@@ -486,6 +486,29 @@ export async function createRevertPullRequest(
 }
 
 /**
+ * VTID-04379: how many commits of `base` the head lacks. `compare` answers for
+ * `base...head`: behind_by is what the head has not merged in yet.
+ */
+export async function getBehindBy(repo: string, base: string, headSha: string): Promise<number> {
+  const r = await githubRequest<{ behind_by?: number }>(
+    `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(headSha)}`,
+  );
+  return typeof r.behind_by === 'number' ? r.behind_by : 0;
+}
+
+/**
+ * VTID-04379: merge the base branch into the PR head (GitHub "Update branch",
+ * a merge commit — never a rebase, so no history is rewritten). expected_head_sha
+ * makes GitHub refuse if the head moved since we looked.
+ */
+export async function updatePullRequestBranch(repo: string, prNumber: number, expectedHeadSha: string): Promise<void> {
+  await githubRequest(`/repos/${repo}/pulls/${prNumber}/update-branch`, {
+    method: 'PUT',
+    body: JSON.stringify({ expected_head_sha: expectedHeadSha }),
+  });
+}
+
+/**
  * Merge a pull request using squash merge
  */
 export async function mergePullRequest(
@@ -852,6 +875,8 @@ export function detectServiceFromFiles(files: string[]): string | null {
 }
 
 export const githubService = {
+  getBehindBy,
+  updatePullRequestBranch,
   branchExists,
   findPrForBranch,
   getPullRequest,

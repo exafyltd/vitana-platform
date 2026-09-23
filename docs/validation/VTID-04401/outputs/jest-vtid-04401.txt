@@ -1,0 +1,20 @@
+    ✓ round-trips a payload with expiry and a nonce (7 ms)
+    ✓ rejects the old unsigned format, a tampered body, a tampered signature and garbage (2 ms)
+    ✓ expires after the TTL (1 ms)
+    ✓ a state signed with another key does not verify (1 ms)
+    ✓ fails closed with no key at all (11 ms)
+  routers trust only the verified identity
+    ✓ social-accounts: a forged token naming another user gets 401, never their connections (59 ms)
+    ✓ capabilities: a forged token gets 401 on execute (192 ms)
+    ✓ no route in either file decodes a token by hand any more (2 ms)
+  callbacks reject forged state
+    ✓ an unsigned state never reaches the token exchange (37 ms)
+    ✓ a state signed for one provider cannot complete another provider’s callback (22 ms)
+    ✓ wearables: an unsigned state is a 400 (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.934 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04401-connected-apps-auth.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

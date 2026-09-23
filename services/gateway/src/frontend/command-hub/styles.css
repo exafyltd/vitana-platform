@@ -17805,3 +17805,83 @@ button.fb-chip:focus-visible,
   .fb-chip { font-size: 0.72rem; }
   .fb-action-btn { padding: 0.45rem 0.7rem; }
 }
+
+/* =============================================================================
+   VTID-04354 — Autopilot › Orchestrator (read-only, Orchestrator v2 P7 v0)
+   ========================================================================== */
+.orch-container { padding: 1.5rem; color: var(--color-text-primary); min-width: 0; }
+.orch-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.orch-header h2 { margin: 0 0 0.25rem; }
+.orch-controls, .orch-filter-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.orch-filter-row { margin-bottom: 0.75rem; }
+.orch-filter-btn {
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+  background: var(--color-sidebar-bg); color: var(--color-text-secondary); border: 1px solid var(--color-border);
+}
+.orch-filter-btn:hover { color: var(--color-text-primary); border-color: var(--color-accent); }
+.orch-filter-btn.is-active { background: var(--color-accent); color: var(--color-text-primary); border-color: var(--color-accent); }
+.orch-filter-btn:disabled { opacity: 0.6; cursor: default; }
+.orch-section { border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; min-width: 0; }
+.orch-section-title { margin: 0 0 0.75rem; font-size: 1rem; }
+.orch-muted { color: var(--color-text-secondary); font-size: 0.8rem; margin: 0.25rem 0; }
+.orch-error {
+  background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.85rem; overflow-wrap: anywhere;
+}
+.orch-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; overflow-wrap: anywhere; }
+.orch-nowrap { white-space: nowrap; }
+.orch-plane-grid, .orch-agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+.orch-plane-card {
+  display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch;
+  text-align: start; cursor: pointer; padding: 0.75rem; border-radius: 8px; font: inherit;
+  background: var(--color-sidebar-bg); border: 1px solid var(--color-border); color: var(--color-text-primary);
+}
+.orch-plane-card:hover, .orch-plane-card.is-active { border-color: var(--color-accent); }
+.orch-plane-name { font-size: 0.8rem; color: var(--color-text-secondary); }
+.orch-plane-total { font-size: 1.6rem; font-weight: 600; margin: 0.15rem 0 0.4rem; }
+.orch-plane-chips { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.orch-pill {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem;
+  border: 1px solid var(--color-border); color: var(--color-text-secondary); white-space: nowrap;
+}
+.orch-pill--succeeded, .orch-pill--active, .orch-pill--healthy { color: #34d399; border-color: rgba(52, 211, 153, 0.5); }
+.orch-pill--failed, .orch-pill--disabled { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+.orch-pill--running, .orch-pill--queued { color: #60a5fa; border-color: rgba(96, 165, 250, 0.5); }
+.orch-pill--awaiting_approval, .orch-pill--waiting_signal { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.orch-table-wrap { overflow-x: auto; max-width: 100%; }
+.orch-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.orch-table th, .orch-table td { text-align: start; padding: 6px 8px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+.orch-table th { color: var(--color-text-secondary); font-weight: 500; white-space: nowrap; }
+.orch-table td.orch-mono { white-space: nowrap; overflow-wrap: normal; }
+.orch-title-cell { min-width: 200px; overflow-wrap: anywhere; }
+.orch-run-error { color: #f87171; font-size: 0.75rem; margin-top: 2px; }
+.orch-agent-card { padding: 0.75rem; border-radius: 8px; background: var(--color-sidebar-bg); border: 1px solid var(--color-border); min-width: 0; }
+.orch-agent-card.is-disabled { opacity: 0.6; }
+.orch-agent-top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+.orch-agent-name { font-weight: 600; overflow-wrap: anywhere; }
+.orch-agent-desc { font-size: 0.8rem; margin: 0.35rem 0; color: var(--color-text-secondary); }
+.orch-agent-meta { display: grid; gap: 2px; margin-top: 0.35rem; }
+.orch-kv { display: flex; gap: 0.5rem; font-size: 0.75rem; }
+.orch-k { color: var(--color-text-secondary); min-width: 64px; }
+.orch-v { overflow-wrap: anywhere; }
+.orch-policy-table tr.is-current td { background: rgba(96, 165, 250, 0.08); }
+.orch-tier { text-align: center; white-space: nowrap; }
+.orch-tier--none { color: rgba(148, 163, 184, 0.55); }
+.orch-policy-table td.orch-mono { white-space: nowrap; overflow-wrap: normal; }
+.orch-tier--read { color: #60a5fa; }
+.orch-tier--draft { color: #fbbf24; }
+.orch-tier--commit { color: #34d399; }
+.orch-tier--org { color: var(--color-text-secondary); font-style: italic; }
+.orch-footer { margin-top: 0.5rem; }
+/* VTID-04396: budget, policy shadow and delegation panels */
+.orch-pill--allow { color: #34d399; border-color: rgba(52, 211, 153, 0.5); }
+.orch-pill--escalate { color: #fbbf24; border-color: rgba(251, 191, 36, 0.5); }
+.orch-pill--deny { color: #f87171; border-color: rgba(248, 113, 113, 0.5); }
+.orch-budget-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-bottom: 0.4rem; }
+.orch-budget-total { font-size: 1.2rem; font-weight: 600; white-space: nowrap; }
+.orch-budget-bar { flex: 1 1 200px; min-width: 0; height: 10px; accent-color: #60a5fa; }
+.orch-table tr.is-over td { background: rgba(248, 113, 113, 0.08); }
+@media (max-width: 600px) {
+  .orch-container { padding: 1rem; }
+  .orch-plane-grid, .orch-agent-grid { grid-template-columns: 1fr; }
+}

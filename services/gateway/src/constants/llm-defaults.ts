@@ -181,6 +181,11 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   'claude-opus-4-7': { input: 15.00, output: 75.00 },
   'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
   'claude-haiku-4-5': { input: 0.80, output: 4.00 },
+  // VTID-04370: the two Bedrock profiles the routing policy actually serves
+  // (eu.anthropic.claude-opus-4-5-20251101-v1:0 / -sonnet-4-5-20250929-v1:0)
+  // had no row, so every Bedrock call on them was reported as $0.
+  'claude-opus-4-5': { input: 5.00, output: 25.00 },
+  'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
   'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
   'claude-3-opus-20240229': { input: 15.00, output: 75.00 },
   'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
@@ -216,12 +221,32 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
 /**
  * Calculate estimated cost for an LLM call
  */
+/**
+ * VTID-04370: the key MODEL_COSTS prices a router model id under — the exact
+ * id when present, else a Bedrock inference-profile id reduced to its bare
+ * Anthropic model name (region prefix and date/version suffix removed).
+ * Before this lived here, only the Operator Console (VTID-04031) reduced
+ * profile ids; router telemetry priced every Bedrock call at $0.
+ */
+export function modelCostKey(model: string | undefined | null): string | null {
+  const m = (model || '').trim();
+  if (!m) return null;
+  if (MODEL_COSTS[m]) return m;
+  const bare = m
+    .replace(/^(?:eu|us|apac|global|jp|au|ca)\.anthropic\./, '')
+    .replace(/^anthropic\./, '')
+    .replace(/-\d{8}-v\d+:\d+$/, '')
+    .replace(/-v\d+:\d+$/, '');
+  return MODEL_COSTS[bare] ? bare : null;
+}
+
 export function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number
 ): number {
-  const costs = MODEL_COSTS[model];
+  const key = modelCostKey(model);
+  const costs = key ? MODEL_COSTS[key] : undefined;
   if (!costs) {
     return 0;
   }

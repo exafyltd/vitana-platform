@@ -3868,7 +3868,7 @@ relay that plainly. Afterwards, confirm the unblock out loud.",
 just files and confirms. Call when the user describes something BROKEN and
 wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 "report this bug", "the button does nothing, file it".
-The summary must be a concrete description of at least 15 words in the
+The summary must be a concrete description (at least 5 words) in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
 Prefer report_to_specialist, which files the same ticket AND hands the
@@ -3882,7 +3882,7 @@ without talking to support.",
               "type": "string",
             },
             "summary": {
-              "description": "Concrete bug description, at least 15 words, in the user's own words (what broke, where, what was expected).",
+              "description": "Concrete bug description, at least 5 concrete words, in the user's own words (what broke, where, what was expected).",
               "type": "string",
             },
           },
@@ -3898,13 +3898,13 @@ should answer offline. Call when the user explicitly wants their question
 logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
 Support weiter", "open a support ticket", "log this question for support".
 Do NOT call for how-to questions you can answer yourself — answer inline.
-Summary: at least 12 words describing the question and context.
+Summary: at least 5 concrete words describing the question and context.
 AFTER: speak the ticket number once and say support will follow up.",
         "name": "submit_support_ticket",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "The user's question with context, at least 12 words.",
+              "description": "The user's question with context, at least 5 concrete words.",
               "type": "string",
             },
           },
@@ -3919,7 +3919,7 @@ AFTER: speak the ticket number once and say support will follow up.",
 or damaged items, orders that never arrived, seller issues, overcharges.
 Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
 "I want a refund", "the seller sent the wrong item, file a claim".
-Summary: at least 12 words — what was ordered, what went wrong, what the
+Summary: at least 5 concrete words — what was ordered, what went wrong, what the
 user wants (refund / replacement). Include the order number if they have it.
 AFTER: speak the ticket number once and say the team will review the claim.",
         "name": "submit_marketplace_dispute",
@@ -3930,7 +3930,7 @@ AFTER: speak the ticket number once and say the team will review the claim.",
               "type": "string",
             },
             "summary": {
-              "description": "Dispute description, at least 12 words: item, problem, desired outcome.",
+              "description": "Dispute description, at least 5 concrete words: item, problem, desired outcome.",
               "type": "string",
             },
           },
@@ -3945,14 +3945,14 @@ AFTER: speak the ticket number once and say the team will review the claim.",
 email trouble, role/permission issues, profile data corrections, lockouts.
 Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
 bitte melden", "I'm locked out", "report my login problem".
-NEVER ask for or record passwords. Summary: at least 12 words describing
+NEVER ask for or record passwords. Summary: at least 5 concrete words describing
 the account problem and what the user already tried.
 AFTER: speak the ticket number once and say the team will follow up.",
         "name": "submit_account_issue",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "Account problem description, at least 12 words. Never include passwords.",
+              "description": "Account problem description, at least 5 concrete words. Never include passwords.",
               "type": "string",
             },
           },
@@ -16773,7 +16773,7 @@ relay that plainly. Afterwards, confirm the unblock out loud.",
 just files and confirms. Call when the user describes something BROKEN and
 wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 "report this bug", "the button does nothing, file it".
-The summary must be a concrete description of at least 15 words in the
+The summary must be a concrete description (at least 5 words) in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
 Prefer report_to_specialist, which files the same ticket AND hands the
@@ -16787,7 +16787,7 @@ without talking to support.",
               "type": "string",
             },
             "summary": {
-              "description": "Concrete bug description, at least 15 words, in the user's own words (what broke, where, what was expected).",
+              "description": "Concrete bug description, at least 5 concrete words, in the user's own words (what broke, where, what was expected).",
               "type": "string",
             },
           },
@@ -16803,13 +16803,13 @@ should answer offline. Call when the user explicitly wants their question
 logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
 Support weiter", "open a support ticket", "log this question for support".
 Do NOT call for how-to questions you can answer yourself — answer inline.
-Summary: at least 12 words describing the question and context.
+Summary: at least 5 concrete words describing the question and context.
 AFTER: speak the ticket number once and say support will follow up.",
         "name": "submit_support_ticket",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "The user's question with context, at least 12 words.",
+              "description": "The user's question with context, at least 5 concrete words.",
               "type": "string",
             },
           },
@@ -16824,7 +16824,7 @@ AFTER: speak the ticket number once and say support will follow up.",
 or damaged items, orders that never arrived, seller issues, overcharges.
 Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
 "I want a refund", "the seller sent the wrong item, file a claim".
-Summary: at least 12 words — what was ordered, what went wrong, what the
+Summary: at least 5 concrete words — what was ordered, what went wrong, what the
 user wants (refund / replacement). Include the order number if they have it.
 AFTER: speak the ticket number once and say the team will review the claim.",
         "name": "submit_marketplace_dispute",
@@ -16835,7 +16835,7 @@ AFTER: speak the ticket number once and say the team will review the claim.",
               "type": "string",
             },
             "summary": {
-              "description": "Dispute description, at least 12 words: item, problem, desired outcome.",
+              "description": "Dispute description, at least 5 concrete words: item, problem, desired outcome.",
               "type": "string",
             },
           },
@@ -16850,14 +16850,14 @@ AFTER: speak the ticket number once and say the team will review the claim.",
 email trouble, role/permission issues, profile data corrections, lockouts.
 Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
 bitte melden", "I'm locked out", "report my login problem".
-NEVER ask for or record passwords. Summary: at least 12 words describing
+NEVER ask for or record passwords. Summary: at least 5 concrete words describing
 the account problem and what the user already tried.
 AFTER: speak the ticket number once and say the team will follow up.",
         "name": "submit_account_issue",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "Account problem description, at least 12 words. Never include passwords.",
+              "description": "Account problem description, at least 5 concrete words. Never include passwords.",
               "type": "string",
             },
           },

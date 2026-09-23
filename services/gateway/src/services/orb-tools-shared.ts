@@ -27,6 +27,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
@@ -183,6 +184,12 @@ export interface OrbToolIdentity {
    * `session.upstreamProvider` wherever a session is in hand.
    */
   upstream_provider?: string | null;
+  /**
+   * VTID-04382 — the screen the member was on when the tool fired
+   * (session.current_route). The typed feedback tools file their ticket on
+   * the surface this resolves to, the way report_to_specialist does.
+   */
+  current_route?: string | null;
 }
 
 export type OrbToolResult =
@@ -5881,6 +5888,11 @@ export async function dispatchOrbTool(
     return { ok: false, error: `unknown tool: ${name}` };
   }
 
+  // VTID-04362 (Orchestrator v2 P2, shadow): record what the capability
+  // policy WOULD decide for this call. Never blocks; recordToolDecision
+  // swallows its own errors. Read the window at GET /api/v1/orchestrator/policy/shadow.
+  recordToolDecision({ tool: name, role: identity.role, channel: 'voice', session_id: identity.session_id ?? null });
+
   // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
   //
   // Non-invasive: with FEATURE_ROLE_POLICY_ENFORCE off (default) this only
@@ -5939,12 +5951,20 @@ export interface VertexLikeIdentity {
   lang?: string | null;
   is_anonymous?: boolean | null;
   is_mobile?: boolean | null;
+  /** VTID-04382: forwarded so the typed feedback tools pick the surface. */
+  current_route?: string | null;
 }
 
 export interface VertexLikeToolResult {
   success: boolean;
   result: string;
   error?: string;
+  /**
+   * VTID-04385: the handler's structured result, untouched, for callers that
+   * need more than the LLM-facing string (e.g. the ticket a typed feedback
+   * tool just filed). Never sent to the model.
+   */
+  data?: unknown;
 }
 
 export async function dispatchOrbToolForVertex(
@@ -5969,6 +5989,7 @@ export async function dispatchOrbToolForVertex(
       lang: identity.lang ?? null,
       is_anonymous: identity.is_anonymous ?? null,
       is_mobile: identity.is_mobile ?? null,
+      current_route: identity.current_route ?? null,
     },
     sb,
   );
@@ -5988,5 +6009,5 @@ export async function dispatchOrbToolForVertex(
   } else {
     resultStr = '';
   }
-  return { success: true, result: resultStr };
+  return { success: true, result: resultStr, data: r.result };
 }

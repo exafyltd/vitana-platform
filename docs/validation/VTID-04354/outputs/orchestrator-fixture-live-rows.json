@@ -1,0 +1,24 @@
+{
+ "_source": "Read-only from agent_runs_unified and agents_registry, project inmkhvwdcuyhnxkgfvsb, 2026-09-23 ~11:30 UTC. by_status counts are the real 7-day counts; run and agent rows are the 12 newest runs and the first 16 agents by agent_id, text trimmed.",
+ "planes": [
+  {"plane":"dev_autopilot","by_status":{"failed":631,"queued":1,"awaiting_approval":1,"succeeded":17,"cancelled":9}},
+  {"plane":"self_healing","by_status":{"failed":550}}
+ ],
+ "runs": [
+  {"run_key":"dev_autopilot:cdce6e55","plane":"dev_autopilot","agent_id":"dev-autopilot-executor","status":"queued","vtid":"VTID-04287","title":"[warning] new env var requires workflow binding","error":null,"created_at":"2026-09-23T11:25:43Z"},
+  {"run_key":"self_healing:90e99ccf","plane":"self_healing","agent_id":"self-healing","status":"failed","vtid":"VTID-DA-277457ec","title":"dev_autopilot_triage_failed dev_autopilot.execution.ci","error":null,"created_at":"2026-09-23T11:25:17Z"},
+  {"run_key":"dev_autopilot:277457ec","plane":"dev_autopilot","agent_id":"dev-autopilot-executor","status":"failed","vtid":"VTID-04287","title":"[warning] new env var requires workflow binding","error":"LLM call failed after 0s: both providers failed: primary=Bedrock invoke_failed: Operation not allowed; fallback=Bedrock invoke_failed: Operation not allowed","created_at":"2026-09-23T11:24:13Z"},
+  {"run_key":"self_healing:06af1309","plane":"self_healing","agent_id":"self-healing","status":"failed","vtid":"VTID-DA-5e81d542","title":"dev_autopilot_triage_failed dev_autopilot.execution.ci","error":null,"created_at":"2026-09-23T11:23:57Z"},
+  {"run_key":"dev_autopilot:5e81d542","plane":"dev_autopilot","agent_id":"agent","status":"failed","vtid":"VTID-04287","title":"[warning] new env var requires workflow binding","error":"LLM call failed on turn 1: both providers failed: primary=DeepSeek 402: Insufficient Balance","created_at":"2026-09-23T11:22:13Z"},
+  {"run_key":"dev_autopilot:9237f6a1","plane":"dev_autopilot","agent_id":"dev-autopilot-executor","status":"failed","vtid":"VTID-04287","title":"[warning] new env var requires workflow binding","error":"LLM call failed after 0s: both providers failed: primary=Bedrock invoke_failed: Operation not allowed; fallback=Bedrock invoke_failed: Operation not allowed","created_at":"2026-09-23T11:20:43Z"}
+ ],
+ "agents": [
+  {"agent_id":"architecture-investigator","display_name":"Architecture Investigator","description":"System-wide root-cause hypothesis agent.","status":"unknown","llm_provider":"deepseek","llm_model":"deepseek-reasoner","llm_stage":"triage","max_tier":"read","surfaces_allowed":[],"roles_allowed":[],"owner":"platform","enabled":true},
+  {"agent_id":"autopilot-agent-executor","display_name":"Dev Autopilot agent executor","description":"Tool-loop code agent on the ECS executor task (VTID-04006).","status":"unknown","llm_provider":"deepseek","llm_model":"deepseek-flash","llm_stage":"worker","max_tier":"commit","surfaces_allowed":[],"roles_allowed":[],"owner":"platform","enabled":true},
+  {"agent_id":"backoffice-command-orchestrator","display_name":"BackOffice command orchestrator","description":"Typed ERP command registry, policy tiers and maker-checker (VTID-03842).","status":"unknown","llm_provider":"none","llm_model":null,"llm_stage":null,"max_tier":"high","surfaces_allowed":[],"roles_allowed":[],"owner":"platform","enabled":true},
+  {"agent_id":"conductor","display_name":"Conductor","description":"Central LLM router proxy.","status":"unknown","llm_provider":"conductor","llm_model":null,"llm_stage":null,"max_tier":null,"surfaces_allowed":[],"roles_allowed":[],"owner":null,"enabled":false},
+  {"agent_id":"gemini-operator","display_name":"Gemini Operator","description":"Core wrapper with function-calling tools for ORB and Operator chat.","status":"unknown","llm_provider":"gemini","llm_model":"gemini-3.1-pro-preview","llm_stage":"operator","max_tier":"commit","surfaces_allowed":["command-hub"],"roles_allowed":["developer","admin"],"owner":"platform","enabled":true},
+  {"agent_id":"llm-merge-validator","display_name":"LLM merge review","description":"Pre-merge validator for Dev Autopilot PRs (VTID-03853/04231).","status":"unknown","llm_provider":"claude","llm_model":"eu.anthropic.claude-opus-4-5-20251101-v1:0","llm_stage":"validator","max_tier":"read","surfaces_allowed":[],"roles_allowed":[],"owner":"platform","enabled":true},
+  {"agent_id":"mcp-gateway","display_name":"MCP Gateway","description":"MCP connector hub. Tool server, not an LLM caller.","status":"healthy","llm_provider":"none","llm_model":null,"llm_stage":null,"max_tier":null,"surfaces_allowed":[],"roles_allowed":[],"owner":null,"enabled":true}
+ ]
+}

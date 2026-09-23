@@ -219,7 +219,7 @@ export type ReportToSpecialistResult =
       error: string;
     };
 
-const VAGUE_PATTERNS: RegExp[] = [
+export const VAGUE_PATTERNS: RegExp[] = [
   /^user (wants|would like|wishes) to report (a|an|the)?\s*(technical |bug|issue|problem|claim|complaint|account|support)?\s*(report|issue|problem|claim|bug|complaint|question|something)\.?$/i,
   /^user has (a|an|the)?\s*(bug|issue|problem|claim|complaint|account|support|technical)\s*(report|issue|problem|claim|bug|complaint|question|matter)\.?$/i,
   /^report a (bug|issue|problem|claim|complaint|technical)\s*\.?$/i,
@@ -227,6 +227,16 @@ const VAGUE_PATTERNS: RegExp[] = [
   /^something is broken\.?$/i,
   /^(user|customer)\s+(needs help|wants help|has a question)\.?$/i,
 ];
+
+/**
+ * One definition of "too thin to file" shared by report_to_specialist and the
+ * typed submit_* tools (VTID-04359), so the two paths can never disagree on
+ * what a usable report is.
+ */
+export function isVagueSummary(summary: string): boolean {
+  const words = summary.split(/\s+/).filter(Boolean).length;
+  return words < REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS || VAGUE_PATTERNS.some((re) => re.test(summary));
+}
 
 const VAGUE_INSTRUCTION = (summary: string) =>
   buildReportToSpecialistToolMessage('vague', REPORT_TO_SPECIALIST_ACTIONS.vague(summary));
@@ -258,8 +268,7 @@ export async function executeReportToSpecialist(
   }
 
   const wordCount = summary.split(/\s+/).filter(Boolean).length;
-  const isVague =
-    wordCount < REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS || VAGUE_PATTERNS.some((re) => re.test(summary));
+  const isVague = isVagueSummary(summary);
   if (isVague) {
     return {
       decision: 'vague',

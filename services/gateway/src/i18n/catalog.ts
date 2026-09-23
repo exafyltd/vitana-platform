@@ -54,6 +54,11 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.title'
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
+  // VTID-04338: calendar entry reminders ({title} already carries the entry's emoji)
+  | 'notif.calendar_reminder.in_minutes'
+  | 'notif.calendar_reminder.in_hours'
+  | 'notif.calendar_reminder.now'
+  | 'notif.calendar_reminder.tomorrow'
   | 'notif.fallback_app_name'
   // VTID-03885: Partner Health Test Integration
   | 'notif.partner_test_status_changed.title'

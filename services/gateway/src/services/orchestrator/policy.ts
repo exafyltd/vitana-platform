@@ -53,6 +53,9 @@ export const ROLE_DEFAULTS: Readonly<Record<string, RoleCeilings>> = Object.free
   admin: { community: 'read', professional: 'read', staff: 'read', admin: 'commit' },
   developer: { community: 'read', admin: 'read', backoffice: 'read', dev: 'commit', ops: 'read' },
   infra: { dev: 'read', ops: 'commit' },
+  // VTID-04362: an unauthenticated ORB session (pre-login /maxina) may only
+  // read community information — its catalog is navigation + knowledge.
+  anonymous: { community: 'read' },
 });
 
 export const CHANNEL_CEILINGS: Readonly<Record<AgentChannel, PolicyTier>> = Object.freeze({
@@ -70,6 +73,12 @@ export const ORG_ROLE_CEILINGS: Readonly<Record<string, PolicyTier>> = Object.fr
   owner: 'commit',
   admin: 'commit',
   member: 'draft',
+  // VTID-04400: the roles partner_organization_members actually stores
+  // (routes/partner-orgs.ts ORG_ROLES). Without them every real membership
+  // resolved to 'none' and no commerce agent could ever run.
+  org_admin: 'commit',
+  staff: 'draft',
+  professional: 'draft',
 });
 
 function minTier(a: PolicyTier, b: PolicyTier): PolicyTier {
@@ -175,4 +184,29 @@ export function policyDefaults() {
     org_roles: ORG_ROLE_CEILINGS,
     enforced: false,
   };
+}
+
+/**
+ * VTID-04362: evaluate one ORB tool call from its catalog entry
+ * (tool-catalog.ts). Same verdicts as evaluatePolicy, plus one carve-out from
+ * plan §3.2: a user-own, low-risk commit (`self`) may be committed by voice
+ * when the role may commit in that domain — logging water or setting an
+ * alarm must not bounce the user to a screen.
+ */
+export function evaluateToolCall(
+  ctx: Pick<AgentContext, 'platform_role' | 'orgs' | 'channel'>,
+  tool: { domain: PolicyDomain; tier: PolicyTier; self: boolean },
+  extras: PolicyExtras = {},
+): PolicyDecision {
+  const base = evaluatePolicy(ctx, tool.domain, tool.tier, extras);
+  if (
+    base.decision === 'escalate'
+    && ctx.channel === 'voice'
+    && tool.self
+    && tool.tier === 'commit'
+    && TIER_RANK[base.role_ceiling] >= TIER_RANK.commit
+  ) {
+    return { ...base, decision: 'allow', reason: 'user-own low-risk commit confirmed by voice' };
+  }
+  return base;
 }

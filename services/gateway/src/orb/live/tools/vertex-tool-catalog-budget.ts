@@ -157,6 +157,21 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   'explain_feature',
 ];
 
+/**
+ * VTID-04397: priority names that exist only behind a feature flag (the
+ * member support specialist and its async companions, declared when
+ * ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is 'true'). Kept apart from the
+ * list above because that one is pinned to exist in every authenticated
+ * catalog; these are ranked right after it when present and skipped when not.
+ */
+export const FLAG_GATED_PRIORITY_TOOLS: readonly string[] = [
+  'ask_support_specialist',
+  // VTID-04400: the business ORB's commerce specialist (ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED).
+  'ask_commerce_specialist',
+  'get_delegation_result',
+  'cancel_delegation',
+];
+
 export interface ToolCatalogBudgetResult {
   /** The catalog to send. Same array instance as the input when nothing was trimmed. */
   tools: object[];
@@ -250,7 +265,7 @@ export function resolveToolCatalogByteBudgetFor(
 export function enforceToolCatalogBudget(
   tools: object[],
   budgetBytes: number,
-  priority: readonly string[] = VERTEX_BRIDGE_PRIORITY_TOOLS,
+  priority: readonly string[] = [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
 ): ToolCatalogBudgetResult {
   const declarationsBefore = toolCatalogDeclarationCount(tools);
   const bytesBefore = toolCatalogDeclarationBytes(tools);

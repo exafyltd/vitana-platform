@@ -1515,6 +1515,10 @@ export async function handleLiveSessionStart(
     // case), where the topic has never been heard and the full open SHOULD
     // fire. See guided-topic-narration.ts's isResume handling.
     guided_topic_resume: (body as any).guided_topic_resume === true,
+    // VTID-04395: the member opened the ORB from Support → "report by
+    // voice". The widget sends it on the first start only; the greeting
+    // ladder opens with the support-report intake while no turn has run.
+    support_report: (body as any).support_report === true,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.

@@ -84,7 +84,12 @@ jest.mock('../../src/services/dev-autopilot-execute', () => ({
 
 jest.mock('../../src/services/calendar-service', () => ({
   computeNextAvailableSlot: jest.fn().mockResolvedValue(new Date('2026-08-01T10:00:00.000Z')),
-  createCalendarEvent: jest.fn().mockResolvedValue({ id: 'cal-evt-1' }),
+}));
+
+// VTID-04356: activation writes through the idempotent producer contract.
+jest.mock('../../src/services/calendar-producers', () => ({
+  upsertCalendarEntryFromSource: jest.fn().mockResolvedValue({ action: 'created', event: { id: 'cal-evt-1' } }),
+  completeCalendarEntriesForSource: jest.fn().mockResolvedValue(0),
 }));
 
 // The route now requires a verified identity (security-audit fix, #2867: this
@@ -774,7 +779,7 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
       stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), []);
 
-      const { createCalendarEvent } = require('../../src/services/calendar-service');
+      const { upsertCalendarEntryFromSource } = require('../../src/services/calendar-producers');
       const app = mountApp();
       const res = await request(app)
         .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
@@ -783,9 +788,10 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.calendar_event_id).toBe('cal-evt-1');
-      expect(createCalendarEvent).toHaveBeenCalledWith(
+      expect(upsertCalendarEntryFromSource).toHaveBeenCalledWith(
         USER_ID,
-        expect.objectContaining({ event_type: 'community', source_ref_id: REC_ID }),
+        { source_type: 'autopilot', source_ref_type: 'autopilot_recommendation', source_ref_id: REC_ID },
+        expect.objectContaining({ event_type: 'community', start_time: '2026-08-01T10:00:00.000Z' }),
       );
     });
 
