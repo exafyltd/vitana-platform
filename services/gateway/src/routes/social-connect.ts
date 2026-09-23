@@ -20,9 +20,11 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   getOAuthUrl,
   parseOAuthState,
+  callbackProviderFor,
   exchangeCodeForTokens,
   fetchSocialProfile,
   storeSocialConnection,
@@ -41,6 +43,8 @@ import {
 import * as repo from './social-connect-repository';
 
 const router = Router();
+// VTID-04401: verify every bearer token before a handler reads the identity.
+router.use(optionalAuth);
 const LOG_PREFIX = '[SocialConnect]';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -116,20 +120,14 @@ async function getServiceClient() {
   return createClient(url, key);
 }
 
-// Helper: extract user info from JWT
+// VTID-04401: the identity comes from optionalAuth, which VERIFIES the token.
+// This used to base64-decode the payload without checking the signature, so a
+// forged token naming any user id reached that user's connected accounts with
+// the service role.
 function extractUserFromJwt(req: Request): { userId: string; tenantId: string } | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const token = authHeader.split(' ')[1];
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    return {
-      userId: payload.sub,
-      tenantId: payload.app_metadata?.active_tenant_id || process.env.DEFAULT_TENANT_ID || '',
-    };
-  } catch {
-    return null;
-  }
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!identity?.user_id) return null;
+  return { userId: identity.user_id, tenantId: identity.tenant_id || process.env.DEFAULT_TENANT_ID || '' };
 }
 
 // =============================================================================
@@ -269,6 +267,10 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
 
   // From here on use the actual provider from state, not the URL path.
   const provider = stateData.provider;
+  // VTID-04401: a state signed for one provider cannot complete another's callback.
+  if (callbackProviderFor(provider) !== urlProvider) {
+    return errRedirect('invalid_state', urlProvider);
+  }
   returnMode = stateData.returnMode ?? returnMode;
 
   console.log(`${LOG_PREFIX} Processing callback for ${provider} (url:${urlProvider}, return:${returnMode ?? 'web'}), user ${stateData.userId.slice(0, 8)}…`);

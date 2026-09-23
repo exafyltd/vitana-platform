@@ -18,6 +18,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { signOAuthState, verifyOAuthState } from '../lib/oauth-state';
 import * as repo from './social-connect-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -200,9 +201,14 @@ export function getOAuthUrl(
   }
 
   const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
-  const state = Buffer.from(
-    JSON.stringify({ userId, tenantId, provider, returnMode, includeServices }),
-  ).toString('base64url');
+  // VTID-04401: signed, expiring state — the callback has no bearer token,
+  // so this is the only proof of which user the provider account belongs to.
+  let state: string;
+  try {
+    state = signOAuthState({ userId, tenantId, provider, returnMode, includeServices });
+  } catch {
+    return { url: '', error: 'OAuth state signing is not configured.' };
+  }
 
   // Phase 3: when the unified Google flow passes includeServices, replace
   // the provider's default scope list with the union of the selected
@@ -264,11 +270,10 @@ export function parseOAuthState(state: string): {
   returnMode?: OAuthReturnMode;
   includeServices?: GoogleSubService[];
 } | null {
-  try {
-    return JSON.parse(Buffer.from(state, 'base64url').toString());
-  } catch {
-    return null;
-  }
+  // VTID-04401: unsigned, tampered or expired state is rejected.
+  const parsed = verifyOAuthState<Record<string, unknown>>(state);
+  if (!parsed || typeof parsed.userId !== 'string' || typeof parsed.provider !== 'string') return null;
+  return parsed as any;
 }
 
 /**
