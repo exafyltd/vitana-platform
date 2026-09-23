@@ -124,6 +124,16 @@ jest.mock('../../src/lib/supabase', () => ({
   getSupabase: () => mockGetSupabase(),
 }));
 
+// VTID-04414 follow-up: the context bootstrap now reads the brain flag through
+// the shared session context builder. Unmocked, the first authenticated request
+// compiled and ran the real system-controls module (5 ms -> ~600 ms locally,
+// over the 5 s test timeout on a loaded CI runner). Off = the legacy pack these
+// assertions were written against; the rest of the module stays real.
+jest.mock('../../src/services/system-controls-service', () => ({
+  ...jest.requireActual('../../src/services/system-controls-service'),
+  isVitanaBrainOrbEnabled: jest.fn().mockResolvedValue(false),
+}));
+
 // ---------------------------------------------------------------------------
 // OASIS / memory-commit
 // ---------------------------------------------------------------------------
