@@ -1985,6 +1985,7 @@ import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-t
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
 import { buildSessionContext } from '../orb/live/session/session-context';
+import { handleContextUpdateMessage } from '../orb/live/session/context-update';
 import { makeSessionMutator } from '../orb/live/session/session-mutator';
 import { getCurrentScreenHandler } from '../orb/live/tools/handlers/navigator';
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
@@ -17240,7 +17241,13 @@ router.get('/health', async (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update';
+  // VTID-04425: context_update fields (validated by applyContextUpdate)
+  current_route?: string;
+  recent_routes?: string[];
+  screen_title?: string;
+  app_state?: Record<string, unknown>;
+  is_mobile?: boolean;
   // Text message fields
   text?: string;
   // Start message fields
@@ -17504,6 +17511,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
 }
 
 /**
+ * VTID-04425 (WS-3.3): apply a mid-session context_update from either
+ * transport. A route change emits one bounded diagnostic.
+ */
+export function handleContextUpdate(session: GeminiLiveSession, raw: unknown): void {
+  handleContextUpdateMessage(session, raw, emitDiag);
+}
+
+/**
  * VTID-01222: Handle messages from WebSocket client
  */
 async function handleWsClientMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
@@ -17619,6 +17634,16 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
 
     case 'stop':
       handleWsStopSession(clientSession);
+      break;
+
+    case 'context_update':
+      // VTID-04425 (WS-3.3): the host's screen changed mid-session. Updates
+      // the session state the tools read; never injected into the model
+      // stream (VTID-04424). No error frame without a session — the widget
+      // may report a route change between sessions.
+      if (liveSession && liveSession.active) {
+        handleContextUpdate(liveSession, message);
+      }
       break;
 
     default:

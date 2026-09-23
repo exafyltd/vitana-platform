@@ -24,6 +24,7 @@
  *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
+import { handleContextUpdateMessage } from './context-update';
 import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
 import type { Response } from 'express';
 import { resolveOrbSurface, isWorkSurface } from '../surface';
@@ -2607,6 +2608,13 @@ export async function handleLiveStreamSend(
   // VTID-ANON-NUDGE: Block all input after turn limit on anonymous sessions.
   if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {
     return res.json({ ok: true });
+  }
+
+  // VTID-04425 (WS-3.3): the host's screen changed mid-session. Updates the
+  // session state the tools read; never injected into the model stream.
+  if ((body as { type?: string }).type === 'context_update') {
+    const r = handleContextUpdateMessage(session, body, deps.emitDiag);
+    return res.json({ ok: true, applied: r.applied, route_changed: r.route_changed, ...(r.reason ? { reason: r.reason } : {}) });
   }
 
   try {

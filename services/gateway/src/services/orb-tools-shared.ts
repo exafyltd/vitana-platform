@@ -4334,6 +4334,14 @@ export async function tool_get_current_screen(
     ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
   const lang = (id.lang || 'en') as string;
+  // VTID-04425: the host's screen title and small app state, reported
+  // mid-session via context_update. Values were validated on arrival.
+  const screenState = args.screen_state && typeof args.screen_state === 'object' && !Array.isArray(args.screen_state)
+    && Object.keys(args.screen_state as Record<string, unknown>).length > 0
+    ? (args.screen_state as Record<string, unknown>)
+    : null;
+  const withState = <T extends Record<string, unknown>>(o: T): T & { screen_state?: Record<string, unknown> } =>
+    (screenState ? { ...o, screen_state: screenState } : o);
 
   if (!route) {
     return {
@@ -4353,34 +4361,28 @@ export async function tool_get_current_screen(
       if (e) trailTitles.push(getContent(e, lang).title);
       if (trailTitles.length >= 4) break;
     }
+    const screen = withState({
+      title: content.title,
+      description: content.description,
+      category: entry.category,
+      screen_id: entry.screen_id,
+      route: entry.route,
+      recent_screens: trailTitles,
+    });
     return {
       ok: true,
-      result: {
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      },
-      text: JSON.stringify({
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      }),
+      result: screen,
+      text: JSON.stringify(screen),
     };
   }
 
   // Unknown route — catalog miss.
-  const fallback = {
+  const fallback = withState({
     title: 'Unknown screen',
     description: 'The user is on a route that is not in the navigation catalog.',
     route,
-    recent_screens: [],
-  };
+    recent_screens: [] as string[],
+  });
   return {
     ok: true,
     result: fallback,

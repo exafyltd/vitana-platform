@@ -28,6 +28,7 @@
  */
 
 import { commitSessionMemory } from '../../../services/session-memory-commit';
+import { contextUpdateSummary, type ContextUpdateStats } from './context-update';
 import { isSessionContinuityWriteEnabled } from '../../../services/continuity/session-continuity-writer';
 
 export interface FinalizableLiveSession {
@@ -40,6 +41,8 @@ export interface FinalizableLiveSession {
   finalizedTurnCount?: number;
   lang?: string | null;
   clientContext?: { timezone?: string | null } | null;
+  /** VTID-04425: mid-session context_update counters, when any arrived. */
+  contextUpdateStats?: ContextUpdateStats;
 }
 
 type ScheduleRefreshFn = (input: {
@@ -81,6 +84,8 @@ export interface FinalizedEventPayload {
   threads_written: number;
   threads_touched: number;
   promises_written: number;
+  /** VTID-04425: context_update counters for this session (absent when none arrived). */
+  context_updates?: { received: number; applied: number; route_changes: number; ignored: number };
 }
 
 type RecordContinuityFn = (input: {
@@ -268,6 +273,8 @@ export function finalizeLiveSession(
         threads_touched: continuity.threads_touched,
         promises_written: continuity.promises_written,
       };
+      const contextUpdates = contextUpdateSummary(session);
+      if (contextUpdates) payload.context_updates = contextUpdates;
       try {
         await (opts.emitFinalized ?? defaultEmitFinalized)(payload, userId || null);
       } catch (err) {
