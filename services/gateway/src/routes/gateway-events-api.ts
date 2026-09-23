@@ -7,13 +7,14 @@
  * which query the local oasis_events table directly.
  */
 
+import { oasisOperatorBaseUrl } from '../env';
 import { Router, Request, Response } from 'express';
 import fetch from 'node-fetch';
 
 const router = Router();
 
 // OASIS base URL from environment (for proxy to external OASIS service)
-const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+const OASIS_URL = oasisOperatorBaseUrl();
 
 /**
  * GET /api/v1/gateway-events
