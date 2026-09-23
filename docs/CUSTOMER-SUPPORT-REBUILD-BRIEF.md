@@ -288,6 +288,33 @@ visible next to its `VTID-…` everywhere either appears:
 7. **Devon on the cascade and the Serbian bridge** (§3.5 decision 2), with
    the Vitana-files-it-herself fallback shipped first.
 
+### 4.1 Status (2026-09-23)
+
+All seven slices are merged to `main` (platform #3611 `36091d8`, vitana-v1
+#1128 `c7fa75e`). **None is verified live**: staging ECS cannot place tasks
+while the AWS account block holds, so staging still serves `e09eb26`.
+
+| Slice | VTID | Merged | Live check still owed |
+|---|---|---|---|
+| 1-2 Hand-off root cause + fix | VTID-04332 | yes | a spoken hand-off producing `feedback.ticket.created` with a `session_id` |
+| 3 ID chain | VTID-04333 | yes | a fix PR titled `… (FB-…, VTID-…)` |
+| 4 Supervisor screens | VTID-04334 | yes | Command Hub drawer on staging |
+| 5 Member screens | VTID-04335 (vitana-v1) | yes | desktop Support page on `preview-aws` |
+| 6 Pipeline | VTID-04333 | yes | `auto_dispatched=N` in the executor log |
+| 7 Devon on cascade / Serbian bridge | VTID-04336 | yes | `persona_swap_in_process` event |
+
+Follow-ups after the merge:
+
+- **VTID-04359 (platform):** the typed `submit_*` tools used 15/12-word
+  minimums while `report_to_specialist` used 5, so the same report could
+  be filed by one tool and refused by the other. Both now use
+  `isVagueSummary()` (5 words and the placeholder patterns). `/mine`
+  returns the member's own report text (`raw_transcript`, clipped to
+  2,000 characters) so the member list can show what they reported.
+- **VTID-04360 (vitana-v1):** translate the admin drawer labels, drop the
+  retired `NewTicketPopup` from `docs/SCREEN_REGISTRY.md`, show the report
+  text in the member ticket list.
+
 ## 5. Rules that bite here
 
 - Staging-first. Merging to `main` deploys staging only; production only via
