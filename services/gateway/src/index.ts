@@ -1645,6 +1645,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04320: in-process reminder dispatch (tick every 30s, sweeper every
+      // 5min). Nothing external has called /reminders-tick since the GCP
+      // scheduler went away, so reminders stopped firing entirely.
+      try {
+        const { startRemindersDispatchLoop } = require('./services/reminders-dispatch');
+        if (startRemindersDispatchLoop()) {
+          console.log('⏰ Reminder dispatch loop started (in-process)');
+        } else {
+          console.log('⏸️ Reminder dispatch loop disabled — set REMINDERS_INPROCESS_DISPATCH_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {

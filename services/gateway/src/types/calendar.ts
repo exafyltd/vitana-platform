@@ -26,6 +26,9 @@ export const ROLE_TO_CONTEXTS: Record<string, CalendarRoleContext[]> = {
   professional:['community', 'personal'],
   staff:       ['admin', 'personal'],
   admin:       ['admin', 'personal'],
+  // VTID-04321: backoffice (VTID-03832) sits between staff and admin on the
+  // role ladder; without this entry it fell back to the community view.
+  backoffice:  ['admin', 'personal'],
   developer:   ['developer', 'personal'],
   infra:       ['developer', 'personal'],
   // Super admin (exafy_admin=true) → no filter, sees everything
@@ -61,6 +64,7 @@ export function toWritableRoleContext(role: string | null | undefined): Calendar
     case 'admin':
     case 'super_admin':
     case 'staff':
+    case 'backoffice':
       return 'admin';
     default:
       // community, patient, professional, null, unknown → community
@@ -179,17 +183,20 @@ export interface CalendarContextHit {
 // Zod Schemas (API validation)
 // =============================================================================
 
+/** The calendar_events.event_type CHECK list (valid_event_type). */
+export const CALENDAR_EVENT_TYPES = [
+  'personal', 'community', 'professional', 'health', 'workout', 'nutrition',
+  'autopilot', 'journey_milestone', 'dev_task', 'deployment',
+  'sprint_milestone', 'admin_task', 'wellness_nudge',
+] as const;
+
 export const CreateCalendarEventSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   description: z.string().optional().nullable(),
   start_time: z.string().datetime({ message: 'start_time must be ISO 8601' }),
   end_time: z.string().datetime().optional().nullable(),
   location: z.string().optional().nullable(),
-  event_type: z.enum([
-    'personal', 'community', 'professional', 'health', 'workout', 'nutrition',
-    'autopilot', 'journey_milestone', 'dev_task', 'deployment',
-    'sprint_milestone', 'admin_task', 'wellness_nudge',
-  ]).default('personal'),
+  event_type: z.enum(CALENDAR_EVENT_TYPES).default('personal'),
   status: z.enum(['confirmed', 'pending', 'conflict', 'cancelled']).default('confirmed'),
   priority: z.enum(['low', 'medium', 'high']).default('medium'),
   role_context: z.enum(['community', 'admin', 'developer', 'personal']).default('community'),

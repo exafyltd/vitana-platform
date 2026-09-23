@@ -290,6 +290,34 @@ describe('registerAllActionExecutors', () => {
       );
     });
 
+    it('never writes tenant_id (calendar_events has no such column) — VTID-04321', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['calendar_add_event'](
+        { title: 'Walk', start_time: '2026-01-01T10:00:00.000Z' },
+        CTX
+      );
+      const row = (mockDb.insert as jest.Mock).mock.calls[0][0];
+      expect(row).not.toHaveProperty('tenant_id');
+      expect(row).toMatchObject({ user_id: CTX.user_id, source_type: 'assistant' });
+    });
+
+    it('falls back to wellness_nudge for an event_type the CHECK would reject — VTID-04321', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-4' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['calendar_add_event'](
+        { title: 'x', start_time: '2026-01-01T10:00:00.000Z', event_type: 'meditation' },
+        CTX
+      );
+      await executors['calendar_add_event'](
+        { title: 'y', start_time: '2026-01-01T10:00:00.000Z', event_type: 'workout' },
+        CTX
+      );
+      const calls = (mockDb.insert as jest.Mock).mock.calls;
+      expect(calls[0][0].event_type).toBe('wellness_nudge');
+      expect(calls[1][0].event_type).toBe('workout');
+    });
+
     it('returns DB unavailable when getSupabase() returns null', async () => {
       mockGetSupabase.mockReturnValue(null);
       const res = await executors['calendar_add_event'](

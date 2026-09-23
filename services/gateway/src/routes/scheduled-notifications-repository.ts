@@ -309,6 +309,17 @@ export function fallbackClaimDueReminders(sb: any, args: { lookahead: string; di
     .limit(args.limit);
 }
 
+// VTID-04320: close pending reminders that are too far past their fire time
+// to be worth a push (see services/reminders-dispatch.ts, stale guard).
+export function closeStalePendingReminders(sb: any, args: { cutoff: string }) {
+  return sb
+    .from('reminders')
+    .update({ status: 'failed', delivery_via: 'stale_skipped' })
+    .eq('status', 'pending')
+    .lt('next_fire_at', args.cutoff)
+    .select('id, user_id, next_fire_at');
+}
+
 export function markReminderFired(sb: any, args: { reminderId: string; firedAt: string }) {
   return sb
     .from('reminders')
