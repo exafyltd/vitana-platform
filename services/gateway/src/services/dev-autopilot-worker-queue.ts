@@ -124,8 +124,21 @@ export interface WorkerTaskResult {
   queue_row_id?: string;
 }
 
+/**
+ * VTID-04327 — the autopilot-worker daemon (services/autopilot-worker, a
+ * `claude -p` loop on a developer's machine) was retired on the owner's
+ * decision (Orchestrator plan §8.5). Nothing consumes this queue any more, so
+ * the lane is off unconditionally: setting DEV_AUTOPILOT_USE_WORKER=true would
+ * only enqueue tasks nobody picks up. The agent executor (VTID-04006) is the
+ * code-writing lane. A set flag is logged once so a stale task def is visible.
+ */
+let workerFlagWarned = false;
 export function isWorkerQueueEnabled(): boolean {
-  return (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true';
+  if (!workerFlagWarned && (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true') {
+    workerFlagWarned = true;
+    console.warn('[dev-autopilot-worker-queue] DEV_AUTOPILOT_USE_WORKER=true is ignored: the autopilot-worker lane is retired (VTID-04327).');
+  }
+  return false;
 }
 
 export function isWorkerOwnsPrEnabled(): boolean {

@@ -69,14 +69,6 @@ jobs:
             install: npm install --no-audit --no-fund
             test: npm test
             runner: jest
-          - service: autopilot-worker
-            install: npm ci --no-audit --no-fund
-            test: npx jest --silent
-            runner: jest
-          - service: worker-runner
-            install: npm ci --no-audit --no-fund
-            test: npx jest --silent
-            runner: jest
           - service: oasis-projector
             install: npm ci --no-audit --no-fund
             test: npx jest --silent

@@ -66,13 +66,6 @@
       "cloud_run_service": "openclaw-bridge",
       "deployable": true
     },
-    "worker-runner": {
-      "paths": [
-        "services/worker-runner/"
-      ],
-      "cloud_run_service": "worker-runner",
-      "deployable": true
-    },
     "vaea": {
       "paths": [
         "services/vaea/"
