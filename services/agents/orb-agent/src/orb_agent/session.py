@@ -850,7 +850,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
 
     # §11 conversation-flow memory: accumulate the conversation transcript so
     # _teardown can POST it to the gateway's /api/v1/orb/session/commit-memory
-    # endpoint, which runs the SAME extraction (Cognee + deduplicated facts) the
+    # endpoint, which runs the SAME extraction (deduplicated facts) the
     # Vertex path runs at session stop. Before this, the LiveKit agent extracted
     # NOTHING and every conversation was heard and thrown away (no cross-session
     # memory). User lines come from the proven user_input_transcribed hook;

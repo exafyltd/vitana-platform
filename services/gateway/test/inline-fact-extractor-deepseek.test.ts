@@ -122,36 +122,10 @@ describe('inline-fact-extractor: provider comes from routing (VTID-03579)', () =
       'bedrock-runtime',
     ];
     const direct = fetchCalls
-      .filter((c) => providerHosts.some((h) => c.url.includes(h)))
-      // KNOWN, DELIBERATE CARVE-OUT — embeddings, not generation.
-      //
-      // Persisting a fact embeds it (`text-embedding-004`) for pgvector recall.
-      // That call CANNOT be routed to Bedrock Claude: Anthropic publishes no
-      // embedding model at all, so this is a missing capability, not a missing
-      // config — the AWS answer is Titan Embeddings, which is a new adapter and
-      // its own build (VTID-03579 follow-up).
-      //
-      // It is carved out by exact path rather than by relaxing the host list, so
-      // ANY other Google call reintroduced here still fails this test. When
-      // Titan Embeddings lands, delete this filter and the test tightens itself.
-      .filter((c) => !c.url.includes(':embedContent'));
+      // VTID-04342: embeddings moved to Bedrock Titan V2 (SDK, not fetch), so
+      // the old `:embedContent` carve-out is gone and ANY Google call fails.
+      .filter((c) => providerHosts.some((h) => c.url.includes(h)));
     expect(direct).toEqual([]);
-  });
-
-  it('documents the one remaining Google dependency: embeddings', async () => {
-    await extractAndPersistFacts({
-      conversationText: CONVERSATION,
-      tenant_id: 'tenant-123',
-      user_id: 'user-456',
-      session_id: 'session-789',
-    });
-
-    // This asserts the gap EXISTS, so it cannot be quietly forgotten: the test
-    // starts failing the moment embeddings move off Google, which is the prompt
-    // to delete both this test and the carve-out above.
-    const embedCalls = fetchCalls.filter((c) => c.url.includes(':embedContent'));
-    expect(embedCalls.length).toBeGreaterThan(0);
-    expect(embedCalls[0].url).toContain('generativelanguage.googleapis.com');
   });
 
   it('fails soft when the router cannot serve — no throw, no write', async () => {

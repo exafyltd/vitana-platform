@@ -259,7 +259,7 @@ function createMemoryClient(): SupabaseClient | null {
  * VTID-01225: Fetch recent conversation turns from memory_items for Cognee extraction
  * Queries by user_id and time range to get conversation history
  */
-export async function fetchRecentConversationForCognee(
+export async function fetchRecentConversationTranscript(
   tenantId: string,
   userId: string,
   startTime: Date,
@@ -700,6 +700,35 @@ export async function writeMemoryItemWithIdentity(
     }
 
     console.log(`[VTID-01186] Memory written: ${data?.id} (user=${identity.user_id.substring(0,8)}..., tenant=${identity.tenant_id.substring(0,8)}...)`);
+
+    // VTID-04342: embed on write (Titan V2, fire-and-forget) so the row is
+    // reachable by semantic recall immediately. This path never embedded
+    // before, which is why only 1/3 of memory_items ever had a vector. A
+    // failure leaves embedding NULL; AP-0910 retries it hourly.
+    if (data?.id) {
+      const itemId = data.id as string;
+      void (async () => {
+        try {
+          const { embedMemoryText, toPgVector } = await import('./memory-embedding');
+          const emb = await embedMemoryText(params.content);
+          if (!emb.ok || !emb.embedding) {
+            console.warn(`[VTID-04342] memory_items embed skipped for ${itemId}: ${emb.error}`);
+            return;
+          }
+          const { error: embErr } = await supabase
+            .from('memory_items')
+            .update({
+              embedding: toPgVector(emb.embedding),
+              embedding_model: emb.model,
+              embedding_updated_at: new Date().toISOString(),
+            })
+            .eq('id', itemId);
+          if (embErr) console.warn(`[VTID-04342] memory_items embed store failed for ${itemId}: ${embErr.message}`);
+        } catch (e: any) {
+          console.warn(`[VTID-04342] memory_items embed error for ${itemId}: ${e?.message ?? e}`);
+        }
+      })();
+    }
 
     // VTID-02005 Phase 5b: fan out to mem_episodes (Tier 2 mirror).
     // Fire-and-forget. Never blocks the primary write. Skipped when the

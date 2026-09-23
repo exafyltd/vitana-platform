@@ -27,21 +27,19 @@ jest.mock('../../src/services/guide/pattern-extractor', () => ({
 import { extractPatternsForUser } from '../../src/services/guide/pattern-extractor';
 const mockedExtract = extractPatternsForUser as jest.MockedFunction<typeof extractPatternsForUser>;
 
-// AP-0910 batches embeddings via memory-facts-service's DEDICATED 768-dim
-// generator (memory_facts.embedding is a fixed vector(768) column — a
-// different dimension from memory_items' vector(1536), which the shared
-// embedding-service.ts correctly serves instead); AP-0911 delegates to the
-// synthesis service. Mock both so handler tests stay hermetic (no
-// Vertex/OpenAI/DeepSeek calls).
-jest.mock('../../src/services/memory-facts-service', () => ({
-  generateFactEmbeddings: jest.fn(),
+// AP-0910 embeds via the single memory embedder (Titan V2, 1024-dim —
+// VTID-04342); AP-0911 delegates to the synthesis service. Mock both so
+// handler tests stay hermetic (no Bedrock/OpenAI/DeepSeek calls).
+jest.mock('../../src/services/memory-embedding', () => ({
+  embedMemoryTexts: jest.fn(),
+  toPgVector: (e: number[]) => '[' + e.join(',') + ']',
 }));
 jest.mock('../../src/services/user-model-synthesis', () => ({
   synthesizeUserModel: jest.fn(),
 }));
-import { generateFactEmbeddings } from '../../src/services/memory-facts-service';
+import { embedMemoryTexts } from '../../src/services/memory-embedding';
 import { synthesizeUserModel } from '../../src/services/user-model-synthesis';
-const mockedBatchEmbed = generateFactEmbeddings as jest.MockedFunction<typeof generateFactEmbeddings>;
+const mockedBatchEmbed = embedMemoryTexts as jest.MockedFunction<typeof embedMemoryTexts>;
 const mockedSynthesize = synthesizeUserModel as jest.MockedFunction<typeof synthesizeUserModel>;
 
 // AP-0913 mirrors posts via orb-memory-bridge's writeMemoryItemWithIdentity,
@@ -520,28 +518,52 @@ describe('runBehaviorPreferenceInference (AP-0908)', () => {
 });
 
 describe('runMemoryEmbeddingBackfill (AP-0910)', () => {
-  it('embeds the unembedded backlog in one batch', async () => {
+  it('embeds the unembedded fact and memory_items backlog', async () => {
     const supabase = makeFakeSupabase({
       memory_facts: [
         { data: [{ id: 'f1', fact_key: 'user_favorite_tea', fact_value: 'Earl Grey' }], error: null },
         { data: null, error: null }, // update
       ],
+      memory_items: [
+        { data: [{ id: 'm1', content: 'I ran 5km this morning' }, { id: 'm2', content: '  ' }], error: null },
+        { data: null, error: null }, // update
+      ],
     });
-    mockedBatchEmbed.mockResolvedValue({ ok: true, embeddings: [[0.1, 0.2]], model: 'test-model' });
+    mockedBatchEmbed.mockReset();
+    mockedBatchEmbed
+      .mockResolvedValueOnce({ ok: true, embeddings: [[0.1, 0.2]], model: 'amazon.titan-embed-text-v2:0', failed: 0 })
+      .mockResolvedValueOnce({ ok: true, embeddings: [[0.3, 0.4]], model: 'amazon.titan-embed-text-v2:0', failed: 0 });
     const { ctx } = makeCtx(supabase);
     const handler = getHandler('runMemoryEmbeddingBackfill')!;
     const result = await handler(ctx);
-    expect(mockedBatchEmbed).toHaveBeenCalledWith(['user_favorite_tea: Earl Grey']);
-    expect(result).toEqual({ usersAffected: 0, actionsTaken: 1 });
+    expect(mockedBatchEmbed).toHaveBeenNthCalledWith(1, ['user_favorite_tea: Earl Grey']);
+    // blank content is skipped, never sent to the embedder
+    expect(mockedBatchEmbed).toHaveBeenNthCalledWith(2, ['I ran 5km this morning']);
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 2 });
   });
 
-  it('is a no-op when the backlog is empty', async () => {
-    const supabase = makeFakeSupabase({ memory_facts: [{ data: [], error: null }] });
-    mockedBatchEmbed.mockClear();
+  it('is a no-op when both backlogs are empty', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [{ data: [], error: null }],
+      memory_items: [{ data: [], error: null }],
+    });
+    mockedBatchEmbed.mockReset();
     const { ctx } = makeCtx(supabase);
     const handler = getHandler('runMemoryEmbeddingBackfill')!;
     const result = await handler(ctx);
     expect(mockedBatchEmbed).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('leaves rows un-embedded (for the next run) when Bedrock is unavailable', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [{ data: [{ id: 'f1', fact_key: 'k', fact_value: 'v' }], error: null }],
+      memory_items: [{ data: [], error: null }],
+    });
+    mockedBatchEmbed.mockReset();
+    mockedBatchEmbed.mockResolvedValue({ ok: false, embeddings: [null], failed: 1, error: 'not_configured' });
+    const { ctx } = makeCtx(supabase);
+    const result = await getHandler('runMemoryEmbeddingBackfill')!(ctx);
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 });

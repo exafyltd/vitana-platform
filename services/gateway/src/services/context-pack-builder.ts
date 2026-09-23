@@ -285,7 +285,7 @@ async function fetchMemoryFacts(
           content: `${f.fact_key}: ${f.fact_value}`,
           importance: Math.round(f.provenance_confidence * 100),
           occurred_at: f.extracted_at || new Date().toISOString(),
-          source: f.provenance_source || 'cognee_extraction',
+          source: f.provenance_source || 'memory_extraction',
           relevance_score: 1.0, // Identity core facts are always max relevance
         }));
         console.log(`[VTID-01216] Identity Core: ${identityCoreFacts.length} pinned facts loaded`);
@@ -306,7 +306,7 @@ async function fetchMemoryFacts(
         content: `${r.fact_key}: ${r.fact_value}`,
         importance: Math.round(r.provenance_confidence * 100),
         occurred_at: new Date().toISOString(),
-        source: r.provenance_source || 'cognee_extraction',
+        source: r.provenance_source || 'memory_extraction',
         relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
       }));
       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
@@ -325,7 +325,7 @@ async function fetchMemoryFacts(
         content: `${r.fact_key}: ${r.fact_value}`,
         importance: Math.round(r.provenance_confidence * 100),
         occurred_at: new Date().toISOString(),
-        source: r.provenance_source || 'cognee_extraction',
+        source: r.provenance_source || 'memory_extraction',
         relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
       }));
     } else if (!generalResult.ok && generalResult.error && generalResult.error !== 'missing_lens') {
@@ -961,7 +961,7 @@ export async function buildContextPack(
     );
   }
 
-  // Memory Facts retrieval (cognee extraction pipeline output)
+  // Memory Facts retrieval (fact extraction pipeline output)
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
       fetchMemoryFacts(input.lens, input.query)
@@ -971,7 +971,7 @@ export async function buildContextPack(
     );
   }
 
-  // Relationship Graph retrieval (cognee extraction pipeline output)
+  // Relationship Graph retrieval (relationship graph output)
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
       fetchRelationshipContext(input.lens)
@@ -1433,7 +1433,7 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
 
   context += `</user_context>\n\n`;
 
-  // Structured facts section (from cognee extraction pipeline)
+  // Structured facts section (from fact extraction pipeline)
   const structuredFactHits = pack.memory_hits.filter(h => h.category_key.startsWith('fact:'));
   if (structuredFactHits.length > 0) {
     context += `<structured_facts>\n`;
@@ -1444,7 +1444,7 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
     context += `</structured_facts>\n\n`;
   }
 
-  // Relationship graph section (from cognee extraction pipeline)
+  // Relationship graph section (from relationship graph)
   if (pack.relationship_context && pack.relationship_context.length > 0) {
     context += `<relationship_graph>\n`;
     context += `The following is the user's relationship graph:\n\n`;

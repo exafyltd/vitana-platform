@@ -219,6 +219,25 @@ export async function fetchDiaryEntriesSince(
     .limit(limit);
 }
 
+// VTID-04343: the Daily Diary the app actually writes (text/voice/photo
+// editors, Memory Garden "add memory"). 273 rows vs 1 in
+// memory_diary_entries, so reading only the latter meant diary_loaded=0 on
+// every turn. User-owned, no tenant column (a diary is personal).
+export async function fetchAppDiaryEntriesSince(
+  sb: SupabaseClient,
+  userId: string,
+  cutoffIso: string,
+  limit: number,
+) {
+  return sb
+    .from('diary_entries')
+    .select('id, created_at, text, tags')
+    .eq('user_id', userId)
+    .gte('created_at', cutoffIso)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
+
 // ==================== autopilot_recommendations / user_proactive_pause (GOVERNANCE) ====================
 
 export async function fetchDismissedAutopilotRecommendations(

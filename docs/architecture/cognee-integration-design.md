@@ -1,3 +1,5 @@
+> **RETIRED (VTID-04344):** the Cognee extractor service, its gateway client and the `/relationships/from-cognee` route were removed; this document is historical.
+
 # Cognee Integration Design for Vitana Platform
 
 **VTID**: VTID-01225

@@ -1,17 +1,17 @@
 /**
- * VTID-01225: Inline Fact Extractor (Cognee Fallback)
+ * VTID-01225: Inline Fact Extractor
  *
- * Lightweight Gemini-based fact extractor that runs INSIDE the gateway
- * when the external Cognee extractor service is unavailable (404/down).
+ * Lightweight LLM-based fact extractor that runs INSIDE the gateway. Originally
+ * the fallback for the external Cognee extractor service; since VTID-04344
+ * (Cognee removed) it is the sole conversation fact-extraction path.
  *
- * Uses the SAME write_fact() RPC that Cognee uses, writing to the SAME
- * memory_facts table with the SAME schema. The read path (context-pack-builder)
- * doesn't care which service wrote the fact.
+ * Writes via the write_fact() RPC into memory_facts. The read path
+ * (context-pack-builder) doesn't care which service wrote the fact.
  *
  * Design constraints:
- * - Fire-and-forget (non-blocking, same as Cognee)
+ * - Fire-and-forget (non-blocking)
  * - Uses Vertex AI (primary) or Gemini API (fallback) - same as conversation route
- * - Writes via write_fact() RPC (same as cognee-extractor-client.ts line 582)
+ * - Writes via write_fact() RPC
  * - Low temperature (0.1) for deterministic extraction
  * - Small token budget (512) to keep latency low
  * - Only extracts identity/preference/relationship facts (high-value)
@@ -20,7 +20,7 @@
 import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
 import { callViaRouter } from './llm-router'; // VTID-03579: provider comes from llm_routing_policy, never hardcoded
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
-// inline-fact-extractor activity (the cognee fallback path).
+// inline-fact-extractor activity.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
 
 // =============================================================================
@@ -331,8 +331,8 @@ async function persistFact(
  * Extract facts from a conversation turn and persist to memory_facts.
  * Fire-and-forget: call this without awaiting.
  *
- * Uses the same write_fact() RPC as Cognee, writing to the same table.
- * The read path (context-pack-builder fetchMemoryFacts) picks up both.
+ * Uses the write_fact() RPC into memory_facts; the read path
+ * (context-pack-builder fetchMemoryFacts) picks it up.
  */
 export async function extractAndPersistFacts(input: {
   conversationText: string;

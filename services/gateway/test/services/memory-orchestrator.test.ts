@@ -77,7 +77,7 @@ function makePack(overrides: Partial<ContextPack> = {}): ContextPack {
         content: 'user_name: Dragan Alexander',
         importance: 90,
         occurred_at: new Date().toISOString(),
-        source: 'cognee_extraction',
+        source: 'memory_extraction',
         relevance_score: 1,
       },
       {

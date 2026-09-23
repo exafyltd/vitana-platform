@@ -16,7 +16,6 @@
  * docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
  */
 
-import { cogneeExtractorClient } from './cognee-extractor-client';
 import { deduplicatedExtract } from './extraction-dedup-manager';
 
 /** Minimum transcript length (chars) worth extracting from. Mirrors the Vertex
@@ -34,41 +33,22 @@ export interface CommitSessionMemoryArgs {
 export interface CommitSessionMemoryResult {
   /** True when at least the deduplicated extractor was fired. */
   committed: boolean;
-  /** True when the Cognee extractor was also queued (it is gated by a flag). */
-  cognee_queued: boolean;
   reason?: string;
 }
 
 /**
- * Fire-and-forget the session-end extraction (Cognee + deduplicated inline
- * facts). Never throws — extraction failures must never block the session-stop
- * path. Returns what was fired so callers can record telemetry.
+ * Fire-and-forget the session-end extraction (deduplicated inline facts; the
+ * Cognee extractor that used to run alongside it was retired in VTID-04344).
+ * Never throws — extraction failures must never block the session-stop path.
+ * Returns what was fired so callers can record telemetry.
  */
 export function commitSessionMemory(args: CommitSessionMemoryArgs): CommitSessionMemoryResult {
   const transcript = (args.transcript || '').trim();
   if (transcript.length <= MIN_COMMIT_TRANSCRIPT_CHARS) {
-    return { committed: false, cognee_queued: false, reason: 'transcript_too_short' };
+    return { committed: false, reason: 'transcript_too_short' };
   }
   if (!args.tenantId || !args.userId) {
-    return { committed: false, cognee_queued: false, reason: 'missing_identity' };
-  }
-
-  let cogneeQueued = false;
-  try {
-    if (cogneeExtractorClient.isEnabled()) {
-      cogneeExtractorClient.extractAsync({
-        transcript,
-        tenant_id: args.tenantId,
-        user_id: args.userId,
-        session_id: args.sessionId,
-        active_role: args.activeRole || 'community',
-      });
-      cogneeQueued = true;
-    }
-  } catch (err) {
-    console.warn(
-      `[session-memory-commit] cognee extractAsync threw (non-fatal) for ${args.userId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    return { committed: false, reason: 'missing_identity' };
   }
 
   try {
@@ -86,5 +66,5 @@ export function commitSessionMemory(args: CommitSessionMemoryArgs): CommitSessio
     );
   }
 
-  return { committed: true, cognee_queued: cogneeQueued };
+  return { committed: true };
 }

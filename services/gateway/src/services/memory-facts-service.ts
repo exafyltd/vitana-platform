@@ -516,8 +516,11 @@ export async function searchFactsSemantic(
   const timeoutMs = options?.timeout_ms ?? CPB_FACT_FETCH_TIMEOUT_MS;
 
   try {
-    const { generateEmbedding } = await import('./embedding-service');
-    const embResult = await generateEmbedding(query);
+    // VTID-04342: same Titan V2 space as memory_facts.embedding (vector(1024)).
+    // The old path embedded the query at 1536 dims against a 768 column, so
+    // every call failed on the dimension check.
+    const { embedMemoryText } = await import('./memory-embedding');
+    const embResult = await embedMemoryText(query);
     if (!embResult.ok || !embResult.embedding) {
       return { ok: false, facts: [], error: 'embedding_failed' };
     }
@@ -628,131 +631,31 @@ export async function listFactsByConfidence(
 // Async Embedding Generation (VTID-01225)
 // =============================================================================
 
-// BOOTSTRAP-MEMORY-DAILY-LEARNING: memory_facts.embedding is a FIXED
-// vector(768) column — confirmed via pg_attribute.atttypmod on staging
-// 2026-07-06 — a DIFFERENT dimension from memory_items.embedding's
-// vector(1536) (see embedding-service.ts, VTID-01978). Every write here
-// MUST use this dedicated 768-dim path, never the shared embedding-service
-// (which is correctly hardcoded to 1536 for memory_items and must stay
-// that way). Before this fix, every OpenAI-generated embedding (native
-// 1536d) was silently REJECTED by Postgres on the vector-dimension check —
-// confirmed on staging: an OpenAI batch call generated 100 valid 1536d
-// vectors, and all 100 UPDATEs failed, leaving embedded=0. The 21
-// historically-embedded facts matched Gemini's text-embedding-004 (native
-// 768d) fallback, which happened to be dimension-compatible by accident.
-const FACT_EMBEDDING_DIMENSIONS = 768;
-const FACT_EMBEDDING_OPENAI_MODEL = 'text-embedding-3-small';
-const FACT_EMBEDDING_GEMINI_MODEL = 'text-embedding-004';
+// VTID-04342: memory_facts.embedding is vector(1024), Amazon Titan Text
+// Embeddings V2 — the single memory embedder (memory-embedding.ts). This
+// replaces the OpenAI → Gemini 768-dim path: neither key exists on AWS, so no
+// fact had been embedded since 2026-04-28, and the Gemini leg was a standing
+// Google-dependency policy violation (NEVER-27). No fallback provider on
+// purpose: a second model would put vectors from a different space into the
+// same column.
 
 interface FactEmbeddingBatchResult {
   ok: boolean;
-  embeddings?: number[][];
+  /** Same order as the input; null where that one text failed. */
+  embeddings?: Array<number[] | null>;
   model?: string;
   error?: string;
 }
 
-async function callOpenAIForFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not configured' };
-  try {
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        input: texts,
-        model: FACT_EMBEDDING_OPENAI_MODEL,
-        // Matryoshka-truncated native output at the exact column width —
-        // NOT a naive post-hoc slice of a 1536d vector.
-        dimensions: FACT_EMBEDDING_DIMENSIONS,
-        encoding_format: 'float',
-      }),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      return { ok: false, error: `OpenAI ${response.status}: ${body.slice(0, 200)}` };
-    }
-    const data = (await response.json()) as { data?: Array<{ embedding?: number[] }> };
-    const embeddings = (data.data || []).map((d) => d.embedding).filter(Array.isArray) as number[][];
-    if (embeddings.length !== texts.length) {
-      return { ok: false, error: `expected ${texts.length} embeddings, got ${embeddings.length}` };
-    }
-    return { ok: true, embeddings, model: FACT_EMBEDDING_OPENAI_MODEL };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
-  }
-}
-
-async function callGeminiForFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
-  if (!apiKey) return { ok: false, error: 'GOOGLE_GEMINI_API_KEY not configured' };
-  try {
-    const embeddings: number[][] = [];
-    for (const text of texts) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${FACT_EMBEDDING_GEMINI_MODEL}:embedContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: { parts: [{ text }] } }),
-        },
-      );
-      if (!response.ok) {
-        const body = await response.text();
-        return { ok: false, error: `Gemini ${response.status}: ${body.slice(0, 200)}` };
-      }
-      const data = (await response.json()) as { embedding?: { values?: number[] } };
-      const vec = data.embedding?.values;
-      if (!Array.isArray(vec)) return { ok: false, error: 'missing embedding in Gemini response' };
-      embeddings.push(vec);
-    }
-    return { ok: true, embeddings, model: FACT_EMBEDDING_GEMINI_MODEL };
-  } catch (err: any) {
-    return { ok: false, error: err?.message ?? String(err) };
-  }
-}
-
 /**
- * Generate 768-dim embeddings matching memory_facts.embedding's fixed
- * vector(768) column. OpenAI (requested at native 768d) primary, Gemini
- * text-embedding-004 (native 768d) fallback. Exported for AP-0910's batch
- * backfill; also used internally by generateFactEmbeddingAsync below.
- *
- * GATEWAY-GOOGLE-DEPENDENCY-AUDIT-2026-08-28 finding #1/#2 flagged this
- * alongside embedding-service.ts's Gemini fallback (VTID-01184, now fixed —
- * see providers/titan-embedding.ts), but this one could NOT get the same
- * Bedrock/Titan fix: Titan Text Embeddings V1 is fixed at 1536-dim, and V2
- * only offers 256/512/1024 — none match this column's fixed 768. Closing
- * this one for real needs a human decision (migrate memory_facts.embedding
- * to a Titan-compatible width and re-embed every existing row, or accept a
- * quality-degrading truncation), not a code-only swap — so the Gemini
- * fallback stays, but is now logged as the policy incident it is (NEVER-27
- * / IF-THEN-29) instead of a silent console.warn.
+ * Generate Titan V2 (1024-dim) embeddings for fact texts. Exported for
+ * AP-0910's batch backfill; also used by generateFactEmbeddingAsync below.
  */
 export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
   if (texts.length === 0) return { ok: true, embeddings: [] };
-  const openai = await callOpenAIForFactEmbeddings(texts);
-  if (openai.ok) return openai;
-  console.warn(`[${VTID}] OpenAI fact-embedding failed, trying Gemini: ${openai.error}`);
-  const gemini = await callGeminiForFactEmbeddings(texts);
-  if (gemini.ok) {
-    console.error(`[${VTID}] GOOGLE FALLBACK USED (policy violation, no Bedrock/Titan equivalent for the fixed 768-dim column): ${gemini.model}`);
-    await emitOasisEvent({
-      vtid: VTID,
-      type: 'embedding.google_fallback_used',
-      source: 'memory-facts-service',
-      status: 'error',
-      message: `POLICY VIOLATION: used Gemini fallback for fact-embedding generation (${gemini.model}) — OpenAI failed and no Bedrock/Titan model matches the fixed 768-dim column`,
-      payload: {
-        policy_violation: true,
-        openai_error: openai.error,
-        provider: 'gemini',
-        model: gemini.model,
-        count: texts.length,
-      },
-    }).catch(() => {});
-    return gemini;
-  }
-  return { ok: false, error: `OpenAI: ${openai.error}; Gemini: ${gemini.error}` };
+  const { embedMemoryTexts } = await import('./memory-embedding');
+  const res = await embedMemoryTexts(texts);
+  return { ok: res.ok, embeddings: res.embeddings, model: res.model, error: res.error };
 }
 
 /**
@@ -791,7 +694,7 @@ export function generateFactEmbeddingAsync(
         supabase,
         factId,
         JSON.stringify(embedding),
-        result.model || FACT_EMBEDDING_OPENAI_MODEL,
+        result.model || 'amazon.titan-embed-text-v2:0',
         new Date().toISOString(),
       );
 

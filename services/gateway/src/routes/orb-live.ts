@@ -163,8 +163,6 @@ import { writeTimelineRow } from '../services/timeline-projector';
 import { notifyUserAsync } from '../services/notification-service';
 // VTID-02857: read operator-tunable speakingRate from system_config (cached)
 import { getVoiceConfig } from '../services/voice-config';
-// VTID-01225: Cognee Entity Extraction Integration
-import { cogneeExtractorClient, type CogneeExtractionRequest } from '../services/cognee-extractor-client';
 // VTID-01225-READ-FIX: Inline fact extraction for voice sessions
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01230: Session buffer (Tier 0 short-term memory) + extraction dedup
@@ -201,7 +199,6 @@ import {
   getDebugSnapshot,
   writeDevMemoryItem,
   writeMemoryItemWithIdentity,
-  fetchRecentConversationForCognee,  // VTID-01225: For Cognee extraction
   fetchRecentOrbUserTurns,           // VTID-RECENT-TURNS: grounding for "what did I last say?"
   formatRecentTurnsBlock,            // VTID-RECENT-TURNS: pretty-print helper
   DEV_IDENTITY,
@@ -296,14 +293,6 @@ import {
   executeTaskStateQuery,
   getTaskStateQueryDebugInfo
 } from '../services/task-state-query-service';
-// VTID-01153: Memory Indexer Client (Mem0 OSS)
-import {
-  isMemoryIndexerEnabled,
-  writeToMemoryIndexer,
-  searchMemoryIndexer,
-  getMemoryContext,
-  buildMemoryIndexerEnhancedInstruction
-} from '../services/memory-indexer-client';
 // Language preference persistence via memory_facts
 import { writeFact, getCurrentFacts } from '../services/memory-facts-service';
 // VTID-01219: Gemini Live API WebSocket for real-time voice-to-voice
@@ -881,7 +870,7 @@ interface OrbTranscriptTurn {
 
 /**
  * VTID-01039: Persisted transcript for ORB session
- * VTID-01225: Extended with tenant_id/user_id for Cognee extraction
+ * VTID-01225: Extended with tenant_id/user_id for memory extraction
  */
 interface OrbSessionTranscript {
   orb_session_id: string;
@@ -889,7 +878,7 @@ interface OrbSessionTranscript {
   turns: OrbTranscriptTurn[];
   started_at: string;
   finalized: boolean;
-  // VTID-01225: Identity for Cognee extraction persistence
+  // VTID-01225: Identity for memory extraction persistence
   tenant_id?: string;
   user_id?: string;
   summary?: {
@@ -1040,7 +1029,7 @@ export interface GeminiLiveSession {
   // overwrite it. The WS setup-message builder concatenates BOTH fields
   // when rendering the system_instruction.
   wakeBriefOverrideBlock?: string;
-  // VTID-01225: Transcript accumulation for Cognee extraction
+  // VTID-01225: Transcript accumulation for memory extraction
   // Forwarding v2d: `persona` records WHICH persona spoke this assistant turn
   // (e.g. 'vitana' / 'devon' / 'sage' / 'atlas' / 'mira'). Without this, the
   // conversation_history injected into the next persona's prompt labels every
@@ -7702,7 +7691,7 @@ async function connectToLiveAPI(
       // Send setup message with model and configuration
       // Vertex AI uses snake_case (unlike Google AI which uses camelCase)
       // VTID-01224: Include tools and bootstrap context
-      // VTID-01225: Enable input/output transcription for Cognee extraction
+      // VTID-01225: Enable input/output transcription for memory extraction
       // VTID-02047 voice channel-swap: when activePersona is a specialist
       // (set by report_to_specialist tool + a transparent reconnect), look
       // up the voice from the persona registry (agent_personas.voice_id).
@@ -12303,7 +12292,7 @@ async function generateMemoryEnhancedSystemInstruction(
     : Promise.resolve('');
 
   // VTID-01225-READ-FIX: Always fetch memory_facts directly via REST API.
-  // This bypasses ALL pipeline complexity (Mem0, Context Assembly, Memory Bridge)
+  // This bypasses ALL pipeline complexity (Context Assembly, Memory Bridge)
   // and guarantees structured facts are ALWAYS available in the system instruction.
   let memoryFactsSection = '';
   let resolvedLanguageDirective = '';
@@ -12445,31 +12434,6 @@ Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
 - NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
-
-  // VTID-01153: Try memory-indexer first (Mem0 OSS)
-  // VTID-01186: Use effective identity for memory lookups
-  if (isMemoryIndexerEnabled()) {
-    console.log('[VTID-01153] Memory indexer enabled, fetching context from Mem0');
-    try {
-      const mem0Result = await buildMemoryIndexerEnhancedInstruction(
-        baseInstructionWithMemory,
-        effectiveIdentity.user_id,
-        'general conversation context' // Query for broad context
-      );
-
-      if (mem0Result.contextChars > 0) {
-        console.log(`[VTID-01153] Memory indexer context injected: ${mem0Result.contextChars} chars`);
-        return {
-          instruction: mem0Result.instruction,
-          memoryContext: null // Using Mem0 format instead of legacy
-        };
-      } else {
-        console.log('[VTID-01153] Memory indexer returned empty context, falling back');
-      }
-    } catch (err: any) {
-      console.warn('[VTID-01153] Memory indexer error, falling back:', err.message);
-    }
-  }
 
   // Check if memory bridge is enabled (legacy Supabase-based memory)
   if (!isMemoryBridgeEnabled()) {
@@ -13274,31 +13238,6 @@ router.post('/chat', withLatencyTracker('text'), optionalAuth, async (req: Authe
     });
   }
 
-  // VTID-01153: Write to memory-indexer (Mem0 OSS) - fire-and-forget
-  // VTID-01186: Use identity from request
-  if (isMemoryIndexerEnabled() && identity.user_id) {
-    writeToMemoryIndexer({
-      user_id: identity.user_id,
-      content: inputText,
-      role: 'user',
-      metadata: {
-        source: 'orb',
-        orb_session_id: orbSessionId,
-        conversation_id: conversationId,
-        vtid: 'VTID-01153',
-        tenant_id: identity.tenant_id
-      }
-    }).then(result => {
-      if (result.stored) {
-        console.log(`[VTID-01153] User message written to Mem0: ${result.memory_ids.join(', ')}`);
-      } else {
-        console.log(`[VTID-01153] User message not stored in Mem0: ${result.decision}`);
-      }
-    }).catch(err => {
-      console.warn('[VTID-01153] Mem0 write error:', err.message);
-    });
-  }
-
   try {
     // Build thread ID for Gemini processing
     const threadId = `orb-${orbSessionId}`;
@@ -13862,35 +13801,6 @@ router.post('/chat', withLatencyTracker('text'), optionalAuth, async (req: Authe
     // User facts are extracted to memory_facts via inline-fact-extractor instead.
     console.log(`[VTID-01225-CLEANUP] Skipping assistant chat reply write to memory_items (pollution prevention)`);
 
-    // VTID-DEBUG-MEM: Write assistant response to memory-indexer (Mem0 OSS) - fire-and-forget
-    // VTID-01186: Use identity from request
-    // This ensures conversation continuity - the LLM needs to know what it said previously
-    if (isMemoryIndexerEnabled() && identity.user_id) {
-      writeToMemoryIndexer({
-        user_id: identity.user_id,
-        content: replyText,
-        role: 'assistant',
-        metadata: {
-          source: 'orb',
-          orb_session_id: orbSessionId,
-          conversation_id: conversationId,
-          model,
-          provider,
-          latency_ms: latencyMs,
-          vtid: 'VTID-DEBUG-MEM',
-          tenant_id: identity.tenant_id
-        }
-      }).then(result => {
-        if (result.stored) {
-          console.log(`[VTID-DEBUG-MEM] Assistant response written to Mem0: ${result.memory_ids.join(', ')}`);
-        } else {
-          console.log(`[VTID-DEBUG-MEM] Assistant response not stored in Mem0: ${result.decision}`);
-        }
-      }).catch(err => {
-        console.warn('[VTID-DEBUG-MEM] Mem0 assistant write error:', err.message);
-      });
-    }
-
     console.log(`[VTID-0135] Chat response generated via ${provider}`);
 
     // VTID-01106: Add memory debug info to response for debugging
@@ -14081,19 +13991,6 @@ router.post('/end-session', async (req: Request, res: Response) => {
       // VTID-01225: Use identity from transcript if available, fall back to env vars
       const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
       const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
-      // VTID-ROLE-CMD-HUB: Look up active_role from session if available
-      const endSessionRole = liveSessions.get(orb_session_id)?.active_role || 'community';
-
-      if (cogneeExtractorClient.isEnabled()) {
-        cogneeExtractorClient.extractAsync({
-          transcript: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id: orb_session_id,
-          active_role: endSessionRole
-        });
-        console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
-      }
 
       // VTID-01230: Deduplicated extraction (force on session end)
       deduplicatedExtract({
@@ -14191,7 +14088,7 @@ function generateSessionSummary(turns: OrbTranscriptTurn[]): {
 
 /**
  * VTID-01039: POST /session/append - Append a turn to transcript
- * VTID-01225: Extended to accept tenant_id/user_id for Cognee extraction
+ * VTID-01225: Extended to accept tenant_id/user_id for memory extraction
  *
  * Request:
  * {
@@ -14230,7 +14127,7 @@ router.post('/session/append', (req: Request, res: Response) => {
       turns: [],
       started_at: new Date().toISOString(),
       finalized: false,
-      // VTID-01225: Capture identity for Cognee extraction
+      // VTID-01225: Capture identity for memory extraction
       tenant_id: tenant_id || undefined,
       user_id: user_id || undefined
     };
@@ -14364,20 +14261,6 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 
     const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
     const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
-    // VTID-ROLE-CMD-HUB: Look up active_role from session if available
-    const finalizeSessionRole = liveSessions.get(orb_session_id)?.active_role || 'community';
-
-    if (cogneeExtractorClient.isEnabled()) {
-      const extractionRequest: CogneeExtractionRequest = {
-        transcript: fullTranscript,
-        tenant_id: tenantId,
-        user_id: userId,
-        session_id: orb_session_id,
-        active_role: finalizeSessionRole
-      };
-      cogneeExtractorClient.extractAsync(extractionRequest);
-      console.log(`[VTID-01225] Cognee extraction queued for session: ${orb_session_id} (tenant=${tenantId.substring(0, 8)}..., user=${userId.substring(0, 8)}...)`);
-    }
 
     // VTID-01230: Deduplicated extraction (force on session end)
     deduplicatedExtract({
@@ -15901,7 +15784,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // Brief EventSource reconnects (network blips, tab-wake, iOS bfcache) arrive
   // within seconds and no new memory facts have been extracted yet, so
   // rebuilding burns 400-1200 ms of Supabase + optional brain work for no
-  // user-visible benefit. The 60 s window is well below the Cognee extraction
+  // user-visible benefit. The 60 s window is well below the memory extraction
   // dedup window, so this never starves the model of genuinely new facts.
   const bootstrapAgeMs = session.contextBootstrapBuiltAt
     ? Date.now() - session.contextBootstrapBuiltAt

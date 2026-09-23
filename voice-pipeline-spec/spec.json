@@ -1793,7 +1793,7 @@
     {
       "name": "extraction_throttle_ms",
       "value": 60000,
-      "description": "Cognee fact-extraction debounce",
+      "description": "Fact-extraction debounce",
       "implementations": [
         "vertex"
       ]

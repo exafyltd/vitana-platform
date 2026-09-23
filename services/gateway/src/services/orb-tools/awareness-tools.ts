@@ -514,7 +514,7 @@ export async function tool_get_environmental_context(
   if (gate) return gate;
   try {
     // Real stored location: the user's residence fact from the Memory Garden
-    // (memory_facts.user_residence, written by the Cognee extractor).
+    // (memory_facts.user_residence, written by the fact extractor).
     let residence: string | null = null;
     try {
       const { data } = await repo.fetchLatestActiveFactValue(sb, id.tenant_id as string, id.user_id as string, 'user_residence');

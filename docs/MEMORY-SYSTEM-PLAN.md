@@ -287,12 +287,23 @@ Memory failed here mostly **silently**. The plan makes every failure loud and me
 
 Each phase ships independently to staging and is verified with the health check and the golden eval before the next starts. Each bullet becomes its own VTID/PR.
 
-### Phase 0 — Stop the bleeding (≈1 week)
-- [ ] **D3:** only write `preferred_language` when it changes; cleanup migration to collapse the 10k superseded rows.
-- [ ] **D1/D2:** switch user-memory embeddings to Titan v2 (reuse `dev-memory-embedding.ts`); add `embedding vector(1024)` columns; re-embed about 1k active facts and about 3k items (cents of Bedrock cost); point the semantic RPCs at them.
-- [ ] **D6:** load `diary_entries` in the broker DIARY block.
-- [ ] Delete Cognee code and Mem0 wiring; ask the owner to scale `vitana-cognee-extractor` to 0.
-- [ ] Add `ci_memory_health()` to the morning health check, so every later phase is measured.
+### Phase 0 — Stop the bleeding (≈1 week) — shipped 2026-09-23 in PR #3606
+- [x] **D3 (VTID-04341):** `write_fact()` no longer re-inserts a same-value fact unless the source is stronger. Fixed in the database function, so it covers every writer, not only `preferred_language`. Applied live. The ~10k already-superseded rows are left alone: they are history, and deleting them is a separate decision.
+- [x] **D1/D2 (VTID-04342):**
+  - One memory embedder, Titan V2 1024-dim (`memory-embedding.ts`).
+  - `memory_items`/`memory_facts` columns changed to `vector(1024)` and applied live.
+  - Old vectors nulled.
+  - Items are embedded on write.
+  - AP-0910 drains both tables.
+  - The broker now runs `memory_items` semantic search first (it never ran before).
+  - The OpenAI/Gemini fact path is removed.
+- [x] **D6 (VTID-04343):** the broker DIARY block merges `diary_entries` (the app's diary) with `memory_diary_entries`.
+- [x] **Cognee + Mem0 removed (VTID-04344).** The ECS service `vitana-cognee-extractor` was already at 0 tasks; deleting it is `scripts/aws/retire-cognee-extractor.sh --apply` (owner-run, admin identity).
+- [x] **`ci_memory_health()` + morning check #21 (VTID-04345)**, applied live. It is expected to FAIL until the re-embed backlog drains and AP-0910 is scheduled again (below).
+
+**Found during Phase 0, owner action needed:** none of the memory-intelligence automations have run since July 2026: AP-0906..AP-0913, including graph projection, the AP-0910 embedding backfill and user-model synthesis. Their GCP Cloud Scheduler died with GCP. The AWS replacement (`scripts/aws/setup-eventbridge-cron-migration.sh`, VTID-04226) was prepared but never applied. Running it with `--apply` from an admin session restores them.
+
+Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs its own fix.
 
 ### Phase 1 — Consolidate (≈2–3 weeks)
 - [ ] `services/memory/` with `remember.*` and `recall()`; move the inline extractor behind it (fixes D8).
@@ -319,13 +330,17 @@ Each phase ships independently to staging and is verified with the health check 
 
 ---
 
-## 7. Decisions for the platform owner
+## 7. Decisions for the platform owner — answered 2026-09-23
 
-1. **Approve deleting Cognee and Mem0 outright** (no replacement service), and scaling down the `vitana-cognee-extractor` ECS service.
-2. **Approve Titan v2 (1024-dim) as the single embedder** for all memory, including re-embedding existing rows.
-3. **Approve the transcript retention window**: raw turns kept 30 / 60 / 90 days, then deleted; summaries and facts kept.
-4. **Approve an isolated test database** (local Supabase in CI is enough for the golden eval). Today there is no safe place to verify memory writes, and memory cannot be verified without writes.
-5. **Sequencing:** community first (Phases 0–2), then developers (3), then ERP/support (4). Phase 3 can run in parallel if a second person is available.
+1. **Delete Cognee and Mem0, no replacement.** Agreed.
+2. **Titan V2 (1024-dim) as the single embedder, including re-embedding.** Agreed, and done in Phase 0.
+3. **Transcript retention: 90 days.** Raw turns are kept 90 days, then deleted; summaries and facts are kept. This is implemented in Phase 2, when transcripts move out of `memory_items`.
+4. **Isolated test database: in AWS.**
+   - `scripts/aws/setup-memory-test-db.sh` creates `vitana-memory-test`: private RDS Postgres, synthetic data only, never reachable by the app.
+   - It is owner-run, because Claude Code sessions have no `rds:CreateDBInstance`.
+   - The golden eval runs against it from an ECS task inside the VPC.
+   - For per-PR CI, a throwaway pgvector container in the GitHub runner is the cheaper complement. Phase 0's `write_fact` change was tested the same way, on a local Postgres.
+5. **Sequencing:** community first (Phases 0–2), then developers (3), then ERP/support (4).
 
 ---
 

@@ -3,24 +3,18 @@
 // orb-agent via /api/v1/orb/session/commit-memory) route through so
 // extraction can never fork again.
 //
+// VTID-04344: the Cognee extractor that used to run alongside the
+// deduplicated inline extractor was retired; deduplicatedExtract is the sole
+// extraction path and the result no longer carries `cognee_queued`.
+//
 // Scope:
 //   1. Guard clauses — transcript-too-short and missing-identity paths
-//      never fire either extractor.
-//   2. The commit path — both extractors are invoked with the right
-//      tenant/user/session scoping when cogneeExtractorClient is enabled.
-//   3. Partial-failure handling — a throw from either extractor is
-//      swallowed (non-fatal) and never prevents the other extractor from
-//      running or the function from returning a normal result.
+//      never fire the extractor.
+//   2. The commit path — deduplicatedExtract is invoked with the right
+//      tenant/user/session scoping.
+//   3. Failure handling — a throw from the extractor is swallowed
+//      (non-fatal) and never escapes the function.
 //   4. Tenant/user scoping — args are never swapped/merged across calls.
-
-const mockIsEnabled = jest.fn();
-const mockExtractAsync = jest.fn();
-jest.mock('../../src/services/cognee-extractor-client', () => ({
-  cogneeExtractorClient: {
-    isEnabled: (...args: any[]) => mockIsEnabled(...args),
-    extractAsync: (...args: any[]) => mockExtractAsync(...args),
-  },
-}));
 
 const mockDeduplicatedExtract = jest.fn();
 jest.mock('../../src/services/extraction-dedup-manager', () => ({
@@ -50,10 +44,7 @@ function baseArgs(overrides: Partial<CommitSessionMemoryArgs> = {}): CommitSessi
 let warnSpy: jest.SpyInstance;
 
 beforeEach(() => {
-  mockIsEnabled.mockReset();
-  mockExtractAsync.mockReset();
   mockDeduplicatedExtract.mockReset();
-  mockIsEnabled.mockReturnValue(true);
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -69,15 +60,13 @@ describe('commitSessionMemory — guard clauses', () => {
   it('skips extraction when the transcript is exactly at the minimum length (boundary is exclusive)', () => {
     const result = commitSessionMemory(baseArgs({ transcript: 'a'.repeat(MIN_COMMIT_TRANSCRIPT_CHARS) }));
 
-    expect(result).toEqual({ committed: false, cognee_queued: false, reason: 'transcript_too_short' });
-    expect(mockIsEnabled).not.toHaveBeenCalled();
-    expect(mockExtractAsync).not.toHaveBeenCalled();
+    expect(result).toEqual({ committed: false, reason: 'transcript_too_short' });
     expect(mockDeduplicatedExtract).not.toHaveBeenCalled();
   });
 
   it('skips extraction for an empty/whitespace-only transcript', () => {
     const result = commitSessionMemory(baseArgs({ transcript: '   ' }));
-    expect(result).toEqual({ committed: false, cognee_queued: false, reason: 'transcript_too_short' });
+    expect(result).toEqual({ committed: false, reason: 'transcript_too_short' });
   });
 
   it('proceeds when the transcript is one character over the minimum', () => {
@@ -90,58 +79,32 @@ describe('commitSessionMemory — guard clauses', () => {
     // toward clearing the threshold.
     const padded = '  ' + 'a'.repeat(MIN_COMMIT_TRANSCRIPT_CHARS - 1) + '  ';
     const result = commitSessionMemory(baseArgs({ transcript: padded }));
-    expect(result).toEqual({ committed: false, cognee_queued: false, reason: 'transcript_too_short' });
+    expect(result).toEqual({ committed: false, reason: 'transcript_too_short' });
   });
 
   it('skips extraction when tenantId is missing, even with a long transcript', () => {
     const result = commitSessionMemory(baseArgs({ tenantId: '' }));
 
-    expect(result).toEqual({ committed: false, cognee_queued: false, reason: 'missing_identity' });
-    expect(mockExtractAsync).not.toHaveBeenCalled();
+    expect(result).toEqual({ committed: false, reason: 'missing_identity' });
     expect(mockDeduplicatedExtract).not.toHaveBeenCalled();
   });
 
   it('skips extraction when userId is missing', () => {
     const result = commitSessionMemory(baseArgs({ userId: '' }));
-    expect(result).toEqual({ committed: false, cognee_queued: false, reason: 'missing_identity' });
+    expect(result).toEqual({ committed: false, reason: 'missing_identity' });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Commit path — both extractors fired with correct args
+// Commit path
 // ---------------------------------------------------------------------------
 
 describe('commitSessionMemory — commit path', () => {
-  it('fires both extractors and reports cognee_queued=true when cognee is enabled', () => {
+  it('fires the deduplicated extractor and reports committed=true', () => {
     const result = commitSessionMemory(baseArgs());
 
-    expect(result).toEqual({ committed: true, cognee_queued: true });
-    expect(mockExtractAsync).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ committed: true });
     expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
-  });
-
-  it('maps args to cogneeExtractorClient.extractAsync with correct tenant/user/session scoping', () => {
-    commitSessionMemory(baseArgs({
-      tenantId: 'tenant-X',
-      userId: 'user-Y',
-      sessionId: 'session-Z',
-      activeRole: 'developer',
-    }));
-
-    expect(mockExtractAsync).toHaveBeenCalledWith({
-      transcript: LONG_TRANSCRIPT,
-      tenant_id: 'tenant-X',
-      user_id: 'user-Y',
-      session_id: 'session-Z',
-      active_role: 'developer',
-    });
-  });
-
-  it('defaults active_role to "community" when not provided', () => {
-    const { activeRole, ...rest } = baseArgs();
-    commitSessionMemory(rest as CommitSessionMemoryArgs);
-
-    expect(mockExtractAsync).toHaveBeenCalledWith(expect.objectContaining({ active_role: 'community' }));
   });
 
   it('maps args to deduplicatedExtract with force:true (always, on session end)', () => {
@@ -156,50 +119,17 @@ describe('commitSessionMemory — commit path', () => {
     });
   });
 
-  it('reports cognee_queued=false and skips extractAsync when cognee is disabled, but still runs the deduplicated extractor', () => {
-    mockIsEnabled.mockReturnValue(false);
-
-    const result = commitSessionMemory(baseArgs());
-
-    expect(result).toEqual({ committed: true, cognee_queued: false });
-    expect(mockExtractAsync).not.toHaveBeenCalled();
-    expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
+  it('no longer reports a cognee_queued field (Cognee retired, VTID-04344)', () => {
+    const result = commitSessionMemory(baseArgs()) as unknown as Record<string, unknown>;
+    expect(result).not.toHaveProperty('cognee_queued');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Partial-failure handling — neither extractor throwing should ever
-// propagate out of commitSessionMemory or block the other extractor.
+// Failure handling — an extractor throw must never propagate.
 // ---------------------------------------------------------------------------
 
-describe('commitSessionMemory — partial-failure handling', () => {
-  it('swallows a synchronous throw from cogneeExtractorClient.isEnabled() and still runs deduplicatedExtract', () => {
-    mockIsEnabled.mockImplementation(() => {
-      throw new Error('flag check blew up');
-    });
-
-    const result = commitSessionMemory(baseArgs());
-
-    expect(result).toEqual({ committed: true, cognee_queued: false });
-    expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('cognee extractAsync threw (non-fatal)'));
-  });
-
-  it('swallows a synchronous throw from cogneeExtractorClient.extractAsync() and still runs deduplicatedExtract', () => {
-    mockExtractAsync.mockImplementation(() => {
-      throw new Error('extractAsync blew up');
-    });
-
-    const result = commitSessionMemory(baseArgs());
-
-    // extractAsync throwing means the `cogneeQueued = true` assignment right
-    // after it never runs, so cognee_queued must stay false — but the
-    // function itself must not throw, and deduplicatedExtract must still run.
-    expect(result).toEqual({ committed: true, cognee_queued: false });
-    expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('cognee extractAsync threw (non-fatal)'));
-  });
-
+describe('commitSessionMemory — failure handling', () => {
   it('swallows a synchronous throw from deduplicatedExtract without affecting the reported result', () => {
     mockDeduplicatedExtract.mockImplementation(() => {
       throw new Error('dedup extractor blew up');
@@ -207,23 +137,8 @@ describe('commitSessionMemory — partial-failure handling', () => {
 
     const result = commitSessionMemory(baseArgs());
 
-    expect(result).toEqual({ committed: true, cognee_queued: true });
-    expect(mockExtractAsync).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ committed: true });
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('deduplicatedExtract threw (non-fatal)'));
-  });
-
-  it('swallows failures in BOTH extractors simultaneously and still returns committed:true', () => {
-    mockExtractAsync.mockImplementation(() => {
-      throw new Error('cognee blew up');
-    });
-    mockDeduplicatedExtract.mockImplementation(() => {
-      throw new Error('dedup blew up');
-    });
-
-    const result = commitSessionMemory(baseArgs());
-
-    expect(result.committed).toBe(true);
-    expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -236,11 +151,8 @@ describe('commitSessionMemory — tenant/user isolation', () => {
     commitSessionMemory(baseArgs({ tenantId: 'tenant-1', userId: 'user-1', sessionId: 'session-1' }));
     commitSessionMemory(baseArgs({ tenantId: 'tenant-2', userId: 'user-2', sessionId: 'session-2' }));
 
-    const cogneeCalls = mockExtractAsync.mock.calls.map((c) => c[0]);
     const dedupCalls = mockDeduplicatedExtract.mock.calls.map((c) => c[0]);
 
-    expect(cogneeCalls[0]).toMatchObject({ tenant_id: 'tenant-1', user_id: 'user-1', session_id: 'session-1' });
-    expect(cogneeCalls[1]).toMatchObject({ tenant_id: 'tenant-2', user_id: 'user-2', session_id: 'session-2' });
     expect(dedupCalls[0]).toMatchObject({ tenant_id: 'tenant-1', user_id: 'user-1', session_id: 'session-1' });
     expect(dedupCalls[1]).toMatchObject({ tenant_id: 'tenant-2', user_id: 'user-2', session_id: 'session-2' });
   });

@@ -748,7 +748,8 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runMemoryInformedMatching',
   },
   {
-    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts)
+    // Audit-only: the real extraction pipeline (inline-fact-extractor.ts via
+    // extraction-dedup-manager deduplicatedExtract)
     // already runs outside the registry per session end; no
     // 'orb.session.ended' event is dispatched to trigger this today.
     id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',

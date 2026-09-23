@@ -62,7 +62,7 @@ export async function handleIdentityIntent(
   const refusal = composeIdentityRefusal(intent.fact_key, input.user_locale ?? intent.locale);
 
   // Audit: this counts as an attempted identity write that we caught BEFORE
-  // it reached the broker / LLM tool / Cognee path. Mirrors the audit event
+  // it reached the broker / LLM tool / extractor path. Mirrors the audit event
   // shape from memory-audit.ts so dashboards work uniformly.
   await emitOasisEvent({
     vtid: 'VTID-01952',

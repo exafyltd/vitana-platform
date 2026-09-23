@@ -3,7 +3,7 @@
  *
  * Builds the [USER IDENTITY] block injected at the TOP of every brain system
  * prompt. Identity values come from app_users (canonical) — NEVER from
- * memory_facts (mirror) — so even if Cognee or some legacy bug wrote a
+ * memory_facts (mirror) — so even if an extractor or some legacy bug wrote a
  * wrong name into memory, the brain can never speak it.
  *
  * Two guardrails:

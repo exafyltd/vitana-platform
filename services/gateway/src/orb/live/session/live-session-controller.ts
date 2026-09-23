@@ -80,7 +80,7 @@ import {
 } from '../../../services/extraction-dedup-manager';
 import {
   DEV_IDENTITY,
-  fetchRecentConversationForCognee,
+  fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
@@ -105,7 +105,6 @@ import {
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
-import { cogneeExtractorClient } from '../../../services/cognee-extractor-client';
 import {
   sessions,
   liveSessions,
@@ -2297,8 +2296,8 @@ export async function handleLiveSessionStart(
  *   - VTID-WATCHDOG: clears response watchdog.
  *   - OASIS event `vtid.live.session.stop` (with VTID-NAV-TIMEJOURNEY user_id).
  *   - VTID-01959/VTID-01994: voice self-healing dispatch with session metrics.
- *   - VTID-01225: fire-and-forget Cognee extraction (transcriptTurns first,
- *     memory_items fallback). VTID-01230 dedup pass on the same transcript.
+ *   - VTID-01230: fire-and-forget deduplicated fact extraction (transcriptTurns
+ *     first, memory_items fallback).
  *   - VTID-01230: destroySessionBuffer + clearExtractionState.
  *   - Removes from `liveSessions`.
  *   - VTID-02917: wake-timeline disconnect event + endSession.
@@ -2440,17 +2439,6 @@ export async function handleLiveSessionStop(
         .join('\n');
 
       if (fullTranscript.length > 50) {
-        if (cogneeExtractorClient.isEnabled()) {
-          cogneeExtractorClient.extractAsync({
-            transcript: fullTranscript,
-            tenant_id: tenantId,
-            user_id: userId,
-            session_id,
-            active_role: session.active_role || 'community',
-          });
-          console.log(`[VTID-01225] Cognee extraction queued from transcriptTurns (${session.transcriptTurns.length} turns): ${session_id}`);
-        }
-
         // VTID-01230: Deduplicated extraction (force on session end)
         deduplicatedExtract({
           conversationText: fullTranscript,
@@ -2462,20 +2450,9 @@ export async function handleLiveSessionStop(
       }
     } else {
       // Fallback: query memory_items if no in-memory transcript available
-      fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      fetchRecentConversationTranscript(tenantId, userId, session.createdAt, new Date())
         .then((transcript) => {
           if (transcript && transcript.length > 50) {
-            if (cogneeExtractorClient.isEnabled()) {
-              cogneeExtractorClient.extractAsync({
-                transcript,
-                tenant_id: tenantId,
-                user_id: userId,
-                session_id,
-                active_role: session.active_role || 'community',
-              });
-              console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
-            }
-
             // VTID-01230: Deduplicated extraction from memory_items fallback
             deduplicatedExtract({
               conversationText: transcript,

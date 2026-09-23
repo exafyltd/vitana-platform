@@ -103,6 +103,26 @@ export async function updateFactEmbedding(
   return supabase.from('memory_facts').update(patch).eq('id', rowId);
 }
 
+// VTID-04342: AP-0910 also drains memory_items (the canonical episodic store),
+// whose rows were never embedded on write.
+export async function fetchMemoryItemsMissingEmbedding(supabase: SupabaseClient, tenantId: string, limit: number) {
+  return supabase
+    .from('memory_items')
+    .select('id, content')
+    .eq('tenant_id', tenantId)
+    .is('embedding', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
+
+export async function updateMemoryItemEmbedding(
+  supabase: SupabaseClient,
+  rowId: string,
+  patch: { embedding: string; embedding_model: string; embedding_updated_at: string },
+) {
+  return supabase.from('memory_items').update(patch).eq('id', rowId);
+}
+
 export async function fetchAllActiveFactUserIds(supabase: SupabaseClient, tenantId: string, limit: number) {
   return supabase.from('memory_facts').select('user_id').eq('tenant_id', tenantId).is('superseded_at', null).limit(limit);
 }
