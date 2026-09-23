@@ -134,3 +134,25 @@ OASIS_PROOF:
 - AP-0910 has no running scheduler: AP-09xx last ran 2026-07-06. The backlog drains through embed-on-write for new rows, plus manual AP-0910 runs, until `scripts/aws/setup-eventbridge-cron-migration.sh --apply` is run by an admin.
 - `vitana-memory-test` (RDS) is not created: `rds:CreateDBInstance` was denied for this session. `scripts/aws/setup-memory-test-db.sh --apply` is owner-run.
 - The `vitana-cognee-extractor` ECS service (already 0 tasks) is not deleted. `scripts/aws/retire-cognee-extractor.sh --apply` is owner-run.
+
+## Route mount evidence (new routes in Phase 2)
+
+ROUTE_MOUNT: `services/gateway/src/index.ts` → `mountRouterSync(app, '/api/v1', memoryGardenRouter, { owner: 'memory-garden' })` (router `services/gateway/src/routes/memory-garden.ts`, all routes behind `requireAuthWithTenant`)
+
+FINAL_URL:
+- `GET  /api/v1/memory/garden/entries`
+- `GET  /api/v1/memory/garden/categories`
+- `POST /api/v1/memory/garden/entries`
+- `PATCH /api/v1/memory/garden/entries/:kind/:id`
+- `DELETE /api/v1/memory/garden/entries/:kind/:id`
+- `POST /api/v1/memory/diary/entries`
+- `DELETE /api/v1/memory/diary/entries/:id`
+- `GET  /api/v1/memory/daily-learning`
+
+CURL_PROOF: **not yet run.** The routes are new and deployed nowhere, so there is nothing to curl before merge. Writing down a response now would be invented evidence.
+- **Before merge (now):** `services/gateway/test/routes/memory-garden.test.ts` mounts the real router with supertest and checks 401 without identity, 400 on invalid input, 200/201 JSON on success and 404/502 pass-through.
+- **After the staging deploy:** this read-only check needs no token. The expected answer is `401 application/json` (route exists); `404 text/html` would mean it did not deploy.
+
+  ```
+  curl -s -o /dev/null -w "%{http_code} %{content_type}\n" https://preview-aws-gateway.vitanaland.com/api/v1/memory/garden/categories
+  ```
