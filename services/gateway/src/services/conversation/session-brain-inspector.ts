@@ -108,7 +108,19 @@ export interface SessionBrainSummary {
       scores: Array<{ provider: string; score: number | null; priority: number | null }>;
     } | null;
   } | null;
-  tools: { bytes_before: number | null; bytes_after: number | null; dropped_count: number | null; provider: string | null } | null;
+  tools: {
+    bytes_before: number | null;
+    bytes_after: number | null;
+    dropped_count: number | null;
+    provider: string | null;
+    /** VTID-04426: context-aware selection, when it ran. */
+    route_groups?: string[];
+    contextual_kept?: number | null;
+    deferred_reachable?: number | null;
+    /** VTID-04426: find_tool calls and the tools use_tool ran. */
+    searches?: number;
+    deferred_used?: string[];
+  } | null;
   errors: Array<{ at: string; stage: string; failure_kind: string | null; code: string | null }>;
   outcome: {
     stopped: boolean;
@@ -280,12 +292,27 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
       case 'tool_catalog_trimmed':
       case 'vertex_tool_catalog_trimmed':
         summary.tools = {
+          ...(summary.tools ?? {}),
           bytes_before: num(m.bytes_before),
           bytes_after: num(m.bytes_after),
           dropped_count: num(m.dropped_count),
-          provider: str(m.provider),
+          provider: str(m.provider) ?? summary.tools?.provider ?? null,
+          ...(m.selection === 'context'
+            ? {
+              route_groups: Array.isArray(m.route_groups) ? (m.route_groups as unknown[]).map(String) : [],
+              contextual_kept: num(m.contextual_kept),
+              deferred_reachable: num(m.deferred_reachable),
+            }
+            : {}),
         };
         break;
+      case 'deferred_tool_search':
+      case 'deferred_tool_used': {
+        const t = summary.tools ?? (summary.tools = { bytes_before: null, bytes_after: null, dropped_count: null, provider: null });
+        if (stage === 'deferred_tool_search') t.searches = (t.searches ?? 0) + 1;
+        else if (str(m.tool)) t.deferred_used = [...(t.deferred_used ?? []), str(m.tool) as string];
+        break;
+      }
       default:
         if (ERROR_STAGES.has(stage)) {
           summary.errors.push({ at: r.created_at, stage, failure_kind: str(m.failure_kind), code: str(m.code) ?? str(m.reason) });

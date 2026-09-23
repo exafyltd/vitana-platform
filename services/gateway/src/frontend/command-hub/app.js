@@ -7974,8 +7974,13 @@ function _convBrainRender(host, d) {
     host.appendChild(_convHeading('Tools, errors and outcome'));
     var t = d.tools;
     host.appendChild(_convTileGrid([
-        _convTile('Tool catalog', t ? Math.round((t.bytes_after || 0) / 1024) + ' KB' : 'not trimmed',
-            t ? 'from ' + Math.round((t.bytes_before || 0) / 1024) + ' KB · ' + (t.dropped_count || 0) + ' dropped' + (t.provider ? ' · ' + t.provider : '') : null),
+        _convTile('Tool catalog', t && t.bytes_after != null ? Math.round((t.bytes_after || 0) / 1024) + ' KB' : 'not trimmed',
+            t ? [
+                t.bytes_before != null ? 'from ' + Math.round((t.bytes_before || 0) / 1024) + ' KB · ' + (t.dropped_count || 0) + ' dropped' + (t.provider ? ' · ' + t.provider : '') : '',
+                // VTID-04426: context-aware selection and the tools reached through find_tool / use_tool.
+                t.route_groups ? 'screen: ' + (t.route_groups.length ? t.route_groups.join(', ') : 'none') + ' · ' + (t.contextual_kept || 0) + ' screen tools · ' + (t.deferred_reachable || 0) + ' reachable' : '',
+                (t.searches || (t.deferred_used || []).length) ? (t.searches || 0) + ' find_tool · used: ' + ((t.deferred_used || []).join(', ') || 'none') : ''
+            ].filter(Boolean).join(' · ') || null : null),
         _convTile('Errors', String((d.errors || []).length),
             (d.errors || []).map(function (e) { return e.stage + (e.failure_kind ? ':' + e.failure_kind : ''); }).join(' · ') || null,
             (d.errors || []).length ? 'warn' : null),

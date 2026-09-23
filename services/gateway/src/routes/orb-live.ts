@@ -128,8 +128,22 @@ import {
 // that is what closed the bridge with 1007 on the first generation request.
 import {
   enforceToolCatalogBudget,
+  FLAG_GATED_PRIORITY_TOOLS,
   resolveToolCatalogByteBudgetFor,
+  VERTEX_BRIDGE_PRIORITY_TOOLS,
 } from '../orb/live/tools/vertex-tool-catalog-budget';
+// VTID-04426 (WS-3.4): context-aware fill order for the catalog budget, and
+// find_tool / use_tool to reach what the budget dropped.
+import {
+  buildSessionToolPriority,
+  deferredDeclarationMap,
+  FIND_TOOL_NAME,
+  isToolSelectionEnabled,
+  resolveUseTool,
+  runFindTool,
+  USE_TOOL_NAME,
+  withMetaTools,
+} from '../orb/live/tools/session-tool-selection';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -1124,6 +1138,13 @@ export interface GeminiLiveSession {
   // short TTL (see TOOL_CACHE_TTL_MS). Session-scoped → torn down with the
   // session; never crosses users.
   toolResultCache?: Map<string, { at: number; result: { success: boolean; result: string; error?: string } }>;
+  /**
+   * VTID-04426 (WS-3.4): tools the catalog budget dropped for this stream,
+   * reachable through find_tool / use_tool; and the names declared directly.
+   * Set only when ORB_TOOL_SELECTION_ENABLED is on and the budget trimmed.
+   */
+  deferredTools?: Map<string, Record<string, unknown>>;
+  declaredToolNames?: Set<string>;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -3122,6 +3143,24 @@ async function executeLiveApiTool(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-04426 (WS-3.4): the two meta tools. find_tool searches the tools the
+  // catalog budget dropped for this stream; use_tool runs one of them through
+  // this same dispatcher (same timeout, auth and handlers). Only tools that
+  // were in this session's own catalog are reachable.
+  if (toolName === FIND_TOOL_NAME) {
+    const r = runFindTool(session.deferredTools as any, args);
+    try {
+      const n = (JSON.parse(r.result).tools || []).length;
+      emitDiag(session, 'deferred_tool_search', { results: n });
+    } catch { /* diagnostic only */ }
+    return r;
+  }
+  if (toolName === USE_TOOL_NAME) {
+    const u = resolveUseTool(session.deferredTools as any, session.declaredToolNames, args);
+    if (!u.ok) return u.result;
+    emitDiag(session, 'deferred_tool_used', { tool: u.name });
+    return executeLiveApiTool(session, u.name, u.args);
+  }
   const startTime = Date.now();
   // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
   markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
@@ -8314,7 +8353,37 @@ async function connectToLiveAPI(
             resolveToolCatalogByteBudgetFor(session.upstreamProvider);
           const toolsIn = (setupMessage.setup as any)?.tools;
           if (toolBudget > 0 && Array.isArray(toolsIn)) {
-            const toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+            let toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+            // VTID-04426 (WS-3.4): when the budget has to trim, fill it in a
+            // context-aware order (meta tools, the base priority list, the
+            // brain's core tools, then the tools of the screen the session is
+            // on) and keep the dropped tools reachable via find_tool/use_tool.
+            // Same budget; only the order and the reach change.
+            let _selection: { groups: string[]; contextual_kept: number; deferred: number } | null = null;
+            session.deferredTools = undefined;
+            session.declaredToolNames = undefined;
+            if (toolResult.trimmed && isToolSelectionEnabled()) {
+              const sel = buildSessionToolPriority(
+                toolsIn,
+                [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
+                session.current_route,
+              );
+              const selected = enforceToolCatalogBudget(withMetaTools(toolsIn), toolBudget, sel.priority);
+              const declared = new Set<string>();
+              for (const g of selected.tools as Array<{ function_declarations?: Array<{ name?: string }> }>) {
+                for (const d of g.function_declarations ?? []) if (typeof d?.name === 'string') declared.add(d.name);
+              }
+              if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
+                toolResult = selected;
+                session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
+                session.declaredToolNames = declared;
+                _selection = {
+                  groups: sel.groups,
+                  contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
+                  deferred: session.deferredTools.size,
+                };
+              }
+            }
             if (toolResult.trimmed) {
               (setupMessage.setup as any).tools = toolResult.tools;
               console.warn(
@@ -8349,6 +8418,7 @@ async function connectToLiveAPI(
               emitDiag(session, 'tool_catalog_trimmed', {
                 provider: session.upstreamProvider,
                 ..._budgetDiag,
+                ...(_selection ? { selection: 'context', route_groups: _selection.groups, contextual_kept: _selection.contextual_kept, deferred_reachable: _selection.deferred } : {}),
               });
               if (session.upstreamProvider === 'vertex') {
                 emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
