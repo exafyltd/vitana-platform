@@ -33462,6 +33462,7 @@ function fetchIntegrationsPlugins() {
         var platformExtensions = [
             { name: 'Supabase', type: 'Database', status: 'active', version: 'v2', description: 'Auth, PostgreSQL, RLS, Edge Functions', source: 'platform' },
             { name: 'Firebase', type: 'Push Notifications', status: 'active', version: 'Admin SDK', description: 'FCM push delivery for web & mobile', source: 'platform' },
+            { name: 'Cognee', type: 'Knowledge Engine', status: 'active', version: '-', description: 'Knowledge graph extraction & RAG pipeline', source: 'agent' },
             { name: 'OASIS', type: 'Event System', status: 'active', version: '-', description: 'Event sourcing, projections & task lifecycle', source: 'platform' },
             { name: 'Cloud Run', type: 'Runtime', status: 'active', version: 'managed', description: 'Container hosting for all services', source: 'infrastructure' },
             { name: 'Vertex AI', type: 'AI Platform', status: 'active', version: '-', description: 'Gemini Live API for ORB voice sessions', source: 'platform' },
