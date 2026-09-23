@@ -19,7 +19,10 @@
  * variant (`2-turn cap`, VTID-04244) and any future cap size count too.
  */
 
-export const TURN_CAP_FAILURE_RE = /\bturn cap\b|\bmax turns reached\b/i;
+// VTID-04394: a run stopped by the progress ledger (`agent stalled: …`) is
+// the same class — the agent could not finish this finding — so it trips
+// the breaker too.
+export const TURN_CAP_FAILURE_RE = /\bturn cap\b|\bmax turns reached\b|\bagent stalled\b/i;
 
 export function isTurnCapFailure(metadata: Record<string, unknown> | null | undefined): boolean {
   const err = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).error : null;
