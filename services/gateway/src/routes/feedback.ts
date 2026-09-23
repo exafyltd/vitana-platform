@@ -209,6 +209,21 @@ router.post('/', async (req: Request, res: Response) => {
 // GET /mine — list current user's tickets  (public: GET /api/v1/feedback/tickets/mine)
 // =============================================================================
 
+/**
+ * VTID-04359: the reporter sees their own words in the ticket list. The row
+ * is read with the member's own RLS client, so this is only ever their own
+ * text; it is clipped so a long voice transcript does not bloat the list.
+ */
+export const MY_TICKET_REPORT_TEXT_MAX_CHARS = 2000;
+export function clipReportText(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  return text.length > MY_TICKET_REPORT_TEXT_MAX_CHARS
+    ? `${text.slice(0, MY_TICKET_REPORT_TEXT_MAX_CHARS)}…`
+    : text;
+}
+
 router.get('/mine', async (req: Request, res: Response) => {
   const token = getBearerToken(req);
   if (!token) {
@@ -239,8 +254,9 @@ router.get('/mine', async (req: Request, res: Response) => {
   const RESOLVED = new Set(['resolved', 'user_confirmed']);
   const tickets = (data ?? []).map((t: Record<string, unknown>) => {
     const { resolution_md, draft_answer_md, ...rest } = t as Record<string, unknown> & { resolution_md?: string | null; draft_answer_md?: string | null };
-    if (!RESOLVED.has(String(rest.status))) return rest;
-    return { ...rest, resolution_md: resolution_md ?? null, answer_md: draft_answer_md ?? null };
+    const shaped = { ...rest, raw_transcript: clipReportText(rest.raw_transcript) };
+    if (!RESOLVED.has(String(rest.status))) return shaped;
+    return { ...shaped, resolution_md: resolution_md ?? null, answer_md: draft_answer_md ?? null };
   });
 
   return res.json({
