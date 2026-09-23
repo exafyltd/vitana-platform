@@ -201,7 +201,10 @@ describe('VTID-04334 CSP + cache-bust', () => {
     for (const cls of ['.fb-pipeline', '.fb-chip', '.fb-chip--empty', '.fb-member-badge', '.fb-inbox-vtid', '.fb-action-btn']) {
       expect(STYLES).toContain(cls);
     }
-    expect(INDEX_HTML).toContain('app.js?v=20261004-vtid-04334-feedback-pipeline');
-    expect(INDEX_HTML).toContain('styles.css?v=20261004-vtid-04334-feedback-pipeline');
+    // At-or-after, so a later cache-bust (VTID-04354) does not fail this suite.
+    const appVer = (INDEX_HTML.match(/app\.js\?v=([^"']+)/) || [])[1] || '';
+    const cssVer = (INDEX_HTML.match(/styles\.css\?v=([^"']+)/) || [])[1] || '';
+    expect(appVer >= '20261004-vtid-04334-feedback-pipeline').toBe(true);
+    expect(cssVer >= '20261004-vtid-04334-feedback-pipeline').toBe(true);
   });
 });
