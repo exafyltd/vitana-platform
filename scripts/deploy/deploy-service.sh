@@ -23,7 +23,6 @@ NC="\033[0m"
 # =============================================================================
 declare -A SERVICE_MAPPINGS=(
   ["vitana-verification-engine"]="services/agents/vitana-orchestrator:/health:vitana-verification-engine"
-  ["cognee-extractor"]="services/agents/cognee-extractor:/health:cognee-extractor"
   ["openclaw-bridge"]="services/openclaw-bridge:/health:openclaw-bridge"
 )
 
@@ -138,8 +137,6 @@ echo -e "${YELLOW}Deploying ${CLOUD_RUN_SERVICE} to Cloud Run...${NC}"
 # NOTE: --set-secrets REPLACES all secrets, so we must include ALL required secrets here
 if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
   echo -e "${YELLOW}VTID-01125: Binding secrets for gateway service...${NC}"
-  # VTID-01225: Add Cognee Extractor URL for entity extraction
-  COGNEE_URL="https://cognee-extractor-86804897789.us-central1.run.app"
   echo -e "${YELLOW}VTID-ORBC: Including LOVABLE_JWT_SECRET for dual-project auth...${NC}"
   echo -e "${YELLOW}VTID-01228: Including DAILY_API_KEY for Daily.co video integration...${NC}"
   echo -e "${YELLOW}VTID-01228: Including Stripe secrets for payment integration...${NC}"
@@ -154,7 +151,7 @@ if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
     --platform managed \
     --allow-unauthenticated \
     --session-affinity \
-    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,COGNEE_EXTRACTOR_URL=${COGNEE_URL},FRONTEND_URL=https://vitana-lovable-vers1.lovable.app" \
+    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1,FRONTEND_URL=https://vitana-lovable-vers1.lovable.app" \
     --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest,SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest,SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest,SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest,LOVABLE_JWT_SECRET=LOVABLE_JWT_SECRET:latest,GITHUB_TOKEN=GITHUB_TOKEN:latest,GH_TOKEN=GITHUB_TOKEN:latest,GITHUB_SAFE_MERGE_TOKEN=GITHUB_TOKEN:latest,DEV_AUTH_SECRET=DEV_AUTH_SECRET:latest,DEV_TEST_USER_EMAIL=DEV_TEST_USER_EMAIL:latest,DEV_TEST_USER_PASSWORD=DEV_TEST_USER_PASSWORD:latest,DEV_JWT_SECRET=DEV_JWT_SECRET:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest,DAILY_API_KEY=daily-api-key:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,STRIPE_CONNECT_WEBHOOK_SECRET=STRIPE_CONNECT_WEBHOOK_SECRET:latest" \
     --quiet
 elif [ "$CLOUD_RUN_SERVICE" = "worker-runner" ]; then
@@ -187,24 +184,6 @@ elif [ "$CLOUD_RUN_SERVICE" = "openclaw-bridge" ]; then
     --set-env-vars "ENVIRONMENT=${ENVIRONMENT},GATEWAY_URL=${GATEWAY_URL_VALUE},OPENCLAW_HOME=/opt/vitana-autopilot,OPENCLAW_LLM_PROVIDER=anthropic,OPENCLAW_LLM_MODEL=claude-sonnet-4-6,OPENCLAW_WORKSPACE_ISOLATION=tenant_namespaces,OPENCLAW_DISABLED_SKILLS=shell:browser:file,OPENCLAW_ENFORCE_GOVERNANCE=true,OPENCLAW_HEARTBEAT_ENABLED=true,OPENCLAW_HEARTBEAT_INTERVAL_MS=900000" \
     --set-secrets "SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest" \
     --quiet
-elif [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
-  # VTID-01225: Cognee Extractor - uses Gemini API for entity extraction
-  # Internal-only ingress with allow-unauthenticated (network security via internal ingress)
-  # Cognee initialization takes ~25-30 seconds, cpu-boost helps with cold starts
-  echo -e "${YELLOW}VTID-01225: Deploying Cognee Extractor with Gemini API config...${NC}"
-  gcloud run deploy "$CLOUD_RUN_SERVICE" \
-    --project "$PROJECT" \
-    --region "$REGION" \
-    --source "$SOURCE_PATH" \
-    --platform managed \
-    --allow-unauthenticated \
-    --ingress internal \
-    --cpu-boost \
-    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},LLM_PROVIDER=gemini,LLM_MODEL=gemini/gemini-2.0-flash,GOOGLE_CLOUD_PROJECT=${PROJECT}" \
-    --set-secrets "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest" \
-    --quiet
-  # Note: Internal ingress provides network-level security - only Cloud Run services in same project can call
-  echo -e "${GREEN}Cognee Extractor deployed with internal-only ingress.${NC}"
 else
   gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --project "$PROJECT" \

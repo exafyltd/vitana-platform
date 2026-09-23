@@ -20,6 +20,7 @@
  */
 
 import type { IntentKind } from './intent-classifier';
+import { rememberFact } from './memory/remember'; // VTID-04364
 
 const SUPABASE_URL = process.env.SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
@@ -130,29 +131,23 @@ export async function writeIntentFacts(intent: IntentForMemory): Promise<void> {
   const facts = buildFacts(intent);
   if (facts.length === 0 || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return;
 
+  // VTID-04364: every fact goes through the shared rememberFact() path
+  // (Identity Lock check, write_fact RPC, embed on write).
   await Promise.all(facts.map(async (fact) => {
     try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_SERVICE_ROLE,
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-        },
-        body: JSON.stringify({
-          p_tenant_id: intent.tenant_id,
-          p_user_id: intent.user_id,
-          p_fact_key: fact.fact_key,
-          p_fact_value: fact.fact_value,
-          p_entity: 'self',
-          p_fact_value_type: fact.fact_value_type,
-          p_provenance_source: 'assistant_inferred',
-          p_provenance_confidence: 0.85,
-        }),
+      const written = await rememberFact({
+        tenant_id: intent.tenant_id,
+        user_id: intent.user_id,
+        fact_key: fact.fact_key,
+        fact_value: fact.fact_value,
+        entity: 'self',
+        fact_value_type: fact.fact_value_type,
+        provenance_source: 'assistant_inferred',
+        provenance_confidence: 0.85,
+        actor: 'intent-memory-hooks',
       });
-      if (!response.ok) {
-        const errBody = await response.text().catch(() => '');
-        console.warn(`[VTID-01975] write_fact ${fact.fact_key} failed: ${response.status} ${errBody.slice(0, 120)}`);
+      if (!written.ok) {
+        console.warn(`[VTID-01975] write_fact ${fact.fact_key} failed: ${String(written.error).slice(0, 160)}`);
       }
     } catch (err: any) {
       console.warn(`[VTID-01975] write_fact ${fact.fact_key} error: ${err.message}`);

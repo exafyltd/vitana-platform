@@ -20,12 +20,15 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
 import * as repo from './orb-memory-bridge-repository';
-// VTID-02005 Phase 5b: Tier 2 dual-writer
-import { mirrorEpisode } from './mem-tier2-writer';
+import { memoryRoleForWrite } from './memory/scope'; // VTID-04367
 import {
-  scoreAndRankMemories,
-  emitScoringEvent,
-  logScoringRun,
+  recordTranscriptTurn,
+  rawTurnsAlsoToMemoryItems,
+  transcriptRoleOf,
+  fetchRecentTranscriptTurns,
+  fetchTranscriptWindow,
+} from './memory/transcript'; // VTID-04387
+import {
   type ScoringContext,
   type ScoredMemoryItem,
   type ScoringMetadata,
@@ -45,7 +48,6 @@ import {
 import {
   ContextWindowManager,
   selectContextWindow,
-  ContextSelectionResult,
   ContextMetrics,
   formatSelectionDebug
 } from './context-window-manager';
@@ -143,15 +145,6 @@ export interface OrbMemoryContext {
   excludedCount?: number;
   /** VTID-01117: Reasons for exclusions (summary) */
   exclusionSummary?: Record<string, number>;
-}
-
-/**
- * VTID-01115: Scored memory context with full relevance scoring
- */
-export interface ScoredOrbMemoryContext extends OrbMemoryContext {
-  scored_items: ScoredMemoryItem[];
-  excluded_items: ScoredMemoryItem[];
-  scoring_metadata: ScoringMetadata;
 }
 
 // =============================================================================
@@ -259,7 +252,7 @@ function createMemoryClient(): SupabaseClient | null {
  * VTID-01225: Fetch recent conversation turns from memory_items for Cognee extraction
  * Queries by user_id and time range to get conversation history
  */
-export async function fetchRecentConversationForCognee(
+export async function fetchRecentConversationTranscript(
   tenantId: string,
   userId: string,
   startTime: Date,
@@ -269,6 +262,15 @@ export async function fetchRecentConversationForCognee(
   if (!client) {
     console.warn('[VTID-01225] No Supabase client for fetching conversation');
     return null;
+  }
+
+  // VTID-04387: the transcript table is the complete record; memory_items
+  // is the fallback for turns written before it existed.
+  const turns = await fetchTranscriptWindow(
+    { tenant_id: tenantId, user_id: userId }, startTime.toISOString(), endTime.toISOString(),
+  );
+  if (turns.length > 0) {
+    return turns.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n');
   }
 
   try {
@@ -317,6 +319,12 @@ export async function fetchRecentOrbUserTurns(
   identity: { user_id: string; tenant_id: string },
   limit: number = 3
 ): Promise<Array<{ content: string; occurred_at: string }>> {
+  // VTID-04387: newest user turns from the transcript table first.
+  const recent = await fetchRecentTranscriptTurns(identity, { limit, role: 'user' });
+  if (recent.length > 0) {
+    return recent.map((t) => ({ content: t.content, occurred_at: t.occurred_at }));
+  }
+
   const client = createMemoryClient();
   if (!client) return [];
 
@@ -617,7 +625,7 @@ export interface MemoryIdentity {
 export async function writeMemoryItemWithIdentity(
   identity: MemoryIdentity,
   params: {
-    source: 'orb_text' | 'orb_voice' | 'system';
+    source: 'orb_text' | 'orb_voice' | 'system' | 'diary' | 'upload';
     content: string;
     content_json?: Record<string, unknown>;
     importance?: number;
@@ -631,6 +639,31 @@ export async function writeMemoryItemWithIdentity(
   if (!identity.user_id || !identity.tenant_id) {
     console.error('[VTID-01186] writeMemoryItemWithIdentity: Missing user_id or tenant_id');
     return { ok: false, error: 'Identity incomplete: user_id and tenant_id required' };
+  }
+
+  // VTID-04387: a raw conversation turn goes to memory_transcript_turns
+  // (90-day TTL), the complete record used for session transcripts and
+  // recent-turn grounding. It is recorded before the trivial-message filter.
+  const transcriptRole = transcriptRoleOf(params.content_json);
+  if (transcriptRole) {
+    const cj = params.content_json || {};
+    void recordTranscriptTurn({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      role: transcriptRole,
+      content: params.content,
+      source: params.source,
+      session_id: (cj.orb_session_id as string) ?? (cj.session_id as string) ?? null,
+      conversation_id: (cj.conversation_id as string) ?? null,
+      channel: (cj.channel as string) ?? null,
+      active_role: identity.active_role ?? null,
+      occurred_at: params.occurred_at,
+    });
+    // Transition switch: once session summaries are observed live, raw turns
+    // stop landing in memory_items (MEMORY_RAW_TURNS_TO_ITEMS=false).
+    if (!rawTurnsAlsoToMemoryItems()) {
+      return { ok: true, skipped: true };
+    }
   }
 
   // Filter trivial messages to prevent memory flooding
@@ -687,7 +720,10 @@ export async function writeMemoryItemWithIdentity(
       content: params.content,
       content_json: contentJson,
       importance: adjustedImportance,
-      occurred_at: occurredAt
+      occurred_at: occurredAt,
+      // VTID-04367: NULL for personal memory, the role otherwise, so
+      // memory_semantic_search can scope reads by role (D9).
+      active_role: memoryRoleForWrite(identity.active_role),
     });
 
     if (error) {
@@ -701,33 +737,34 @@ export async function writeMemoryItemWithIdentity(
 
     console.log(`[VTID-01186] Memory written: ${data?.id} (user=${identity.user_id.substring(0,8)}..., tenant=${identity.tenant_id.substring(0,8)}...)`);
 
-    // VTID-02005 Phase 5b: fan out to mem_episodes (Tier 2 mirror).
-    // Fire-and-forget. Never blocks the primary write. Skipped when the
-    // mem_tier2_dual_write_enabled flag is off (default).
-    void mirrorEpisode({
-      tenant_id: identity.tenant_id,
-      user_id: identity.user_id,
-      source_event_id: data?.id,
-      conversation_id: (params.content_json?.conversation_id as string | undefined) ?? undefined,
-      session_id: (params.content_json?.session_id as string | undefined) ?? undefined,
-      kind: 'utterance',
-      content: params.content,
-      content_json: contentJson,
-      importance: adjustedImportance,
-      category_key: categoryKey,
-      source: params.source,
-      workspace_scope: params.workspace_scope ?? 'dev',
-      active_role: identity.active_role ?? undefined,
-      visibility_scope: 'private',
-      origin_service: 'orb-memory-bridge',
-      occurred_at: occurredAt,
-      // Provenance: actor_id distinguishes user-spoken from assistant-said
-      // (`direction` was already read earlier in this function for importance)
-      actor_id: direction === 'assistant' ? 'assistant' : 'user',
-      confidence: 1.0,
-      source_engine: params.source,
-      classification: { health: false, ephemeral: false },
-    });
+    // VTID-04342: embed on write (Titan V2, fire-and-forget) so the row is
+    // reachable by semantic recall immediately. This path never embedded
+    // before, which is why only 1/3 of memory_items ever had a vector. A
+    // failure leaves embedding NULL; AP-0910 retries it hourly.
+    if (data?.id) {
+      const itemId = data.id as string;
+      void (async () => {
+        try {
+          const { embedMemoryText, toPgVector } = await import('./memory-embedding');
+          const emb = await embedMemoryText(params.content);
+          if (!emb.ok || !emb.embedding) {
+            console.warn(`[VTID-04342] memory_items embed skipped for ${itemId}: ${emb.error}`);
+            return;
+          }
+          const { error: embErr } = await supabase
+            .from('memory_items')
+            .update({
+              embedding: toPgVector(emb.embedding),
+              embedding_model: emb.model,
+              embedding_updated_at: new Date().toISOString(),
+            })
+            .eq('id', itemId);
+          if (embErr) console.warn(`[VTID-04342] memory_items embed store failed for ${itemId}: ${embErr.message}`);
+        } catch (e: any) {
+          console.warn(`[VTID-04342] memory_items embed error for ${itemId}: ${e?.message ?? e}`);
+        }
+      })();
+    }
 
     return { ok: true, id: data?.id, category_key: categoryKey };
 
@@ -1418,379 +1455,6 @@ export async function fetchDevMemoryContext(
 }
 
 // =============================================================================
-// VTID-01115: Scored Memory Context Fetching
-// =============================================================================
-
-/**
- * VTID-01115: Fetch memory context with relevance scoring
- *
- * This is the D23 implementation of the Memory Relevance Scoring Engine.
- * Every memory item is scored before entering the context bundle.
- *
- * Hard Constraints:
- * - No memory enters context without a score
- * - All scoring logic is deterministic and inspectable
- * - Raw timestamps alone do not determine relevance
- *
- * @param intent - The current intent from D21 (health, longevity, community, lifestyle, planner, general)
- * @param domain - Optional domain from D22 (health, community, business, lifestyle)
- * @param role - User role for access control (patient, professional, staff, admin, developer)
- * @param limit - Maximum number of memory items to consider
- * @param categories - Optional category filter
- */
-export async function fetchScoredMemoryContext(
-  intent: RetrieveIntent = 'general',
-  domain?: Domain,
-  role: UserRole = 'patient',
-  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
-  categories?: string[]
-): Promise<ScoredOrbMemoryContext> {
-  const fetchedAt = new Date().toISOString();
-  const currentTime = new Date();
-
-  // Check if memory bridge is enabled
-  if (!isMemoryBridgeEnabled()) {
-    return {
-      ok: false,
-      user_id: DEV_IDENTITY.USER_ID,
-      tenant_id: DEV_IDENTITY.TENANT_ID,
-      items: [],
-      scored_items: [],
-      excluded_items: [],
-      summary: 'Memory bridge disabled',
-      formatted_context: '',
-      fetched_at: fetchedAt,
-      error: 'Memory bridge not enabled (requires dev-sandbox mode)',
-      scoring_metadata: {
-        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
-        scoring_timestamp: fetchedAt,
-        context: { intent, domain, role },
-        total_candidates: 0,
-        included_count: 0,
-        deprioritized_count: 0,
-        excluded_count: 0,
-        top_n_with_factors: [],
-        exclusion_reasons: []
-      }
-    };
-  }
-
-  const supabase = createMemoryClient();
-  if (!supabase) {
-    return {
-      ok: false,
-      user_id: DEV_IDENTITY.USER_ID,
-      tenant_id: DEV_IDENTITY.TENANT_ID,
-      items: [],
-      scored_items: [],
-      excluded_items: [],
-      summary: 'Database not configured',
-      formatted_context: '',
-      fetched_at: fetchedAt,
-      error: 'Supabase not configured',
-      scoring_metadata: {
-        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
-        scoring_timestamp: fetchedAt,
-        context: { intent, domain, role },
-        total_candidates: 0,
-        included_count: 0,
-        deprioritized_count: 0,
-        excluded_count: 0,
-        top_n_with_factors: [],
-        exclusion_reasons: []
-      }
-    };
-  }
-
-  try {
-    // Calculate since timestamp (max age for memory items)
-    const sinceDate = new Date();
-    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
-    const sinceTimestamp = sinceDate.toISOString();
-
-    // Filter categories
-    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
-
-    // Set request context for dev user
-    const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContextByTenantId(
-      supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.ACTIVE_ROLE,
-    );
-    if (bootstrapError) {
-      console.warn('[VTID-01115] Bootstrap context failed (non-fatal):', bootstrapError.message);
-    }
-
-    // VTID-DEBUG-01: Split categories into persistent (no time filter) and time-sensitive
-    // Personal identity info (name, birthday, family) must NEVER expire
-    const persistentCategories = categoryFilter.filter(
-      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
-    );
-    const timeSensitiveCategories = categoryFilter.filter(
-      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
-    );
-
-    console.log(`[VTID-DEBUG-01] Scored query - persistent categories (no time limit): ${persistentCategories.join(', ')}`);
-    console.log(`[VTID-DEBUG-01] Scored query - time-sensitive categories (${MEMORY_CONFIG.MAX_AGE_HOURS}h): ${timeSensitiveCategories.join(', ')}`);
-
-    // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
-    let persistentItems: MemoryItem[] = [];
-    if (persistentCategories.length > 0) {
-      const { data: persistentData, error: persistentError } = await repo.fetchPersistentMemoryItemsByImportance(
-        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, persistentCategories, limit * 2,
-      );
-
-      if (persistentError) {
-        console.warn('[VTID-DEBUG-01] Persistent category query error (scored):', persistentError.message);
-      } else {
-        persistentItems = (persistentData || []) as MemoryItem[];
-        console.log(`[VTID-DEBUG-01] Scored: Found ${persistentItems.length} persistent memory items (no time filter)`);
-      }
-    }
-
-    // Query 2: Time-sensitive categories WITH time filter
-    let timeSensitiveItems: MemoryItem[] = [];
-    if (timeSensitiveCategories.length > 0) {
-      const { data: timeSensitiveData, error: timeSensitiveError } = await repo.fetchTimeSensitiveMemoryItemsByOccurredAt(
-        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, timeSensitiveCategories, sinceTimestamp, limit * 2,
-      );
-
-      if (timeSensitiveError) {
-        if (timeSensitiveError.message.includes('does not exist') || timeSensitiveError.code === '42P01') {
-          console.warn('[VTID-01115] memory_items table not found (VTID-01104 dependency)');
-          return {
-            ok: false,
-            user_id: DEV_IDENTITY.USER_ID,
-            tenant_id: DEV_IDENTITY.TENANT_ID,
-            items: [],
-            scored_items: [],
-            excluded_items: [],
-            summary: 'Memory Core not deployed',
-            formatted_context: '',
-            fetched_at: fetchedAt,
-            error: 'Memory Core not available (VTID-01104 dependency)',
-            scoring_metadata: {
-              scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
-              scoring_timestamp: fetchedAt,
-              context: { intent, domain, role },
-              total_candidates: 0,
-              included_count: 0,
-              deprioritized_count: 0,
-              excluded_count: 0,
-              top_n_with_factors: [],
-              exclusion_reasons: []
-            }
-          };
-        }
-        console.error('[VTID-DEBUG-01] Time-sensitive category query error (scored):', timeSensitiveError.message);
-      } else {
-        timeSensitiveItems = (timeSensitiveData || []) as MemoryItem[];
-      }
-    }
-
-    // Merge results: persistent items first (identity is most important), then time-sensitive
-    const allItems = [...persistentItems, ...timeSensitiveItems];
-
-    // Deduplicate by ID (in case of overlap)
-    const seenIds = new Set<string>();
-    const memoryItems = allItems.filter(item => {
-      if (seenIds.has(item.id)) return false;
-      seenIds.add(item.id);
-      return true;
-    });
-
-    console.log(`[VTID-DEBUG-01] Scored total: ${memoryItems.length} items (${persistentItems.length} persistent + ${timeSensitiveItems.length} time-sensitive)`);
-
-    const rawItems = memoryItems as MemoryItem[];
-
-    // =============================================================================
-    // VTID-01115: Apply Relevance Scoring
-    // This is the core D23 functionality - score all memories before context assembly
-    // =============================================================================
-
-    const scoringContext: ScoringContext = {
-      intent,
-      domain,
-      role,
-      user_id: DEV_IDENTITY.USER_ID,
-      tenant_id: DEV_IDENTITY.TENANT_ID,
-      current_time: currentTime
-      // TODO: Add user_reinforcement_signals when available from database
-    };
-
-    console.log(`[VTID-01115] Scoring ${rawItems.length} memory candidates (intent=${intent}, domain=${domain || 'none'}, role=${role})`);
-
-    const scoringResult = scoreAndRankMemories(rawItems, scoringContext);
-
-    // Log the scoring run for debugging
-    logScoringRun(scoringResult.scoring_metadata, true);
-
-    // Emit OASIS event for scoring
-    await emitScoringEvent(
-      'memory.scoring.completed',
-      scoringResult.scoring_metadata,
-      {
-        intent,
-        domain,
-        role,
-        categories: categoryFilter
-      }
-    ).catch((err: Error) => console.warn('[VTID-01115] Failed to emit scoring event:', err.message));
-
-    // Get only included items (not excluded) up to limit
-    const includedItems = scoringResult.scored_items
-      .filter(item => !item.exclusion_reason)
-      .slice(0, limit);
-
-    // Convert ScoredMemoryItem back to MemoryItem for backward compatibility
-    const items: MemoryItem[] = includedItems.map(scored => ({
-      id: scored.id,
-      category_key: scored.category_key,
-      source: scored.source,
-      content: scored.content,
-      content_json: scored.content_json,
-      importance: scored.importance,
-      occurred_at: scored.occurred_at,
-      created_at: scored.created_at
-    }));
-
-    const summary = generateMemorySummary(items);
-    const formattedContext = formatScoredMemoryForPrompt(includedItems);
-
-    console.log(`[VTID-01115] Scored context: ${includedItems.length} included, ${scoringResult.excluded_items.length} excluded (of ${rawItems.length} candidates)`);
-
-    // Emit OASIS event for context fetch
-    await emitOasisEvent({
-      vtid: 'VTID-01115',
-      type: 'orb.memory.scored_context_fetched',
-      source: 'orb-memory-bridge',
-      status: 'success',
-      message: `Fetched ${includedItems.length} scored memory items for ORB context`,
-      payload: {
-        user_id: DEV_IDENTITY.USER_ID,
-        tenant_id: DEV_IDENTITY.TENANT_ID,
-        scoring_run_id: scoringResult.scoring_metadata.scoring_run_id,
-        total_candidates: rawItems.length,
-        included_count: includedItems.length,
-        excluded_count: scoringResult.excluded_items.length,
-        intent,
-        domain,
-        role
-      }
-    }).catch((err: Error) => console.warn('[VTID-01115] OASIS event failed:', err.message));
-
-    return {
-      ok: true,
-      user_id: DEV_IDENTITY.USER_ID,
-      tenant_id: DEV_IDENTITY.TENANT_ID,
-      items,
-      scored_items: includedItems,
-      excluded_items: scoringResult.excluded_items,
-      summary,
-      formatted_context: formattedContext,
-      fetched_at: fetchedAt,
-      scoring_metadata: scoringResult.scoring_metadata
-    };
-
-  } catch (err: any) {
-    console.error('[VTID-01115] Scored memory context fetch error:', err.message);
-    return {
-      ok: false,
-      user_id: DEV_IDENTITY.USER_ID,
-      tenant_id: DEV_IDENTITY.TENANT_ID,
-      items: [],
-      scored_items: [],
-      excluded_items: [],
-      summary: 'Fetch error',
-      formatted_context: '',
-      fetched_at: fetchedAt,
-      error: err.message,
-      scoring_metadata: {
-        scoring_run_id: `score_${DEV_IDENTITY.TENANT_ID}_${Date.now()}`,
-        scoring_timestamp: fetchedAt,
-        context: { intent, domain, role },
-        total_candidates: 0,
-        included_count: 0,
-        deprioritized_count: 0,
-        excluded_count: 0,
-        top_n_with_factors: [],
-        exclusion_reasons: []
-      }
-    };
-  }
-}
-
-/**
- * VTID-01115: Format scored memory items for prompt injection
- * Includes relevance scores for transparency
- */
-function formatScoredMemoryForPrompt(items: ScoredMemoryItem[]): string {
-  if (items.length === 0) {
-    return '';
-  }
-
-  const lines: string[] = [];
-  lines.push('## User Context (from Memory - Relevance Scored)');
-  lines.push('');
-
-  // Group by category
-  const byCategory: Record<string, ScoredMemoryItem[]> = {};
-  for (const item of items) {
-    if (!byCategory[item.category_key]) {
-      byCategory[item.category_key] = [];
-    }
-    byCategory[item.category_key].push(item);
-  }
-
-  // Sort categories by highest score in category
-  const sortedCategories = Object.keys(byCategory).sort((a, b) => {
-    const maxA = Math.max(...byCategory[a].map(i => i.relevance_score));
-    const maxB = Math.max(...byCategory[b].map(i => i.relevance_score));
-    return maxB - maxA;
-  });
-
-  // Format each category
-  for (const category of sortedCategories) {
-    const catItems = byCategory[category];
-    lines.push(`### ${formatCategoryName(category)}`);
-
-    // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
-    // Other categories use ITEMS_PER_CATEGORY to prevent flooding
-    const isIdentityCategory = category === 'personal' || category === 'relationships';
-    const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
-
-    for (const item of catItems.slice(0, itemLimit)) {
-      const timestamp = formatRelativeTime(item.occurred_at);
-      const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
-      const direction = item.content_json?.direction as string | undefined;
-
-      // Include relevance indicator for high-scoring items
-      const relevanceMarker = item.relevance_score >= 70 ? '★' :
-                              item.relevance_score >= 50 ? '●' : '○';
-
-      if (direction === 'user') {
-        lines.push(`- ${relevanceMarker} [${timestamp}] User: "${content}"`);
-      } else if (direction === 'assistant') {
-        lines.push(`- ${relevanceMarker} [${timestamp}] Assistant: "${content}"`);
-      } else {
-        lines.push(`- ${relevanceMarker} [${timestamp}] ${content}`);
-      }
-    }
-
-    if (catItems.length > itemLimit) {
-      lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
-    }
-    lines.push('');
-  }
-
-  // Truncate if too long
-  let result = lines.join('\n');
-  if (result.length > MEMORY_CONFIG.MAX_CONTEXT_CHARS) {
-    result = result.substring(0, MEMORY_CONFIG.MAX_CONTEXT_CHARS - 50) + '\n\n(context truncated for brevity)';
-  }
-
-  return result;
-}
-
-// =============================================================================
 // VTID-01106: Memory Formatting for Prompts
 // =============================================================================
 
@@ -2045,19 +1709,6 @@ You KNOW this user. You REMEMBER their name, their hometown, their family, and t
   return enhancedInstruction;
 }
 
-/**
- * Get memory context and build enhanced instruction in one call
- * Convenience function for ORB integration
- */
-export async function getMemoryEnhancedInstruction(
-  baseInstruction: string
-): Promise<{ instruction: string; memoryContext: OrbMemoryContext }> {
-  const memoryContext = await fetchDevMemoryContext();
-  const instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
-
-  return { instruction, memoryContext };
-}
-
 // =============================================================================
 // VTID-01107: Debug Snapshot for Memory Endpoint
 // =============================================================================
@@ -2171,484 +1822,9 @@ export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
 }
 
 // =============================================================================
-// VTID-01121: Trust Context Integration
-// =============================================================================
-
-import {
-  TrustRepairService,
-  quickDetectCorrection,
-  getTrustBand,
-} from './trust-repair-service';
-import type { TrustScore, BehaviorConstraint } from '../types/feedback-correction';
-
-/**
- * Trust context for ORB decision-making
- * Fetched alongside memory context for complete user state
- */
-export interface OrbTrustContext {
-  ok: boolean;
-  overallTrust: number;
-  trustBand: string;  // 'Critical' | 'Low' | 'Medium' | 'High' | 'Full'
-  requiresRestriction: boolean;
-  needsAttention: boolean;
-  scores: TrustScore[];
-  constraints: BehaviorConstraint[];
-  recentCorrectionCount: number;
-  timestamp: string;
-  error?: string;
-}
-
-/**
- * VTID-01121: Fetch trust context for ORB session
- * Returns current trust scores and behavior constraints
- * Used to adjust ORB behavior based on user's correction history
- */
-export async function fetchDevTrustContext(): Promise<OrbTrustContext> {
-  const timestamp = new Date().toISOString();
-
-  // Only active in dev sandbox
-  if (!isMemoryBridgeEnabled()) {
-    return {
-      ok: false,
-      overallTrust: 80,  // Default trust
-      trustBand: 'High',
-      requiresRestriction: false,
-      needsAttention: false,
-      scores: [],
-      constraints: [],
-      recentCorrectionCount: 0,
-      timestamp,
-      error: 'Trust context only available in dev-sandbox mode',
-    };
-  }
-
-  try {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!supabaseUrl || !supabaseKey) {
-      return {
-        ok: false,
-        overallTrust: 80,
-        trustBand: 'High',
-        requiresRestriction: false,
-        needsAttention: false,
-        scores: [],
-        constraints: [],
-        recentCorrectionCount: 0,
-        timestamp,
-        error: 'Supabase credentials not configured',
-      };
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
-    // Bootstrap dev identity context
-    await repo.rpcDevBootstrapRequestContextByTenantSlug(
-      supabase, DEV_IDENTITY.TENANT_SLUG, DEV_IDENTITY.USER_ID, DEV_IDENTITY.ACTIVE_ROLE,
-    );
-
-    // Fetch trust scores
-    const { data: trustData, error: trustError } = await repo.rpcGetTrustScores(supabase);
-
-    if (trustError) {
-      // If RPC doesn't exist, return defaults (migration not applied)
-      if (trustError.message.includes('does not exist')) {
-        console.log('[VTID-01121] Trust scores RPC not available (migration pending)');
-        return {
-          ok: true,
-          overallTrust: 80,
-          trustBand: 'High',
-          requiresRestriction: false,
-          needsAttention: false,
-          scores: [],
-          constraints: [],
-          recentCorrectionCount: 0,
-          timestamp,
-        };
-      }
-      throw new Error(trustError.message);
-    }
-
-    // Fetch behavior constraints
-    const { data: constraintData, error: constraintError } = await repo.rpcGetBehaviorConstraints(supabase, null);
-
-    if (constraintError && !constraintError.message.includes('does not exist')) {
-      console.warn('[VTID-01121] Constraint fetch error:', constraintError.message);
-    }
-
-    // Fetch recent correction count
-    const { data: historyData } = await repo.rpcGetCorrectionHistory(supabase, 10, 0, null);
-
-    const scores: TrustScore[] = trustData?.scores || [];
-    const constraints: BehaviorConstraint[] = constraintData?.constraints || [];
-    const recentCorrectionCount = historyData?.total || 0;
-
-    // Find overall trust score
-    const overallScore = scores.find(s => s.component === 'overall');
-    const overallTrust = overallScore?.score ?? 80;
-    const trustBand = getTrustBand(overallTrust);
-
-    // Determine if restriction is needed
-    const requiresRestriction = overallTrust < 40 || scores.some(s => s.score < 40);
-    const needsAttention = overallTrust < 20 || scores.some(s => s.consecutive_corrections >= 5);
-
-    console.log(`[VTID-01121] Trust context fetched: overall=${overallTrust}, band=${trustBand}, constraints=${constraints.length}`);
-
-    return {
-      ok: true,
-      overallTrust,
-      trustBand,
-      requiresRestriction,
-      needsAttention,
-      scores,
-      constraints,
-      recentCorrectionCount,
-      timestamp,
-    };
-
-  } catch (err: any) {
-    console.error('[VTID-01121] Failed to fetch trust context:', err.message);
-    return {
-      ok: false,
-      overallTrust: 80,
-      trustBand: 'High',
-      requiresRestriction: false,
-      needsAttention: false,
-      scores: [],
-      constraints: [],
-      recentCorrectionCount: 0,
-      timestamp,
-      error: err.message,
-    };
-  }
-}
-
-/**
- * VTID-01121: Build trust-aware system instruction enhancement
- * Adds trust context and behavior constraints to ORB system prompt
- */
-export function buildTrustAwareInstruction(
-  baseInstruction: string,
-  trustContext: OrbTrustContext
-): string {
-  // If trust is high and no constraints, no modification needed
-  if (!trustContext.ok || (trustContext.overallTrust >= 70 && trustContext.constraints.length === 0)) {
-    return baseInstruction;
-  }
-
-  let trustGuidance = '\n\n## TRUST & BEHAVIOR GUIDANCE (VTID-01121)\n';
-
-  // Add trust level awareness
-  trustGuidance += `\nCurrent trust level: ${trustContext.trustBand} (${trustContext.overallTrust}/100)\n`;
-
-  // Add restriction guidance if needed
-  if (trustContext.requiresRestriction) {
-    trustGuidance += `
-**IMPORTANT: The user has corrected you multiple times. Be extra careful:**
-- Ask for confirmation before taking significant actions
-- Be more conservative with suggestions
-- Acknowledge when you're uncertain
-- If the user seems frustrated, acknowledge it and adjust your approach
-`;
-  }
-
-  if (trustContext.needsAttention) {
-    trustGuidance += `
-**CRITICAL: Trust is very low. The user is frustrated with past interactions:**
-- Avoid proactive suggestions unless asked
-- Keep responses shorter and more direct
-- Ask before assuming anything about their preferences
-- If you're about to repeat a past mistake, stop and ask instead
-`;
-  }
-
-  // Add specific behavior constraints
-  if (trustContext.constraints.length > 0) {
-    trustGuidance += '\n**BLOCKED BEHAVIORS - DO NOT DO THESE:**\n';
-    for (const constraint of trustContext.constraints.slice(0, 5)) {
-      trustGuidance += `- ${constraint.description}\n`;
-    }
-    if (trustContext.constraints.length > 5) {
-      trustGuidance += `- (and ${trustContext.constraints.length - 5} more constraints)\n`;
-    }
-  }
-
-  return baseInstruction + trustGuidance;
-}
-
-/**
- * VTID-01121: Quick check if a user message appears to be a correction
- * Returns detection result for ORB to decide how to respond
- */
-export function detectUserCorrection(userMessage: string): {
-  isCorrection: boolean;
-  type: string | null;
-  shouldAcknowledge: boolean;
-} {
-  const result = quickDetectCorrection(userMessage);
-
-  return {
-    isCorrection: result.isCorrection,
-    type: result.type,
-    shouldAcknowledge: result.isCorrection && result.type !== null,
-  };
-}
-
-/**
- * VTID-01121: Get combined memory and trust context for ORB
- * Convenience function that fetches both contexts in parallel
- */
-export async function getFullOrbContext(): Promise<{
-  memoryContext: OrbMemoryContext;
-  trustContext: OrbTrustContext;
-}> {
-  const [memoryContext, trustContext] = await Promise.all([
-    fetchDevMemoryContext(),
-    fetchDevTrustContext(),
-  ]);
-
-  return { memoryContext, trustContext };
-}
-
-/**
- * VTID-01121: Build fully enhanced instruction with memory and trust
- * Combines memory context and trust awareness into system instruction
- */
-export async function buildFullyEnhancedInstruction(
-  baseInstruction: string
-): Promise<{
-  instruction: string;
-  memoryContext: OrbMemoryContext;
-  trustContext: OrbTrustContext;
-}> {
-  const { memoryContext, trustContext } = await getFullOrbContext();
-
-  // First add memory context
-  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
-
-  // Then add trust awareness
-  instruction = buildTrustAwareInstruction(instruction, trustContext);
-
-  return { instruction, memoryContext, trustContext };
-}
-
-// =============================================================================
-// VTID-01120: D28 Emotional & Cognitive Signal Integration
-// =============================================================================
-
-/**
- * Enhanced instruction context including D28 emotional/cognitive signals
- * VTID-01135: Now includes D41 boundary/consent context
- */
-export interface OrbEnhancedContext {
-  instruction: string;
-  memoryContext: OrbMemoryContext;
-  signalContext?: {
-    context: string;
-    orbContext: OrbSignalContext;
-  };
-  /** VTID-01135: D41 boundary and consent context */
-  boundaryContext?: {
-    context: string;
-    orbContext: OrbBoundaryContext;
-  };
-}
-
-/**
- * VTID-01120 + VTID-01135: Build memory-enhanced instruction with D28 signal and D41 boundary context
- *
- * Combines:
- * - Base system instruction
- * - Memory context (personal, relationships, conversations)
- * - D28 emotional/cognitive signals (tone, pacing, depth hints)
- * - D41 boundary/consent context (privacy, emotional safety, suppressions)
- *
- * @param baseInstruction - The base system instruction
- * @param sessionId - Optional session ID for signal lookup
- * @returns Enhanced instruction with memory, signal, and boundary context
- */
-export async function getFullyEnhancedInstruction(
-  baseInstruction: string,
-  sessionId?: string
-): Promise<OrbEnhancedContext> {
-  // Get memory context
-  const memoryContext = await fetchDevMemoryContext();
-  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
-
-  // Get D28 signal context
-  let signalContext: { context: string; orbContext: OrbSignalContext } | undefined;
-  try {
-    const signalResult = await getOrbSignalContext(sessionId);
-    if (signalResult) {
-      signalContext = signalResult;
-
-      // Inject signal context into instruction
-      // Position after memory context but before closing
-      instruction = `${instruction}
-
-${signalResult.context}
-
-Use these signals to adapt your response:
-- If user appears stressed/overwhelmed: Use calming tone, simplify explanations
-- If user appears frustrated: Be patient, acknowledge their concern, focus on solutions
-- If user appears fatigued: Be concise, offer to continue later if needed
-- If urgency is detected: Address the urgent need first
-- If hesitation is detected: Ask clarifying questions, offer options
-- IMPORTANT: Never mention these signals directly to the user`;
-    }
-  } catch (err) {
-    console.warn('[VTID-01120] Signal context fetch failed (non-fatal):', err);
-    // Continue without signal context - graceful degradation
-  }
-
-  // VTID-01135: Get D41 boundary/consent context
-  let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
-  try {
-    // Convert OrbSignalContext to Record<string, unknown> for compatibility
-    const emotionalSignals = signalContext?.orbContext
-      ? { ...signalContext.orbContext } as Record<string, unknown>
-      : undefined;
-    const boundaryResult = await getOrbBoundaryContext(
-      undefined, // authToken - uses dev identity in sandbox
-      emotionalSignals // Pass emotional signals for vulnerability detection
-    );
-    if (boundaryResult) {
-      boundaryContext = boundaryResult;
-
-      // Inject boundary context into instruction
-      instruction = `${instruction}
-
-${boundaryResult.context}
-
-BOUNDARY ENFORCEMENT RULES (Non-Negotiable):
-- If monetization is suppressed: Do NOT suggest products, services, or paid recommendations
-- If social introductions are suppressed: Do NOT suggest meeting new people or joining groups
-- If proactive nudges are suppressed: Only respond to what the user explicitly asks
-- Blocked topics listed above MUST NEVER be discussed, even if user asks
-- For topics requiring consent: Ask permission before proceeding
-- When in doubt, choose the more protective response
-- NEVER argue with or question the user's boundaries`;
-
-      console.log(`[VTID-01135] D41 boundary context injected: privacy=${boundaryResult.orbContext.privacy_level}, suppressions=${
-        [boundaryResult.orbContext.suppress_monetization && 'monetization',
-         boundaryResult.orbContext.suppress_social && 'social',
-         boundaryResult.orbContext.suppress_proactive && 'proactive'].filter(Boolean).join(',') || 'none'
-      }`);
-    }
-  } catch (err) {
-    console.warn('[VTID-01135] Boundary context fetch failed (non-fatal):', err);
-    // Continue without boundary context - graceful degradation
-  }
-
-  return { instruction, memoryContext, signalContext, boundaryContext };
-}
-
-/**
- * VTID-01120 + VTID-01135: Process user message and get enhanced instruction context
- *
- * Convenience function that:
- * 1. Computes D28 signals from the incoming message
- * 2. Fetches memory context
- * 3. Fetches D41 boundary/consent context
- * 4. Builds fully enhanced instruction
- *
- * @param baseInstruction - The base system instruction
- * @param userMessage - The user's incoming message
- * @param sessionId - Optional session ID
- * @param turnId - Optional turn ID
- * @param responseTimeSeconds - Optional time since last interaction
- * @returns Enhanced instruction with computed signals, memory, and boundaries
- */
-export async function processAndEnhanceInstruction(
-  baseInstruction: string,
-  userMessage: string,
-  sessionId?: string,
-  turnId?: string,
-  responseTimeSeconds?: number
-): Promise<OrbEnhancedContext> {
-  // Get memory context
-  const memoryContext = await fetchDevMemoryContext();
-  let instruction = buildMemoryEnhancedInstruction(baseInstruction, memoryContext);
-
-  // Process message through D28 engine to compute signals
-  let signalContext: { context: string; orbContext: OrbSignalContext } | undefined;
-  try {
-    const signalResult = await processMessageForOrb(
-      userMessage,
-      sessionId,
-      turnId,
-      responseTimeSeconds
-    );
-
-    if (signalResult) {
-      signalContext = {
-        context: signalResult.context,
-        orbContext: signalResult.orbContext
-      };
-
-      // Inject signal context into instruction
-      instruction = `${instruction}
-
-${signalResult.context}
-
-Use these signals to adapt your response:
-- If user appears stressed/overwhelmed: Use calming tone, simplify explanations
-- If user appears frustrated: Be patient, acknowledge their concern, focus on solutions
-- If user appears fatigued: Be concise, offer to continue later if needed
-- If urgency is detected: Address the urgent need first
-- If hesitation is detected: Ask clarifying questions, offer options
-- IMPORTANT: Never mention these signals directly to the user`;
-
-      console.log(`[VTID-01120] D28 signals computed: engagement=${signalResult.orbContext.engagement_level}, urgent=${signalResult.orbContext.is_urgent}`);
-    }
-  } catch (err) {
-    console.warn('[VTID-01120] Signal computation failed (non-fatal):', err);
-    // Continue without signal context - graceful degradation
-  }
-
-  // VTID-01135: Get D41 boundary/consent context
-  let boundaryContext: { context: string; orbContext: OrbBoundaryContext } | undefined;
-  try {
-    // Convert OrbSignalContext to Record<string, unknown> for compatibility
-    const emotionalSignals = signalContext?.orbContext
-      ? { ...signalContext.orbContext } as Record<string, unknown>
-      : undefined;
-    const boundaryResult = await getOrbBoundaryContext(
-      undefined, // authToken - uses dev identity in sandbox
-      emotionalSignals // Pass emotional signals for vulnerability detection
-    );
-    if (boundaryResult) {
-      boundaryContext = boundaryResult;
-
-      // Inject boundary context into instruction
-      instruction = `${instruction}
-
-${boundaryResult.context}
-
-BOUNDARY ENFORCEMENT RULES (Non-Negotiable):
-- If monetization is suppressed: Do NOT suggest products, services, or paid recommendations
-- If social introductions are suppressed: Do NOT suggest meeting new people or joining groups
-- If proactive nudges are suppressed: Only respond to what the user explicitly asks
-- Blocked topics listed above MUST NEVER be discussed, even if user asks
-- For topics requiring consent: Ask permission before proceeding
-- When in doubt, choose the more protective response
-- NEVER argue with or question the user's boundaries`;
-
-      console.log(`[VTID-01135] D41 boundary context injected for message processing`);
-    }
-  } catch (err) {
-    console.warn('[VTID-01135] Boundary context fetch failed (non-fatal):', err);
-    // Continue without boundary context - graceful degradation
-  }
-
-  return { instruction, memoryContext, signalContext, boundaryContext };
-}
-
-// =============================================================================
 // VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120 + VTID-01121 + VTID-01135: Exports
 // Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
-// Note: fetchScoredMemoryContext, ScoredOrbMemoryContext exported inline
+// VTID-04364: the unused scored/trust/enhanced instruction builders were removed.
 // VTID-01117: Added context window manager exports
 // VTID-01135: Added D41 boundary context exports
 // =============================================================================

@@ -190,6 +190,8 @@ export interface OrbToolIdentity {
    * the surface this resolves to, the way report_to_specialist does.
    */
   current_route?: string | null;
+  /** VTID-04430: the client build stamp; typed feedback tickets store it. */
+  app_version?: string | null;
 }
 
 export type OrbToolResult =
@@ -5964,6 +5966,8 @@ export interface VertexLikeIdentity {
   is_mobile?: boolean | null;
   /** VTID-04382: forwarded so the typed feedback tools pick the surface. */
   current_route?: string | null;
+  /** VTID-04430: forwarded so typed feedback tickets carry the app version. */
+  app_version?: string | null;
 }
 
 export interface VertexLikeToolResult {
@@ -6001,6 +6005,7 @@ export async function dispatchOrbToolForVertex(
       is_anonymous: identity.is_anonymous ?? null,
       is_mobile: identity.is_mobile ?? null,
       current_route: identity.current_route ?? null,
+      app_version: identity.app_version ?? null,
     },
     sb,
   );

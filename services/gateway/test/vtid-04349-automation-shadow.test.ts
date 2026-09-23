@@ -213,7 +213,7 @@ describe('trigger routes and pins', () => {
   it('EventBridge automation jobs carry the internal token and default to staging', () => {
     const sh = fs.readFileSync(path.join(ROOT, 'scripts/aws/setup-eventbridge-cron-migration.sh'), 'utf8');
     const apJobs = sh.split('\n').filter((l) => l.includes('/api/v1/automations/cron/AP-'));
-    expect(apJobs.length).toBe(19);
+    expect(apJobs.length).toBe(20); // +1: VTID-04391 AP-0914
     for (const l of apJobs) expect(l).toContain('\\"auth\\":\\"gateway_internal\\",\\"gateway_url\\":\\"$AUTOMATIONS_GATEWAY_URL\\"');
     expect(sh).toContain('AUTOMATIONS_GATEWAY_URL="${AUTOMATIONS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"');
   });

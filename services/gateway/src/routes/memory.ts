@@ -55,6 +55,7 @@ import { processLocationMentionsFromDiary } from './locations';
 import { getSupabase } from '../lib/supabase';
 import { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } from '../services/diary-health-extractor';
 import * as repo from './memory-repository';
+import { syncDiaryToIndex } from '../services/memory/diary'; // VTID-04390
 
 const router = Router();
 
@@ -1825,75 +1826,9 @@ router.post('/diary/sync-index', async (req: Request, res: Response) => {
     const tenantId = (tenantRow?.tenant_id as string | undefined)
       ?? '00000000-0000-0000-0000-000000000000';
 
-    // Read the user's pre-write Index so we can compute a per-pillar delta
-    // for the response (drives the celebration toast + voice "what moved").
-    const { data: beforeRow } = await repo.fetchVitanaIndexScoreRow(admin, userId, entryDate);
-    const before = beforeRow as {
-      score_total?: number;
-      score_nutrition?: number;
-      score_hydration?: number;
-      score_exercise?: number;
-      score_sleep?: number;
-      score_mental?: number;
-    } | null;
-
-    // Run extractor → persist → recompute. Same path as POST /diary's hook.
-    const writes = extractHealthFeaturesFromDiary(rawText);
-    let health_features_written = 0;
-    if (writes.length > 0) {
-      const { written } = await persistDiaryHealthFeatures(
-        admin,
-        userId,
-        tenantId,
-        entryDate,
-        writes,
-      );
-      health_features_written = written;
-    }
-
-    // Always recompute (even if 0 writes — entry still counts as journal_entry
-    // via the extractor's unconditional emit; recompute makes the new row
-    // visible).
-    let pillars_after: Record<string, number> | null = null;
-    try {
-      const { data: rec } = await repo.recomputeVitanaIndexForUser(admin, userId, entryDate);
-      const r = rec as any;
-      if (r && r.ok !== false) {
-        pillars_after = {
-          total: Number(r.score_total ?? 0),
-          nutrition: Number(r.score_nutrition ?? 0),
-          hydration: Number(r.score_hydration ?? 0),
-          exercise:  Number(r.score_exercise  ?? 0),
-          sleep:     Number(r.score_sleep     ?? 0),
-          mental:    Number(r.score_mental    ?? 0),
-        };
-      }
-    } catch (recErr: any) {
-      console.warn(`[VTID-01983] Index recompute failed (non-fatal): ${recErr?.message ?? recErr}`);
-    }
-
-    // Per-pillar delta — for the celebration UX. Defaults to 0 if no before row.
-    const index_delta = pillars_after ? {
-      total:     pillars_after.total     - Number(before?.score_total     ?? 0),
-      nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
-      hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
-      exercise:  pillars_after.exercise  - Number(before?.score_exercise  ?? 0),
-      sleep:     pillars_after.sleep     - Number(before?.score_sleep     ?? 0),
-      mental:    pillars_after.mental    - Number(before?.score_mental    ?? 0),
-    } : null;
-
-    // H.5 — diary streak celebration (best-effort, non-blocking).
-    const { celebrateDiaryStreak } = await import('../services/diary-streak-celebrator');
-    const streak = await celebrateDiaryStreak(admin, userId, tenantId);
-
-    return res.status(200).json({
-      ok: true,
-      entry_date: entryDate,
-      health_features_written,
-      pillars_after,
-      index_delta,
-      streak,
-    });
+    // VTID-04390: the same sync the unified diary endpoint runs.
+    const sync = await syncDiaryToIndex(admin, userId, tenantId, rawText, entryDate);
+    return res.status(200).json({ ok: true, ...sync });
   } catch (err: any) {
     console.error('[VTID-01983] /diary/sync-index error:', err?.message ?? err);
     return res.status(500).json({ ok: false, error: err?.message ?? 'UNKNOWN' });

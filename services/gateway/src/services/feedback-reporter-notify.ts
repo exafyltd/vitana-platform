@@ -20,6 +20,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import { notifyUser } from './notification-service';
+import { recordResolvedTicketMemory } from './memory/support-ticket';
 
 const LOG_PREFIX = '[feedback-reporter-notify]';
 
@@ -27,6 +28,8 @@ export interface NotifyDeps {
   supabase?: SupabaseClient;
   notify?: typeof notifyUser;
   locale?: typeof getUserLocale;
+  /** VTID-04412: writes the member + support memory episodes; injectable for tests. */
+  rememberTicket?: typeof recordResolvedTicketMemory;
 }
 
 function serviceClient(): SupabaseClient | null {
@@ -51,6 +54,12 @@ export async function notifyFeedbackReporter(
     const t = ticket as { id: string; user_id: string | null; ticket_number: string | null; status: string } | null;
     if (!t || !t.user_id) return { sent: false, reason: 'no_reporter' };
     if (t.status !== 'resolved' && t.status !== 'user_confirmed') return { sent: false, reason: `status_${t.status}` };
+
+    // VTID-04412: every resolve path already comes through here, so this is
+    // where a resolved ticket becomes memory. Fire-and-forget, never throws.
+    void (deps.rememberTicket ?? recordResolvedTicketMemory)(sb, t.id)
+      .then((m) => { if (m.status === 'failed') console.warn(`${LOG_PREFIX} ticket memory failed for ${t.id}: ${m.error}`); })
+      .catch(() => undefined);
 
     const { data: membership } = await sb
       .from('user_tenants')

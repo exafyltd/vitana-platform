@@ -108,6 +108,7 @@ describe('writeDevMemory', () => {
       p_supersedes: null,
       p_file_paths: [],
       p_stage: null,
+      p_author_user_id: null,
     });
   });
 

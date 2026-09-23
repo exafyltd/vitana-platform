@@ -722,7 +722,9 @@ export function createUpstreamLiveMessageHandler(
               if (session.identity && session.identity.tenant_id) {
                 userMemoryIdentity = {
                   user_id: session.identity.user_id,
-                  tenant_id: session.identity.tenant_id
+                  tenant_id: session.identity.tenant_id,
+                  // VTID-04367: the role the user is speaking in scopes the row.
+                  active_role: session.active_role || session.identity.role || null,
                 };
               } else if (ctx.deps.isDevSandbox()) {
                 userMemoryIdentity = {
@@ -2437,7 +2439,9 @@ export function handleTurnComplete(
     if (session.identity && session.identity.tenant_id) {
       userMemoryIdentity = {
         user_id: session.identity.user_id,
-        tenant_id: session.identity.tenant_id
+        tenant_id: session.identity.tenant_id,
+        // VTID-04367: the role the user is speaking in scopes the row.
+        active_role: session.active_role || session.identity.role || null,
       };
     } else if (ctx.deps.isDevSandbox()) {
       userMemoryIdentity = {

@@ -1341,7 +1341,7 @@ router.get(
     const vitanaId = req.identity?.vitana_id ?? null;
 
     // VTID-03014: extract first_name preferring app_users.display_name, then
-    // memory_facts.user_name (the canonical Cognee-extracted name). Without
+    // memory_facts.user_name (the canonical extracted name). Without
     // this, users whose display_name is null but whose user_name fact IS
     // populated got greeted by @handle instead of their actual name —
     // exactly the failure mode the L2.2b.6 smoke surfaced.
@@ -2163,8 +2163,8 @@ router.get(
 
 // §11 — session-end memory commit (LiveKit parity with Vertex). The agent owns
 // the transcript (the conversation runs in the agent process), so it POSTs it
-// here on teardown. This runs the SAME extraction (Cognee + deduplicated inline
-// facts) the Vertex path runs at session stop. Without it, LiveKit conversations
+// here on teardown. This runs the SAME extraction (deduplicated inline facts)
+// the Vertex path runs at session stop. Without it, LiveKit conversations
 // were heard and thrown away → no cross-session memory. Fire-and-forget;
 // extraction never blocks the agent's teardown. See
 // docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
@@ -2187,7 +2187,10 @@ router.post(
       const sessionId =
         typeof body.session_id === 'string' && body.session_id.length > 0
           ? body.session_id
-          : `livekit-${userId.slice(0, 8)}`;
+          : // VTID-04365: the commit is idempotent per session id, so a fallback
+            // id must be unique per call — a per-user constant would drop every
+            // later session of that user for six hours.
+            `livekit-${userId.slice(0, 8)}-${Date.now()}`;
       const activeRole = typeof body.active_role === 'string' ? body.active_role : null;
 
       const result = commitSessionMemory({
@@ -2196,6 +2199,8 @@ router.post(
         userId,
         sessionId,
         activeRole,
+        channel: 'livekit',
+        trigger: 'livekit_commit_memory',
       });
 
       // Telemetry so "did this session persist memory?" is QUERYABLE (§4/§11),
@@ -2213,7 +2218,7 @@ router.post(
           session_id: sessionId,
           user_id: userId,
           committed: result.committed,
-          cognee_queued: result.cognee_queued,
+          summary_queued: result.summary_queued ?? false,
           reason: result.reason ?? null,
           transcript_chars: transcript.length,
         },

@@ -31,11 +31,13 @@ import {
   VTID,
   EMBEDDING_DIMENSIONS,
 } from '../services/supabase-semantic-memory';
+// VTID-04342: memory_items is embedded with the single memory embedder
+// (Titan V2, 1024-dim) — never the shared 1536-dim embedding-service.
 import {
-  generateEmbedding,
-  generateBatchEmbeddings,
-  isEmbeddingServiceAvailable,
-} from '../services/embedding-service';
+  generateMemoryEmbedding as generateEmbedding,
+  generateMemoryBatchEmbeddings as generateBatchEmbeddings,
+  isMemoryEmbeddingAvailable as isEmbeddingServiceAvailable,
+} from '../services/memory-embedding';
 import {
   ContextLens,
   validateContextLens,
@@ -482,7 +484,7 @@ router.post('/admin/embeddings/generate', async (req: Request, res: Response) =>
       const updates = batch.map((item, idx) => ({
         id: item.id,
         embedding: embeddingResult.embeddings![idx],
-        embedding_model: embeddingResult.model || 'text-embedding-3-small'
+        embedding_model: embeddingResult.model || 'amazon.titan-embed-text-v2:0'
       }));
 
       // Update embeddings

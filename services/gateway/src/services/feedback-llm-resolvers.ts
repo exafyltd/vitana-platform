@@ -191,7 +191,7 @@ KEY MODULES (use these when the bug touches them):
 - Dev autopilot:                 \`services/gateway/src/services/dev-autopilot-execute.ts\`,
                                  \`services/gateway/src/services/dev-autopilot-safety.ts\`
 - Memory:                        \`services/gateway/src/services/orb-memory-bridge.ts\`,
-                                 \`services/gateway/src/services/cognee-extractor-client.ts\`
+                                 \`services/gateway/src/services/inline-fact-extractor.ts\`
 - Retrieval / RAG:               \`services/gateway/src/services/retrieval-router.ts\`
 - Vitana Index:                  \`services/agents/vitana-orchestrator/*\`
 - Command Hub UI:                \`services/gateway/src/frontend/command-hub/app.js\`

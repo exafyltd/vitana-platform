@@ -22,8 +22,6 @@ import { randomUUID } from 'crypto';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { writeTimelineRow } from '../services/timeline-projector';
-// VTID-01225: Cognee entity extraction from diary entries
-import { cogneeExtractorClient } from '../services/cognee-extractor-client';
 import * as repo from './diary-repository';
 
 const router = Router();
@@ -468,7 +466,6 @@ interface ExtractionResult {
 
 /**
  * Trigger extraction hooks after diary entry submission
- * - VTID-01225: Fire Cognee extraction for entity/relationship/signal detection
  * - Detect names for relationship signals (deterministic, immediate)
  * - Track tags for topic profile
  */
@@ -486,20 +483,8 @@ async function triggerExtractionHooks(
   };
 
   try {
-    // 1. VTID-01225: Fire Cognee extraction (entities, relationships, signals)
-    // This replaces the placeholder - Cognee does the heavy lifting
-    if (userId && tenantId && entry.content.length > 20) {
-      cogneeExtractorClient.extractAsync({
-        transcript: entry.content,
-        tenant_id: tenantId,
-        user_id: userId,
-        session_id: `diary-${entryId}`,
-        active_role: 'community',
-      });
-      console.log(`[VTID-01225] Cognee extraction queued for diary entry: ${entryId}`);
-    }
-
-    // Emit OASIS event for extraction tracking
+    // 1. Emit OASIS event for extraction tracking
+    // (VTID-04344: the Cognee extractor call that used to run here was retired.)
     await emitDiaryEvent(
       'memory.garden.extract.triggered',
       'info',
@@ -510,7 +495,6 @@ async function triggerExtractionHooks(
         content_length: entry.content.length,
         user_id: userId,
         tenant_id: tenantId,
-        cognee_enabled: cogneeExtractorClient.isEnabled(),
       }
     );
     result.garden_nodes_triggered = true;
@@ -688,7 +672,7 @@ router.post('/entry', async (req: Request, res: Response) => {
 
     const memoryId = data?.id || entryId;
 
-    // VTID-01225: Extract userId/tenantId from JWT for Cognee extraction
+    // VTID-01225: Extract userId/tenantId from JWT for extraction tracking
     let jwtUserId: string | undefined;
     let jwtTenantId: string | undefined;
     try {

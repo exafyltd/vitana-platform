@@ -58,6 +58,11 @@ const AUTH_NAMES = [
   // 'F'), so this name needs its own explicit entry. It IS auth — strictly
   // the same requireDevRole check, just with an extra token source.
   'requireDevRoleForStream',
+  // requireDevMemoryAccess / requireDevMemoryWriter (routes/dev-memory.ts,
+  // VTID-04408): X-Gateway-Internal, else requireAdminAuth; the Access variant
+  // also accepts the read-only X-Dev-Memory-Token (closed unless configured).
+  // Both ARE auth.
+  'requireDevMemoryAccess', 'requireDevMemoryWriter',
   // requireInternalOrAdmin (routes/automations.ts, VTID-04349): the
   // scheduler's X-Gateway-Internal token or a verified exafy_admin session,
   // the same contract as test-contracts-scheduled.ts. It IS auth.

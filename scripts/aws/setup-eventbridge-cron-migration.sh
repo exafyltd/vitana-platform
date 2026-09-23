@@ -156,6 +156,7 @@ JOBS=(
   "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "gateway-reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick|{}"
   "gateway-reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper|{}"
   "gateway-daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute|{\"tenant_id\":\"$TENANT_ID\"}"
@@ -165,6 +166,9 @@ JOBS=(
   # VTID-04226 — test-contract scanners (see header). Cadence chosen, not restored.
   "gateway-test-contracts-scheduled-run|*/15 * * * *|UTC|/api/v1/test-contracts/scheduled-run|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
   "gateway-test-contracts-missing|30 6 * * *|UTC|/api/v1/test-contracts/missing|{}|{\"method\":\"GET\",\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-04407 — Operator thread handoffs (developer memory). Staging: that is
+  # where OPERATOR_THREADS_ENABLED records threads. Hourly; idempotent.
+  "gateway-dev-memory-handoff-sweep|20 * * * *|UTC|/api/v1/dev-memory/handoffs/sweep|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.

@@ -264,6 +264,44 @@ export async function listOperatorThreadMessages(
   return { ok: true, messages: msgs.data || [] };
 }
 
+export interface OperatorThreadListItem {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  turns: number;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+export const THREAD_LIST_SUMMARY_CHARS = 280;
+
+/**
+ * VTID-04409: the caller's own Operator threads, newest activity first, so
+ * the console can reopen a thread started on another device or by voice.
+ * A null/non-UUID caller has no threads (voice and machine turns are
+ * recorded without an owner and are not listed).
+ */
+export async function listOperatorThreads(
+  opts: { userId: string | null; limit?: number },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: true; threads: OperatorThreadListItem[] } | { ok: false; error: 'disabled' | 'unavailable' }> {
+  if (!isOperatorThreadsEnabled(env)) return { ok: false, error: 'disabled' };
+  const s = getSupa();
+  if (!s) return { ok: false, error: 'unavailable' };
+  const owner = normalizeUserId(opts.userId);
+  if (!owner) return { ok: true, threads: [] };
+  const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
+  const r = await rest<OperatorThreadListItem[]>(s,
+    `operator_threads?user_id=eq.${encodeURIComponent(owner)}&select=id,title,summary,turns,last_message_at,created_at&order=last_message_at.desc.nullslast&limit=${limit}`);
+  if (!r.ok) return { ok: false, error: 'unavailable' };
+  const threads = (r.data || []).map((t) => ({
+    ...t,
+    turns: t.turns || 0,
+    summary: t.summary ? clipMessage(t.summary, THREAD_LIST_SUMMARY_CHARS) : null,
+  }));
+  return { ok: true, threads };
+}
+
 export async function getThreadSummary(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   if (!isOperatorThreadsEnabled(env)) return null;
   const s = getSupa();

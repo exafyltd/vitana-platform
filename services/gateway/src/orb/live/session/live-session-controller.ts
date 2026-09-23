@@ -84,13 +84,12 @@ import { deriveHasPriorSession } from '../instruction/greeting-gate';
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
 const voiceMeterIntervals: Map<string, NodeJS.Timeout> = new Map();
 const VOICE_METER_INTERVAL_MS = 60_000; // 1 minute
-import {
-  deduplicatedExtract,
-  clearExtractionState,
-} from '../../../services/extraction-dedup-manager';
+import { clearExtractionState } from '../../../services/extraction-dedup-manager';
+// VTID-04365: every session end goes through the one commit.
+import { commitSessionMemory, renderTranscript } from '../../../services/session-memory-commit';
 import {
   DEV_IDENTITY,
-  fetchRecentConversationForCognee,
+  fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
@@ -115,7 +114,6 @@ import {
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
-import { cogneeExtractorClient } from '../../../services/cognee-extractor-client';
 import { finalizeLiveSession } from './finalize-live-session';
 import {
   sessions,
@@ -1559,6 +1557,8 @@ export async function handleLiveSessionStart(
     // voice". The widget sends it on the first start only; the greeting
     // ladder opens with the support-report intake while no turn has run.
     support_report: (body as any).support_report === true,
+    // VTID-04430: the host app's build stamp; voice-filed tickets store it.
+    app_version: normalizeAppVersion((body as any).app_version),
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -2341,8 +2341,8 @@ export async function handleLiveSessionStart(
  *   - VTID-WATCHDOG: clears response watchdog.
  *   - OASIS event `vtid.live.session.stop` (with VTID-NAV-TIMEJOURNEY user_id).
  *   - VTID-01959/VTID-01994: voice self-healing dispatch with session metrics.
- *   - VTID-01225: fire-and-forget Cognee extraction (transcriptTurns first,
- *     memory_items fallback). VTID-01230 dedup pass on the same transcript.
+ *   - VTID-01230: fire-and-forget deduplicated fact extraction (transcriptTurns
+ *     first, memory_items fallback).
  *   - VTID-01230: destroySessionBuffer + clearExtractionState.
  *   - Removes from `liveSessions`.
  *   - VTID-02917: wake-timeline disconnect event + endSession.
@@ -2464,44 +2464,33 @@ export async function handleLiveSessionStop(
     },
   });
 
-  // VTID-01225: Fire-and-forget entity extraction from live session.
-  // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items.
-  // Falls back to memory_items query only if transcriptTurns is empty.
+  // Session-end memory commit from the in-memory transcriptTurns (the full,
+  // unfiltered conversation); memory_items only when those are gone.
   if (session.identity && session.identity.tenant_id) {
     const tenantId = session.identity.tenant_id;
     const userId = session.identity.user_id;
 
+    // VTID-04365: the one session-end commit (facts + session summary).
+    const activeRole = session.active_role || session.identity.role || null;
     if (session.transcriptTurns.length > 0) {
       // VTID-04353: memory + voice summary through the one idempotent finalize
       // (a second end path on the same transcript is a no-op).
       finalizeLiveSession(session, { sessionId: session_id, reason: 'live_session_stop' });
     } else {
-      // Fallback: query memory_items if no in-memory transcript available
-      fetchRecentConversationForCognee(tenantId, userId, session.createdAt, new Date())
+      // Fallback: rebuild the transcript from memory_items when the
+      // in-memory turns are gone (e.g. the session moved instances).
+      fetchRecentConversationTranscript(tenantId, userId, session.createdAt, new Date())
         .then((transcript) => {
-          if (transcript && transcript.length > 50) {
-            if (cogneeExtractorClient.isEnabled()) {
-              cogneeExtractorClient.extractAsync({
-                transcript,
-                tenant_id: tenantId,
-                user_id: userId,
-                session_id,
-                active_role: session.active_role || 'community',
-              });
-              console.log(`[VTID-01225] Cognee extraction queued from memory_items fallback: ${session_id}`);
-            }
-
-            // VTID-01230: Deduplicated extraction from memory_items fallback
-            deduplicatedExtract({
-              conversationText: transcript,
-              tenant_id: tenantId,
-              user_id: userId,
-              session_id,
-              force: true,
-            });
-          } else {
-            console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
-          }
+          const r = commitSessionMemory({
+            transcript: transcript || '',
+            tenantId,
+            userId,
+            sessionId: session_id,
+            activeRole,
+            channel: 'orb_voice',
+            trigger: 'sse_stop_memory_items',
+          });
+          if (!r.committed) console.log(`[VTID-04365] No session commit for ${session_id}: ${r.reason}`);
         })
         .catch((err) => {
           console.error(`[VTID-01225] Failed to fetch conversation for extraction: ${err.message}`);
@@ -2818,4 +2807,12 @@ export async function handleLiveStreamSend(
     console.error(`[VTID-01155] Stream send error:`, error);
     return res.status(500).json({ ok: false, error: error.message });
   }
+}
+
+/** VTID-04430 — a short build stamp from the client, or null. Never trusted beyond length/charset. */
+export function normalizeAppVersion(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim();
+  if (!v || v.length > 64 || !/^[A-Za-z0-9._+-]+$/.test(v)) return null;
+  return v;
 }

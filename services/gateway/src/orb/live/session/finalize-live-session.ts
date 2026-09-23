@@ -10,8 +10,9 @@
  * a transcript store the live widget never fills.
  *
  * finalizeLiveSession():
- *  - commits memory through commitSessionMemory() (Cognee when enabled +
- *    deduplicated fact extraction, forced) — the same helper LiveKit uses;
+ *  - commits memory through commitSessionMemory() (forced fact extraction
+ *    plus the memory_items session_summary episode, VTID-04365) — the same
+ *    helper LiveKit and the text-session end endpoints use;
  *  - writes the voice session summary through recordSessionSummary()
  *    (`memory` routing stage, upsert on user_id + session_id);
  *  - writes the open threads and promises the session left behind through
@@ -197,6 +198,9 @@ export function finalizeLiveSession(
       userId,
       sessionId: opts.sessionId,
       activeRole: session.active_role || 'community',
+      // VTID-04365 (main): recorded on the memory-system summary.
+      channel: 'orb_voice',
+      trigger: opts.reason,
     });
     memoryCommitted = commit.committed;
     memorySkipReason = commit.reason;

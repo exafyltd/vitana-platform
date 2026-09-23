@@ -625,9 +625,9 @@ describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', ()
     expect(idx).toBeGreaterThan(0);
     const slice = source.slice(idx, idx + 400);
     expect(slice).toMatch(/await\s+handleLiveSessionStop\s*\(\s*req\s*,\s*res\s*\)/);
-    // Anti-regression: no inline OASIS emit or cogneeExtractor call inside this slice.
+    // Anti-regression: no inline OASIS emit or extraction call inside this slice.
     expect(slice).not.toMatch(/emitLiveSessionEvent\s*\(/);
-    expect(slice).not.toMatch(/cogneeExtractorClient/);
+    expect(slice).not.toMatch(/deduplicatedExtract\s*\(/);
     expect(slice).not.toMatch(/liveSessions\.delete\(/);
   });
 

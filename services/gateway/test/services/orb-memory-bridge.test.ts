@@ -15,8 +15,8 @@
  * Mocking strategy: `@supabase/supabase-js`'s createClient is mocked with a
  * small chainable query-builder stand-in (same convention as
  * test/services/memory-facts-service.test.ts), plus jest.mock() at the
- * module boundary for oasis-event-service and mem-tier2-writer (fire-and-
- * forget Tier 2 mirror), matching this codebase's established convention.
+ * module boundary for oasis-event-service,
+ * matching this codebase's established convention.
  */
 
 process.env.NODE_ENV = 'test';
@@ -50,8 +50,13 @@ function makeBuilder(resolver: (table: string, calls: ChainCall[]) => TableResul
 function makeSupabaseClient(opts: {
   fromResolver?: (table: string, calls: ChainCall[]) => TableResult;
   rpcImpl?: (...args: any[]) => Promise<any>;
+  transcriptRows?: any[];
 } = {}) {
-  const fromResolver = opts.fromResolver ?? (() => ({ data: [], error: null }));
+  const userResolver = opts.fromResolver ?? (() => ({ data: [], error: null }));
+  // VTID-04387: the transcript table is its own store; the per-test
+  // resolvers describe memory_items, so the transcript reads empty here.
+  const fromResolver = (table: string, calls: ChainCall[]): TableResult =>
+    table === 'memory_transcript_turns' ? { data: opts.transcriptRows ?? [], error: null } : userResolver(table, calls);
   const fromMock = jest.fn((table: string) => makeBuilder(fromResolver, table));
   const rpcMock = jest.fn(opts.rpcImpl ?? (() => Promise.resolve({ data: null, error: null })));
   return { from: fromMock, rpc: rpcMock };
@@ -65,12 +70,6 @@ jest.mock('@supabase/supabase-js', () => ({
 const mockEmitOasisEvent = jest.fn().mockResolvedValue({ ok: true });
 jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => mockEmitOasisEvent(...args),
-}));
-
-const mockMirrorEpisode = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../src/services/mem-tier2-writer', () => ({
-  mirrorEpisode: (...args: any[]) => mockMirrorEpisode(...args),
-  mirrorFact: jest.fn().mockResolvedValue(undefined),
 }));
 
 // global.fetch is used by fetchMemoryContextWithIdentity's raw REST call to
@@ -342,7 +341,7 @@ describe('writeMemoryItemWithIdentity', () => {
     expect(mockClient.from).not.toHaveBeenCalled();
   });
 
-  it('skips trivial user messages without writing', async () => {
+  it('skips trivial user messages in memory_items but keeps them in the transcript (VTID-04387)', async () => {
     mockClient = makeSupabaseClient();
     const result = await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'orb_voice',
@@ -350,7 +349,39 @@ describe('writeMemoryItemWithIdentity', () => {
       content_json: { direction: 'user' },
     });
     expect(result).toEqual({ ok: true, skipped: true });
-    expect(mockClient.from).not.toHaveBeenCalled();
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).not.toContain('memory_items');
+    expect(tables).toContain('memory_transcript_turns');
+  });
+
+  it('with MEMORY_RAW_TURNS_TO_ITEMS=false a raw turn goes only to the transcript (VTID-04387)', async () => {
+    const prev = process.env.MEMORY_RAW_TURNS_TO_ITEMS;
+    process.env.MEMORY_RAW_TURNS_TO_ITEMS = 'false';
+    try {
+      mockClient = makeSupabaseClient();
+      const result = await writeMemoryItemWithIdentity(IDENTITY, {
+        source: 'orb_voice',
+        content: 'I want to sleep eight hours every night from now on because my health matters',
+        content_json: { direction: 'user', orb_session_id: 'sess-1' },
+      });
+      expect(result).toEqual({ ok: true, skipped: true });
+      const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+      expect(tables).toEqual(['memory_transcript_turns']);
+    } finally {
+      process.env.MEMORY_RAW_TURNS_TO_ITEMS = prev;
+    }
+  });
+
+  it('a system note (navigator, person focus) is never a transcript turn', async () => {
+    mockClient = makeSupabaseClient();
+    await writeMemoryItemWithIdentity(IDENTITY, {
+      source: 'orb_voice',
+      content: 'Vitana navigated to Settings',
+      content_json: { direction: 'system' },
+      skipFiltering: true,
+    });
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).not.toContain('memory_transcript_turns');
   });
 
   it('writes under the GIVEN identity\'s tenant_id/user_id — never DEV_IDENTITY\'s', async () => {
@@ -394,25 +425,47 @@ describe('writeMemoryItemWithIdentity', () => {
     expect(insertedRow.importance).toBeGreaterThanOrEqual(50);
   });
 
-  it('fans out to mem-tier2-writer.mirrorEpisode with matching tenant/user scoping', async () => {
+  // VTID-04367: memory_items.active_role scopes reads by role. Personal
+  // memory is stored NULL so every role sees it; a work role is stored as-is.
+  function captureInsert(id: string) {
+    const box: { row: any } = { row: null };
     mockClient = makeSupabaseClient({
-      fromResolver: () => ({ data: { id: 'mem-5', category_key: 'conversation' }, error: null }),
+      fromResolver: (_table, calls) => {
+        const insertCall = calls.find(c => c.method === 'insert');
+        if (insertCall) box.row = insertCall.args[0];
+        return { data: { id, category_key: 'conversation' }, error: null };
+      },
     });
+    return box;
+  }
+
+  it('stores personal (community) memory with active_role NULL', async () => {
+    const box = captureInsert('mem-5');
     await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'orb_text',
       content: 'my favorite hobby is photography and I do it every weekend',
       content_json: { direction: 'user' },
     });
-    expect(mockMirrorEpisode).toHaveBeenCalledTimes(1);
-    const mirrorArg = mockMirrorEpisode.mock.calls[0][0];
-    expect(mirrorArg.tenant_id).toBe('tenant-456');
-    expect(mirrorArg.user_id).toBe('user-123');
-    expect(mirrorArg.actor_id).toBe('user');
+    expect(box.row.active_role).toBeNull();
   });
 
-  it('marks actor_id as "assistant" for assistant-direction writes (skipFiltering bypasses the assistant block)', async () => {
+  it('stores memory written in a work role with that role', async () => {
+    const box = captureInsert('mem-6');
+    await writeMemoryItemWithIdentity({ ...IDENTITY, active_role: 'Developer' }, {
+      source: 'orb_text',
+      content: 'the staging deploy for the gateway needs the new flag set first',
+      content_json: { direction: 'user' },
+    });
+    expect(box.row.active_role).toBe('developer');
+  });
+
+  it('no longer mirrors to the tier-2 mem_episodes table (VTID-04366)', async () => {
+    const tables: string[] = [];
     mockClient = makeSupabaseClient({
-      fromResolver: () => ({ data: { id: 'mem-6', category_key: 'conversation' }, error: null }),
+      fromResolver: (table) => {
+        tables.push(table);
+        return { data: { id: 'mem-7', category_key: 'conversation' }, error: null };
+      },
     });
     await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'system',
@@ -420,8 +473,7 @@ describe('writeMemoryItemWithIdentity', () => {
       content_json: { direction: 'assistant' },
       skipFiltering: true,
     });
-    const mirrorArg = mockMirrorEpisode.mock.calls[0][0];
-    expect(mirrorArg.actor_id).toBe('assistant');
+    expect(tables).not.toContain('mem_episodes');
   });
 
   it('returns ok:false when the memory_items table does not exist', async () => {
@@ -578,6 +630,16 @@ describe('fetchMemoryContextWithIdentity', () => {
 // =============================================================================
 
 describe('fetchRecentOrbUserTurns', () => {
+  it('reads the transcript table first and does not touch memory_items when it has turns (VTID-04387)', async () => {
+    mockClient = makeSupabaseClient({
+      transcriptRows: [{ role: 'user', content: 'from the transcript', occurred_at: '2026-09-23T10:00:00Z', session_id: 's' }],
+    });
+    const out = await fetchRecentOrbUserTurns({ user_id: 'u-1', tenant_id: 't-1' }, 3);
+    expect(out).toEqual([{ content: 'from the transcript', occurred_at: '2026-09-23T10:00:00Z' }]);
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).toEqual(['memory_transcript_turns']);
+  });
+
   it('returns [] when Supabase is not configured', async () => {
     delete process.env.SUPABASE_URL;
     const result = await fetchRecentOrbUserTurns({ user_id: 'u1', tenant_id: 't1' });

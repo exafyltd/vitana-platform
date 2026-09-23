@@ -683,12 +683,6 @@ export type CicdEventType =
   // OVERLAY.EVENT_DRAWER overlay because the top event dominated the
   // runner-up by >= 0.15 and there were no live_rooms in the result.
   | 'orb.search_events.auto_nav'
-  // VTID-01225: Cognee Entity Extraction Events
-  | 'cognee.extraction.started'
-  | 'cognee.extraction.completed'
-  | 'cognee.extraction.timeout'
-  | 'cognee.extraction.persisted'
-  | 'cognee.extraction.error'
   // VTID-01221: Autopilot Recommendation Sync Events
   | 'autopilot.recommendations.requested'
   | 'autopilot.recommendations.received'

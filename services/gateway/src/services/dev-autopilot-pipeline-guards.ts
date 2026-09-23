@@ -27,13 +27,24 @@ export const PR_CLOSED_UNMERGED_KEY = 'pr_closed_unmerged_at';
 export const PR_STATE_CHECKED_KEY = 'pr_state_checked_at';
 
 /**
+ * VTID-04428: a merged PR the bridge has since reverted ON MAIN (its revert
+ * PR merged). The change is no longer on main, so the PR is no reason to
+ * block the finding's next attempt — before this, every deploy/verification
+ * failure spawned a self-heal child that died on its own parent's merged PR
+ * (recovery doc item 6). A revert PR left open (auto-merge refused) is NOT
+ * stamped: the change is still live and a new attempt must wait.
+ */
+export const PR_REVERTED_KEY = 'pr_reverted_at';
+
+/**
  * PostgREST filter fragment (leading '&') selecting executions whose PR is
  * still a reason to block a new attempt for the same finding.
  */
 export const STRANDED_PR_FILTER =
   '&pr_url=not.is.null'
   + '&status=not.in.(completed,self_healed,auto_archived)'
-  + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`;
+  + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`
+  + `&metadata->>${PR_REVERTED_KEY}=is.null`;
 
 /**
  * VTID-04293: execution statuses that still own their finding. Mirrors the
@@ -67,6 +78,17 @@ export function selectPlannedCandidates<T extends { id: string }>(
 ): T[] {
   const planned = new Set(plannedFindingIds);
   return candidates.filter((c) => planned.has(c.id));
+}
+
+/**
+ * VTID-04428: true when revertExecutionPR() reverted a MERGED change and its
+ * revert PR actually merged (a post-merge stage, a real PR url, no error).
+ */
+export function isRevertMergedOnMain(
+  stage: string,
+  revert: { ok: boolean; revert_pr_url?: string | null; error?: string | null; reverted_on_main?: boolean },
+): boolean {
+  return stage !== 'ci' && revert.ok && revert.reverted_on_main === true && !revert.error;
 }
 
 /**

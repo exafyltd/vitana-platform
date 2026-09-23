@@ -113,7 +113,7 @@ describe('domainForPath', () => {
     expect(domainForPath('services/gateway/src/routes/auth.ts')).toBe('routes');
     expect(domainForPath('services/gateway/src/services/foo.ts')).toBe('services');
     expect(domainForPath('services/gateway/src/frontend/command-hub/app.js')).toBe('frontend');
-    expect(domainForPath('services/agents/cognee-extractor/main.py')).toBe('agents');
+    expect(domainForPath('services/agents/orb-agent/main.py')).toBe('agents');
     expect(domainForPath('supabase/migrations/x.sql')).toBe('database');
   });
 

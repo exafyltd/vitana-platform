@@ -131,19 +131,6 @@ describe('memory-intelligence-repository', () => {
     });
   });
 
-  describe('rpcWriteFact', () => {
-    it('forwards args to the write_fact RPC verbatim', async () => {
-      const sb = makeSupabaseStub({ data: null });
-      const args = {
-        p_tenant_id: 't1', p_user_id: 'u1', p_fact_key: 'k', p_fact_value: 'v',
-        p_entity: 'self', p_fact_value_type: 'text', p_provenance_source: 'behavior_inferred',
-        p_provenance_confidence: 0.55,
-      };
-      await repo.rpcWriteFact(sb as any, args);
-      expect(sb.rpc).toHaveBeenCalledWith('write_fact', args);
-    });
-  });
-
   describe('fetchKnowledgeDocByTags', () => {
     it('uses overlaps() against the tags array', async () => {
       const sb = makeSupabaseStub({ data: [] });

@@ -1,26 +1,26 @@
 /**
- * VTID-01225: Inline Fact Extractor (Cognee Fallback)
+ * VTID-01225: Inline Fact Extractor
  *
- * Lightweight Gemini-based fact extractor that runs INSIDE the gateway
- * when the external Cognee extractor service is unavailable (404/down).
+ * Lightweight LLM-based fact extractor that runs INSIDE the gateway. Originally
+ * the fallback for the external Cognee extractor service; since VTID-04344
+ * (Cognee removed) it is the sole conversation fact-extraction path.
  *
- * Uses the SAME write_fact() RPC that Cognee uses, writing to the SAME
- * memory_facts table with the SAME schema. The read path (context-pack-builder)
- * doesn't care which service wrote the fact.
+ * Writes via the write_fact() RPC into memory_facts. The read path
+ * (context-pack-builder) doesn't care which service wrote the fact.
  *
  * Design constraints:
- * - Fire-and-forget (non-blocking, same as Cognee)
+ * - Fire-and-forget (non-blocking)
  * - Uses Vertex AI (primary) or Gemini API (fallback) - same as conversation route
- * - Writes via write_fact() RPC (same as cognee-extractor-client.ts line 582)
+ * - Writes via write_fact() RPC
  * - Low temperature (0.1) for deterministic extraction
  * - Small token budget (512) to keep latency low
  * - Only extracts identity/preference/relationship facts (high-value)
  */
 
-import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
+import { rememberFact } from './memory/remember'; // VTID-04364 single fact-write path
 import { callViaRouter } from './llm-router'; // VTID-03579: provider comes from llm_routing_policy, never hardcoded
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
-// inline-fact-extractor activity (the cognee fallback path).
+// inline-fact-extractor activity.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
 
 // =============================================================================
@@ -257,70 +257,33 @@ async function persistFact(
     // Evidence lookup is best-effort; base confidence stands.
   }
 
-  // VTID-01952: Identity Lock chokepoint. Inline LLM extraction is an
-  // inference path — never allowed to write identity-class facts (name,
-  // DOB, gender, email, etc.). DB trigger is defense-in-depth.
-  const lockCheck = await assertWriteFact({
-    fact_key: effectiveFactKey,
-    provenance_source: provenance,
-    provenance_confidence: confidence,
-    actor_id: 'inline-fact-extractor',
-    source_engine: 'inline-fact-extractor',
+  // VTID-04364: Identity Lock check, write_fact RPC and embed-on-write all
+  // run in the shared rememberFact() path. Inline LLM extraction is an
+  // inference path, so identity-class keys are refused there.
+  const written = await rememberFact({
     tenant_id,
     user_id,
+    fact_key: effectiveFactKey,
+    fact_value: fact.fact_value,
+    entity: fact.entity,
+    fact_value_type: fact.fact_value_type,
+    provenance_source: provenance,
+    provenance_confidence: confidence,
+    actor: 'inline-fact-extractor',
   });
-  if (!lockCheck.ok) {
+  if (written.blocked === 'identity_lock') {
     console.log(
-      `[VTID-01952] Identity Lock blocked inline fact write: ${effectiveFactKey} ` +
-      `(reason=${lockCheck.reason}). User must change identity-class facts via Profile/Settings UI.`
+      `[VTID-01952] Identity Lock blocked inline fact write: ${effectiveFactKey}. ` +
+      `User must change identity-class facts via Profile/Settings UI.`
     );
     return false;
   }
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-      body: JSON.stringify({
-        p_tenant_id: tenant_id,
-        p_user_id: user_id,
-        p_fact_key: effectiveFactKey,
-        p_fact_value: fact.fact_value,
-        p_entity: fact.entity,
-        p_fact_value_type: fact.fact_value_type,
-        p_provenance_source: provenance,
-        p_provenance_confidence: confidence,
-      }),
-    });
-
-    if (response.ok) {
-      const factId = await response.json();
-      console.log(`[VTID-01225-inline] Persisted: ${fact.fact_key}="${fact.fact_value}" (id=${factId})`);
-      // BOOTSTRAP-MEMORY-DAILY-LEARNING: embed on write (fire-and-forget).
-      // This path wrote 96% of live facts without embeddings, which left
-      // tier-2 semantic fact retrieval permanently blind.
-      if (typeof factId === 'string' && factId) {
-        try {
-          const { generateFactEmbeddingAsync } = await import('./memory-facts-service');
-          generateFactEmbeddingAsync(factId, effectiveFactKey, fact.fact_value);
-        } catch {
-          /* embedding is best-effort; the backfill automation catches misses */
-        }
-      }
-      return true;
-    } else {
-      const errorText = await response.text();
-      console.warn(`[VTID-01225-inline] write_fact failed for "${fact.fact_key}": ${response.status} - ${errorText}`);
-      return false;
-    }
-  } catch (err: any) {
-    console.warn(`[VTID-01225-inline] Persist error for "${fact.fact_key}": ${err.message}`);
+  if (!written.ok) {
+    console.warn(`[VTID-01225-inline] write_fact failed for "${fact.fact_key}": ${written.error}`);
     return false;
   }
+  console.log(`[VTID-01225-inline] Persisted: ${fact.fact_key}="${fact.fact_value}" (id=${written.fact_id})`);
+  return true;
 }
 
 // =============================================================================
@@ -331,8 +294,8 @@ async function persistFact(
  * Extract facts from a conversation turn and persist to memory_facts.
  * Fire-and-forget: call this without awaiting.
  *
- * Uses the same write_fact() RPC as Cognee, writing to the same table.
- * The read path (context-pack-builder fetchMemoryFacts) picks up both.
+ * Uses the write_fact() RPC into memory_facts; the read path
+ * (context-pack-builder fetchMemoryFacts) picks it up.
  */
 export async function extractAndPersistFacts(input: {
   conversationText: string;

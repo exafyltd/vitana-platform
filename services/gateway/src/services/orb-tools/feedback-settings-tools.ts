@@ -151,6 +151,7 @@ async function createTypedTicket(
   const sessionId = id.session_id ?? null;
   const language = id.lang ?? null;
   const currentRoute = id.current_route ?? null;
+  const appVersion = id.app_version ?? null;
 
   // Same registry resolution the pipeline uses. Only status='active'
   // personas resolve (VTID-03044: devon only), so this cannot route to a
@@ -182,6 +183,7 @@ async function createTypedTicket(
           session_id: sessionId,
           surface,
           current_route: currentRoute,
+          app_version: appVersion,
         },
       );
       switch (result.decision) {
@@ -243,6 +245,7 @@ async function createTypedTicket(
         ...extraFields,
       },
       screen_path: screenPath,
+      app_version: appVersion,
       resolver_agent: null,
       triaged_at: null,
     });

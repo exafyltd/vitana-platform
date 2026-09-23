@@ -1,7 +1,7 @@
 /**
  * VTID-01225: Inline Fact Extractor Unit Tests
  *
- * Tests the Gemini-based inline fact extractor that serves as Cognee fallback.
+ * Tests the inline fact extractor (the sole fact-extraction path since VTID-04344).
  * Verifies:
  * 1. parseFactsResponse handles all LLM output formats (clean JSON, markdown, mixed)
  * 2. persistFact calls write_fact() RPC with correct schema

@@ -260,6 +260,24 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### dev_agent_memory — handoffs + author — APPLIED 2026-09-23 (VTID-04407)
+**Purpose:** Phase 3 of `docs/MEMORY-SYSTEM-PLAN.md`. This gives each developer their own
+working state next to the repo-wide knowledge.
+
+- `author_user_id uuid` (nullable) is the person a row belongs to. NULL means repo-wide
+  knowledge, which is what every row before this change was. Partial index
+  `dev_agent_memory_author_recent_idx (author_user_id, category, created_at desc) WHERE superseded_by IS NULL`.
+- Category `handoff` was added to the CHECK constraint. It is an end-of-thread note written by
+  `POST /api/v1/dev-memory/handoffs/sweep` and read by `GET /api/v1/dev-memory/morning-pack`.
+- `write_dev_memory()` was dropped and recreated with a trailing `p_author_user_id uuid default null`.
+  Exactly one overload exists. Execute is revoked from `public`/`anon`/`authenticated` and granted
+  to `service_role` only.
+- `recall_dev_memory()` now leaves out `handoff` rows unless `p_category = 'handoff'`, so stale
+  "next steps" never compete with knowledge in semantic recall.
+
+**Status:** migration `20260923190000_vtid_04407_dev_agent_memory_handoff.sql`, applied live
+2026-09-23. Checked after applying: one overload, `anon` has no execute, 219 existing rows untouched.
+
 ### dev_agent_memory — file-scoped recall + stage provenance — APPLIED 2026-09-21 (VTID-04224)
 **Purpose:** extends `dev_agent_memory` (VTID-03889, Operator Console engineering
 memory) with two additive columns so the Planner/Worker/Validator LLM
@@ -1052,6 +1070,12 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-23 | VTID-04411/04412, **applied live**: `memory_categories` `customer` (→ business_projects) and `support_ticket` (→ uncategorized); indexes `idx_memory_items_customer_key` (tenant, content_json->>customer_key, occurred_at desc) WHERE category_key='customer', unique `uq_memory_items_customer_command` (content_json->>command_id) and unique `uq_memory_items_support_ticket` (content_json->>ticket_id, coalesce(active_role,'')). | Claude Code | VTID-04411 |
+| 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
+| 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
+| 2026-09-23 | Memory Phase 2, **applied to the live project 2026-09-23**: new table `memory_transcript_turns` (raw conversation turns, RLS own-rows SELECT, service-role writes) with `purge_memory_transcript_turns(p_days >= 30)` scheduled daily by pg_cron `purge-memory-transcript-turns` (90 days); the last 90 days of raw turns in `memory_items` copied into it. `memory_categories` gains the 13 Garden category keys, and `memory_category_mapping` gains `personal → personal_identity`. `ai_memory` (112 active) and `diary_entries` (273) copied into `memory_items` as episodes (`content_json.kind = legacy_ai_memory / diary`, linked by id, importance ≤ 50 so `trg_notify_memory_garden` did not fire — 0 notifications). Legacy tables untouched. | Claude Code | VTID-04387 / VTID-04388 / VTID-04389 / VTID-04390 |
+| 2026-09-23 | Memory Phase 1 (docs/MEMORY-SYSTEM-PLAN.md), **applied to the live project 2026-09-23**: `memory_categories` row `session_summary` (mapped to Garden `uncategorized`) and partial unique index `uq_memory_items_session_summary` on `memory_items (user_id, (content_json->>'session_id')) WHERE category_key = 'session_summary'` — at most one session-summary episode per session. No DDL for role scope: `memory_items.active_role` (existing column, 3,183 rows all NULL) is now written — NULL for personal roles, the role otherwise — and read through the existing `p_active_role` parameter of `memory_semantic_search`. The gateway no longer writes or reads the tier-2 mirrors `mem_facts` / `mem_episodes`. | Claude Code | VTID-04364 / VTID-04365 / VTID-04366 / VTID-04367 |
+| 2026-09-23 | Memory Phase 0 (docs/MEMORY-SYSTEM-PLAN.md), all **applied to the live project 2026-09-23**: `write_fact()` no longer re-inserts a fact whose value did not change unless the source is stronger (new helper `_memory_provenance_rank`) — 80% of `memory_facts` rows were same-value `preferred_language` rewrites; `memory_items.embedding` and `memory_facts.embedding` changed to `vector(1024)` (Amazon Titan Text Embeddings V2, the single memory embedder), old OpenAI/Gemini vectors nulled for re-embedding, HNSW indexes rebuilt; new service-role RPC `ci_memory_health()` for the morning health check. See the Memory section below. | Claude Code | VTID-04341 / VTID-04342 / VTID-04345 |
 | 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
@@ -2687,6 +2711,35 @@ shape as `erp-access.ts`'s `effectiveCapabilities()`. `org_admin`/`staff`
 get full access to every `partner_registry` row linked to their org;
 `professional` gets access only to orders where
 `assigned_professional_user_id` matches them.
+
+**Not applied to the live database — file only (rule 4).** No
+Supabase/gateway credentials were reachable from this session; see
+`docs/validation/VTID-03932/acceptance.md`.
+
+---
+
+## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
+
+Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two tables:
+
+| Table | Holds | Embedding |
+|---|---|---|
+| `memory_facts` | Current key/value facts with provenance and supersession (`superseded_by IS NULL` = current). Written only through `write_fact()`. | `embedding vector(1024)`, `embedding_model = 'amazon.titan-embed-text-v2:0'` |
+| `memory_items` | Episodes (conversation turns today; session summaries, diary, daily learnings in later phases). | `embedding vector(1024)`, same model |
+
+- **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
+- **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
+- **Search RPCs** `memory_semantic_search(vector, …)` and `memory_facts_semantic_search(vector, …)` take an untyped `vector` and compare with `<=>`; they need no change when the dimension changes.
+- **Diary** — the broker reads both `diary_entries` (the app's Daily Diary; `user_id`, no tenant column) and `memory_diary_entries`, merged newest-first.
+- **`ci_memory_health()`** — `SECURITY DEFINER`, `service_role` only, counts only: writes/24h, `preferred_language` writes/24h, embedding coverage of rows older than 2h, `dlq_new_24h`, `memory.orchestrator.context_built` with memory / with diary, AP-0910 last run. Read by `MORNING-SYSTEM-HEALTH-CHECK.yml` check 21.
+- **One fact write path (VTID-04364):** every gateway fact write goes through `services/gateway/src/services/memory/remember.ts` (`rememberFact()`: Identity Lock → `write_fact` → async Titan embedding). A source-contract test fails the build if any other file calls `write_fact`.
+- **Session summaries (VTID-04365):** every session end calls `commitSessionMemory()` once. It extracts facts, and for a session with ≥ 2 user turns and ≥ 200 chars writes one `memory_items` row: `category_key = 'session_summary'`, `source = 'system'`, `importance = 50` (kept ≤ 50 so `trg_notify_memory_garden` does not notify), `content_json = { kind, session_id, channel, user_turns, summary_provider }`, written by the `memory` routing stage. `uq_memory_items_session_summary` makes it one per (user, session); a losing concurrent insert gets 23505, which is treated as already committed.
+- **Role scope (VTID-04367):** `memory_items.active_role` is NULL for personal memory (roles community / user / member / patient / none) and the role name otherwise (e.g. `developer`, `staff`, `backoffice`). Reads pass `p_active_role`; `memory_semantic_search` returns rows where `active_role IS NULL OR = p_active_role`, so personal memory is visible in every role and work-role memory only in its own role. The REST fallback uses the same filter.
+- **`memory_transcript_turns` (VTID-04387):** `id, tenant_id, user_id, session_id, conversation_id, role ('user'|'assistant'), content, source, channel, active_role, occurred_at, created_at`. Every `memory_items` write whose `content_json.direction` is `user`/`assistant` is recorded here by the gateway. Recent-turn grounding and session transcript rebuilds read this table first. Rows older than 90 days are deleted nightly. Raw turns are still copied to `memory_items` until `MEMORY_RAW_TURNS_TO_ITEMS=false` is set (after session summaries are observed live).
+- **Memory Garden (VTID-04388/04389):** `/api/v1/memory/garden/{entries,categories}` lists current `memory_facts` plus non-raw `memory_items`, grouped into the 13 Garden categories (facts by key, episodes via `memory_category_mapping`). User edits write facts with `provenance_source = 'user_stated_via_memory_garden_ui'` (supersedes) and notes as `memory_items` (`source 'upload'`, `kind 'garden_note'`). Forgetting a fact deletes every row of that key for the user, history included.
+- **Diary (VTID-04390):** `POST /api/v1/memory/diary/entries` writes the `diary_entries` row, one `memory_items` episode (`source 'diary'`, `kind 'diary'`, `content_json.diary_entry_id`), and runs the health-feature / Vitana Index sync. Deleting or editing the episode in the Garden updates the diary row too.
+- **Notification threshold:** `trg_notify_memory_garden` inserts a `memory_garden_grew` notification for every `memory_items` insert with `importance > 50`. Memory writers therefore keep automatic episodes at ≤ 50.
+- Tier-2 mirrors `mem_facts` / `mem_episodes` / `mem_graph_edges` still exist, but the gateway no longer writes or reads `mem_facts` / `mem_episodes` (VTID-04366). The broker's SEMANTIC block reads current `memory_facts` (`superseded_at IS NULL`). The DB trigger `mirror_relationship_edge_to_tier2_trg` and the `mem_tier2_dual_write_enabled` flag are left in place until production runs this code (the published prod gateway still reads the mirrors); drop both, and the three tables, after two weeks of clean health checks.
 
 **Superseded note (VTID-04337, 2026-09-23):** the VTID-03932 session
 recorded this section as "not applied — file only", but it was applied on
