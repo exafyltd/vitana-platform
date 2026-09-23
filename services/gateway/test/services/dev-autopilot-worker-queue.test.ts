@@ -95,19 +95,11 @@ describe('isWorkerQueueEnabled', () => {
     expect(isWorkerQueueEnabled()).toBe(false);
   });
 
-  it('is true for "true"', () => {
-    process.env.DEV_AUTOPILOT_USE_WORKER = 'true';
-    expect(isWorkerQueueEnabled()).toBe(true);
-  });
-
-  it('is true for "TRUE" (case-insensitive)', () => {
-    process.env.DEV_AUTOPILOT_USE_WORKER = 'TRUE';
-    expect(isWorkerQueueEnabled()).toBe(true);
-  });
-
-  it('is false for any other value', () => {
-    process.env.DEV_AUTOPILOT_USE_WORKER = 'yes';
-    expect(isWorkerQueueEnabled()).toBe(false);
+  it('stays false even when the flag is set — the lane is retired (VTID-04327)', () => {
+    for (const v of ['true', 'TRUE', 'yes']) {
+      process.env.DEV_AUTOPILOT_USE_WORKER = v;
+      expect(isWorkerQueueEnabled()).toBe(false);
+    }
   });
 });
 

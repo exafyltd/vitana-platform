@@ -805,8 +805,9 @@ const deepseekAdapter: ProviderAdapter = {
  * to avoid duplicating the queue protocol.
  */
 const claudeSubscriptionAdapter: ProviderAdapter = {
-  isAvailable: () =>
-    (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true',
+  // VTID-04327: the autopilot-worker daemon is retired, so this provider is
+  // never available; a stage pointed at it is skipped like any unconfigured one.
+  isAvailable: () => false,
   async call({ prompt, model, maxTokens }): Promise<AdapterResult> {
     try {
       const { runWorkerTask } = await import('./dev-autopilot-worker-queue');
