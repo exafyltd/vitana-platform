@@ -181,7 +181,7 @@ router.get('/events', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// GET /events/window?from&to[&include_busy=false] — VTID-04331
+// GET /events/window?from&to[&include_busy=false][&include_work=false] — VTID-04331
 // Everything the calendar shows in a date range for the active role:
 // recurring entries expanded into occurrences, entries from other lenses as
 // grey busy blocks (time only). Max 62 days per request.
@@ -235,7 +235,18 @@ router.get('/events/window', async (req: Request, res: Response) => {
         ? { ...it, display_emoji: entryEmoji(it.event as any), reminders: reminderRules(it.event as any) }
         : it,
     );
-    return res.json({ ok: true, data, count: data.length, timezone: userTimezone ?? null });
+    // VTID-04357: developer/admin work lenses — computed live, read-only,
+    // Exafy staff only (verified claim; the role header only picks the lens).
+    const { workLensesFor, listWorkItems, mergeWorkItems } = await import('../services/calendar-work-lens');
+    const lenses = req.query.include_work === 'false'
+      ? []
+      : workLensesFor(role, (req as AuthenticatedRequest).identity?.exafy_admin === true);
+    const work = lenses.length
+      ? (await listWorkItems(userId, lenses, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() }))
+          .map((it) => ({ ...it, display_emoji: it.event?.emoji ?? '📌', reminders: [] as unknown[] }))
+      : [];
+    const merged = mergeWorkItems<any>(data, work);
+    return res.json({ ok: true, data: merged, count: merged.length, timezone: userTimezone ?? null, work_lenses: lenses });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
@@ -458,6 +469,11 @@ router.post('/events/:id/complete', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
 
     const { id } = req.params;
+    // VTID-04357: work-lens items are computed from their own tables, not
+    // calendar rows — they are finished where they live, never here.
+    if (id.startsWith('work:')) {
+      return res.status(400).json({ ok: false, error: 'work items are read-only in the calendar' });
+    }
     const parsed = CompleteEventSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ ok: false, error: parsed.error.issues });
