@@ -1,3 +1,7 @@
 npx tsc --noEmit -p services/gateway   # exit 0
 npx jest test/vtid-04394-progress-ledger.test.ts test/autopilot-agent-loop.test.ts test/vtid-04016-agent-check-guard.test.ts   # 42 pass
 npx jest   # full suite, outputs/full-jest.txt
+# Local full run: 17930 passed, 1 failed. The failure is test/orb/context/compile-assistant-decision-context.test.ts
+# "runs all five providers concurrently", which asserts completion ORDER of timers only 5 ms apart. It is load-sensitive
+# under a full parallel run, touches no file in this PR, and passes 3/3 when run alone:
+npx jest test/orb/context/compile-assistant-decision-context.test.ts   # x3: 9/9 passed each time
