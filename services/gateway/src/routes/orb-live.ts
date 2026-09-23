@@ -1904,6 +1904,7 @@ import {
 import {
   isVertexSerbianBridgeEnabled,
   isVertexSerbianBridgeLanguage,
+  resolveVertexLivePersonaVoice,
 } from '../orb/live/upstream/vertex-serbian-bridge';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -7737,7 +7738,9 @@ async function connectToLiveAPI(
           }
         }
       }
-      _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
+      // VTID-04336: only a Gemini prebuilt voice may reach speech_config —
+      // a specialist whose registry voice is a Nova/Polly id gets Charon.
+      _personaVoice = resolveVertexLivePersonaVoice(_personaVoice, _persona) || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
@@ -8304,6 +8307,9 @@ async function connectToLiveAPI(
           responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
           vadSilenceMs: session.vadSilenceMs,
           systemInstruction: cascadedInstruction,
+          // VTID-04336: the envelope's catalog; the cascade keeps only the
+          // hand-off tools (CASCADE_TOOL_ALLOWLIST) so Devon is reachable.
+          tools: Array.isArray(cascadedSetup.tools) ? (cascadedSetup.tools as Array<Record<string, unknown>>) : [],
         });
         setupComplete = true;
         clearTimeout(connectionTimeout);

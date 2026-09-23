@@ -34,21 +34,44 @@
  *     directory — nothing here can affect a Nova Sonic session.
  */
 
-import { synthesizePolly, resolvePollyVoice } from '../../../../services/tts/polly';
-import { synthesizeFish } from '../../../../services/tts/fish';
+import {
+  synthesizePolly,
+  resolvePollyVoice,
+  resolvePollySpecialistVoice,
+  type PollyVoiceRole,
+} from '../../../../services/tts/polly';
+import { synthesizeFish, resolveFishVoice } from '../../../../services/tts/fish';
 
 export interface CascadeTtsResult {
   audioB64: string;
 }
 
+/**
+ * VTID-04336 — which persona is speaking. Omitted = receptionist (Vitana),
+ * the exact pre-VTID-04336 request for every backend.
+ */
+export interface CascadeTtsOptions {
+  voiceRole?: PollyVoiceRole;
+}
+
 export interface CascadeTtsBackend {
   readonly name: 'polly' | 'fish';
-  synthesize(text: string, lang: string): Promise<CascadeTtsResult | null>;
+  synthesize(text: string, lang: string, opts?: CascadeTtsOptions): Promise<CascadeTtsResult | null>;
 }
 
 export const pollyBackend: CascadeTtsBackend = {
   name: 'polly',
-  synthesize: async (text, lang) => {
+  synthesize: async (text, lang, opts) => {
+    // VTID-04336 — backend-local: the specialist speaks in Polly's
+    // specialist voice for the language when one exists. When it does not,
+    // or the specialist synthesis fails (the table is docs-derived, see
+    // polly.ts), the receptionist request below runs exactly as before — a
+    // voice-table gap costs the timbre change, never the audio.
+    if (opts?.voiceRole === 'specialist' && resolvePollySpecialistVoice(lang)) {
+      const specialist = await synthesizePolly({ text, lang, format: 'pcm', voiceRole: 'specialist' });
+      if (specialist?.audioB64) return { audioB64: specialist.audioB64 };
+      console.warn(`[VTID-04336] specialist Polly voice failed for lang='${lang}' — using the receptionist voice`);
+    }
     const result = await synthesizePolly({ text, lang, format: 'pcm' });
     return result?.audioB64 ? { audioB64: result.audioB64 } : null;
   },
@@ -56,11 +79,41 @@ export const pollyBackend: CascadeTtsBackend = {
 
 export const fishBackend: CascadeTtsBackend = {
   name: 'fish',
-  synthesize: async (text, lang) => {
+  // VTID-04336 — `opts` is accepted and deliberately ignored: Fish has
+  // exactly one curated voice per language (`FISH_VOICES`, `sr` = Milica),
+  // and a second one may only come from a manual review of a Fish-official
+  // voice — never an unvetted community clone (VTID-03970 rejected one with
+  // adult-content tags). The specialist keeps the curated voice; the prompt
+  // still switches.
+  synthesize: async (text, lang, _opts) => {
     const result = await synthesizeFish({ text, lang, format: 'pcm' });
     return result?.audioB64 ? { audioB64: result.audioB64 } : null;
   },
 };
+
+/**
+ * VTID-04336 — what a cascade session in `lang` will sound like for `role`,
+ * for telemetry on an in-process persona swap. Mirrors the selection order
+ * of `synthesizeCascadeReply()` (Polly first, Fish only where Polly has no
+ * voice). `distinct` is false when the specialist has to reuse the
+ * receptionist's timbre (zh, tr, sr).
+ */
+export function describeCascadeVoice(
+  lang: string,
+  role: PollyVoiceRole,
+): { backend: CascadeTtsBackend['name'] | null; voice: string | null; distinct: boolean } {
+  const receptionist = resolvePollyVoice(lang);
+  if (receptionist) {
+    const specialist = role === 'specialist' ? resolvePollySpecialistVoice(lang) : null;
+    return {
+      backend: 'polly',
+      voice: String((specialist ?? receptionist).voiceId),
+      distinct: !!specialist,
+    };
+  }
+  const fish = resolveFishVoice(lang);
+  return { backend: fish ? 'fish' : null, voice: fish ? fish.label : null, distinct: false };
+}
 
 /**
  * Synthesize a cascade turn's reply, trying Polly first and falling back to
@@ -75,12 +128,15 @@ export const fishBackend: CascadeTtsBackend = {
 export async function synthesizeCascadeReply(
   text: string,
   lang: string,
+  opts?: CascadeTtsOptions,
 ): Promise<(CascadeTtsResult & { backend: CascadeTtsBackend['name'] }) | null> {
-  const pollyResult = await pollyBackend.synthesize(text, lang);
+  // VTID-04336: `opts` only tells each backend WHO is speaking; the selection
+  // order below (Polly first, Fish only on a Polly coverage gap) is unchanged.
+  const pollyResult = await pollyBackend.synthesize(text, lang, opts);
   if (pollyResult) return { ...pollyResult, backend: 'polly' };
 
   if (!resolvePollyVoice(lang)) {
-    const fishResult = await fishBackend.synthesize(text, lang);
+    const fishResult = await fishBackend.synthesize(text, lang, opts);
     if (fishResult) return { ...fishResult, backend: 'fish' };
   }
 
