@@ -97,6 +97,13 @@ TENANT_ID="${DEFAULT_TENANT_ID:-}"
 # VTID-04226: the test-contract scanners target STAGING until the owner
 # promotes them (IF-THEN 26); override to gateway.vitanaland.com deliberately.
 TEST_CONTRACTS_GATEWAY_URL="${TEST_CONTRACTS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"
+# VTID-04349: the AP-XXXX automation jobs start on the STAGING gateway, where
+# AUTOMATIONS_DELIVERY_MODE=shadow records notifications and writes instead of
+# performing them. Pointing them at production (live, real members) is the
+# owner's go-live decision: re-run with AUTOMATIONS_GATEWAY_URL=https://gateway.vitanaland.com
+# once staging shadow runs are verified. /api/v1/automations/* now requires
+# X-Gateway-Internal, so these jobs carry auth=gateway_internal.
+AUTOMATIONS_GATEWAY_URL="${AUTOMATIONS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"
 INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/staging/internal-token}"
 
 LAMBDA_NAME="vitana-cron-dispatch"
@@ -130,25 +137,25 @@ fi
 # Verbatim from scripts/setup-cloud-scheduler.sh's JOBS + MEMORY_INTELLIGENCE_JOBS
 # + DIRECT_JOBS (minus push-dispatch, already migrated) + TENANT_DIRECT_JOBS.
 JOBS=(
-  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}"
+  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "gateway-reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick|{}"
   "gateway-reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper|{}"
   "gateway-daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute|{\"tenant_id\":\"$TENANT_ID\"}"

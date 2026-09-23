@@ -18,6 +18,7 @@ import { Router, Request, Response } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import * as repo from './feedback-admin-repository';
+import { attachLatestExecutions, type LatestExecutionSummary } from '../services/feedback-ticket-ref';
 
 const router = Router();
 const VTID = 'VTID-02605';
@@ -91,8 +92,30 @@ router.get('/tickets', async (req: Request, res: Response) => {
     console.error(`[${VTID}] tickets list failed:`, error.message);
     return res.status(502).json({ ok: false, error: 'QUERY_FAILED', details: error.message });
   }
-  return res.json({ ok: true, tickets: data ?? [] });
+  return res.json({ ok: true, tickets: await withLatestExecutions(supabase, (data ?? []) as Array<Record<string, unknown>>) });
 });
+
+/**
+ * VTID-04333: every admin ticket row carries `latest_execution` (see
+ * services/feedback-ticket-ref.ts for the shape) next to the linked_vtid /
+ * linked_finding_id / linked_pr_url columns. One extra query per page;
+ * a failure leaves latest_execution null rather than failing the list.
+ */
+async function withLatestExecutions<T extends Record<string, unknown>>(
+  supabase: ReturnType<typeof getServiceClient>,
+  tickets: T[],
+): Promise<Array<T & { latest_execution: LatestExecutionSummary | null }>> {
+  const findingIds = [...new Set(tickets
+    .map((t) => (typeof t.linked_finding_id === 'string' ? t.linked_finding_id : null))
+    .filter((v): v is string => !!v))];
+  let executions: Array<Record<string, unknown>> = [];
+  if (findingIds.length > 0) {
+    const { data, error } = await repo.fetchExecutionsForFindings(supabase, findingIds);
+    if (error) console.error(`[feedback-admin] fetchExecutionsForFindings error: ${error.message}`);
+    executions = (data ?? []) as Array<Record<string, unknown>>;
+  }
+  return attachLatestExecutions(tickets as Array<T & { linked_finding_id?: string | null }>, executions);
+}
 
 // ---------------------------------------------------------------------------
 // GET /tickets/:id
@@ -118,7 +141,12 @@ router.get('/tickets/:id', async (req: Request, res: Response) => {
       })
     : { data: [] };
 
-  return res.json({ ok: true, ticket, handoffs: handoffs ?? [], similar: similar ?? [] });
+  // VTID-04333: the detail carries the ticket's latest Dev Autopilot execution.
+  const [withExec] = await withLatestExecutions(supabase, [ticket as Record<string, unknown>]);
+  return res.json({
+    ok: true, ticket, handoffs: handoffs ?? [], similar: similar ?? [],
+    latest_execution: withExec?.latest_execution ?? null,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -252,7 +280,7 @@ router.get('/tenants/:tenantId/tickets', async (req: Request, res: Response) => 
       raw_transcript_excerpt: excerptFromTranscript(raw_transcript ?? null),
     };
   });
-  return res.json({ ok: true, tickets: enriched, member_count: userIds.length });
+  return res.json({ ok: true, tickets: await withLatestExecutions(supabase, enriched as Array<Record<string, unknown>>), member_count: userIds.length });
 });
 
 // ---------------------------------------------------------------------------

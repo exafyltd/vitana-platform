@@ -12,6 +12,10 @@
 #   def (VITANA_ENV, feature flags, SUPABASE_JWT_SECRET, …) carry forward —
 #   the task def is the AWS analogue of STAGE-DEPLOY.yml's authoritative
 #   ENV_VARS block, so this workflow does not re-declare it.
+#   Exception (VTID-04363): VITANA_ENV=staging IS pinned now — the Dev
+#   Autopilot loop runs only on its owner env (dev-autopilot-loop-owner.ts,
+#   default staging), so losing it from live state would silently stop the
+#   loop everywhere.
 # - Smoke gate mirrors STAGE-DEPLOY.yml: /api/v1/admin/health must report
 #   env=staging AND /api/v1/admin/build-info must report the deployed
 #   commit — otherwise the job fails loudly (CLAUDE.md §15).
@@ -278,6 +282,14 @@ jobs:
         # and the measured win has to come from the directive and tool-catalog
         # budgets (VTID-04096/04097) alone.
         #
+        # VTID-04349 -- community automation engine (AP-XXXX) back on STAGING in
+        # shadow mode: AUTOMATIONS_DELIVERY_MODE=shadow records every
+        # notification, write and RPC instead of performing it (staging shares
+        # the production database, so a live run here would reach real
+        # members). AUTOPILOT_HEARTBEAT_ENABLED + DEFAULT_TENANT_ID (Maxina)
+        # start the in-process heartbeat loop. Not declared on the prod
+        # workflow: production goes live only on the owner's decision after
+        # staging shadow runs are verified.
         # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
         # upserted to "staging-only" below. Checked live in this repo: it
         # is set on neither AWS gateway task def (only the dead GCP
@@ -655,6 +667,12 @@ jobs:
 # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
 # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
 #
+# VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
+# decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
+# spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
+# dispatched to Dev Autopilot without an Approve & Fix click. Kill switch,
+# per-pass cap and the PR-approval hold still apply. Rollback: "false".
+#
 # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
         # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
         # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
@@ -885,6 +903,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                                "FEEDBACK_AUTO_DISPATCH_ENABLED",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
@@ -896,7 +915,8 @@ jobs:
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
-                                                "NAV_CONTINUATION_BIND") | not) ]
+                                                "NAV_CONTINUATION_BIND","VITANA_ENV",
+                                                "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -916,6 +936,10 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"VITANA_ENV", value:"staging"},
+                          {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
+                          {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
+                          {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},
@@ -939,6 +963,7 @@ jobs:
                           {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
                           {name:"OPERATOR_THREADS_ENABLED", value:"true"},
                           {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                          {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},

@@ -85,6 +85,7 @@ import {
   buildTranscriptSection,
   buildSpecialistLanguageDirective,
   buildPersonaBehavioralRule,
+  buildHandoffTicketSection,
   buildBootstrapContextPack,
   handleNavigateToScreen,
   buildNavigatorPolicySection,
@@ -453,6 +454,40 @@ describe('buildPersonaBehavioralRule', () => {
       expect(text).toContain('[BEHAVIORAL RULES — universal]');
       expect(text).toContain('[VARY YOUR PHRASING — universal]');
     }
+  });
+
+  // VTID-04332
+  it('specialist close tells the member their ticket number, as intent — no scripted example sentences', () => {
+    const text = buildPersonaBehavioralRule('devon');
+    expect(text).toContain('TICKET');
+    expect(text).toContain('NUMBER');
+    expect(text).not.toContain("I've created a ticket");
+    expect(text).not.toContain('Ich habe ein Ticket');
+    expect(text).not.toContain('Danke für deine Zeit');
+  });
+
+  it('Vitana treats a bug report / broken state as a hand-off case with one short confirmation', () => {
+    const text = buildPersonaBehavioralRule('vitana');
+    expect(text).toContain('BROKEN STATE IS A HAND-OFF');
+    expect(text).not.toContain('Shall I bring in Devon');
+    expect(text).not.toMatch(/rare —/i);
+  });
+});
+
+describe('buildHandoffTicketSection (VTID-04332)', () => {
+  it('names the ticket, the append_to_ticket tool and the closing ticket number', () => {
+    const text = buildHandoffTicketSection('FB-2026-09-000200');
+    expect(text).toContain('[TICKET — this hand-off]');
+    expect(text).toContain('FB-2026-09-000200');
+    expect(text).toContain('append_to_ticket');
+    expect(text).toContain('"current"');
+    expect(text).toMatch(/Before the conversation ends, tell the user their ticket number \(FB-2026-09-000200\)/);
+  });
+
+  it('degrades honestly when the ticket number is not assigned yet', () => {
+    const text = buildHandoffTicketSection(null);
+    expect(text).toContain('not assigned yet');
+    expect(text).not.toContain('null');
   });
 });
 

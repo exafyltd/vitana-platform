@@ -7,6 +7,13 @@
  * AC-3 routes: /context needs any signed-in user; /runs, /runs/summary and
  *      /agents need exafy_admin; nothing writes.
  * AC-4 migration: additive, service-role only, view is security_invoker.
+ * VTID-04325 AC-5 /policy: any signed-in user sees the defaults, their own
+ *      ceilings and an optional dry evaluation; bad input is a 400.
+ * VTID-04375 AC-7 /delegations: exafy_admin only; targets + job counts.
+ * VTID-04370 AC-6 /budgets: exafy_admin only; today's spend vs budgets, over
+ *      lines listed as would_deny; a read error is a 502.
+ * VTID-04362 AC-6 /policy/shadow: exafy_admin only; returns the shadow window
+ *      and the tool catalog summary; enforced is false.
  */
 
 import * as fs from 'fs';
@@ -34,6 +41,7 @@ function stubSupabase() {
       calls.push(rec);
       const result = tables[table] ?? { data: [], error: null };
       const chain: any = {};
+      chain.range = (..._a: unknown[]) => { rec.ops.push('range'); return chain; };
       for (const op of ['select', 'eq', 'in', 'order', 'limit', 'gte']) {
         chain[op] = (..._a: unknown[]) => { rec.ops.push(op); return chain; };
       }
@@ -48,6 +56,7 @@ function stubSupabase() {
 }
 
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: () => stubSupabase() }));
+jest.mock('../../src/services/orb-tools-shared', () => ({ ORB_TOOL_NAMES: ['log_water', 'dev_recent_events', 'dev_publish_to_prod'] }));
 
 import { buildAgentContext, normalizeChannel, resolveAgentContext } from '../../src/services/orchestrator/context';
 import { normalizeRunQuery, summarizeRunRows, RUN_LIST_MAX_LIMIT } from '../../src/services/orchestrator/run-ledger';
@@ -171,6 +180,60 @@ describe('routes', () => {
     const res = await request(app()).get('/api/v1/orchestrator/runs/summary?days=3');
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ days: 3, truncated: false, planes: [{ plane: 'self_healing', total: 1 }] });
+  });
+
+  test('/policy: 401 anonymous; own ceilings and a dry evaluation for a member (VTID-04325)', async () => {
+    expect((await request(app()).get('/api/v1/orchestrator/policy')).status).toBe(401);
+    identity.current = member;
+    tables.user_tenants = { data: [{ active_role: 'community' }] };
+    const res = await request(app()).get('/api/v1/orchestrator/policy?channel=voice&domain=community&tier=commit');
+    expect(res.status).toBe(200);
+    expect(res.body.data.defaults.enforced).toBe(false);
+    expect(res.body.data.ceilings).toMatchObject({ community: 'draft', admin: 'none' });
+    expect(res.body.data.evaluation).toMatchObject({ decision: 'escalate', domain: 'community', requested: 'commit' });
+    expect((await request(app()).get('/api/v1/orchestrator/policy?domain=nope')).status).toBe(400);
+    expect((await request(app()).get('/api/v1/orchestrator/policy?domain=dev&tier=root')).status).toBe(400);
+  });
+
+  test('/policy/shadow: 403 for a member; window + catalog for an admin (VTID-04362)', async () => {
+    const { recordToolDecision, resetShadow } = await import('../../src/services/orchestrator/policy-shadow');
+    resetShadow();
+    identity.current = member;
+    expect((await request(app()).get('/api/v1/orchestrator/policy/shadow')).status).toBe(403);
+    recordToolDecision({ tool: 'dev_recent_events', role: 'community' });
+    identity.current = admin;
+    const res = await request(app()).get('/api/v1/orchestrator/policy/shadow');
+    expect(res.status).toBe(200);
+    expect(res.body.data.shadow).toMatchObject({ enforced: false, total_calls: 1, by_decision: { deny: 1 } });
+    expect(res.body.data.catalog).toMatchObject({ tools: 3, unclassified: [] });
+    expect(res.body.data.catalog.by_domain_tier.dev).toEqual({ read: 1, high: 1 });
+  });
+
+  test('/budgets: 403 for a member; spend vs budgets for an admin (VTID-04370)', async () => {
+    identity.current = member;
+    expect((await request(app()).get('/api/v1/orchestrator/budgets')).status).toBe(403);
+    identity.current = admin;
+    tables.oasis_events = { data: [
+      { metadata: { service: 'dev-autopilot-planning', vtid: 'VTID-1', model: 'eu.anthropic.claude-opus-4-5-20251101-v1:0', input_tokens: 10_000_000, output_tokens: 400_000, cost_estimate_usd: 0 } },
+      { metadata: { service: 'autopilot-agent', vtid: 'VTID-2', model: 'deepseek-flash', input_tokens: 1000, output_tokens: 10, cost_estimate_usd: 0.01 } },
+    ] };
+    const res = await request(app()).get('/api/v1/orchestrator/budgets');
+    expect(res.status).toBe(200);
+    expect(res.body.data.enforced).toBe(false);
+    expect(res.body.data.spend).toMatchObject({ calls: 2, repriced_calls: 1 });
+    expect(res.body.data.would_deny.map((l: any) => l.key)).toEqual(expect.arrayContaining(['dev-autopilot-planning', 'VTID-1']));
+    tables.oasis_events = { error: { message: 'boom' } };
+    expect((await request(app()).get('/api/v1/orchestrator/budgets')).status).toBe(502);
+  });
+
+  test('/delegations: 403 for a member; targets and job counts for an admin (VTID-04375)', async () => {
+    identity.current = member;
+    expect((await request(app()).get('/api/v1/orchestrator/delegations')).status).toBe(403);
+    identity.current = admin;
+    const res = await request(app()).get('/api/v1/orchestrator/delegations');
+    expect(res.status).toBe(200);
+    expect(res.body.data.targets.map((t: any) => t.agent_id)).toContain('operator');
+    expect(res.body.data.jobs).toHaveProperty('total');
   });
 
   test('/agents returns agent cards; a read error is a 502, not a crash', async () => {

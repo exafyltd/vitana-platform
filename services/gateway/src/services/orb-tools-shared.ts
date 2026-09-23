@@ -27,6 +27,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
@@ -440,7 +441,7 @@ export async function tool_report_to_specialist(
   identity: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const { executeReportToSpecialist } = await import('./report-to-specialist-core');
+  const { executeReportToSpecialist, reportToSpecialistToolMessage } = await import('./report-to-specialist-core');
 
   // VTID-03099: build gate_input from the user's recent RAW transcript
   // turns so the two-gate RPC matches forward_request_phrases against
@@ -481,12 +482,26 @@ export async function tool_report_to_specialist(
       gate_input: gateInput,
       source: 'orb-livekit-tool',
       screen_path: '/orb/livekit-voice',
+      session_id: identity.session_id ?? null,
     },
   );
 
+  // VTID-04332: every reply text begins with a STATUS the VTID-03033 rule
+  // recognizes. On this path the gateway does not swap the persona itself —
+  // the LiveKit orb-agent does (perform_handoff) when a specialist was
+  // picked, and the agent builds its own model-facing STATUS text from
+  // `result`. `text` here serves the HTTP /orb/tool callers and mirrors the
+  // agent's mapping: a routed ticket is handoff_created, an unrouted one
+  // ticket_filed_no_handoff.
   switch (result.decision) {
     case 'failed':
-      return { ok: false, error: result.error };
+      // The error string is what HTTP callers relay to a model, so it
+      // carries the STATUS line; the raw cause goes to the log.
+      console.error(`[VTID-04332] report_to_specialist (shared) failed: ${result.error}`);
+      return {
+        ok: false,
+        error: reportToSpecialistToolMessage(result, { handoffQueued: false }).text,
+      };
     case 'vague':
       return {
         ok: true,
@@ -509,10 +524,10 @@ export async function tool_report_to_specialist(
       const roleLabel = result.persona
         ? personaLabel[result.persona] ?? 'a specialist colleague'
         : 'our team';
-      const ticketNum = result.ticket.ticket_number ?? '(pending)';
-      const llmInstruction = result.persona
-        ? `Ticket ${ticketNum} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call): "I'll connect you with ${roleLabel}." / "Let me bring ${roleLabel} in." / "Einen Moment, ${roleLabel} übernimmt." Then STOP — do NOT introduce the colleague yourself.`
-        : `Ticket ${ticketNum} created. Our team will look at this. Tell the user warmly that you've filed the report and they'll hear back — vary your phrasing. Then STOP.`;
+      const llmInstruction = reportToSpecialistToolMessage(result, {
+        handoffQueued: !!result.persona,
+        roleLabel,
+      }).text;
       return {
         ok: true,
         result: {
@@ -5865,6 +5880,11 @@ export async function dispatchOrbTool(
   if (!handler) {
     return { ok: false, error: `unknown tool: ${name}` };
   }
+
+  // VTID-04362 (Orchestrator v2 P2, shadow): record what the capability
+  // policy WOULD decide for this call. Never blocks; recordToolDecision
+  // swallows its own errors. Read the window at GET /api/v1/orchestrator/policy/shadow.
+  recordToolDecision({ tool: name, role: identity.role, channel: 'voice', session_id: identity.session_id ?? null });
 
   // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
   //

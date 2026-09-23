@@ -74,6 +74,7 @@ import { getSupabase } from '../../../lib/supabase';
 import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 import { notifyUserAsync } from '../../../services/notification-service';
+import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -2173,7 +2174,23 @@ export function handleTurnComplete(
   // client; the route's reconnect path rebuilds with persona overrides while
   // the browser transport stays connected.
   const pendingSwap = (session as any).pendingPersonaSwap;
-  if (pendingSwap && session.active) {
+  if (pendingSwap && session.active && supportsInProcessPersonaSwap(ctx.client)) {
+    // VTID-04336: the cascade has no upstream stream to reconnect — swap the
+    // persona in process (prompt + TTS voice role) on the same client.
+    (session as any).activePersona = pendingSwap;
+    (session as any).pendingPersonaSwap = null;
+    const applied = ctx.client.applyPersona(buildInProcessPersonaSwap(session as any, pendingSwap));
+    console.log(
+      `[VTID-04336] turn_complete with pending persona swap → in-process swap to ${pendingSwap} ` +
+        `(voice=${applied.voiceRole}, instruction_chars=${applied.instructionChars}, restored_base=${applied.restoredBaseInstruction})`,
+    );
+    ctx.deps.emitDiag(session, 'persona_swap_in_process', {
+      persona: applied.persona,
+      voice_role: applied.voiceRole,
+      instruction_chars: applied.instructionChars,
+      restored_base_instruction: applied.restoredBaseInstruction,
+    });
+  } else if (pendingSwap && session.active) {
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     (session as any)._personaSwapInFlight = true;

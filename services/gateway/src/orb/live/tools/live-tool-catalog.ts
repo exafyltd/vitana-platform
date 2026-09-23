@@ -24,6 +24,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
+import { DELEGATION_COMPANION_TOOLS } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -152,7 +153,7 @@ export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
   'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
   'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
 ]);
-const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME]);
+const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
 function commandHubAllowlist(): Set<string> {
   return new Set<string>([
     ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
@@ -172,6 +173,10 @@ function applyCommandHubGate(tools: object[]): object[] {
       });
       if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
         kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });
+        // VTID-04386: the async companions — result on a later turn, and cancel.
+        for (const t of DELEGATION_COMPANION_TOOLS) {
+          if (!kept.some((d) => d.name === t.name)) kept.push(t as { name?: unknown });
+        }
       }
       delegateAdded = true;
       if (kept.length > 0) out.push({ ...group, function_declarations: kept });
@@ -182,8 +187,29 @@ function applyCommandHubGate(tools: object[]): object[] {
   return out;
 }
 
+/**
+ * VTID-04326 — the commerce surface gets the navigation tools and knowledge
+ * search only. Community, health, diary, memory and developer tools are
+ * absent, so nothing personal can be read or written from business mode.
+ * Commerce-specific read tools (org, team, order inbox) are a later slice.
+ */
+function applyCommerceGate(tools: object[]): object[] {
+  const out: object[] = [];
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
+        NAVIGATION_TOOL_NAMES.has(typeof d?.name === 'string' ? d.name : ''));
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    }
+    // google_search grounding is dropped on commerce: answers come from the
+    // knowledge base, not the open web, while customer data is on screen.
+  }
+  return out;
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
   if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
+  if (surface === 'commerce') return mode === 'authenticated' ? applyCommerceGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;
   if (mode !== 'authenticated') return tools; // anonymous sessions already get the narrow navigator-only set
   const allowed = surfaceAllowlist(surface);
@@ -909,34 +935,26 @@ function buildLiveApiToolsUngated(
           description: [
             'File a customer-support ticket and hand the call to Devon, our',
             'tech-support colleague (VTID-03044 canary: Devon is the ONLY',
-            'enabled specialist; Sage / Atlas / Mira are disabled). This is',
-            'RARE — typically less than 5% of conversations. You ARE the',
-            'instruction manual; almost every question is yours to answer.',
+            'enabled specialist; Sage / Atlas / Mira are disabled).',
             '',
-            'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
-            'first say something like "Shall I bring in Devon to file this?"',
-            'and wait for the user to say yes. Implicit consent does NOT count.',
-            'Vary the proposal phrasing every time.',
+            'CALL IT when the user reports a CONCRETE PROBLEM: a bug, something',
+            'that does not work, a problem with their account, a refund or',
+            'claim. That IS a hand-off case. Confirm once, in your own words,',
+            'that they want it filed and passed to support; when they agree,',
+            'call it. One short confirmation is enough.',
             '',
-            'CALL ONLY WHEN ALL THREE are true:',
-            '  (1) the user has described a CONCRETE PROBLEM (bug, broken',
-            '      state, refund, account lockout, claim) — not a question',
-            '      about how something works,',
-            '  (2) the user has EXPLICITLY agreed to be connected to a',
-            '      specialist (after you proposed it), and',
-            '  (3) you can write a SPECIFIC `summary` (>= 15 words) that',
-            '      describes WHAT broke, on WHICH screen/feature, with the',
-            '      user\'s own words. If you cannot — because the user only',
-            '      said "I want to report a bug" without details — DO NOT',
-            '      CALL THIS TOOL YET. Instead ask ONE follow-up question:',
-            '      "What\'s breaking — which screen or feature?" Get the',
-            '      details, THEN call this tool. A vague summary causes the',
-            '      specialist to invent the issue, which is worse than not',
-            '      forwarding at all. Generic summaries like "user wants to',
-            '      report a bug" are FORBIDDEN.',
+            '`summary`: what went wrong and where, in the user\'s own words. A',
+            'short sentence is fine. If the user only said they want to report',
+            'something without saying what, ask one short question about what',
+            'is broken first. Placeholder summaries ("user wants to report a',
+            'bug") are rejected.',
             '',
-            'NEVER CALL for any of these — answer them yourself inline using',
-            'search_knowledge first:',
+            'The reply begins with a STATUS line. Only "STATUS: handoff_created."',
+            'means a colleague is joining; every other STATUS means you stay',
+            'with the user — follow its ACTION line.',
+            '',
+            'Do NOT call for how-to questions — you are the instruction manual',
+            'for those; answer them yourself inline using search_knowledge first:',
             '  - "How does X work?" / "What is X?" / "Explain X"',
             '  - "Show me how to use X" / "How do I X?" / "Teach me"',
             '  - "Tell me about X" / "I want to learn X" / "I am new"',
@@ -947,17 +965,12 @@ function buildLiveApiToolsUngated(
             '    report. First-time users asking how to use the diary is a',
             '    teaching moment, NOT a customer-support ticket.',
             '',
-            'GATE-A enforcement: the backend re-checks the user\'s actual',
-            'recent words (not your summary). If the gate returns STAY_INLINE,',
-            'do NOT mention the routing decision out loud — silently answer',
-            'the question. Same if the conversation\'s forward budget is',
-            'exhausted (max 1 forward + 1 return per conversation).',
+            'The backend re-checks the user\'s actual recent words (not your',
+            'summary); max 1 forward + 1 return per conversation.',
             '',
-            'AFTER A FORWARD FIRES: speak ONE short bridge sentence in your',
-            'own natural words. ANNOUNCE the handoff — never INTRODUCE the',
-            'specialist ("Hi, here is Devon" — that is DEVON\'S job in his',
-            'own voice). Vary your phrasing every time, never recite a',
-            'template. Then STOP — the next voice is the specialist\'s.'
+            'AFTER STATUS handoff_created: one short turn in your own words',
+            'announcing the colleague by role — never introduce them or speak',
+            'for them (they greet in their own voice). Then STOP.'
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -977,10 +990,39 @@ function buildLiveApiToolsUngated(
               },
               summary: {
                 type: 'string',
-                description: 'CONCRETE one-paragraph summary using the user\'s OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.',
+                description: 'What went wrong and where, in the user\'s own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.',
               },
             },
             required: ['kind', 'summary'],
+          },
+        },
+        // VTID-04332: the specialist (Devon) adds what the member tells them
+        // to the ticket Vitana filed at hand-off. Server-enforced: only a
+        // specialist persona, only after a hand-off in this session, only on
+        // a ticket owned by this user.
+        {
+          name: 'append_to_ticket',
+          description: [
+            'Support colleague only (not Vitana): add a detail the user gives',
+            'you to the ticket Vitana filed when she handed the user to you.',
+            'Call it for each substantive detail — what they did, what',
+            'happened, which screen, error text, device. Use ticket_id',
+            '"current" for this hand-off\'s ticket. Do not read the note back',
+            'to the user. Vitana files new reports with report_to_specialist.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              ticket_id: {
+                type: 'string',
+                description: '"current" for the ticket of this hand-off (default), or that ticket\'s id.',
+              },
+              note: {
+                type: 'string',
+                description: 'The detail to record, in plain words.',
+              },
+            },
+            required: ['note'],
           },
         },
         // VTID-01943: Contacts search. Routes to contacts.read capability.

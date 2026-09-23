@@ -26,7 +26,11 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
-import { executeReportToSpecialist } from '../report-to-specialist-core';
+import {
+  executeReportToSpecialist,
+  isVagueSummary,
+  REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS,
+} from '../report-to-specialist-core';
 import { GATEWAY_LOCALES, type GatewayLocale } from '../../i18n/catalog';
 import {
   pickPersonaForKind,
@@ -77,7 +81,8 @@ function askForSpecifics(toolName: string, words: number, minWords: number): Orb
     ok: true,
     result: { decision: 'needs_details', word_count: words, min_words: minWords },
     text:
-      `ASK_FOR_SPECIFICS: The summary is too short (${words} words, need at least ${minWords}). ` +
+      `ASK_FOR_SPECIFICS: The summary is too thin to file (${words} words; need at least ${minWords} ` +
+      `concrete words that say what went wrong, not a placeholder). ` +
       `Do NOT call ${toolName} again yet. Ask the user ONE follow-up question in their language ` +
       `for concrete details (what exactly happened, which screen or feature, what they expected). ` +
       `Then call ${toolName} again with a fuller summary in the user's own words. ` +
@@ -131,7 +136,7 @@ async function createTypedTicket(
     return { ok: false, error: 'summary is required' };
   }
   const words = wordCount(summary);
-  if (words < minWords) {
+  if (words < minWords || isVagueSummary(summary)) {
     return askForSpecifics(toolName, words, minWords);
   }
 
@@ -160,7 +165,12 @@ async function createTypedTicket(
           lang: id.lang ?? null,
         },
         sb,
-        { gate_input: summary, source: TICKET_SOURCE, screen_path: screenPath },
+        {
+          gate_input: summary,
+          source: TICKET_SOURCE,
+          screen_path: screenPath,
+          session_id: id.session_id ?? null,
+        },
       );
       switch (result.decision) {
         case 'failed':
@@ -275,7 +285,7 @@ export async function tool_submit_bug_report(
 ): Promise<OrbToolResult> {
   const screen = String(args.screen ?? '').trim();
   return createTypedTicket(
-    'submit_bug_report', 'bug', 15, args, id, sb,
+    'submit_bug_report', 'bug', REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS, args, id, sb,
     screen ? { screen } : {},
   );
 }
@@ -285,7 +295,7 @@ export async function tool_submit_support_ticket(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  return createTypedTicket('submit_support_ticket', 'support_question', 12, args, id, sb);
+  return createTypedTicket('submit_support_ticket', 'support_question', REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS, args, id, sb);
 }
 
 export async function tool_submit_marketplace_dispute(
@@ -295,7 +305,7 @@ export async function tool_submit_marketplace_dispute(
 ): Promise<OrbToolResult> {
   const orderReference = String(args.order_reference ?? '').trim();
   return createTypedTicket(
-    'submit_marketplace_dispute', 'marketplace_claim', 12, args, id, sb,
+    'submit_marketplace_dispute', 'marketplace_claim', REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS, args, id, sb,
     orderReference ? { order_reference: orderReference } : {},
   );
 }
@@ -305,7 +315,7 @@ export async function tool_submit_account_issue(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  return createTypedTicket('submit_account_issue', 'account_issue', 12, args, id, sb);
+  return createTypedTicket('submit_account_issue', 'account_issue', REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS, args, id, sb);
 }
 
 // Open = anything before a terminal status. Matches the "active tickets"
@@ -752,17 +762,19 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       'just files and confirms. Call when the user describes something BROKEN and',
       'wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",',
       '"report this bug", "the button does nothing, file it".',
-      'The summary must be a concrete description of at least 15 words in the',
+      'The summary must be a concrete description (at least 5 words) in the',
       'user\'s own words — which screen, what happened, what was expected.',
       'AFTER: speak the ticket number once and say the team will follow up.',
-      'For live handoff to a specialist use report_to_specialist instead.',
+      'Prefer report_to_specialist, which files the same ticket AND hands the',
+      'user to tech support; use this only when the user wants it logged',
+      'without talking to support.',
     ].join('\n'),
     parameters: {
       type: 'object',
       properties: {
         summary: {
           type: 'string',
-          description: 'Concrete bug description, at least 15 words, in the user\'s own words (what broke, where, what was expected).',
+          description: 'Concrete bug description, at least 5 concrete words, in the user\'s own words (what broke, where, what was expected).',
         },
         screen: {
           type: 'string',
@@ -780,7 +792,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       'logged for support: "erstell ein Support-Ticket", "leite meine Frage an den',
       'Support weiter", "open a support ticket", "log this question for support".',
       'Do NOT call for how-to questions you can answer yourself — answer inline.',
-      'Summary: at least 12 words describing the question and context.',
+      'Summary: at least 5 concrete words describing the question and context.',
       'AFTER: speak the ticket number once and say support will follow up.',
     ].join('\n'),
     parameters: {
@@ -788,7 +800,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       properties: {
         summary: {
           type: 'string',
-          description: 'The user\'s question with context, at least 12 words.',
+          description: 'The user\'s question with context, at least 5 concrete words.',
         },
       },
       required: ['summary'],
@@ -801,7 +813,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       'or damaged items, orders that never arrived, seller issues, overcharges.',
       'Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",',
       '"I want a refund", "the seller sent the wrong item, file a claim".',
-      'Summary: at least 12 words — what was ordered, what went wrong, what the',
+      'Summary: at least 5 concrete words — what was ordered, what went wrong, what the',
       'user wants (refund / replacement). Include the order number if they have it.',
       'AFTER: speak the ticket number once and say the team will review the claim.',
     ].join('\n'),
@@ -810,7 +822,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       properties: {
         summary: {
           type: 'string',
-          description: 'Dispute description, at least 12 words: item, problem, desired outcome.',
+          description: 'Dispute description, at least 5 concrete words: item, problem, desired outcome.',
         },
         order_reference: {
           type: 'string',
@@ -827,7 +839,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       'email trouble, role/permission issues, profile data corrections, lockouts.',
       'Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,',
       'bitte melden", "I\'m locked out", "report my login problem".',
-      'NEVER ask for or record passwords. Summary: at least 12 words describing',
+      'NEVER ask for or record passwords. Summary: at least 5 concrete words describing',
       'the account problem and what the user already tried.',
       'AFTER: speak the ticket number once and say the team will follow up.',
     ].join('\n'),
@@ -836,7 +848,7 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       properties: {
         summary: {
           type: 'string',
-          description: 'Account problem description, at least 12 words. Never include passwords.',
+          description: 'Account problem description, at least 5 concrete words. Never include passwords.',
         },
       },
       required: ['summary'],

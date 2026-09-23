@@ -789,6 +789,9 @@ export type CicdEventType =
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'
+  // VTID-04368: LLM provider outage gate on the autopilot loop
+  | 'dev_autopilot.provider_outage.detected'
+  | 'dev_autopilot.provider_outage.cleared'
   | 'dev_autopilot.finding.completed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
@@ -915,6 +918,10 @@ export type CicdEventType =
   | 'feedback.ticket.triaged'
   | 'feedback.ticket.resolved'
   | 'feedback.ticket.user_confirmed'
+  // VTID-04333: dispatch + fix outcome, filed under the ticket's own VTID
+  | 'feedback.ticket.dispatched'
+  | 'feedback.ticket.auto_dispatch_blocked'
+  | 'feedback.ticket.fix_failed'
   | 'feedback.handoff.started'
   | 'feedback.handoff.completed'
   // VTID-02632: Phase 8 — Nightly consolidator events

@@ -7,9 +7,14 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-jest.mock('../../src/services/report-to-specialist-core', () => ({
-  executeReportToSpecialist: jest.fn(),
-}));
+jest.mock('../../src/services/report-to-specialist-core', () => {
+  const actual = jest.requireActual('../../src/services/report-to-specialist-core');
+  return {
+    executeReportToSpecialist: jest.fn(),
+    isVagueSummary: actual.isVagueSummary,
+    REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS: actual.REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS,
+  };
+});
 jest.mock('../../src/services/persona-registry', () => ({
   pickPersonaForKind: jest.fn(),
   pickPersonaForKindForTenant: jest.fn(),
@@ -151,13 +156,35 @@ describe('tool_submit_bug_report', () => {
     );
   });
 
-  it('asks for specifics when the summary is under 15 words', async () => {
+  it('asks for specifics when the summary is under 5 words (VTID-04359)', async () => {
     const res = await tool_submit_bug_report(
-      { summary: 'The app is broken please fix it now' }, IDENT, makeSb(),
+      { summary: 'App is broken' }, IDENT, makeSb(),
     );
     expect(res.ok).toBe(true);
     expect((res as any).text).toContain('ASK_FOR_SPECIFICS');
+    expect((res as any).result.min_words).toBe(5);
     expect(executeReportToSpecialist).not.toHaveBeenCalled();
+  });
+
+  it('asks for specifics on a placeholder summary even when it has 5 words (VTID-04359)', async () => {
+    const res = await tool_submit_bug_report(
+      { summary: 'User wants to report a bug' }, IDENT, makeSb(),
+    );
+    expect((res as any).text).toContain('ASK_FOR_SPECIFICS');
+    expect(executeReportToSpecialist).not.toHaveBeenCalled();
+  });
+
+  it('files a short but concrete 5-word bug report (VTID-04359)', async () => {
+    (pickPersonaForKindForTenant as jest.Mock).mockResolvedValue('devon');
+    (executeReportToSpecialist as jest.Mock).mockResolvedValueOnce({
+      decision: 'created',
+      ticket: { id: 'tk-2', ticket_number: 'FB-2026-09-000001' },
+      persona: 'devon', matched_keyword: null, confidence: null, rpc_decision: null, rpc_gate: null,
+    });
+    await tool_submit_bug_report(
+      { summary: 'Diary save button crashes app' }, IDENT, makeSb(),
+    );
+    expect(executeReportToSpecialist).toHaveBeenCalled();
   });
 
   it('requires an authenticated user', async () => {

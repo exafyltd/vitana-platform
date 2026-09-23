@@ -96,6 +96,27 @@ curl -s -o /dev/null -w "%{http_code} %{content_type}\n" "$B/api/v1/voice/awaren
 curl -s -o /dev/null -w "%{http_code} %{content_type}\n" -X POST "$B/api/v1/brain/test" -H 'Content-Type: application/json' -d '{}'   # expect 401 application/json
 ```
 
+## OASIS evidence (whole PR)
+
+OASIS_PROOF: new event types, each added to the `CicdEventType` union in
+`services/gateway/src/types/cicd.ts` and each a state transition, never a poll
+or heartbeat:
+- `conversation.session.finalized` (VTID-04353): once per finalize run, after
+  its writes settle. Payload `session_id, reason, turns, user_turns, duration_ms,
+  memory_committed, summary_written, threads_written, threads_touched,
+  promises_written`. TEST: services/gateway/test/orb/live/session/vtid-04353-finalize-live-session.test.ts
+- `conversation.offer.{made,accepted,declined,ignored}` (VTID-04355): one per
+  offer transition, payload `offer_id, source, provider, key, tool, offered_at`.
+  TEST: services/gateway/test/services/assistant-continuation/vtid-04355-offer-outcomes.test.ts
+- No new topic for VTID-04369 or VTID-04393: new fields on existing
+  `orb.live.diag` stages (`failure_kind` on `upstream_error`, the Monitor
+  columns on `greeting_sent`) and one new diag stage `brain_context_built`.
+  TEST: services/gateway/test/orb/live/vtid-04369-failure-kind-and-monitor-fields.test.ts,
+  services/gateway/test/orb/live/instruction/vtid-04393-bootstrap-packer.test.ts
+- VTID-04371 emits nothing; it reads `oasis_events` by topic in an hourly rollup.
+
+Live signal after merge (staging): rows with these topics in `oasis_events`.
+
 ## Not in scope
 
 - `/assistant/chat` itself stays open (the Dev ORB relies on it without a
