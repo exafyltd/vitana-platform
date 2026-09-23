@@ -112,6 +112,7 @@ router.get('/registry/:id', (req: Request, res: Response) => {
 // =============================================================================
 
 router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -127,6 +128,7 @@ router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Re
 });
 
 router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -137,6 +139,7 @@ router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Resp
 });
 
 router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   const { event_topic, event_payload } = req.body || {};
   if (!tenantId || !event_topic) {
@@ -148,6 +151,7 @@ router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Respo
 });
 
 router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
