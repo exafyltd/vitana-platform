@@ -303,7 +303,7 @@ Each phase ships independently to staging and is verified with the health check 
 
 **Found during Phase 0, owner action needed:** none of the memory-intelligence automations have run since July 2026: AP-0906..AP-0913, including graph projection, the AP-0910 embedding backfill and user-model synthesis. Their GCP Cloud Scheduler died with GCP. The AWS replacement (`scripts/aws/setup-eventbridge-cron-migration.sh`, VTID-04226) was prepared but never applied. Running it with `--apply` from an admin session restores them.
 
-Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs its own fix.
+Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by VTID-04349 (`requireInternalOrAdmin`).
 
 ### Phase 1 — Consolidate (≈2–3 weeks)
 - [x] `services/memory/remember.ts` — one fact write path; inline extractor, intent hooks, diary extractor and memory-intelligence all moved behind it (fixes D8). VTID-04364.
@@ -345,6 +345,7 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
   - The text is the ticket's own report and resolution.
   - Episodes are unique per (ticket, role), with importance 45.
   - The member's recall sees their own copy only (golden eval scenario 12).
+- [x] The support copy is read (VTID-04431). `support_resolution_search` (service_role only) finds similar resolved tickets in the ticket's tenant and returns ticket ids only. The Sage, Devon and Mira drafters get the published resolution of up to three of them as reference: ticket number, kind and resolution, never another member's report. Drafts are reviewed by a human before a member sees anything. `SUPPORT_PRIOR_RESOLUTIONS_ENABLED=false` turns it off. Not wired: the member-facing support specialist, on purpose; it must only see the member's own tickets.
 
 ---
 
