@@ -82,3 +82,7 @@ AC-13: System-instruction and tool-catalog characterization snapshots updated
   exposing it there would drop the specialist-only guard.
 - No live verification: nothing was deployed and nothing was run against staging or
   production.
+
+## OASIS
+
+OASIS_PROOF: the existing `feedback.ticket.created` event emitted by `report-to-specialist-core.ts` now carries `session_id`, `surface` and `language` in its payload; no new topic. Asserted in services/gateway/test/vtid-04332-report-to-specialist-status-contract.test.ts (`evt.payload` toMatchObject `{ session_id, surface, language }`).
