@@ -73,6 +73,18 @@ import { buildReminders, remindersEnabled, renderRemindersBlock } from './watche
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
 import { recordExecutionOutcomeMemory } from './operator-turn-memory';
+import {
+  LEGACY_STUCK_EXECUTION_MS,
+  acquireDevRunLease,
+  decideWatchdogReclaim,
+  isRunLeaseEnabled,
+  readDevRunLeases,
+  releaseDevRunLease,
+  runPhaseOutcome,
+  sweepOrphanDevRunLeases,
+  watchdogCandidateWindowMs,
+  type LeaseRest,
+} from './orchestrator/run-lease';
 import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
 import {
   STRANDED_PR_FILTER,
@@ -292,6 +304,11 @@ export async function supa<T>(
   } catch (err) {
     return { ok: false, status: 500, error: String(err) };
   }
+}
+
+/** VTID-04446: bind the REST helper for the run-lease module (which cannot import this file). */
+export function leaseRest(s: SupaConfig): LeaseRest {
+  return <T,>(path: string, init?: RequestInit) => supa<T>(s, path, init);
 }
 
 // =============================================================================
@@ -2760,14 +2777,19 @@ export function buildWatchdogReclaimPatch(
   existing: Record<string, unknown> | null | undefined,
   stuckMs: number,
   now: Date = new Date(),
+  basis: 'legacy_stale' | 'lease_expired' = 'legacy_stale',
 ): { status: 'failed'; completed_at: string; metadata: Record<string, unknown> } {
   return {
     status: 'failed',
     completed_at: now.toISOString(),
     metadata: {
       ...(existing && typeof existing === 'object' ? existing : {}),
-      error: `watchdog: stuck in 'running' > ${stuckMs / 60_000}m (container recycled mid-execution)`,
+      // VTID-04446: an expired run lease is its own, faster reason.
+      error: basis === 'lease_expired'
+        ? `watchdog: run lease expired (no heartbeat for longer than the lease TTL) — task presumed dead`
+        : `watchdog: stuck in 'running' > ${stuckMs / 60_000}m (container recycled mid-execution)`,
       watchdog_reclaimed_at: now.toISOString(),
+      ...(basis === 'lease_expired' ? { watchdog_basis: 'lease_expired' } : {}),
     },
   };
 }
@@ -2800,9 +2822,13 @@ export async function backgroundExecutorTick(): Promise<void> {
   // VTID-04011: an agent execution (AGENT_DEADLINE_MS is 22 min by default)
   // heartbeats its row's updated_at every AGENT_HEARTBEAT_MS while alive, so
   // this cutoff only ever catches a task that actually died.
-  const STUCK_EXECUTION_MS = 20 * 60 * 1000; // 20 min — plenty of slack for a normal execute (5-10 min)
+  const STUCK_EXECUTION_MS = LEGACY_STUCK_EXECUTION_MS; // 20 min — plenty of slack for a normal execute (5-10 min)
   try {
-    const cutoff = new Date(Date.now() - STUCK_EXECUTION_MS).toISOString();
+    // VTID-04446: with run leases on, candidates are rows quiet for longer
+    // than the lease TTL, and the lease — not the clock — decides. Off, the
+    // window is the legacy 20 minutes and every candidate is reclaimed.
+    const leasesOn = isRunLeaseEnabled();
+    const cutoff = new Date(Date.now() - watchdogCandidateWindowMs()).toISOString();
     const stuckR = await supa<Array<{ id: string; finding_id: string; updated_at: string; metadata?: Record<string, unknown> | null }>>(
       s,
       `/rest/v1/dev_autopilot_executions?status=eq.running&updated_at=lt.${cutoff}&select=id,finding_id,updated_at,metadata&limit=10`,
@@ -2810,23 +2836,33 @@ export async function backgroundExecutorTick(): Promise<void> {
     if (stuckR.ok && stuckR.data && stuckR.data.length > 0) {
       // VTID-04005: a gateway only reclaims what it (or a legacy unstamped
       // claim) owns — the other environment's executor task may be alive.
-      for (const stuck of filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} watchdog`)) {
+      const owned = filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} watchdog`);
+      const leases = leasesOn ? await readDevRunLeases(leaseRest(s), owned.map((r) => r.id)) : null;
+      for (const stuck of owned) {
+        const decision = leasesOn
+          ? decideWatchdogReclaim(stuck, leases?.get(stuck.id) ?? null)
+          : { action: 'reclaim' as const, reason: 'legacy_stale' as const };
+        if (decision.action === 'skip') {
+          if (decision.reason === 'lease_live') console.log(`${LOG_PREFIX} watchdog: ${stuck.id.slice(0, 8)} quiet but its lease is live — not reclaimed`);
+          continue;
+        }
         const reclaim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${stuck.id}&status=eq.running`, {
           method: 'PATCH',
           headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({
-            ...buildWatchdogReclaimPatch(stuck.metadata, STUCK_EXECUTION_MS),
+            ...buildWatchdogReclaimPatch(stuck.metadata, STUCK_EXECUTION_MS, new Date(), decision.reason),
           }),
         });
         if (reclaim.ok) {
-          console.log(`${LOG_PREFIX} watchdog reclaimed stuck execution ${stuck.id.slice(0, 8)}`);
+          console.log(`${LOG_PREFIX} watchdog reclaimed stuck execution ${stuck.id.slice(0, 8)} (${decision.reason})`);
+          if (leasesOn) void releaseDevRunLease(leaseRest(s), stuck.id, 'failed', `watchdog reclaim: ${decision.reason}`);
           await emitOasisEvent({
             vtid: EXEC_VTID,
             type: 'dev_autopilot.execution.failed',
             source: 'dev-autopilot',
             status: 'error',
             message: `Execution ${stuck.id.slice(0, 8)} reclaimed by watchdog (stuck in running)`,
-            payload: { execution_id: stuck.id, finding_id: stuck.finding_id, reason: 'stuck_in_running' },
+            payload: { execution_id: stuck.id, finding_id: stuck.finding_id, reason: 'stuck_in_running', reclaim_basis: decision.reason },
           });
           try {
             const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
@@ -2837,6 +2873,11 @@ export async function backgroundExecutorTick(): Promise<void> {
           }
         }
       }
+    }
+    // VTID-04446: close expired leases whose execution already moved on.
+    if (leasesOn) {
+      const swept = await sweepOrphanDevRunLeases(leaseRest(s));
+      if (swept > 0) console.log(`${LOG_PREFIX} run-lease sweep closed ${swept} orphan lease(s)`);
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} execution watchdog error:`, err);
@@ -2973,6 +3014,9 @@ export async function backgroundExecutorTick(): Promise<void> {
       console.warn(`${LOG_PREFIX} claim failed for ${exec.id}: ${claim.error}`);
       continue;
     }
+    // VTID-04446: the run lease (flag-gated, fail-open). Written with the
+    // legacy 20-minute window; the agent heartbeat renews it to the TTL.
+    await acquireDevRunLease(leaseRest(s), exec);
 
     await emitOasisEvent({
       vtid: EXEC_VTID,
@@ -3105,6 +3149,9 @@ export async function applyExecutionResult(
   execId: string,
   result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean; cancelled?: boolean },
 ): Promise<void> {
+  // VTID-04446: the running phase is over, whatever the result — close its
+  // lease so the watchdog has nothing to decide. Idempotent, fail-open.
+  if (isRunLeaseEnabled()) await releaseDevRunLease(leaseRest(s), execId, runPhaseOutcome(result), result.ok ? null : (result.error || null));
   // VTID-04032: the agent stopped because an operator cancelled it. The
   // cancel route normally moved the row to `cancelled` already (in which
   // case there is nothing to write); if the flag was raised another way,

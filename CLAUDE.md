@@ -1593,6 +1593,12 @@ ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED=true
 # specialist's result survives a gateway task change. Exact 'true' enables;
 # unset = in-memory only, as before. Fail-open.
 ORCHESTRATOR_DELEGATION_PERSIST_ENABLED=true
+# Dev Autopilot run leases on the agent_runs ledger (VTID-04446, P4): the
+# running-watchdog asks the lease instead of the 20-min clock. Exact 'true'
+# enables; set on the gateway AND the executor task; apply migration
+# 20260923210000_vtid_04446_run_leases.sql first. TTL clamps to 2-30 min.
+ORCHESTRATOR_RUN_LEASE_ENABLED=true
+ORCHESTRATOR_RUN_LEASE_TTL_MS=300000
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
