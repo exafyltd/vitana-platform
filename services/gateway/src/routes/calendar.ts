@@ -226,7 +226,16 @@ router.get('/events/window', async (req: Request, res: Response) => {
       { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
       { includeBusy, userTimezone },
     );
-    return res.json({ ok: true, data: items, count: items.length, timezone: userTimezone ?? null });
+    // VTID-04351: the calendar screen shows each entry's emoji and the
+    // reminders it will actually get — computed by the same rules the
+    // reminder loop uses, so the screen can never promise a different time.
+    const { reminderRules, entryEmoji } = await import('../services/calendar-reminders');
+    const data = items.map((it) =>
+      it.event
+        ? { ...it, display_emoji: entryEmoji(it.event as any), reminders: reminderRules(it.event as any) }
+        : it,
+    );
+    return res.json({ ok: true, data, count: data.length, timezone: userTimezone ?? null });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });

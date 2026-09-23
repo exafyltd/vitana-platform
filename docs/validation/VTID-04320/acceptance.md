@@ -141,6 +141,9 @@ TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
 AC-19 — The loop starts only on `CALENDAR_DEFAULT_REMINDERS_ENABLED` exactly `true`; staging pins it, prod does not.
 TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
 
+AC-20 (VTID-04351) — The window read decorates each visible entry with `display_emoji` and `reminders` from the same rules the reminder loop uses; busy blocks pass through untouched, so they still carry time only.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
 ## Not done here, on purpose
 
 - Production: the prod gateway workflow does not set the flag. Staging and

@@ -207,3 +207,14 @@ describe('flag and wiring', () => {
     expect(fs.readFileSync(path.join(wf, 'AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8')).not.toContain('CALENDAR_DEFAULT_REMINDERS_ENABLED');
   });
 });
+
+describe('window read carries the same reminders the loop writes (VTID-04351)', () => {
+  it('the /events/window route decorates entries with reminderRules + entryEmoji, never busy blocks', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../src/routes/calendar.ts'), 'utf8');
+    const route = src.slice(src.indexOf("router.get('/events/window'"), src.indexOf("router.get('/events/upcoming'"));
+    expect(route).toContain("import('../services/calendar-reminders')");
+    expect(route).toContain('reminders: reminderRules(it.event');
+    expect(route).toContain('display_emoji: entryEmoji(it.event');
+    expect(route).toMatch(/it\.event\s*\?/); // busy blocks (event null) pass through untouched
+  });
+});
