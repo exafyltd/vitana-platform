@@ -76,8 +76,9 @@ export async function fetchLearningAutomationRuns(sb: SupabaseClient, automation
 export async function fetchProfileNarrativeStamps(sb: SupabaseClient, signalName: string) {
   return sb
     .from('user_assistant_state')
-    // Only the timestamp: the narrative text itself never leaves the DB here.
-    .select('generated_at:value->>generated_at')
+    // Only stamps and counts: the narrative text itself never leaves the DB here.
+    // VTID-04438: + schema version, sections filled and input counts.
+    .select('generated_at:value->>generated_at, schema_version:value->>schema_version, sections_filled:value->>sections_filled, summaries:value->inputs_counts->>summaries, diary:value->inputs_counts->>diary, outcome_providers:value->inputs_counts->>outcome_providers')
     .eq('signal_name', signalName)
     .limit(5000);
 }

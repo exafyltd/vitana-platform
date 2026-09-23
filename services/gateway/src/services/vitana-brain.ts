@@ -356,7 +356,7 @@ export async function buildBrainSystemInstruction(input: {
   // recommendations even though the identity says "engineering co-pilot".
   // Skipping both blocks for non-community roles is the structural fix.
   const isCommunitySurface = mapRoleForGuide(input.role) === 'community';
-  const [memoryContext, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock] = await Promise.all([
+  const [memoryContext, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock, userProfileBlock] = await Promise.all([
     // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: the orchestrator wraps the
     // old buildContextPack call and adds goals + preferences + do-not-repeat
     // + the mandatory memory self-check block. skip_goal_section is set for
@@ -395,6 +395,12 @@ export async function buildBrainSystemInstruction(input: {
         })
       : Promise.resolve(''),
     buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
+    // VTID-04438 (WS-4.1): the nightly structured profile. Community surface
+    // only, bounded read, '' on anything but a fresh stored profile. It sits
+    // in the core instruction, so the per-user core snapshot carries it too.
+    isCommunitySurface
+      ? import('./user-model-synthesis').then((m) => m.readUserProfileBlock(input.tenant_id, input.user_id)).catch(() => '')
+      : Promise.resolve(''),
   ]);
   const contextPack = memoryContext.context_pack;
   const contextForLLM = memoryContext.memory_prompt_block;
@@ -432,6 +438,7 @@ export async function buildBrainSystemInstruction(input: {
   const coreInstruction = `${baseInstruction}
 ${languageDirective}
 ${identityGuardrailBlock}
+${userProfileBlock}
 ${contextForLLM}
 ${lifeCompassBlock}
 ${journeyModesBlock}
@@ -446,7 +453,7 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 ${proactiveGuideBlock}`;
 
   const latencyMs = Date.now() - startTime;
-  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'}, identity=${identityGuardrailBlock.length > 0 ? 'on' : 'off'})`);
+  console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'}, identity=${identityGuardrailBlock.length > 0 ? 'on' : 'off'}, profile=${userProfileBlock.length > 0 ? 'on' : 'off'})`);
 
   return { instruction, contextPack, coreInstruction };
 }

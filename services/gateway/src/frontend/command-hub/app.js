@@ -7825,7 +7825,12 @@ function _convRenderLearning(host, hours) {
             body.appendChild(_convTileGrid([
                 _convTile('Users with a narrative', String(n.users_with_narrative)),
                 _convTile('Fresh (≤ 7 days)', String(n.fresh_7d), 'older ones are no longer injected', n.users_with_narrative > 0 && n.fresh_7d === 0 ? 'warn' : null),
-                _convTile('Newest', _convWhen(n.newest_generated_at) || '—')
+                _convTile('Newest', _convWhen(n.newest_generated_at) || '—'),
+                // VTID-04438 (WS-4.1): profile quality and how much of each user's picture the learning saw.
+                _convTile('Structured profiles', String(n.structured || 0),
+                    n.avg_sections_filled == null ? 'none yet' : n.avg_sections_filled + ' of 6 parts filled on average'),
+                _convTile('Inputs seen', (n.with_conversations || 0) + ' · ' + (n.with_diary || 0) + ' · ' + (n.with_outcomes || 0),
+                    'profiles built with conversations · diary · suggestion outcomes')
             ]));
         }
         if (d.jobs) {

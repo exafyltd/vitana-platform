@@ -139,6 +139,12 @@ describe('learning health', () => {
       fresh_7d: 1,
       newest_generated_at: '2026-09-22T00:00:00.000Z',
       oldest_generated_at: '2026-07-06T00:00:00.000Z',
+      // VTID-04438: profile quality fields; none of these rows is structured.
+      structured: 0,
+      avg_sections_filled: null,
+      with_conversations: 0,
+      with_diary: 0,
+      with_outcomes: 0,
     });
   });
 });
@@ -154,9 +160,13 @@ describe('source contract', () => {
     expect(route.slice(start)).not.toMatch(/fetchOasisEventsByStage|oasis_events'/);
   });
 
-  it('the narrative read selects only the timestamp, never the narrative text', () => {
+  it('the narrative read selects stamps and counts only, never the narrative text', () => {
     const fn = repoSrc.slice(repoSrc.indexOf('fetchProfileNarrativeStamps'));
-    expect(fn).toMatch(/select\('generated_at:value->>generated_at'\)/);
+    const sel = fn.match(/\.select\('([^']*)'\)/)![1];
+    // VTID-04438 added schema/section/input counts; the text stays in the DB.
+    expect(sel.startsWith('generated_at:value->>generated_at')).toBe(true);
+    for (const col of sel.split(',').map((c) => c.trim())) expect(col).toMatch(/^[a-z_]+:value(->[a-z_]+)?->>[a-z_]+$/);
+    expect(sel).not.toMatch(/narrative|structured|summary/);
   });
 
   it('the local signal name matches the synthesis module', () => {

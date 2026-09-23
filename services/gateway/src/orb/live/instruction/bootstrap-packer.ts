@@ -96,6 +96,8 @@ const RULES: Rule[] = [
   { test: /^## (MOST RECENT USER UTTERANCES|LETZTE ECHTE NUTZER-AUSSAGEN)/, key: 'recent_utterances', priority: 1, tier: 'core' },
   { test: /^## Verified Facts/, key: 'verified_facts', priority: 1, tier: 'core' },
   { test: /^=== ACTIVE LIFE COMPASS GOAL/, key: 'life_compass_goal', priority: 1, tier: 'core' },
+  // VTID-04438 (WS-4.1): the nightly structured profile (user-profile.ts).
+  { test: /^=== USER PROFILE \(nightly synthesis\)/, key: 'user_profile', priority: 2, tier: 'core' },
   // VTID-04414: the lesson surface's learner facts (session-context-builder.ts).
   { test: /^=== LEARNER BACKGROUND/, key: 'learner_background', priority: 1, tier: 'core' },
   { test: /^=== PROACTIVE (OPENER|INITIATIVE)/, key: 'proactive_opener', priority: 2, tier: 'situational' },

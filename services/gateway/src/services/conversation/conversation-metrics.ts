@@ -318,10 +318,20 @@ export interface NarrativeFreshness {
   fresh_7d: number;
   newest_generated_at: string | null;
   oldest_generated_at: string | null;
+  /**
+   * VTID-04438 (WS-4.1): profile quality and coverage — how many profiles are
+   * structured (schema 2), how full they are (sections 0..6), and how much of
+   * each user's picture the learning actually saw.
+   */
+  structured?: number;
+  avg_sections_filled?: number | null;
+  with_conversations?: number;
+  with_diary?: number;
+  with_outcomes?: number;
 }
 
 export function summarizeNarrativeFreshness(
-  values: Array<{ generated_at?: unknown } | null | undefined>,
+  values: Array<{ generated_at?: unknown; schema_version?: unknown; sections_filled?: unknown; summaries?: unknown; diary?: unknown; outcome_providers?: unknown } | null | undefined>,
   nowMs: number,
   maxAgeDays = 7,
 ): NarrativeFreshness {
@@ -330,10 +340,20 @@ export function summarizeNarrativeFreshness(
     .filter((s): s is string => !!s && Number.isFinite(Date.parse(s)))
     .sort();
   const cutoff = nowMs - maxAgeDays * 86_400_000;
+  const n = (x: unknown) => (x === null || x === undefined || x === '' ? NaN : Number(x));
+  const rows = values.filter(Boolean) as Array<Record<string, unknown>>;
+  const structuredRows = rows.filter((v) => n(v.schema_version) >= 2);
+  const sections = structuredRows.map((v) => n(v.sections_filled)).filter((x) => Number.isFinite(x));
+  const pos = (k: string) => structuredRows.filter((v) => n(v[k]) > 0).length;
   return {
     users_with_narrative: values.length,
     fresh_7d: stamps.filter((s) => Date.parse(s) >= cutoff).length,
     newest_generated_at: stamps.length ? stamps[stamps.length - 1] : null,
     oldest_generated_at: stamps.length ? stamps[0] : null,
+    structured: structuredRows.length,
+    avg_sections_filled: sections.length ? Math.round((sections.reduce((a, b) => a + b, 0) / sections.length) * 10) / 10 : null,
+    with_conversations: pos('summaries'),
+    with_diary: pos('diary'),
+    with_outcomes: pos('outcome_providers'),
   };
 }

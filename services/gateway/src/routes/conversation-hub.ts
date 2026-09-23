@@ -491,7 +491,7 @@ router.get('/admin/conversation/metrics/learning', ...adminOnly, async (req: Aut
         jobs: runs.error ? null : summarizeLearningJobs((runs.data || []) as AutomationRunRow[], Date.parse(sinceIso), nowMs),
         profile_narrative: narratives.error
           ? null
-          : summarizeNarrativeFreshness((narratives.data || []) as Array<{ generated_at?: unknown }>, nowMs),
+          : summarizeNarrativeFreshness((narratives.data || []) as Array<Record<string, unknown>>, nowMs),
         coverage: summary ? summary.learning : null,
         errors,
       },
