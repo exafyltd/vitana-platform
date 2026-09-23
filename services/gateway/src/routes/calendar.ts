@@ -187,6 +187,15 @@ router.post('/subscription', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
     const { rotateFeedToken } = await import('../services/calendar-ics-feed');
     const token = await rotateFeedToken(userId);
+    // The token never goes into the event: only that a link now exists.
+    emitOasisEvent({
+      vtid: 'VTID-04358',
+      type: 'calendar.feed.link_created' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar subscription link created',
+      payload: { user_id: userId },
+    }).catch(() => {});
     // A path, not a URL: the client prefixes the gateway base it already uses.
     return res.status(201).json({ ok: true, data: { feed_path: `/api/v1/calendar/feed/${token}.ics` } });
   } catch (err: any) {
@@ -201,6 +210,14 @@ router.delete('/subscription', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
     const { revokeFeedToken } = await import('../services/calendar-ics-feed');
     await revokeFeedToken(userId);
+    emitOasisEvent({
+      vtid: 'VTID-04358',
+      type: 'calendar.feed.link_revoked' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar subscription link turned off',
+      payload: { user_id: userId },
+    }).catch(() => {});
     return res.json({ ok: true });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} DELETE /subscription error:`, err.message);

@@ -48,3 +48,7 @@ to VTID-04357. The owner asked for the calendar to reach external calendars:
 - The app-side button to create, copy and revoke the link ships in
   `exafyltd/vitana-v1` on the same branch.
 - Google two-way sync (OAuth) is step 7b.
+
+## OASIS
+
+Creating and turning off a link emit `calendar.feed.link_created` / `calendar.feed.link_revoked` (info, `source: calendar-api`, payload `{ user_id }` only — never the token). TEST: `vtid-04358-calendar-ics-feed.test.ts` › "creating and turning off a link emit OASIS events that never carry the token". Serving the feed emits nothing (a read, polled hourly by calendar apps — not a state transition).

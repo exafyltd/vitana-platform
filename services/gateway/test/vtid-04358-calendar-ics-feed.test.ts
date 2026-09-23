@@ -139,8 +139,14 @@ describe('tokens', () => {
 });
 
 describe('routes', () => {
+  const emitted: any[] = [];
   function app(identity: any) {
     jest.resetModules();
+    jest.doMock('../src/services/oasis-event-service', () => ({
+      emitOasisEvent: jest.fn(async (e: any) => {
+        emitted.push(e);
+      }),
+    }));
     jest.doMock('../src/middleware/auth-supabase-jwt', () => ({
       optionalAuth: (req: any, _res: any, next: any) => {
         if (identity) req.identity = identity;
@@ -163,6 +169,7 @@ describe('routes', () => {
   afterEach(() => {
     jest.dontMock('../src/middleware/auth-supabase-jwt');
     jest.dontMock('../src/services/calendar-ics-feed');
+    jest.dontMock('../src/services/oasis-event-service');
   });
 
   it('the feed needs no bearer and serves text/calendar, private-cached', async () => {
@@ -193,6 +200,15 @@ describe('routes', () => {
     const res = await request(app({ user_id: 'u1' })).post('/api/v1/calendar/subscription');
     expect(res.status).toBe(201);
     expect(res.body.data.feed_path).toBe(`/api/v1/calendar/feed/${'B'.repeat(43)}.ics`);
+  });
+
+  it('creating and turning off a link emit OASIS events that never carry the token', async () => {
+    emitted.length = 0;
+    const a = app({ user_id: 'u1' });
+    await request(a).post('/api/v1/calendar/subscription');
+    await request(a).delete('/api/v1/calendar/subscription');
+    expect(emitted.map((e) => e.type)).toEqual(['calendar.feed.link_created', 'calendar.feed.link_revoked']);
+    expect(JSON.stringify(emitted)).not.toContain('B'.repeat(43));
   });
 
   it('other calendar routes stay behind sign-in', async () => {
