@@ -4459,6 +4459,7 @@ async function executeLiveApiToolInner(
 
         try {
           const { createCalendarEvent, checkConflicts } = await import('../services/calendar-service');
+          const { toWritableRoleContext } = await import('../types/calendar');
 
           // Check for conflicts first
           const effectiveEndTime = eventEnd || new Date(new Date(eventStart).getTime() + 60 * 60 * 1000).toISOString();
@@ -4473,7 +4474,9 @@ async function executeLiveApiToolInner(
             event_type: eventType as any,
             status: 'confirmed',
             priority: 'medium',
-            role_context: role === 'developer' ? 'developer' : role === 'admin' ? 'admin' : 'community',
+            // VTID-04356: one mapping for every writer — professional and
+            // backoffice used to fall through to the community view here.
+            role_context: toWritableRoleContext(role),
             source_type: 'assistant',
             priority_score: 50,
             wellness_tags: [],

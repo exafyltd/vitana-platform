@@ -3,19 +3,17 @@
  *
  * Turns a user's stated goal (life_compass row with a target_date) into a
  * structured plan via the LLM planner stage: milestones + weekly checkpoints +
- * recurring daily habits. Persists to goal_plans / goal_plan_steps and mirrors
- * scheduled steps onto the calendar. The My Journey screen reads the plan for
+ * recurring daily habits. Persists to goal_plans / goal_plan_steps; a database
+ * trigger puts the steps in the calendar (VTID-04356). My Journey reads the plan for
  * the day-by-day view and today's steps.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
-import { bulkCreateCalendarEvents } from '../calendar-service';
 import { getUserLocale } from '../../i18n/server-locale';
 import { seedGoalPlanSourceCache } from './goal-plan-i18n';
 import * as repo from './goal-planner-service-repository';
 import { LOCALE_ENGLISH_NAME, type GatewayLocale } from '../../i18n/catalog';
-import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
 
@@ -462,68 +460,13 @@ export async function generateGoalPlan(
     ((stepRows as any[]) ?? []).map((s) => ({ id: s.id, title: s.title, description: s.description ?? null })),
   );
 
-  await mirrorStepsToCalendar(userId, planId, goal, startDate, (stepRows as any[]) ?? []);
+  // VTID-04356: the steps reach the calendar through trg_goal_plan_step_calendar
+  // (migration 20260923160000), not from here. The in-code mirror that lived
+  // here had never written a row: its one bulk insert mixed rows with and
+  // without recurring_pattern, which PostgREST rejects. The trigger also
+  // covers moves, done/undone, deletes and a superseded plan.
 
   return { plan_id: planId, step_count: drafts.length };
-}
-
-/** Best-effort: write dated steps as calendar events and habits as one recurring event. */
-async function mirrorStepsToCalendar(
-  userId: string,
-  planId: string,
-  goal: ActiveGoal,
-  startDate: string,
-  steps: Array<{ id: string; kind: string; title: string; description: string | null; scheduled_date: string | null }>,
-): Promise<void> {
-  try {
-    const events: CreateCalendarEventInput[] = [];
-    for (const s of steps) {
-      if ((s.kind === 'milestone' || s.kind === 'checkpoint') && s.scheduled_date) {
-        events.push({
-          title: s.title,
-          description: s.description,
-          start_time: `${s.scheduled_date}T09:00:00.000Z`,
-          end_time: null,
-          event_type: 'journey_milestone',
-          status: 'pending',
-          priority: 'medium',
-          role_context: 'community',
-          source_type: 'journey',
-          source_ref_id: s.id,
-          source_ref_type: `goal_${s.kind}`,
-          priority_score: 60,
-          wellness_tags: [],
-          metadata: { goal_plan_id: planId, life_compass_id: goal.id, goal_text: goal.primary_goal },
-          is_recurring: false,
-        } as CreateCalendarEventInput);
-      } else if (s.kind === 'habit') {
-        events.push({
-          title: s.title,
-          description: s.description,
-          start_time: `${startDate}T08:00:00.000Z`,
-          end_time: null,
-          event_type: 'wellness_nudge',
-          status: 'pending',
-          priority: 'medium',
-          role_context: 'community',
-          source_type: 'journey',
-          source_ref_id: s.id,
-          source_ref_type: 'goal_habit',
-          priority_score: 50,
-          wellness_tags: [],
-          metadata: { goal_plan_id: planId, life_compass_id: goal.id },
-          is_recurring: true,
-          recurring_pattern: { freq: 'daily', until: goal.target_date },
-        } as CreateCalendarEventInput);
-      }
-    }
-    if (events.length > 0) {
-      const created = await bulkCreateCalendarEvents(userId, events);
-      console.log(`${LOG} mirrored ${created.length}/${events.length} steps to calendar`);
-    }
-  } catch (e: any) {
-    console.error(`${LOG} calendar mirror failed (non-fatal): ${e?.message}`);
-  }
 }
 
 export interface GoalPlanStep {

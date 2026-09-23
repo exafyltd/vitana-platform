@@ -141,13 +141,20 @@ export type OAuthReturnMode = 'web' | 'mobile';
  * minimal — Phase 4 (incremental consent) covers extra scopes (e.g.
  * gmail.send) on demand.
  */
-export type GoogleSubService = 'gmail' | 'calendar' | 'contacts' | 'youtube';
+export type GoogleSubService = 'gmail' | 'calendar' | 'contacts' | 'youtube' | 'calendar_sync';
 
 export const GOOGLE_SUB_SCOPES: Record<GoogleSubService, string[]> = {
   gmail: ['https://www.googleapis.com/auth/gmail.readonly'],
   calendar: ['https://www.googleapis.com/auth/calendar.readonly'],
   contacts: ['https://www.googleapis.com/auth/contacts.readonly'],
   youtube: ['https://www.googleapis.com/auth/youtube.readonly'],
+  // VTID-04372: Vitanaland <-> Google sync. calendar.app.created only reaches
+  // calendars this app created (the member's "Vitanaland" calendar);
+  // calendar.freebusy reads busy times of their other calendars, no details.
+  calendar_sync: [
+    'https://www.googleapis.com/auth/calendar.app.created',
+    'https://www.googleapis.com/auth/calendar.freebusy',
+  ],
 };
 
 /** Default unified bundle when no `include` is passed. */
@@ -155,7 +162,7 @@ export const GOOGLE_DEFAULT_INCLUDE: GoogleSubService[] = ['gmail', 'calendar', 
 
 export function parseGoogleInclude(raw: string | undefined): GoogleSubService[] | null {
   if (!raw) return null;
-  const valid = new Set<GoogleSubService>(['gmail', 'calendar', 'contacts', 'youtube']);
+  const valid = new Set<GoogleSubService>(['gmail', 'calendar', 'contacts', 'youtube', 'calendar_sync']);
   const parsed = raw
     .split(',')
     .map((s) => s.trim().toLowerCase())

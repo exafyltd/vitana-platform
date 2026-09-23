@@ -378,6 +378,47 @@ export async function rescheduleEvent(
   });
 }
 
+// =============================================================================
+// VTID-04374 — who may move an entry
+// =============================================================================
+
+/**
+ * Why a member may NOT move this entry themselves, or null when they may.
+ *
+ * Only entries the member (or Vitana on their behalf) put there move: a
+ * booked appointment, a lab order, a live room, an invite or a plan step is
+ * owned by its source, and moving the calendar copy would be wrong (the
+ * other party still expects the old time) and short-lived (the next source
+ * update moves it back). A recurring series moves as a whole from where it
+ * was made, never from one occurrence here.
+ */
+export type MoveBlockReason = 'cancelled' | 'completed' | 'recurring' | 'owned_by_source';
+
+export function moveBlockReason(
+  e: Pick<CalendarEvent, 'status' | 'completed_at' | 'rrule' | 'source_type' | 'source_ref_type'>,
+): MoveBlockReason | null {
+  if (e.status === 'cancelled') return 'cancelled';
+  if (e.completed_at) return 'completed';
+  if (e.rrule) return 'recurring';
+  const src = e.source_type ?? 'manual';
+  if (src === 'manual' || src === 'assistant') return null;
+  if (src === 'autopilot' && (e.source_ref_type ?? 'autopilot_recommendation') === 'autopilot_recommendation') return null;
+  if (src === 'journey' && e.source_ref_type === 'journey_task') return null;
+  return 'owned_by_source';
+}
+
+export async function getOwnCalendarEvent(eventId: string, userId: string): Promise<CalendarEvent | null> {
+  const config = getSupabaseConfig();
+  if (!config) return null;
+  const resp = await fetch(
+    `${config.url}/rest/v1/calendar_events?id=eq.${encodeURIComponent(eventId)}&user_id=eq.${encodeURIComponent(userId)}&select=*&limit=1`,
+    { headers: headers(config.key) },
+  );
+  if (!resp.ok) return null;
+  const rows = (await resp.json()) as CalendarEvent[];
+  return rows[0] ?? null;
+}
+
 export async function markEventActivated(
   eventId: string,
   userId: string,
@@ -573,4 +614,118 @@ export async function extractCalendarPatterns(
   }
 
   return patterns;
+}
+
+// =============================================================================
+// VTID-04331 — window read: recurrence expanded, other lenses as busy blocks
+// =============================================================================
+
+/**
+ * One item the calendar UI renders for a date range. Recurring entries become
+ * one item per occurrence (`occurrence_index` set, `id` = `${event_id}::${start}`).
+ * Entries from a lens the active role does not see come back as grey busy
+ * blocks: time only — no title, description, location, attendees or source.
+ */
+export interface CalendarWindowItem {
+  id: string;
+  event_id: string;
+  start_time: string;
+  end_time: string | null;
+  busy: boolean;
+  occurrence_index: number | null;
+  event: CalendarEvent | null; // null for busy blocks
+}
+
+/** Drop everything identifying from an entry the active lens may not see. */
+export function toBusyBlock(item: Omit<CalendarWindowItem, 'busy' | 'event'>): CalendarWindowItem {
+  return { ...item, busy: true, event: null };
+}
+
+/**
+ * Pure part of listCalendarWindow: expand + classify already-fetched rows.
+ * Exported for tests.
+ */
+export function buildCalendarWindow(
+  rows: CalendarEvent[],
+  role: string | null,
+  window: { from: string; to: string },
+  opts: { includeBusy: boolean; fallbackTz: string; expand: (e: CalendarEvent) => Array<{ start: string; end: string; index: number }> },
+): CalendarWindowItem[] {
+  const visible = getVisibleContexts(role); // null = everything (super_admin)
+  const from = Date.parse(window.from);
+  const to = Date.parse(window.to);
+  const items: CalendarWindowItem[] = [];
+
+  for (const ev of rows) {
+    if (ev.status === 'cancelled') continue;
+    const canSee = visible === null || visible.includes(ev.role_context as any);
+    if (!canSee && !opts.includeBusy) continue;
+
+    const occurrences = ev.rrule
+      ? opts.expand(ev).map((o) => ({ start: o.start, end: o.end, index: o.index as number | null }))
+      : [{ start: ev.start_time, end: ev.end_time ?? ev.start_time, index: null as number | null }];
+
+    for (const o of occurrences) {
+      const s = Date.parse(o.start);
+      const e = Math.max(Date.parse(o.end), s + 1);
+      if (!(s < to && e > from)) continue;
+      const base = {
+        id: o.index === null ? ev.id : `${ev.id}::${o.start}`,
+        event_id: ev.id,
+        start_time: o.start,
+        end_time: ev.rrule || ev.end_time ? o.end : null,
+        occurrence_index: o.index,
+      };
+      items.push(canSee ? { ...base, busy: false, event: ev } : toBusyBlock(base));
+    }
+  }
+
+  return items.sort((a, b) => Date.parse(a.start_time) - Date.parse(b.start_time));
+}
+
+/**
+ * Everything the calendar shows between `from` and `to` for the active role.
+ * One-off entries are selected by overlap; recurring ones by having started
+ * before `to` (their occurrences are then expanded and filtered).
+ */
+export async function listCalendarWindow(
+  userId: string,
+  role: string | null,
+  window: { from: string; to: string },
+  opts: { includeBusy?: boolean; userTimezone?: string } = {},
+): Promise<CalendarWindowItem[]> {
+  const config = getSupabaseConfig();
+  if (!config) return [];
+  const { expandOccurrences } = await import('./calendar-recurrence');
+  const fallbackTz = opts.userTimezone || 'Europe/Berlin';
+  const includeBusy = opts.includeBusy ?? true;
+
+  // The lens filter is applied in buildCalendarWindow (busy blocks need the
+  // other lenses' rows), so rows are fetched for the whole user here.
+  const base = `${config.url}/rest/v1/calendar_events?user_id=eq.${encodeURIComponent(userId)}&status=neq.cancelled`;
+  const oneOff =
+    `${base}&rrule=is.null&start_time=lt.${encodeURIComponent(window.to)}` +
+    `&or=(end_time.gt.${encodeURIComponent(window.from)},and(end_time.is.null,start_time.gte.${encodeURIComponent(window.from)}))` +
+    `&order=start_time.asc&limit=1000`;
+  const recurring = `${base}&rrule=not.is.null&start_time=lt.${encodeURIComponent(window.to)}&limit=500`;
+
+  const [a, b] = await Promise.all([
+    fetch(oneOff, { headers: headers(config.key) }),
+    fetch(recurring, { headers: headers(config.key) }),
+  ]);
+  if (!a.ok || !b.ok) {
+    console.error(`${LOG_PREFIX} listCalendarWindow failed:`, a.ok ? '' : await a.text(), b.ok ? '' : await b.text());
+    return [];
+  }
+  const rows = [...((await a.json()) as CalendarEvent[]), ...((await b.json()) as CalendarEvent[])];
+
+  return buildCalendarWindow(rows, role, window, {
+    includeBusy,
+    fallbackTz,
+    expand: (ev) => expandOccurrences(
+      { start_time: ev.start_time, end_time: ev.end_time, rrule: ev.rrule as string, timezone: ev.timezone },
+      window,
+      fallbackTz,
+    ),
+  });
 }
