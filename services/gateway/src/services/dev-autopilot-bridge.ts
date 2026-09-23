@@ -40,7 +40,7 @@ import {
 import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 import { createRevertPullRequest, mergePullRequest } from './github-service';
-import { isRealCiClose, PR_CLOSED_UNMERGED_KEY } from './dev-autopilot-pipeline-guards';
+import { isRealCiClose, isRevertMergedOnMain, PR_CLOSED_UNMERGED_KEY, PR_REVERTED_KEY } from './dev-autopilot-pipeline-guards';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -286,7 +286,7 @@ async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
 export async function revertExecutionPR(
   exec: ExecutionRow,
   stage: FailureStage,
-): Promise<{ ok: boolean; revert_pr_url?: string; error?: string }> {
+): Promise<{ ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean }> {
   if (!exec.pr_url) {
     return { ok: true }; // Nothing to revert — session never produced a PR
   }
@@ -358,7 +358,7 @@ export async function revertExecutionPR(
       return { ok: true, revert_pr_url: revertPr.html_url, error: `revert PR open but auto-merge failed: ${merged.message}` };
     }
     console.log(`${LOG_PREFIX} auto-reverted ${exec.id.slice(0, 8)} via PR #${revertPr.number} (merged ${merged.sha?.slice(0, 8) || '?'})`);
-    return { ok: true, revert_pr_url: revertPr.html_url };
+    return { ok: true, revert_pr_url: revertPr.html_url, reverted_on_main: true };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -710,7 +710,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
 
   // 2. Attempt auto-revert (best-effort — failure here shouldn't block the
   //    bridge from recording the triage report + escalating).
-  const revert: { ok: boolean; revert_pr_url?: string; error?: string } = fixMode
+  const revert: { ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean } = fixMode
     ? { ok: true }
     : await revertExecutionPR(exec, input.failure_stage);
   if (fixMode) console.log(`${LOG_PREFIX} fix mode for ${exec.id.slice(0, 8)}: PR #${fixMode.pr_number} stays open on ${fixMode.branch}`);
@@ -761,6 +761,11 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       // PR-flood guard does not refuse this row's own self-heal child.
       ...(isRealCiClose(input.failure_stage, revert.revert_pr_url)
         ? { [PR_CLOSED_UNMERGED_KEY]: new Date().toISOString() }
+        : {}),
+      // VTID-04428: the merged change was reverted on main — its PR no longer
+      // blocks this row's self-heal child (the flood guard used to refuse it).
+      ...(isRevertMergedOnMain(input.failure_stage, revert)
+        ? { [PR_REVERTED_KEY]: new Date().toISOString() }
         : {}),
     },
   };

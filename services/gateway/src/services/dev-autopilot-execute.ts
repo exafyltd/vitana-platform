@@ -2267,7 +2267,7 @@ async function terminalizeVtidLedgerForExecution(
     if (!vtid) return; // autonomous-plane finding — no vtid_ledger row to close
 
     const terminal_outcome = status === 'completed' ? 'success' : status;
-    const patchR = await supa(
+    const patchLedger = () => supa(
       s,
       `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&is_terminal=eq.false`,
       {
@@ -2276,6 +2276,15 @@ async function terminalizeVtidLedgerForExecution(
         body: JSON.stringify({ is_terminal: true, terminal_outcome, status }),
       },
     );
+    let patchR = await patchLedger();
+    if (!patchR.ok) {
+      // VTID-04429: one retry. The PATCH is idempotent (is_terminal=eq.false
+      // guard), and a transient PostgREST blip was the whole failure mode.
+      console.warn(
+        `${LOG_PREFIX} vtid_ledger terminalize retry for ${vtid} after: ${patchR.error}`,
+      );
+      patchR = await patchLedger();
+    }
     if (!patchR.ok) {
       // VTID-04378: loud, not a warning — a failed write leaves the task
       // IN PROGRESS on the board with nothing else that will ever close it.
