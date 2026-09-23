@@ -23,6 +23,8 @@ import {
   delegateToAgent,
   getJob,
   listJobs,
+  findJob,
+  latestJob,
   type DelegationCaller,
 } from '../../../services/orchestrator/dispatcher';
 import { registerDefaultDelegationTargets } from '../../../services/orchestrator/delegation-targets';
@@ -262,12 +264,19 @@ function pickJob(session: DelegationSession, args: Record<string, unknown>) {
   return { caller, job };
 }
 
-export function runGetDelegationResult(session: DelegationSession, args: Record<string, unknown>): ToolResult {
-  const { job } = pickJob(session, args);
+/**
+ * VTID-04415: reading a result may also look in the run ledger, so a result
+ * produced for an earlier session on another gateway task is still found.
+ */
+export async function runGetDelegationResult(session: DelegationSession, args: Record<string, unknown>): Promise<ToolResult> {
+  const caller = callerFromSession(session);
+  const id = typeof args.job_id === 'string' ? args.job_id.trim() : '';
+  const job = id ? await findJob(id, caller) : await latestJob(caller);
   if (!job) return { success: false, result: '', error: 'No delegation found in this session' };
   return { success: true, result: JSON.stringify(jobView(job)) };
 }
 
+/** Cancel stays local: a job running on another task cannot be stopped from here. */
 export function runCancelDelegation(session: DelegationSession, args: Record<string, unknown>): ToolResult {
   const { caller, job } = pickJob(session, args);
   if (!job) return { success: false, result: '', error: 'No delegation found in this session' };

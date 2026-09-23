@@ -21,7 +21,10 @@
  *
  * Jobs live in process memory, bounded, with a TTL. ORB sessions are pinned
  * to one gateway task, so the job is on the task that serves the session.
- * Persisting jobs as native agent_runs rows is P4.
+ * VTID-04415: with ORCHESTRATOR_DELEGATION_PERSIST_ENABLED each job is also
+ * written through to `agent_runs` (delegation-run-store.ts); `findJob` /
+ * `latestJob` read it when this task does not hold the job, under the same
+ * owner rules. Memory stays primary; the store is fail-open.
  *
  * Cancel is cooperative: the job is marked cancelled and its result is
  * discarded; an agent that supports AbortSignal stops, one that does not
@@ -32,6 +35,7 @@ import { randomUUID } from 'crypto';
 import type { OrbSurface } from '../../orb/live/surface';
 import type { AgentChannel, AgentOrgContext } from './context';
 import { evaluatePolicy, type PolicyDecision, type PolicyDomain, type PolicyTier } from './policy';
+import { defaultDelegationRunStore, type DelegationRunStore } from './delegation-run-store';
 
 export interface DelegationCaller {
   user_id: string | null;
@@ -108,8 +112,29 @@ export const JOB_TTL_MS = 60 * 60 * 1000;
 export const MAX_JOBS = 1_000;
 export const MAX_REQUEST_CHARS = 4_000;
 
-interface JobEntry { job: DelegationJob; controller: AbortController; expires: number }
+interface JobEntry { job: DelegationJob; controller: AbortController; expires: number; persisted: Promise<void> }
 const jobs = new Map<string, JobEntry>();
+
+// undefined = not resolved yet (read the env on first use); null = off.
+let runStore: DelegationRunStore | null | undefined;
+
+/** Inject the run store (tests), or pass undefined to re-read the env. */
+export function setDelegationRunStore(store: DelegationRunStore | null | undefined): void {
+  runStore = store;
+}
+
+function activeRunStore(): DelegationRunStore | null {
+  if (runStore === undefined) runStore = defaultDelegationRunStore();
+  return runStore;
+}
+
+function persistFinish(entry: JobEntry): void {
+  const store = activeRunStore();
+  if (!store) return;
+  const snapshot = { ...entry.job };
+  // After the insert, never before: a job can finish inside the ack window.
+  entry.persisted = entry.persisted.then(() => store.recordFinish(snapshot)).catch(() => undefined);
+}
 
 function prune(now: number): void {
   for (const [id, e] of jobs) if (e.expires <= now) jobs.delete(id);
@@ -181,7 +206,15 @@ export async function delegateToAgent(
     session_id: caller.session_id, status: 'running', request: text.slice(0, MAX_REQUEST_CHARS),
     result: null, error: null, created_at: new Date(now()).toISOString(), completed_at: null,
   };
-  jobs.set(job.job_id, { job, controller, expires: now() + JOB_TTL_MS });
+  const store = activeRunStore();
+  const entry: JobEntry = {
+    job, controller, expires: now() + JOB_TTL_MS,
+    persisted: store
+      ? store.recordStart({ ...job }, { tenant_id: caller.tenant_id, platform_role: caller.platform_role, channel: caller.channel }, target.tier)
+        .catch(() => undefined)
+      : Promise.resolve(),
+  };
+  jobs.set(job.job_id, entry);
 
   const finish = (status: JobStatus, result: unknown, error: string | null) => {
     if (job.status !== 'running') return; // cancelled: discard
@@ -189,6 +222,7 @@ export async function delegateToAgent(
     job.result = result;
     job.error = error;
     job.completed_at = new Date(now()).toISOString();
+    persistFinish(entry);
   };
   const run = Promise.resolve()
     .then(() => target.run(job.request, caller, controller.signal))
@@ -244,7 +278,36 @@ export function cancelJob(jobId: string, caller: Pick<DelegationCaller, 'user_id
   e.job.status = 'cancelled';
   e.job.completed_at = new Date().toISOString();
   e.controller.abort();
+  persistFinish(e);
   return { ok: true, status: 'cancelled' };
+}
+
+/**
+ * VTID-04415: `getJob`, falling back to the run ledger when this task does
+ * not hold the job (the session that started it ran on another task). Same
+ * owner rules: same user, same surface.
+ */
+export async function findJob(jobId: string, caller: Pick<DelegationCaller, 'user_id' | 'surface'>): Promise<DelegationJob | null> {
+  const local = getJob(jobId, caller);
+  if (local || !caller.user_id) return local;
+  const store = activeRunStore();
+  if (!store) return null;
+  const row = await store.find(jobId, { user_id: caller.user_id, surface: caller.surface });
+  return row && row.user_id === caller.user_id && row.surface === caller.surface ? { ...row } : null;
+}
+
+/** VTID-04415: the caller's most recent job on this surface, here or in the run ledger. */
+export async function latestJob(caller: Pick<DelegationCaller, 'user_id' | 'surface'>): Promise<DelegationJob | null> {
+  const local = listJobs(caller, 1)[0] ?? null;
+  if (!caller.user_id) return local;
+  const store = activeRunStore();
+  if (!store) return local;
+  const row = await store.latest({ user_id: caller.user_id, surface: caller.surface });
+  if (!row || row.user_id !== caller.user_id || row.surface !== caller.surface) return local;
+  if (!local) return { ...row };
+  // Newest wins; a local copy of the same job is fresher than the row.
+  if (row.job_id === local.job_id) return local;
+  return row.created_at > local.created_at ? { ...row } : local;
 }
 
 /** Admin view: counts by agent and status, no request text or results. */
