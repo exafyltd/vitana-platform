@@ -194,6 +194,7 @@ jobs:
           echo "Pushed $IMAGE"
 
       - name: Register task-definition revision + roll the service
+        id: roll
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
           # environment-scoped repository VARIABLES when set (not secrets —
@@ -1008,6 +1009,35 @@ jobs:
           echo "Waiting for service to stabilize (up to ~10 min)…"
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
+      # VTID-04314: a timed-out `services-stable` waiter says nothing about WHY.
+      # From 2026-09-22 22:21 UTC seven consecutive deploys died that way with
+      # byte-identical build and secret output to the last green run, while
+      # staging kept serving the old build. Print the rollout state, the latest
+      # service events and the stop reason of the most recent stopped tasks so
+      # the failure names its own cause in the job log. Read-only, best-effort.
+      - name: Diagnose failed rollout (service events + stopped tasks)
+        if: failure() && steps.roll.outcome == 'failure'
+        run: |
+          set +e
+          C="${{ env.ECS_CLUSTER }}"; S="${{ env.ECS_SERVICE }}"
+          echo "== deployments"
+          aws ecs describe-services --cluster "$C" --services "$S" \
+            --query 'services[0].deployments[].{status:status,rollout:rolloutState,reason:rolloutStateReason,td:taskDefinition,desired:desiredCount,running:runningCount,pending:pendingCount,failed:failedTasks}' \
+            --output table
+          echo "== latest service events"
+          aws ecs describe-services --cluster "$C" --services "$S" \
+            --query 'services[0].events[:15].[createdAt,message]' --output text
+          echo "== most recent stopped tasks"
+          ARNS=$(aws ecs list-tasks --cluster "$C" --service-name "$S" --desired-status STOPPED \
+            --query 'taskArns[:5]' --output text | tr '\t' ' ' | sed 's/None//g')
+          if [ -n "${ARNS// /}" ]; then
+            aws ecs describe-tasks --cluster "$C" --tasks $ARNS \
+              --query 'tasks[].{td:taskDefinitionArn,stopCode:stopCode,stopped:stoppedReason,health:healthStatus,exit:containers[0].exitCode,why:containers[0].reason}' \
+              --output json
+          else
+            echo "(no stopped tasks listed)"
+          fi
+          exit 0
       - name: Smoke — env=staging + deployed commit live
         run: |
           set -e
