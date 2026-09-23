@@ -27,6 +27,7 @@
  */
 
 import type { LLMProvider, LLMRouterMessage, LLMRouterResult, LLMRouterTool, LLMRouterToolCall, LLMStage } from './llm-router';
+import { ProgressLedger, type StallOptions, type TurnCall } from './autopilot-agent/agent-progress';
 
 export const STAGE_LOOP_DEFAULT_MAX_TURNS = 6;
 export const STAGE_LOOP_DEFAULT_MAX_TOOL_CALLS = 10;
@@ -35,6 +36,14 @@ export const STAGE_LOOP_TOOL_RESULT_MAX_CHARS = 20_000;
 export const STAGE_LOOP_HISTORY_CHAR_BUDGET = 90_000;
 export const STAGE_LOOP_CONTINUE_PROMPT = 'Tool results above. Continue: call another tool if you still need evidence, otherwise give your final answer now.';
 export const STAGE_LOOP_FINAL_PROMPT = 'Your tool budget is used up. Give your final answer now from the evidence you already have — do not request more tools.';
+/**
+ * VTID-04446 (P4): progress ledger for the stage loops. The budgets here are
+ * small (6 turns), so the thresholds are too: one re-plan after two turns of
+ * nothing but exact repeats, and the final answer after three. A stalled loop
+ * is not a failure — it goes straight to the tool-less final call.
+ */
+export const STAGE_LOOP_DEFAULT_STALL: Readonly<StallOptions> = Object.freeze({ replanAfter: 2, stopAfter: 3 });
+export const STAGE_LOOP_REPLAN_PROMPT = 'Your last turns repeated tool calls you had already made, with the same arguments, and learned nothing new. Do not repeat them: use a different tool or different arguments, or give your final answer now.';
 const HISTORY_TRIM_NOTICE = '[tool result trimmed to bound context size — this tool ran earlier in the session]';
 
 export interface StageToolOutcome {
@@ -44,7 +53,7 @@ export interface StageToolOutcome {
 
 export interface StageToolStep {
   turn: number;
-  kind: 'llm' | 'tool' | 'final' | 'error';
+  kind: 'llm' | 'tool' | 'final' | 'error' | 'nudge';
   name?: string;
   detail: string;
   ms?: number;
@@ -89,6 +98,8 @@ export interface StageToolLoopOptions {
   now?: () => number;
   /** Test seam / caller override; defaults to the real `callViaRouter`. */
   callLlm?: StageLlmCall;
+  /** VTID-04446: stall thresholds; `false` turns stall detection off. */
+  stall?: StallOptions | false;
 }
 
 export interface StageToolLoopResult {
@@ -107,6 +118,8 @@ export interface StageToolLoopResult {
   steps: StageToolStep[];
   /** True when the final answer was forced by a budget (turns/tool calls/deadline). */
   budgetExhausted: boolean;
+  /** VTID-04446: true when the final answer was forced because the loop stopped making progress. */
+  stalled: boolean;
 }
 
 function clip(s: string, max: number): string {
@@ -160,8 +173,10 @@ export async function runStageToolLoop(o: StageToolLoopOptions): Promise<StageTo
   let toolCalls = 0;
   let prompt = o.prompt;
   let budgetExhausted = false;
+  let stalled = false;
+  const ledger = o.stall === false ? null : new ProgressLedger(o.stall ?? STAGE_LOOP_DEFAULT_STALL);
   const step = (s: StageToolStep) => { steps.push(s); try { o.onStep?.(s); } catch { /* telemetry never breaks the loop */ } };
-  const fail = (error: string): StageToolLoopResult => ({ ok: false, error, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted });
+  const fail = (error: string): StageToolLoopResult => ({ ok: false, error, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted, stalled });
 
   const call = async (withTools: boolean): Promise<LLMRouterResult> => {
     turns += 1;
@@ -191,17 +206,17 @@ export async function runStageToolLoop(o: StageToolLoopOptions): Promise<StageTo
     const outOfTurns = turns >= maxTurns;
     const outOfTime = now() > deadline;
     const outOfTools = o.tools.length > 0 && toolCalls >= maxToolCalls;
-    if (outOfTurns || outOfTime || outOfTools) {
+    if (outOfTurns || outOfTime || outOfTools || stalled) {
       // One last call, no tools, for the answer from what the model already has.
-      budgetExhausted = true;
-      step({ turn: turns, kind: 'final', detail: outOfTime ? 'deadline reached — asking for the final answer' : outOfTools ? 'tool-call budget reached — asking for the final answer' : 'turn budget reached — asking for the final answer' });
+      budgetExhausted = outOfTurns || outOfTime || outOfTools;
+      step({ turn: turns, kind: 'final', detail: stalled ? 'stalled: repeated tool calls without progress — asking for the final answer' : outOfTime ? 'deadline reached — asking for the final answer' : outOfTools ? 'tool-call budget reached — asking for the final answer' : 'turn budget reached — asking for the final answer' });
       prompt = o.finalPrompt ?? STAGE_LOOP_FINAL_PROMPT;
       const r = await call(false);
       if (!r.ok) return fail(`${o.stage} stage call failed on final turn ${turns}: ${r.error || 'unknown'}`);
       const text = (r.text || '').trim();
       if (!text) return fail(`${o.stage} stage returned no text on the final turn`);
       history.push({ role: 'user', content: prompt }, { role: 'assistant', content: text });
-      return { ok: true, text, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted };
+      return { ok: true, text, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted, stalled };
     }
 
     const r = await call(true);
@@ -212,14 +227,16 @@ export async function runStageToolLoop(o: StageToolLoopOptions): Promise<StageTo
       const text = (r.text || '').trim();
       if (!text) return fail(`${o.stage} stage returned neither text nor a tool call on turn ${turns}`);
       history.push({ role: 'assistant', content: text });
-      return { ok: true, text, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted };
+      return { ok: true, text, provider, model, fallbackUsed, usage, turns, toolCalls, toolNames, history, steps, budgetExhausted, stalled };
     }
     history.push({ role: 'assistant', toolCalls: calls, content: r.text || undefined });
     const results: Array<{ id?: string; name: string; result: string; isError?: boolean }> = [];
+    const turnCalls: TurnCall[] = [];
     for (const c of calls) {
       const args = c.arguments || {};
       if (toolCalls >= maxToolCalls) {
         results.push({ id: c.id, name: c.name, result: `tool-call budget (${maxToolCalls}) exhausted — answer from the evidence you already have`, isError: true });
+        turnCalls.push({ name: c.name, args, isError: true });
         continue;
       }
       toolCalls += 1;
@@ -233,9 +250,16 @@ export async function runStageToolLoop(o: StageToolLoopOptions): Promise<StageTo
       }
       step({ turn: turns, kind: 'tool', name: c.name, detail: out.isError ? out.result.slice(0, 300) : summarizeArgs(args), ms: now() - t0, isError: out.isError });
       results.push({ id: c.id, name: c.name, result: clip(out.result, STAGE_LOOP_TOOL_RESULT_MAX_CHARS), isError: out.isError });
+      turnCalls.push({ name: c.name, args, isError: out.isError });
     }
     history.push({ role: 'user', toolResults: results });
     prompt = o.continuePrompt ?? STAGE_LOOP_CONTINUE_PROMPT;
+    const verdict = ledger ? ledger.record(turns, turnCalls) : 'progress';
+    if (verdict === 'stalled') stalled = true;
+    else if (verdict === 'replan') {
+      step({ turn: turns, kind: 'nudge', detail: `re-plan: ${ledger!.idleTurns} turn(s) of repeated tool calls` });
+      prompt = STAGE_LOOP_REPLAN_PROMPT;
+    }
   }
 }
 

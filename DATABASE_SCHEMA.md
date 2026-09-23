@@ -436,6 +436,15 @@ project 2026-09-23 (Supabase MCP `apply_migration`, additive, pre/post-checked).
 
 All four: RLS on (tables), no policies, `anon`/`authenticated` revoked — service role only.
 
+**Run leases (VTID-04446) — migration committed, NOT APPLIED.**
+`20260923210000_vtid_04446_run_leases.sql` adds a partial index
+`idx_agent_runs_running_lease` on `agent_runs (lease_until) WHERE status = 'running'`
+and re-creates `agent_runs_unified` with one change: native rows carrying
+`metadata.mirror_of` (the lease row of a Dev Autopilot execution,
+`idempotency_key = dev_autopilot:<execution id>`) are excluded, since the
+execution already appears through its own projection. No table is created or
+altered. Apply it before setting `ORCHESTRATOR_RUN_LEASE_ENABLED=true`.
+
 `agents_registry` gained agent-card columns in the same migration: `skills`,
 `domains`, `roles_allowed`, `surfaces_allowed` (text[], default `{}`),
 `llm_stage`, `max_tier` (CHECK read|draft|commit|high), `budget_per_run_usd`,
@@ -961,6 +970,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-23 | VTID-04446, **committed, NOT applied** (owner applies): migration `20260923210000_vtid_04446_run_leases.sql` — partial index `idx_agent_runs_running_lease` + `agent_runs_unified` re-created excluding lease mirrors (`metadata.mirror_of`). Additive; required before `ORCHESTRATOR_RUN_LEASE_ENABLED=true`. | Claude | VTID-04446 |
 | 2026-09-23 | VTID-04411/04412, **applied live**: `memory_categories` `customer` (→ business_projects) and `support_ticket` (→ uncategorized); indexes `idx_memory_items_customer_key` (tenant, content_json->>customer_key, occurred_at desc) WHERE category_key='customer', unique `uq_memory_items_customer_command` (content_json->>command_id) and unique `uq_memory_items_support_ticket` (content_json->>ticket_id, coalesce(active_role,'')). | Claude Code | VTID-04411 |
 | 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |

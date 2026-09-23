@@ -13,7 +13,8 @@
  * watchdog (or anything else) has already moved on is never touched.
  */
 
-import { supa, type SupaConfig } from '../dev-autopilot-execute';
+import { supa, leaseRest, type SupaConfig } from '../dev-autopilot-execute';
+import { isRunLeaseEnabled, renewDevRunLease } from '../orchestrator/run-lease';
 
 const LOG_PREFIX = '[autopilot-agent]';
 
@@ -68,6 +69,12 @@ export function startExecutionHeartbeat(
     /** VTID-04032: called once, from a beat, when the row was cancelled underneath the agent. */
     onCancelRequested?: () => void;
     read?: HeartbeatRead;
+    /**
+     * VTID-04446: renew the run lease on every beat so a stepping run's lease
+     * is always ahead of the clock. Defaults to the ledger renew when
+     * ORCHESTRATOR_RUN_LEASE_ENABLED is on; null means no lease.
+     */
+    renewLease?: (() => Promise<unknown>) | null;
   } = {},
 ): ExecutionHeartbeat {
   const intervalMs = opts.intervalMs ?? heartbeatIntervalMs();
@@ -79,6 +86,9 @@ export function startExecutionHeartbeat(
       const r = await supa<Array<{ status?: string; metadata?: Record<string, unknown> | null }>>(s, path);
       return r.ok && r.data && r.data[0] ? r.data[0] : null;
     });
+  const renewLease = opts.renewLease !== undefined
+    ? opts.renewLease
+    : (isRunLeaseEnabled() ? () => renewDevRunLease(leaseRest(s), executionId) : null);
   let count = 0;
   let stopped = false;
   let cancelFired = false;
@@ -89,6 +99,9 @@ export function startExecutionHeartbeat(
     Promise.resolve()
       .then(() => patch(path, body))
       .catch((err) => console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] heartbeat failed:`, err instanceof Error ? err.message : err))
+      // VTID-04446: the beat is also the lease renewal (fail-open inside).
+      .then(() => (stopped || !renewLease ? undefined : renewLease()))
+      .catch((err) => console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] lease renew failed:`, err instanceof Error ? err.message : err))
       // VTID-04032: the same beat is the agent's only view of the row — if
       // an operator cancelled it, tell the runner (once) so the loop stops
       // at its next boundary instead of running to the deadline.
