@@ -1227,6 +1227,11 @@ export async function handleLiveSessionStart(
             latency_ms: bootstrapResult.latencyMs,
             reason: bootstrapResult.skippedReason || null,
             transport: transportLabel,
+            // VTID-04419: the builder the session started on, and why a brain
+            // build fell back (read by the Command Hub brain inspector).
+            builder: session.contextBuilder ?? null,
+            brain_error: (bootstrapResult as { brainError?: string }).brainError ?? null,
+            chars: finalContext.length,
           },
         }).catch(() => { });
       })

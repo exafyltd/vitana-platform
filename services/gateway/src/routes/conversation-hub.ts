@@ -44,6 +44,7 @@ import {
 } from '../services/conversation/screen-surface';
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
+import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } from '../services/conversation/session-brain-inspector';
 import {
   summarizeConversationMetrics,
   buildMetricSeries,
@@ -334,6 +335,49 @@ function toMetricRows(data: Array<Record<string, unknown>> | null | undefined): 
     computed_at: r.computed_at ? String(r.computed_at) : undefined,
   }));
 }
+
+/**
+ * VTID-04419 (Plan v1 WS-1.7): brain inspector.
+ * GET /admin/conversation/sessions?hours=24&user_id=&limit=30
+ * Recent voice sessions (newest first), from session-start events in a bounded
+ * window. Never returns the user's email or user agent.
+ */
+router.get('/admin/conversation/sessions', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const hours = Math.min(Math.max(Number(req.query.hours) || 24, 1), 168);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  const userId = typeof req.query.user_id === 'string' && req.query.user_id.trim() ? req.query.user_id.trim() : null;
+  if (userId && !isValidUserId(userId)) return jsonError(res, 400, 'user_id must be a UUID');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { sessions, error } = await listRecentSessions(supabase, { hours, userId, limit });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: { hours, count: sessions.length, sessions } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'sessions read failed');
+  }
+});
+
+/**
+ * VTID-04419: GET /admin/conversation/sessions/:sessionId/brain
+ * For one session: the context that was built (builder, packing, gate,
+ * snapshot, reconnect rebuilds), the opening decision, the tool catalog trim,
+ * errors, the outcome, and a compact timeline.
+ */
+router.get('/admin/conversation/sessions/:sessionId/brain', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const sessionId = req.params.sessionId;
+  if (!isValidSessionId(sessionId)) return jsonError(res, 400, 'invalid session id');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { summary, error } = await inspectSession(supabase, sessionId);
+    if (error) return jsonError(res, 500, error);
+    if (!summary.found) return jsonError(res, 404, 'session not found in the last 14 days');
+    return res.json({ ok: true, data: summary });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'session inspect failed');
+  }
+});
 
 /**
  * GET /admin/conversation/metrics/summary?window_hours=24

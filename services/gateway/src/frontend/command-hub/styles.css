@@ -17904,3 +17904,27 @@ button.fb-chip:focus-visible,
   .conv-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .conv-metric-tile__value { font-size: 18px; }
 }
+/* VTID-04419 (Plan v1 WS-1.7): brain inspector (Conversation → Simulator / Journey Context) */
+.conv-brain { margin-top: 24px; padding-top: 12px; border-top: 1px solid #2c3444; max-width: 1100px; }
+.conv-brain__bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.conv-brain__input { flex: 1 1 260px; min-width: 0; padding: 6px 8px; background: #161b22; border: 1px solid #2c3444; border-radius: 5px; color: #e6e6e6; font-size: 13px; font-family: monospace; }
+.conv-brain__btn { padding: 7px 14px; background: #2f6feb; border: 1px solid #2f6feb; border-radius: 5px; color: #fff; font-size: 13px; cursor: pointer; min-height: 36px; }
+.conv-brain__btn--ghost { background: transparent; color: #c8ccd4; border-color: #2c3444; }
+.conv-brain__list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.conv-brain__row { text-align: start; padding: 8px 10px; background: #161b22; border: 1px solid #2c3444; border-radius: 5px; color: #c8ccd4; font-size: 12px; font-family: monospace; cursor: pointer; overflow-wrap: anywhere; min-height: 36px; }
+.conv-brain__row:hover, .conv-brain__row:focus-visible { border-color: #61afef; }
+.conv-brain__meta { color: #c8ccd4; font-size: 12px; font-family: monospace; margin-bottom: 8px; overflow-wrap: anywhere; }
+.conv-brain__chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 6px; }
+.conv-brain__chips-label { color: #8a94a6; font-size: 12px; min-width: 76px; }
+.conv-brain__chip { padding: 2px 8px; border: 1px solid #2c3444; border-radius: 10px; font-size: 11px; color: #c8ccd4; overflow-wrap: anywhere; }
+
+
+.conv-brain__error { color: #e06c75; border: 1px solid #e06c75; border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+.conv-brain__timeline { margin-top: 12px; font-size: 12px; color: #c8ccd4; }
+.conv-brain__timeline summary { cursor: pointer; color: #8a94a6; }
+.conv-brain__tl-row { font-family: monospace; padding: 1px 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .conv-brain__bar { flex-direction: column; align-items: stretch; }
+  .conv-brain__input { flex: 0 0 auto; }
+  .conv-brain__chips-label { min-width: 0; width: 100%; }
+}

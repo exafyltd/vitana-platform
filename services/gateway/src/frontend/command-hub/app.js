@@ -7769,6 +7769,172 @@ function renderConversationToolHealthView() {
     return ui.panel;
 }
 
+// ─── VTID-04419 (Plan v1 WS-1.7): brain inspector ───────────────────────────
+// Per voice session: what context was built and trimmed, what the opening
+// decision was and why, the tool catalog trim, errors and the outcome. Mounted
+// in Conversation → Simulator and Conversation → Journey Context. Read-only;
+// admin endpoints GET /admin/conversation/sessions[/:id/brain]. Class-based
+// styling only (CSP).
+function _convBrainChips(label, keys, tone) {
+    var row = _convEl('div', { cls: 'conv-brain__chips' });
+    row.appendChild(_convEl('span', { text: label, cls: 'conv-brain__chips-label' }));
+    if (!keys || !keys.length) {
+        row.appendChild(_convEl('span', { text: 'none', cls: 'conv-metric-muted' }));
+        return row;
+    }
+    keys.forEach(function (k) {
+        row.appendChild(_convEl('span', { text: k, cls: 'conv-brain__chip' + (tone ? ' conv-brain__chip--' + tone : '') }));
+    });
+    return row;
+}
+
+function _convBrainFail(host, err) {
+    host.innerHTML = '';
+    host.appendChild(_convEl('div', { text: 'Could not load: ' + (err && err.message ? err.message : err), cls: 'conv-brain__error' }));
+}
+
+function _convBrainRender(host, d) {
+    host.innerHTML = '';
+    var c = d.context || {}, o = d.outcome || {}, u = d.user || {};
+    host.appendChild(_convEl('div', {
+        text: d.session_id + ' · started ' + (_convWhen(d.started_at) || '?') + ' · ' + (u.lang || '?') + ' · ' + (u.transport || '?') +
+            (u.origin ? ' · ' + u.origin : '') + (u.user_id ? ' · user ' + u.user_id : ''),
+        cls: 'conv-brain__meta'
+    }));
+    var gate = c.gate;
+    host.appendChild(_convHeading('Context'));
+    host.appendChild(_convTileGrid([
+        _convTile('Builder', c.builder || (c.skipped_reason ? c.skipped_reason : 'not recorded'),
+            c.brain_error ? 'brain failed: ' + c.brain_error : (c.bootstrap_latency_ms != null ? 'built in ' + _convMs({ value: c.bootstrap_latency_ms }) : null),
+            c.brain_error ? 'warn' : null),
+        _convTile('Context at setup', c.setup_context_chars == null ? '—' : c.setup_context_chars + ' chars',
+            'source: ' + (c.setup_context_source || (gate && gate.context_source) || 'unknown'),
+            c.setup_context_chars === 0 ? 'warn' : null),
+        _convTile('Context wait', gate ? (gate.timed_out ? 'timed out' : 'in time') : '—',
+            gate && gate.waited_ms != null ? 'waited ' + gate.waited_ms + ' ms' : null, gate && gate.timed_out ? 'warn' : null),
+        _convTile('Stored snapshot', c.snapshot_used ? 'used' : 'not used',
+            c.snapshot_used && c.snapshot_used.chars != null ? c.snapshot_used.chars + ' chars' : null),
+        _convTile('Reconnect rebuilds', String((c.rebuilt_on_reconnect || []).length),
+            (c.rebuilt_on_reconnect || []).map(function (r) { return r.builder + (r.started_builder && r.started_builder !== r.builder ? ' (started ' + r.started_builder + ')' : ''); }).join(' · ') || null)
+    ]));
+    var p = c.packing;
+    if (p) {
+        host.appendChild(_convEl('div', {
+            text: 'Bootstrap packing: ' + (p.chars_before == null ? '?' : p.chars_before) + ' → ' + (p.chars_after == null ? '?' : p.chars_after) + ' chars' + (p.packed ? ' (trimmed to budget)' : ' (under budget, unchanged)'),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convBrainChips('Kept', p.kept));
+        host.appendChild(_convBrainChips('Shortened', p.shortened, 'warn'));
+        host.appendChild(_convBrainChips('Dropped', p.dropped, 'bad'));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No packing report for this session.', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Decision'));
+    if (d.decision && d.decision.length) {
+        host.appendChild(_convTable(
+            [{ key: 'at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' },
+             { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'Next step' }, { key: 'current_route', label: 'Screen' }],
+            d.decision.map(function (x) {
+                return { at: _convWhen(x.at) || '', wake_opener: x.wake_opener || '', register: x.register || '', bucket: x.bucket || '',
+                    nba: (x.nba || '') + (x.nba_domain ? ' (' + x.nba_domain + ')' : ''), current_route: x.current_route || '' };
+            })
+        ));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No opening decision recorded (for example, a silent reconnect).', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Tools, errors and outcome'));
+    var t = d.tools;
+    host.appendChild(_convTileGrid([
+        _convTile('Tool catalog', t ? Math.round((t.bytes_after || 0) / 1024) + ' KB' : 'not trimmed',
+            t ? 'from ' + Math.round((t.bytes_before || 0) / 1024) + ' KB · ' + (t.dropped_count || 0) + ' dropped' + (t.provider ? ' · ' + t.provider : '') : null),
+        _convTile('Errors', String((d.errors || []).length),
+            (d.errors || []).map(function (e) { return e.stage + (e.failure_kind ? ':' + e.failure_kind : ''); }).join(' · ') || null,
+            (d.errors || []).length ? 'warn' : null),
+        _convTile('First speech', o.first_audio_ms == null ? '—' : (o.first_audio_ms / 1000).toFixed(1) + ' s', 'session open → first model audio'),
+        _convTile('Reply speed', (o.turn_first_audio_ms || []).length ? (o.turn_first_audio_ms || []).map(function (x) { return 't' + x.turn + ' ' + (x.ms / 1000).toFixed(1) + ' s'; }).join(' · ') : '—',
+            'first model audio after each user turn', (o.turn_first_audio_ms || []).some(function (x) { return x.ms > 3000; }) ? 'warn' : null),
+        _convTile('Ended', o.stopped ? (o.stop_reason || 'stopped') : 'no stop event',
+            (o.stopped && !o.stop_reason ? 'no reason recorded · ' : '') + (o.turns == null ? '' : o.turns + ' turn(s)') +
+            (o.duration_ms == null ? '' : ' · ' + Math.round(o.duration_ms / 1000) + ' s'), o.stopped ? null : 'warn'),
+        _convTile('Finalized', o.finalized ? 'yes' : 'no',
+            o.finalized ? ((o.finalized.memory_committed ? 'memory committed' : 'no memory commit') + ' · ' + (o.finalized.summary_written ? 'summary written' : 'no summary')) : null)
+    ]));
+
+    var tl = _convEl('details', { cls: 'conv-brain__timeline' });
+    tl.appendChild(_convEl('summary', { text: 'Timeline (' + (d.timeline || []).length + ' of ' + d.events_read + ' events' + (d.truncated ? ', truncated' : '') + ')' }));
+    (d.timeline || []).forEach(function (e) {
+        tl.appendChild(_convEl('div', { text: '+' + (e.t_ms / 1000).toFixed(1) + ' s  ' + e.topic + (e.stage ? ' · ' + e.stage : ''), cls: 'conv-brain__tl-row' }));
+    });
+    host.appendChild(tl);
+}
+
+function _convBrainInspector(getUserId) {
+    var box = _convEl('section', { cls: 'conv-brain' });
+    box.appendChild(_convHeading('Brain inspector'));
+    box.appendChild(_convEl('p', {
+        text: 'For one voice session: what context was built and trimmed, what the opening decision was and why, and how the session ended. Read-only.',
+        cls: 'conv-metric-muted'
+    }));
+    var bar = _convEl('div', { cls: 'conv-brain__bar' });
+    var sidInput = _convEl('input', { cls: 'conv-brain__input' });
+    sidInput.placeholder = 'live-… session id';
+    sidInput.setAttribute('aria-label', 'Voice session id');
+    var inspectBtn = _convEl('button', { text: 'Inspect', cls: 'conv-brain__btn' });
+    inspectBtn.type = 'button';
+    var listBtn = _convEl('button', { text: 'Recent sessions', cls: 'conv-brain__btn conv-brain__btn--ghost' });
+    listBtn.type = 'button';
+    bar.appendChild(sidInput);
+    bar.appendChild(inspectBtn);
+    bar.appendChild(listBtn);
+    box.appendChild(bar);
+    var list = _convEl('div', { cls: 'conv-brain__list' });
+    var detail = _convEl('div', { cls: 'conv-brain__detail' });
+    box.appendChild(list);
+    box.appendChild(detail);
+
+    function inspect(id) {
+        id = (id || '').trim();
+        if (!id) return;
+        sidInput.value = id;
+        detail.innerHTML = '';
+        detail.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions/' + encodeURIComponent(id) + '/brain')
+            .then(function (d) { _convBrainRender(detail, d); })
+            .catch(function (err) { _convBrainFail(detail, err); });
+    }
+
+    function loadList() {
+        var uid = typeof getUserId === 'function' ? String(getUserId() || '').trim() : '';
+        list.innerHTML = '';
+        list.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions?hours=72&limit=30' + (uid ? '&user_id=' + encodeURIComponent(uid) : ''))
+            .then(function (d) {
+                list.innerHTML = '';
+                if (!d.sessions.length) {
+                    list.appendChild(_convEl('div', { text: 'No voice sessions in the last 72 h' + (uid ? ' for this user' : '') + '.', cls: 'conv-metric-muted' }));
+                    return;
+                }
+                d.sessions.forEach(function (s) {
+                    var row = _convEl('button', {
+                        text: (_convWhen(s.started_at) || '') + ' · ' + (s.lang || '?') + ' · ' + (s.transport || '?') + ' · ' + s.session_id,
+                        cls: 'conv-brain__row'
+                    });
+                    row.type = 'button';
+                    row.addEventListener('click', function () { inspect(s.session_id); });
+                    list.appendChild(row);
+                });
+            })
+            .catch(function (err) { _convBrainFail(list, err); });
+    }
+
+    inspectBtn.addEventListener('click', function () { inspect(sidInput.value); });
+    sidInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') inspect(sidInput.value); });
+    listBtn.addEventListener('click', loadList);
+    return box;
+}
+
 function renderConversationSimulatorView() {
     var ui = _convPanel('Conversation · Simulator', 'Dry-run the decision for a user — assembled bundle, register, ranked NBAs, and the composed directive. Read-only: the assistant never speaks or emits.');
     ui.body.innerHTML = '';
@@ -7827,6 +7993,8 @@ function renderConversationSimulatorView() {
         }).catch(function (err) { _convError(out, err); });
     }
     runBtn.addEventListener('click', run);
+    // VTID-04419: the brain inspector, filtered by the user id above when set.
+    ui.panel.appendChild(_convBrainInspector(function () { return userInput.value; }));
     return ui.panel;
 }
 
@@ -44807,6 +44975,9 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextNextActionInspectorPanel(jc.nextActionInspector));
 
     c.appendChild(grid);
+    // VTID-04419 (Plan v1 WS-1.7): the brain inspector for this user's voice
+    // sessions (the userId above filters the session list).
+    c.appendChild(_convBrainInspector(function () { return jc.userId; }));
     return c;
 }
 

@@ -88,6 +88,21 @@ GET /api/v1/admin/conversation/decisions       -> 401 application/json; charset=
 
 Post-merge expectation: all three return `401 application/json` anonymously.
 
+**Added by VTID-04419 (WS-1.7), same PR.** Two more `router.get(...)` handlers on
+the same `conversation-hub` router, same `requireAuth` + `requireExafyAdmin`:
+
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/sessions`
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/sessions/:sessionId/brain`
+
+Pre-merge, anonymous, staging, 2026-09-23:
+
+```
+GET /api/v1/admin/conversation/sessions  -> 404 text/html; charset=utf-8   (not deployed yet)
+GET /api/v1/admin/conversation/decisions -> 401 application/json; charset=utf-8   (same router: mounted, admin gate live)
+```
+
+Post-merge expectation: both return `401 application/json` anonymously.
+
 ### Post-deploy check (AC-6)
 
 ```
@@ -122,6 +137,13 @@ or heartbeat:
   `context_rebuilt_on_reconnect` (builder, started_builder, chars, latency_ms,
   brain_error, turns) when an SSE reconnect rebuilds the session context.
   TEST: services/gateway/test/orb/live/session/vtid-04414-session-context-builder.test.ts
+- No new topic for VTID-04418: one new `orb.live.diag` stage
+  `upstream_handlers_bound` (Vertex path on the shared handlers) and a new
+  `reason: superseded_by_new_session` on `conversation.session.finalized`.
+  TEST: services/gateway/test/orb/live/session/vtid-04418-teardown-dedupe.test.ts
+- No new topic for VTID-04419: `builder`, `brain_error` and `chars` fields on
+  the existing `orb.live.context.bootstrap` event; the inspector only reads.
+  TEST: services/gateway/test/services/conversation/vtid-04419-session-brain-inspector.test.ts
 
 Live signal after merge (staging): rows with these topics in `oasis_events`.
 
