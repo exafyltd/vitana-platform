@@ -1,0 +1,3 @@
+$ cd services/gateway && node node_modules/.bin/jest test/orb/live/surface.test.ts test/orb/live/commerce-surface.test.ts test/orb/live/tools/surface-gated-catalog.test.ts
+Test Suites: 3 passed, 3 total   Tests: 42 passed, 42 total
+$ npx tsc --noEmit -p services/gateway   -> clean
