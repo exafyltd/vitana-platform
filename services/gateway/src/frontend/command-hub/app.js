@@ -7753,7 +7753,9 @@ function _convRenderShadowRanking(host, days) {
             _convTile('Openings ranked', String(d.sessions_ranked || 0), 'of ' + (d.sessions_read || 0) + ' sessions in ' + (d.days || days) + ' day(s)'),
             _convTile('Agreement', d.agree_rate == null ? '—' : Math.round(d.agree_rate * 1000) / 10 + '%', d.agree + ' same winner'),
             _convTile('Would differ', String(d.sessions_ranked - d.agree), 'the shadow score picks another provider',
-                d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null)
+                d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null),
+            // VTID-04435 (WS-4.3): openings scored with the user's own weights (their outcomes, within fixed limits).
+            _convTile('Personal weights', String(d.personalized || 0), (d.personal_changed_winner || 0) + ' changed the shadow pick')
         ]));
         if ((d.disagreements || []).length) {
             body.appendChild(_convTable([{ key: 'live', label: 'Live pick' }, { key: 'shadow', label: 'Shadow pick' }, { key: 'count', label: 'Openings' }], d.disagreements));
@@ -7960,6 +7962,14 @@ function _convBrainRender(host, d) {
                         'would pick ' + (sh.shadow_winner || 'none') + ' instead of ' + (sh.live_winner || 'none')),
                 cls: sh.agree ? 'conv-metric-muted' : 'conv-brain__shadow-diff'
             }));
+            // VTID-04435 (WS-4.3): this user's weight adjustment.
+            if (sh.personal) {
+                var bodyPersonal = 'Personal weights from ' + (sh.personal.evidence == null ? '?' : sh.personal.evidence) + ' settled offers: outcome ×' +
+                    sh.personal.outcome_mult + ', freshness ×' + sh.personal.freshness_mult +
+                    (sh.personal.shared_weights_winner && sh.personal.shared_weights_winner !== sh.shadow_winner
+                        ? ' · shared weights would pick ' + sh.personal.shared_weights_winner : ' · same pick as the shared weights');
+                host.appendChild(_convEl('div', { text: bodyPersonal, cls: 'conv-metric-muted' }));
+            }
             host.appendChild(_convTable(
                 [{ key: 'provider', label: 'Provider' }, { key: 'score', label: 'Shadow score' }, { key: 'priority', label: 'Fixed priority' }],
                 (sh.scores || []).map(function (x) {

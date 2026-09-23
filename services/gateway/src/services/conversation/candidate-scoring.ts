@@ -61,8 +61,8 @@ export interface ScoringContext {
   recentWindow: number;
   currentRoute: string | null;
   partOfDay: PartOfDay | null;
-  /** provider → { accepted, settled } for this user. */
-  outcomes: Record<string, { accepted: number; settled: number }>;
+  /** provider → { accepted, settled } for this user (declined / ignored when known, VTID-04435). */
+  outcomes: Record<string, { accepted: number; settled: number; declined?: number; ignored?: number }>;
 }
 
 export interface ScoredCandidate {
@@ -236,10 +236,12 @@ export function __resetScoringWeightsCacheForTest(): void {
 export async function loadUserOutcomes(
   sb: SupabaseClient,
   userId: string,
-): Promise<Record<string, { accepted: number; settled: number }>> {
+): Promise<Record<string, { accepted: number; settled: number; declined: number; ignored: number }>> {
   const { readOfferOutcomeStats } = await import('./offer-outcome-stats');
   const { rows } = await readOfferOutcomeStats(sb, { days: 90, userId });
-  const out: Record<string, { accepted: number; settled: number }> = {};
-  for (const r of rows) out[r.provider] = { accepted: r.accepted, settled: r.accepted + r.declined + r.ignored };
+  const out: Record<string, { accepted: number; settled: number; declined: number; ignored: number }> = {};
+  for (const r of rows) {
+    out[r.provider] = { accepted: r.accepted, settled: r.accepted + r.declined + r.ignored, declined: r.declined, ignored: r.ignored };
+  }
   return out;
 }

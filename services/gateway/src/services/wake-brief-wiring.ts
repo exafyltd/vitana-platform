@@ -33,6 +33,8 @@ import {
   rankInShadow,
   type ScorableCandidate,
 } from './conversation/candidate-scoring';
+// VTID-04435 (WS-4.3): per-user weights from the user's own outcomes.
+import { personalizeWeights } from './conversation/personal-weights';
 // VTID-04423 (WS-2.3): the opening's candidates, kept for the conversation.
 import {
   BRAIN_CANDIDATES_TTL_MIN,
@@ -901,7 +903,7 @@ async function recordShadowRanking(
   if (candidates.length === 0) return;
   const t0 = Date.now();
   const weights = await loadScoringWeights(args.supabase ?? null);
-  let outcomes: Record<string, { accepted: number; settled: number }> = {};
+  let outcomes: Record<string, { accepted: number; settled: number; declined?: number; ignored?: number }> = {};
   if (args.supabase && args.userId) {
     try {
       outcomes = await loadUserOutcomes(args.supabase, args.userId);
@@ -909,16 +911,26 @@ async function recordShadowRanking(
       outcomes = {};
     }
   }
-  const ranking = rankInShadow(candidates, winningProviderKey(decision), {
+  const scoringCtx = {
     recentlyServed,
     recentWindow: RECENT_OPENERS_WINDOW,
     currentRoute: args.currentRoute ?? null,
     partOfDay: partOfDayForHour(localHourIn(args.timezone ?? null)),
     outcomes,
-  }, weights);
+  };
+  // VTID-04435 (WS-4.3): the shadow score uses this user's copy of the
+  // weights (their own outcomes, within fixed limits). The shared-weights
+  // winner is recorded beside it, so the effect of personalisation is visible.
+  const personal = personalizeWeights(weights, outcomes);
+  const ranking = rankInShadow(candidates, winningProviderKey(decision), scoringCtx, personal.weights);
+  const baseWinner = personal.adjustment.applied
+    ? rankInShadow(candidates, null, scoringCtx, weights).shadow_winner
+    : ranking.shadow_winner;
   safeRecord(recorder, args.sessionId, 'continuation_shadow_ranked', {
     decisionId: decision.decisionId,
     ...ranking,
+    personal: personal.adjustment,
+    shadow_winner_shared_weights: baseWinner,
     outcome_providers: Object.keys(outcomes).length,
     durationMs: Date.now() - t0,
   });

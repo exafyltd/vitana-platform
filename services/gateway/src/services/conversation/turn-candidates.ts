@@ -136,13 +136,18 @@ export async function readTurnCandidates(
       loadScoringWeights(sb),
       loadUserOutcomes(sb, userId).catch(() => ({})),
     ]);
+    // VTID-04435 (WS-4.3): with BRAIN_PERSONAL_WEIGHTS=true (staging) the
+    // live re-ranking uses this user's copy of the weights, within the fixed
+    // limits in personal-weights.ts; otherwise the shared weights, as before.
+    const { isPersonalWeightsLive, personalizeWeights } = await import('./personal-weights');
+    const useWeights = isPersonalWeightsLive() ? personalizeWeights(weights, outcomes).weights : weights;
     const ranked = decideTurnCandidates(stored, {
       recentlyServed: Array.isArray(recent?.value) ? recent!.value.filter((k) => typeof k === 'string') : [],
       recentWindow: RECENT_WINDOW,
       currentRoute: opts.currentRoute ?? null,
       partOfDay: partOfDayForHour(localHourIn(opts.timezone ?? null)),
       outcomes,
-    }, weights);
+    }, useWeights);
     return { ranked, text: renderTurnCandidatesText(ranked) };
   } catch {
     return { ranked: [], text: '' };

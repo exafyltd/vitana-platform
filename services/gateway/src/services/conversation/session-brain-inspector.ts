@@ -106,6 +106,8 @@ export interface SessionBrainSummary {
       shadow_winner: string | null;
       agree: boolean | null;
       scores: Array<{ provider: string; score: number | null; priority: number | null }>;
+      /** VTID-04435: this user's weight adjustment, and the winner under the shared weights. */
+      personal?: { evidence: number | null; outcome_mult: number | null; freshness_mult: number | null; shared_weights_winner: string | null } | null;
     } | null;
   } | null;
   tools: {
@@ -379,6 +381,15 @@ export function summarizeWakeTimeline(events: unknown): SessionBrainSummary['can
         agree: bool(m.agree),
         scores: cands.slice(0, 15).map((c) => ({ provider: str(c.provider) ?? '?', score: num(c.score), priority: num(c.priority) })),
       };
+      const pa = (m.personal ?? null) as Record<string, unknown> | null;
+      if (pa && pa.applied === true) {
+        o.shadow.personal = {
+          evidence: num(pa.evidence),
+          outcome_mult: num(pa.outcome_mult),
+          freshness_mult: num(pa.freshness_mult),
+          shared_weights_winner: str(m.shadow_winner_shared_weights),
+        };
+      }
     } else if (name === 'continuation_decision_finished') {
       const o = ensure();
       o.duration_ms = num(m.durationMs);
