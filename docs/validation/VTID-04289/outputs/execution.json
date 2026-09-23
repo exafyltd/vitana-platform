@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04289",
+  "execution_id": "593cb4d1-070e-47db-8b11-7c835dd128de",
+  "finding_id": "e367b3a1-62dd-4e52-b6c1-276cd0c26368",
+  "plan_version": 1,
+  "branch": "dev-autopilot/593cb4d1",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/services/action-executors.test.ts",
+      "action": "modify"
+    }
+  ],
+  "generated_at": "2026-09-22T21:12:46.432Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
