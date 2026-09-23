@@ -6720,6 +6720,12 @@ async function executeLiveApiToolInner(
         return await runOperatorDelegateAsync(session, args ?? {});
       }
 
+      // VTID-04397: member ORB → the support specialist (agent-as-tool).
+      case 'ask_support_specialist': {
+        const { runAskSupportSpecialist } = await import('../orb/live/tools/delegation-tools');
+        return await runAskSupportSpecialist(session, args ?? {});
+      }
+
       case 'get_delegation_result': {
         const { runGetDelegationResult } = await import('../orb/live/tools/delegation-tools');
         return runGetDelegationResult(session, args ?? {});

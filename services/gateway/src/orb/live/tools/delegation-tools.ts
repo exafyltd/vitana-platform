@@ -26,6 +26,7 @@ import {
   type DelegationCaller,
 } from '../../../services/orchestrator/dispatcher';
 import { registerDefaultDelegationTargets } from '../../../services/orchestrator/delegation-targets';
+import { isSupportSpecialistEnabled, SUPPORT_SPECIALIST_AGENT_ID } from '../../../services/orchestrator/support-specialist';
 import { resolveOrbSurface } from '../surface';
 
 export const GET_DELEGATION_RESULT_TOOL_NAME = 'get_delegation_result';
@@ -53,6 +54,32 @@ export const CANCEL_DELEGATION_TOOL = {
 };
 
 export const DELEGATION_COMPANION_TOOLS = [GET_DELEGATION_RESULT_TOOL, CANCEL_DELEGATION_TOOL];
+
+/**
+ * VTID-04397: the member ORB's support specialist (agent-as-tool). Declared
+ * only on the member surface, only when ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED
+ * is 'true'. The specialist returns findings; Vitana answers in her own words.
+ */
+export const ASK_SUPPORT_SPECIALIST_TOOL_NAME = 'ask_support_specialist';
+export const ASK_SUPPORT_SPECIALIST_TOOL = {
+  name: ASK_SUPPORT_SPECIALIST_TOOL_NAME,
+  description: [
+    "Ask the support specialist about the member's own support tickets and bug reports (status, what happened, whether it is fixed)",
+    'or a how-do-I / account question the knowledge base answers. It looks things up and returns findings; it changes nothing.',
+    'Answer the member from the findings in your own words. If it is still working, say briefly that you are checking,',
+    'then call get_delegation_result on a later turn. To report a NEW problem use report_to_specialist instead.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: { question: { type: 'string', description: "The member's question, restated clearly (include any ticket number they mentioned)." } },
+    required: ['question'],
+  },
+};
+
+/** The member-surface delegation tools, or none when the specialist is off. */
+export function memberDelegationTools(env: NodeJS.ProcessEnv = process.env): object[] {
+  return isSupportSpecialistEnabled(env) ? [ASK_SUPPORT_SPECIALIST_TOOL, ...DELEGATION_COMPANION_TOOLS] : [];
+}
 
 export interface DelegationSession {
   sessionId: string;
@@ -113,6 +140,36 @@ export async function runOperatorDelegateAsync(session: DelegationSession, args:
       };
     case 'failed':
       return { success: false, result: '', error: `Operator turn failed: ${r.error}` };
+    case 'escalate':
+      return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
+    default:
+      return { success: false, result: '', error: r.error };
+  }
+}
+
+/** ask_support_specialist, through the dispatcher (voice ack window 1.5 s). */
+export async function runAskSupportSpecialist(session: DelegationSession, args: Record<string, unknown>): Promise<ToolResult> {
+  if (!isSupportSpecialistEnabled()) {
+    return { success: false, result: '', error: 'the support specialist is not enabled' };
+  }
+  registerDefaultDelegationTargets();
+  const caller = callerFromSession(session);
+  const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
+  const r = await delegateToAgent(SUPPORT_SPECIALIST_AGENT_ID, question, caller);
+  switch (r.status) {
+    case 'done':
+      return { success: true, result: JSON.stringify(r.result) };
+    case 'working':
+      return {
+        success: true,
+        result: JSON.stringify({
+          status: 'working',
+          job_id: r.job_id,
+          note: 'The support specialist is still looking it up. Tell the member briefly that you are checking; call get_delegation_result with this job_id on a later turn or when they ask.',
+        }),
+      };
+    case 'failed':
+      return { success: false, result: '', error: `Support specialist failed: ${r.error}` };
     case 'escalate':
       return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
     default:

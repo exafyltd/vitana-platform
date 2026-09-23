@@ -1581,6 +1581,10 @@ OPERATOR_MACHINE_AUTH_TOKEN=xxx
 # Exact 'true' enables; kill switch + PR-approval hold still apply. Pinned on
 # staging only; off-switch is 'false'.
 FEEDBACK_AUTO_DISPATCH_ENABLED=true
+# Member-ORB support specialist (VTID-04397, orchestrator P3 agent-as-tool):
+# read-only findings from the member's own tickets + the knowledge base via
+# delegate_to_agent. Exact 'true' enables; unset = not registered, not declared.
+ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED=true
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,
