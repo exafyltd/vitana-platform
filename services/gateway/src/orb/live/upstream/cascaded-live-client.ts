@@ -41,6 +41,12 @@
  * languages that today produce garbled fragments is a strict improvement;
  * claiming tool parity it does not have would not be.
  *
+ * VTID-04413 — the orchestrator's specialist tools (`ask_support_specialist`,
+ * `ask_commerce_specialist` and their `get_delegation_result` /
+ * `cancel_delegation` companions) join the allowlist, so a member speaking a
+ * cascade language reaches the same specialists a Nova session does. They
+ * are declared only when the catalog passed to `connect()` carries them.
+ *
  * VTID-04336 — THE ONE EXCEPTION: THE HAND-OFF TOOLS, AND PERSONA SWAP
  * ------------------------------------------------------------------
  * The owner decided the Vitana → Devon hand-off must work in every language.
@@ -136,6 +142,14 @@ export const DEFAULT_CASCADE_VAD_SILENCE_MS = 900;
 export const CASCADE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
   'report_to_specialist',
   'switch_persona',
+  // VTID-04413 (Orchestrator P3): agent-as-tool specialists. Declared only
+  // when the session catalog already carries them — their own flags and the
+  // surface gate decide that upstream, exactly as on Nova. The dispatcher
+  // acks within 1.5 s, well inside CASCADE_TOOL_RESULT_TIMEOUT_MS.
+  'ask_support_specialist',
+  'ask_commerce_specialist',
+  'get_delegation_result',
+  'cancel_delegation',
 ]);
 
 /** VTID-04336 — how long one tool call may take before a synthetic error result. */
