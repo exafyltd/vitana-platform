@@ -126,6 +126,26 @@ async function refreshIfExpired(
 }
 
 /**
+ * VTID-04372: a fresh access token for a connector, for callers that talk to
+ * the provider API themselves (the Google Calendar sync). Same load +
+ * refresh-if-expired path as dispatchAction; null when the user has no
+ * active connection for any of `providers`.
+ */
+export async function getConnectorAccessToken(
+  supabase: SupabaseClient,
+  userId: string,
+  connectorId: string,
+  providers: string[] = [connectorId],
+): Promise<string | null> {
+  const connector = getConnector(connectorId);
+  if (!connector) return null;
+  const stored = await loadConnection(supabase, userId, providers);
+  if (!stored) return null;
+  const { tokens } = await refreshIfExpired(supabase, connectorId, stored.id, connector, stored);
+  return tokens.access_token || null;
+}
+
+/**
  * Primary entry point — called by the capability layer and (future) voice
  * tool handlers.
  */

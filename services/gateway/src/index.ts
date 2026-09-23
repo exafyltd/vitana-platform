@@ -1689,6 +1689,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Calendar maintenance loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04372: Google Calendar two-way sync — built, switched off. Starts
+      // only with CALENDAR_GOOGLE_SYNC_ENABLED=true and the Google OAuth client.
+      try {
+        const { startGoogleSyncLoop } = require('./services/calendar-google-sync');
+        if (startGoogleSyncLoop()) {
+          console.log('🗓️ Calendar Google sync loop started');
+        } else {
+          console.log('⏸️ Calendar Google sync loop off — needs CALENDAR_GOOGLE_SYNC_ENABLED=true and GOOGLE_OAUTH_CLIENT_ID/SECRET');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar Google sync loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {

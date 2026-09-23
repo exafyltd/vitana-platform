@@ -194,7 +194,7 @@ router.get('/connect/:provider', (req: Request, res: Response) => {
     } else if (parsed.length === 0) {
       return res.status(400).json({
         ok: false,
-        error: 'Invalid `include` value. Use a comma-separated list of: gmail, calendar, contacts, youtube.',
+        error: 'Invalid `include` value. Use a comma-separated list of: gmail, calendar, contacts, youtube, calendar_sync.',
       });
     } else {
       includeServices = parsed;

@@ -228,6 +228,82 @@ router.delete('/subscription', async (req: Request, res: Response) => {
   }
 });
 
+// =============================================================================
+// VTID-04372 — Google Calendar two-way sync (built, switched off)
+//   GET  /google          → availability + this member's sync state
+//   POST /google/enable   → turn on (needs a Google connection with the sync scopes)
+//   POST /google/disable  → turn off; pulled busy times are removed
+// =============================================================================
+router.get('/google', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { googleSyncAvailability, getSyncState, GOOGLE_SYNC_CONNECT_URL } = await import('../services/calendar-google-sync');
+    const availability = googleSyncAvailability();
+    const state = availability === 'ready' ? await getSyncState(userId) : null;
+    return res.json({
+      ok: true,
+      data: {
+        availability,
+        enabled: state?.enabled === true,
+        last_push_at: state?.last_push_at ?? null,
+        last_pull_at: state?.last_pull_at ?? null,
+        last_error: state?.last_error ?? null,
+        connect_url: GOOGLE_SYNC_CONNECT_URL,
+      },
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /google error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/google/enable', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { enableGoogleSync } = await import('../services/calendar-google-sync');
+    const r = await enableGoogleSync(userId);
+    if (!r.ok) {
+      if (r.error === 'not_configured') return res.status(503).json({ ok: false, error: 'not_configured' });
+      return res.status(409).json({ ok: false, error: 'not_connected', connect_url: r.connect_url });
+    }
+    emitOasisEvent({
+      vtid: 'VTID-04372',
+      type: 'calendar.google_sync.enabled' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Google Calendar sync turned on',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    return res.json({ ok: true, data: { enabled: true } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /google/enable error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/google/disable', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { disableGoogleSync } = await import('../services/calendar-google-sync');
+    await disableGoogleSync(userId);
+    emitOasisEvent({
+      vtid: 'VTID-04372',
+      type: 'calendar.google_sync.disabled' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Google Calendar sync turned off',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    return res.json({ ok: true, data: { enabled: false } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /google/disable error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
 router.get('/feed/:file', async (req: Request, res: Response) => { // public-route — no user JWT; the 256-bit token in the path is the credential (hash-checked)
   try {
     const m = /^([A-Za-z0-9_-]+)\.ics$/.exec(String(req.params.file ?? ''));
@@ -338,7 +414,15 @@ router.get('/events/window', async (req: Request, res: Response) => {
       ? (await listWorkItems(userId, lenses, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() }))
           .map((it) => ({ ...it, display_emoji: it.event?.emoji ?? '📌', reminders: [] as unknown[] }))
       : [];
-    const merged = mergeWorkItems<any>(data, work);
+    // VTID-04372: busy times pulled from the member's Google calendar — times only.
+    let external: any[] = [];
+    if (includeBusy) {
+      const { googleSyncAvailability, listExternalBusy } = await import('../services/calendar-google-sync');
+      if (googleSyncAvailability() === 'ready') {
+        external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
+      }
+    }
+    const merged = mergeWorkItems<any>([...data, ...external], work);
     return res.json({ ok: true, data: merged, count: merged.length, timezone: userTimezone ?? null, work_lenses: lenses });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);

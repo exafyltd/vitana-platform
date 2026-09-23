@@ -921,6 +921,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | `calendar_events`: `rrule`, `timezone`, `reminder_offsets`, `emoji` + CHECKs; role_context adds `professional`; source_type adds six producer types. Also applied the never-applied 2026-04-28 `pillar`/`contribution_vector` migration. | Claude | VTID-04331 |
 | 2026-09-23 | Producer triggers on `goal_plan_steps`, `goal_plans`, `user_health_plans`, `provider_appointments`, `lab_test_orders`, `live_room_sessions`, `live_room_access_grants` → `calendar_events` through one SQL upsert (`calendar_upsert_from_source`); future-only backfill (555 goal-plan entries, 3 health-plan series). No table/column change. | Claude | VTID-04356 |
 | 2026-09-23 | New table `calendar_feed_tokens` (one private iCalendar subscription token per user, SHA-256 hash only; RLS on, no policies, no browser grants). | Claude | VTID-04358 |
+| 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1025,6 +1026,27 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 | `last_used_at` | timestamptz | last feed fetch (best effort) |
 
 RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated` — the gateway (service role) is the only reader/writer. The feed carries the user's own entries (title, time, place only — no descriptions, no alarms); work-lens items are not rows and never appear.
+
+### calendar_google_sync / calendar_google_links / calendar_external_busy (VTID-04372)
+
+**Purpose:** Google Calendar two-way sync. Built, switched off (`CALENDAR_GOOGLE_SYNC_ENABLED` exactly `true` + the Google OAuth client). Push: the member's own community/personal entries go to a "Vitanaland" calendar the app creates in their Google account (scope `calendar.app.created`, so no other Google calendar is ever touched). Pull: only free/busy of their Google primary calendar (scope `calendar.freebusy`), shown as grey busy blocks. OAuth tokens are **not** here — they stay in `social_connections` (provider `google`). Migration `20260923180000_vtid_04372_calendar_google_sync.sql`, applied live 2026-09-23.
+
+`calendar_google_sync` — one row per member:
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | uuid PK | FK `auth.users(id)` ON DELETE CASCADE |
+| `enabled` | boolean NOT NULL default false | member turned sync on |
+| `google_calendar_id` | text | the app-created Vitanaland calendar; NULL = create on next run |
+| `last_push_at`, `last_pull_at` | timestamptz | last successful run |
+| `last_error` | text | last failure, cleared on success |
+| `created_at`, `updated_at` | timestamptz | |
+
+`calendar_google_links` — one row per pushed entry: `id` uuid PK, `user_id` uuid FK, `calendar_event_id` uuid UNIQUE FK `calendar_events(id)` **ON DELETE SET NULL** (a deleted entry's Google copy is removed on the next run, then the row), `google_event_id` text, `pushed_hash` text (SHA-256 of the pushed event body; unchanged → no write), `pushed_at`.
+
+`calendar_external_busy` — busy intervals, replaced wholesale per pull: `id` uuid PK, `user_id` uuid FK, `source` text CHECK in (`google`), `start_time`, `end_time` (CHECK end > start), `fetched_at`. Times only — no titles, no attendees. Index `(user_id, start_time)`.
+
+All three: RLS enabled with no policies; `ALL` revoked from `PUBLIC`/`anon`/`authenticated` — the gateway (service role) is the only reader/writer.
 
 ### calendar_events ← plans, bookings, orders, rooms (VTID-04356 triggers)
 
