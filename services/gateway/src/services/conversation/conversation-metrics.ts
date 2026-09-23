@@ -268,6 +268,7 @@ export function buildMetricSeries(
 /** The nightly learning jobs the Assistant › Metrics tab reports on (AP-0906..AP-0913). */
 export const LEARNING_AUTOMATIONS = [
   'AP-0906', 'AP-0907', 'AP-0908', 'AP-0909', 'AP-0910', 'AP-0911', 'AP-0912', 'AP-0913',
+  'AP-0915', // VTID-04444: diary theme rollup (consolidator loop 10)
 ] as const;
 
 export interface AutomationRunRow {

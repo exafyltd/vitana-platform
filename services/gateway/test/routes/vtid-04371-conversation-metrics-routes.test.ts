@@ -18,6 +18,7 @@ const repoMock = {
   fetchConversationMetricSeries: jest.fn(),
   fetchLearningAutomationRuns: jest.fn(),
   fetchProfileNarrativeStamps: jest.fn(),
+  fetchDiaryThemeStamps: jest.fn(), // VTID-04444
 };
 jest.mock('../../src/routes/conversation-hub-repository', () => repoMock);
 
@@ -99,7 +100,7 @@ describe('GET /admin/conversation/metrics/learning', () => {
     expect(res.status).toBe(200);
     const d = res.body.data;
     expect(d.window_hours).toBe(168);
-    expect(d.jobs).toHaveLength(8);
+    expect(d.jobs).toHaveLength(9); // +1: VTID-04444 AP-0915
     expect(d.jobs.find((j: { automation_id: string }) => j.automation_id === 'AP-0911').stale).toBe(true);
     expect(d.profile_narrative).toMatchObject({ users_with_narrative: 1, fresh_7d: 0 });
     expect(d.coverage.sessions_finalized).toBe(2);
@@ -116,5 +117,23 @@ describe('GET /admin/conversation/metrics/learning', () => {
     expect(res.body.data.jobs).toBeNull();
     expect(res.body.data.errors).toEqual(['automation_runs: denied']);
     expect(res.body.data.coverage.sessions_finalized).toBe(0);
+  });
+
+  // VTID-04444 (WS-4.2): diary theme rollup coverage, stamps only.
+  it('reports diary theme coverage, and a failed diary read never fails the page', async () => {
+    repoMock.fetchLearningAutomationRuns.mockResolvedValue({ data: [], error: null });
+    repoMock.fetchProfileNarrativeStamps.mockResolvedValue({ data: [], error: null });
+    repoMock.fetchConversationMetricsSince.mockResolvedValue({ data: [], error: null });
+    repoMock.fetchDiaryThemeStamps.mockResolvedValue({ data: [{ generated_at: new Date().toISOString(), theme_count: '4' }], error: null });
+    let res = await request(makeApp()).get('/api/v1/admin/conversation/metrics/learning');
+    expect(res.status).toBe(200);
+    expect(res.body.data.diary_themes).toMatchObject({ enabled: false, users_with_themes: 1, fresh: 1, avg_themes: 4 });
+    expect(repoMock.fetchDiaryThemeStamps).toHaveBeenCalledWith(fakeSb, 'diary_themes_v1');
+
+    repoMock.fetchDiaryThemeStamps.mockRejectedValue(new Error('boom'));
+    res = await request(makeApp()).get('/api/v1/admin/conversation/metrics/learning');
+    expect(res.status).toBe(200);
+    expect(res.body.data.diary_themes).toBeNull();
+    expect(res.body.data.errors).toEqual(['user_assistant_state (diary themes): boom']);
   });
 });

@@ -82,3 +82,15 @@ export async function fetchProfileNarrativeStamps(sb: SupabaseClient, signalName
     .eq('signal_name', signalName)
     .limit(5000);
 }
+
+/**
+ * VTID-04444 (WS-4.2): diary theme rollup coverage for Learning health.
+ * Stamps and counts only — the themes themselves never leave the DB here.
+ */
+export async function fetchDiaryThemeStamps(sb: SupabaseClient, signalName: string) {
+  return sb
+    .from('user_assistant_state')
+    .select('generated_at:value->>generated_at, theme_count:value->>theme_count, entries_considered:value->>entries_considered')
+    .eq('signal_name', signalName)
+    .limit(5000);
+}

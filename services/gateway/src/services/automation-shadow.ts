@@ -57,6 +57,8 @@ export const SHADOW_UNSAFE_HANDLERS: ReadonlySet<string> = new Set([
   'runOwnPostMemoryCapture',
   // VTID-04391: memory/daily-learning (LLM call + own client for embeddings)
   'runDailyLearningEpisodes',
+  // VTID-04444: memory/diary-theme-rollup (LLM call on the memory stage)
+  'runDiaryThemeRollup',
   // onboarding-growth: recommendation-engine, social-connect-service
   // (posts to members' own social accounts), milestone-service
   'runOrbGuidedOnboarding',

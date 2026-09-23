@@ -44,6 +44,7 @@ import {
 } from '../services/conversation/screen-surface';
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
+import { SIGNAL_DIARY_THEMES, isDiaryRollupEnabled, summarizeDiaryThemeStamps } from '../services/memory/diary-theme-rollup';
 import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } from '../services/conversation/session-brain-inspector';
 import { readOfferOutcomeStats, OFFER_STATS_MAX_DAYS } from '../services/conversation/offer-outcome-stats';
 import { readShadowComparison, SHADOW_MAX_DAYS } from '../services/conversation/shadow-comparison';
@@ -475,13 +476,19 @@ router.get('/admin/conversation/metrics/learning', ...adminOnly, async (req: Aut
   const sinceIso = windowStartIso(windowHours, nowMs);
   const errors: string[] = [];
   try {
-    const [runs, narratives, metrics] = await Promise.all([
+    const [runs, narratives, metrics, diaryThemes] = await Promise.all([
       repo.fetchLearningAutomationRuns(supabase, LEARNING_AUTOMATIONS),
       repo.fetchProfileNarrativeStamps(supabase, PROFILE_NARRATIVE_SIGNAL),
       repo.fetchConversationMetricsSince(supabase, sinceIso),
+      // VTID-04444 (WS-4.2): diary theme rollup coverage — stamps and counts only.
+      // A throw here is reported like any failed read, never a 500.
+      Promise.resolve()
+        .then(() => repo.fetchDiaryThemeStamps(supabase, SIGNAL_DIARY_THEMES))
+        .catch((e: unknown) => ({ data: null, error: { message: e instanceof Error ? e.message : String(e) } })),
     ]);
     if (runs.error) errors.push(`automation_runs: ${runs.error.message}`);
     if (narratives.error) errors.push(`user_assistant_state: ${narratives.error.message}`);
+    if (diaryThemes?.error) errors.push(`user_assistant_state (diary themes): ${diaryThemes.error.message}`);
     if (metrics.error) errors.push(`conversation_metrics_hourly: ${metrics.error.message}`);
     const summary = metrics.error ? null : summarizeConversationMetrics(toMetricRows(metrics.data), windowHours);
     return res.json({
@@ -493,6 +500,12 @@ router.get('/admin/conversation/metrics/learning', ...adminOnly, async (req: Aut
           ? null
           : summarizeNarrativeFreshness((narratives.data || []) as Array<Record<string, unknown>>, nowMs),
         coverage: summary ? summary.learning : null,
+        diary_themes: !diaryThemes || diaryThemes.error
+          ? null
+          : {
+              enabled: isDiaryRollupEnabled(),
+              ...summarizeDiaryThemeStamps((diaryThemes.data || []) as Array<Record<string, unknown>>, nowMs),
+            },
         errors,
       },
     });

@@ -7833,6 +7833,19 @@ function _convRenderLearning(host, hours) {
                     'profiles built with conversations · diary · suggestion outcomes')
             ]));
         }
+        // VTID-04444 (WS-4.2): the diary theme rollup (consolidator loop 10 / AP-0915).
+        var dt = d.diary_themes;
+        if (dt) {
+            body.appendChild(_convHeading('Diary themes (nightly rollup)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Rollup', dt.enabled ? 'on' : 'off', dt.enabled ? 'runs nightly (AP-0915)' : 'off by default, flag not set'),
+                _convTile('Users with themes', String(dt.users_with_themes || 0),
+                    dt.avg_themes == null ? 'none yet' : dt.avg_themes + ' themes on average'),
+                _convTile('Fresh (≤ 14 days)', String(dt.fresh || 0), 'older ones are not read by the profile',
+                    dt.enabled && dt.users_with_themes > 0 && !dt.fresh ? 'warn' : null),
+                _convTile('Newest', _convWhen(dt.newest_generated_at) || '—')
+            ]));
+        }
         if (d.jobs) {
             body.appendChild(_convHeading('Nightly learning jobs'));
             body.appendChild(_convTable(

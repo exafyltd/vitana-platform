@@ -81,6 +81,16 @@ export interface SynthesisInputs {
   diary?: Array<{ text: string; created_at: string | null }>;
   /** VTID-04438: suggestion outcomes per provider (90 days). */
   outcomes?: Array<{ provider: string; accepted: number; declined: number; ignored: number }>;
+  /**
+   * VTID-04444 (WS-4.2): the nightly diary theme rollup (30 days of diary,
+   * diary_themes_v1), when a fresh one exists. Absent = built as before.
+   */
+  diary_themes?: {
+    themes: Array<{ label: string; entries: number; trend: string }>;
+    mood_arc: string | null;
+    people: string[];
+    generated_at: string;
+  } | null;
 }
 
 export interface SynthesisResult {
@@ -101,6 +111,9 @@ export function computeInputsHash(inputs: SynthesisInputs): string {
     (inputs.summaries ?? []).map((x) => x.ended_at ?? x.summary.slice(0, 40)).sort(),
     (inputs.diary ?? []).map((x) => x.created_at ?? x.text.slice(0, 40)).sort(),
     (inputs.outcomes ?? []).map((o) => `${o.provider}:${o.accepted}/${o.declined}/${o.ignored}`).sort(),
+    // VTID-04444: a new diary rollup re-synthesizes. Only when one exists, so
+    // a profile built without it keeps its hash (no re-synthesis on deploy).
+    ...(inputs.diary_themes ? [inputs.diary_themes.generated_at] : []),
   ]);
   let h = 0;
   for (let i = 0; i < s.length; i++) {
@@ -135,10 +148,11 @@ export async function gatherSynthesisInputs(
     index = { total: idx.score_total, weakest_pillar: pillars[0]?.[0] ?? null };
   }
 
-  const [summaries, diary, outcomes] = await Promise.all([
+  const [summaries, diary, outcomes, diaryThemes] = await Promise.all([
     gatherRecentSummaries(supabase, userId),
     gatherRecentDiary(supabase, userId),
     gatherOutcomes(supabase, userId),
+    gatherDiaryThemes(supabase, tenantId, userId),
   ]);
 
   return {
@@ -149,7 +163,29 @@ export async function gatherSynthesisInputs(
     summaries,
     diary,
     outcomes,
+    ...(diaryThemes ? { diary_themes: diaryThemes } : {}),
   };
+}
+
+// VTID-04444 (WS-4.2): best-effort like the other broader inputs.
+async function gatherDiaryThemes(
+  supabase: SupabaseClient,
+  tenantId: string,
+  userId: string,
+): Promise<SynthesisInputs['diary_themes']> {
+  try {
+    const { readDiaryThemes } = await import('./memory/diary-theme-rollup');
+    const t = await readDiaryThemes(supabase, tenantId, userId);
+    if (!t) return null;
+    return {
+      themes: t.themes.map((x) => ({ label: x.label, entries: x.entries, trend: x.trend })),
+      mood_arc: t.mood_arc,
+      people: t.people,
+      generated_at: t.generated_at,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // VTID-04438: each broader input is best-effort — a failed read leaves that
@@ -227,6 +263,13 @@ export function buildSynthesisPrompt(inputs: SynthesisInputs): string {
   if (inputs.diary?.length) {
     lines.push('RECENT DIARY ENTRIES (the user\'s own words, newest first):');
     for (const x of inputs.diary) lines.push(`- ${x.created_at ? x.created_at.slice(0, 10) + ': ' : ''}${x.text}`);
+  }
+  if (inputs.diary_themes?.themes.length) {
+    const dt = inputs.diary_themes;
+    lines.push('DIARY THEMES (last 30 days of the diary, how many entries carry each):');
+    for (const t of dt.themes) lines.push(`- ${t.label}: ${t.entries} entr${t.entries === 1 ? 'y' : 'ies'}, ${t.trend}`);
+    if (dt.mood_arc) lines.push(`- mood across the entries: ${dt.mood_arc}`);
+    if (dt.people.length) lines.push(`- people who come up: ${dt.people.join(', ')}`);
   }
   const fit = computeSuggestionFit(inputs.outcomes ?? []);
   if (fit.length) {
@@ -313,6 +356,7 @@ export async function synthesizeUserModel(
         summaries: inputs.summaries?.length ?? 0,
         diary: inputs.diary?.length ?? 0,
         outcome_providers: inputs.outcomes?.length ?? 0,
+        ...(inputs.diary_themes ? { diary_themes: inputs.diary_themes.themes.length } : {}),
       },
       sections_filled: profileSectionsFilled(structured),
     },
