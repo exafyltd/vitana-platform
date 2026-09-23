@@ -323,8 +323,12 @@ Follow-ups after the merge:
   turns it off. Support → Contact tickets (`surface='support'`) stay in the
   human-only queue by design and are not auto-drafted.
 - **VTID-04385 (vitana-v1 + platform):** the member sees the ticket number
-  and a link after a spoken report, and Support → "report by voice" opens
-  the ORB for a report.
+  and a link after a spoken report (`support_ticket_filed` frame → widget
+  event → app toast with a link).
+- **VTID-04395 (vitana-v1 + platform):** Support → "report by voice" opens
+  the ORB as a support intake — a greeting rung that outranks every
+  briefing, written as an intent, only before the first turn. Desktop and
+  mobile Support screens both open it (vitana-v1 #1131).
 - **VTID-04360 (vitana-v1):** translate the admin drawer labels, drop the
   retired `NewTicketPopup` from `docs/SCREEN_REGISTRY.md`, show the report
   text in the member ticket list.

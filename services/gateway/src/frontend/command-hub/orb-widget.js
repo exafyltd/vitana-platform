@@ -2228,6 +2228,14 @@
         _s.journeyFocus = null;
       }
 
+      // VTID-04395: opened from Support → "report by voice". One-shot like
+      // journey_focus_step: only this start carries it, so a later reconnect
+      // never re-opens the intake.
+      if (_s.supportReport) {
+        startPayload.support_report = true;
+        _s.supportReport = false;
+      }
+
       // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
       // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
       // rides along so the guided-topic-narration provider LEADS turn-1 and
@@ -3158,6 +3166,24 @@
         clearTimeout(_s._listeningIdleTimer);
         _s._preReconnectVoiceState = _s.voiceState;
         _announceDisconnect('connection');
+        break;
+
+      case 'support_ticket_filed':
+        // VTID-04385: a spoken report became a ticket. The host app shows the
+        // ticket number with a link (window event, like
+        // vitana:guided-topic-teaching-complete — no init() option to drop).
+        try {
+          window.dispatchEvent(new CustomEvent('vitana:support-ticket-filed', {
+            detail: {
+              ticketId: msg.ticket_id || null,
+              ticketNumber: msg.ticket_number || null,
+              kind: msg.kind || null,
+              url: msg.url || null,
+            },
+          }));
+        } catch (e) {
+          console.warn('[VTOrb] support_ticket_filed dispatch failed:', e);
+        }
         break;
 
       case 'persona_swap_reconnecting':
@@ -4843,6 +4869,9 @@
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
     // silently re-open. Cleared only on an explicit re-open in _show().
     _s._userRequestedClose = true;
+    // VTID-04395: a support-report open that never started does not leak
+    // into the next, unrelated open.
+    _s.supportReport = false;
     // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
     // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
     // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
@@ -5477,6 +5506,16 @@
     // One-shot: the focus is consumed by the upcoming _sessionStart only.
     focusJourneyStep: function (stepKey) {
       _s.journeyFocus = (typeof stepKey === 'string' && stepKey) ? stepKey : null;
+      _show();
+    },
+
+    // VTID-04395: open the orb for a support report. Vitana opens by asking
+    // what happened (instead of a briefing) and files the ticket from the
+    // member's words. One-shot: consumed by the upcoming _sessionStart only.
+    // Starts from a clean slate so an open session cannot swallow the flag.
+    startSupportReport: function () {
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
+      _s.supportReport = true;
       _show();
     },
 
