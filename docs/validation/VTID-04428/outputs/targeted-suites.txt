@@ -1,0 +1,95 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.warn
+    [dev-autopilot-execute] vtid_ledger terminalize retry for VTID-09999 after: 500: {"error":"boom"}
+      2281 |       // VTID-04429: one retry. The PATCH is idempotent (is_terminal=eq.false
+      2282 |       // guard), and a transient PostgREST blip was the whole failure mode.
+    > 2283 |       console.warn(
+           |               ^
+      2284 |         `${LOG_PREFIX} vtid_ledger terminalize retry for ${vtid} after: ${patchR.error}`,
+      2285 |       );
+      2286 |       patchR = await patchLedger();
+      at terminalizeVtidLedgerForExecution (src/services/dev-autopilot-execute.ts:2283:15)
+PASS test/vtid-03895-terminalize-vtid-ledger.test.ts
+  VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSideEffects)
+    ✓ completed: PATCHes vtid_ledger with is_terminal=true, terminal_outcome=success, and emits vtidLifecycleCompleted (9 ms)
+    ✓ failed: terminal_outcome/status = failed, emits vtidLifecycleFailed (1 ms)
+    ✓ cancelled: terminal_outcome/status = cancelled, emits vtidLifecycleFailed (not a success outcome) (1 ms)
+    ✓ never PATCHes vtid_ledger for a non-terminal status (or reverted/self_healed) (1 ms)
+    ✓ autonomous-plane finding (no activated_vtid): looks up the recommendation but never PATCHes vtid_ledger (1 ms)
+    ✓ missing finding_id on the execution row: bails before even looking up the recommendation
+    ✓ a failed vtid_ledger PATCH is logged, not thrown, and never crashes the caller (38 ms)
+    ✓ cancelExecution() (direct-PATCH path, bypassing patchExecution) also terminalizes vtid_ledger (1 ms)
+PASS test/vtid-04378-ledger-terminalization.test.ts
+  ledgerStatusForExecution
+    ✓ maps terminal execution statuses to a ledger outcome (6 ms)
+    ✓ leaves non-terminal states and `reverted` (a child continues the VTID) alone (2 ms)
+  wiring
+    ✓ every failed_escalated PATCH in the bridge is followed by a ledger close (1 ms)
+    ✓ reject closes the ledger as cancelled
+    ✓ the terminal side effects use the mapping, and a failed ledger write is an error, not a warning (2 ms)
+    [dev-autopilot-execute] lazy-plan generated for todo-1
+      at lazyPlanTick (src/services/dev-autopilot-execute.ts:3788:17)
+    [dev-autopilot-execute] lazy-plan generated for dead-2
+      at lazyPlanTick (src/services/dev-autopilot-execute.ts:3788:17)
+    [dev-autopilot-execute] lazy-plan generated for flag-3
+      at lazyPlanTick (src/services/dev-autopilot-execute.ts:3788:17)
+    [dev-autopilot-execute] lazy-plan tick: generated 3 plan(s)
+      at lazyPlanTick (src/services/dev-autopilot-execute.ts:3804:13)
+    [dev-autopilot-execute] closed-PR reconcile: 1/3 rows unblocked
+      at closedPrReconcileTick (src/services/dev-autopilot-execute.ts:3998:28)
+PASS test/vtid-04280-pipeline-unstick.test.ts
+  VTID-04280 pure helpers
+    ✓ selectPlanlessCandidates keeps order and drops planned ids (1 ms)
+    ✓ isRealCiClose is true only for a real CI-stage close
+    ✓ classifyPrState distinguishes merged from closed-unmerged (9 ms)
+    ✓ prNumberOf falls back to the pr_url (the #3570 row has no pr_number)
+    ✓ chunkIds bounds each in.() list (1 ms)
+    ✓ STRANDED_PR_FILTER excludes rows stamped closed-unmerged
+  VTID-04280 lazyPlanTick reaches planless findings below planned ones
+    ✓ plans the planless rows even when the 12 highest-impact rows are already planned (5 ms)
+    ✓ skips the tick when the plan lookup fails rather than re-planning everything (1 ms)
+  VTID-04280 closedPrReconcileTick
+    ✓ stamps closed-unmerged PRs, records merged/open PRs without unblocking them (3 ms)
+    ✓ is rate-limited to once per 5 minutes
+  VTID-04280 wiring (source contract)
+    ✓ all three PR-flood guards use the shared filter
+    ✓ autoApproveTick reads a wide window and pre-filters to planned findings (1 ms)
+    ✓ the closed-PR reconcile tick runs on the background ticker
+    ✓ the bridge stamps its own CI-stage close on the row (1 ms)
+  console.error
+    [dev-autopilot-execute] vtid_ledger terminalize error for execution exec-000: TypeError: Cannot read properties of undefined (reading 'vtidLifecycleFailed')
+        at terminalizeVtidLedgerForExecution (/home/user/vitana-platform/services/gateway/src/services/dev-autopilot-execute.ts:2304:24)
+      2309 |     }
+      2310 |   } catch (err) {
+    > 2311 |     console.error(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
+           |             ^
+      2312 |   }
+      2313 | }
+      2314 |
+      at terminalizeVtidLedgerForExecution (src/services/dev-autopilot-execute.ts:2311:13)
+PASS test/vtid-04428-post-merge-retry.test.ts
+  VTID-04428 isRevertMergedOnMain
+    ✓ is true only for a post-merge stage whose revert merged (5 ms)
+    ✓ is false for the ci stage (a closed PR, not a revert) (1 ms)
+    ✓ is false when the revert PR is open but did not merge (1 ms)
+    ✓ is false for a dry-run stub, a failed revert, or a missing flag (1 ms)
+  VTID-04428 STRANDED_PR_FILTER
+    ✓ excludes rows stamped reverted-on-main, keeping the earlier clauses (1 ms)
+  VTID-04428 bridge wiring (source contract)
+    ✓ revertExecutionPR reports reverted_on_main only on the merged-revert path
+    ✓ the bridge stamps pr_reverted_at through the pure predicate (1 ms)
+  VTID-04429 ledger close retries once
+    ✓ a transient failure is retried and the second write lands (52 ms)
+    ✓ two failures stop at two attempts and log the error (52 ms)
+    ✓ a first-try success writes once (78 ms)
+Test Suites: 4 passed, 4 total
+Tests:       37 passed, 37 total
+Snapshots:   0 total
+Time:        1.468 s, estimated 2 s
+Ran all test suites matching /test\/vtid-04428-post-merge-retry.test.ts|test\/vtid-03895-terminalize-vtid-ledger.test.ts|test\/vtid-04280-pipeline-unstick.test.ts|test\/vtid-04378-ledger-terminalization.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
