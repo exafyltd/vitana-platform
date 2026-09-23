@@ -33,6 +33,13 @@ import {
   rankInShadow,
   type ScorableCandidate,
 } from './conversation/candidate-scoring';
+// VTID-04423 (WS-2.3): the opening's candidates, kept for the conversation.
+import {
+  BRAIN_CANDIDATES_TTL_MIN,
+  isTurnCandidatesEnabled,
+  toStoredTurnCandidates,
+  type StoredTurnCandidates,
+} from './conversation/turn-candidates';
 import {
   defaultProviderRegistry,
 } from './assistant-continuation/provider-registry';
@@ -835,6 +842,21 @@ export async function decideWakeBriefForSession(
     void recordShadowRanking(recorder, args, decision, storedRecentOpeners).catch(() => {
       /* shadow scoring is best-effort */
     });
+  }
+
+  // VTID-04423 (WS-2.3): keep this opening's candidates for the rest of the
+  // conversation; get_next_best_action re-ranks them when the model asks.
+  // Stored only — nothing here is spoken.
+  if (args.recordEmission && args.supabase && args.userId && isTurnCandidatesEnabled()) {
+    const candidates = toStoredTurnCandidates(decision);
+    if (candidates.length) {
+      const value: StoredTurnCandidates = { decision_id: decision.decisionId, stored_at: new Date(now()).toISOString(), candidates };
+      void import('./orb/orb-session-state')
+        .then(({ writeOrbSessionState }) =>
+          writeOrbSessionState(args.supabase!, args.userId!, 'brain_candidates', value, BRAIN_CANDIDATES_TTL_MIN),
+        )
+        .catch(() => { /* best-effort */ });
+    }
   }
 
   return decision;
