@@ -6,6 +6,9 @@
  *   GET /api/v1/orchestrator/runs           — unified runs across planes (exafy_admin)
  *   GET /api/v1/orchestrator/runs/summary   — per-plane counts over a window (exafy_admin)
  *   GET /api/v1/orchestrator/agents         — agent cards from agents_registry (exafy_admin)
+ *   GET /api/v1/orchestrator/policy         — default grants + the caller's own ceilings,
+ *                                             optional ?domain=&tier= dry evaluation (VTID-04325,
+ *                                             shadow: nothing enforces it yet)
  *
  * Nothing here writes or changes any plane's behaviour.
  */
@@ -20,6 +23,13 @@ import {
   summarizeRuns,
   listAgentCards,
 } from '../services/orchestrator/run-ledger';
+import {
+  ceilingsFor,
+  evaluatePolicy,
+  isPolicyDomain,
+  isPolicyTier,
+  policyDefaults,
+} from '../services/orchestrator/policy';
 
 const router = Router();
 
@@ -90,6 +100,42 @@ router.get('/agents', requireDevRole, async (_req: Request, res: Response) => {
   const { agents, error } = await listAgentCards(sb);
   if (error) return res.status(502).json({ ok: false, error });
   return res.json({ ok: true, data: { agents } });
+});
+
+router.get('/policy', requireAuth as any, async (req: Request, res: Response) => {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const q = req.query as Record<string, unknown>;
+  if (q.domain !== undefined && !isPolicyDomain(q.domain)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_DOMAIN' });
+  }
+  if (q.tier !== undefined && !isPolicyTier(q.tier)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_TIER' });
+  }
+  const sb = db(res);
+  if (!sb) return;
+  const context = await resolveAgentContext(sb, {
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    exafy_admin: identity.exafy_admin,
+    current_route: typeof q.route === 'string' ? q.route : null,
+    explicit_surface: typeof q.surface === 'string' ? q.surface : null,
+    channel: typeof q.channel === 'string' ? q.channel : 'web',
+    locale: null,
+  });
+  const evaluation = isPolicyDomain(q.domain)
+    ? evaluatePolicy(context, q.domain, isPolicyTier(q.tier) ? q.tier : 'read')
+    : null;
+  return res.json({
+    ok: true,
+    data: {
+      defaults: policyDefaults(),
+      platform_role: context.platform_role,
+      channel: context.channel,
+      ceilings: ceilingsFor(context),
+      evaluation,
+    },
+  });
 });
 
 export default router;
