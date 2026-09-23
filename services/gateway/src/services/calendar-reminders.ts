@@ -18,10 +18,23 @@
  *
  * Only reminders firing in the next MATERIALIZE_HORIZON are written, so the
  * table holds a small, fresh set instead of months of rows for a daily habit.
+ *
+ * VTID-04373:
+ *   - Quiet hours. A default reminder that would fire inside the member's
+ *     Do-Not-Disturb window (user_notification_preferences.dnd_*, local time)
+ *     fires one minute before the window starts instead — never inside it,
+ *     never after the entry. If another reminder for the same occurrence
+ *     already fires in the QUIET_DEDUP_MS before that, the moved one is
+ *     dropped (a lab gets the 19:00 heads-up, not a second one at 21:59).
+ *     An entry's own reminder_offsets are a deliberate choice and are left
+ *     where the member put them.
+ *   - Text refresh. A pending reminder whose entry was renamed (or whose
+ *     wording changed) gets its text rewritten on the next reconcile; before
+ *     this the text was fixed at insert.
  */
 
 import { CalendarEvent } from '../types/calendar';
-import { expandOccurrences } from './calendar-recurrence';
+import { expandOccurrences, localParts, zonedTimeToEpoch } from './calendar-recurrence';
 import { formatLocalHHMM, resolveUserTimezone } from './guide/user-timezone';
 
 const LOG_PREFIX = '[CalendarReminders]';
@@ -92,6 +105,58 @@ export function reminderRules(e: ReminderEntry): ReminderRule[] {
   }
 }
 
+/** A member's quiet hours, as local minutes of the day. start === end means off. */
+export interface QuietWindow {
+  startMin: number;
+  endMin: number;
+}
+
+/** Another reminder this close before a moved one makes the moved one redundant. */
+export const QUIET_DEDUP_MS = 6 * 60 * MINUTE;
+
+/** "22:00" / "22:00:00" → minutes of the day; null for anything else. */
+function hhmmToMinutes(v: string | null | undefined): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(v ?? '');
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  return h < 24 && mi < 60 ? h * 60 + mi : null;
+}
+
+/** The member's quiet window from their notification preferences row, or null. Pure. */
+export function quietWindowFromPrefs(
+  prefs: { dnd_enabled?: boolean | null; dnd_start_time?: string | null; dnd_end_time?: string | null } | null | undefined,
+): QuietWindow | null {
+  if (!prefs?.dnd_enabled) return null;
+  const startMin = hhmmToMinutes(prefs.dnd_start_time);
+  const endMin = hhmmToMinutes(prefs.dnd_end_time);
+  if (startMin === null || endMin === null || startMin === endMin) return null;
+  return { startMin, endMin };
+}
+
+/** True when `epochMs` falls inside the window in `tz` (the window may wrap midnight). Pure. */
+export function inQuietWindow(epochMs: number, w: QuietWindow, tz: string): boolean {
+  const p = localParts(epochMs, tz);
+  const m = p.h * 60 + p.mi;
+  return w.startMin < w.endMin ? m >= w.startMin && m < w.endMin : m >= w.startMin || m < w.endMin;
+}
+
+/**
+ * One minute before the quiet window that contains `fireMs` began. Only
+ * meaningful when inQuietWindow(fireMs) is true. Pure, DST-aware.
+ */
+export function beforeQuietWindow(fireMs: number, w: QuietWindow, tz: string): number {
+  const p = localParts(fireMs, tz);
+  const m = p.h * 60 + p.mi;
+  // A wrapping window entered yesterday evening when we are in its morning half.
+  const daysBack = w.startMin > w.endMin && m < w.endMin ? 1 : 0;
+  const day = new Date(Date.UTC(p.y, p.mo - 1, p.d) - daysBack * 86_400_000);
+  const start = zonedTimeToEpoch(
+    day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), Math.floor(w.startMin / 60), w.startMin % 60, 0, tz,
+  );
+  return start - MINUTE;
+}
+
 export interface DesiredReminder {
   key: string;
   user_id: string;
@@ -101,6 +166,8 @@ export interface DesiredReminder {
   fire_at: string; // ISO
   rule: ReminderRule['kind'];
   timezone: string;
+  /** True when quiet hours moved this reminder earlier (VTID-04373). */
+  quiet_shifted?: boolean;
 }
 
 export function reminderKey(eventId: string, occurrenceStart: string, offsetMinutes: number): string {
@@ -134,7 +201,14 @@ function eveningBefore(startMs: number, hour: number, tz: string): number {
  */
 export function computeDesiredReminders(
   entries: ReminderEntry[],
-  opts: { now: number; horizonMs?: number; lookbackMs?: number; tzOf: (userId: string) => string },
+  opts: {
+    now: number;
+    horizonMs?: number;
+    lookbackMs?: number;
+    tzOf: (userId: string) => string;
+    /** The member's quiet hours; default reminders never fire inside them. */
+    quietOf?: (userId: string) => QuietWindow | null;
+  },
 ): DesiredReminder[] {
   const horizon = opts.horizonMs ?? MATERIALIZE_HORIZON_MS;
   const lookback = opts.lookbackMs ?? VALIDITY_LOOKBACK_MS;
@@ -156,11 +230,25 @@ export function computeDesiredReminders(
         ).map((o) => o.start)
       : [e.start_time];
 
+    // Quiet hours apply to default reminders only; explicit offsets stay put.
+    const quiet = Array.isArray(e.reminder_offsets) ? null : opts.quietOf?.(e.user_id) ?? null;
+
     for (const occ of occurrences) {
       const startMs = Date.parse(occ);
       if (Number.isNaN(startMs)) continue;
+      const fires: Array<{ fireMs: number; rule: ReminderRule['kind']; shifted: boolean }> = [];
       for (const rule of rules) {
-        const fireMs = rule.kind === 'before' ? startMs - rule.minutes * MINUTE : eveningBefore(startMs, rule.hour, tz);
+        let fireMs = rule.kind === 'before' ? startMs - rule.minutes * MINUTE : eveningBefore(startMs, rule.hour, tz);
+        let shifted = false;
+        if (quiet && inQuietWindow(fireMs, quiet, tz)) {
+          fireMs = beforeQuietWindow(fireMs, quiet, tz);
+          shifted = true;
+        }
+        fires.push({ fireMs, rule: rule.kind, shifted });
+      }
+      for (const f of fires) {
+        if (f.shifted && fires.some((o) => !o.shifted && o.fireMs <= f.fireMs && f.fireMs - o.fireMs <= QUIET_DEDUP_MS)) continue;
+        const { fireMs } = f;
         if (fireMs > startMs || fireMs < minFire || fireMs > maxFire) continue;
         const offset = Math.round((startMs - fireMs) / MINUTE);
         const key = reminderKey(e.id, occ, offset);
@@ -172,8 +260,9 @@ export function computeDesiredReminders(
             occurrence_start: new Date(startMs).toISOString(),
             offset_minutes: offset,
             fire_at: new Date(fireMs).toISOString(),
-            rule: rule.kind,
+            rule: f.rule,
             timezone: tz,
+            ...(f.shifted ? { quiet_shifted: true } : {}),
           });
         }
       }
@@ -189,7 +278,19 @@ export function reminderText(
   tr: (key: string, params: Record<string, string | number>) => string,
 ): string {
   const title = `${entryEmoji(entry)} ${entry.title}`.trim();
-  if (r.rule === 'evening_before') {
+  // A reminder on the day before the entry reads "tomorrow at …" — the lab
+  // heads-up, a reminder moved out of quiet hours, a one-day offset.
+  const fireMs = Date.parse(r.fire_at);
+  const startMs = Date.parse(r.occurrence_start);
+  const dayBefore =
+    !Number.isNaN(fireMs) &&
+    !Number.isNaN(startMs) &&
+    (() => {
+      const f = localParts(fireMs, r.timezone);
+      const s = localParts(startMs, r.timezone);
+      return Date.UTC(s.y, s.mo - 1, s.d) - Date.UTC(f.y, f.mo - 1, f.d) === 86_400_000;
+    })();
+  if (r.rule === 'evening_before' || (dayBefore && r.offset_minutes >= 60)) {
     return tr('notif.calendar_reminder.tomorrow', { title, time: formatLocalHHMM(r.occurrence_start, r.timezone) });
   }
   if (r.offset_minutes === 0) return tr('notif.calendar_reminder.now', { title });
@@ -207,6 +308,7 @@ export interface ReconcileResult {
   desired: number;
   created: number;
   cancelled: number;
+  refreshed: number;
   skipped_no_tenant: number;
   error?: string;
 }
@@ -226,7 +328,7 @@ const ENTRY_COLUMNS =
 
 export async function reconcileCalendarReminders(now: number = Date.now()): Promise<ReconcileResult> {
   const c = cfg();
-  const result: ReconcileResult = { ok: false, entries: 0, desired: 0, created: 0, cancelled: 0, skipped_no_tenant: 0 };
+  const result: ReconcileResult = { ok: false, entries: 0, desired: 0, created: 0, cancelled: 0, refreshed: 0, skipped_no_tenant: 0 };
   if (!c) return { ...result, error: 'supabase_config_missing' };
 
   try {
@@ -237,7 +339,7 @@ export async function reconcileCalendarReminders(now: number = Date.now()): Prom
       fetch(`${base}&rrule=is.null&start_time=gte.${encodeURIComponent(scanFrom)}&start_time=lt.${encodeURIComponent(scanTo)}&limit=5000`, { headers: h(c.key) }),
       fetch(`${base}&rrule=not.is.null&start_time=lt.${encodeURIComponent(scanTo)}&limit=2000`, { headers: h(c.key) }),
       fetch(
-        `${c.url}/rest/v1/reminders?select=id,calendar_event_id,calendar_occurrence_start,reminder_offset_minutes,next_fire_at` +
+        `${c.url}/rest/v1/reminders?select=id,calendar_event_id,calendar_occurrence_start,reminder_offset_minutes,next_fire_at,action_text` +
           `&calendar_event_id=not.is.null&status=eq.pending&created_via=eq.system&limit=10000`,
         { headers: h(c.key) },
       ),
@@ -248,6 +350,7 @@ export async function reconcileCalendarReminders(now: number = Date.now()): Prom
     const entries = [...((await oneOffResp.json()) as ReminderEntry[]), ...((await recurringResp.json()) as ReminderEntry[])];
     const existing = (await existingResp.json()) as Array<{
       id: string; calendar_event_id: string; calendar_occurrence_start: string; reminder_offset_minutes: number; next_fire_at: string;
+      action_text?: string | null;
     }>;
     result.entries = entries.length;
 
@@ -271,8 +374,31 @@ export async function reconcileCalendarReminders(now: number = Date.now()): Prom
         }
       }
     }
+    // Quiet hours (VTID-04373). A failed read means no quiet hours this tick —
+    // reminders still arrive, at their usual time — and is logged, not thrown.
+    const quietByUser = new Map<string, QuietWindow>();
+    if (userIds.length) {
+      const list = userIds.map((u) => `"${u}"`).join(',');
+      const qr = await fetch(
+        `${c.url}/rest/v1/user_notification_preferences?select=user_id,dnd_enabled,dnd_start_time,dnd_end_time` +
+          `&dnd_enabled=is.true&user_id=in.(${encodeURIComponent(list)})`,
+        { headers: h(c.key) },
+      );
+      if (qr.ok) {
+        for (const row of (await qr.json()) as Array<{ user_id: string; dnd_enabled: boolean; dnd_start_time: string | null; dnd_end_time: string | null }>) {
+          const w = quietWindowFromPrefs(row);
+          if (w) quietByUser.set(row.user_id, w);
+        }
+      } else {
+        console.warn(`${LOG_PREFIX} quiet-hours read failed ${qr.status}; reminders keep their usual times this tick`);
+      }
+    }
 
-    const valid = computeDesiredReminders(entries, { now, tzOf: (u) => tzByUser.get(u) ?? resolveUserTimezone(null) });
+    const valid = computeDesiredReminders(entries, {
+      now,
+      tzOf: (u) => tzByUser.get(u) ?? resolveUserTimezone(null),
+      quietOf: (u) => quietByUser.get(u) ?? null,
+    });
     const validKeys = new Set(valid.map((d) => d.key));
     const toWrite = valid.filter((d) => Date.parse(d.fire_at) >= now - MINUTE);
     result.desired = toWrite.length;
@@ -320,6 +446,26 @@ export async function reconcileCalendarReminders(now: number = Date.now()): Prom
       result.created = ((await ins.json()) as unknown[]).length;
     }
 
+    // Pending reminders still wanted, whose text no longer matches the entry
+    // (renamed, emoji changed, wording changed). Rows read without text are
+    // left alone — nothing to compare against.
+    const desiredByKey = new Map(valid.map((d) => [d.key, d]));
+    for (const r of existing) {
+      if (typeof r.action_text !== 'string') continue;
+      const d = desiredByKey.get(reminderKey(r.calendar_event_id, r.calendar_occurrence_start, r.reminder_offset_minutes));
+      const entry = d && entryById.get(d.calendar_event_id);
+      if (!d || !entry) continue;
+      const text = reminderText(entry, d, (k, p) => tt(k as any, locales.get(d.user_id), p as any));
+      if (text === r.action_text) continue;
+      const up = await fetch(`${c.url}/rest/v1/reminders?id=eq.${encodeURIComponent(r.id)}&status=eq.pending`, {
+        method: 'PATCH',
+        headers: h(c.key, { Prefer: 'return=representation' }),
+        body: JSON.stringify({ action_text: text, spoken_message: text, updated_at: new Date(now).toISOString() }),
+      });
+      if (!up.ok) throw new Error(`refresh failed ${up.status}: ${(await up.text()).slice(0, 200)}`);
+      result.refreshed += ((await up.json()) as unknown[]).length;
+    }
+
     // Pending system reminders whose entry moved, was cancelled, completed or
     // deleted, or whose offsets changed.
     const stale = existing
@@ -336,8 +482,8 @@ export async function reconcileCalendarReminders(now: number = Date.now()): Prom
       result.cancelled += ((await up.json()) as unknown[]).length;
     }
 
-    if (result.created || result.cancelled) {
-      console.log(`${LOG_PREFIX} created=${result.created} cancelled=${result.cancelled} entries=${result.entries} skipped_no_tenant=${result.skipped_no_tenant}`);
+    if (result.created || result.cancelled || result.refreshed) {
+      console.log(`${LOG_PREFIX} created=${result.created} cancelled=${result.cancelled} refreshed=${result.refreshed} entries=${result.entries} skipped_no_tenant=${result.skipped_no_tenant}`);
     }
     return { ...result, ok: true };
   } catch (err: any) {
