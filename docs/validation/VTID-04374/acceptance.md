@@ -65,3 +65,9 @@ OASIS_IMPACT:
 - `calendar.event.rescheduled` and `calendar.event.auto_cancelled` now carry
   `VTID-04374` instead of `SYSTEM`.
 - The prioritizer's `calendar.prioritization.completed` is unchanged.
+- `calendar.maintenance.manual_run` is new. It is emitted when staff run
+  `/reschedule` or `/reprioritize` by hand. The payload holds the job, who
+  ran it (`run_by`) and the counts. No entry content is included.
+- `/meetup-reminders` is now a no-op. It changes no state, so it carries
+  `impact-allow-no-oasis`. Because it reads and writes nothing, it is also
+  marked `public-route`.

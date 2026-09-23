@@ -822,7 +822,24 @@ router.post('/reschedule', async (req: Request, res: Response) => {
   if (!requireStaff(req, res)) return;
   try {
     const { rescheduleUnactivatedTasks } = await import('../services/calendar-rescheduler');
-    const result = await rescheduleUnactivatedTasks();
+    const result: any = await rescheduleUnactivatedTasks();
+    // A staff member ran a job over every member's calendar: record who and what.
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.maintenance.manual_run' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar reschedule run by staff',
+      payload: {
+        job: 'reschedule',
+        run_by: (req as AuthenticatedRequest).identity?.user_id ?? null,
+        rescheduled: result?.rescheduled ?? null,
+        cancelled: result?.cancelled ?? null,
+        users_processed: result?.users_processed ?? null,
+        total_updated: result?.total_updated ?? null,
+        errors: result?.errors ?? result?.total_errors ?? null,
+      },
+    }).catch(() => {});
     return res.json({ ok: true, ...result });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /reschedule error:`, err.message);
@@ -837,7 +854,24 @@ router.post('/reprioritize', async (req: Request, res: Response) => {
   if (!requireStaff(req, res)) return;
   try {
     const { reprioritizeAllUsers } = await import('../services/calendar-prioritizer');
-    const result = await reprioritizeAllUsers();
+    const result: any = await reprioritizeAllUsers();
+    // A staff member ran a job over every member's calendar: record who and what.
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.maintenance.manual_run' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar reprioritize run by staff',
+      payload: {
+        job: 'reprioritize',
+        run_by: (req as AuthenticatedRequest).identity?.user_id ?? null,
+        rescheduled: result?.rescheduled ?? null,
+        cancelled: result?.cancelled ?? null,
+        users_processed: result?.users_processed ?? null,
+        total_updated: result?.total_updated ?? null,
+        errors: result?.errors ?? result?.total_errors ?? null,
+      },
+    }).catch(() => {});
     return res.json({ ok: true, ...result });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /reprioritize error:`, err.message);
