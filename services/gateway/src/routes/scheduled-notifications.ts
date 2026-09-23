@@ -953,8 +953,8 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 // (global_event_participants → calendar_events, VTID-04321) and get the
 // calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
 // gets a clear answer instead of a 404.
-// public-route — retired no-op; it reads and writes nothing, so there is nothing to protect
-router.post('/meetup-reminders', (_req: Request, res: Response) => {
+// Retired no-op: it reads and writes nothing, so there is nothing to protect.
+router.post('/meetup-reminders', (_req: Request, res: Response) => { // public-route
   // impact-allow-no-oasis — retired: no state change at all (VTID-04374)
   return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
 });
