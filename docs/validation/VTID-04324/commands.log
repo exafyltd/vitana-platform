@@ -1,0 +1,8 @@
+$ aws ecs list-services / describe-services (read-only snapshot) -> outputs/ecs-state-before.txt
+$ aws logs describe-log-streams per service (read-only) -> outputs/last-log-activity.txt
+$ aws ecs update-service --cluster Vitana-ECS-Cluster --service vitana-auth-proxy --desired-count 0
+An error occurred (AccessDeniedException) when calling the UpdateService operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: ecs:UpdateService ... because no identity-based policy allows the ecs:UpdateService action
+$ cd services/gateway && node node_modules/.bin/jest test/vtid-04324-ecs-scale-allowlist.test.ts
+Tests: 17 passed, 17 total
+$ SERVICES_INPUT=vitana-gateway DESIRED=0 node scripts/ci/ecs-scale-allowlist.cjs
+REFUSED: not in the allowlist, refused: vitana-gateway   (exit 1)

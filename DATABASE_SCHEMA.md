@@ -394,6 +394,38 @@ CREATE TABLE operator_messages (
 
 ---
 
+### agent_runs / agent_run_steps / agent_run_signals / agent_runs_unified — APPLIED 2026-09-23 (VTID-04319)
+
+Orchestrator v2 run ledger (`docs/ORCHESTRATOR-REDESIGN-PLAN.md` §3.3). Migration
+`20260923120000_vtid_04319_orchestrator_run_ledger.sql`, applied to the live
+project 2026-09-23 (Supabase MCP `apply_migration`, additive, pre/post-checked).
+
+- `agent_runs` — native run ledger (id, parent/root run, agent_id, plane,
+  principal jsonb, user_id, tenant_id, vtid, intent, status
+  `queued|running|waiting_signal|awaiting_approval|succeeded|failed|cancelled`,
+  tier `read|draft|commit|high`, idempotency_key UNIQUE, budget/spent USD,
+  lease_owner/lease_until, created_via, deliver_to, result_ref, error, metadata,
+  timestamps). **Empty until a plane writes natively (P4).**
+- `agent_run_steps` — append-only progress ledger per run (seq UNIQUE per run;
+  kind `model_call|tool_call|observation|progress|note`; progress/looping flags;
+  tokens, cost, duration).
+- `agent_run_signals` — approval / rejection / ci_result / cancel / user_reply / timeout.
+- `agent_runs_unified` — read-only VIEW (`security_invoker = true`) projecting
+  `dev_autopilot_executions`, `automation_runs`, `self_healing_log` and native
+  `agent_runs` into one shape (`run_key`, `plane`, `agent_id`, generic `status`,
+  `source_status`, `vtid`, `tenant_id`, `parent_run_key`, `created_via`, `title`,
+  `error`, `result_ref`, timestamps). Read by `GET /api/v1/orchestrator/runs`.
+
+All four: RLS on (tables), no policies, `anon`/`authenticated` revoked — service role only.
+
+`agents_registry` gained agent-card columns in the same migration: `skills`,
+`domains`, `roles_allowed`, `surfaces_allowed` (text[], default `{}`),
+`llm_stage`, `max_tier` (CHECK read|draft|commit|high), `budget_per_run_usd`,
+`budget_per_day_usd`, `owner`, `eval_suite`, `eval_pass_rate`, `enabled`
+(default true). Seeded: conductor / crewai-gcp / validator-core `enabled=false`
+(source removed, VTID-04318); stage/tier on six known agents; five
+previously unregistered agents inserted.
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`
@@ -868,6 +900,7 @@ CREATE TABLE my_new_table (
 | 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
+| 2026-09-23 | Added `agent_runs` / `agent_run_steps` / `agent_run_signals` and the `agent_runs_unified` projection view; `agents_registry` agent-card columns + seed. Migration `20260923120000_vtid_04319_orchestrator_run_ledger.sql` **applied to the live project 2026-09-23** (additive; view unions 4,442 existing runs; anon/authenticated verified without SELECT). | Claude | VTID-04319 |
 | 2026-09-17 | Added `operator_threads` / `operator_messages` (server-side Operator Console threads + rolling summaries, W4b). Migration `20260917230000_vtid_04022_operator_threads.sql` **applied to the live project 2026-09-17 22:20 UTC** (Supabase MCP `apply_migration`; pre/post-checked, both tables empty, RLS + service_role policy + indexes present) because the Migration Drift Check requires it before merge; gateway code stays fail-open and inert until `OPERATOR_THREADS_ENABLED` is pinned. | Claude | VTID-04022 |
 | 2026-09-17 | Commerce Partner Onboarding landing: marked the `partner_organizations`/roster/`patient_profiles` section APPLIED (Phase A, VTID-03957); documented `partner_organizations.commerce_vertical` (VTID-03974) and the VTID-03995 `get_my_permitted_roles()`/`set_role_preference()` changes — both migrations applied to the live project 2026-09-17 on the platform owner's explicit instruction, post-checked (column + CHECK + comment present; both function bodies replaced, `validate_role_assignment()` no longer called from `set_role_preference()`). | Claude | VTID-03996 |
 | 2026-09-17 | Added `service_bot_accounts` allowlist + guarded the VTID-03089 welcome-chat trigger and its `/auth/login` TS mirror against it. Two service/automation accounts (claude-code-agent, operator-autopilot) provisioned directly into `user_tenants` on 2026-09-16 fanned an identical intro DM out to 445 real community members — confirmed via read-only production query, nothing recalled. Migration `20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql`. | Claude | VTID-03990 |

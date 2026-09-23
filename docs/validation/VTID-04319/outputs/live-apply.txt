@@ -1,0 +1,28 @@
+Supabase MCP apply_migration vtid_04319_orchestrator_run_ledger -> {"success":true}  (2026-09-23)
+
+select plane, status, count(*) from agent_runs_unified group by 1,2:
+  community_autopilot succeeded          110
+  dev_autopilot       cancelled         1243
+  dev_autopilot       failed             607
+  dev_autopilot       succeeded           49
+  dev_autopilot       awaiting_approval    3
+  dev_autopilot       queued               1
+  self_healing        failed            2414
+  self_healing        succeeded           15
+  (total 4442; native agent_runs empty as designed)
+
+has_table_privilege('anon','agent_runs_unified','SELECT') = false
+has_table_privilege('authenticated','agent_runs','SELECT') = false
+pg_class.relrowsecurity(agent_runs) = true
+
+agents_registry after seed:
+  conductor / crewai-gcp / validator-core     enabled=false (retired_by VTID-04318)
+  architecture-investigator  triage   read
+  dev-autopilot              planner  commit
+  gemini-operator            operator commit
+  voice-triage-agent         triage   read
+  autopilot-agent-executor   worker   commit   (new)
+  self-healing-triage        triage   read     (new)
+  llm-merge-validator        validator read    (new)
+  spec-generator             planner  draft    (new)
+  backoffice-command-orchestrator  -  high     (new)

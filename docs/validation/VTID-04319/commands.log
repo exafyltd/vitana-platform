@@ -1,0 +1,5 @@
+$ cd services/gateway && node node_modules/.bin/jest test/routes/orchestrator.test.ts
+Tests: 17 passed, 17 total
+$ node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .
+(exit 0)
+$ Supabase MCP apply_migration vtid_04319_orchestrator_run_ledger  -> success; read-only checks in outputs/live-apply.txt
