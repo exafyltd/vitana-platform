@@ -19,6 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
 import { buildLocalizedSystemPrompt } from '../../i18n/llm-locale';
 import type { GatewayLocale } from '../../i18n/catalog';
+import { embedItemLater } from './embed-item';
 
 export const DAILY_LEARNING_LOCAL_HOUR = 22;
 export const MAX_DAY_INPUT_CHARS = 10_000;
@@ -184,23 +185,8 @@ export async function writeDailyLearning(
     if (/duplicate key|23505/i.test(error.message)) return { status: 'already_written' };
     return { status: 'write_failed', error: error.message };
   }
-  void embedLater((data as any)?.id, text);
+  void embedItemLater((data as any)?.id, text);
   return { status: 'written', id: (data as any)?.id ?? null, chars: text.length };
-}
-
-async function embedLater(id: string | undefined, text: string): Promise<void> {
-  if (!id) return;
-  try {
-    const { embedMemoryText, toPgVector } = await import('../memory-embedding');
-    const emb = await embedMemoryText(text);
-    if (!emb.ok || !emb.embedding) return;
-    const { getSupabase } = await import('../../lib/supabase');
-    const sb = getSupabase();
-    if (!sb) return;
-    await sb.from('memory_items').update({ embedding: toPgVector(emb.embedding), embedding_model: emb.model, embedding_updated_at: new Date().toISOString() }).eq('id', id);
-  } catch {
-    /* AP-0910 backfills NULL embeddings */
-  }
 }
 
 /** The user's daily learnings, newest first (for the Daily summary screen). */

@@ -64,7 +64,10 @@ function parseRepo(v: unknown): DevMemoryRepo {
   return v === 'vitana-v1' ? 'vitana-v1' : 'vitana-platform';
 }
 
-router.get('/morning-pack', authorize({ allowPackToken: true }), async (req: Request, res: Response) => {
+const requireDevMemoryAccess = authorize({ allowPackToken: true });
+const requireDevMemoryWriter = authorize({ allowPackToken: false });
+
+router.get('/morning-pack', requireDevMemoryAccess, async (req: Request, res: Response) => {
   const caller = (req as any).devMemoryCaller as Caller;
   let author: string | null = null;
   if (caller.kind === 'admin') author = caller.userId && UUID_RE.test(caller.userId) ? caller.userId : null;
@@ -78,7 +81,7 @@ router.get('/morning-pack', authorize({ allowPackToken: true }), async (req: Req
   return res.json({ ok: true, pack: r.pack });
 });
 
-router.post('/handoffs/sweep', authorize({ allowPackToken: false }), async (_req: Request, res: Response) => {
+router.post('/handoffs/sweep', requireDevMemoryWriter, async (_req: Request, res: Response) => {
   const result = await runHandoffSweep();
   if (result.written > 0) {
     emitOasisEvent({

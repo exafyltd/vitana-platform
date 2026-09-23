@@ -334,8 +334,17 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
 - [x] Server-side Operator thread list: `GET /api/v1/operator/threads` (VTID-04409). The Command Hub `app.js` wiring is separate and needs the Command Hub ownership allowlist.
 
 ### Phase 4 — Customer & support memory (≈2 weeks, after Phase 2)
-- [ ] `scope=customer:<id>` episodes from BackOffice notes and assistant turns; `recall()` for the BackOffice surface.
-- [ ] Resolved-ticket summaries (user + `role:support`).
+- [x] Customer-scoped episodes (VTID-04411, migration `20260923200000`, applied live). Every executed BackOffice CRM/sales command about a customer, lead, contact or opportunity leaves one `customer` episode.
+  - It is written by the orchestrator after execution, on both the direct and the approved path.
+  - Each episode is keyed by `content_json.customer_key`, with `active_role 'backoffice'` and importance 40, and is unique per command.
+  - The text is built from the command's own fields, with no model call.
+  - Recall: the BackOffice voice tool `backoffice_customer_memory` reads everything the tenant recorded about one customer. It needs `crm.view` or `sales.view`.
+  - Personal recall and the Garden never see these episodes (golden eval scenario 11).
+  - Not done: "assistant turns" as customer episodes. BackOffice voice turns are not tied to a customer until a command names one, and the command episode already covers that case.
+- [x] Resolved-ticket summaries (VTID-04412). Every resolve path goes through `notifyFeedbackReporter`, which now also writes two `support_ticket` episodes: one for the member (`active_role NULL`) and one for `role:support`.
+  - The text is the ticket's own report and resolution.
+  - Episodes are unique per (ticket, role), with importance 45.
+  - The member's recall sees their own copy only (golden eval scenario 12).
 
 ---
 

@@ -19,6 +19,27 @@ function fakeSupabase(ticket: any, tenant: any) {
   } as any;
 }
 
+describe('VTID-04412 resolved ticket → memory', () => {
+  it('a resolved ticket is handed to the memory writer; an unresolved one is not', async () => {
+    const rememberTicket = jest.fn().mockResolvedValue({ status: 'written', written: 2 });
+    const notify = jest.fn().mockResolvedValue({ pushed: 0, inapp: true });
+    const sb = fakeSupabase({ id: 'tk-1', user_id: 'u-1', ticket_number: 'FB-7', status: 'resolved' }, { tenant_id: 'ten-1' });
+    await notifyFeedbackReporter('tk-1', { supabase: sb, notify, locale: async () => 'en' as any, rememberTicket });
+    expect(rememberTicket).toHaveBeenCalledWith(sb, 'tk-1');
+    rememberTicket.mockClear();
+    const open = fakeSupabase({ id: 'tk-2', user_id: 'u-1', ticket_number: 'FB-8', status: 'needs_more_info' }, { tenant_id: 'ten-1' });
+    await notifyFeedbackReporter('tk-2', { supabase: open, notify, locale: async () => 'en' as any, rememberTicket });
+    expect(rememberTicket).not.toHaveBeenCalled();
+  });
+
+  it('a failing memory write never breaks the notification', async () => {
+    const notify = jest.fn().mockResolvedValue({ pushed: 1, inapp: true });
+    const sb = fakeSupabase({ id: 'tk-1', user_id: 'u-1', ticket_number: 'FB-7', status: 'resolved' }, { tenant_id: 'ten-1' });
+    const r = await notifyFeedbackReporter('tk-1', { supabase: sb, notify, locale: async () => 'en' as any, rememberTicket: jest.fn().mockRejectedValue(new Error('x')) });
+    expect(r.sent).toBe(true);
+  });
+});
+
 describe('notifyFeedbackReporter', () => {
   it('sends one translated feedback_ticket_resolved notification to the reporter', async () => {
     const notify = jest.fn().mockResolvedValue({ pushed: 1, inapp: true });

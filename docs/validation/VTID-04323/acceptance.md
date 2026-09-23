@@ -151,6 +151,41 @@ Not done in Phase 3, owner steps:
 - The sweep schedule runs only after `setup-eventbridge-cron-migration.sh --apply`.
 - The Command Hub thread-list UI is not built. It needs a Command Hub ownership allowlist entry.
 
+## Phase 4 acceptance (VTID-04411 / 04412)
+
+AC-23: every BackOffice CRM/sales command that executes and is about a customer, lead, contact or opportunity writes one `customer` episode. This covers both the direct path and the approved path. Each episode:
+- is keyed by the resolved id (or the created record's id, or a folded name);
+- carries `active_role 'backoffice'` and importance 40 (below the notification threshold);
+- is unique per command;
+- has text built from the command's own fields.
+
+A failed, rejected or read command writes nothing, and a failing memory write never changes the command result. (VTID-04411)
+TEST: services/gateway/test/services/memory/customer.test.ts
+TEST: services/gateway/test/vtid-04411-orchestrator-customer-memory.test.ts
+
+AC-24: `backoffice_customer_memory` recalls a tenant's episodes for one customer, by id, key or exact name, newest first.
+- It runs only on the backoffice surface and needs crm.view or sales.view.
+- When nothing is recorded, it says so.
+(VTID-04411)
+TEST: services/gateway/test/vtid-03848-backoffice-voice-tools.test.ts
+
+AC-25: a resolved ticket writes one member episode and one `support` episode.
+- Every resolve path goes through `notifyFeedbackReporter`.
+- Each write is idempotent per (ticket, role).
+- An unresolved ticket, or one without a reporter or tenant, writes nothing.
+- A failed write never blocks the notification.
+(VTID-04412)
+TEST: services/gateway/test/services/memory/support-ticket.test.ts
+TEST: services/gateway/test/vtid-04312-feedback-reporter-notify.test.ts
+
+AC-26: in the golden eval, BackOffice customer episodes never reach personal recall or the Garden. The member's recall sees their own support episode, and never the support copy. The eval now has 12 scenarios. (VTID-04411/04412)
+TEST: services/gateway/test/memory-golden-eval.test.ts
+
+Not done in Phase 4:
+- Customer memory from BackOffice assistant turns. A voice turn is not tied to a customer until a command names one, and the command episode already records it.
+- A support-surface caller that reads `role:support` memory. The rows are written and the broker reads a role when one is passed, but no specialist persona passes `support` yet.
+- Nothing was written live: no real command or ticket has gone through this code.
+
 ## OASIS
 
 OASIS_PROOF:

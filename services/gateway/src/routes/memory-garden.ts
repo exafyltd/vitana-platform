@@ -106,6 +106,7 @@ router.get('/memory/garden/categories', requireAuthWithTenant, async (req: Authe
 });
 
 router.post('/memory/garden/entries', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — emitted through emitWrite() → emitOasisEvent('memory.garden.edited')
   const identity = identityOf(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: VTID });
   const body = (req.body ?? {}) as Record<string, unknown>;
@@ -127,6 +128,7 @@ router.post('/memory/garden/entries', requireAuthWithTenant, async (req: Authent
 });
 
 router.patch('/memory/garden/entries/:kind/:id', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — emitted through emitWrite() → emitOasisEvent('memory.garden.edited')
   const identity = identityOf(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: VTID });
   const kind = kindOf(req.params.kind);
@@ -146,6 +148,7 @@ router.patch('/memory/garden/entries/:kind/:id', requireAuthWithTenant, async (r
 });
 
 router.delete('/memory/garden/entries/:kind/:id', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — emitted through emitWrite() → emitOasisEvent('memory.garden.edited')
   const identity = identityOf(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: VTID });
   const kind = kindOf(req.params.kind);
@@ -185,12 +188,14 @@ router.post('/memory/diary/entries', requireAuthWithTenant, async (req: Authenti
 });
 
 router.delete('/memory/diary/entries/:id', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — emitted through emitWrite() → emitOasisEvent('memory.garden.edited')
   const identity = identityOf(req);
   if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', vtid: 'VTID-04390' });
   const sb = getSupabase();
   if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED', vtid: 'VTID-04390' });
   const r = await deleteDiaryEntry(sb, identity, req.params.id);
   if (!r.ok) return res.status(r.status ?? 502).json({ ok: false, error: r.error, vtid: 'VTID-04390' });
+  emitWrite(identity, 'deleted', 'diary', req.params.id);
   return res.json({ ok: true, vtid: 'VTID-04390' });
 });
 
