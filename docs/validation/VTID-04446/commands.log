@@ -6,3 +6,4 @@ node node_modules/.bin/jest test/services/orchestrator/vtid-04446-run-leases.tes
 node node_modules/.bin/jest test/services/orchestrator test/services/autopilot-agent + every suite importing
   llm-stage-tool-loop / agent-heartbeat / dev-autopilot-execute / runStageToolLoop / backgroundExecutorTick / applyExecutionResult
                                                                               -> 67 suites, 946 tests passed
+node node_modules/.bin/jest (full gateway suite)                               -> 1154 passed / 1 skipped suites; 18496 passed, 29 skipped, 6 todo, 0 failed
