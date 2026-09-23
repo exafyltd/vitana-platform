@@ -1,0 +1,6 @@
+(vitana-v1) npx vitest run src/lib/coach-chat-api.test.ts src/hooks/useMemoryMetadata.garden.test.ts  -> 2 files, 13 tests passed
+(vitana-v1) npx vitest run                                  -> 151 files, 859 tests passed
+(vitana-v1) npx tsc --noEmit -p tsconfig.app.json           -> 166 errors on main, 166 with change, 0 in touched files
+(vitana-v1) npx eslint <touched files>                      -> clean
+(vitana-v1) npm run i18n:inventory                          -> pages 356, keys 4942
+(vitana-v1) local harness (vite, stubbed coach API + consent) + playwright 1400x900 / 390x844 / 390x844 rtl -> 0 page errors, no horizontal scroll
