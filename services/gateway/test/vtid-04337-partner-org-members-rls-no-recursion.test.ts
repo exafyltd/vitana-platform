@@ -34,9 +34,12 @@ describe('VTID-04337 partner org RLS without recursion', () => {
     expect(sql).not.toMatch(/is_partner_org_member\(p_org_id uuid,/);
   });
 
-  it('is not executable by PUBLIC/anon, only authenticated and service_role', () => {
+  it('is revoked from PUBLIC and granted explicitly to every role that reads these tables', () => {
+    // anon holds SELECT on partner_organizations; Postgres checks EXECUTE on a
+    // policy's functions even when an earlier OR branch is true, so anon must
+    // be granted or anonymous reads fail with "permission denied for function".
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.is_partner_org_member\(uuid\) FROM PUBLIC;/);
-    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.is_partner_org_member\(uuid\) TO authenticated, service_role;/);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.is_partner_org_member\(uuid\) TO anon, authenticated, service_role;/);
   });
 
   it('the members SELECT policy no longer selects from its own table', () => {

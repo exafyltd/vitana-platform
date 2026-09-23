@@ -23,10 +23,10 @@ TEST: services/gateway/test/partner-orgs.test.ts
 AC-4 Activation is conditional on the current status: the UPDATE carries `status IN ('pending_review','suspended','active')`. A `rejected` org returns 409 `ORG_NOT_ACTIVATABLE` with its current status and emits no `partner_org.activated` event. A missing org still returns 404, and re-activating an active health org stays the idempotent no-op the registry bridge relies on.
 TEST: services/gateway/test/partner-orgs.test.ts
 
-AC-5 The members SELECT policy and the organizations SELECT policy check membership through `public.is_partner_org_member(uuid)`. That helper is SECURITY DEFINER with a pinned `search_path`, answers only for the calling user, and is executable only by `authenticated` and `service_role`. Neither policy selects from `partner_organization_members` directly.
+AC-5 The members SELECT policy and the organizations SELECT policy check membership through `public.is_partner_org_member(uuid)`. That helper is SECURITY DEFINER with a pinned `search_path`, answers only for the calling user, and is revoked from `PUBLIC` but granted to `anon`, `authenticated` and `service_role`. `anon` needs it: it holds SELECT on `partner_organizations`, and Postgres checks EXECUTE on a policy's functions even when an earlier OR branch is already true. Neither policy selects from `partner_organization_members` directly.
 TEST: services/gateway/test/vtid-04337-partner-org-members-rls-no-recursion.test.ts
 
-AC-6 After the migration is applied, the same read-only probe as `outputs/live-rls-recursion-before.txt` returns a count instead of 42P17. It is recorded in `outputs/live-rls-after.txt` once applied.
+AC-6 After the migration is applied, the same read-only probe as `outputs/live-rls-recursion-before.txt` returns a count instead of 42P17, for both `authenticated` and `anon`. **Verified live on 2026-09-23:** the migration was applied on the platform owner's go-ahead, and both roles read without error (`outputs/live-rls-after.txt`). Both tables are empty on the live project, so the positive per-member case is covered by the shape test only.
 TEST: services/gateway/test/vtid-04337-partner-org-members-rls-no-recursion.test.ts
 
 ## OASIS

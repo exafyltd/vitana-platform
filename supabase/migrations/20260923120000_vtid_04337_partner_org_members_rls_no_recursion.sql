@@ -38,8 +38,15 @@ $$;
 COMMENT ON FUNCTION public.is_partner_org_member(uuid) IS
   'VTID-04337: true if the calling user is a member of the given partner organization. SECURITY DEFINER so RLS policies on partner_organization_members / partner_organizations can use it without recursing.';
 
+-- Every role that can SELECT these tables must be able to execute the helper,
+-- because Postgres checks EXECUTE on functions in a policy expression even
+-- when an earlier OR branch is already true. anon holds SELECT on
+-- partner_organizations, so revoking it here would turn an anonymous read of
+-- active organizations into "permission denied for function". Granting it is
+-- harmless: the helper answers only for the caller, and an anonymous caller
+-- has no current_user_id(), so it returns false.
 REVOKE ALL ON FUNCTION public.is_partner_org_member(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.is_partner_org_member(uuid) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_partner_org_member(uuid) TO anon, authenticated, service_role;
 
 DROP POLICY IF EXISTS partner_organization_members_select ON public.partner_organization_members;
 CREATE POLICY partner_organization_members_select ON public.partner_organization_members
