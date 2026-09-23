@@ -64,11 +64,12 @@ export async function listOutlookBusy(
   token: string,
   from: string,
   to: string,
+  excludeEventIds: ReadonlySet<string> = new Set(),
 ): Promise<{ ok: true; busy: Array<{ start_time: string; end_time: string }> } | { ok: false; error: string; status: number }> {
   const busy: Array<{ start_time: string; end_time: string }> = [];
   let url: string | null =
     `${GRAPH}/me/calendarView?startDateTime=${encodeURIComponent(from)}&endDateTime=${encodeURIComponent(to)}` +
-    `&$select=start,end,showAs,isCancelled&$top=200`;
+    `&$select=start,end,showAs,isCancelled,seriesMasterId&$top=200`;
   let pages = 0;
   while (url && pages < 10) {
     // Prefer: UTC so start/end come back as UTC wall times.
@@ -76,6 +77,8 @@ export async function listOutlookBusy(
     if (!r.ok) return { ok: false, error: r.errorMessage ?? 'graph_error', status: r.status };
     for (const ev of r.json?.value ?? []) {
       if (ev?.isCancelled) continue;
+      // VTID-04436: events Vitanaland pushed itself are not outside busy time.
+      if (excludeEventIds.has(ev?.id) || (ev?.seriesMasterId && excludeEventIds.has(ev.seriesMasterId))) continue;
       if (ev?.showAs === 'free' || ev?.showAs === 'workingElsewhere') continue;
       const s = asUtcIso(ev?.start?.dateTime);
       const e = asUtcIso(ev?.end?.dateTime);

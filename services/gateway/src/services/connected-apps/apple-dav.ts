@@ -7,7 +7,9 @@
  * Deliberately dependency-free: the DAV responses are small multistatus
  * documents and the IMAP exchange is four commands, so a namespace-agnostic
  * extractor and a TLS socket are enough, and the gateway lockfiles stay
- * untouched. Everything here is read-only against the member's account.
+ * untouched. Everything here is read-only against the member's account,
+ * except the one "Vitanaland" calendar the calendar push creates and writes
+ * (VTID-04436, davWrite below) — never any other calendar.
  */
 
 import * as tls from 'tls';
@@ -92,6 +94,42 @@ async function dav(
     if (r.status === 401 || r.status === 403) throw new AppleAuthError('apple_auth_failed');
     if (r.status !== 207 && !r.ok) throw new Error(`dav ${method} ${r.status}`);
     return await r.text();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+export class DavStatusError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+/**
+ * VTID-04436: the write half — MKCALENDAR, PUT and DELETE on the member's
+ * Vitanaland calendar only. Returns the HTTP status; auth failures throw
+ * AppleAuthError, anything else outside 2xx throws DavStatusError.
+ */
+export async function davWrite(
+  c: AppleCredentials,
+  method: 'MKCALENDAR' | 'PUT' | 'DELETE',
+  url: string,
+  body?: string,
+  headers: Record<string, string> = {},
+): Promise<number> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), TIMEOUT_MS);
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: { Authorization: basic(c), 'User-Agent': 'Vitanaland/1.0', ...headers },
+      body,
+      signal: ctl.signal,
+      redirect: 'follow',
+    });
+    if (r.status === 401 || r.status === 403) throw new AppleAuthError('apple_auth_failed');
+    if (!r.ok) throw new DavStatusError(r.status, `dav ${method} ${r.status}`);
+    return r.status;
   } finally {
     clearTimeout(t);
   }
@@ -255,8 +293,12 @@ export async function listAppleEvents(
   home: string,
   from: string,
   to: string,
+  skipCalendars: string[] = [],
 ): Promise<IcsEvent[]> {
-  const calendars = await listCalendars(c, home);
+  // VTID-04436: the Vitanaland calendar the push writes is skipped, or every
+  // pushed entry would come back as a grey busy block on top of itself.
+  const skip = new Set(skipCalendars.map(sameCollection));
+  const calendars = (await listCalendars(c, home)).filter((u) => !skip.has(sameCollection(u)));
   const start = caldavStamp(from);
   const end = caldavStamp(to);
   const body =
@@ -273,6 +315,11 @@ export async function listAppleEvents(
     }
   }
   return events;
+}
+
+/** Collection URLs compared without a trailing slash. */
+export function sameCollection(url: string): string {
+  return url.replace(/\/+$/, '');
 }
 
 /** Busy intervals only — never titles. Transparent and cancelled events are free. */
