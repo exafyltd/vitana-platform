@@ -211,6 +211,8 @@ describe('toggle flows', () => {
     expect(r).toEqual({ ok: true, status: 'on' });
     const up = calls.find((c) => c.method === 'POST' && c.url.includes('connected_app_settings'))!;
     expect(up.body).toMatchObject({ user_id: 'u1', app_id: 'outlook-mail', enabled: true });
+    const { emitOasisEvent } = require('../src/services/oasis-event-service');
+    expect(emitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'connected_app.enabled', actor_id: 'u1', vtid: 'VTID-04402', payload: expect.objectContaining({ app_id: 'outlook-mail' }) }));
   });
 
   it('an app the stack cannot serve refuses with not_configured', async () => {
@@ -351,6 +353,12 @@ describe('toggle flows', () => {
     expect(r).toMatchObject({ ok: true, result: { received: 3, imported: 1 } });
     const up = calls.find((c) => c.url.includes('contacts?on_conflict=user_id,source,external_id'))!;
     expect(up.body[0]).toMatchObject({ user_id: 'u1', source: 'android', contact_name: 'Ana', contact_email: 'ana@x.com' });
+    // OASIS: the import and the switch-on are recorded with the member as actor.
+    const { emitOasisEvent } = require('../src/services/oasis-event-service');
+    const types = (emitOasisEvent as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(types).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'connected_app.contacts_imported', actor_id: 'u1', vtid: 'VTID-04402', payload: expect.objectContaining({ app_id: 'android-contacts' }) }),
+    ]));
     expect(await hub.importDeviceContacts('u1', [])).toMatchObject({ ok: false, error: 'no_contacts' });
     jest.dontMock('../src/lib/excluded-test-service-accounts');
   });

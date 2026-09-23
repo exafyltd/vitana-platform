@@ -154,3 +154,10 @@ The hub emits these events, with the member as `actor_id`:
 - `connected_app.consent_incomplete`
 - `connected_app.sync_failed`
 - `connected_app.contacts_imported`
+
+OASIS_PROOF: `services/gateway/test/vtid-04402-connected-apps.test.ts` asserts that
+`emitOasisEvent` is called with `connected_app.enabled` (one-tap switch-on of
+Outlook Mail with a covering grant) and `connected_app.contacts_imported`
+(Android import), each carrying `vtid: VTID-04402`, `actor_id` = the member and
+`payload.app_id`. The remaining three types go through the same `emit()` helper
+in `services/connected-apps/hub.ts`.
