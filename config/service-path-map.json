@@ -52,20 +52,6 @@
       "cloud_run_service": "mcp-gateway",
       "deployable": false
     },
-    "deploy-watcher": {
-      "paths": [
-        "services/deploy-watcher/"
-      ],
-      "cloud_run_service": "deploy-watcher",
-      "deployable": false
-    },
-    "oasis": {
-      "paths": [
-        "services/oasis/"
-      ],
-      "cloud_run_service": null,
-      "deployable": false
-    },
     "validators": {
       "paths": [
         "services/validators/"

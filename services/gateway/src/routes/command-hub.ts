@@ -5,6 +5,7 @@
  * Access Control: Requires developer, admin, or exafy_admin role.
  * Community/patient/professional users are blocked with 403.
  */
+import { oasisOperatorBaseUrl } from '../env';
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { naturalLanguageService } from '../services/natural-language-service';
@@ -106,7 +107,7 @@ router.post('/api/chat', requireAuth, requireDeveloperAccess, async (req: Reques
     
     if (cmd === '/services') {
       try {
-        const response = await fetch('https://oasis-operator-86804897789.us-central1.run.app/health/services');
+        const response = await fetch(`${oasisOperatorBaseUrl()}/health/services`);
         if (response.ok) {
           const data: any = await response.json();
           const serviceList = (data.services || [])

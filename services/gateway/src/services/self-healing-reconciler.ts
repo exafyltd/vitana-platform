@@ -19,6 +19,7 @@
  *      self-healing.dispatch.retried (re-drive) OASIS events.
  */
 
+import { gatewayBaseUrl } from '../env';
 import { emitOasisEvent } from './oasis-event-service';
 import { notifyGChat } from './self-healing-snapshot-service';
 import {
@@ -35,10 +36,10 @@ import { probeEndpoint as sharedProbeEndpoint } from './self-healing-probe';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+const GATEWAY_URL = gatewayBaseUrl();
 const COMMAND_HUB_SH_URL =
   process.env.COMMAND_HUB_SH_URL ||
-  'https://gateway-q74ibpv6ia-uc.a.run.app/command-hub/infrastructure/self-healing';
+  `${gatewayBaseUrl()}/command-hub/infrastructure/self-healing`;
 const LOG_PREFIX = '[self-healing-reconciler]';
 
 const DEFAULT_INTERVAL_MS = 10 * 60 * 1000;
