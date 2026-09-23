@@ -75,6 +75,8 @@ import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
+// VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
+import { triggerLiveAdvisor } from './live-advisor-hook';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -706,6 +708,7 @@ export function createUpstreamLiveMessageHandler(
                 text: userText,
                 timestamp: new Date().toISOString()
               });
+              triggerLiveAdvisor(session as any, userText, ctx.deps.emitDiag);
               // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
               if (session.identity && session.identity.tenant_id && session.identity.user_id) {
                 addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
@@ -2424,6 +2427,7 @@ export function handleTurnComplete(
       text: userText,
       timestamp: new Date().toISOString()
     });
+    triggerLiveAdvisor(session as any, userText, ctx.deps.emitDiag);
     if (session.identity && session.identity.tenant_id && session.identity.user_id) {
       addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
       addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText)

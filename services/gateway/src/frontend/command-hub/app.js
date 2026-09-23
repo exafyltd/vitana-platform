@@ -7981,6 +7981,16 @@ function _convBrainRender(host, d) {
                 t.route_groups ? 'screen: ' + (t.route_groups.length ? t.route_groups.join(', ') : 'none') + ' · ' + (t.contextual_kept || 0) + ' screen tools · ' + (t.deferred_reachable || 0) + ' reachable' : '',
                 (t.searches || (t.deferred_used || []).length) ? (t.searches || 0) + ' find_tool · used: ' + ((t.deferred_used || []).join(', ') || 'none') : ''
             ].filter(Boolean).join(' · ') || null : null),
+        // VTID-04427 (WS-3.2): the live advisor — counts and cost only, the note text is never stored.
+        _convTile('Live advisor', d.advisor ? d.advisor.notes + ' note(s)' : 'not running',
+            d.advisor ? [
+                d.advisor.reads + ' get_guidance (' + d.advisor.fresh_reads + ' fresh)',
+                '$' + (d.advisor.cost_usd || 0).toFixed(4),
+                d.advisor.latency_ms_max == null ? '' : 'slowest ' + (d.advisor.latency_ms_max / 1000).toFixed(1) + ' s',
+                Object.keys(d.advisor.skipped || {}).map(function (k) { return k + ' ×' + d.advisor.skipped[k]; }).join(', '),
+                (d.advisor.suggested_tools || []).length ? 'suggested: ' + d.advisor.suggested_tools.join(', ') : ''
+            ].filter(Boolean).join(' · ') : 'off until the advisor routing stage is approved',
+            d.advisor && d.advisor.skipped && (d.advisor.skipped.timeout || d.advisor.skipped.error) ? 'warn' : null),
         _convTile('Errors', String((d.errors || []).length),
             (d.errors || []).map(function (e) { return e.stage + (e.failure_kind ? ':' + e.failure_kind : ''); }).join(' · ') || null,
             (d.errors || []).length ? 'warn' : null),

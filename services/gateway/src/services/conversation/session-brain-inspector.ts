@@ -121,6 +121,19 @@ export interface SessionBrainSummary {
     searches?: number;
     deferred_used?: string[];
   } | null;
+  /**
+   * VTID-04427 (WS-3.2): the live advisor, when it ran. Counts and cost only —
+   * the note text itself is never written to OASIS.
+   */
+  advisor?: {
+    notes: number;
+    skipped: Record<string, number>;
+    reads: number;
+    fresh_reads: number;
+    cost_usd: number;
+    latency_ms_max: number | null;
+    suggested_tools: string[];
+  } | null;
   errors: Array<{ at: string; stage: string; failure_kind: string | null; code: string | null }>;
   outcome: {
     stopped: boolean;
@@ -311,6 +324,25 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
         const t = summary.tools ?? (summary.tools = { bytes_before: null, bytes_after: null, dropped_count: null, provider: null });
         if (stage === 'deferred_tool_search') t.searches = (t.searches ?? 0) + 1;
         else if (str(m.tool)) t.deferred_used = [...(t.deferred_used ?? []), str(m.tool) as string];
+        break;
+      }
+      case 'advisor_note':
+      case 'advisor_skipped':
+      case 'guidance_read': {
+        const a = summary.advisor ?? (summary.advisor = { notes: 0, skipped: {}, reads: 0, fresh_reads: 0, cost_usd: 0, latency_ms_max: null, suggested_tools: [] });
+        if (stage === 'advisor_note') {
+          a.notes += 1;
+          a.cost_usd = Math.round((a.cost_usd + (num(m.cost_usd) ?? 0)) * 1e6) / 1e6;
+          for (const t of strList(m.suggested_tools)) if (!a.suggested_tools.includes(t) && a.suggested_tools.length < 20) a.suggested_tools.push(t);
+        } else if (stage === 'advisor_skipped') {
+          const reason = str(m.reason) ?? 'unknown';
+          a.skipped[reason] = (a.skipped[reason] ?? 0) + 1;
+        } else {
+          a.reads += 1;
+          if (m.fresh === true) a.fresh_reads += 1;
+        }
+        const lat = num(m.latency_ms);
+        if (lat !== null && stage !== 'guidance_read') a.latency_ms_max = Math.max(a.latency_ms_max ?? 0, lat);
         break;
       }
       default:

@@ -40,8 +40,12 @@ export function isToolSelectionEnabled(env: Record<string, string | undefined> =
   return env[TOOL_SELECTION_ENV] === 'true';
 }
 
-/** Always kept right after the base priority list when selection is on. */
-export const BRAIN_CORE_TOOLS: readonly string[] = ['get_next_best_action'];
+/**
+ * Always kept right after the base priority list when selection is on.
+ * `get_guidance` is only in a catalog while the live advisor is active
+ * (VTID-04427); a name the catalog lacks is simply skipped.
+ */
+export const BRAIN_CORE_TOOLS: readonly string[] = ['get_guidance', 'get_next_best_action'];
 
 /**
  * Screen → tool-name stems. A route matches a group when its first path

@@ -144,6 +144,10 @@ import {
   USE_TOOL_NAME,
   withMetaTools,
 } from '../orb/live/tools/session-tool-selection';
+// VTID-04427 (WS-3.2): get_guidance reads the live advisor's note (inert until
+// the advisor routing stage is approved and ORB_LIVE_ADVISOR_ENABLED is on).
+import { GET_GUIDANCE_DECLARATION, GET_GUIDANCE_TOOL_NAME, isLiveAdvisorActive } from '../services/conversation/live-advisor';
+import { answerGetGuidance } from '../orb/live/session/live-advisor-hook';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -3147,6 +3151,9 @@ async function executeLiveApiTool(
   // catalog budget dropped for this stream; use_tool runs one of them through
   // this same dispatcher (same timeout, auth and handlers). Only tools that
   // were in this session's own catalog are reachable.
+  if (toolName === GET_GUIDANCE_TOOL_NAME) {
+    return answerGetGuidance(session as any, emitDiag);
+  }
   if (toolName === FIND_TOOL_NAME) {
     const r = runFindTool(session.deferredTools as any, args);
     try {
@@ -8351,8 +8358,21 @@ async function connectToLiveAPI(
         try {
           const { budgetBytes: toolBudget, envVar: toolBudgetEnvVar } =
             resolveToolCatalogByteBudgetFor(session.upstreamProvider);
-          const toolsIn = (setupMessage.setup as any)?.tools;
+          let toolsIn = (setupMessage.setup as any)?.tools;
+          // VTID-04427 (WS-3.2): declare get_guidance only while the live
+          // advisor is active for a signed-in session — never otherwise.
+          if (Array.isArray(toolsIn) && !session.isAnonymous && isLiveAdvisorActive()) {
+            const groups = (toolsIn as Array<Record<string, unknown>>).map((g) => ({ ...g }));
+            const first = groups.find((g) => Array.isArray(g.function_declarations));
+            if (first && !(first.function_declarations as Array<{ name?: string }>).some((d) => d?.name === GET_GUIDANCE_TOOL_NAME)) {
+              first.function_declarations = [GET_GUIDANCE_DECLARATION, ...(first.function_declarations as object[])];
+              toolsIn = groups;
+              (setupMessage.setup as any).tools = groups;
+            }
+          }
           if (toolBudget > 0 && Array.isArray(toolsIn)) {
+            // get_guidance, when declared, is kept by the default priority
+            // (FLAG_GATED_PRIORITY_TOOLS, VTID-04427).
             let toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
             // VTID-04426 (WS-3.4): when the budget has to trim, fill it in a
             // context-aware order (meta tools, the base priority list, the
