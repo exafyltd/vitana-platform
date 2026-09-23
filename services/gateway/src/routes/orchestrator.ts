@@ -15,6 +15,8 @@
  *   GET /api/v1/orchestrator/budgets        — today's LLM spend vs the platform/agent/run budgets
  *                                             and what enforcement would deny (VTID-04370, exafy_admin,
  *                                             shadow)
+ *   GET /api/v1/orchestrator/delegations    — delegation targets and in-memory job counts
+ *                                             (VTID-04375, exafy_admin; no request text or results)
  *
  * Nothing here writes or changes any plane's behaviour.
  */
@@ -37,6 +39,8 @@ import {
   policyDefaults,
 } from '../services/orchestrator/policy';
 import { shadowSnapshot } from '../services/orchestrator/policy-shadow';
+import { jobStats, listDelegationTargets } from '../services/orchestrator/dispatcher';
+import { registerDefaultDelegationTargets } from '../services/orchestrator/delegation-targets';
 import {
   BUDGET_DEFAULTS,
   MONTHLY_ENVELOPE_CAP_USD,
@@ -133,6 +137,11 @@ router.get('/policy/shadow', requireDevRole, async (_req: Request, res: Response
     console.warn('[orchestrator] tool catalog unavailable:', e instanceof Error ? e.message : e);
   }
   return res.json({ ok: true, data: { shadow: shadowSnapshot(), catalog } });
+});
+
+router.get('/delegations', requireDevRole, async (_req: Request, res: Response) => {
+  registerDefaultDelegationTargets();
+  return res.json({ ok: true, data: { targets: listDelegationTargets(), jobs: jobStats() } });
 });
 
 router.get('/budgets', requireDevRole, async (_req: Request, res: Response) => {
