@@ -33,3 +33,7 @@ TEST: services/gateway/test/vtid-04368-retry-storm-outage-gate.test.ts — "is c
 
 AC-6 (post-deploy, live): during the next provider outage, `dev_autopilot.provider_outage.detected` appears once in `oasis_events`, executions per hour drop from ~36 to at most ~2 probes, and no finding is snoozed for it.
 CURL: curl -s https://preview-aws-gateway.vitanaland.com/api/v1/dev-autopilot/supervisor
+
+## OASIS evidence
+
+OASIS_PROOF: two new event types, `dev_autopilot.provider_outage.detected` and `dev_autopilot.provider_outage.cleared`, registered in `CicdEventType` (services/gateway/src/types/cicd.ts). They are emitted by `loadOutageState()` only when the state changes, latched per process, never on every tick (CLAUDE.md §6: polling is not an event). `dev_autopilot.finding.snoozed` (existing type) now also fires from the impact pass, with `pass` in the payload. The wiring is pinned by services/gateway/test/vtid-04368-retry-storm-outage-gate.test.ts ("approval and claiming both go through the outage gate"). Live proof is AC-6: the first provider outage after deploy should produce exactly one `.detected` row in `oasis_events`.
