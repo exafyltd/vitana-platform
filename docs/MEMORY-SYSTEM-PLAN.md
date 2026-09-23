@@ -279,7 +279,7 @@ Memory failed here mostly **silently**. The plan makes every failure loud and me
 
    It runs in CI on every memory PR. This is the missing piece that made "we improved it" unverifiable.
 4. **Idempotent session-end commit.** Keyed by `session_id`, safe to retry, identical for every transport.
-5. **Single owner.** `services/memory/` has one README with the table list, the write callers and the read contract. It is short enough for a supervisor to read in 10 minutes.
+5. **Single owner.** `services/memory/` has one README with the table list, the write callers and the read contract. It is short enough for a supervisor to read in 10 minutes. Done: `services/gateway/src/services/memory/README.md` (VTID-04442).
 
 ---
 
