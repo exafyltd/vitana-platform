@@ -290,9 +290,11 @@ describe('ticket fields', () => {
       surface: 'admin',
       session_id: 'live-abc',
       current_route: '/admin/users',
+      app_version: '2ec2f78c5a1b',
     });
     const row = (repo.insertFeedbackTicket as jest.Mock).mock.calls[0][1];
     expect(row.surface).toBe('admin');
+    expect(row.app_version).toBe('2ec2f78c5a1b'); // VTID-04430
     expect(row.structured_fields).toMatchObject({
       tenant_id: 't-1',
       language: 'de',

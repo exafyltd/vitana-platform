@@ -184,11 +184,11 @@ describe('tool_submit_bug_report', () => {
     });
     await tool_submit_bug_report(
       { summary: LONG_BUG_SUMMARY },
-      { ...IDENT, lang: 'sr', session_id: 'live-s2', current_route: '/admin/feedback' },
+      { ...IDENT, lang: 'sr', session_id: 'live-s2', current_route: '/admin/feedback', app_version: '2ec2f78c5a1b' },
       makeSb(),
     );
     const options = (executeReportToSpecialist as jest.Mock).mock.calls[0][3];
-    expect(options).toMatchObject({ surface: 'admin', session_id: 'live-s2', current_route: '/admin/feedback' });
+    expect(options).toMatchObject({ surface: 'admin', session_id: 'live-s2', current_route: '/admin/feedback', app_version: '2ec2f78c5a1b' });
     expect((executeReportToSpecialist as jest.Mock).mock.calls[0][1]).toMatchObject({ lang: 'sr', tenant_id: 't-1' });
   });
 
@@ -251,12 +251,14 @@ describe('typed tickets without an enabled specialist (VTID-03044 canary)', () =
     const { sb, builder } = insertCapture();
     const id = {
       ...IDENT, lang: 'de', session_id: 'live-s1', current_route: '/command-hub/autopilot', is_mobile: false,
+      app_version: '2ec2f78c5a1b',
     };
     await tool_submit_support_ticket(
       { summary: 'How can I export all of my health data as a file' }, id, sb,
     );
     const inserted = builder.insert.mock.calls[0][0];
     expect(inserted.surface).toBe('command-hub');
+    expect(inserted.app_version).toBe('2ec2f78c5a1b'); // VTID-04430
     expect(inserted.structured_fields).toMatchObject({
       tenant_id: 't-1', language: 'de', session_id: 'live-s1', current_route: '/command-hub/autopilot',
     });

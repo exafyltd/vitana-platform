@@ -1260,6 +1260,8 @@ export interface GeminiLiveSession {
   guided_topic_resume?: boolean;
   /** VTID-04395: opened from Support → "report by voice" (support-report intake). */
   support_report?: boolean;
+  /** VTID-04430: the host app's build stamp; voice-filed tickets store it. */
+  app_version?: string | null;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -4177,6 +4179,7 @@ async function executeLiveApiToolInner(
               ),
               session_id: session.sessionId ?? null,
               current_route: session.current_route ?? null,
+              app_version: session.app_version ?? null,
             },
           );
 
@@ -6851,6 +6854,7 @@ async function executeLiveApiToolInner(
                 // VTID-04382: the typed feedback tools file on this surface.
                 current_route: session.current_route ?? null,
                 is_mobile: session.is_mobile === true,
+                app_version: session.app_version ?? null,
               },
               supabase,
             );
