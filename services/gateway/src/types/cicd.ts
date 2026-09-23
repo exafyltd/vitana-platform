@@ -903,6 +903,10 @@ export type CicdEventType =
   | 'feedback.ticket.triaged'
   | 'feedback.ticket.resolved'
   | 'feedback.ticket.user_confirmed'
+  // VTID-04333: dispatch + fix outcome, filed under the ticket's own VTID
+  | 'feedback.ticket.dispatched'
+  | 'feedback.ticket.auto_dispatch_blocked'
+  | 'feedback.ticket.fix_failed'
   | 'feedback.handoff.started'
   | 'feedback.handoff.completed'
   // VTID-02632: Phase 8 — Nightly consolidator events

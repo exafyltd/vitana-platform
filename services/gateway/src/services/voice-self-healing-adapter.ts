@@ -22,6 +22,7 @@
  * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
 
+import { gatewayBaseUrl } from '../env';
 import {
   classifyVoiceSession,
   VoiceClassification,
@@ -36,7 +37,7 @@ import { classifyQualityFromSessionStop } from './voice-failure-taxonomy';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+const GATEWAY_URL = gatewayBaseUrl();
 // Cloud Run sets K_REVISION; fall back to BUILD_INFO for local/dev.
 const GATEWAY_REVISION =
   process.env.K_REVISION || process.env.BUILD_INFO || 'unknown';

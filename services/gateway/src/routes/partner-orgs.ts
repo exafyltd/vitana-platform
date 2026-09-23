@@ -28,6 +28,11 @@ const ORG_ROLES = ['org_admin', 'staff', 'professional'] as const;
 type OrgRole = (typeof ORG_ROLES)[number];
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// VTID-04337 (SEC-3) — the only statuses /:orgId/activate may move from.
+// 'rejected' is terminal for this endpoint; reversing a rejection is a
+// deliberate decision that needs its own path, not a side effect of activate.
+export const ACTIVATABLE_STATUSES = ['pending_review', 'suspended', 'active'] as const;
+
 // VTID-03974 — the machine-readable routing signal that decides whether an
 // activated org gets a partner_registry bridge (see POST /:orgId/activate
 // below). Deliberately separate from org_type, which stays free-text.
@@ -44,6 +49,12 @@ function isCommerceVertical(value: unknown): value is CommerceVertical {
 
 function getCallerId(req: Request): string | null {
   return (req as AuthenticatedRequest).identity?.user_id ?? null;
+}
+
+function normalizeEmail(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function isExafyAdmin(req: Request): boolean {
@@ -268,6 +279,20 @@ router.post('/invites/:token/accept', requireAuth, async (req: Request, res: Res
   if (!invite) return res.status(404).json({ ok: false, error: 'invite not found' });
   const inv = invite as { id: string; partner_organization_id: string; email: string; role: OrgRole; expires_at: string; accepted_at: string | null };
 
+  // VTID-04337 (SEC-1) — an invite belongs to the address it was sent to.
+  // Before this, anyone holding the link joined with the invited role. The
+  // JWT email is the account's confirmed address; an identity without one
+  // (e.g. a token type that carries no email claim) cannot prove it is the
+  // invitee and is refused rather than waved through. The invited address is
+  // deliberately not echoed back to a caller who does not own it.
+  const callerEmail = normalizeEmail((req as AuthenticatedRequest).identity?.email);
+  if (!callerEmail) {
+    return res.status(403).json({ ok: false, error: 'INVITE_EMAIL_UNVERIFIED', message: 'Sign in with the email address this invite was sent to.' });
+  }
+  if (callerEmail !== normalizeEmail(inv.email)) {
+    return res.status(403).json({ ok: false, error: 'INVITE_EMAIL_MISMATCH', message: 'This invite was sent to a different email address. Sign in with that address to accept it.' });
+  }
+
   if (inv.accepted_at) return res.status(409).json({ ok: false, error: 'invite already accepted' });
   if (new Date(inv.expires_at).getTime() < Date.now()) return res.status(410).json({ ok: false, error: 'invite expired' });
 
@@ -309,14 +334,37 @@ router.post('/:orgId/activate', requireAuth, async (req: Request, res: Response)
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
+  // VTID-04337 (SEC-3) — the update is conditional on the CURRENT status,
+  // so a rejected org can no longer be activated by a stray call. Doing it
+  // in the UPDATE's own WHERE (not a read-then-write) closes the race with a
+  // concurrent reject. 'active' stays in the set so re-activation remains
+  // the idempotent no-op the health-registry bridge below relies on.
   const { data: org, error } = await supabase
     .from('partner_organizations')
     .update({ status: 'active', updated_at: new Date().toISOString() })
     .eq('id', req.params.orgId)
+    .in('status', [...ACTIVATABLE_STATUSES])
     .select('id, org_key, display_name, commerce_vertical, status')
     .maybeSingle();
   if (error) return res.status(500).json({ ok: false, error: error.message });
-  if (!org) return res.status(404).json({ ok: false, error: 'organization not found' });
+  if (!org) {
+    // Nothing matched: either the org does not exist, or its status forbids
+    // activation. Tell the two apart so the caller gets an honest answer.
+    const { data: existing, error: lookupErr } = await supabase
+      .from('partner_organizations')
+      .select('id, status')
+      .eq('id', req.params.orgId)
+      .maybeSingle();
+    if (lookupErr) return res.status(500).json({ ok: false, error: lookupErr.message });
+    if (!existing) return res.status(404).json({ ok: false, error: 'organization not found' });
+    const current = (existing as { status: string }).status;
+    return res.status(409).json({
+      ok: false,
+      error: 'ORG_NOT_ACTIVATABLE',
+      message: `An organization in status "${current}" cannot be activated.`,
+      status: current,
+    });
+  }
   const orgRow = org as { id: string; org_key: string; display_name: string; commerce_vertical: CommerceVertical | null; status: string };
 
   await emitOasisEvent({

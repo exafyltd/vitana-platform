@@ -41,6 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
+import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
@@ -157,6 +158,14 @@ import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../se
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
 import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
+// VTID-04332: STATUS contract of report_to_specialist + append_to_ticket.
+import {
+  buildReportToSpecialistToolMessage,
+  REPORT_TO_SPECIALIST_ACTIONS,
+  reportToSpecialistToolMessage,
+  executeAppendToTicket,
+  appendToTicketToolMessage,
+} from '../services/report-to-specialist-core';
 import { getUserContextSummary } from '../services/user-context-profiler';
 import { getAwarenessConfigSync } from '../services/awareness-registry';
 import { writeTimelineRow } from '../services/timeline-projector';
@@ -721,13 +730,12 @@ export async function resolveEffectiveRole(
     fetchUserRolePreference(userId, tenantId),
     fetchUserActiveRole(userId, tenantId),
   ]);
-  if (pref) {
-    if (tenantRole && pref !== tenantRole) {
-      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
-    }
-    return pref;
+  if (pref && tenantRole && pref !== tenantRole) {
+    console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
   }
-  return tenantRole;
+  // VTID-04318: the rule lives in orchestrator/active-role.ts so the AP
+  // executor targets users on exactly the role the ORB addresses them as.
+  return pickEffectiveRole(pref, tenantRole);
 }
 
 /**
@@ -1893,6 +1901,7 @@ import {
 import {
   isVertexSerbianBridgeEnabled,
   isVertexSerbianBridgeLanguage,
+  resolveVertexLivePersonaVoice,
 } from '../orb/live/upstream/vertex-serbian-bridge';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -2473,7 +2482,32 @@ export function buildTranscriptSection(
   lines.push(`=== END TRANSCRIPT ===`);
   lines.push(`You are ${targetLabel}. Your next utterance is in your voice, your style, your identity.`);
   lines.push(`The user has ALREADY explained what they want above. Do NOT ask "what can I do for you?".`);
-  lines.push(`Synthesize their report into ONE sentence and confirm: "So you're seeing X — is that right?". Do not echo their exact words. Do not summarize the whole transcript. If the question is outside your authority or is an instruction-manual question, hand back to Vitana via switch_persona(to:'vitana') with a brief bridge — NEVER forward to another specialist.`);
+  lines.push(`Synthesize their report into ONE sentence in your own words and ask them to confirm you understood it correctly. Do not echo their exact words. Do not summarize the whole transcript. If the question is outside your authority or is an instruction-manual question, hand back to Vitana via switch_persona(to:'vitana') with a brief bridge — NEVER forward to another specialist.`);
+  return lines.join('\n');
+}
+
+/**
+ * VTID-04332 — the ticket block appended to a specialist's system prompt at
+ * hand-off. Tells the specialist which ticket they own, that they can add
+ * the member's details to it with append_to_ticket, and that the member
+ * must hear their ticket number before the conversation ends. Intent only
+ * (NEVER-rule 41): the specialist words it in the member's language.
+ */
+export function buildHandoffTicketSection(ticketNumber: string | null): string {
+  const ref = ticketNumber ? `ticket ${ticketNumber}` : 'a ticket (its number is not assigned yet)';
+  const lines: string[] = [];
+  lines.push('[TICKET — this hand-off]');
+  lines.push(`Vitana filed ${ref} for this report before handing the user to you.`);
+  lines.push('As the user gives you details (what they did, what happened, which screen, error text, device),');
+  lines.push('save each substantive detail with append_to_ticket (ticket_id "current", note = the detail in plain words).');
+  lines.push('Do not read notes back to the user and do not tell them you are taking notes.');
+  if (ticketNumber) {
+    lines.push(`Before the conversation ends, tell the user their ticket number (${ticketNumber}) in your own words, once,`);
+    lines.push('so they can refer to it later. Say it clearly enough to be written down.');
+  } else {
+    lines.push('Before the conversation ends, tell the user their report is filed and that the ticket number');
+    lines.push('will appear in their support tickets — in your own words, once.');
+  }
   return lines.join('\n');
 }
 
@@ -2716,48 +2750,28 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
     lines.push('');
     lines.push('  STEP 1 — CLOSE-QUESTION TURN (always, never skipped). ONE turn in the');
     lines.push('  user\'s language with FOUR components in order:');
-    lines.push('    (i) Acknowledge that a TICKET HAS BEEN CREATED. NEVER say "done" / "fixed"');
-    lines.push('        / "resolved" / "erledigt im Sinne von gelöst" — a ticket is the START');
-    lines.push('        of the work, not the end. Use phrasing like "I\'ve created a ticket"');
-    lines.push('        / "Ticket is filed" / "Ich habe ein Ticket angelegt".');
-    lines.push('    (ii) Commit to action: convey that the team will work on it RIGHT AWAY.');
-    lines.push('         Examples: "our team will work on it immediately" / "we\'ll take care');
-    lines.push('         of this right away" / "unser Team kümmert sich sofort darum".');
-    lines.push('    (iii) Promise the follow-up: tell the user that VITANA will inform them');
-    lines.push('          when the fix is in. Examples: "as soon as it\'s fixed Vitana will');
-    lines.push('          let you know" / "Vitana wird dir Bescheid geben, sobald es behoben');
-    lines.push('          ist".');
-    lines.push('    (iv) THEN ask the close question: "anything else I can help with, or');
-    lines.push('         shall I hand you back to Vitana?" — varied wording every call.');
-    lines.push('  Vary every component every call. NEVER recite a template. Examples:');
-    lines.push('    "I\'ve created a ticket and our team will work on it right away. As soon');
-    lines.push('     as it\'s fixed, Vitana will let you know. Anything else, or shall I hand');
-    lines.push('     you back to Vitana?"');
-    lines.push('    "Ticket\'s filed — we\'ll take care of this immediately. You\'ll hear from');
-    lines.push('     Vitana the moment the fix lands. Want me to look at anything else first,');
-    lines.push('     or back to Vitana?"');
-    lines.push('    "Ich habe ein Ticket dafür angelegt, und unser Team kümmert sich sofort');
-    lines.push('     darum. Sobald es behoben ist, gibt dir Vitana Bescheid. Möchtest du sonst');
-    lines.push('     noch etwas besprechen, oder zurück zu Vitana?"');
+    lines.push('    (i) Say that the report is filed as a ticket and give the user their TICKET');
+    lines.push('        NUMBER (from the [TICKET] section) so they can refer to it later. Never');
+    lines.push('        call the problem done, fixed or resolved — a ticket is the START of the');
+    lines.push('        work, not the end.');
+    lines.push('    (ii) Commit to action: the team will work on it right away.');
+    lines.push('    (iii) Promise the follow-up: VITANA will let them know when the fix is in.');
+    lines.push('    (iv) THEN ask whether there is anything else, or whether they want to go');
+    lines.push('         back to Vitana.');
+    lines.push('  Word every component yourself, in the user\'s language, differently every');
+    lines.push('  time — this list is intent, never a script to recite.');
     lines.push('  Then WAIT for the user\'s reply.');
     lines.push('');
     lines.push('  STEP 2 — branch on the user\'s reply:');
-    lines.push('    (a) "yes, [new issue]" — handle it. Loop back to your normal intake.');
-    lines.push('    (b) "no" / "that\'s all" / "Nein, das ist alles" / equivalent — speak ONE');
-    lines.push('        short polite GOODBYE turn in the user\'s language, THEN call');
-    lines.push('        switch_persona(to:\'vitana\'). Goodbye structure:');
-    lines.push('         - Thank the user for their time. Use display_name from USER CONTEXT');
-    lines.push('           when known ("Thank you for your time, Dragan, …"). When NOT known,');
-    lines.push('           omit the name. NEVER say "user" or any robotic placeholder.');
-    lines.push('         - Wish them well ("have a great day" / "schönen Tag noch" / "take');
-    lines.push('           care").');
-    lines.push('         - The follow-up promise was given in STEP 1, so the goodbye is');
-    lines.push('           light — don\'t repeat the full "we\'ll let you know" speech here.');
-    lines.push('         - Vary wording every call. NEVER recite the same goodbye twice in');
-    lines.push('           a session. Examples:');
-    lines.push('             "Thank you for your time, Dragan. Have a great day."');
-    lines.push('             "Thanks, Dragan — take care."');
-    lines.push('             "Danke für deine Zeit, Dragan. Schönen Tag noch."');
+    lines.push('    (a) They raise something new — handle it. Loop back to your normal intake.');
+    lines.push('    (b) They say that is all — speak ONE short polite GOODBYE turn in the');
+    lines.push('        user\'s language, THEN call switch_persona(to:\'vitana\'). Goodbye:');
+    lines.push('         - Thank them for their time, by display_name from USER CONTEXT when');
+    lines.push('           known; otherwise without a name. Never a robotic placeholder.');
+    lines.push('         - Wish them well.');
+    lines.push('         - The follow-up promise and ticket number were given in STEP 1, so');
+    lines.push('           the goodbye stays light — do not repeat them.');
+    lines.push('         - Word it yourself and never repeat a goodbye within a session.');
     lines.push('  STEP 2 (b) ORDERING is non-negotiable: SPEAK the goodbye FIRST, THEN call');
     lines.push('  switch_persona. Do NOT speak after the tool call.');
 
@@ -2777,6 +2791,9 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
     lines.push('for instruction-manual questions, even if the user uses words that sound like');
     lines.push('"support". A first-time user asking "how do I use the diary?" is a teaching');
     lines.push('moment, not a customer-support ticket. Specialists handle BROKEN STATE only.');
+    lines.push('BROKEN STATE IS A HAND-OFF: when the user reports a bug, something that does');
+    lines.push('not work, or a problem with their account, confirm once that they want it');
+    lines.push('filed and passed to support, then call report_to_specialist.');
     lines.push('');
     lines.push('[VITANA ON SWAP-BACK — silent pickup]');
     lines.push('When you receive the user back from a specialist, DO NOT GREET. Do not say');
@@ -2785,9 +2802,9 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
     lines.push('When they do, pick up naturally — never restart the conversation.');
     lines.push('');
     lines.push('[VITANA — explicit consent before transfer]');
-    lines.push('Even when forwarding is warranted (rare — bug report, claim, account locked),');
-    lines.push('PROPOSE before transferring: "Shall I bring in Devon for the bug?" Wait for an');
-    lines.push('affirmative reply. Implicit consent does NOT count. Vary your proposal phrasing.');
+    lines.push('Before transferring a bug report, claim or account problem, confirm once, in');
+    lines.push('your own words, that the user wants it filed and passed to support. One short');
+    lines.push('confirmation is enough; when they agree, call report_to_specialist right away.');
   }
   return lines.join('\n');
 }
@@ -4031,7 +4048,11 @@ async function executeLiveApiToolInner(
         const summary = String(args.summary || '').trim();
         const specialistHint = String(args.specialist_hint || '').trim();
         if (!summary) {
-          return { success: false, result: '', error: 'summary is required' };
+          // VTID-04332: an empty summary is the vague branch — ask, don't error.
+          return {
+            success: true,
+            result: buildReportToSpecialistToolMessage('vague', REPORT_TO_SPECIALIST_ACTIONS.vague('')),
+          };
         }
 
         // v3b: ONLY Vitana files tickets. If a specialist calls this tool
@@ -4049,9 +4070,18 @@ async function executeLiveApiToolInner(
         const _activePersonaForReport = ((session as any).activePersona as string | undefined) || 'vitana';
         if (_activePersonaForReport !== 'vitana' && _activePersonaForReport !== '') {
           console.log(`[VTID-02684] report_to_specialist refused — caller is specialist '${_activePersonaForReport}', only vitana files tickets`);
+          // VTID-04332: keep the refusal, but point the specialist at the
+          // tool that actually lets them add to the existing ticket, and
+          // lead with a STATUS the VTID-03033 rule recognizes.
           return {
             success: true,
-            result: `STAY_IN_INTAKE: You (${_activePersonaForReport}) are NOT allowed to file new tickets — only Vitana files. The user is already talking to YOU because Vitana has ALREADY filed the ticket for this issue. Your job is to continue the intake — gather details, write them into the existing ticket via your intake tools, then close with the standard close-question + goodbye flow. Do NOT call report_to_specialist again. Do NOT swap personas. Just respond to the user in your own language and continue the conversation from where it was.`,
+            result: buildReportToSpecialistToolMessage(
+              'stay_inline',
+              `STAY_IN_INTAKE — you (${_activePersonaForReport}) cannot file a new ticket; only Vitana files. ` +
+              `Vitana already filed the ticket for this issue${(session as any).handoffTicketNumber ? ` (${(session as any).handoffTicketNumber})` : ''} and handed the user to you. ` +
+              `Record new details with append_to_ticket (ticket_id "current"), keep the intake going in the user's language, ` +
+              `and close with your usual close-question and goodbye flow. Do not call report_to_specialist again and do not swap personas.`,
+            ),
           };
         }
 
@@ -4068,7 +4098,10 @@ async function executeLiveApiToolInner(
           console.log(`[VTID-02670] report_to_specialist blocked — loop guard cap reached (swapCount=${swapCountForReport})`);
           return {
             success: true,
-            result: `STAY_INLINE: This conversation already used its forward budget. Answer the user yourself as Vitana — do NOT mention the routing decision out loud, just continue helping inline.`,
+            result: buildReportToSpecialistToolMessage(
+              'stay_inline',
+              REPORT_TO_SPECIALIST_ACTIONS.stay_inline('this conversation already used its forward budget'),
+            ),
           };
         }
         if (Date.now() < swapCooldownUntil) {
@@ -4076,7 +4109,10 @@ async function executeLiveApiToolInner(
           console.log(`[VTID-02670] report_to_specialist blocked — cooldown active (${secondsLeft}s left)`);
           return {
             success: true,
-            result: `STAY_INLINE: User just came back from a specialist (cooldown ${secondsLeft}s). Answer the question yourself as Vitana — do NOT mention the routing decision, just respond inline.`,
+            result: buildReportToSpecialistToolMessage(
+              'stay_inline',
+              REPORT_TO_SPECIALIST_ACTIONS.stay_inline(`the user just came back from a colleague, cooldown ${secondsLeft}s`),
+            ),
           };
         }
 
@@ -4091,9 +4127,14 @@ async function executeLiveApiToolInner(
           const _reportTenantId = session.identity?.tenant_id;
           const sbForReport = getSupabase();
           if (!sbForReport) {
-            return { success: false, result: '', error: 'supabase_not_configured' };
+            console.error('[VTID-04332] report_to_specialist failed: supabase_not_configured');
+            return {
+              success: true,
+              result: buildReportToSpecialistToolMessage('failed', REPORT_TO_SPECIALIST_ACTIONS.failed()),
+              error: 'supabase_not_configured',
+            };
           }
-          const { executeReportToSpecialist } = await import('../services/report-to-specialist-core');
+          const { executeReportToSpecialist, feedbackSurfaceForOrb } = await import('../services/report-to-specialist-core');
           // Gate A reads the user's RAW transcript, not the LLM-rewritten
           // summary. The LLM compresses "how does X work?" into business-
           // language like "user is asking about X feature", which bypasses
@@ -4112,15 +4153,27 @@ async function executeLiveApiToolInner(
               gate_input: gateInput,
               source: 'orb-voice-tool',
               screen_path: '/orb/voice',
+              // VTID-04332: surface from the session's route (never null),
+              // plus session id + route for OASIS correlation.
+              surface: feedbackSurfaceForOrb(
+                resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+              ),
+              session_id: session.sessionId ?? null,
+              current_route: session.current_route ?? null,
             },
           );
 
-          // Branch on the helper's decision. vague + stay_inline both
-          // return the LLM instruction the model speaks; failed surfaces
-          // as a tool error; created continues to the session-state work.
+          // Branch on the helper's decision. Every branch returns a tool
+          // message that begins with a STATUS the VTID-03033 HARD RULE
+          // recognizes (VTID-04332) — a failure is a STATUS the model can
+          // act on, not an error the grace layer turns into a vague pivot.
           if (helperResult.decision === 'failed') {
             console.error(`[VTID-02047] report_to_specialist failed: ${helperResult.error}`);
-            return { success: false, result: '', error: helperResult.error };
+            return {
+              success: true,
+              result: reportToSpecialistToolMessage(helperResult, { handoffQueued: false }).text,
+              error: helperResult.error,
+            };
           }
           if (helperResult.decision === 'vague') {
             console.log(`[VTID-02670] report_to_specialist blocked — vague summary ("${summary}", ${helperResult.word_count} words). Asking model to collect specifics.`);
@@ -4165,6 +4218,15 @@ async function executeLiveApiToolInner(
             mira: 'Mira (account)',
           };
           const personaName = personaLabel[pickedPersona] || 'a specialist colleague';
+          // VTID-04332: the ticket this session's hand-off created — the
+          // specialist's append_to_ticket ("current") and closing ticket
+          // number read these.
+          (session as any).handoffTicketId = ticket.id;
+          (session as any).handoffTicketNumber = ticket.ticket_number ?? null;
+          // VTID-04332: only a hand-off that was actually queued below may be
+          // reported as STATUS handoff_created; a filed ticket without a
+          // queued swap is ticket_filed_no_handoff.
+          let handoffQueued = false;
 
           // VTID-02047 voice channel-swap: queue a swap to the specialist's
           // voice + system prompt. The actual reconnect fires AFTER the
@@ -4206,6 +4268,7 @@ async function executeLiveApiToolInner(
                   (userContextSection ? `\n\n${userContextSection}` : '') +
                   (transcriptSection ? `\n\n${transcriptSection}` : '') +
                   `\n\n${behavioralRule}` +
+                  `\n\n${buildHandoffTicketSection(ticket.ticket_number ?? null)}` +
                   `\n\n[HANDOFF NOTE] Vitana captured this brief at handoff: "${summary}". The transcript above is the user's actual words. Synthesize what they reported in ONE sentence (your own words, not theirs) and confirm. Do NOT echo their wording back.` +
                   `\n\n[NAVIGATION TOOL] You have a switch_persona tool. You can ONLY pass to='${RECEPTIONIST_PERSONA_KEY}' — you cannot forward sideways to another specialist. If the question is outside your authority, return the user to Vitana with a brief bridge in your own words (vary your phrasing) and STOP — do NOT speak after calling the tool.`;
                 // VTID-02653 Phase 6: tenant-aware voice + greeting.
@@ -4216,6 +4279,7 @@ async function executeLiveApiToolInner(
                 // the model from the GREET + ASK FOR DETAILS rule.
                 (session as any).personaForcedFirstMessage = '';
                 (session as any)._lastSpecialistPersona = swapTo;
+                handoffQueued = true;
                 console.log(`[VTID-02684] Persona swap queued: ${RECEPTIONIST_PERSONA_KEY} → ${swapTo}, voice=${(session as any).personaVoiceOverride}, tenant=${_reportTenantId ?? 'none'}`);
 
                 // Notify the client UI so it can show "Talking to <Persona>"
@@ -4241,14 +4305,49 @@ async function executeLiveApiToolInner(
             }
           }
 
-          return {
-            success: true,
-            result: `Ticket ${ticket?.ticket_number ?? '(pending)'} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel(pickedPersona, session.lang)}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call, never recite verbatim): "I'll connect you with ${roleLabel(pickedPersona, session.lang)}." / "Let me bring ${roleLabel(pickedPersona, session.lang)} in." / "Einen Moment, ${roleLabel(pickedPersona, session.lang)} übernimmt." Vary your phrasing every call. Do NOT introduce the colleague ("Hi, here is X" — that is THEIR job to say in their own voice). Do NOT speak after the bridge. Then STOP.`,
-          };
+          // VTID-04332: STATUS handoff_created only when the swap was really
+          // queued; otherwise the ticket exists but nobody is joining.
+          const reply = reportToSpecialistToolMessage(helperResult, {
+            handoffQueued,
+            roleLabel: roleLabel(pickedPersona, session.lang),
+          });
+          console.log(`[VTID-04332] report_to_specialist → STATUS ${reply.status} (ticket=${ticket.ticket_number ?? ticket.id}, persona=${pickedPersona || 'none'})`);
+          return { success: true, result: reply.text };
         } catch (err) {
           console.error('[VTID-02047] report_to_specialist failed:', err);
-          return { success: false, result: '', error: err instanceof Error ? err.message : 'unknown error' };
+          return {
+            success: true,
+            result: buildReportToSpecialistToolMessage('failed_network', REPORT_TO_SPECIALIST_ACTIONS.failed_network()),
+            error: err instanceof Error ? err.message : 'unknown error',
+          };
         }
+      }
+
+      // VTID-04332: the specialist (Devon) enriches the ticket Vitana filed
+      // at hand-off. Owner-checked, specialist-only, and "current" resolves
+      // to this session's hand-off ticket — see executeAppendToTicket.
+      case 'append_to_ticket': {
+        const sbForAppend = getSupabase();
+        if (!sbForAppend) {
+          return { success: true, result: appendToTicketToolMessage({ ok: false, reason: 'failed' }), error: 'supabase_not_configured' };
+        }
+        const appendResult = await executeAppendToTicket(
+          { ticket_id: args.ticket_id, note: args.note },
+          {
+            user_id: session.identity.user_id,
+            active_persona: ((session as any).activePersona as string | undefined) || 'vitana',
+            handoff_ticket_id: ((session as any).handoffTicketId as string | undefined) ?? null,
+          },
+          sbForAppend,
+        );
+        if (!appendResult.ok) {
+          console.log(`[VTID-04332] append_to_ticket refused: ${appendResult.reason}${appendResult.error ? ` (${appendResult.error})` : ''}`);
+        }
+        return {
+          success: true,
+          result: appendToTicketToolMessage(appendResult),
+          ...(appendResult.ok || !appendResult.error ? {} : { error: appendResult.error }),
+        };
       }
 
       // =====================================================================
@@ -7726,7 +7825,9 @@ async function connectToLiveAPI(
           }
         }
       }
-      _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
+      // VTID-04336: only a Gemini prebuilt voice may reach speech_config —
+      // a specialist whose registry voice is a Nova/Polly id gets Charon.
+      _personaVoice = resolveVertexLivePersonaVoice(_personaVoice, _persona) || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
@@ -8293,6 +8394,9 @@ async function connectToLiveAPI(
           responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
           vadSilenceMs: session.vadSilenceMs,
           systemInstruction: cascadedInstruction,
+          // VTID-04336: the envelope's catalog; the cascade keeps only the
+          // hand-off tools (CASCADE_TOOL_ALLOWLIST) so Devon is reachable.
+          tools: Array.isArray(cascadedSetup.tools) ? (cascadedSetup.tools as Array<Record<string, unknown>>) : [],
         });
         setupComplete = true;
         clearTimeout(connectionTimeout);

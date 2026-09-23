@@ -40969,6 +40969,10 @@ function renderDevAutopilotFindingCard(finding) {
     titleEl.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-color, #fff);';
     titleLine.appendChild(titleEl);
 
+    // VTID-04334: a finding opened from a member report links to its ticket.
+    var cardFbRef = feedbackTicketRefFrom(finding);
+    if (cardFbRef) titleLine.appendChild(renderFeedbackTicketBadge(cardFbRef));
+
     var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316' };
     var riskBadge = document.createElement('span');
     riskBadge.style.cssText = 'padding: 2px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; background: rgba(255,255,255,0.06); color: ' + (riskColors[finding.risk_class] || '#888') + ';';
@@ -47762,6 +47766,8 @@ function renderAutopilotOpenFindingsPanel(title, filter, emptyText) {
         t.className = 'ap-sup-finding-title';
         t.textContent = f.title;
         body.appendChild(t);
+        var findingFbRef = feedbackTicketRefFrom(f); // VTID-04334
+        if (findingFbRef) body.appendChild(renderFeedbackTicketBadge(findingFbRef));
         var m = document.createElement('div');
         m.className = 'ap-sup-finding-meta';
         m.textContent = [f.detector || f.source_type, f.file_path, 'risk ' + (f.risk_class || '?'), 'effort ' + (f.effort_score == null ? '?' : f.effort_score),
@@ -49019,11 +49025,14 @@ function renderAutopilotLiveView() {
         t.className = 'ap-sup-finding-title';
         t.textContent = (e.recommendation && e.recommendation.title) || ('Execution ' + String(e.id || '').slice(0, 8));
         body.appendChild(t);
+        // VTID-04334: a run that came from a member report says so.
+        var fbRef = feedbackTicketRefFrom(e);
+        if (fbRef) body.appendChild(renderFeedbackTicketBadge(fbRef));
         var m = document.createElement('div');
         m.className = 'ap-sup-finding-meta';
         var err = e.metadata && e.metadata.error ? String(e.metadata.error) : '';
         var src = e.recommendation && e.recommendation.source_type;
-        var origin = src === 'operator_onramp' ? 'operator-requested' : (e.approved_by ? 'human-approved' : (src ? 'auto-approved (' + src + ')' : 'auto-approved'));
+        var origin = fbRef ? 'member report' : (src === 'operator_onramp' ? 'operator-requested' : (e.approved_by ? 'human-approved' : (src ? 'auto-approved (' + src + ')' : 'auto-approved')));
         m.textContent = [autopilotSupervisorAgo(e.updated_at || e.created_at), origin,
             e.auto_fix_depth > 0 ? 'self-heal depth ' + e.auto_fix_depth : null, err ? err.slice(0, 140) : null].filter(Boolean).join(' · ');
         body.appendChild(m);
@@ -49103,6 +49112,9 @@ function renderAutopilotLiveView() {
                 || ('Execution ' + (exec.id ? exec.id.slice(0, 8) : 'unknown'));
             topLine.textContent = taskTitle;
             label.appendChild(topLine);
+            // VTID-04334: member-report badge → the ticket's Feedback drawer.
+            var execFbRef = feedbackTicketRefFrom(exec);
+            if (execFbRef) label.appendChild(renderFeedbackTicketBadge(execFbRef));
             var bottomLine = document.createElement('div');
             bottomLine.style.cssText = 'color:#888;font-size:0.74rem;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;';
             var scanner = (exec.recommendation && exec.recommendation.spec_snapshot && exec.recommendation.spec_snapshot.scanner) || exec.scanner || '';
@@ -51537,6 +51549,7 @@ function feedbackStatusPill(status) {
 
 function renderFeedbackInboxView() {
     var container = document.createElement('div');
+    container.className = 'fb-inbox'; // VTID-04334: scopes the Feedback surface tokens
     container.style.cssText = 'padding:1rem;';
     var header = document.createElement('div');
     header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;';
@@ -51575,6 +51588,11 @@ function renderFeedbackInboxView() {
             '<th style="padding:.5rem .75rem;">Surface</th>' +
             '<th style="padding:.5rem .75rem;">Excerpt</th>' +
             '<th style="padding:.5rem .75rem;">Created</th></tr>';
+        // VTID-04334: the ticket's VTID sits next to its number.
+        var vtidTh = document.createElement('th');
+        vtidTh.className = 'fb-inbox-th';
+        vtidTh.textContent = 'VTID';
+        thead.firstChild.insertBefore(vtidTh, thead.firstChild.children[1]);
         table.appendChild(thead);
         var tbody = document.createElement('tbody');
         tickets.forEach(function (t) {
@@ -51587,6 +51605,10 @@ function renderFeedbackInboxView() {
             num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
             num.textContent = t.ticket_number || '-';
             tr.appendChild(num);
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'fb-inbox-vtid' + (t.linked_vtid ? '' : ' fb-inbox-vtid--empty');
+            vtidCell.textContent = t.linked_vtid || '—';
+            tr.appendChild(vtidCell);
             var kindCell = document.createElement('td'); kindCell.style.cssText = 'padding:.5rem .75rem;'; kindCell.textContent = t.kind; tr.appendChild(kindCell);
             var priCell = document.createElement('td'); priCell.style.cssText = 'padding:.5rem .75rem;'; priCell.textContent = (t.priority || '').toUpperCase(); tr.appendChild(priCell);
             var statusTd = document.createElement('td'); statusTd.style.cssText = 'padding:.5rem .75rem;'; statusTd.appendChild(feedbackStatusPill(t.status)); tr.appendChild(statusTd);
@@ -51607,6 +51629,236 @@ function renderFeedbackInboxView() {
         container.appendChild(error);
     });
     return container;
+}
+
+// ===========================================================================
+// VTID-04334: one ID chain the supervisor can read at a glance
+// (docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.1). The ticket number FB-… is
+// the anchor; it is shown next to its VTID, finding, execution, PR and
+// deploy/verify state in the ticket drawer, and every Autopilot row that came
+// from a member report carries a badge that opens that ticket's drawer.
+// Every field is read defensively: the admin API (VTID-04333) adds
+// linked_vtid / linked_finding_id / linked_pr_url, a latest-execution object
+// and a feedback_ticket object on autopilot rows — when a field is absent the
+// chip says "—" instead of guessing.
+// ===========================================================================
+
+var FEEDBACK_TICKET_SOURCE_PREFIX = 'feedback_ticket:';
+var FEEDBACK_TICKET_TITLE_RE = /^\s*\[(FB-[0-9]{4}-[0-9]{2}-[0-9A-Za-z]+)\]/;
+var FEEDBACK_TERMINAL_STATUSES = ['rejected', 'duplicate', 'user_confirmed', 'wont_fix'];
+var FEEDBACK_RECLASSIFY_KINDS = ['bug', 'ux_issue', 'support_question', 'marketplace_claim', 'account_issue', 'feedback', 'feature_request'];
+var FEEDBACK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The member ticket an autopilot row (execution, recommendation or finding)
+ * came from, or null. Accepts, in order of trust: the API's
+ * feedback_ticket object, source_ref "feedback_ticket:<id>",
+ * spec_snapshot.feedback, and finally the "[FB-…]" title prefix. Looks at the
+ * row itself and at an embedded `recommendation`.
+ */
+function feedbackTicketRefFrom(row) {
+    if (!row || typeof row !== 'object') return null;
+    var ref = { ticket_id: null, ticket_number: null, linked_vtid: null };
+    var sources = [row, (row.recommendation && typeof row.recommendation === 'object') ? row.recommendation : null];
+    sources.forEach(function (src) {
+        if (!src) return;
+        var ft = src.feedback_ticket;
+        if (ft && typeof ft === 'object') {
+            ref.ticket_id = ref.ticket_id || ft.ticket_id || ft.id || null;
+            ref.ticket_number = ref.ticket_number || ft.ticket_number || null;
+            ref.linked_vtid = ref.linked_vtid || ft.linked_vtid || null;
+        }
+        if (typeof src.source_ref === 'string' && src.source_ref.indexOf(FEEDBACK_TICKET_SOURCE_PREFIX) === 0) {
+            ref.ticket_id = ref.ticket_id || src.source_ref.slice(FEEDBACK_TICKET_SOURCE_PREFIX.length) || null;
+        }
+        var fb = src.spec_snapshot && typeof src.spec_snapshot === 'object' ? src.spec_snapshot.feedback : null;
+        if (fb && typeof fb === 'object') {
+            ref.ticket_id = ref.ticket_id || fb.ticket_id || null;
+            ref.ticket_number = ref.ticket_number || fb.ticket_number || null;
+        }
+        [src.title, src.task_title].forEach(function (title) {
+            if (typeof title !== 'string') return;
+            var m = FEEDBACK_TICKET_TITLE_RE.exec(title);
+            if (m) ref.ticket_number = ref.ticket_number || m[1];
+        });
+    });
+    return (ref.ticket_id || ref.ticket_number) ? ref : null;
+}
+
+/** Opens the Feedback drawer for a ref; resolves a bare ticket number first. */
+function openFeedbackTicketFromRef(ref) {
+    if (!ref) return;
+    if (ref.ticket_id) {
+        openFeedbackTicketDrawer(ref.ticket_id);
+        return;
+    }
+    feedbackResolveTicketId(ref.ticket_number).then(function (id) {
+        if (id) openFeedbackTicketDrawer(id);
+        else showToast('Ticket ' + ref.ticket_number + ' is not among the latest 200 tickets', 'error');
+    }).catch(function (err) {
+        showToast('Could not look up ' + ref.ticket_number + ': ' + err.message, 'error');
+    });
+}
+
+/** Ticket number (FB-…) or UUID → ticket UUID, via the admin list endpoint. */
+function feedbackResolveTicketId(numberOrId) {
+    var needle = String(numberOrId || '').trim();
+    if (!needle) return Promise.resolve(null);
+    if (FEEDBACK_UUID_RE.test(needle)) return Promise.resolve(needle);
+    return fetchFeedbackJSON('/api/v1/admin/feedback/tickets?limit=200').then(function (data) {
+        var match = ((data && data.tickets) || []).find(function (t) {
+            return String(t.ticket_number || '').toUpperCase() === needle.toUpperCase();
+        });
+        return match ? match.id : null;
+    });
+}
+
+/** "Member report FB-… · VTID-…" badge for autopilot rows; opens the ticket. */
+function renderFeedbackTicketBadge(ref) {
+    var badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'fb-member-badge';
+    var label = ref.ticket_number || ('ticket ' + String(ref.ticket_id).slice(0, 8));
+    badge.textContent = 'Member report ' + label + (ref.linked_vtid ? ' · ' + ref.linked_vtid : '');
+    badge.title = 'This run came from a member report — open ' + label + ' in the Feedback drawer';
+    badge.setAttribute('aria-label', 'Open member report ' + label);
+    badge.onclick = function (ev) {
+        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+        openFeedbackTicketFromRef(ref);
+    };
+    return badge;
+}
+
+/** Plain-language deploy/verify state for the drawer's pipeline block. */
+function feedbackDeployVerifyState(exec, ticket) {
+    if (ticket && ticket.rolled_back_at) return { text: 'rolled back', tone: 'warn' };
+    if (!exec) {
+        if (ticket && ticket.status === 'resolved' && ticket.auto_resolved) return { text: 'verified', tone: 'ok' };
+        return { text: '—', tone: null };
+    }
+    var status = String(exec.status || '');
+    var stage = exec.failure_stage ? String(exec.failure_stage) : '';
+    if (status === 'completed') return { text: 'deployed · verified', tone: 'ok' };
+    if (status === 'deploying') return { text: 'deploying', tone: 'live' };
+    if (status === 'verifying') return { text: 'deployed · verifying', tone: 'live' };
+    if (status === 'failed' || status === 'reverted') {
+        if (stage === 'deploying' || stage === 'verifying' || stage === 'deploy' || stage === 'verify') {
+            return { text: 'failed at ' + stage, tone: 'bad' };
+        }
+        return { text: 'not deployed (' + status + ')', tone: 'bad' };
+    }
+    if (status === 'cancelled' || status === 'rejected') return { text: 'not deployed (' + status + ')', tone: null };
+    return { text: 'not deployed yet', tone: null };
+}
+
+function feedbackPipelineChip(key, value, opts) {
+    var o = opts || {};
+    var chip = document.createElement(o.href ? 'a' : (o.onClick ? 'button' : 'span'));
+    chip.className = 'fb-chip' + (value ? '' : ' fb-chip--empty') + (o.tone ? ' fb-chip--' + o.tone : '');
+    if (o.href && value) {
+        chip.href = o.href;
+        if (o.external) { chip.target = '_blank'; chip.rel = 'noopener'; }
+    }
+    if (chip.tagName === 'BUTTON') {
+        chip.type = 'button';
+        if (value) chip.onclick = o.onClick; else chip.disabled = true;
+    }
+    if (o.title) chip.title = o.title;
+    var k = document.createElement('span');
+    k.className = 'fb-chip-k';
+    k.textContent = key;
+    chip.appendChild(k);
+    var v = document.createElement('span');
+    v.className = 'fb-chip-v';
+    v.textContent = value || '—';
+    chip.appendChild(v);
+    return chip;
+}
+
+function feedbackCopyToClipboard(text) {
+    try {
+        navigator.clipboard.writeText(text).then(function () {
+            showToast('Copied ' + text, 'success');
+        }, function () {
+            showToast(text, 'info');
+        });
+    } catch (_) {
+        showToast(text, 'info');
+    }
+}
+
+/**
+ * The drawer's "Pipeline" block: ticket → VTID → finding → execution → PR →
+ * deploy/verify, each a chip. `data` is the whole GET /tickets/:id body.
+ */
+function renderFeedbackPipelineBlock(t, data) {
+    var exec = (data && (data.latest_execution || data.execution)) || t.latest_execution || null;
+    if (exec && typeof exec !== 'object') exec = null;
+    var block = document.createElement('div');
+    block.className = 'fb-pipeline';
+    var head = document.createElement('div');
+    head.className = 'fb-pipeline-head';
+    head.textContent = 'Pipeline';
+    block.appendChild(head);
+    var chips = document.createElement('div');
+    chips.className = 'fb-pipeline-chips';
+
+    var ticketNo = t.ticket_number || null;
+    chips.appendChild(feedbackPipelineChip('Ticket', ticketNo, {
+        onClick: function () { feedbackCopyToClipboard(ticketNo); },
+        title: 'Copy the member-facing ticket number'
+    }));
+    var vtid = t.linked_vtid || null;
+    chips.appendChild(feedbackPipelineChip('VTID', vtid, {
+        onClick: function () { feedbackCopyToClipboard(vtid); },
+        title: vtid ? 'Copy ' + vtid + ' (search it in OASIS → VTID Ledger)' : 'No VTID linked yet'
+    }));
+    var findingId = t.linked_finding_id || (exec && exec.finding_id) || null;
+    chips.appendChild(feedbackPipelineChip('Finding', findingId ? String(findingId).slice(0, 8) : null, {
+        href: '/command-hub/autonomy/autopilot-developer/',
+        title: findingId ? 'Finding ' + findingId + ' — open Dev Autopilot' : 'Not dispatched to Dev Autopilot yet'
+    }));
+    var execLabel = null;
+    if (exec && exec.id) {
+        execLabel = String(exec.id).slice(0, 8) + ' · ' + (exec.status || '?') + (exec.failure_stage ? ' @ ' + exec.failure_stage : '');
+    }
+    var execTone = !exec ? null
+        : (exec.status === 'completed' ? 'ok'
+        : (exec.status === 'failed' || exec.status === 'reverted' ? 'bad'
+        : (exec.status === 'cancelled' || exec.status === 'rejected' ? null : 'live')));
+    chips.appendChild(feedbackPipelineChip('Execution', execLabel, {
+        href: exec && exec.id ? '/command-hub/autopilot/live/#autopilot-live-exec-' + exec.id : null,
+        tone: execTone,
+        title: exec && exec.id ? 'Execution ' + exec.id + ' — open on Autopilot Live' : 'No execution yet'
+    }));
+    var prUrl = t.linked_pr_url || (exec && exec.pr_url) || null;
+    var prNumber = exec && exec.pr_number ? exec.pr_number : null;
+    if (!prNumber && prUrl) {
+        var prMatch = /\/pull\/(\d+)/.exec(prUrl);
+        if (prMatch) prNumber = prMatch[1];
+    }
+    chips.appendChild(feedbackPipelineChip('PR', prUrl ? ('#' + (prNumber || '?')) : null, {
+        href: prUrl, external: true,
+        title: prUrl ? 'Open the pull request on GitHub' : 'No pull request yet'
+    }));
+    var dv = feedbackDeployVerifyState(exec, t);
+    chips.appendChild(feedbackPipelineChip('Deploy / verify', dv.text === '—' ? null : dv.text, { tone: dv.tone }));
+    block.appendChild(chips);
+    return block;
+}
+
+function feedbackActionButton(label, variantClass, handler) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fb-action-btn ' + variantClass;
+    b.textContent = label;
+    b.onclick = handler;
+    return b;
+}
+
+/** The tenant id the tenant-scoped ticket routes (rollback, reclassify) need. */
+function feedbackTicketTenantId(t) {
+    return (t && t.tenant_id) || (state.meContext && state.meContext.tenant_id) || null;
 }
 
 function openFeedbackTicketDrawer(ticketId) {
@@ -51664,12 +51916,12 @@ function openFeedbackTicketDrawer(ticketId) {
             if (!ok) return;
             try {
                 var resp = await fetch(path, {
-                    method: 'POST',
+                    method: (body && body.method) || 'POST',
                     headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(body && body.payload ? body.payload : {})
                 });
                 var json = await resp.json().catch(function () { return {}; });
-                if (!resp.ok) throw new Error(json.details || json.error || ('HTTP ' + resp.status));
+                if (!resp.ok) throw new Error(json.message || json.details || json.error || ('HTTP ' + resp.status));
                 // Re-render drawer with fresh state
                 document.getElementById('feedback-ticket-drawer').remove();
                 openFeedbackTicketDrawer(ticketId);
@@ -51703,9 +51955,47 @@ function openFeedbackTicketDrawer(ticketId) {
                 if (reason !== null) runAction('Reject', '/api/v1/admin/feedback/tickets/' + ticketId + '/reject', { payload: { reason: reason } });
             }));
         }
+        // VTID-04334: the three supervisor actions whose routes already exist
+        // (feedback-actions.ts mark-duplicate; tenant-specialists.ts rollback
+        // and reclassify) but had no button. Each is offered only when its
+        // route would accept it, so a click never lands on a known 409.
+        if (FEEDBACK_TERMINAL_STATUSES.indexOf(t.status) === -1) {
+            actionBar.appendChild(feedbackActionButton('Mark duplicate', 'fb-action-btn--neutral', function () {
+                var original = prompt('Ticket number (FB-…) or ID of the original ticket this one duplicates?');
+                if (original === null || !original.trim()) return;
+                feedbackResolveTicketId(original).then(function (originalId) {
+                    if (!originalId) { showToast('Mark duplicate failed: ' + original.trim() + ' not found', 'error'); return; }
+                    if (originalId === t.id) { showToast('Mark duplicate failed: a ticket cannot duplicate itself', 'error'); return; }
+                    runAction('Mark duplicate', '/api/v1/admin/feedback/tickets/' + ticketId + '/mark-duplicate', { payload: { duplicate_of: originalId } });
+                }).catch(function (err) { showToast('Mark duplicate failed: ' + err.message, 'error'); });
+            }));
+        }
+        var fbTenantId = feedbackTicketTenantId(t);
+        if (!t.linked_finding_id && FEEDBACK_TERMINAL_STATUSES.indexOf(t.status) === -1 && t.status !== 'resolved') {
+            var reclassifyBtn = feedbackActionButton('Reclassify', 'fb-action-btn--neutral', function () {
+                var kind = prompt('New kind for ' + t.ticket_number + ' (' + FEEDBACK_RECLASSIFY_KINDS.join(', ') + ')?', t.kind || '');
+                if (kind === null) return;
+                kind = kind.trim();
+                if (FEEDBACK_RECLASSIFY_KINDS.indexOf(kind) === -1) { showToast('Reclassify failed: unknown kind "' + kind + '"', 'error'); return; }
+                runAction('Reclassify', '/api/v1/admin/tenants/' + encodeURIComponent(fbTenantId) + '/tickets/' + ticketId + '/reclassify', { method: 'PUT', payload: { kind: kind } });
+            });
+            if (!fbTenantId) { reclassifyBtn.disabled = true; reclassifyBtn.title = 'No tenant context — reclassify is a tenant-scoped route'; }
+            actionBar.appendChild(reclassifyBtn);
+        }
+        if (t.status === 'resolved' && t.auto_resolved && !t.rolled_back_at && t.linked_pr_url) {
+            var rollbackBtn = feedbackActionButton('Rollback fix', 'fb-action-btn--danger', function () {
+                runAction('Rollback', '/api/v1/admin/tenants/' + encodeURIComponent(fbTenantId) + '/tickets/' + ticketId + '/rollback', { confirm: true });
+            });
+            rollbackBtn.title = 'Opens a revert PR for the merge that closed this ticket (allowed for 72h after it resolved)';
+            if (!fbTenantId) { rollbackBtn.disabled = true; rollbackBtn.title = 'No tenant context — rollback is a tenant-scoped route'; }
+            actionBar.appendChild(rollbackBtn);
+        }
         if (actionBar.childNodes.length > 0) {
             panel.appendChild(actionBar);
         }
+
+        // VTID-04334: ticket → VTID → finding → execution → PR → deploy/verify.
+        panel.appendChild(renderFeedbackPipelineBlock(t, data));
 
         function section(label, body) {
             var s = document.createElement('div');

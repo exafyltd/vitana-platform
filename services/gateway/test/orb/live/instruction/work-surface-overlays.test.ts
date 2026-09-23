@@ -1,4 +1,5 @@
-/** VTID-03848 — admin and backoffice persona overlays + memory scoping in the system instruction. */
+/** VTID-03848 — admin and backoffice persona overlays + memory scoping in the system instruction.
+ *  VTID-04326 — the commerce surface withholds the personal brain context the same way. */
 import { buildLiveSystemInstruction } from '../../../../src/routes/orb-live';
 
 const BOOTSTRAP = '## USER CONTEXT PROFILE\n[FACTS] Display name: Test30User. Birthday: 1990-04-12. Sleep score 71. Diary: felt anxious yesterday.\n[ACTIVITY_14D] 3 events, 2 diary entries.\n';
@@ -38,6 +39,26 @@ describe('admin surface', () => {
     expect(ad).toContain('### admin_briefing');
     expect(ad).not.toContain('### search_memory');
     expect(ad).not.toContain('### backoffice_command');
+  });
+});
+
+describe('commerce surface (VTID-04326)', () => {
+  test('personal brain context is NOT injected on commerce routes', () => {
+    for (const route of ['/commerce', '/commerce/orders', '/partner/team']) {
+      const c = build(route, 'community');
+      expect(c).not.toContain('Sleep score 71');
+      expect(c).not.toContain('felt anxious');
+      expect(c).not.toContain('ACTIVITY AWARENESS OVERRIDE');
+    }
+  });
+  test('personal tools are not advertised on commerce', () => {
+    const c = build('/commerce', 'community');
+    expect(c).not.toContain('### search_memory');
+    expect(c).not.toContain('### save_diary_entry');
+    expect(c).not.toContain('### backoffice_command');
+  });
+  test('commerce holds on mobile too (portal is mobile-adapted)', () => {
+    expect(build('/commerce', 'community', BOOTSTRAP, true)).not.toContain('Sleep score 71');
   });
 });
 

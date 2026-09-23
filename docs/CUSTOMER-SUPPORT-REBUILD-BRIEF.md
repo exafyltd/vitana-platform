@@ -236,9 +236,7 @@ visible next to its `VTID-…` everywhere either appears:
   supervisor decides "Approve & Fix" (or an owner-set auto-approve policy for
   low-risk tickets — owner decision, do not enable it on your own).
 - Support questions get a drafted answer for supervisor review.
-- The 43 stuck tickets are re-triaged (owner approved routing legacy reports
-  into the fix run on 2026-09-23; confirm the same applies to these before
-  dispatching — ask once, with the list).
+- The stuck May–July tickets were closed as outdated (see §3.5).
 
 ### 3.4 Member Customer Support area
 
@@ -250,6 +248,24 @@ visible next to its `VTID-…` everywhere either appears:
   `FeedbackReportList` and TalkToVitana onto one component/data source;
   retire direct reads of `user_feedback_reports`.
 - Notification `feedback_ticket_resolved` deep-links to the specific ticket.
+
+## 3.5 Owner decisions (2026-09-23) — these override §3 where they differ
+
+1. **Auto-start every bug fix.** When a bug/UX ticket has a real
+   (non-placeholder) spec, dispatch it to Dev Autopilot automatically — no
+   "Approve & Fix" click. Build it behind a flag (on by default on staging,
+   off-switch documented), keep it behind the kill switch, and keep the
+   PR-approval hold (`OPERATOR_PR_APPROVAL_REQUIRED` / `require_approval`) as
+   the safety net before anything merges. Support questions still get a
+   drafted answer for review, not auto-sent.
+2. **Devon in every language.** Build persona hand-off for the cascade path
+   (Transcribe → Bedrock → Polly/Fish — ru, pl, tr, zh, ar and the other
+   cascade languages) and the Serbian Vertex bridge, so the member always
+   hears Devon take over. Until that ships for a given path, Vitana files the
+   ticket herself there and says the ticket number — never a silent dead end.
+3. **The 42 stale May–July tickets are closed** as `wont_fix` (VTID-04329),
+   no member notification. Do not re-triage them; the queue starts clean.
+4. The AWS account block is being handled by the owner's side.
 
 ## 4. Work order (one VTID and one PR per slice, CLAUDE.md §4.1)
 
@@ -267,8 +283,10 @@ visible next to its `VTID-…` everywhere either appears:
    vitana-v1 admin drawer shows `linked_vtid`.
 5. **Member screens** (vitana-v1): unified Customer Support area, i18n,
    dead-gateway fallback, deep link.
-6. **Pipeline hygiene**: drafter for all priorities; re-triage of the 43
-   stuck tickets (with owner confirmation).
+6. **Pipeline**: drafter for all priorities; auto-dispatch of bug/UX
+   tickets once the spec is real (§3.5 decision 1).
+7. **Devon on the cascade and the Serbian bridge** (§3.5 decision 2), with
+   the Vitana-files-it-herself fallback shipped first.
 
 ## 5. Rules that bite here
 

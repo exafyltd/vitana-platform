@@ -372,7 +372,8 @@ router.post('/:tenantId/customers/:vitanaId/approve-all', async (req: Request, r
     try {
       const { emitOasisEvent } = await import('../services/oasis-event-service');
       await emitOasisEvent({
-        vtid: 'VTID-02659',
+        // VTID-04333: a dispatched ticket's event goes under its own VTID.
+        vtid: typeof payload.vtid === 'string' && payload.vtid ? payload.vtid : 'VTID-02659',
         type: type as any,
         source: 'feedback-admin-bulk',
         status: 'info',
@@ -492,7 +493,15 @@ router.get('/:tenantId/tickets/:id', async (req: Request, res: Response) => {
     if (data) execution = data as unknown as typeof execution;
   }
 
-  return res.json({ ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs, execution });
+  // VTID-04333: `ticket` (select *) already carries linked_vtid /
+  // linked_finding_id / linked_pr_url; `latest_execution` is the same
+  // summary shape the Command Hub ticket APIs return. `execution` is kept
+  // for the existing drawer.
+  const { summarizeExecution } = await import('../services/feedback-ticket-ref');
+  return res.json({
+    ok: true, ticket: loaded.ticket, handoffs: loaded.handoffs, execution,
+    latest_execution: summarizeExecution(execution as Record<string, unknown> | null),
+  });
 });
 
 const RejectSchema = z.object({ reason: z.string().max(500).optional() });
@@ -911,7 +920,7 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   let newStatus = t.status;
   let action = '';
   let dispatchInfo:
-    | { recommendation_id?: string; execution_id?: string; skipped?: string }
+    | { recommendation_id?: string; execution_id?: string; skipped?: string; vtid?: string }
     | null = null;
 
   // ATOMIC PATH for bug / ux_issue from spec_ready (first try) OR from
@@ -945,6 +954,7 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
       recommendation_id: dispatch.recommendation_id,
       execution_id: dispatch.execution_id,
       skipped: dispatch.skipped,
+      vtid: dispatch.vtid,
     };
   }
 
@@ -997,12 +1007,16 @@ router.post('/:tenantId/tickets/:id/activate', async (req: Request, res: Respons
   try {
     const { emitOasisEvent } = await import('../services/oasis-event-service');
     await emitOasisEvent({
-      vtid: 'VTID-02660',
+      // VTID-04333: a dispatched ticket's event is filed under its own VTID.
+      vtid: dispatchInfo?.vtid ?? 'VTID-02660',
       type: (newStatus === 'resolved' ? 'feedback.ticket.resolved' : 'feedback.ticket.status_changed') as any,
       source: 'tenant-admin-activate',
       status: 'info',
       message: `Tenant ${tenantId} activate ${t.ticket_number}: ${t.status} → ${newStatus}`,
-      payload: { ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action },
+      payload: {
+        ticket_id: t.id, ticket_number: t.ticket_number, from: t.status, to: newStatus, action,
+        ...(dispatchInfo ? { linked_vtid: dispatchInfo.vtid ?? null, recommendation_id: dispatchInfo.recommendation_id ?? null, execution_id: dispatchInfo.execution_id ?? null } : {}),
+      },
       actor_id: userId,
       actor_role: 'operator',
       surface: 'operator',

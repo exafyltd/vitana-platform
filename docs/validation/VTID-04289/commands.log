@@ -1,0 +1,23 @@
+# VTID-04289 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-22T21:12:46.432Z
+# execution_id=593cb4d1-070e-47db-8b11-7c835dd128de finding_id=e367b3a1-62dd-4e52-b6c1-276cd0c26368 plan_version=1
+# branch=dev-autopilot/593cb4d1 base=main
+# llm provider=deepseek model=deepseek-flash
+
+# agent turns=41 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/593cb4d1
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add services/gateway/test/services/action-executors.test.ts   # modify
+$ dev-autopilot: write docs/validation/VTID-04289/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/593cb4d1
+$ gh pr create --base main --head dev-autopilot/593cb4d1
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).

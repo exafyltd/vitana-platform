@@ -1,3 +1,4 @@
+import { oasisOperatorBaseUrl } from '../env';
 import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 import fetch from 'node-fetch';
 import { GeminiParsedCommand, COMMAND_PARSE_PROMPT } from '../types/operator-command';
@@ -9,7 +10,7 @@ import { GeminiParsedCommand, COMMAND_PARSE_PROMPT } from '../types/operator-com
 // a module-load throw on an unused credential would take the whole gateway down
 // at import for a dependency this file no longer has. Provider credentials are
 // the router's concern; this module has none of its own left to check.
-const OASIS_URL = process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-86804897789.us-central1.run.app';
+const OASIS_URL = oasisOperatorBaseUrl();
 
 // VTID-03579: the fast/complex split survives, but as a STAGE choice rather
 // than two pinned Gemini models. `triage` is the cheap stage, `operator` the

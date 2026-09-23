@@ -79,7 +79,7 @@ Verify and (if missing) restore the Vertex env vars on the Cloud Run gateway ser
 - If a config drift is found in \`.github/workflows/EXEC-DEPLOY.yml\` (env var removed), restore the \`VERTEX_PROJECT_ID\` / \`GCP_PROJECT_ID\` lines.
 
 ## Acceptance Criteria
-- \`GET https://gateway-q74ibpv6ia-uc.a.run.app/api/v1/orb/health\` returns \`gemini_configured: true\` and \`tts_client_ready: true\`.
+- \`GET https://gateway.vitanaland.com/api/v1/orb/health\` returns \`gemini_configured: true\` and \`tts_client_ready: true\`.
 - One synthetic voice probe session (PR #4) completes with \`audio_chunks > 0\` (post-chime) AND \`turn_complete\` AND a model utterance containing the expected token.
 - No new \`orb.live.startup.config_missing\` or \`orb.live.config_missing\` events emitted in the 30 minutes following the fix.
 

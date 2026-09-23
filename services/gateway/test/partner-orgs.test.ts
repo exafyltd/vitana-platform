@@ -21,9 +21,11 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: (req: any, res: any, next: any) => {
     const token = req.headers.authorization;
     const byToken: Record<string, any> = {
-      'Bearer owner-1': { user_id: OWNER_USER_ID, tenant_id: null, exafy_admin: false },
-      'Bearer other-1': { user_id: OTHER_USER_ID, tenant_id: null, exafy_admin: false },
-      'Bearer exafy-admin-1': { user_id: EXAFY_ADMIN_USER_ID, tenant_id: null, exafy_admin: true },
+      'Bearer owner-1': { user_id: OWNER_USER_ID, email: 'owner@example.com', tenant_id: null, exafy_admin: false },
+      'Bearer other-1': { user_id: OTHER_USER_ID, email: 'x@example.com', tenant_id: null, exafy_admin: false },
+      'Bearer other-mixed-case': { user_id: OTHER_USER_ID, email: '  X@Example.COM ', tenant_id: null, exafy_admin: false },
+      'Bearer no-email': { user_id: 'no-email-1', email: null, tenant_id: null, exafy_admin: false },
+      'Bearer exafy-admin-1': { user_id: EXAFY_ADMIN_USER_ID, email: 'admin@exafy.io', tenant_id: null, exafy_admin: true },
     };
     if (!token || !byToken[token]) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     req.identity = byToken[token];
@@ -37,6 +39,9 @@ jest.mock('../src/services/oasis-event-service', () => ({
 }));
 
 let tableHandlers: Record<string, (ctx: { op: string; args: any[] }) => any>;
+// Records every .in(column, values) filter so tests can assert that a write
+// was conditional (VTID-04337 activate guard).
+let inFilters: Array<{ table: string; column: string; values: any[] }>;
 
 function makeFakeSupabase() {
   return {
@@ -46,9 +51,10 @@ function makeFakeSupabase() {
       let op = 'select';
       let opArgs: any[] = [];
       const chain: any = {};
-      for (const m of ['eq', 'in', 'order', 'limit']) {
+      for (const m of ['eq', 'order', 'limit']) {
         chain[m] = (...args: any[]) => chain;
       }
+      chain.in = (column: string, values: any[]) => { inFilters.push({ table, column, values }); return chain; };
       chain.select = (...args: any[]) => { if (op === 'select') opArgs = args; return chain; };
       chain.insert = (...args: any[]) => { op = 'insert'; opArgs = args; return chain; };
       chain.update = (...args: any[]) => { op = 'update'; opArgs = args; return chain; };
@@ -78,6 +84,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   emitOasisEventMock.mockResolvedValue({ ok: true });
   tableHandlers = {};
+  inFilters = [];
 });
 
 describe('partner-orgs — auth (mount proof)', () => {
@@ -322,6 +329,46 @@ describe('POST /invites/:token/accept', () => {
   });
 });
 
+describe('POST /invites/:token/accept — invite bound to the invited email (VTID-04337 SEC-1)', () => {
+  const pendingInvite = {
+    id: 'invite-1', partner_organization_id: 'org-1', email: 'x@example.com', role: 'staff',
+    expires_at: '2099-01-01T00:00:00Z', accepted_at: null,
+  };
+
+  it('403 INVITE_EMAIL_MISMATCH when a different account holds the token, and no member row is written', async () => {
+    tableHandlers.partner_organization_invites = () => ({ data: pendingInvite, error: null });
+    tableHandlers.partner_organization_members = () => { throw new Error('must not add a member on email mismatch'); };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('INVITE_EMAIL_MISMATCH');
+    expect(JSON.stringify(r.body)).not.toContain('x@example.com');
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_joined' }));
+  });
+
+  it('403 INVITE_EMAIL_UNVERIFIED when the identity carries no email', async () => {
+    tableHandlers.partner_organization_invites = () => ({ data: pendingInvite, error: null });
+    tableHandlers.partner_organization_members = () => { throw new Error('must not add a member without an email'); };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer no-email');
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('INVITE_EMAIL_UNVERIFIED');
+  });
+
+  it('200 when the email matches ignoring case and surrounding whitespace', async () => {
+    tableHandlers.partner_organization_invites = ({ op }) =>
+      op === 'update' ? { data: null, error: null } : { data: { ...pendingInvite, email: 'X@example.com' }, error: null };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer other-mixed-case');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, partner_organization_id: 'org-1', role: 'staff' });
+  });
+});
+
 describe('POST /:orgId/activate', () => {
   it('403 for a non-exafy_admin caller', async () => {
     const r = await request(makeApp())
@@ -336,6 +383,20 @@ describe('POST /:orgId/activate', () => {
       .post('/api/v1/partner-orgs/org-1/activate')
       .set('Authorization', 'Bearer exafy-admin-1');
     expect(r.status).toBe(404);
+  });
+
+  it('409 ORG_NOT_ACTIVATABLE for a rejected org, and the update was conditional on status (VTID-04337 SEC-3)', async () => {
+    tableHandlers.partner_organizations = ({ op }: any) =>
+      op === 'update'
+        ? { data: null, error: null } // the status filter matched nothing
+        : { data: { id: 'org-1', status: 'rejected' }, error: null };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/activate')
+      .set('Authorization', 'Bearer exafy-admin-1');
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, error: 'ORG_NOT_ACTIVATABLE', status: 'rejected' });
+    expect(inFilters).toContainEqual({ table: 'partner_organizations', column: 'status', values: ['pending_review', 'suspended', 'active'] });
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.activated' }));
   });
 
   it('200 happy path — general-commerce vertical, no partner_registry bridge', async () => {

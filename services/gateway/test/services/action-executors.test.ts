@@ -108,6 +108,39 @@ describe('registerAllActionExecutors', () => {
       expect((res.result as Record<string, unknown>).state).toBe('saved');
     });
 
+    it('persists through the repository with the expected offers_set_state payload', async () => {
+      const mockDb = buildSupabaseMock({
+        data: { ok: true, id: 'offer-2', strength_delta: 2 },
+        error: null,
+      });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['shopping_add_to_list'](
+        { product_id: 'prod-9', note: 'because I like it' },
+        CTX
+      );
+      expect(mockDb.rpc).toHaveBeenCalledWith('offers_set_state', {
+        p_payload: {
+          target_type: 'product',
+          target_id: 'prod-9',
+          state: 'saved',
+          notes: 'because I like it',
+        },
+      });
+      expect((res.result as Record<string, unknown>).strength_delta).toBe(2);
+    });
+
+    it('defaults the note when none is supplied (or not a string)', async () => {
+      const mockDb = buildSupabaseMock({ data: { ok: true, id: 'offer-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['shopping_add_to_list']({ product_id: 'prod-1', note: 123 }, CTX);
+      expect(mockDb.rpc).toHaveBeenCalledWith(
+        'offers_set_state',
+        expect.objectContaining({
+          p_payload: expect.objectContaining({ notes: 'Added by Vitana Assistant' }),
+        })
+      );
+    });
+
     it('returns error when product_id is missing', async () => {
       const res = await executors['shopping_add_to_list']({}, CTX);
       expect(res.ok).toBe(false);
@@ -179,6 +212,26 @@ describe('registerAllActionExecutors', () => {
       const result = res.result as Record<string, unknown>;
       expect((result.milestone_text as string).length).toBe(280);
     });
+
+    it('returns a share_url keyed on the action id and reuses it as external_id', async () => {
+      const res = await executors['share_milestone']({ channel: 'copy_link' }, CTX);
+      const result = res.result as Record<string, unknown>;
+      const expected = `https://vitanaland.com/share/${CTX.action_id}`;
+      expect(result.share_url).toBe(expected);
+      expect(res.external_id).toBe(expected);
+    });
+
+    it('milestone_text defaults to an empty string when not provided', async () => {
+      const res = await executors['share_milestone']({}, CTX);
+      expect((res.result as Record<string, unknown>).milestone_text).toBe('');
+    });
+
+    it('returns DB unavailable when getSupabase() returns null', async () => {
+      mockGetSupabase.mockReturnValue(null);
+      const res = await executors['share_milestone']({ milestone_text: 'hi' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('DB unavailable');
+    });
   });
 
   // ---- social_post_story ---------------------------------------------------
@@ -204,6 +257,14 @@ describe('registerAllActionExecutors', () => {
       const res = await executors['social_post_story']({}, CTX);
       expect((res.result as Record<string, unknown>).provider).toBe('instagram');
     });
+
+    it('coerces a non-string caption/provider to the defaults instead of throwing', async () => {
+      const res = await executors['social_post_story']({ caption: 123, provider: {} }, CTX);
+      expect(res.ok).toBe(true);
+      const result = res.result as Record<string, unknown>;
+      expect(result.caption).toBe('');
+      expect(result.provider).toBe('instagram');
+    });
   });
 
   // ---- wearable_log_workout ------------------------------------------------
@@ -219,6 +280,42 @@ describe('registerAllActionExecutors', () => {
       expect(res.external_id).toBe('workout-99');
       expect((res.result as Record<string, unknown>).workout_type).toBe('run');
       expect((res.result as Record<string, unknown>).duration_minutes).toBe(45);
+    });
+
+    it('inserts the manual row with the expected columns and provider', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-200' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['wearable_log_workout'](
+        { workout_type: 'cycle', duration_minutes: 20 },
+        CTX
+      );
+      expect(mockDb.from).toHaveBeenCalledWith('wearable_workouts');
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenant_id: CTX.tenant_id,
+          user_id: CTX.user_id,
+          provider: 'manual',
+          external_workout_id: `manual-${CTX.action_id}`,
+          workout_type: 'cycle',
+          duration_minutes: 20,
+        })
+      );
+    });
+
+    it('defaults workout_type to other and optional numerics to null when omitted', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-201' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['wearable_log_workout']({}, CTX);
+      expect(res.ok).toBe(true);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workout_type: 'other',
+          duration_minutes: null,
+          calories: null,
+        })
+      );
+      expect((res.result as Record<string, unknown>).workout_type).toBe('other');
+      expect((res.result as Record<string, unknown>).duration_minutes).toBeNull();
     });
 
     it('coerces non-number duration_minutes to null', async () => {
@@ -298,6 +395,52 @@ describe('registerAllActionExecutors', () => {
       );
       expect(res.ok).toBe(false);
       expect(res.error).toBe('DB unavailable');
+    });
+
+    it('inserts the event with the expected columns, defaults and wellness tags', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        {
+          title: 'Walk',
+          start_time: '2026-01-01T10:00:00.000Z',
+          duration_minutes: 60,
+          event_type: 'workout',
+          wellness_tags: ['movement', 'fresh-air'],
+        },
+        CTX
+      );
+      expect(mockDb.from).toHaveBeenCalledWith('calendar_events');
+      expect(mockDb.insert).toHaveBeenCalledWith({
+        tenant_id: CTX.tenant_id,
+        user_id: CTX.user_id,
+        title: 'Walk',
+        start_time: '2026-01-01T10:00:00.000Z',
+        end_time: '2026-01-01T11:00:00.000Z',
+        event_type: 'workout',
+        wellness_tags: ['movement', 'fresh-air'],
+      });
+      expect((res.result as Record<string, unknown>).start_time).toBe('2026-01-01T10:00:00.000Z');
+      expect((res.result as Record<string, unknown>).end_time).toBe('2026-01-01T11:00:00.000Z');
+    });
+
+    it('defaults title to Vitana Event, duration to 30 minutes and tags to an empty array', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-4' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        { start_time: '2026-01-01T10:00:00.000Z', wellness_tags: 'not-an-array' },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Vitana Event',
+          end_time: '2026-01-01T10:30:00.000Z',
+          event_type: 'wellness_nudge',
+          wellness_tags: [],
+        })
+      );
+      expect((res.result as Record<string, unknown>).title).toBe('Vitana Event');
     });
 
     it('returns error when insert returns a DB error', async () => {
