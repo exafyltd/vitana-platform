@@ -16,3 +16,8 @@ TEST: services/gateway/test/vtid-04382-typed-ticket-context.test.ts
 
 AC-5: An unknown route files on the community surface, never NULL.
 TEST: services/gateway/test/orb-tools/feedback-settings-tools.test.ts
+
+OASIS_PROOF: feedback.ticket.created on the unrouted typed-tool path now carries payload.surface,
+payload.language and payload.session_id, asserted in
+services/gateway/test/orb-tools/feedback-settings-tools.test.ts ("carries surface, tenant, language,
+session and route like report_to_specialist").
