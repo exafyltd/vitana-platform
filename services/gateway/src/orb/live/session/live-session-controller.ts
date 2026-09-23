@@ -914,6 +914,9 @@ export async function handleLiveSessionStart(
   // populated the session fields below. Attached to the session object and
   // awaited by connectToLiveAPI's ws.on('open') handler.
   let contextReadyPromise: Promise<void> | undefined;
+  // VTID-04399 (WS-1.2): the rendered core snapshot (or null) — the gate's
+  // fallback when the fresh build misses it.
+  let coreContextFallback: Promise<string | null> | undefined;
 
   // DEV-COMHU-0513 (new-day): FAST greeting-facts pre-fetch. Independent of the
   // heavy bootstrapWork above so the new-day personalized opener has a spoken
@@ -1028,19 +1031,42 @@ export async function handleLiveSessionStart(
     const useOrbBrain = await isVitanaBrainOrbEnabled();
     const contextBuildStart = Date.now();
 
+    const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+    const brainRole = clientContext.isMobile
+      ? 'community'
+      : bodyRoute.startsWith('/command-hub')
+        ? 'developer'
+        : ((bootstrapIdentity as any).active_role || 'community');
+
+    // VTID-04399 (WS-1.2): read the user's stored core context in parallel
+    // with the fresh build. The stream-open gate uses it only if the fresh
+    // build has not populated the session by then. Community only; one
+    // indexed read; fails open to null.
+    const snapshotModule = useOrbBrain && brainRole === 'community' && bootstrapIdentity.tenant_id
+      ? await import('../../../services/conversation/brain-core-snapshot')
+      : null;
+    const coreSnapshotRead = snapshotModule && snapshotModule.isBrainCoreSnapshotEnabled()
+      ? snapshotModule.readBrainCoreSnapshot({ tenantId: bootstrapIdentity.tenant_id!, userId: bootstrapIdentity.user_id })
+      : null;
+    if (coreSnapshotRead && snapshotModule) {
+      coreContextFallback = coreSnapshotRead.then((snap) => {
+        const nowMs = Date.now();
+        const usable = snapshotModule.snapshotUsable(snap, { nowMs });
+        if (!usable.ok || !snap) {
+          console.log(`[VTID-04399] session ${sessionId}: no usable core snapshot (${usable.ok ? 'absent' : usable.reason})`);
+          return null;
+        }
+        return snapshotModule.renderSnapshotForSession(snap, nowMs);
+      });
+    }
+
     const bootstrapWork = Promise.all([
       useOrbBrain
         ? (async () => {
             const brainStart = Date.now();
             try {
               const { buildBrainSystemInstructionCached } = await import('../../../services/vitana-brain-cache');
-              const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-              const brainRole = clientContext.isMobile
-                ? 'community'
-                : bodyRoute.startsWith('/command-hub')
-                  ? 'developer'
-                  : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstructionCached({
+              const { instruction, contextPack: cp, coreInstruction } = await buildBrainSystemInstructionCached({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
                 role: brainRole,
@@ -1049,6 +1075,22 @@ export async function handleLiveSessionStart(
                 user_timezone: clientContext?.timezone,
               });
               console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
+              // VTID-04399: write-through the stable part for the next session
+              // start. Throttled against the row this session already read.
+              if (coreSnapshotRead && snapshotModule && coreInstruction) {
+                void snapshotModule
+                  .recordSnapshotAfterBuild({
+                    tenantId: bootstrapIdentity.tenant_id!,
+                    userId: bootstrapIdentity.user_id,
+                    core: coreInstruction,
+                    lang,
+                    existing: coreSnapshotRead,
+                  })
+                  .then((r) => {
+                    if (r.written) console.log(`[VTID-04399] core snapshot written for session ${sessionId} (${r.reason})`);
+                  })
+                  .catch(() => {});
+              }
               return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
             } catch (err: any) {
               console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
@@ -1458,6 +1500,7 @@ export async function handleLiveSessionStart(
     contextBootstrapSkippedReason,
     contextBootstrapBuiltAt: Date.now(),
     contextReadyPromise,
+    coreContextFallback,
     transcriptTurns: reconnectTranscriptHistory.length > 0
       ? reconnectTranscriptHistory.map((t) => ({ role: t.role, text: t.text, timestamp: new Date().toISOString() }))
       : [],

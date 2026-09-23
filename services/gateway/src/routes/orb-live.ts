@@ -1048,6 +1048,12 @@ export interface GeminiLiveSession {
   // overlaps with the Google auth + WS handshake (500-1000ms) instead of
   // serializing with /live/session/start's response.
   contextReadyPromise?: Promise<void>;
+  // VTID-04399 (WS-1.2): rendered per-user core context snapshot (or null),
+  // read in parallel with the fresh build. The stream-open gate uses it only
+  // when the fresh build has not populated contextInstruction by then.
+  coreContextFallback?: Promise<string | null>;
+  // Where the context the upstream setup carried came from.
+  contextSource?: 'fresh' | 'snapshot' | 'none';
   // VTID-03101: wake-brief override block, kept on its own field so the
   // background bootstrap promise (which unconditionally writes
   // contextInstruction = finalContext at the end of its .then) cannot
@@ -1947,6 +1953,7 @@ export {
   describeRoute,
 } from '../orb/live/instruction/live-system-instruction';
 import type { BootstrapPackResult } from '../orb/live/instruction/bootstrap-packer'; // VTID-04393
+import { applyCoreContextFallback } from '../services/conversation/brain-core-snapshot'; // VTID-04399
 // A5 (orb-live-refactor): buildLiveApiTools lifted to orb/live/tools/live-tool-catalog.ts.
 // Same function, same callers, same admin-tool injection. Zero behavior change.
 // Re-exported here so external callers (including the A0.1 tool-catalog
@@ -2244,6 +2251,10 @@ const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 // promise resolves well under this cap, so behavior is unchanged. Env-tunable
 // for staging without a redeploy.
 const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+// VTID-04399 (WS-1.2): extra time the gate may wait for the core-snapshot
+// read when the fresh build missed CONTEXT_READY_GATE_TIMEOUT_MS. The read
+// starts at session/start, so by the gate it has usually settled already.
+const CORE_SNAPSHOT_GATE_WAIT_MS = Number(process.env.BRAIN_CORE_SNAPSHOT_GATE_WAIT_MS || 150);
 
 // VTID-04100 — hard ceiling on how long the pre-connect greeting bridge may
 // hold the session before the real upstream connect starts. Sized above a
@@ -7808,11 +7819,22 @@ async function connectToLiveAPI(
         } catch (e) {
           // Defensive: proceed with whatever session fields are populated.
         }
+        // VTID-04399 (WS-1.2): when the fresh build missed the gate and left the
+        // session empty, use the stored core snapshot (bounded extra wait for
+        // its read). Never replaces a context the fresh build already wrote.
+        const coreFallback = await applyCoreContextFallback(session, CORE_SNAPSHOT_GATE_WAIT_MS);
+        if (coreFallback.source === 'snapshot') {
+          emitDiag(session, 'core_snapshot_used', { chars: coreFallback.chars, fresh_timed_out: ctxTimedOut });
+        }
         const ctxAwaitMs = Date.now() - awaitStart;
         // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
         // overlap the handshake. This is the number a context-slim (D.2) would
         // move; if it's already ~0, the win is in the model's first-token time.
-        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs, timed_out: ctxTimedOut });
+        session.establishLatency?.mark('context_awaited', {
+          awaited_ms: ctxAwaitMs,
+          timed_out: ctxTimedOut,
+          context_source: coreFallback.source,
+        });
         console.log(
           `[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms` +
             (ctxTimedOut ? ` (TIMED OUT at ${CONTEXT_READY_GATE_TIMEOUT_MS}ms — proceeding with partial context)` : '') +
@@ -8345,6 +8367,7 @@ async function connectToLiveAPI(
       // (D.2) can be correlated against the gap to greeting_sent/first audio.
       session.establishLatency?.mark('setup_sent', {
         context_chars: session.contextInstruction?.length || 0,
+        context_source: session.contextSource ?? null,
       });
       return setupMessage as unknown as Record<string, unknown>;
     };

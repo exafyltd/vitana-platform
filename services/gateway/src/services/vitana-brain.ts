@@ -316,7 +316,7 @@ export async function buildBrainSystemInstruction(input: {
   conversation_start?: string;
   display_name?: string;
   user_timezone?: string;
-}): Promise<{ instruction: string; contextPack: ContextPack }> {
+}): Promise<{ instruction: string; contextPack: ContextPack; coreInstruction: string }> {
   const startTime = Date.now();
 
   // Compute retrieval router — for session bootstrap, force memory-only
@@ -424,7 +424,12 @@ export async function buildBrainSystemInstruction(input: {
   //   Gemini's attention. Putting it before the brevity rule caused Gemini to
   //   default to "What can I do for you?" on the first utterance because the
   //   brevity rule reinforced its trained habit.
-  const instruction = `${baseInstruction}
+  //
+  // VTID-04399: `coreInstruction` is the same text without the proactive
+  // guide block — the part that does not depend on the time of the call
+  // (identity, memory, Life Compass goal, general rules). It is what the
+  // per-user core snapshot stores. `instruction` is byte-identical to before.
+  const coreInstruction = `${baseInstruction}
 ${languageDirective}
 ${identityGuardrailBlock}
 ${contextForLLM}
@@ -436,13 +441,14 @@ User's role: ${input.role}
 
 General instructions (DEFAULT — overridden by Proactive Guide Rules below):
 ${ucConfig.common_instructions || '- Use the memory context to personalize responses\n- Use knowledge context for Vitana-specific questions\n- Be helpful and accurate'}
-- ${input.channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}
+- ${input.channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}`;
+  const instruction = `${coreInstruction}
 ${proactiveGuideBlock}`;
 
   const latencyMs = Date.now() - startTime;
   console.log(`${LOG_PREFIX} System instruction built in ${latencyMs}ms (${instruction.length} chars, ${contextPack.memory_hits?.length || 0} memory hits, calendar=${!!contextPack.calendar_context}, compass=${lifeCompassBlock.length > 0 ? 'on' : 'off'}, guide=${proactiveGuideBlock.length > 0 ? 'on' : 'off'}, identity=${identityGuardrailBlock.length > 0 ? 'on' : 'off'})`);
 
-  return { instruction, contextPack };
+  return { instruction, contextPack, coreInstruction };
 }
 
 // =============================================================================

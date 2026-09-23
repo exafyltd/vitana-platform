@@ -114,6 +114,10 @@ or heartbeat:
   TEST: services/gateway/test/orb/live/vtid-04369-failure-kind-and-monitor-fields.test.ts,
   services/gateway/test/orb/live/instruction/vtid-04393-bootstrap-packer.test.ts
 - VTID-04371 emits nothing; it reads `oasis_events` by topic in an hourly rollup.
+- No new topic for VTID-04399: one new `orb.live.diag` stage `core_snapshot_used`
+  (the stream-open gate used the stored core snapshot) and a `context_source`
+  field on the existing `context_awaited` / `setup_sent` latency marks.
+  TEST: services/gateway/test/services/conversation/vtid-04399-brain-core-snapshot.test.ts
 
 Live signal after merge (staging): rows with these topics in `oasis_events`.
 

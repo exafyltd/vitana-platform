@@ -60,6 +60,11 @@ export interface MetricsSummary {
     first_audio_ms_p50: WeightedValue;
     first_audio_ms_p90: WeightedValue;
     context_wait_timeouts: Rate;
+    /** VTID-04399: authenticated sessions whose final setup carried no context. */
+    context_setup_empty: Rate;
+    /** VTID-04399: where the gate took the context from (fresh / snapshot / none / unknown). */
+    context_sources: Breakdown[];
+    core_snapshot_used: number;
     by_transport: Array<{ transport: string; first_audio_ms_p50: WeightedValue }>;
   };
   reliability: {
@@ -184,6 +189,9 @@ export function summarizeConversationMetrics(rows: MetricRow[], windowHours: num
       first_audio_ms_p50: weighted(rows, 'first_audio_ms_p50'),
       first_audio_ms_p90: weighted(rows, 'first_audio_ms_p90'),
       context_wait_timeouts: rate(totalOf(rows, 'context_wait_timeouts'), samplesOf(rows, 'context_wait_timeouts')),
+      context_setup_empty: rate(totalOf(rows, 'context_setup_empty'), samplesOf(rows, 'context_setup_empty')),
+      context_sources: breakdown(rows, 'context_setup_source', 'source:'),
+      core_snapshot_used: totalOf(rows, 'diag_core_snapshot_used'),
       by_transport: Array.from(transports).sort().map((t) => ({
         transport: t,
         first_audio_ms_p50: weighted(rows, 'first_audio_ms_p50', `transport:${t}`),

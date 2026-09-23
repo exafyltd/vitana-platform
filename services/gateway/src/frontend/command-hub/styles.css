@@ -17875,6 +17875,7 @@ button.fb-chip:focus-visible,
 @media (max-width: 600px) {
   .orch-container { padding: 1rem; }
   .orch-plane-grid, .orch-agent-grid { grid-template-columns: 1fr; }
+}
 /* VTID-04371 (WS-0.7): Conversation Monitor dashboard + Assistant learning health */
 .conv-metric-section { margin-bottom: 24px; }
 .conv-metric-heading { margin: 18px 0 8px; font-size: 15px; }

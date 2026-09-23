@@ -7636,8 +7636,15 @@ function _convRenderPerformance(host, hours) {
         body.appendChild(_convTileGrid([
             _convTile('First speech p50', _convMs(sp.first_audio_ms_p50), sp.first_audio_ms_p50.samples + ' sessions'),
             _convTile('First speech p90', _convMs(sp.first_audio_ms_p90), 'target < 3 s', sp.first_audio_ms_p90.value != null && sp.first_audio_ms_p90.value > 3000 ? 'warn' : null),
-            _convTile('Context wait timed out', _convPct(sp.context_wait_timeouts), sp.context_wait_timeouts.numerator + ' of ' + sp.context_wait_timeouts.denominator, sp.context_wait_timeouts.rate > 0.5 ? 'warn' : null)
-        ]));
+            _convTile('Context wait timed out', _convPct(sp.context_wait_timeouts), sp.context_wait_timeouts.numerator + ' of ' + sp.context_wait_timeouts.denominator, sp.context_wait_timeouts.rate > 0.5 ? 'warn' : null),
+            // VTID-04399: signed-in sessions that set the model up with no
+            // memory context at all — the WS-1.2 target is under 5%.
+            sp.context_setup_empty ? _convTile('Started with no context', _convPct(sp.context_setup_empty),
+                sp.context_setup_empty.numerator + ' of ' + sp.context_setup_empty.denominator + ' signed-in · target < 5%',
+                sp.context_setup_empty.rate != null && sp.context_setup_empty.rate > 0.05 ? 'warn' : null) : null,
+            sp.context_sources ? _convTile('Context source', String(sp.core_snapshot_used || 0) + ' from snapshot',
+                sp.context_sources.map(function (b) { return b.key + ' ' + b.count; }).join(' · ') || 'no data') : null
+        ].filter(Boolean)));
         body.appendChild(_convHeading('Sessions'));
         body.appendChild(_convTileGrid([
             _convTile('Started', String(s.started)),

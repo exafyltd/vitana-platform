@@ -36,6 +36,7 @@ function seams() {
       Promise.resolve({ ok: true, threads_written: 1, threads_touched: 0, promises_written: 1 }),
     ),
     emitFinalized: jest.fn(() => Promise.resolve({ ok: true })),
+    scheduleRefresh: jest.fn(() => ({ scheduled: true, reason: 'scheduled' })),
   };
 }
 
@@ -100,6 +101,23 @@ describe('finalizeLiveSession (VTID-04353)', () => {
       promises_written: 1,
     });
     expect((x.emitFinalized.mock.calls[0] as any[])[1]).toBe('u1');
+    // VTID-04399: the core snapshot refresh is scheduled after the writes.
+    expect(x.scheduleRefresh).toHaveBeenCalledTimes(1);
+    expect(x.scheduleRefresh).toHaveBeenCalledWith({ tenantId: 't1', userId: 'u1', role: 'community', lang: null, timezone: null });
+  });
+
+  it('VTID-04399: no snapshot refresh without a user turn or an identity; a scheduling throw is swallowed', async () => {
+    const x = seams();
+    await finalizeLiveSession(session([['assistant', 'Hallo!']]), { sessionId: 'live-2', reason: 't', ...x }).settled;
+    await finalizeLiveSession(session(convo, { tenant_id: '', user_id: '' }), { sessionId: 'live-3', reason: 't', ...x }).settled;
+    expect(x.scheduleRefresh).not.toHaveBeenCalled();
+
+    const y = seams();
+    y.scheduleRefresh.mockImplementationOnce(() => {
+      throw new Error('boom');
+    });
+    const payload = await finalizeLiveSession(session(convo), { sessionId: 'live-4', reason: 't', ...y }).settled;
+    expect(payload?.session_id).toBe('live-4');
   });
 
   it('the finalized event reports a failed summary and continuity honestly', async () => {

@@ -38,6 +38,21 @@ export interface FinalizableLiveSession {
   createdAt?: Date;
   /** Number of transcript turns covered by the last finalize (VTID-04353). */
   finalizedTurnCount?: number;
+  lang?: string | null;
+  clientContext?: { timezone?: string | null } | null;
+}
+
+type ScheduleRefreshFn = (input: {
+  tenantId: string;
+  userId: string;
+  role?: string | null;
+  lang?: string | null;
+  timezone?: string | null;
+}) => unknown;
+
+async function defaultScheduleRefresh(input: Parameters<ScheduleRefreshFn>[0]): Promise<unknown> {
+  const { scheduleSnapshotRefresh } = await import('../../../services/conversation/brain-core-snapshot');
+  return scheduleSnapshotRefresh(input);
 }
 
 export type FinalizeSkipReason = 'empty_transcript' | 'already_finalized';
@@ -135,6 +150,7 @@ export function finalizeLiveSession(
     recordContinuity?: RecordContinuityFn;
     emitFinalized?: EmitFinalizedFn;
     commitMemory?: typeof commitSessionMemory;
+    scheduleRefresh?: ScheduleRefreshFn;
     nowMs?: number;
   },
 ): FinalizeLiveSessionResult {
@@ -258,6 +274,24 @@ export function finalizeLiveSession(
         console.warn(
           `[VTID-04353] finalized event failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+      }
+      // VTID-04399 (WS-1.2): rebuild the user's core context snapshot a little
+      // later, once this session's memory commit has written its facts, so
+      // the next session start carries them even when its own build is slow.
+      if (userId && tenantId && hasUserTurn) {
+        try {
+          await (opts.scheduleRefresh ?? defaultScheduleRefresh)({
+            tenantId,
+            userId,
+            role: session.active_role ?? null,
+            lang: session.lang ?? null,
+            timezone: session.clientContext?.timezone ?? null,
+          });
+        } catch (err) {
+          console.warn(
+            `[VTID-04399] snapshot refresh scheduling failed for ${opts.sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
       return payload;
     })
