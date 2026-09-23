@@ -49,7 +49,7 @@ import {
   resolveGreetingDirectiveByteBudget,
   greetingDirectiveExceedsBudget,
 } from '../../orb/live/instruction/greeting-directive-budget';
-import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools';
+import { buildOpeningIntentDirective } from './phrasing-rule';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
@@ -881,6 +881,12 @@ function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | nu
   };
 }
 
+/** VTID-04420: the name clause of the first-time welcome intent. */
+function firstTimeNamePart(firstName: string | null | undefined): string {
+  const n = typeof firstName === 'string' ? firstName.trim().replace(/"/g, '') : '';
+  return n ? `The user's name is "${n}" — address them by it. ` : '';
+}
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // VTID-03724 — a tapped guided topic outranks every rung below, including
@@ -907,9 +913,16 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   // Rung 2 — safe_fast_first_time_welcome (a brand-new user gets onboarding).
   if (firstTimeWelcomeFires(ctx)) {
-    const welcome = buildFirstTimeWelcomeLine(ctx.greetLang, ctx.firstName ?? null);
-    const safeWel = welcome.replace(/"/g, '\\"');
-    const welPrompt = `Say exactly: "${safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
+    // VTID-04420 (WS-2.1): was `Say exactly: "<per-language welcome speech>"`
+    // from greeting-pools' buildFirstTimeWelcomeLine — a hardcoded spoken
+    // sentence (NEVER-rule 41) in the verbatim-recitation shape the Nova
+    // guardrail blocks (VTID-03797). Same content, stated as an intent.
+    const welPrompt = buildOpeningIntentDirective(
+      `${firstTimeNamePart(ctx.firstName)}This is their very first voice conversation. Welcome them warmly to Maxina, ` +
+        'introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey ' +
+        'and show them how everything works, and invite them to start their first session together.',
+      'short_welcome',
+    );
     return {
       wakeOpener: 'safe_fast_first_time_welcome',
       directive: welPrompt,
@@ -1039,41 +1052,17 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   const isNewDay =
     ctx.bucket === 'today' || ctx.bucket === 'yesterday' || ctx.bucket === 'week' || ctx.bucket === 'long';
   if (isNewDay && typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0) {
-    const name = ctx.firstName.trim();
+    const name = ctx.firstName.trim().replace(/"/g, '');
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const greetingByLang: Record<string, string> = {
-      en:
-        tod === 'morning'
-          ? `Good morning, ${name}.`
-          : tod === 'afternoon'
-            ? `Good afternoon, ${name}.`
-            : tod === 'evening'
-              ? `Good evening, ${name}.`
-              : `Hello, ${name}.`,
-      de:
-        tod === 'morning'
-          ? `Guten Morgen, ${name}.`
-          : tod === 'evening'
-            ? `Guten Abend, ${name}.`
-            : `Guten Tag, ${name}.`,
-      es:
-        tod === 'morning'
-          ? `Buenos días, ${name}.`
-          : tod === 'evening'
-            ? `Buenas noches, ${name}.`
-            : `Buenas tardes, ${name}.`,
-      fr: tod === 'evening' ? `Bonsoir, ${name}.` : `Bonjour, ${name}.`,
-      sr:
-        tod === 'morning'
-          ? `Добро јутро, ${name}.`
-          : tod === 'evening'
-            ? `Добро вече, ${name}.`
-            : `Добар дан, ${name}.`,
-    };
-    const lk = langKey2(ctx.greetLang);
-    const spoken = greetingByLang[lk] || greetingByLang.en;
-    const safe = spoken.replace(/"/g, '\\"');
-    const newDayPrompt = `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+    // VTID-04420 (WS-2.1): was a per-language `Record<lang, string>` of
+    // finished greetings recited with `Say exactly:` — NEVER-rule 41's own
+    // example of what not to write, and it only covered en/de/es/fr/sr, so a
+    // pt/pl/ru/tr/ar/zh session was greeted in English. Now an intent the
+    // model phrases in the session's language.
+    const newDayPrompt = buildOpeningIntentDirective(
+      `The user's name is "${name}" and it is their first visit today (${tod}). ` +
+        'Greet them warmly by name with a greeting that fits the time of day, as a single short phrase.',
+    );
     return {
       wakeOpener: 'safe_fast_newday',
       directive: newDayPrompt,

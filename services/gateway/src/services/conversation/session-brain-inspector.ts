@@ -83,7 +83,23 @@ export interface SessionBrainSummary {
     nba_domain: string | null;
     current_route: string | null;
     lang: string | null;
+    /** VTID-04420: the provider whose candidate won the ranker, and whether it was spoken. */
+    candidate_provider: string | null;
+    candidate_kind: string | null;
+    candidate_spoken: boolean | null;
+    candidate_outranked_by: string | null;
   }>;
+  /**
+   * VTID-04420 (WS-2.1): every continuation provider's result for this
+   * session's opening, read from `orb_wake_timelines` (one row per session,
+   * keyed by session id). Null when no timeline was recorded.
+   */
+  candidates: {
+    selected_kind: string | null;
+    none_with_reason: string | null;
+    duration_ms: number | null;
+    providers: Array<{ key: string; status: string; latency_ms: number | null; reason: string | null }>;
+  } | null;
   tools: { bytes_before: number | null; bytes_after: number | null; dropped_count: number | null; provider: string | null } | null;
   errors: Array<{ at: string; stage: string; failure_kind: string | null; code: string | null }>;
   outcome: {
@@ -147,6 +163,7 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
       rebuilt_on_reconnect: [],
     },
     decision: [],
+    candidates: null,
     tools: null,
     errors: [],
     outcome: { stopped: false, stop_reason: null, turns: null, duration_ms: null, audio_out_chunks: null, first_audio_ms: null, turn_first_audio_ms: [], finalized: null },
@@ -246,6 +263,10 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
           nba_domain: str(m.nba_domain),
           current_route: str(m.current_route),
           lang: str(m.lang),
+          candidate_provider: str(m.candidate_provider),
+          candidate_kind: str(m.candidate_kind),
+          candidate_spoken: bool(m.candidate_spoken),
+          candidate_outranked_by: str(m.candidate_outranked_by),
         });
         break;
       case 'tool_catalog_trimmed':
@@ -264,6 +285,36 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
     }
   }
   return summary;
+}
+
+/**
+ * VTID-04420: the provider results for one session's opening, from the wake
+ * timeline's `continuation_decision_finished` / `wake_brief_selected` events.
+ */
+export function summarizeWakeTimeline(events: unknown): SessionBrainSummary['candidates'] {
+  if (!Array.isArray(events)) return null;
+  let out: NonNullable<SessionBrainSummary['candidates']> | null = null;
+  const ensure = () => (out ??= { selected_kind: null, none_with_reason: null, duration_ms: null, providers: [] });
+  for (const e of events as Array<Record<string, unknown>>) {
+    const name = str(e?.name);
+    const m = (e?.metadata ?? {}) as Record<string, unknown>;
+    if (name === 'wake_brief_selected') {
+      const o = ensure();
+      o.selected_kind = str(m.selected_continuation_kind);
+      o.none_with_reason = str(m.none_with_reason);
+    } else if (name === 'continuation_decision_finished') {
+      const o = ensure();
+      o.duration_ms = num(m.durationMs);
+      const pr = Array.isArray(m.providerResults) ? (m.providerResults as Array<Record<string, unknown>>) : [];
+      o.providers = pr.slice(0, 40).map((p) => ({
+        key: str(p.key) ?? '?',
+        status: str(p.status) ?? '?',
+        latency_ms: num(p.latencyMs),
+        reason: str(p.reason),
+      }));
+    }
+  }
+  return out;
 }
 
 export function toSessionListItem(row: InspectorEventRow): SessionListItem | null {
@@ -339,5 +390,14 @@ export async function inspectSession(
   if (evRes.error) return { summary: summarizeSessionEvents(sessionId, [start]), error: evRes.error.message };
   const rows = (evRes.data || []) as InspectorEventRow[];
   const withStart = rows.some((r) => r.topic === 'vtid.live.session.start') ? rows : [start, ...rows];
-  return { summary: summarizeSessionEvents(sessionId, withStart, { truncated: rows.length >= INSPECTOR_MAX_EVENTS }), error: null };
+  const summary = summarizeSessionEvents(sessionId, withStart, { truncated: rows.length >= INSPECTOR_MAX_EVENTS });
+  // VTID-04420: provider results live in the session's wake timeline (primary
+  // key lookup, one row). Best-effort — a failure leaves `candidates` null.
+  try {
+    const wt = await sb.from('orb_wake_timelines').select('events').eq('session_id', sessionId).maybeSingle();
+    if (!wt.error && wt.data) summary.candidates = summarizeWakeTimeline((wt.data as { events?: unknown }).events);
+  } catch {
+    /* candidates stay null */
+  }
+  return { summary, error: null };
 }

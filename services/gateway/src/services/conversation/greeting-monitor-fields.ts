@@ -17,6 +17,12 @@ export interface GreetingMonitorContext {
   bucket?: string | null;
   currentRoute?: string | null;
   lang?: string | null;
+  /**
+   * VTID-04420 (WS-2.1): which provider's candidate won the ranker and whether
+   * the rung that fired spoke it (`resolveCandidateOutcome`). Omitted → the
+   * candidate columns are not added.
+   */
+  candidate?: Record<string, unknown> | null;
 }
 
 /** The register an opener implies when its rung does not report one itself. */
@@ -52,5 +58,6 @@ export function withGreetingMonitorFields(
     nba_domain: pick(d.nba_domain),
     current_route: pick(d.current_route, ctx.currentRoute),
     lang: pick(d.lang, ctx.lang),
+    ...(ctx.candidate ?? {}),
   };
 }

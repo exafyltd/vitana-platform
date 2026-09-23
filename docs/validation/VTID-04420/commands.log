@@ -1,0 +1,44 @@
+# VTID-04420 — commands run (2026-09-23)
+
+## VTID
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate {"source":"claude-code","layer":"DEV","module":"conversation-brain"}
+  -> {"ok":true,"vtid":"VTID-04420"}
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04420'
+
+## Read-only telemetry (Supabase MCP, statement_timeout 6-10 s)
+-- Provider results per opening, 30 days (orb_wake_timelines, bounded by started_at):
+WITH ev AS (SELECT e FROM orb_wake_timelines t, jsonb_array_elements(t.events) e WHERE t.started_at > now()-interval '30 days'),
+     pr AS (SELECT p->>'key' k, p->>'status' s FROM ev, jsonb_array_elements(e->'metadata'->'providerResults') p WHERE e->>'name'='continuation_decision_finished')
+SELECT k, s, count(*) FROM pr GROUP BY 1,2;
+-- Ranker picks and errored reasons: same CTE over wake_brief_selected / providerResults.reason.
+-- Greeting steps fired, 30 days (oasis_events, topic-indexed, time-bounded):
+SELECT metadata->>'wake_opener', count(*), max(created_at) FROM oasis_events
+ WHERE topic='orb.live.diag' AND created_at > now()-interval '30 days' AND metadata->>'stage'='greeting_sent' GROUP BY 1;
+-- orb.livekit.next_action.candidate by dedupe_key prefix (only next-action sources emit it; carries no provider key).
+
+## Build and tests (services/gateway)
+npx tsc --noEmit -p .                                                    -> clean
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts
+  -> 4 snapshots failed (safe_fast_first_time_welcome, safe_fast_newday x3): expected, the directive text changed
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u
+  -> 4 snapshots updated; diff reviewed:
+     - "Say exactly: \"Guten Morgen, Dragan.\" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio."
+     + "Open with ONE short spoken phrase, as audio. INTENT: The user's name is \"Dragan\" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen."
+     - "Say exactly: \"Hallo Dragan, ich bin Vitana, … Sollen wir gemeinsam mit deiner ersten Session starten?\" — speak it verbatim as audio …"
+     + "Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is \"Dragan\" — address them by it. This is their very first voice conversation. …"
+     No other snapshot changed (28 passed).
+npx jest test/services/conversation test/orb test/command-hub test/scripts test/vtid-04*
+  -> Test Suites: 402 passed, 402 total; Tests: 6679 passed, 6 todo
+
+## Command Hub
+node scripts/generate-command-hub-symbol-index.mjs            -> 817 functions across 11 files
+node --check src/frontend/command-hub/app.js                  -> OK
+node --check ../../scripts/ci/command-hub-ownership-guard.js  -> OK
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of command-hub/>  -> No CSP pattern hits in added lines.
+index.html ?v= -> 20261009-vtid-04420-brain-candidates (styles.css and app.js)
+
+## Visual check (local harness, nothing live)
+PORT=18520 node docs/validation/VTID-04420/outputs/harness-server.js
+node docs/validation/VTID-04420/outputs/harness-shoot.js > outputs/shoot-report.json
+  -> Simulator + Journey Context, 1400x900 and 390x844: Candidates table with 13 providers,
+     Decision "Candidate" column "login_briefing · outranked", no page errors, no horizontal overflow.

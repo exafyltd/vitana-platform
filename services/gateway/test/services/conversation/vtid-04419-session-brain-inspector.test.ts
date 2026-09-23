@@ -12,6 +12,7 @@ import {
   isValidUserId,
   listRecentSessions,
   summarizeSessionEvents,
+  summarizeWakeTimeline,
   type InspectorEventRow,
 } from '../../../src/services/conversation/session-brain-inspector';
 
@@ -66,7 +67,7 @@ describe('summarizeSessionEvents', () => {
   });
 
   it('reports the decision, tools, errors and outcome', () => {
-    expect(s.decision).toEqual([{ at: at(650), wake_opener: 'conv_resume', register: 'resume', bucket: 'same_day', nba: 'log_water', nba_domain: 'hydration', current_route: '/home', lang: 'de' }]);
+    expect(s.decision).toEqual([{ at: at(650), wake_opener: 'conv_resume', register: 'resume', bucket: 'same_day', nba: 'log_water', nba_domain: 'hydration', current_route: '/home', lang: 'de', candidate_provider: null, candidate_kind: null, candidate_spoken: null, candidate_outranked_by: null }]);
     expect(s.tools).toEqual({ bytes_before: 226803, bytes_after: 65521, dropped_count: 24, provider: 'nova_sonic' });
     expect(s.errors).toEqual([
       { at: at(95_000), stage: 'upstream_error', failure_kind: 'content_filter', code: 'nova_validation' },
@@ -119,7 +120,7 @@ function fakeSb(results: Array<{ data: unknown; error: unknown }>) {
       calls.push(rec);
       const result = results[i++] ?? { data: [], error: null };
       const b: any = {};
-      for (const m of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'limit']) {
+      for (const m of ['select', 'eq', 'in', 'gte', 'lte', 'order', 'limit', 'maybeSingle']) {
         b[m] = (...args: unknown[]) => { rec.push([m, args]); return b; };
       }
       b.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
@@ -162,6 +163,64 @@ describe('bounded reads', () => {
     const r = await inspectSession(sb, SID);
     expect(r.summary.found).toBe(false);
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('VTID-04420: provider candidates', () => {
+  const timeline = [
+    { name: 'continuation_decision_started', metadata: {} },
+    { name: 'wake_brief_selected', metadata: { decisionId: 'd1', selected_continuation_kind: 'wake_brief' } },
+    {
+      name: 'continuation_decision_finished',
+      metadata: {
+        decisionId: 'd1',
+        durationMs: 412,
+        providerResults: [
+          { key: 'login_briefing', status: 'returned', latencyMs: 120 },
+          { key: 'real_life_invite', status: 'suppressed', latencyMs: 3, reason: 'flag_off' },
+          { key: 'feature_discovery_teacher', status: 'errored', latencyMs: 800, reason: 'provider_timeout' },
+        ],
+      },
+    },
+  ];
+
+  it('summarizes the wake timeline into provider results', () => {
+    expect(summarizeWakeTimeline(timeline)).toEqual({
+      selected_kind: 'wake_brief',
+      none_with_reason: null,
+      duration_ms: 412,
+      providers: [
+        { key: 'login_briefing', status: 'returned', latency_ms: 120, reason: null },
+        { key: 'real_life_invite', status: 'suppressed', latency_ms: 3, reason: 'flag_off' },
+        { key: 'feature_discovery_teacher', status: 'errored', latency_ms: 800, reason: 'provider_timeout' },
+      ],
+    });
+    expect(summarizeWakeTimeline(null)).toBeNull();
+    expect(summarizeWakeTimeline([])).toBeNull();
+  });
+
+  it('inspectSession reads the wake timeline by session id (one keyed row)', async () => {
+    const { sb, calls } = fakeSb([
+      { data: [rows()[1]], error: null },
+      { data: rows(), error: null },
+      { data: { events: timeline }, error: null },
+    ]);
+    const r = await inspectSession(sb, SID, { nowMs: T0 + 10 * 60_000 });
+    expect(calls[2]).toContainEqual(['from', ['orb_wake_timelines']]);
+    expect(calls[2]).toContainEqual(['eq', ['session_id', SID]]);
+    expect(r.summary.candidates?.providers).toHaveLength(3);
+  });
+
+  it('a failed timeline read leaves candidates null and the summary intact', async () => {
+    const { sb } = fakeSb([
+      { data: [rows()[1]], error: null },
+      { data: rows(), error: null },
+      { data: null, error: { message: 'boom' } },
+    ]);
+    const r = await inspectSession(sb, SID, { nowMs: T0 + 10 * 60_000 });
+    expect(r.error).toBeNull();
+    expect(r.summary.found).toBe(true);
+    expect(r.summary.candidates).toBeNull();
   });
 });
 

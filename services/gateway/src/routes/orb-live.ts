@@ -380,7 +380,7 @@ import {
 } from '../services/conversation/compute-greeting-decision';
 import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
 // VTID-04416 (WS-1.4): every opening decision goes through the brain entry point.
-import { decideOpeningFlow } from '../services/conversation/decide-conversation-flow';
+import { decideOpeningFlow, resolveCandidateOutcome } from '../services/conversation/decide-conversation-flow';
 
 // VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
 // decision.ts for the full incident writeup): Bedrock's content filter
@@ -10730,6 +10730,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               bucket: _temporalSF.bucket,
               currentRoute: session.current_route ?? null,
               lang: greetLang,
+              // VTID-04420: which provider's candidate won and whether it was spoken.
+              candidate: { ...resolveCandidateOutcome(_sfDecision.wakeOpener, (session as any).wakeBriefDecision) },
             }));
             if (_sfDecision.effects.armWatchdog) {
               startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
@@ -10953,6 +10955,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         bucket: _temporalSync.bucket,
         currentRoute: session.current_route ?? null,
         lang,
+        // VTID-04420: which provider's candidate won and whether it was spoken.
+        candidate: { ...resolveCandidateOutcome(decision.wakeOpener, (session as any).wakeBriefDecision) },
       }));
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');

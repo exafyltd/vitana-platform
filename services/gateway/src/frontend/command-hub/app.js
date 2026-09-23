@@ -7834,14 +7834,36 @@ function _convBrainRender(host, d) {
     if (d.decision && d.decision.length) {
         host.appendChild(_convTable(
             [{ key: 'at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' },
-             { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'Next step' }, { key: 'current_route', label: 'Screen' }],
+             { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'Next step' }, { key: 'current_route', label: 'Screen' },
+             { key: 'candidate', label: 'Candidate' }],
             d.decision.map(function (x) {
                 return { at: _convWhen(x.at) || '', wake_opener: x.wake_opener || '', register: x.register || '', bucket: x.bucket || '',
-                    nba: (x.nba || '') + (x.nba_domain ? ' (' + x.nba_domain + ')' : ''), current_route: x.current_route || '' };
+                    nba: (x.nba || '') + (x.nba_domain ? ' (' + x.nba_domain + ')' : ''), current_route: x.current_route || '',
+                    // VTID-04420: which provider's candidate won the ranker, and whether this opener spoke it.
+                    candidate: x.candidate_provider ? x.candidate_provider + (x.candidate_spoken ? ' · spoken' : ' · outranked') : (x.candidate_spoken === false ? 'none' : '') };
             })
         ));
     } else {
         host.appendChild(_convEl('div', { text: 'No opening decision recorded (for example, a silent reconnect).', cls: 'conv-metric-muted' }));
+    }
+
+    // VTID-04420 (WS-2.1): every continuation provider's result for the opening.
+    host.appendChild(_convHeading('Candidates'));
+    var cand = d.candidates;
+    if (cand && cand.providers && cand.providers.length) {
+        host.appendChild(_convEl('div', {
+            text: 'Ranker picked: ' + (cand.selected_kind === 'none_with_reason' ? 'nothing (' + (cand.none_with_reason || 'no reason') + ')' : (cand.selected_kind || 'unknown')) +
+                (cand.duration_ms != null ? ' · ranked in ' + cand.duration_ms + ' ms' : ''),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convTable(
+            [{ key: 'key', label: 'Provider' }, { key: 'status', label: 'Result' }, { key: 'latency', label: 'Latency' }, { key: 'reason', label: 'Reason' }],
+            cand.providers.map(function (x) {
+                return { key: x.key, status: x.status, latency: x.latency_ms == null ? '' : x.latency_ms + ' ms', reason: x.reason || '' };
+            })
+        ));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No provider results recorded for this session.', cls: 'conv-metric-muted' }));
     }
 
     host.appendChild(_convHeading('Tools, errors and outcome'));
