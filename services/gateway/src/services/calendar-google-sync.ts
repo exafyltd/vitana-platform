@@ -392,25 +392,29 @@ export async function runGoogleSyncTick(now: number = Date.now()): Promise<TickR
 }
 
 /** Busy intervals from Google overlapping the window, as window busy items. */
+/** Where a grey busy block came from (VTID-04402). */
+export type ExternalBusySource = 'google' | 'microsoft' | 'apple';
+
 export async function listExternalBusy(
   userId: string,
   window: { from: string; to: string },
-): Promise<Array<{ id: string; event_id: string; start_time: string; end_time: string; busy: true; occurrence_index: null; event: null; source: 'google' }>> {
+): Promise<Array<{ id: string; event_id: string; start_time: string; end_time: string; busy: true; occurrence_index: null; event: null; source: ExternalBusySource }>> {
   if (!cfg()) return [];
   try {
+    // VTID-04402: Outlook and iCloud calendars write here too (source column).
     const rows = (await db(
-      `calendar_external_busy?select=id,start_time,end_time&user_id=eq.${encodeURIComponent(userId)}` +
+      `calendar_external_busy?select=id,source,start_time,end_time&user_id=eq.${encodeURIComponent(userId)}` +
         `&start_time=lt.${encodeURIComponent(window.to)}&end_time=gt.${encodeURIComponent(window.from)}&order=start_time.asc&limit=500`,
-    )) as Array<{ id: string; start_time: string; end_time: string }>;
+    )) as Array<{ id: string; source?: ExternalBusySource; start_time: string; end_time: string }>;
     return rows.map((r) => ({
-      id: `google:${r.id}`,
-      event_id: `google:${r.id}`,
+      id: `${r.source ?? 'google'}:${r.id}`,
+      event_id: `${r.source ?? 'google'}:${r.id}`,
       start_time: r.start_time,
       end_time: r.end_time,
       busy: true as const,
       occurrence_index: null,
       event: null,
-      source: 'google' as const,
+      source: r.source ?? 'google',
     }));
   } catch (err: any) {
     // The window must still render without the Google layer.

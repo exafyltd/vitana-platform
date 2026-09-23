@@ -246,7 +246,7 @@ describe('AC-5 through the dispatcher', () => {
       expect(body.status).toBe('working');
       release({ ok: true, result: { findings: 'still open' } });
       await jest.advanceTimersByTimeAsync(1);
-      const later = JSON.parse(runGetDelegationResult(session, { job_id: body.job_id }).result);
+      const later = JSON.parse((await runGetDelegationResult(session, { job_id: body.job_id })).result);
       expect(later).toMatchObject({ status: 'succeeded', result: { findings: 'still open' } });
     } finally {
       jest.useRealTimers();

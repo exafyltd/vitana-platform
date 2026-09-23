@@ -30,7 +30,10 @@ export type AuthType =
   // Vitana Media Hub). Resolver treats these as implicitly connected for
   // every authenticated user; dispatcher skips the token lookup and passes
   // an empty TokenPair to performAction.
-  | 'none';
+  | 'none'
+  // VTID-04404: an app-specific password the connector loads itself
+  // (Apple iCloud). The dispatcher skips the social_connections lookup.
+  | 'app_password';
 
 export interface OAuthConfig {
   authorize_url: string;

@@ -535,6 +535,52 @@ All four: RLS on (tables), no policies, `anon`/`authenticated` revoked — servi
 (source removed, VTID-04318); stage/tier on six known agents; five
 previously unregistered agents inserted.
 
+### connected_app_settings / apple_account_credentials — Connected Apps hub — APPLIED 2026-09-23 (VTID-04402..04405)
+**Purpose:** one on/off switch per Mail / Calendar / Contacts app on the
+Connected Apps screen (Gmail, Google Calendar, Google Contacts, Outlook Mail,
+Outlook Calendar, Apple Mail, Apple Calendar, iPhone Contacts, Android Contacts).
+Migration: `supabase/migrations/20260923200000_vtid_04402_connected_apps.sql`.
+
+```sql
+CREATE TABLE connected_app_settings (
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  app_id       TEXT NOT NULL,          -- one of the nine app ids (CHECK)
+  enabled      BOOLEAN NOT NULL DEFAULT false,
+  last_sync_at TIMESTAMPTZ,
+  last_result  JSONB,                  -- e.g. {"imported":120} or {"busy":14}
+  last_error   TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, app_id)
+);
+
+CREATE TABLE apple_account_credentials (
+  user_id           UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  tenant_id         UUID,
+  apple_id          TEXT NOT NULL,
+  secret_ciphertext BYTEA NOT NULL,    -- AES-256-GCM (AI_CREDENTIALS_ENC_KEY)
+  secret_iv         BYTEA NOT NULL,
+  secret_tag        BYTEA NOT NULL,
+  caldav_home_url   TEXT,
+  carddav_home_url  TEXT,
+  verified_at       TIMESTAMPTZ,
+  last_error        TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Both: RLS enabled, zero policies, REVOKE ALL from anon/authenticated → service role only.
+```
+
+**Also changed by the same migration:**
+- `social_connections.provider` CHECK also allows `'microsoft'` (Outlook Mail + Calendar share one Graph token).
+- `social_connections.scopes` now stores the scopes the provider actually **granted** (was: the configured list).
+- `contacts.source` / `contacts.external_id` + unique index `(user_id, source, external_id)` — imported contacts de-duplicate per source (`google`, `icloud`, `android`); hand-added contacts keep both NULL.
+- `calendar_external_busy.source` CHECK allows `'google','microsoft','apple'` — Outlook and iCloud busy times show as grey blocks too. Times only, never titles.
+
+**Rules:** tokens stay in `social_connections` (Google, Microsoft) or here encrypted (Apple). Turning an app off deletes what it left in Vitanaland (busy rows; imported contacts only when the member ticks it); turning the provider's last app off releases the grant (Google refresh token revoked, Microsoft tokens dropped, Apple credentials deleted).
+
+---
+
 ### Wallet System (USD / Credits / VTNA) — added 2026-07-17
 
 **This is the live, production system backing the wallet UI** (`useWallet.ts`

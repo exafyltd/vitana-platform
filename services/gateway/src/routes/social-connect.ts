@@ -20,9 +20,11 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   getOAuthUrl,
   parseOAuthState,
+  callbackProviderFor,
   exchangeCodeForTokens,
   fetchSocialProfile,
   storeSocialConnection,
@@ -41,6 +43,8 @@ import {
 import * as repo from './social-connect-repository';
 
 const router = Router();
+// VTID-04401: verify every bearer token before a handler reads the identity.
+router.use(optionalAuth);
 const LOG_PREFIX = '[SocialConnect]';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -51,7 +55,7 @@ const APP_URL = process.env.APP_URL || 'https://vitana.app';
 // YouTube is surfaced in the Music & Video section of /settings/connected-apps,
 // so its callback lands there too.
 function callbackRedirectPath(provider: string): string {
-  if (provider === 'google' || provider === 'youtube') return '/settings/connected-apps';
+  if (provider === 'google' || provider === 'youtube' || provider === 'microsoft') return '/settings/connected-apps';
   return '/settings/social';
 }
 
@@ -116,20 +120,14 @@ async function getServiceClient() {
   return createClient(url, key);
 }
 
-// Helper: extract user info from JWT
+// VTID-04401: the identity comes from optionalAuth, which VERIFIES the token.
+// This used to base64-decode the payload without checking the signature, so a
+// forged token naming any user id reached that user's connected accounts with
+// the service role.
 function extractUserFromJwt(req: Request): { userId: string; tenantId: string } | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const token = authHeader.split(' ')[1];
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    return {
-      userId: payload.sub,
-      tenantId: payload.app_metadata?.active_tenant_id || process.env.DEFAULT_TENANT_ID || '',
-    };
-  } catch {
-    return null;
-  }
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!identity?.user_id) return null;
+  return { userId: identity.user_id, tenantId: identity.tenant_id || process.env.DEFAULT_TENANT_ID || '' };
 }
 
 // =============================================================================
@@ -269,6 +267,10 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
 
   // From here on use the actual provider from state, not the URL path.
   const provider = stateData.provider;
+  // VTID-04401: a state signed for one provider cannot complete another's callback.
+  if (callbackProviderFor(provider) !== urlProvider) {
+    return errRedirect('invalid_state', urlProvider);
+  }
   returnMode = stateData.returnMode ?? returnMode;
 
   console.log(`${LOG_PREFIX} Processing callback for ${provider} (url:${urlProvider}, return:${returnMode ?? 'web'}), user ${stateData.userId.slice(0, 8)}…`);
@@ -303,7 +305,20 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
   // VTID-01928: Skip social enrichment for Google — it's a data-access connector,
   // not a profile-scraping one. Social providers (Instagram/Facebook/TikTok/etc.)
   // still run the enrichment pipeline for interest/topic extraction.
-  if (result.connection_id && provider !== 'google') {
+  // VTID-04402: a toggle on the Connected Apps screen started this grant —
+  // switch that app on and run its first sync now, so one tap is enough.
+  let enabledApp: string | undefined;
+  if (stateData.enableApp) {
+    try {
+      const { onGrantReturned } = await import('../services/connected-apps/hub');
+      const r = await onGrantReturned(stateData.userId, stateData.tenantId, stateData.enableApp);
+      if (r.ok) enabledApp = stateData.enableApp;
+    } catch (err: any) {
+      console.warn(`${LOG_PREFIX} enabling ${stateData.enableApp} after grant failed: ${err?.message}`);
+    }
+  }
+
+  if (result.connection_id && provider !== 'google' && provider !== 'microsoft') {
     enrichProfileFromSocial(supabase, stateData.userId, stateData.tenantId, result.connection_id)
       .then(enrichResult => {
         console.log(`${LOG_PREFIX} Enrichment for ${provider}: ${enrichResult.enrichments.join(', ') || 'none'}`);
@@ -317,6 +332,7 @@ router.get('/callback/:provider', async (req: Request, res: Response) => {
     status: 'ok',
     connected: provider,
     username: profile.username,
+    ...(enabledApp ? { app: enabledApp } : {}),
   }));
 });
 

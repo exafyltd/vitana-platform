@@ -18,6 +18,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { signOAuthState, verifyOAuthState } from '../lib/oauth-state';
 import * as repo from './social-connect-repository';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
@@ -33,12 +34,25 @@ const GATEWAY_URL = process.env.GATEWAY_PUBLIC_URL || process.env.APP_URL || 'ht
 // so users connecting YouTube don't have to grant mail and calendar access.
 export type SocialProvider =
   | 'instagram' | 'facebook' | 'tiktok' | 'youtube' | 'linkedin' | 'twitter'
-  | 'google';
+  | 'google' | 'microsoft';
 
 export const SUPPORTED_PROVIDERS: SocialProvider[] = [
   'instagram', 'facebook', 'tiktok', 'youtube', 'linkedin', 'twitter',
-  'google',
+  'google', 'microsoft',
 ];
+
+/**
+ * VTID-04403: Microsoft Graph sign-in (Outlook Mail + Outlook Calendar).
+ * `common` accepts work/school and personal Microsoft accounts; a single-
+ * tenant app registration can pin its own tenant with MICROSOFT_OAUTH_TENANT.
+ */
+function microsoftTenant(): string {
+  const t = (process.env.MICROSOFT_OAUTH_TENANT || 'common').trim();
+  return /^[A-Za-z0-9.-]+$/.test(t) ? t : 'common';
+}
+
+/** Scopes every Microsoft grant carries: sign-in, refresh token, profile. */
+export const MICROSOFT_BASE_SCOPES = ['openid', 'email', 'profile', 'offline_access', 'User.Read'];
 
 interface ProviderConfig {
   name: string;
@@ -125,7 +139,40 @@ const PROVIDER_CONFIGS: Record<SocialProvider, ProviderConfig> = {
     clientIdEnv: 'GOOGLE_OAUTH_CLIENT_ID',
     clientSecretEnv: 'GOOGLE_OAUTH_CLIENT_SECRET',
   },
+  // VTID-04403: Outlook Mail + Outlook Calendar ride on one Microsoft Graph
+  // token. The Connected Apps hub asks only for the scopes of the app being
+  // switched on (extraScopes); this list is the fallback bundle.
+  microsoft: {
+    name: 'Microsoft',
+    authUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    profileUrl: 'https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName',
+    scopes: [...MICROSOFT_BASE_SCOPES, 'Mail.Read', 'Calendars.Read'],
+    clientIdEnv: 'MICROSOFT_OAUTH_CLIENT_ID',
+    clientSecretEnv: 'MICROSOFT_OAUTH_CLIENT_SECRET',
+  },
 };
+
+/** Authorize / token URLs, with the Microsoft tenant applied. */
+function providerAuthUrl(provider: SocialProvider): string {
+  const url = PROVIDER_CONFIGS[provider].authUrl;
+  return provider === 'microsoft' ? url.replace('/common/', `/${microsoftTenant()}/`) : url;
+}
+function providerTokenUrl(provider: SocialProvider): string {
+  const url = PROVIDER_CONFIGS[provider].tokenUrl;
+  return provider === 'microsoft' ? url.replace('/common/', `/${microsoftTenant()}/`) : url;
+}
+
+/** VTID-04403: the provider's configured default scopes (for status checks). */
+export function providerDefaultScopes(provider: SocialProvider): string[] {
+  return [...PROVIDER_CONFIGS[provider].scopes];
+}
+
+/** VTID-04402: whether a provider's OAuth client is configured on this stack. */
+export function isProviderConfigured(provider: SocialProvider, env: NodeJS.ProcessEnv = process.env): boolean {
+  const c = PROVIDER_CONFIGS[provider];
+  return !!(c && env[c.clientIdEnv] && env[c.clientSecretEnv]);
+}
 
 // =============================================================================
 // OAuth URL Generation
@@ -176,6 +223,13 @@ export interface GetOAuthUrlOptions {
   includeServices?: GoogleSubService[];
   /** Phase 4: 'incremental' drops `prompt=consent` so Google merges new scopes onto the user's existing grant instead of forcing a full re-consent. */
   mode?: 'full' | 'incremental';
+  /**
+   * VTID-04402: exact scope list to request (the Connected Apps hub asks
+   * only for the app being switched on). Wins over includeServices.
+   */
+  scopesOverride?: string[];
+  /** VTID-04402: Connected App to switch on once the grant comes back. */
+  enableApp?: string;
 }
 
 /**
@@ -190,7 +244,7 @@ export function getOAuthUrl(
   tenantId: string,
   options: GetOAuthUrlOptions = {},
 ): { url: string; error?: string } {
-  const { returnMode = 'web', includeServices, mode = 'full' } = options;
+  const { returnMode = 'web', includeServices, mode = 'full', scopesOverride, enableApp } = options;
   const config = PROVIDER_CONFIGS[provider];
   if (!config) return { url: '', error: `Unsupported provider: ${provider}` };
 
@@ -200,16 +254,22 @@ export function getOAuthUrl(
   }
 
   const callbackUrl = `${GATEWAY_URL}/api/v1/social-accounts/callback/${callbackProviderFor(provider)}`;
-  const state = Buffer.from(
-    JSON.stringify({ userId, tenantId, provider, returnMode, includeServices }),
-  ).toString('base64url');
+  // VTID-04401: signed, expiring state — the callback has no bearer token,
+  // so this is the only proof of which user the provider account belongs to.
+  let state: string;
+  try {
+    state = signOAuthState({ userId, tenantId, provider, returnMode, includeServices, enableApp });
+  } catch {
+    return { url: '', error: 'OAuth state signing is not configured.' };
+  }
 
   // Phase 3: when the unified Google flow passes includeServices, replace
   // the provider's default scope list with the union of the selected
   // sub-services (plus openid/email/profile so we still get a userinfo
   // round-trip to populate provider_username).
-  const scopes =
-    provider === 'google' && includeServices && includeServices.length > 0
+  const scopes = scopesOverride && scopesOverride.length > 0
+    ? Array.from(new Set(scopesOverride))
+    : provider === 'google' && includeServices && includeServices.length > 0
       ? Array.from(
           new Set([
             'openid',
@@ -251,7 +311,14 @@ export function getOAuthUrl(
     }
   }
 
-  return { url: `${config.authUrl}?${params.toString()}` };
+  if (provider === 'microsoft') {
+    // Show the account picker so a member with several Microsoft accounts
+    // chooses one, and let Microsoft merge new scopes onto the grant.
+    params.set('prompt', 'select_account');
+    params.set('response_mode', 'query');
+  }
+
+  return { url: `${providerAuthUrl(provider)}?${params.toString()}` };
 }
 
 /**
@@ -263,12 +330,12 @@ export function parseOAuthState(state: string): {
   provider: SocialProvider;
   returnMode?: OAuthReturnMode;
   includeServices?: GoogleSubService[];
+  enableApp?: string;
 } | null {
-  try {
-    return JSON.parse(Buffer.from(state, 'base64url').toString());
-  } catch {
-    return null;
-  }
+  // VTID-04401: unsigned, tampered or expired state is rejected.
+  const parsed = verifyOAuthState<Record<string, unknown>>(state);
+  if (!parsed || typeof parsed.userId !== 'string' || typeof parsed.provider !== 'string') return null;
+  return parsed as any;
 }
 
 /**
@@ -301,6 +368,8 @@ export async function exchangeCodeForTokens(
   access_token: string;
   refresh_token?: string;
   expires_in?: number;
+  /** VTID-04402: scopes the provider says it granted (space-separated in the response). */
+  scopes_granted?: string[];
   error?: string;
 }> {
   const config = PROVIDER_CONFIGS[provider];
@@ -329,7 +398,7 @@ export async function exchangeCodeForTokens(
       delete body.client_id;
     }
 
-    const resp = await fetch(config.tokenUrl, {
+    const resp = await fetch(providerTokenUrl(provider), {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(body).toString(),
@@ -346,6 +415,9 @@ export async function exchangeCodeForTokens(
       access_token: data.access_token,
       refresh_token: data.refresh_token,
       expires_in: data.expires_in,
+      scopes_granted: typeof data.scope === 'string'
+        ? data.scope.split(/[\s,]+/).filter(Boolean)
+        : undefined,
     };
   } catch (err: any) {
     return { access_token: '', error: err.message };
@@ -502,6 +574,26 @@ function normalizeProfile(provider: SocialProvider, data: any): SocialProfile {
         interests: [],
         raw: data,
       };
+    case 'microsoft': {
+      // VTID-04403: Graph /me — work/school accounts carry `mail`,
+      // personal accounts often only `userPrincipalName`.
+      const email = data.mail || data.userPrincipalName || '';
+      return {
+        provider_user_id: data.id || '',
+        username: email,
+        display_name: data.displayName || email,
+        avatar_url: '',
+        profile_url: '',
+        bio: '',
+        location: '',
+        website: '',
+        followers_count: 0,
+        following_count: 0,
+        posts_count: 0,
+        interests: [],
+        raw: data,
+      };
+    }
     case 'google':
       // Google userinfo (OpenID Connect) returns sub/email/name/picture.
       return {
@@ -559,7 +651,7 @@ export async function storeSocialConnection(
   userId: string,
   tenantId: string,
   provider: SocialProvider,
-  tokens: { access_token: string; refresh_token?: string; expires_in?: number },
+  tokens: { access_token: string; refresh_token?: string; expires_in?: number; scopes_granted?: string[] },
   profile: SocialProfile,
 ): Promise<{ ok: boolean; connection_id?: string; error?: string }> {
   const tokenExpiresAt = tokens.expires_in
@@ -576,9 +668,17 @@ export async function storeSocialConnection(
     avatar_url: profile.avatar_url,
     profile_url: profile.profile_url,
     access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token || null,
+    // VTID-04402: an incremental consent often returns no refresh_token;
+    // keep the stored one rather than overwriting it with null.
+    ...(tokens.refresh_token ? { refresh_token: tokens.refresh_token } : {}),
     token_expires_at: tokenExpiresAt,
-    scopes: PROVIDER_CONFIGS[provider].scopes,
+    // VTID-04402: what the provider actually granted, so the Connected Apps
+    // hub can tell whether (say) Gmail is covered. Google returns the full
+    // accumulated set with include_granted_scopes; Microsoft the set for the
+    // token. Falls back to the configured list when a provider sends none.
+    scopes: tokens.scopes_granted && tokens.scopes_granted.length > 0
+      ? tokens.scopes_granted
+      : PROVIDER_CONFIGS[provider].scopes,
     profile_data: profile.raw,
     enrichment_status: 'pending',
     connected_at: new Date().toISOString(),

@@ -1589,6 +1589,10 @@ ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED=true
 # read-only findings about the caller's own partner organizations. Exact
 # 'true' enables; unset = not registered, not declared.
 ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED=true
+# Delegation jobs written through to the agent_runs ledger (VTID-04415), so a
+# specialist's result survives a gateway task change. Exact 'true' enables;
+# unset = in-memory only, as before. Fail-open.
+ORCHESTRATOR_DELEGATION_PERSIST_ENABLED=true
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

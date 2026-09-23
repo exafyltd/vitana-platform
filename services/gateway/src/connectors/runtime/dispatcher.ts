@@ -107,6 +107,11 @@ async function refreshIfExpired(
     await repo.updateSocialConnectionTokens(supabase, connectionId, {
       access_token: fresh.access_token,
       token_expires_at: fresh.expires_at ?? null,
+      // VTID-04403: providers that rotate refresh tokens (Microsoft) return
+      // a new one; store it so the next refresh does not use a stale token.
+      ...(fresh.refresh_token && fresh.refresh_token !== stored.refresh_token
+        ? { refresh_token: fresh.refresh_token }
+        : {}),
       updated_at: new Date().toISOString(),
     });
     console.log(`${LOG} refreshed ${connectorId} token, new expiry ${fresh.expires_at}`);
@@ -189,7 +194,9 @@ export async function dispatchAction(
   let providerUserId: string | undefined;
   let providerUsername: string | undefined;
 
-  if (connector.auth_type === 'none') {
+  if (connector.auth_type === 'none' || connector.auth_type === 'app_password') {
+    // 'app_password' connectors (Apple, VTID-04404) load their own
+    // encrypted credentials from ctx.user_id inside performAction.
     tokens = { access_token: '' };
   } else {
     const providers = storageProvidersFor(opts.connectorId, opts.capability);

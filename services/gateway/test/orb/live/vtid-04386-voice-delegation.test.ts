@@ -80,10 +80,10 @@ describe('async operator_delegate (AC-2, AC-3)', () => {
     const body = JSON.parse(first.result);
     expect(body).toMatchObject({ status: 'working', job_id: expect.any(String) });
 
-    expect(JSON.parse(runGetDelegationResult(hubSession(), { job_id: body.job_id }).result)).toMatchObject({ status: 'running' });
+    expect(JSON.parse((await runGetDelegationResult(hubSession(), { job_id: body.job_id })).result)).toMatchObject({ status: 'running' });
     release!({ success: true, result: JSON.stringify({ operator_reply: 'VTID-1 is done' }) });
     await flush();
-    const later = JSON.parse(runGetDelegationResult(hubSession(), {}).result);
+    const later = JSON.parse((await runGetDelegationResult(hubSession(), {})).result);
     expect(later).toMatchObject({ status: 'succeeded', result: { operator_reply: 'VTID-1 is done' } });
   }, 10000);
 
@@ -92,15 +92,15 @@ describe('async operator_delegate (AC-2, AC-3)', () => {
     expect(runCancelDelegation(hubSession(), {}).success).toBe(true);
     release!({ success: true, result: '{"operator_reply":"late"}' });
     await flush();
-    expect(JSON.parse(runGetDelegationResult(hubSession(), { job_id: body.job_id }).result)).toMatchObject({ status: 'cancelled', result: null });
+    expect(JSON.parse((await runGetDelegationResult(hubSession(), { job_id: body.job_id })).result)).toMatchObject({ status: 'cancelled', result: null });
   }, 10000);
 });
 
 describe('isolation (AC-4)', () => {
   test('another surface or user cannot read the job', async () => {
     const body = JSON.parse((await runOperatorDelegateAsync(hubSession(), { request: 'x' })).result);
-    expect(runGetDelegationResult({ sessionId: 's9', current_route: '/home', identity: ADMIN }, { job_id: body.job_id }).success).toBe(false);
-    expect(runGetDelegationResult(hubSession({ identity: { ...ADMIN, user_id: 'other' } }), { job_id: body.job_id }).success).toBe(false);
+    expect((await runGetDelegationResult({ sessionId: 's9', current_route: '/home', identity: ADMIN }, { job_id: body.job_id })).success).toBe(false);
+    expect((await runGetDelegationResult(hubSession({ identity: { ...ADMIN, user_id: 'other' } }), { job_id: body.job_id })).success).toBe(false);
     expect(runCancelDelegation({ sessionId: 's9', current_route: '/home', identity: ADMIN }, { job_id: body.job_id }).success).toBe(false);
   }, 10000);
 });
