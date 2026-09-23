@@ -1,6 +1,6 @@
 /**
  * VTID-04403: Microsoft connector — Outlook Mail and Outlook Calendar over
- * Microsoft Graph. Mirrors the Google connector's capability shape so the
+ * Microsoft Graph (and Outlook Contacts since VTID-04449). Mirrors the Google connector's capability shape so the
  * assistant can say "check my Outlook" exactly the way it checks Gmail.
  *
  * Tokens live in social_connections (provider 'microsoft'), written by the
@@ -103,7 +103,7 @@ const microsoftConnector: Connector = {
   category: 'productivity',
   display_name: 'Microsoft',
   auth_type: 'oauth2',
-  capabilities: ['email.read', 'email.send', 'calendar.list', 'calendar.create'],
+  capabilities: ['email.read', 'email.send', 'calendar.list', 'calendar.create', 'contacts.read'],
 
   async initialize(): Promise<void> {
     if (!process.env.MICROSOFT_OAUTH_CLIENT_ID || !process.env.MICROSOFT_OAUTH_CLIENT_SECRET) {
@@ -236,6 +236,39 @@ const microsoftConnector: Connector = {
           external_id: r.json?.id,
           url: r.json?.webLink,
           raw: { action: 'ack', summary: subject, start: s.toISOString(), end: e.toISOString(), html_link: r.json?.webLink },
+        };
+      }
+
+      // VTID-04449: Outlook address book, optional name/email/phone filter.
+      case 'contacts.read': {
+        const q = typeof action.args?.query === 'string' ? (action.args.query as string).trim().toLowerCase() : '';
+        const limit = Math.max(1, Math.min(200, Number(action.args?.limit ?? 50) || 50));
+        const r = await graph(
+          token,
+          'GET',
+          `/me/contacts?$select=displayName,givenName,surname,emailAddresses,mobilePhone,homePhones,businessPhones&$top=${q ? 500 : limit}`,
+        );
+        if (isMissingScope(r)) return missingScope('contacts.read', 'outlook-contacts');
+        if (!r.ok) return { ok: false, error: `Outlook contacts list failed: ${r.errorMessage}` };
+        const all = (r.json?.value ?? []).map((c: any) => ({
+          name: c.displayName || [c.givenName, c.surname].filter(Boolean).join(' '),
+          emails: (c.emailAddresses ?? []).map((e: any) => e?.address).filter(Boolean) as string[],
+          phones: [c.mobilePhone, ...(c.homePhones ?? []), ...(c.businessPhones ?? [])].filter(Boolean) as string[],
+        })).filter((c: any) => c.name || c.emails.length || c.phones.length);
+        const filtered = q
+          ? all.filter((c: any) =>
+              String(c.name ?? '').toLowerCase().includes(q) ||
+              c.emails.some((e: string) => e.toLowerCase().includes(q)) ||
+              c.phones.some((p: string) => p.toLowerCase().includes(q)))
+          : all;
+        return {
+          ok: true,
+          raw: {
+            action: 'structured_list',
+            contacts: filtered.slice(0, limit),
+            total: filtered.length,
+            summary: `${filtered.length} contact${filtered.length === 1 ? '' : 's'}${q ? ` matching "${q}"` : ''}.`,
+          },
         };
       }
 

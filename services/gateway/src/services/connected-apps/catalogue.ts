@@ -1,8 +1,8 @@
 /**
- * VTID-04402: the nine mail / calendar / contacts apps on the Connected Apps
- * screen, as one catalogue. The app renders from this (via GET
- * /api/v1/connected-apps), so an app is never shown with a Connect button
- * the backend cannot honour.
+ * VTID-04402: the mail / calendar / contacts apps on the Connected Apps
+ * screen (ten since VTID-04449 added Outlook Contacts), as one catalogue.
+ * The app renders from this (via GET /api/v1/connected-apps), so an app is
+ * never shown with a Connect button the backend cannot honour.
  *
  * Three ways to connect:
  *   oauth         — Google or Microsoft consent screen; one token per
@@ -82,6 +82,17 @@ export const CONNECTED_APPS: ConnectedAppDef[] = [
     sync: 'calendar_busy',
   },
   {
+    // VTID-04449: Outlook / Microsoft 365 address book, imported the same way
+    // as Google and iPhone contacts.
+    id: 'outlook-contacts',
+    provider: 'microsoft',
+    kind: 'contacts',
+    method: 'oauth',
+    scopes: ['Contacts.Read'],
+    capabilities: ['contacts.read', 'contacts.import'],
+    sync: 'contacts_import',
+  },
+  {
     id: 'apple-mail',
     provider: 'apple',
     kind: 'mail',
@@ -144,6 +155,7 @@ export function scopesCover(granted: string[] | null | undefined, needed: string
     // A broader Microsoft grant covers the narrower one.
     if (want === 'calendars.read' && have.has('calendars.readwrite')) return true;
     if (want === 'mail.read' && have.has('mail.readwrite')) return true;
+    if (want === 'contacts.read' && have.has('contacts.readwrite')) return true;
     return false;
   });
 }

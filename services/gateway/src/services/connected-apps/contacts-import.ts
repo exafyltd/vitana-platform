@@ -1,6 +1,6 @@
 /**
- * VTID-04405: import a member's contacts from Google, iCloud or their
- * Android phone into Vitanaland's `contacts` table.
+ * VTID-04405: import a member's contacts from Google, iCloud, Outlook
+ * (VTID-04449) or their Android phone into Vitanaland's `contacts` table.
  *
  * - De-duplicated per source (user_id, source, external_id): a second sync
  *   updates names/emails/phones instead of adding copies.
@@ -18,7 +18,7 @@
 
 import { db, enc } from './db';
 
-export type ContactSource = 'google' | 'icloud' | 'android';
+export type ContactSource = 'google' | 'icloud' | 'microsoft' | 'android';
 
 export interface ImportContact {
   external_id: string;
@@ -218,6 +218,37 @@ export async function fetchGoogleContacts(token: string): Promise<ImportContact[
     }
     pageToken = json?.nextPageToken ?? '';
     if (!pageToken || out.length >= MAX_CONTACTS_PER_IMPORT) break;
+  }
+  return out;
+}
+
+/**
+ * VTID-04449: every contact in the member's Outlook / Microsoft 365
+ * address book (Graph /me/contacts, all pages). Only names, e-mail
+ * addresses and phone numbers are read.
+ */
+export async function fetchOutlookContacts(token: string): Promise<ImportContact[]> {
+  const out: ImportContact[] = [];
+  let url: string | null =
+    'https://graph.microsoft.com/v1.0/me/contacts' +
+    '?$select=id,displayName,givenName,surname,emailAddresses,mobilePhone,homePhones,businessPhones&$top=500';
+  for (let page = 0; url && page < 20; page++) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const json: any = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (r.status === 403) throw new Error('permission_not_granted');
+      throw new Error(`outlook_contacts ${r.status}: ${json?.error?.message ?? r.statusText}`);
+    }
+    for (const c of json?.value ?? []) {
+      out.push({
+        external_id: String(c.id ?? ''),
+        name: c.displayName || [c.givenName, c.surname].filter(Boolean).join(' '),
+        emails: (c.emailAddresses ?? []).map((e: any) => e?.address).filter(Boolean),
+        phones: [c.mobilePhone, ...(c.homePhones ?? []), ...(c.businessPhones ?? [])].filter(Boolean),
+      });
+    }
+    url = json?.['@odata.nextLink'] ?? null;
+    if (out.length >= MAX_CONTACTS_PER_IMPORT) break;
   }
   return out;
 }

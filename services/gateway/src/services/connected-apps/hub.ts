@@ -329,7 +329,10 @@ export async function disconnectApp(
   }
   if (opts.removeData && app.kind === 'contacts') {
     const { removeImportedContacts } = await import('./contacts-import');
-    const source = app.provider === 'google' ? 'google' : app.provider === 'apple' ? 'icloud' : 'android';
+    const source = app.provider === 'google' ? 'google'
+      : app.provider === 'apple' ? 'icloud'
+      : app.provider === 'microsoft' ? 'microsoft'
+      : 'android';
     await removeImportedContacts(userId, source);
   }
 
@@ -449,6 +452,13 @@ async function runSync(userId: string, app: ConnectedAppDef): Promise<Record<str
       if (!token) throw new Error('not_connected');
       const { fetchGoogleContacts, importContacts } = await import('./contacts-import');
       const r = await importContacts(userId, 'google', await fetchGoogleContacts(token));
+      return { ...r };
+    }
+    case 'outlook-contacts': {
+      const token = await providerToken(userId, 'microsoft');
+      if (!token) throw new Error('not_connected');
+      const { fetchOutlookContacts, importContacts } = await import('./contacts-import');
+      const r = await importContacts(userId, 'microsoft', await fetchOutlookContacts(token));
       return { ...r };
     }
     case 'google-calendar': {
@@ -606,7 +616,7 @@ export async function runConnectedAppsTick(now: number = Date.now()): Promise<{ 
   if (!dbConfigured()) return { synced: 0, failed: 0 };
   const rows = (await db(
     `connected_app_settings?select=user_id,app_id,last_sync_at&enabled=eq.true` +
-      `&app_id=in.(outlook-calendar,apple-calendar,google-contacts,iphone-contacts)&order=last_sync_at.asc.nullsfirst&limit=500`,
+      `&app_id=in.(outlook-calendar,apple-calendar,google-contacts,iphone-contacts,outlook-contacts)&order=last_sync_at.asc.nullsfirst&limit=500`,
   )) as Array<{ user_id: string; app_id: string; last_sync_at: string | null }>;
   let synced = 0;
   let failed = 0;

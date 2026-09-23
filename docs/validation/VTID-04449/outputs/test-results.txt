@@ -1,0 +1,12 @@
+$ npx jest test/vtid-04449-outlook-contacts.test.ts test/vtid-04402-connected-apps.test.ts
+Test Suites: 2 passed, 2 total
+Tests:       43 passed, 43 total
+$ npx tsc --noEmit -p .        # clean
+$ npx jest test/routes/connected-apps.test.ts test/vtid-04436-calendar-push.test.ts test/vtid-04439-contacts-import-collisions.test.ts test/vtid-04372
+Test Suites: 4 passed, 4 total
+Tests:       53 passed, 53 total
+$ IMPACT_SCAN_DRY_RUN=true IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs
+[impact-scan] findings: blocker=0 warning=0 info=0 total=0
+-- Supabase (apply_migration vtid_04449_outlook_contacts_app), then:
+select pg_get_constraintdef(oid) from pg_constraint where conname='connected_app_settings_app_id_check';
+-> CHECK (app_id = ANY (ARRAY['gmail','google-calendar','google-contacts','outlook-mail','outlook-calendar','outlook-contacts','apple-mail','apple-calendar','iphone-contacts','android-contacts']))
