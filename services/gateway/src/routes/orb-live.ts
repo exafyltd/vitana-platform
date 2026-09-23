@@ -41,6 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
+import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
@@ -732,13 +733,12 @@ export async function resolveEffectiveRole(
     fetchUserRolePreference(userId, tenantId),
     fetchUserActiveRole(userId, tenantId),
   ]);
-  if (pref) {
-    if (tenantRole && pref !== tenantRole) {
-      console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
-    }
-    return pref;
+  if (pref && tenantRole && pref !== tenantRole) {
+    console.log(`[BOOTSTRAP-ORB-ROLE-SYNC] role_preference="${pref}" overrides user_tenants.active_role="${tenantRole}" for user=${userId.substring(0, 8)}...`);
   }
-  return tenantRole;
+  // VTID-04318: the rule lives in orchestrator/active-role.ts so the AP
+  // executor targets users on exactly the role the ORB addresses them as.
+  return pickEffectiveRole(pref, tenantRole);
 }
 
 /**

@@ -17,6 +17,7 @@
  * 4. Accessibility - WCAG compliance check
  */
 
+import { gatewayBaseUrl } from '../env';
 import { emitOasisEvent } from './oasis-event-service';
 import { getVtidSpec, getSpecDomain } from './vtid-spec-service';
 
@@ -87,7 +88,7 @@ const CONFIG = {
 // Service to URL mapping
 const SERVICE_URLS: Record<string, string> = {
   'temp_vitana_v1': process.env.FRONTEND_URL || 'https://temp-vitana-v1.lovable.app',
-  'gateway': process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app',
+  'gateway': gatewayBaseUrl(),
 };
 
 // =============================================================================

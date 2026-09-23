@@ -200,7 +200,7 @@ function buildDeterministicSpec(diagnosis: Diagnosis): string {
 
   const curlEndpoint = d.endpoint.startsWith('http')
     ? d.endpoint
-    : `https://vitana-gateway-<hash>-uc.a.run.app${d.endpoint}`;
+    : `https://gateway.vitanaland.com${d.endpoint}`;
 
   const breakingCommitInfo = ga?.breaking_commit
     ? `\n\nIf fix causes regression, revert to commit \`${ga.breaking_commit.sha.slice(0, 8)}\` (pre-breaking state).`
@@ -278,7 +278,7 @@ curl -s ${curlEndpoint} | jq .
 # { "ok": true, ... }
 
 # Verify no blast radius — check gateway root health
-curl -s https://vitana-gateway-<hash>-uc.a.run.app/health | jq .
+curl -s https://gateway.vitanaland.com/health | jq .
 
 # Check OASIS event was recorded
 curl -s "${SUPABASE_URL ?? 'https://<project>.supabase.co'}/rest/v1/oasis_events?vtid=eq.${d.vtid}&topic=eq.self-healing.fix.applied&order=created_at.desc&limit=1" \\

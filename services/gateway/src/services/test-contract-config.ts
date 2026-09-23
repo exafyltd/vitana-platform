@@ -11,12 +11,13 @@
  * probe worker-runner's /alive, /metrics, /ready, /live, and a future
  * operator-armed canary endpoint.
  */
+import { gatewayBaseUrl } from '../env';
 
 export function contractGatewayBaseUrl(): string {
   return (
     process.env.GATEWAY_INTERNAL_BASE_URL ||
     process.env.GATEWAY_PUBLIC_URL ||
-    'https://gateway-86804897789.us-central1.run.app'
+    gatewayBaseUrl()
   );
 }
 
@@ -24,7 +25,10 @@ export function contractWorkerRunnerBaseUrl(): string {
   return (
     process.env.WORKER_RUNNER_INTERNAL_BASE_URL ||
     process.env.WORKER_RUNNER_PUBLIC_URL ||
-    'https://worker-runner-86804897789.us-central1.run.app'
+    // VTID-04318: worker-runner has no public URL on AWS (CLAUDE.md §1b —
+    // it polls outward, no ALB). The old default was a deleted Cloud Run
+    // host; an unset URL now fails the probe as base_url_not_configured.
+    ''
   );
 }
 

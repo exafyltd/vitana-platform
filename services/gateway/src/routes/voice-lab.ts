@@ -9,6 +9,7 @@
  * - GET /api/v1/voice-lab/live/sessions/:sessionId/turns - Get session turns
  */
 
+import { gatewayBaseUrl } from '../env';
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
@@ -147,7 +148,7 @@ function livekitTestsAuthGate(
       const audience =
         process.env.LIVEKIT_TESTS_GCP_AUDIENCE ??
         process.env.GATEWAY_SELF_URL ??
-        'https://gateway-86804897789.us-central1.run.app';
+        gatewayBaseUrl();
       const client = new OAuth2Client();
       const ticket = await client.verifyIdToken({ idToken: token, audience });
       const payload = ticket.getPayload();
