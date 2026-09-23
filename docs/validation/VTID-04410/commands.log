@@ -1,0 +1,4 @@
+cd services/gateway
+npx jest test/services/vtid-04410-genai-semconv.test.ts   # 6/6 passed
+npx tsc --noEmit                                           # clean
+npx jest <40 suites referencing llm-telemetry / llm-router / llm.call>   # 40/40 suites, 461/461 tests passed
