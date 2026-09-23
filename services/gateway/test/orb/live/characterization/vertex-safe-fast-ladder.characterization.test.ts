@@ -59,7 +59,9 @@ describe('VTID-03366 / 1c: safe-fast ladder lives in the brain; transport gather
     expect(orbLive).toMatch(/_sfDecision\.effects\.stampBriefingDate/);
     expect(orbLive).toMatch(/_sfDecision\.effects\.recordNbaKey/);
     expect(orbLive).toMatch(/_sfDecision\.effects\.armWatchdog/);
-    expect(orbLive).toMatch(/emitDiag\(session, 'greeting_sent', _sfDecision\.diag\)/);
+    // VTID-04369: the brain's diag is still what is emitted, wrapped so every
+    // opener carries the Monitor columns.
+    expect(orbLive).toMatch(/emitDiag\(session, 'greeting_sent', withGreetingMonitorFields\(_sfDecision\.diag,/);
   });
 
   it('orb-live.ts no longer carries any inline safe-fast / conv_resume decision branch', () => {

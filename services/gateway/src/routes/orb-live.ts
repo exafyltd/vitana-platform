@@ -366,6 +366,7 @@ import {
   tryDayCloseRung,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
 
 // VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
 // decision.ts for the full incident writeup): Bedrock's content filter
@@ -10497,7 +10498,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 });
               }
             }
-            emitDiag(session, 'greeting_sent', _sfDecision.diag);
+            // VTID-04369: every opener carries the Monitor columns.
+            emitDiag(session, 'greeting_sent', withGreetingMonitorFields(_sfDecision.diag, {
+              bucket: _temporalSF.bucket,
+              currentRoute: session.current_route ?? null,
+              lang: greetLang,
+            }));
             if (_sfDecision.effects.armWatchdog) {
               startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
             }
@@ -10712,7 +10718,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       // closed a day_close one", so a plain last-value stash is enough; no
       // history, no other reader.
       (session as any)._lastWakeOpener = decision.wakeOpener;
-      emitDiag(session, 'greeting_sent', decision.diag);
+      // VTID-04369: every opener carries the Monitor columns.
+      emitDiag(session, 'greeting_sent', withGreetingMonitorFields(decision.diag, {
+        bucket: _temporalSync.bucket,
+        currentRoute: session.current_route ?? null,
+        lang,
+      }));
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
       }

@@ -33,6 +33,7 @@ import type {
   UpstreamConnectOptions,
   UpstreamConnectionState,
   UpstreamErrorEvent,
+  NovaFailureKind,
   UpstreamLiveClient,
   UpstreamToolResult,
   UpstreamUsageEvent,
@@ -85,6 +86,31 @@ export function classifyNovaError(err: unknown): NovaFailureCode {
     return 'nova_stream_error';
   }
   return 'nova_stream_error';
+}
+
+/**
+ * VTID-04369 (WS-0.6) — split `nova_validation` into what it really was.
+ *
+ * Measured over 30 days of production `upstream_error` diags, one code covered
+ * three unrelated failures: the idle-stream timeout ("Timed out waiting for
+ * audio bytes or interactive content … less than 55/295 seconds", 94), a
+ * protocol-ordering error of ours ("All contents must be closed before ending
+ * prompt", 38) and the real guardrail block ("blocked by our content
+ * filters", 37). Returns null for every other code, so the field is only ever
+ * set where it means something.
+ */
+export function classifyNovaFailureKind(
+  code: string,
+  diagnostic: string | null | undefined,
+): NovaFailureKind | null {
+  if (code !== 'nova_validation') return null;
+  const d = (diagnostic ?? '').toLowerCase();
+  if (d.includes('content filter')) return 'content_filter';
+  if (d.includes('timed out waiting for audio bytes') || d.includes('interactive content are less than')) {
+    return 'idle_timeout';
+  }
+  if (d.includes('all contents must be closed')) return 'prompt_protocol';
+  return 'other';
 }
 
 /**
@@ -959,6 +985,9 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   }
 
   private emitError(err: UpstreamErrorEvent): void {
+    // VTID-04369: every nova_validation carries what it really was.
+    const kind = classifyNovaFailureKind(err.code, err.diagnostic);
+    if (kind && !err.failure_kind) err = { ...err, failure_kind: kind };
     // One typed error per failure; never spam identical categories.
     if (this.errorEmitted && (err.code === 'nova_stream_error' || err.code === 'nova_stream_timeout')) {
       return;

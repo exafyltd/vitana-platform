@@ -2120,6 +2120,8 @@ export function handleUpstreamError(
   ctx.deps.emitDiag(ctx.session, 'upstream_error', {
     code: event.code,
     diagnostic: (event as { diagnostic?: string }).diagnostic ?? null,
+    // VTID-04369: null for every code except nova_validation.
+    failure_kind: (event as { failure_kind?: string }).failure_kind ?? null,
   });
   ctx.callbacks.onError(new Error(`${event.code}: ${event.message}`));
 }
