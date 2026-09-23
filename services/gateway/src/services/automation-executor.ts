@@ -17,6 +17,13 @@ import { AutomationDefinition, AutomationContext, RunStatus, TriggerType, RoleTa
 import { getAutomation, getHeartbeatAutomations, getEventAutomations, automationTargetsRole } from './automation-registry';
 import { notifyUserAsync } from './notification-service';
 import * as repo from './automation-executor-repository';
+import {
+  resolveAutomationDeliveryMode,
+  SHADOW_UNSAFE_HANDLERS,
+  createShadowRecorder,
+  createShadowSupabase,
+  summarizeShadow,
+} from './automation-shadow';
 
 // ── Notification throttle ────────────────────────────────────
 // Tracks daily notification counts per user to prevent flooding.
@@ -259,8 +266,17 @@ export async function executeAutomation(
     return { ok: true, skipped: true, error: 'EXECUTION_DISARMED' };
   }
 
+  // VTID-04349: shadow mode (staging) never runs a handler that can reach a
+  // member through a path the shadow wrapper does not cover.
+  const deliveryMode = resolveAutomationDeliveryMode();
+  if (deliveryMode === 'shadow' && SHADOW_UNSAFE_HANDLERS.has(definition.handler)) {
+    console.log(`[AutomationExecutor] Shadow mode: ${automationId} (${definition.handler}) not run — it delivers outside ctx`);
+    return { ok: true, skipped: true, error: 'SHADOW_UNSAFE_HANDLER' };
+  }
+
   const supabase = await getServiceClient();
   if (!supabase) return { ok: false, error: 'Supabase not configured' };
+  const shadow = deliveryMode === 'shadow' ? createShadowRecorder() : null;
 
   const targetRoles: RoleTarget = definition.targetRoles;
 
@@ -272,7 +288,8 @@ export async function executeAutomation(
   const ctx: AutomationContext = {
     tenantId,
     targetRoles,
-    supabase,
+    supabase: shadow ? createShadowSupabase(supabase, shadow) : supabase,
+    deliveryMode,
     run: {
       id: runId,
       tenant_id: tenantId,
@@ -291,6 +308,10 @@ export async function executeAutomation(
       console.log(`[${automationId}] ${msg}`);
     },
     notify: (userId: string, type: string, payload) => {
+      if (shadow) {
+        shadow.notifications.push({ user_id: userId, type, title: payload?.title || '' });
+        return;
+      }
       // Throttle: check daily limit before sending
       checkNotificationThrottle(userId, supabase).then(allowed => {
         if (allowed) {
@@ -318,6 +339,8 @@ export async function executeAutomation(
     await completeRun(runId, 'completed', result.usersAffected, result.actionsTaken, undefined, {
       logs,
       event_payload: eventPayload,
+      delivery_mode: deliveryMode,
+      ...(shadow ? { shadow: summarizeShadow(shadow) } : {}),
     });
 
     await emitOasisEvent(`autopilot.automation.completed`, {
@@ -335,7 +358,12 @@ export async function executeAutomation(
     const errorMsg = err.message || String(err);
     ctx.log(`Failed: ${errorMsg}`);
 
-    await completeRun(runId, 'failed', 0, 0, errorMsg, { logs, event_payload: eventPayload });
+    await completeRun(runId, 'failed', 0, 0, errorMsg, {
+      logs,
+      event_payload: eventPayload,
+      delivery_mode: deliveryMode,
+      ...(shadow ? { shadow: summarizeShadow(shadow) } : {}),
+    });
 
     await emitOasisEvent(`autopilot.automation.failed`, {
       automation_id: automationId,

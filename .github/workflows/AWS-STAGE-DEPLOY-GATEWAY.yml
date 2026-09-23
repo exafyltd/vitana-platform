@@ -278,6 +278,14 @@ jobs:
         # and the measured win has to come from the directive and tool-catalog
         # budgets (VTID-04096/04097) alone.
         #
+        # VTID-04349 -- community automation engine (AP-XXXX) back on STAGING in
+        # shadow mode: AUTOMATIONS_DELIVERY_MODE=shadow records every
+        # notification, write and RPC instead of performing it (staging shares
+        # the production database, so a live run here would reach real
+        # members). AUTOPILOT_HEARTBEAT_ENABLED + DEFAULT_TENANT_ID (Maxina)
+        # start the in-process heartbeat loop. Not declared on the prod
+        # workflow: production goes live only on the owner's decision after
+        # staging shadow runs are verified.
         # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
         # upserted to "staging-only" below. Checked live in this repo: it
         # is set on neither AWS gateway task def (only the dead GCP
@@ -903,7 +911,8 @@ jobs:
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
-                                                "NAV_CONTINUATION_BIND") | not) ]
+                                                "NAV_CONTINUATION_BIND",
+                                                "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -923,6 +932,9 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
+                          {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
+                          {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},

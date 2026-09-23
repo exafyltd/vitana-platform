@@ -23,7 +23,8 @@
  *   GET  /api/v1/automations/referrals             — Get user's referrals
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   AUTOMATION_REGISTRY,
   getAutomation,
@@ -43,6 +44,24 @@ import * as repo from './automations-repository';
 
 const router = Router();
 const VTID = 'VTID-01250';
+
+// ── VTID-04349: auth for the trigger routes ─────────────────
+// execute / heartbeat / dispatch / cron start runs that notify real members.
+// They were mounted with no auth at all. Accept either the scheduler's
+// X-Gateway-Internal token (same contract as test-contracts-scheduled.ts) or a
+// signed-in exafy_admin (the Command Hub's Run / Dispatch buttons).
+function isInternalCaller(req: Request): boolean {
+  const token = process.env.GATEWAY_INTERNAL_TOKEN;
+  return Boolean(token && req.get('X-Gateway-Internal') === token);
+}
+
+export async function requireInternalOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (isInternalCaller(req)) return next();
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    if ((req as AuthenticatedRequest).identity?.exafy_admin === true) return next();
+    res.status(403).json({ ok: false, error: 'automation triggers require X-Gateway-Internal token or exafy_admin' });
+  });
+}
 
 // ── Helper: get tenant_id ───────────────────────────────────
 function getTenantId(req: Request): string | null {
@@ -92,7 +111,8 @@ router.get('/registry/:id', (req: Request, res: Response) => {
 // Execution endpoints
 // =============================================================================
 
-router.post('/execute/:id', async (req: Request, res: Response) => {
+router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -107,7 +127,8 @@ router.post('/execute/:id', async (req: Request, res: Response) => {
   return res.status(result.ok ? 200 : 500).json(result);
 });
 
-router.post('/heartbeat', async (req: Request, res: Response) => {
+router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -117,7 +138,8 @@ router.post('/heartbeat', async (req: Request, res: Response) => {
   return res.json({ ok: true, ...result });
 });
 
-router.post('/dispatch', async (req: Request, res: Response) => {
+router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   const { event_topic, event_payload } = req.body || {};
   if (!tenantId || !event_topic) {
@@ -128,7 +150,8 @@ router.post('/dispatch', async (req: Request, res: Response) => {
   return res.json({ ok: true, ...result });
 });
 
-router.post('/cron/:id', async (req: Request, res: Response) => {
+router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
