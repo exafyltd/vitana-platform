@@ -1,0 +1,21 @@
+    ✓ command hub declares the three delegation tools once each (5 ms)
+    ✓ community and commerce catalogs have none of them (3 ms)
+    ✓ a slow operator turn returns working at once, result on a later turn (1510 ms)
+    ✓ cancel_delegation stops it and the late result is never reported (1508 ms)
+    ✓ another surface or user cannot read the job (1502 ms)
+    ✓ exafy_admin in the command hub is the developer role (1 ms)
+    ✓ a non-admin in the command hub is refused by policy; outside it the tool is refused
+    ✓ orb-live dispatches all three names to the delegation module (1 ms)
+    ✓ the command hub prompt tells the model to fetch and cancel (1 ms)
+    ✓ declares operator_delegate exactly once (1 ms)
+    ✓ retires the legacy task tools that bypassed the Operator on-ramp (1 ms)
+    ✓ keeps navigation, memory search and developer read tools
+    ✓ drops community tools
+    ✓ fits well inside the 64 KB Nova tool budget, so nothing is trimmed away
+    ✓ leaves the community catalog unchanged (1 ms)
+    ✓ runs the Operator turn on the bound thread with the verified identity, tagged voice_delegate (1 ms)
+    ✓ reports still_working when the turn outlasts the wait, without failing (11 ms)
+    ✓ refuses outside the Command Hub and without a signed-in identity (1 ms)
+    ✓ surfaces an Operator failure as a tool error
+Test Suites: 2 passed, 2 total
+Tests:       19 passed, 19 total
