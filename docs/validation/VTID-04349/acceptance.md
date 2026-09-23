@@ -33,3 +33,9 @@ TEST: services/gateway/test/vtid-04349-automation-shadow.test.ts — "pins shado
 
 AC-7 (post-deploy, live): after a staging deploy, `automation_runs` rows appear with `metadata.delivery_mode='shadow'` and a `shadow` summary, and no new `user_notifications` rows are created by automation runs.
 CURL: curl -s https://preview-aws-gateway.vitanaland.com/api/v1/automations/health
+
+## Route evidence (existing routes, middleware added — no new route)
+
+ROUTE_MOUNT: services/gateway/src/index.ts mounts routes/automations.ts at /api/v1/automations; this PR only inserts `requireInternalOrAdmin` into the chain of four existing POST routes.
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/automations/execute/:id (and /heartbeat, /dispatch, /cron/:id)
+CURL_PROOF: before this PR, unauthenticated `curl -X POST .../api/v1/automations/execute/AP-DOES-NOT-EXIST -d '{}'` on staging → `400 application/json {"ok":false,"error":"tenant_id required"}` (route exists, JSON, and it accepted an anonymous caller). After deploy the same request must return 401 JSON.
