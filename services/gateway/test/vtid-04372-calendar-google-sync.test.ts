@@ -266,13 +266,15 @@ describe('routes', () => {
 describe('wiring', () => {
   const src = (p: string) => fs.readFileSync(path.resolve(__dirname, '../src', p), 'utf8');
 
-  it('the window read adds Google busy times only when sync is ready and busy blocks are wanted', () => {
+  // VTID-04402: Outlook and iCloud write busy rows too, only while their app
+  // is on (turning it off deletes them), so the read is gated on
+  // include_busy alone rather than on the Google sync flag.
+  it('the window read adds external busy times only when busy blocks are wanted', () => {
     const route = src('routes/calendar.ts');
     const at = route.indexOf('listExternalBusy(');
     expect(at).toBeGreaterThan(0);
     const before = route.slice(route.lastIndexOf("router.get('/events/window'", at), at);
     expect(before).toContain('if (includeBusy)');
-    expect(before).toContain("googleSyncAvailability() === 'ready'");
   });
 
   it('the loop is wired at boot and pinned on no environment yet', () => {
