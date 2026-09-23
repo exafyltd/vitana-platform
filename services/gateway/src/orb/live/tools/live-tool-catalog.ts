@@ -182,8 +182,29 @@ function applyCommandHubGate(tools: object[]): object[] {
   return out;
 }
 
+/**
+ * VTID-04326 — the commerce surface gets the navigation tools and knowledge
+ * search only. Community, health, diary, memory and developer tools are
+ * absent, so nothing personal can be read or written from business mode.
+ * Commerce-specific read tools (org, team, order inbox) are a later slice.
+ */
+function applyCommerceGate(tools: object[]): object[] {
+  const out: object[] = [];
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
+        NAVIGATION_TOOL_NAMES.has(typeof d?.name === 'string' ? d.name : ''));
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    }
+    // google_search grounding is dropped on commerce: answers come from the
+    // knowledge base, not the open web, while customer data is on screen.
+  }
+  return out;
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
   if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
+  if (surface === 'commerce') return mode === 'authenticated' ? applyCommerceGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;
   if (mode !== 'authenticated') return tools; // anonymous sessions already get the narrow navigator-only set
   const allowed = surfaceAllowlist(surface);

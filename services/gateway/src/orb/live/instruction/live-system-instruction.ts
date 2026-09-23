@@ -792,7 +792,9 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // facts) is not injected at all — those assistants must never mix personal
   // or community material into tenant-administration or ERP work. The
   // Command Hub keeps its existing behaviour (the developer is also a member).
-  const bootstrapForSurface = (resolvedSurface === 'admin' || resolvedSurface === 'backoffice') ? '' : bootstrapContext;
+  // VTID-04326: commerce joins them — a partner org's business session never
+  // carries the member's personal health/diary/community context.
+  const bootstrapForSurface = (resolvedSurface === 'admin' || resolvedSurface === 'backoffice' || resolvedSurface === 'commerce') ? '' : bootstrapContext;
   let effectiveBootstrap = bootstrapForSurface ?? '';
   if (
     effectiveBootstrap &&
