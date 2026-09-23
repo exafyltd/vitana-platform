@@ -17,8 +17,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from './oasis-event-service';
-import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
-import { mirrorFact } from './mem-tier2-writer'; // VTID-02005 Phase 5b Tier 2 mirror
+import { rememberFact } from './memory/remember'; // VTID-04364 single fact-write path
 import * as repo from './memory-facts-service-repository';
 
 // =============================================================================
@@ -142,118 +141,80 @@ export async function writeFact(request: WriteFactRequest): Promise<WriteFactRes
     };
   }
 
-  // VTID-01952: Identity Lock chokepoint. Block writes to identity-class
-  // fact_keys (name, DOB, gender, email, etc.) from any provenance_source
-  // not in the authorized UI surface set. Defense-in-depth — the Postgres
-  // trigger enforce_identity_lock_memory_facts also enforces this. Audit
-  // event memory.identity.write_attempted is emitted from inside.
-  const lockCheck = await assertWriteFact({
-    fact_key: request.fact_key,
-    provenance_source: request.provenance_source,
-    provenance_confidence: confidence,
-    actor_id: 'memory-facts-service',
-    source_engine: 'memory-facts-service',
-    tenant_id: request.tenant_id,
-    user_id: request.user_id,
-  });
-  if (!lockCheck.ok) {
-    console.log(
-      `[VTID-01952] Identity Lock blocked writeFact: ${request.fact_key} ` +
-      `from ${request.provenance_source ?? '<null>'} (reason=${lockCheck.reason}). ` +
-      `User must change identity-class facts via Profile/Settings UI.`
-    );
-    return {
-      ok: false,
-      error: `identity_locked: ${request.fact_key} cannot be written from this source`,
-    };
-  }
-
+  // VTID-04364: the write itself (Identity Lock check, write_fact RPC,
+  // embedding) is the shared rememberFact() path every fact writer uses.
+  // The tier-2 mem_facts mirror is gone (VTID-04366): the broker reads
+  // memory_facts directly.
   const supabase = createServiceClient();
   if (!supabase) {
     return { ok: false, error: 'Supabase not configured' };
   }
 
-  try {
-    const { data, error } = await repo.writeFactRpc(supabase, {
-      p_tenant_id: request.tenant_id,
-      p_user_id: request.user_id,
-      p_fact_key: request.fact_key,
-      p_fact_value: request.fact_value,
-      p_entity: request.entity || 'self',
-      p_fact_value_type: request.fact_value_type || 'text',
-      p_provenance_source: request.provenance_source || 'user_stated',
-      p_provenance_utterance_id: request.provenance_utterance_id || null,
-      p_provenance_confidence: confidence,
-      p_thread_id: request.thread_id || null
-    });
+  const written = await rememberFact(
+    {
+      tenant_id: request.tenant_id,
+      user_id: request.user_id,
+      fact_key: request.fact_key,
+      fact_value: request.fact_value,
+      entity: request.entity || 'self',
+      fact_value_type: request.fact_value_type || 'text',
+      provenance_source: request.provenance_source || 'user_stated',
+      provenance_utterance_id: request.provenance_utterance_id || null,
+      provenance_confidence: confidence,
+      thread_id: request.thread_id || null,
+      actor: SERVICE_NAME,
+    },
+    { client: supabase },
+  );
 
-    if (error) {
-      console.error(`[${VTID}] Fact write failed:`, error.message);
+  if (written.blocked === 'identity_lock') {
+    console.log(
+      `[VTID-01952] Identity Lock blocked writeFact: ${request.fact_key} ` +
+      `from ${request.provenance_source ?? '<null>'}. ` +
+      `User must change identity-class facts via Profile/Settings UI.`
+    );
+    return { ok: false, error: written.error };
+  }
 
-      await emitOasisEvent({
-        vtid: VTID,
-        type: 'memory.fact.write.failed' as any,
-        source: SERVICE_NAME,
-        status: 'error',
-        message: `Fact write failed: ${error.message}`,
-        payload: {
-          tenant_id: request.tenant_id,
-          user_id: request.user_id,
-          fact_key: request.fact_key,
-          error: error.message,
-          duration_ms: Date.now() - startTime
-        }
-      });
-
-      return { ok: false, error: error.message };
-    }
-
-    // Emit success event
+  if (!written.ok) {
+    console.error(`[${VTID}] Fact write failed:`, written.error);
     await emitOasisEvent({
       vtid: VTID,
-      type: 'memory.fact.written' as any,
+      type: 'memory.fact.write.failed' as any,
       source: SERVICE_NAME,
-      status: 'success',
-      message: `Fact written: ${request.fact_key}`,
+      status: 'error',
+      message: `Fact write failed: ${written.error}`,
       payload: {
         tenant_id: request.tenant_id,
         user_id: request.user_id,
-        fact_id: data,
         fact_key: request.fact_key,
-        entity: request.entity || 'self',
-        provenance_source: request.provenance_source || 'user_stated',
-        provenance_confidence: confidence,
+        error: written.error,
         duration_ms: Date.now() - startTime
       }
     });
+    return { ok: false, error: written.error };
+  }
 
-    console.log(`[${VTID}] Fact written: ${request.fact_key} = ${request.fact_value.substring(0, 50)}...`);
-
-    // VTID-02005 Phase 5b: mirror to mem_facts (Tier 2). Fire-and-forget.
-    void mirrorFact({
+  await emitOasisEvent({
+    vtid: VTID,
+    type: 'memory.fact.written' as any,
+    source: SERVICE_NAME,
+    status: 'success',
+    message: `Fact written: ${request.fact_key}`,
+    payload: {
       tenant_id: request.tenant_id,
       user_id: request.user_id,
-      source_event_id: typeof data === 'string' ? data : undefined,
-      entity: request.entity || 'self',
+      fact_id: written.fact_id,
       fact_key: request.fact_key,
-      fact_value: request.fact_value,
-      fact_value_type: request.fact_value_type || 'text',
-      vtid: VTID,
-      // Provenance: actor_id reflects the legacy provenance_source taxonomy
-      actor_id: request.provenance_source || 'user_stated',
-      confidence,
-      source_engine: SERVICE_NAME,
-      classification: {},
-    });
+      entity: request.entity || 'self',
+      provenance_source: request.provenance_source || 'user_stated',
+      provenance_confidence: confidence,
+      duration_ms: Date.now() - startTime
+    }
+  });
 
-    return {
-      ok: true,
-      fact_id: data
-    };
-  } catch (err: any) {
-    console.error(`[${VTID}] Fact write error:`, err.message);
-    return { ok: false, error: err.message };
-  }
+  console.log(`[${VTID}] Fact written: ${request.fact_key} = ${request.fact_value.substring(0, 50)}...`);
+  return { ok: true, fact_id: written.fact_id };
 }
 
 // =============================================================================

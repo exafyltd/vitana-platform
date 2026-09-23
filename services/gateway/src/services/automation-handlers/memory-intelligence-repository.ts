@@ -127,23 +127,7 @@ export async function fetchAllActiveFactUserIds(supabase: SupabaseClient, tenant
   return supabase.from('memory_facts').select('user_id').eq('tenant_id', tenantId).is('superseded_at', null).limit(limit);
 }
 
-// ==================== write_fact RPC ====================
-
-export async function rpcWriteFact(
-  supabase: SupabaseClient,
-  args: {
-    p_tenant_id: string;
-    p_user_id: string;
-    p_fact_key: string;
-    p_fact_value: string;
-    p_entity: string;
-    p_fact_value_type: string;
-    p_provenance_source: string;
-    p_provenance_confidence: number;
-  },
-) {
-  return supabase.rpc('write_fact', args);
-}
+// write_fact now goes through services/memory/remember.ts (VTID-04364).
 
 // ==================== knowledge_docs ====================
 

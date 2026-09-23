@@ -181,6 +181,8 @@ import { handleIdentityIntent } from '../services/identity-intent-handler';
 // VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (multi-instance safe; dual-write w/ in-process buffer)
 import { addTurnRedis, destroySessionBufferRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
+// VTID-04365: every session end goes through the one commit.
+import { commitSessionMemory, renderTranscript } from '../services/session-memory-commit';
 // VTID-01149: Unified Task-Creation Intake
 import {
   detectTaskCreationIntent,
@@ -202,11 +204,9 @@ import { writeMemoryItem, classifyCategory } from './memory';
 import {
   isMemoryBridgeEnabled,
   isDevSandbox,
-  fetchDevMemoryContext,
   fetchMemoryContextWithIdentity,
   buildMemoryEnhancedInstruction,
   getDebugSnapshot,
-  writeDevMemoryItem,
   writeMemoryItemWithIdentity,
   fetchRecentOrbUserTurns,           // VTID-RECENT-TURNS: grounding for "what did I last say?"
   formatRecentTurnsBlock,            // VTID-RECENT-TURNS: pretty-print helper
@@ -9677,18 +9677,16 @@ async function connectToLiveAPI(
           if (shouldEmitIssue) try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (e) { /* WS may be closed */ }
         }
 
-        // Fire final extraction on genuine disconnect
+        // VTID-04365: genuine disconnect ends the session — one commit.
         if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-          const allText = session.transcriptTurns
-            .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-            .join('\n');
-          // VTID-01230: Force extraction on disconnect (session end)
-          deduplicatedExtract({
-            conversationText: allText,
-            tenant_id: session.identity.tenant_id,
-            user_id: session.identity.user_id,
-            session_id: session.sessionId,
-            force: true,
+          commitSessionMemory({
+            transcript: renderTranscript(session.transcriptTurns),
+            tenantId: session.identity.tenant_id,
+            userId: session.identity.user_id,
+            sessionId: session.sessionId,
+            activeRole: session.active_role || session.identity.role || null,
+            channel: 'orb_voice',
+            trigger: 'upstream_disconnect',
           });
           // Clean up session buffer and extraction state
           destroySessionBuffer(session.sessionId);
@@ -14088,21 +14086,18 @@ router.post('/end-session', async (req: Request, res: Response) => {
 
     // VTID-01225: Fire-and-forget entity extraction from transcript
     if (transcript.turns.length > 0) {
-      const fullTranscript = transcript.turns
-        .map(turn => `${turn.role}: ${turn.text}`)
-        .join('\n');
-
-      // VTID-01225: Use identity from transcript if available, fall back to env vars
-      const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-      const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
-
-      // VTID-01230: Deduplicated extraction (force on session end)
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: tenantId,
-        user_id: userId,
-        session_id: orb_session_id,
-        force: true,
+      // VTID-04365: the one session-end commit. The DEV_SANDBOX identity is a
+      // dev-only fallback; outside the sandbox a transcript with no identity
+      // is not written to anyone's memory.
+      const tenantId = transcript.tenant_id || (isDevSandbox() ? (process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001') : '');
+      const userId = transcript.user_id || (isDevSandbox() ? (process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099') : '');
+      commitSessionMemory({
+        transcript: renderTranscript(transcript.turns),
+        tenantId,
+        userId,
+        sessionId: orb_session_id,
+        channel: 'orb_voice',
+        trigger: 'end_session',
       });
       destroySessionBuffer(orb_session_id);
       clearExtractionState(orb_session_id);
@@ -14359,20 +14354,16 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 
   // VTID-01225: Fire-and-forget entity extraction from transcript
   if (transcript.turns.length > 0) {
-    const fullTranscript = transcript.turns
-      .map(turn => `${turn.role}: ${turn.text}`)
-      .join('\n');
-
-    const tenantId = transcript.tenant_id || process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001';
-    const userId = transcript.user_id || process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099';
-
-    // VTID-01230: Deduplicated extraction (force on session end)
-    deduplicatedExtract({
-      conversationText: fullTranscript,
-      tenant_id: tenantId,
-      user_id: userId,
-      session_id: orb_session_id,
-      force: true,
+    // VTID-04365: the one session-end commit; DEV_SANDBOX identity only in the sandbox.
+    const tenantId = transcript.tenant_id || (isDevSandbox() ? (process.env.DEV_SANDBOX_TENANT_ID || '00000000-0000-0000-0000-000000000001') : '');
+    const userId = transcript.user_id || (isDevSandbox() ? (process.env.DEV_SANDBOX_USER_ID || '00000000-0000-0000-0000-000000000099') : '');
+    commitSessionMemory({
+      transcript: renderTranscript(transcript.turns),
+      tenantId,
+      userId,
+      sessionId: orb_session_id,
+      channel: 'orb_voice',
+      trigger: 'session_finalize',
     });
     destroySessionBuffer(orb_session_id);
     clearExtractionState(orb_session_id);
@@ -16170,17 +16161,17 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session.sseResponse = null;
     }
 
-    // VTID-01230: Deduplicated extraction on SSE disconnect
+    // VTID-04365: the SSE close tears the upstream down below, so this is a
+    // session end — one commit (idempotent if /live/session/stop also runs).
     if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-      const fullTranscript = session.transcriptTurns
-        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: session.identity.tenant_id,
-        user_id: session.identity.user_id,
-        session_id: sessionId,
-        force: true,
+      commitSessionMemory({
+        transcript: renderTranscript(session.transcriptTurns),
+        tenantId: session.identity.tenant_id,
+        userId: session.identity.user_id,
+        sessionId,
+        activeRole: session.active_role || session.identity.role || null,
+        channel: 'orb_voice',
+        trigger: 'sse_close',
       });
     }
 

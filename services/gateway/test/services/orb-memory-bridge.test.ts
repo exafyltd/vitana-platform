@@ -15,8 +15,8 @@
  * Mocking strategy: `@supabase/supabase-js`'s createClient is mocked with a
  * small chainable query-builder stand-in (same convention as
  * test/services/memory-facts-service.test.ts), plus jest.mock() at the
- * module boundary for oasis-event-service and mem-tier2-writer (fire-and-
- * forget Tier 2 mirror), matching this codebase's established convention.
+ * module boundary for oasis-event-service,
+ * matching this codebase's established convention.
  */
 
 process.env.NODE_ENV = 'test';
@@ -65,12 +65,6 @@ jest.mock('@supabase/supabase-js', () => ({
 const mockEmitOasisEvent = jest.fn().mockResolvedValue({ ok: true });
 jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => mockEmitOasisEvent(...args),
-}));
-
-const mockMirrorEpisode = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../src/services/mem-tier2-writer', () => ({
-  mirrorEpisode: (...args: any[]) => mockMirrorEpisode(...args),
-  mirrorFact: jest.fn().mockResolvedValue(undefined),
 }));
 
 // global.fetch is used by fetchMemoryContextWithIdentity's raw REST call to
@@ -394,25 +388,47 @@ describe('writeMemoryItemWithIdentity', () => {
     expect(insertedRow.importance).toBeGreaterThanOrEqual(50);
   });
 
-  it('fans out to mem-tier2-writer.mirrorEpisode with matching tenant/user scoping', async () => {
+  // VTID-04367: memory_items.active_role scopes reads by role. Personal
+  // memory is stored NULL so every role sees it; a work role is stored as-is.
+  function captureInsert(id: string) {
+    const box: { row: any } = { row: null };
     mockClient = makeSupabaseClient({
-      fromResolver: () => ({ data: { id: 'mem-5', category_key: 'conversation' }, error: null }),
+      fromResolver: (_table, calls) => {
+        const insertCall = calls.find(c => c.method === 'insert');
+        if (insertCall) box.row = insertCall.args[0];
+        return { data: { id, category_key: 'conversation' }, error: null };
+      },
     });
+    return box;
+  }
+
+  it('stores personal (community) memory with active_role NULL', async () => {
+    const box = captureInsert('mem-5');
     await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'orb_text',
       content: 'my favorite hobby is photography and I do it every weekend',
       content_json: { direction: 'user' },
     });
-    expect(mockMirrorEpisode).toHaveBeenCalledTimes(1);
-    const mirrorArg = mockMirrorEpisode.mock.calls[0][0];
-    expect(mirrorArg.tenant_id).toBe('tenant-456');
-    expect(mirrorArg.user_id).toBe('user-123');
-    expect(mirrorArg.actor_id).toBe('user');
+    expect(box.row.active_role).toBeNull();
   });
 
-  it('marks actor_id as "assistant" for assistant-direction writes (skipFiltering bypasses the assistant block)', async () => {
+  it('stores memory written in a work role with that role', async () => {
+    const box = captureInsert('mem-6');
+    await writeMemoryItemWithIdentity({ ...IDENTITY, active_role: 'Developer' }, {
+      source: 'orb_text',
+      content: 'the staging deploy for the gateway needs the new flag set first',
+      content_json: { direction: 'user' },
+    });
+    expect(box.row.active_role).toBe('developer');
+  });
+
+  it('no longer mirrors to the tier-2 mem_episodes table (VTID-04366)', async () => {
+    const tables: string[] = [];
     mockClient = makeSupabaseClient({
-      fromResolver: () => ({ data: { id: 'mem-6', category_key: 'conversation' }, error: null }),
+      fromResolver: (table) => {
+        tables.push(table);
+        return { data: { id: 'mem-7', category_key: 'conversation' }, error: null };
+      },
     });
     await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'system',
@@ -420,8 +436,7 @@ describe('writeMemoryItemWithIdentity', () => {
       content_json: { direction: 'assistant' },
       skipFiltering: true,
     });
-    const mirrorArg = mockMirrorEpisode.mock.calls[0][0];
-    expect(mirrorArg.actor_id).toBe('assistant');
+    expect(tables).not.toContain('mem_episodes');
   });
 
   it('returns ok:false when the memory_items table does not exist', async () => {

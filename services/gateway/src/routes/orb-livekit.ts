@@ -2163,7 +2163,10 @@ router.post(
       const sessionId =
         typeof body.session_id === 'string' && body.session_id.length > 0
           ? body.session_id
-          : `livekit-${userId.slice(0, 8)}`;
+          : // VTID-04365: the commit is idempotent per session id, so a fallback
+            // id must be unique per call — a per-user constant would drop every
+            // later session of that user for six hours.
+            `livekit-${userId.slice(0, 8)}-${Date.now()}`;
       const activeRole = typeof body.active_role === 'string' ? body.active_role : null;
 
       const result = commitSessionMemory({
@@ -2172,6 +2175,8 @@ router.post(
         userId,
         sessionId,
         activeRole,
+        channel: 'livekit',
+        trigger: 'livekit_commit_memory',
       });
 
       // Telemetry so "did this session persist memory?" is QUERYABLE (§4/§11),
@@ -2189,6 +2194,7 @@ router.post(
           session_id: sessionId,
           user_id: userId,
           committed: result.committed,
+          summary_queued: result.summary_queued ?? false,
           reason: result.reason ?? null,
           transcript_chars: transcript.length,
         },

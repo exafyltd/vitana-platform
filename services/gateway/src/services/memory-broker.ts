@@ -20,6 +20,12 @@
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 import * as repo from './memory-broker-repository';
+import { memoryRoleForRead, memoryRoleOrFilter } from './memory/scope';
+
+/** VTID-04367: the role a read is scoped to — `lens.active_role` wins over `role`. */
+function readRole(input: MemoryReadInput): string | undefined {
+  return input.lens?.active_role || input.role || undefined;
+}
 
 const VTID = 'VTID-02026';
 const POLICY_VERSION = 'mem-2026.04';
@@ -68,7 +74,9 @@ export type ChannelKind =
   | 'brief'
   | 'admin';
 
-export type RoleKind = 'community' | 'developer' | 'admin';
+// VTID-04367: any session role. Personal roles read personal memory only;
+// a work role also reads memory written in that role (services/memory/scope.ts).
+export type RoleKind = 'community' | 'developer' | 'admin' | string;
 
 export interface ContextLens {
   tenant_id: string;
@@ -136,7 +144,6 @@ export interface EpisodicBlock {
   kind: 'EPISODIC';
   hits: EpisodicHit[];
   source:
-    | 'mem_episodes'
     | 'memory_items_semantic'
     | 'memory_items_rest';
   fetched_at: string;
@@ -156,7 +163,7 @@ export interface SemanticFact {
 export interface SemanticBlock {
   kind: 'SEMANTIC';
   facts: SemanticFact[];
-  source: 'mem_facts';
+  source: 'memory_facts';
   fetched_at: string;
 }
 
@@ -441,75 +448,27 @@ async function fetchEpisodicBlock(
 
   // VTID-03156 (CPB-1/2): the broker owns the full episodic ladder.
   //
-  // VTID-04342 reordered it. Before, step 1 was mem_episodes semantic
-  // (embeddings frozen at 2026-04-28, a different model space) and step 2
-  // mem_episodes recency — which always returns rows — so the canonical
-  // memory_items semantic search (then step 3) could never run and "relevant"
-  // recall was really "most recent". Now:
-  //   1. memory_semantic_search on memory_items (canonical; Titan V2 1024-dim,
-  //      same space as the rows AP-0910 and the write path embed)
-  //   2. mem_episodes recency-ordered select
-  //   3. memory_items REST (importance+recency-ordered)
-  // mem_episodes semantic is no longer queried: its vectors are vector(1536)
-  // from a dead provider and cannot be compared with a Titan V2 query.
-  // Each step falls through only when the previous one produced 0 hits.
+  // VTID-04366: memory_items is the only episodic store the broker reads.
+  // The tier-2 mem_episodes mirror (a dual-write copy whose embeddings froze
+  // on 2026-04-28) is gone from this path. Two steps:
+  //   1. memory_semantic_search on memory_items (Titan V2 1024-dim)
+  //   2. memory_items REST, importance- then recency-ordered
+  // Step 2 runs only when step 1 produced 0 hits or had no query.
+  //
+  // VTID-04367: both steps are role-scoped. Personal memory
+  // (active_role NULL) is visible in every role; memory written in a work
+  // role only in that role (services/memory/scope.ts).
   const trimmedQuery = (input.query ?? '').trim();
 
-  // Step 1: memory_items semantic-rank.
   if (trimmedQuery.length > 5) {
-    const legacySemantic = await fetchEpisodicLegacySemantic(
-      input, trimmedQuery, limit
-    );
-    if (
-      legacySemantic.ok &&
-      legacySemantic.block &&
-      legacySemantic.block.hits.length > 0
-    ) {
-      return { block: legacySemantic.block, latency_ms: Date.now() - t0 };
+    const semantic = await fetchEpisodicLegacySemantic(input, trimmedQuery, limit, maxAgeHours);
+    if (semantic.ok && semantic.block && semantic.block.hits.length > 0) {
+      return { block: semantic.block, latency_ms: Date.now() - t0 };
     }
   }
 
-  // Step 2: mem_episodes recency-order.
-  let recencyBlock: EpisodicBlock | null = null;
-  {
-    const cutoff = maxAgeHours && maxAgeHours > 0
-      ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
-      : null;
-    const { data, error } = await repo.fetchMemEpisodesRecency(supabase, input.tenant_id, input.user_id, limit, cutoff);
-    if (!error) {
-      recencyBlock = {
-        kind: 'EPISODIC',
-        hits: (data ?? []).map(r => ({
-          id: r.id,
-          kind: r.kind,
-          content: (r.content ?? '').slice(0, 400),
-          category_key: r.category_key,
-          source: r.source,
-          importance: r.importance ?? 30,
-          occurred_at: r.occurred_at,
-          actor_id: r.actor_id,
-          conversation_id: r.conversation_id,
-        })),
-        source: 'mem_episodes',
-        fetched_at: new Date().toISOString(),
-      };
-      if (recencyBlock.hits.length > 0) {
-        return { block: recencyBlock, latency_ms: Date.now() - t0 };
-      }
-    } else {
-      console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
-    }
-  }
-
-  // Step 3: REST fallback on memory_items.
-  const legacyRest = await fetchEpisodicLegacyRest(input, limit);
-  if (legacyRest.ok && legacyRest.block) {
-    return { block: legacyRest.block, latency_ms: Date.now() - t0 };
-  }
-
-  // Last resort — return the (possibly empty) recency block so the
-  // caller still sees a well-formed EpisodicBlock.
-  return { block: recencyBlock, latency_ms: Date.now() - t0 };
+  const rest = await fetchEpisodicLegacyRest(input, limit, maxAgeHours);
+  return { block: rest.block, latency_ms: Date.now() - t0 };
 }
 
 // -----------------------------------------------------------------------------
@@ -526,6 +485,7 @@ async function fetchEpisodicLegacySemantic(
   input: MemoryReadInput,
   query: string,
   limit: number,
+  maxAgeHours: number | null = null,
 ): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
   // VTID-04342: query in the same Titan V2 space as memory_items.embedding.
   const { embedMemoryText } = await import('./memory-embedding');
@@ -541,10 +501,10 @@ async function fetchEpisodicLegacySemantic(
     p_tenant_id: input.tenant_id,
     p_user_id: input.user_id,
     p_workspace_scope: null,
-    p_active_role: null,
+    p_active_role: memoryRoleForRead(readRole(input)),
     p_categories: null,
     p_visibility_scope: 'private',
-    p_max_age_hours: null,
+    p_max_age_hours: maxAgeHours && maxAgeHours > 0 ? maxAgeHours : null,
     p_recency_boost: true,
   });
   if (error) {
@@ -578,6 +538,7 @@ async function fetchEpisodicLegacySemantic(
 async function fetchEpisodicLegacyRest(
   input: MemoryReadInput,
   limit: number,
+  maxAgeHours: number | null = null,
 ): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, block: null };
@@ -590,7 +551,12 @@ async function fetchEpisodicLegacyRest(
   // term overlap — when no overlap, the blender ordering collapsed
   // to importance+recency anyway).
   const fetchLimit = limit * 3;
-  const { data, error } = await repo.fetchMemoryItemsLegacyRest(supabase, input.tenant_id, input.user_id, fetchLimit);
+  const cutoff = maxAgeHours && maxAgeHours > 0
+    ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
+    : null;
+  const { data, error } = await repo.fetchMemoryItemsLegacyRest(
+    supabase, input.tenant_id, input.user_id, fetchLimit, memoryRoleOrFilter(readRole(input)), cutoff,
+  );
 
   if (error) {
     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
@@ -627,27 +593,29 @@ async function fetchSemanticBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  // Active facts only (the canonical "current truth" view from mem_facts).
-  const { data, error } = await repo.fetchActiveMemFacts(supabase, input.tenant_id, input.user_id, limit);
+  // VTID-04366: current facts from the canonical memory_facts table, most
+  // confident first. mem_facts (the tier-2 mirror) was written by only two
+  // callers, so this block was near-empty for most users.
+  const { data, error } = await repo.fetchCurrentMemoryFacts(supabase, input.tenant_id, input.user_id, limit);
 
   if (error) {
-    console.warn(`[${VTID}] mem_facts query failed: ${error.message}`);
+    console.warn(`[${VTID}] memory_facts query failed: ${error.message}`);
     return { block: null, latency_ms: Date.now() - t0 };
   }
 
   const block: SemanticBlock = {
     kind: 'SEMANTIC',
-    facts: (data ?? []).map(r => ({
+    facts: (data ?? []).map((r: any) => ({
       id: r.id,
       fact_key: r.fact_key,
       fact_value: r.fact_value,
       fact_value_type: r.fact_value_type,
       entity: r.entity,
-      confidence: r.confidence ?? 1.0,
-      actor_id: r.actor_id,
-      asserted_at: r.asserted_at,
+      confidence: r.provenance_confidence != null ? Number(r.provenance_confidence) : 1.0,
+      actor_id: r.provenance_source,
+      asserted_at: r.extracted_at,
     })),
-    source: 'mem_facts',
+    source: 'memory_facts',
     fetched_at: new Date().toISOString(),
   };
   return { block, latency_ms: Date.now() - t0 };
@@ -1060,11 +1028,11 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       withBudget(fetchEpisodicBlock(input, limit, maxAge), budgetMs).then(r => {
         if (r.timedOut) {
           degraded = true;
-          latencyPerStream['mem_episodes'] = budgetMs;
+          latencyPerStream['memory_items'] = budgetMs;
         } else if (r.value?.block) {
           blocks['EPISODIC'] = r.value.block;
-          streamsHit.push('mem_episodes');
-          latencyPerStream['mem_episodes'] = r.value.latency_ms;
+          streamsHit.push('memory_items');
+          latencyPerStream['memory_items'] = r.value.latency_ms;
         }
       })
     );
@@ -1075,11 +1043,11 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       withBudget(fetchSemanticBlock(input, 50), budgetMs).then(r => {
         if (r.timedOut) {
           degraded = true;
-          latencyPerStream['mem_facts'] = budgetMs;
+          latencyPerStream['memory_facts'] = budgetMs;
         } else if (r.value?.block) {
           blocks['SEMANTIC'] = r.value.block;
-          streamsHit.push('mem_facts');
-          latencyPerStream['mem_facts'] = r.value.latency_ms;
+          streamsHit.push('memory_facts');
+          latencyPerStream['memory_facts'] = r.value.latency_ms;
         }
       })
     );

@@ -20,12 +20,40 @@ const mockDeduplicatedExtract = jest.fn();
 jest.mock('../../src/services/extraction-dedup-manager', () => ({
   deduplicatedExtract: (...args: any[]) => mockDeduplicatedExtract(...args),
 }));
+const mockCallViaRouter = jest.fn();
+jest.mock('../../src/services/llm-router', () => ({
+  callViaRouter: (...args: any[]) => mockCallViaRouter(...args),
+}));
+const mockWriteMemoryItem = jest.fn();
+jest.mock('../../src/services/orb-memory-bridge', () => ({
+  writeMemoryItemWithIdentity: (...args: any[]) => mockWriteMemoryItem(...args),
+}));
+const mockEmitOasisEvent = jest.fn();
+jest.mock('../../src/services/oasis-event-service', () => ({
+  emitOasisEvent: (...args: any[]) => mockEmitOasisEvent(...args),
+}));
 
 import {
   commitSessionMemory,
+  cleanSummary,
+  countUserTurns,
+  isSummaryEligible,
+  renderTranscript,
+  resetSessionCommitState,
+  MAX_SUMMARY_CHARS,
+  MAX_SUMMARY_INPUT_CHARS,
   MIN_COMMIT_TRANSCRIPT_CHARS,
   type CommitSessionMemoryArgs,
 } from '../../src/services/session-memory-commit';
+
+const flush = () => new Promise((r) => setImmediate(r));
+
+const CONVERSATION = [
+  'User: I slept badly again, maybe five hours.',
+  'Assistant: That sounds tiring. What kept you up?',
+  'User: Work stress mostly. I want to try going to bed at ten this week.',
+  'Assistant: Good plan. I can remind you at half past nine.',
+].join('\n');
 
 const LONG_TRANSCRIPT =
   'a'.repeat(MIN_COMMIT_TRANSCRIPT_CHARS + 1); // strictly over the threshold
@@ -44,7 +72,14 @@ function baseArgs(overrides: Partial<CommitSessionMemoryArgs> = {}): CommitSessi
 let warnSpy: jest.SpyInstance;
 
 beforeEach(() => {
+  resetSessionCommitState();
   mockDeduplicatedExtract.mockReset();
+  mockCallViaRouter.mockReset();
+  mockWriteMemoryItem.mockReset();
+  mockEmitOasisEvent.mockReset();
+  mockCallViaRouter.mockResolvedValue({ ok: true, text: 'The user slept about five hours.', provider: 'bedrock' });
+  mockWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mi-1' });
+  mockEmitOasisEvent.mockResolvedValue(undefined);
   warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -103,7 +138,7 @@ describe('commitSessionMemory — commit path', () => {
   it('fires the deduplicated extractor and reports committed=true', () => {
     const result = commitSessionMemory(baseArgs());
 
-    expect(result).toEqual({ committed: true });
+    expect(result).toEqual({ committed: true, summary_queued: false });
     expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
   });
 
@@ -137,7 +172,7 @@ describe('commitSessionMemory — failure handling', () => {
 
     const result = commitSessionMemory(baseArgs());
 
-    expect(result).toEqual({ committed: true });
+    expect(result).toEqual({ committed: true, summary_queued: false });
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('deduplicatedExtract threw (non-fatal)'));
   });
 });
@@ -155,5 +190,117 @@ describe('commitSessionMemory — tenant/user isolation', () => {
 
     expect(dedupCalls[0]).toMatchObject({ tenant_id: 'tenant-1', user_id: 'user-1', session_id: 'session-1' });
     expect(dedupCalls[1]).toMatchObject({ tenant_id: 'tenant-2', user_id: 'user-2', session_id: 'session-2' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-04365 — one commit per session, plus a session-summary episode
+// ---------------------------------------------------------------------------
+
+describe('commitSessionMemory — idempotency (VTID-04365)', () => {
+  it('a second commit for the same session is reported as already_committed and extracts nothing', () => {
+    expect(commitSessionMemory(baseArgs()).committed).toBe(true);
+    expect(commitSessionMemory(baseArgs())).toEqual({ committed: false, reason: 'already_committed' });
+    expect(mockDeduplicatedExtract).toHaveBeenCalledTimes(1);
+  });
+
+  it('a different session for the same user still commits', () => {
+    commitSessionMemory(baseArgs({ sessionId: 's-1' }));
+    expect(commitSessionMemory(baseArgs({ sessionId: 's-2' })).committed).toBe(true);
+  });
+
+  it('refuses a commit without a session id', () => {
+    expect(commitSessionMemory(baseArgs({ sessionId: '' }))).toEqual({
+      committed: false,
+      reason: 'missing_session_id',
+    });
+  });
+});
+
+describe('session summary eligibility', () => {
+  it('needs at least two user turns and 200 characters', () => {
+    expect(countUserTurns(CONVERSATION)).toBe(2);
+    expect(isSummaryEligible(CONVERSATION)).toBe(true);
+    expect(isSummaryEligible('User: hi\nAssistant: hello')).toBe(false);
+    expect(isSummaryEligible('User: ' + 'a'.repeat(300))).toBe(false);
+  });
+
+  it('renderTranscript produces the User:/Assistant: shape and drops empty turns', () => {
+    expect(
+      renderTranscript([
+        { role: 'user', text: 'hi' },
+        { role: 'assistant', text: 'hello' },
+        { role: 'user', text: '  ' },
+      ]),
+    ).toBe('User: hi\nAssistant: hello');
+  });
+
+  it('cleanSummary drops NONE and caps the length', () => {
+    expect(cleanSummary('NONE')).toBeNull();
+    expect(cleanSummary(' none. ')).toBeNull();
+    expect(cleanSummary('')).toBeNull();
+    expect(cleanSummary('"The user likes tea."')).toBe('The user likes tea.');
+    expect(cleanSummary('x'.repeat(2000))!.length).toBe(MAX_SUMMARY_CHARS);
+  });
+});
+
+describe('session summary write', () => {
+  it('summarises through the memory stage and writes one session_summary episode', async () => {
+    const r = commitSessionMemory(baseArgs({ transcript: CONVERSATION, channel: 'orb_voice', trigger: 'sse_stop' }));
+    expect(r).toEqual({ committed: true, summary_queued: true });
+    await flush();
+
+    expect(mockCallViaRouter).toHaveBeenCalledWith(
+      'memory',
+      CONVERSATION,
+      expect.objectContaining({ service: 'session-memory-commit', maxTokens: 300 }),
+    );
+    expect(mockWriteMemoryItem).toHaveBeenCalledTimes(1);
+    const [identity, item] = mockWriteMemoryItem.mock.calls[0];
+    expect(identity).toEqual({ tenant_id: 'tenant-aaa', user_id: 'user-bbb', active_role: 'community' });
+    expect(item).toMatchObject({
+      source: 'system',
+      category_key: 'session_summary',
+      content: 'The user slept about five hours.',
+      content_json: expect.objectContaining({ kind: 'session_summary', session_id: 'session-ccc', channel: 'orb_voice', user_turns: 2 }),
+    });
+    expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'memory.session.summarized' }));
+  });
+
+  it('sends only the tail of a very long transcript', async () => {
+    const long = CONVERSATION + '\n' + 'User: ' + 'b'.repeat(MAX_SUMMARY_INPUT_CHARS * 2);
+    commitSessionMemory(baseArgs({ transcript: long }));
+    await flush();
+    expect(mockCallViaRouter.mock.calls[0][1].length).toBe(MAX_SUMMARY_INPUT_CHARS);
+  });
+
+  it('writes nothing when the model says there is nothing worth remembering', async () => {
+    mockCallViaRouter.mockResolvedValue({ ok: true, text: 'NONE' });
+    commitSessionMemory(baseArgs({ transcript: CONVERSATION }));
+    await flush();
+    expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing and never throws when the router fails', async () => {
+    mockCallViaRouter.mockResolvedValue({ ok: false, error: 'both providers down' });
+    commitSessionMemory(baseArgs({ transcript: CONVERSATION }));
+    await flush();
+    expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('session summary failed'));
+  });
+
+  it('treats a duplicate-key insert as already committed by another instance (no warning, no event)', async () => {
+    mockWriteMemoryItem.mockResolvedValue({ ok: false, error: 'duplicate key value violates unique constraint "uq_memory_items_session_summary"' });
+    commitSessionMemory(baseArgs({ transcript: CONVERSATION }));
+    await flush();
+    expect(mockEmitOasisEvent).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('write failed'));
+  });
+
+  it('a short one-turn session gets facts but no summary', async () => {
+    const r = commitSessionMemory(baseArgs());
+    expect(r.summary_queued).toBe(false);
+    await flush();
+    expect(mockCallViaRouter).not.toHaveBeenCalled();
   });
 });

@@ -306,11 +306,13 @@ Each phase ships independently to staging and is verified with the health check 
 Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs its own fix.
 
 ### Phase 1 — Consolidate (≈2–3 weeks)
-- [ ] `services/memory/` with `remember.*` and `recall()`; move the inline extractor behind it (fixes D8).
-- [ ] One session-end commit for all transports (fixes D7); session-summary episode on every session.
-- [ ] Broker reads the canonical tables; turn off the tier-2 dual write; drop the mirrors after 2 weeks of clean health checks; replay or close the DLQ.
-- [ ] Both prompt builders call `recall()`; delete the unused bridge exports.
-- [ ] Role filter in `recall()` (fixes D9).
+- [x] `services/memory/remember.ts` — one fact write path; inline extractor, intent hooks, diary extractor and memory-intelligence all moved behind it (fixes D8). VTID-04364.
+- [x] One session-end commit for all transports (WS cleanup, SSE stop/close, upstream disconnect, `/end-session`, `/session/finalize`, LiveKit) (fixes D7); session-summary episode per session, idempotent in process and by unique index. VTID-04365.
+- [x] Broker reads the canonical tables; the gateway no longer writes the tier-2 mirrors. VTID-04366.
+- [ ] Drop the mirrors, the relationship-edge mirror trigger and the flag after prod runs this code and 2 weeks of clean health checks; replay or close the DLQ.
+- [x] Delete the unused bridge exports (scored/trust/enhanced instruction builders, ~875 lines; no caller in `src/` or `test/`). VTID-04364.
+- [ ] Both prompt builders call one `recall()` — the context pack already reads through the broker; the ORB live prompt still uses `fetchMemoryContextWithIdentity`. Moving it changes what a live voice session hears and needs latency measurement on staging first, so it is its own step.
+- [x] Role scope on write (`memory_items.active_role`) and on read (broker, context pack) (fixes D9). VTID-04367.
 
 ### Phase 2 — Make users feel it (≈2–3 weeks)
 - [ ] **Memory Garden on the canonical store** (vitana-v1): gateway API for list/add/edit/delete; migrate `ai_memory` and diary tags; fix category counting (fixes D4, D5); retire the Gemini edge functions (fixes D12).

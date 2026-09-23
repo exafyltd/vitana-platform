@@ -1617,7 +1617,7 @@ describe('orb-livekit routes', () => {
       );
     });
 
-    it('defaults session_id to a userId-derived value when omitted', async () => {
+    it('defaults session_id to a unique userId-derived value when omitted (VTID-04365)', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid, tenantId: TENANT_A });
       const res = await request(app)
@@ -1626,7 +1626,11 @@ describe('orb-livekit routes', () => {
         .send({ transcript: 'A'.repeat(80) });
       expect(res.status).toBe(200);
       expect(mockCommitSessionMemory).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: `livekit-${uid.slice(0, 8)}` }),
+        expect.objectContaining({
+          sessionId: expect.stringMatching(new RegExp(`^livekit-${uid.slice(0, 8)}-\\d+$`)),
+          channel: 'livekit',
+          trigger: 'livekit_commit_memory',
+        }),
       );
     });
 

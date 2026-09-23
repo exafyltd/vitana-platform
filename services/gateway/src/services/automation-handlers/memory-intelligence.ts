@@ -18,6 +18,7 @@ import {
 import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
 import { getUserTimezone, userLocalHour } from '../daily-pace-service';
 import * as repo from './memory-intelligence-repository';
+import { rememberFact } from '../memory/remember'; // VTID-04364
 
 // ── AP-0901: Memory-Informed Matching ───────────────────────
 // On a positive match reaction, look up the user's most recent self-facts
@@ -320,16 +321,21 @@ async function runBehaviorPreferenceInference(ctx: AutomationContext) {
     let wroteAny = false;
     for (const [factKey, value] of derived.get(userId)!) {
       if (existing.get(`${userId}:${factKey}`) === value) continue;
-      const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
-        p_tenant_id: tenantId,
-        p_user_id: userId,
-        p_fact_key: factKey,
-        p_fact_value: value,
-        p_entity: 'self',
-        p_fact_value_type: 'text',
-        p_provenance_source: 'behavior_inferred',
-        p_provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
-      });
+      const written = await rememberFact(
+        {
+          tenant_id: tenantId,
+          user_id: userId,
+          fact_key: factKey,
+          fact_value: value,
+          entity: 'self',
+          fact_value_type: 'text',
+          provenance_source: 'behavior_inferred',
+          provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
+          actor: 'memory-intelligence',
+        },
+        { client: supabase },
+      );
+      const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
       if (rpcErr) {
         ctx.log(`write_fact ${factKey} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
         continue;
@@ -706,16 +712,21 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   }
 
   const writeInsight = async (userId: string, key: string, value: string) => {
-    const { error: rpcErr } = await repo.rpcWriteFact(supabase, {
-      p_tenant_id: tenantId,
-      p_user_id: userId,
-      p_fact_key: key,
-      p_fact_value: value,
-      p_entity: 'self',
-      p_fact_value_type: 'text',
-      p_provenance_source: 'system_observed',
-      p_provenance_confidence: 0.9,
-    });
+    const written = await rememberFact(
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        fact_key: key,
+        fact_value: value,
+        entity: 'self',
+        fact_value_type: 'text',
+        provenance_source: 'system_observed',
+        provenance_confidence: 0.9,
+        actor: 'memory-intelligence',
+      },
+      { client: supabase },
+    );
+    const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
     if (rpcErr) {
       ctx.log(`insight write ${key} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
       return false;

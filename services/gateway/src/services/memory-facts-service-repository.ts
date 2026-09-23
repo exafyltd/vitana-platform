@@ -20,23 +20,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function writeFactRpc(
-  sb: SupabaseClient,
-  args: {
-    p_tenant_id: string;
-    p_user_id: string;
-    p_fact_key: string;
-    p_fact_value: string;
-    p_entity: string;
-    p_fact_value_type: string;
-    p_provenance_source: string;
-    p_provenance_utterance_id: string | null;
-    p_provenance_confidence: number;
-    p_thread_id: string | null;
-  },
-) {
-  return sb.rpc('write_fact', args);
-}
+// write_fact moved to services/memory/remember.ts (VTID-04364).
 
 export async function getCurrentFactsRpc(
   sb: SupabaseClient,

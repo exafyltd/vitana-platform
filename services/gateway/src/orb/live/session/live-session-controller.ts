@@ -74,10 +74,9 @@ import { deriveHasPriorSession } from '../instruction/greeting-gate';
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
 const voiceMeterIntervals: Map<string, NodeJS.Timeout> = new Map();
 const VOICE_METER_INTERVAL_MS = 60_000; // 1 minute
-import {
-  deduplicatedExtract,
-  clearExtractionState,
-} from '../../../services/extraction-dedup-manager';
+import { clearExtractionState } from '../../../services/extraction-dedup-manager';
+// VTID-04365: every session end goes through the one commit.
+import { commitSessionMemory, renderTranscript } from '../../../services/session-memory-commit';
 import {
   DEV_IDENTITY,
   fetchRecentConversationTranscript,
@@ -309,15 +308,15 @@ export function cleanupWsSession(
     // scope extraction/buffer teardown to a key nothing else uses).
     const liveSessionKey = ls.sessionId || sessionId;
     if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
-      const fullTranscript = ls.transcriptTurns
-        .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
-        .join('\n');
-      deduplicatedExtract({
-        conversationText: fullTranscript,
-        tenant_id: ls.identity.tenant_id,
-        user_id: ls.identity.user_id,
-        session_id: liveSessionKey,
-        force: true,
+      // VTID-04365: the one session-end commit (facts + session summary).
+      commitSessionMemory({
+        transcript: renderTranscript(ls.transcriptTurns),
+        tenantId: ls.identity.tenant_id,
+        userId: ls.identity.user_id,
+        sessionId: liveSessionKey,
+        activeRole: ls.active_role || ls.identity.role || null,
+        channel: 'orb_voice',
+        trigger: 'ws_cleanup',
       });
       destroySessionBuffer(liveSessionKey);
       clearExtractionState(liveSessionKey);
@@ -2426,44 +2425,39 @@ export async function handleLiveSessionStop(
     },
   });
 
-  // VTID-01225: Fire-and-forget entity extraction from live session.
-  // Use in-memory transcriptTurns (UNFILTERED full conversation) instead of memory_items.
-  // Falls back to memory_items query only if transcriptTurns is empty.
+  // Session-end memory commit from the in-memory transcriptTurns (the full,
+  // unfiltered conversation); memory_items only when those are gone.
   if (session.identity && session.identity.tenant_id) {
     const tenantId = session.identity.tenant_id;
     const userId = session.identity.user_id;
 
+    // VTID-04365: the one session-end commit (facts + session summary).
+    const activeRole = session.active_role || session.identity.role || null;
     if (session.transcriptTurns.length > 0) {
-      const fullTranscript = session.transcriptTurns
-        .map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.text}`)
-        .join('\n');
-
-      if (fullTranscript.length > 50) {
-        // VTID-01230: Deduplicated extraction (force on session end)
-        deduplicatedExtract({
-          conversationText: fullTranscript,
-          tenant_id: tenantId,
-          user_id: userId,
-          session_id,
-          force: true,
-        });
-      }
+      commitSessionMemory({
+        transcript: renderTranscript(session.transcriptTurns),
+        tenantId,
+        userId,
+        sessionId: session_id,
+        activeRole,
+        channel: 'orb_voice',
+        trigger: 'sse_stop',
+      });
     } else {
-      // Fallback: query memory_items if no in-memory transcript available
+      // Fallback: rebuild the transcript from memory_items when the
+      // in-memory turns are gone (e.g. the session moved instances).
       fetchRecentConversationTranscript(tenantId, userId, session.createdAt, new Date())
         .then((transcript) => {
-          if (transcript && transcript.length > 50) {
-            // VTID-01230: Deduplicated extraction from memory_items fallback
-            deduplicatedExtract({
-              conversationText: transcript,
-              tenant_id: tenantId,
-              user_id: userId,
-              session_id,
-              force: true,
-            });
-          } else {
-            console.log(`[VTID-01225] No meaningful transcript for extraction: ${session_id}`);
-          }
+          const r = commitSessionMemory({
+            transcript: transcript || '',
+            tenantId,
+            userId,
+            sessionId: session_id,
+            activeRole,
+            channel: 'orb_voice',
+            trigger: 'sse_stop_memory_items',
+          });
+          if (!r.committed) console.log(`[VTID-04365] No session commit for ${session_id}: ${r.reason}`);
         })
         .catch((err) => {
           console.error(`[VTID-01225] Failed to fetch conversation for extraction: ${err.message}`);

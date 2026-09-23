@@ -42,6 +42,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './diary-health-extractor-repository';
+import { rememberFact } from './memory/remember'; // VTID-04364
 
 export interface DiaryFeatureWrite {
   feature_key: string;
@@ -336,20 +337,23 @@ export async function persistDiaryHealthFeatures(
       .slice(0, 4)
       .map((w) => `${w.feature_key.replace(/_/g, ' ')}: ${w.feature_value}${w.feature_unit ? ` ${w.feature_unit}` : ''}`)
       .join(', ');
-    repo
-      .writeDiaryHealthSignalFact(admin, {
-        p_tenant_id: tenantId,
-        p_user_id: userId,
-        p_fact_key: 'diary_recent_health_signals',
-        p_fact_value: `${summary} (diary ${date})`,
-        p_entity: 'self',
-        p_fact_value_type: 'text',
-        p_provenance_source: 'system_observed',
-        p_provenance_confidence: 0.6,
-      })
-      .then(({ error }: { error: { message: string } | null }) => {
-        if (error) console.warn(`[VTID-01977] diary→memory fact write failed: ${error.message}`);
-      });
+    // VTID-04364: through the shared rememberFact() path (embed on write).
+    void rememberFact(
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        fact_key: 'diary_recent_health_signals',
+        fact_value: `${summary} (diary ${date})`,
+        entity: 'self',
+        fact_value_type: 'text',
+        provenance_source: 'system_observed',
+        provenance_confidence: 0.6,
+        actor: 'diary-health-extractor',
+      },
+      { client: admin },
+    ).then((r) => {
+      if (!r.ok) console.warn(`[VTID-01977] diary→memory fact write failed: ${r.error}`);
+    });
   }
 
   return { written, failed };

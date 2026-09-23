@@ -201,7 +201,9 @@ async function fetchMemoryHitsViaBroker(
       user_id: lens.user_id!,
       intent: 'recall_history',
       channel: 'conversation',
-      role: 'community',
+      // VTID-04367: scope the read to the lens role (personal memory is
+      // always visible; memory written in a work role only in that role).
+      role: lens.active_role || 'community',
       latency_budget_ms: 1500,
       required_blocks: ['EPISODIC'],
       query: query && query.trim().length > 5 ? query : undefined,
@@ -217,7 +219,7 @@ async function fetchMemoryHitsViaBroker(
       content: (h.content ?? '').substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
       importance: h.importance ?? 30,
       occurred_at: h.occurred_at,
-      source: h.source ?? 'mem_episodes',
+      source: h.source ?? 'broker_episodic',
       // The broker's EPISODIC hits arrive in already-ranked order (semantic
       // when query was set, recency otherwise). Encode that rank as a
       // descending relevance_score so the context-pack ranker downstream

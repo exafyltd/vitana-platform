@@ -44,9 +44,41 @@ TEST: services/gateway/test/routes/admin-memory-broker.test.ts
 AC-8: the morning health check gains check 21, which reads `ci_memory_health()` (service_role only, counts only). The self-audit stays last as check 22, and TOTAL_CHECKS is 22. (VTID-04345)
 TEST: services/gateway/test/vtid-04345-morning-memory-check.test.ts
 
+## Phase 1 acceptance (VTID-04364 / 04365 / 04366 / 04367)
+
+AC-9: every gateway fact write goes through `rememberFact()`: Identity Lock → `write_fact` → async embedding. No other source file calls the `write_fact` RPC. The inline extractor, intent hooks, diary extractor and memory-intelligence handlers all use it. (VTID-04364)
+TEST: services/gateway/test/services/memory/remember.test.ts
+TEST: services/gateway/test/services/memory-facts-service.test.ts
+TEST: services/gateway/test/services/automation-handlers-memory-intelligence-repository.test.ts
+
+AC-10: every session end (WS cleanup, SSE stop/close, upstream disconnect, `/end-session`, `/session/finalize`, LiveKit commit-memory) calls `commitSessionMemory()` once per session. A session with ≥ 2 user turns gets one `session_summary` episode, written by the `memory` stage and idempotent both in process and through `uq_memory_items_session_summary` (applied live). (VTID-04365)
+TEST: services/gateway/test/services/session-memory-commit.test.ts
+TEST: services/gateway/test/routes/orb-livekit.test.ts
+
+AC-11: the broker's EPISODIC block reads only `memory_items`, and the SEMANTIC block reads current `memory_facts`. The gateway no longer writes or reads `mem_facts` / `mem_episodes`, and the tier-2 writer modules are deleted. (VTID-04366)
+TEST: services/gateway/test/services/memory-broker.test.ts
+TEST: services/gateway/test/services/memory-broker-episodic-fallback.test.ts
+TEST: services/gateway/test/services/orb-memory-bridge.test.ts
+
+AC-12: `memory_items.active_role` is NULL for personal roles and holds the role otherwise. Episodic reads pass the role (lens role first) to `memory_semantic_search` and to the REST fallback, so memory written in a work role is visible only in that role. (VTID-04367)
+TEST: services/gateway/test/services/memory-broker-episodic-fallback.test.ts
+TEST: services/gateway/test/services/orb-memory-bridge.test.ts
+TEST: services/gateway/test/orb/live/session/upstream-message-handler.test.ts
+
+Phase 1 verification:
+- `tsc --noEmit` is clean.
+- Full gateway jest: 1099 of 1100 suites pass (1 skipped); 17,799 tests pass, 0 fail (`outputs/jest-full-phase1.txt`).
+- Live read-only checks: `memory_semantic_search` has `p_active_role` / `p_max_age_hours` and filters `active_role IS NULL OR = p_active_role`; all 3,183 existing `memory_items` rows have `active_role` NULL (so nothing becomes hidden); the `session_summary` category and unique index exist.
+
+Not verified in Phase 1:
+- No session summary has been written on staging yet.
+- The first live signal is a `memory.session.summarized` OASIS event after this deploys to staging.
+- `mem_tier2_dual_write_enabled` and the relationship-edge mirror trigger stay in place while production still runs the old reader.
+
 ## OASIS
 
 OASIS_PROOF:
+- `memory.session.summarized` (new, VTID-04365) is emitted once per written session summary, with session id, channel, trigger, memory_item_id and provider. `orb.live.memory.committed` now carries `summary_queued`.
 - `autopilot.memory.embeddings_backfilled` (emitted by AP-0910) now carries `model`, `facts_embedded`, `facts_failed`, `items_embedded` and `items_failed`. It is emitted only when something was attempted.
 - The five `cognee.extraction.*` event types are removed; nothing emitted them since 2026-04-29.
 - Covered by `automation-handlers-phase2.test.ts` (AP-0910) and `tsc --noEmit` (event type union).

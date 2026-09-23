@@ -32,3 +32,10 @@ node node_modules/.bin/jest <memory/broker/diary/semantic/embedding/automation s
 node node_modules/.bin/jest   # full suite, see outputs/jest-full.txt
 bash -n scripts/aws/setup-memory-test-db.sh scripts/aws/retire-cognee-extractor.sh; both dry-runs executed
 python3 -c "yaml.safe_load(MORNING-SYSTEM-HEALTH-CHECK.yml)"; check-21 shell logic dry-run against live numbers
+
+## Phase 1 (VTID-04364..04367)
+apply_migration vtid_04365_session_summary_episodes     # category + unique index, applied live
+select memory_semantic_search signature / active_role distribution   # read-only
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .    # exit 0
+node node_modules/.bin/jest test/services/session-memory-commit.test.ts test/routes/orb-livekit.test.ts test/services/memory ...
+node node_modules/.bin/jest   # full suite, outputs/jest-full-phase1.txt

@@ -398,7 +398,7 @@ describe('server_content — turn_complete', () => {
     send({ server_content: { turn_complete: true } });
     await flush();
     expect(mockWriteMemoryItemWithIdentity).toHaveBeenCalledWith(
-      { user_id: 'u1', tenant_id: 't1' },
+      { user_id: 'u1', tenant_id: 't1', active_role: null },
       expect.objectContaining({ source: 'orb_voice', content: expect.stringContaining('sufficiently long') }),
     );
     expect(mockAddSessionTurn).toHaveBeenCalledWith('sess-raw-1', 't1', 'u1', 'user', expect.any(String));
