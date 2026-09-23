@@ -138,8 +138,11 @@ router.use(optionalAuth);
 // gateway_client.py / session.py, which documents that anonymous sessions
 // (no user_jwt) getting 401 from tool endpoints is expected/acceptable.
 const OPEN_PATHS = new Set(['/health']);
+// VTID-04358: /feed/<token>.ics is read by external calendar apps, which
+// cannot send a bearer. The secret token in the path is the credential.
+const isFeedPath = (p: string) => p.startsWith('/feed/');
 router.use((req: Request, res: Response, next) => {
-  if (OPEN_PATHS.has(req.path)) return next();
+  if (OPEN_PATHS.has(req.path) || isFeedPath(req.path)) return next();
   if (!(req as AuthenticatedRequest).identity?.user_id) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
@@ -157,6 +160,70 @@ function getUserId(req: Request): string | null {
 function getActiveRole(req: Request): string | null {
   return (req.query.role as string) || req.get('X-Vitana-Active-Role') || null;
 }
+
+// =============================================================================
+// VTID-04358 — private iCalendar subscription feed
+//   GET    /subscription            → is a link active, created/last used
+//   POST   /subscription            → create a new link (replaces the old one)
+//   DELETE /subscription            → revoke it
+//   GET    /feed/<token>.ics        → the feed (no bearer; the token is the key)
+// The plain token is returned once, on POST; only its hash is stored.
+// =============================================================================
+router.get('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { getFeedStatus } = await import('../services/calendar-ics-feed');
+    return res.json({ ok: true, data: await getFeedStatus(userId) });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { rotateFeedToken } = await import('../services/calendar-ics-feed');
+    const token = await rotateFeedToken(userId);
+    // A path, not a URL: the client prefixes the gateway base it already uses.
+    return res.status(201).json({ ok: true, data: { feed_path: `/api/v1/calendar/feed/${token}.ics` } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.delete('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { revokeFeedToken } = await import('../services/calendar-ics-feed');
+    await revokeFeedToken(userId);
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} DELETE /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/feed/:file', async (req: Request, res: Response) => { // public-route — no user JWT; the 256-bit token in the path is the credential (hash-checked)
+  try {
+    const m = /^([A-Za-z0-9_-]+)\.ics$/.exec(String(req.params.file ?? ''));
+    const { resolveFeedToken, buildFeedForUser } = await import('../services/calendar-ics-feed');
+    const userId = m ? await resolveFeedToken(m[1]) : null;
+    // One answer for malformed, unknown and revoked tokens: nothing to probe.
+    if (!userId) return res.status(404).type('text/plain').send('Not found');
+    const body = await buildFeedForUser(userId);
+    res.set('Cache-Control', 'private, max-age=900');
+    res.set('X-Robots-Tag', 'noindex');
+    return res.type('text/calendar; charset=utf-8').send(body);
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /feed error:`, err.message);
+    return res.status(500).type('text/plain').send('Error');
+  }
+});
 
 // =============================================================================
 // GET /events — List events (role-filtered, paginated)
