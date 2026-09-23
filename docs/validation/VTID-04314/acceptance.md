@@ -33,3 +33,4 @@ TEST: services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-synta
 
 AC-5 (post-merge, live): the staging deploy for this merge either goes green,
 or its log names the rollout failure in the new step.
+CURL: curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info (git_commit = this merge on success; otherwise the "Diagnose failed rollout" step output of the staging deploy run)
