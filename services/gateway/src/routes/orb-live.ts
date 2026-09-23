@@ -1045,6 +1045,12 @@ export interface GeminiLiveSession {
   // typically EventSource network blips, not long pauses, so rebuilding would
   // waste 400-1200 ms of Supabase/Gemini calls for zero user benefit.
   contextBootstrapBuiltAt?: number;
+  // VTID-04414 (WS-1.3): how the standing context was built at session start,
+  // so a reconnect rebuild uses the same builder (brain / legacy / lesson),
+  // the same brain role, and re-applies the same extras.
+  contextBuilder?: import('../orb/live/session/session-context-builder').ContextBuilderKind;
+  contextBrainRole?: string;
+  contextExtras?: import('../orb/live/session/session-context-builder').ContextExtras;
   // BOOTSTRAP-ORB-CRITICAL-PATH: Resolves once the heavy context assembly
   // (memory bootstrap, active role lookup, last-session info, admin briefing,
   // stored-language lookup) has populated the fields above. Awaited inside
@@ -16152,13 +16158,30 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     if (bootstrapAgeMs < BOOTSTRAP_REBUILD_MIN_AGE_MS) {
       console.log(`[BOOTSTRAP-ORB-PHASE1] Reconnect within ${Math.round(bootstrapAgeMs / 1000)}s of session-start for ${sessionId} — reusing cached bootstrap context (saved ~${Math.round((session.contextBootstrapLatencyMs || 800))} ms)`);
     } else {
-      console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns, bootstrap age ${Math.round(bootstrapAgeMs / 1000)}s). Rebuilding context pack...`);
+      console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns, bootstrap age ${Math.round(bootstrapAgeMs / 1000)}s). Rebuilding context (${session.contextBuilder ?? 'legacy'})...`);
       try {
-        const bootstrapResult = await buildBootstrapContextPack(session.identity, sessionId);
-        if (bootstrapResult.contextInstruction) {
-          session.contextInstruction = bootstrapResult.contextInstruction;
+        // VTID-04414 (WS-1.3): rebuild with the builder, role and extras the
+        // session started with. Before, this was always the legacy pack with no
+        // Autopilot offer, admin briefing or journey block — a brain session
+        // silently switched context, and a lesson got the full community pack.
+        const { rebuildSessionContext } = await import('../orb/live/session/session-context-builder');
+        const { isAdminRole } = await import('../services/admin-scanners/briefing');
+        const rebuilt = await rebuildSessionContext(session, sessionId, {
+          legacy: buildBootstrapContextPack,
+          isAdminRole,
+        });
+        if (rebuilt && rebuilt.contextInstruction) {
+          session.contextInstruction = rebuilt.contextInstruction;
           session.contextBootstrapBuiltAt = Date.now();
-          console.log(`[VTID-01225] Context pack rebuilt on reconnect: ${bootstrapResult.latencyMs}ms, chars=${session.contextInstruction.length}`);
+          console.log(`[VTID-01225] Context rebuilt on reconnect (${rebuilt.builder}): ${rebuilt.latencyMs}ms, chars=${session.contextInstruction.length}`);
+          emitDiag(session, 'context_rebuilt_on_reconnect', {
+            builder: rebuilt.builder,
+            started_builder: session.contextBuilder ?? null,
+            chars: rebuilt.contextInstruction.length,
+            latency_ms: rebuilt.latencyMs,
+            brain_error: rebuilt.brainError ?? null,
+            turns: session.transcriptTurns.length,
+          });
         }
       } catch (err: any) {
         console.warn(`[VTID-01225] Context pack rebuild on reconnect failed: ${err.message}`);

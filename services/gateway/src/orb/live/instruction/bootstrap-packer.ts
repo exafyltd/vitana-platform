@@ -96,6 +96,8 @@ const RULES: Rule[] = [
   { test: /^## (MOST RECENT USER UTTERANCES|LETZTE ECHTE NUTZER-AUSSAGEN)/, key: 'recent_utterances', priority: 1, tier: 'core' },
   { test: /^## Verified Facts/, key: 'verified_facts', priority: 1, tier: 'core' },
   { test: /^=== ACTIVE LIFE COMPASS GOAL/, key: 'life_compass_goal', priority: 1, tier: 'core' },
+  // VTID-04414: the lesson surface's learner facts (session-context-builder.ts).
+  { test: /^=== LEARNER BACKGROUND/, key: 'learner_background', priority: 1, tier: 'core' },
   { test: /^=== PROACTIVE (OPENER|INITIATIVE)/, key: 'proactive_opener', priority: 2, tier: 'situational' },
   { test: /^=== OPENING SHAPE MATRIX/, key: 'opening_shape', priority: 2, tier: 'situational' },
   { test: /^=== USER CONTEXT \(you already know this user\) ===/, key: 'specialist_context', priority: 3, tier: 'situational' },

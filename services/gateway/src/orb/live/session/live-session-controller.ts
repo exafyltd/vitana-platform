@@ -42,6 +42,14 @@ import type {
   LiveStreamVideoFrame,
 } from '../types';
 import type { ContextPack } from '../../../types/conversation';
+import {
+  buildBaseSessionContext,
+  buildLessonContext,
+  composeSessionContext,
+  fetchJourneyStandingBlock,
+  resolveBrainRole,
+  type ContextBuilderKind,
+} from './session-context-builder';
 import { SESSION_TIMEOUT_MS, VERTEX_PROJECT_ID } from '../config';
 import { VERTEX_LIVE_MODEL } from '../protocol';
 import {
@@ -987,40 +995,31 @@ export async function handleLiveSessionStart(
     // await in connectToLiveAPI is ~0ms.
     contextBootstrapSkippedReason = 'guided_topic_minimal';
     sseActiveRole = 'community';
-    const isDe = (lang || 'en').toLowerCase().startsWith('de');
-    const minimalGuidedContext = isDe
-      ? 'Du bist Vitana — die warme, ruhige Stimme der Vitanaland-Langlebigkeits-Community. Du stellst gerade ein Thema aus der geführten Reise vor und erklärst es. Halte dich an die dir vorgegebene Lektion.'
-      : 'You are Vitana — the warm, calm voice of the Vitanaland longevity community. You are introducing and teaching one Guided Journey topic. Stay on the lesson you are given.';
     const guidedTopicUserId = bootstrapIdentity.user_id;
+    const guidedTopicTenantId = bootstrapIdentity.tenant_id;
     contextReadyPromise = Promise.resolve().then(async () => {
       // BOOTSTRAP-ORB-GUIDED-JOURNEY-AWARE: this fast path skips the heavy
-      // bootstrap, so WITHOUT this fetch the model has ZERO awareness of where
-      // the user is in the Guided Journey and defaults to "let's start the first
-      // session" — even for a user on session 10. Inject the SAME authoritative
-      // standing block the heavy path uses (current session + "never restart at
-      // 1"). Correctness-first: we await one indexed read (~20-50ms) so the model
-      // is journey-aware from turn 1. Best-effort: any failure keeps the minimal
-      // persona rather than blocking first audio.
-      let ctx = minimalGuidedContext;
-      try {
-        const { getSupabase } = await import('../../../lib/supabase');
-        const supaGj = getSupabase() ?? undefined;
-        if (supaGj) {
-          const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
-            '../../../services/assistant-continuation/providers/new-day-overview-payload'
-          );
-          const gj = await fetchGuidedJourney(supaGj, guidedTopicUserId, lang);
-          const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
-          if (journeyBlock) ctx = `${ctx}${journeyBlock}`;
-        }
-      } catch { /* keep minimal persona — journey awareness is additive */ }
+      // bootstrap, so WITHOUT the journey block the model has ZERO awareness of
+      // where the user is in the Guided Journey and defaults to "let's start the
+      // first session" — even for a user on session 10.
+      // VTID-04414 (WS-1.3): the lesson surface of the shared context builder.
+      // Persona + journey standing block + the learner's verified facts from the
+      // stored core snapshot (bounded, 300 ms). Both reads run in parallel and
+      // fail open to the minimal persona.
+      const lesson = await buildLessonContext({ userId: guidedTopicUserId, tenantId: guidedTopicTenantId, lang });
       session.active_role = 'community';
       session.lastSessionInfo = null;
-      session.contextInstruction = ctx;
+      session.contextInstruction = lesson.text;
       session.contextPack = undefined;
       session.contextBootstrapLatencyMs = 0;
       session.contextBootstrapSkippedReason = 'guided_topic_minimal';
       session.contextBootstrapBuiltAt = Date.now();
+      session.contextBuilder = 'lesson';
+      session.contextBrainRole = 'community';
+      session.contextExtras = {};
+      if (lesson.learnerChars > 0) {
+        console.log(`[VTID-04414] Guided-topic session ${sessionId}: learner background ${lesson.learnerChars} chars`);
+      }
     });
     console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (+journey awareness) for fast first audio`);
   } else if (bootstrapIdentity) {
@@ -1032,11 +1031,12 @@ export async function handleLiveSessionStart(
     const contextBuildStart = Date.now();
 
     const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-    const brainRole = clientContext.isMobile
-      ? 'community'
-      : bodyRoute.startsWith('/command-hub')
-        ? 'developer'
-        : ((bootstrapIdentity as any).active_role || 'community');
+    // VTID-04414 (WS-1.3): one role rule for every path that builds the voice context.
+    const brainRole = resolveBrainRole({
+      isMobile: clientContext.isMobile,
+      route: bodyRoute,
+      identityRole: (bootstrapIdentity as any).active_role || null,
+    });
 
     // VTID-04399 (WS-1.2): read the user's stored core context in parallel
     // with the fresh build. The stream-open gate uses it only if the fresh
@@ -1061,43 +1061,42 @@ export async function handleLiveSessionStart(
     }
 
     const bootstrapWork = Promise.all([
-      useOrbBrain
-        ? (async () => {
-            const brainStart = Date.now();
-            try {
-              const { buildBrainSystemInstructionCached } = await import('../../../services/vitana-brain-cache');
-              const { instruction, contextPack: cp, coreInstruction } = await buildBrainSystemInstructionCached({
-                user_id: bootstrapIdentity.user_id,
-                tenant_id: bootstrapIdentity.tenant_id || 'default',
-                role: brainRole,
-                channel: 'orb',
-                thread_id: sessionId,
-                user_timezone: clientContext?.timezone,
-              });
-              console.log(`[VITANA-BRAIN] ORB context built in ${Date.now() - brainStart}ms (${instruction.length} chars)`);
-              // VTID-04399: write-through the stable part for the next session
-              // start. Throttled against the row this session already read.
-              if (coreSnapshotRead && snapshotModule && coreInstruction) {
-                void snapshotModule
-                  .recordSnapshotAfterBuild({
-                    tenantId: bootstrapIdentity.tenant_id!,
-                    userId: bootstrapIdentity.user_id,
-                    core: coreInstruction,
-                    lang,
-                    existing: coreSnapshotRead,
-                  })
-                  .then((r) => {
-                    if (r.written) console.log(`[VTID-04399] core snapshot written for session ${sessionId} (${r.reason})`);
-                  })
-                  .catch(() => {});
-              }
-              return { contextInstruction: instruction, contextPack: cp, latencyMs: Date.now() - brainStart };
-            } catch (err: any) {
-              console.warn(`[VITANA-BRAIN] ORB brain context failed, falling back to legacy: ${err.message}`);
-              return deps.buildBootstrapContextPack(bootstrapIdentity, sessionId);
-            }
-          })()
-        : deps.buildBootstrapContextPack(bootstrapIdentity, sessionId),
+      // VTID-04414 (WS-1.3): the shared builder — brain when enabled, legacy
+      // otherwise, legacy on a brain failure (named in brainError). The same
+      // builder serves the reconnect rebuild and LiveKit.
+      buildBaseSessionContext(
+        {
+          identity: bootstrapIdentity,
+          sessionId,
+          brainRole,
+          timezone: clientContext?.timezone,
+          useBrain: useOrbBrain,
+        },
+        { legacy: deps.buildBootstrapContextPack },
+      ).then((base) => {
+        if (base.builder === 'brain') {
+          console.log(`[VITANA-BRAIN] ORB context built in ${base.latencyMs}ms (${(base.contextInstruction || '').length} chars)`);
+          // VTID-04399: write-through the stable part for the next session
+          // start. Throttled against the row this session already read.
+          if (coreSnapshotRead && snapshotModule && base.coreInstruction) {
+            void snapshotModule
+              .recordSnapshotAfterBuild({
+                tenantId: bootstrapIdentity.tenant_id!,
+                userId: bootstrapIdentity.user_id,
+                core: base.coreInstruction,
+                lang,
+                existing: coreSnapshotRead,
+              })
+              .then((r) => {
+                if (r.written) console.log(`[VTID-04399] core snapshot written for session ${sessionId} (${r.reason})`);
+              })
+              .catch(() => {});
+          }
+        } else if (base.brainError) {
+          console.warn(`[VITANA-BRAIN] ORB brain context failed, fell back to legacy: ${base.brainError}`);
+        }
+        return base;
+      }),
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
@@ -1135,15 +1134,18 @@ export async function handleLiveSessionStart(
           resolvedRole = 'community';
         }
 
-        let finalContext = bootstrapResult.contextInstruction || '';
-        // VTID-03201: community sessions get the proactive Autopilot offer so
-        // Vitana raises it unprompted. resolvedRole already folds mobile → community.
+        // VTID-04414 (WS-1.3): the extras are composed by the shared builder
+        // (the same order as before: offer, briefing, journey) and stored on
+        // the session so a reconnect rebuild re-applies them.
+        const contextExtras = {
+          autopilotOffer: autopilotOffer || null,
+          adminBriefing: adminBriefing || null,
+        };
+        const resolvedIsAdmin = isAdminRole(resolvedRole);
         if (resolvedRole === 'community' && autopilotOffer) {
-          finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
           console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
         }
-        if (isAdminRole(resolvedRole) && adminBriefing) {
-          finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
+        if (resolvedIsAdmin && adminBriefing) {
           emitOasisEvent({
             vtid: 'BOOTSTRAP-ADMIN-EE',
             type: 'admin.briefing.injected',
@@ -1160,7 +1162,7 @@ export async function handleLiveSessionStart(
         if (bootstrapResult.skippedReason) {
           console.warn(`[VTID-01224] Context bootstrap skipped for ${sessionId}: ${bootstrapResult.skippedReason}`);
         } else {
-          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, chars=${finalContext.length}`);
+          console.log(`[VTID-01224] Context bootstrap complete for ${sessionId}: ${bootstrapResult.latencyMs}ms, base chars=${(bootstrapResult.contextInstruction || '').length}`);
         }
 
         let finalLang = lang;
@@ -1172,21 +1174,18 @@ export async function handleLiveSessionStart(
         // GUIDED JOURNEY standing awareness: append the user's LIVE journey
         // progress (sessions completed, current session + title, where they left
         // off) to the STANDING bootstrap context — so Vitana knows the user is on
-        // e.g. session 10 on EVERY turn, not only at the greeting. Without this she
-        // defaults to "the first lesson" mid-conversation. Best-effort; the block
-        // is empty for brand-new users and any failure never blocks bootstrap.
-        try {
-          const { getSupabase } = await import('../../../lib/supabase');
-          const supaGj = getSupabase() ?? undefined;
-          if (supaGj && bootstrapIdentity.user_id) {
-            const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
-              '../../../services/assistant-continuation/providers/new-day-overview-payload'
-            );
-            const gj = await fetchGuidedJourney(supaGj, bootstrapIdentity.user_id, finalLang);
-            const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
-            if (journeyBlock) finalContext = finalContext ? `${finalContext}${journeyBlock}` : journeyBlock.trimStart();
-          }
-        } catch { /* non-blocking — journey awareness is additive */ }
+        // e.g. session 10 on EVERY turn, not only at the greeting. Best-effort;
+        // empty for brand-new users and any failure never blocks bootstrap.
+        const journeyBlock = bootstrapIdentity.user_id
+          ? await fetchJourneyStandingBlock(bootstrapIdentity.user_id, finalLang)
+          : '';
+        const finalContext = composeSessionContext({
+          base: bootstrapResult.contextInstruction || '',
+          role: resolvedRole,
+          isAdminRole: resolvedIsAdmin,
+          extras: contextExtras,
+          journeyBlock,
+        }).text;
 
         session.active_role = resolvedRole;
         session.lastSessionInfo = fetchedSessionInfo;
@@ -1195,6 +1194,9 @@ export async function handleLiveSessionStart(
         session.contextBootstrapLatencyMs = bootstrapResult.latencyMs;
         session.contextBootstrapSkippedReason = bootstrapResult.skippedReason;
         session.contextBootstrapBuiltAt = Date.now();
+        session.contextBuilder = (bootstrapResult as { builder?: ContextBuilderKind }).builder ?? 'legacy';
+        session.contextBrainRole = brainRole;
+        session.contextExtras = contextExtras;
         try {
           (session as any).onboardingCohortBlock = await deps.fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
         } catch { /* non-blocking */ }

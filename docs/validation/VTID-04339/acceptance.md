@@ -118,6 +118,10 @@ or heartbeat:
   (the stream-open gate used the stored core snapshot) and a `context_source`
   field on the existing `context_awaited` / `setup_sent` latency marks.
   TEST: services/gateway/test/services/conversation/vtid-04399-brain-core-snapshot.test.ts
+- No new topic for VTID-04414: one new `orb.live.diag` stage
+  `context_rebuilt_on_reconnect` (builder, started_builder, chars, latency_ms,
+  brain_error, turns) when an SSE reconnect rebuilds the session context.
+  TEST: services/gateway/test/orb/live/session/vtid-04414-session-context-builder.test.ts
 
 Live signal after merge (staging): rows with these topics in `oasis_events`.
 
