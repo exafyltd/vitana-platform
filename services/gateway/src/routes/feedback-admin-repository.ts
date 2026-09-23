@@ -25,7 +25,7 @@ export async function fetchFeedbackTicketsList(
   let q = sb
     .from('feedback_tickets')
     .select(
-      'id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, classifier_meta, duplicate_of, resolver_agent, created_at, triaged_at, resolved_at, user_confirmed_at',
+      'id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, classifier_meta, duplicate_of, resolver_agent, created_at, triaged_at, resolved_at, user_confirmed_at, linked_vtid, linked_finding_id, linked_pr_url',
     )
     .order('created_at', { ascending: false })
     .limit(filters.limit);
@@ -63,11 +63,27 @@ export async function fetchTenantFeedbackTickets(sb: SupabaseClient, userIds: st
   return sb
     .from('feedback_tickets')
     .select(
-      'id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, resolver_agent, created_at, resolved_at, user_confirmed_at',
+      'id, ticket_number, vitana_id, kind, status, priority, surface, raw_transcript, screen_path, app_version, resolver_agent, created_at, resolved_at, user_confirmed_at, linked_vtid, linked_finding_id, linked_pr_url',
     )
     .in('user_id', userIds)
     .order('created_at', { ascending: false })
     .limit(limit);
+}
+
+// ==================== dev_autopilot_executions ====================
+
+/**
+ * VTID-04333: executions for the findings the listed tickets are linked to.
+ * The caller keeps the newest per finding (attachLatestExecutions). Bounded
+ * by the ticket page size (≤200 findings).
+ */
+export async function fetchExecutionsForFindings(sb: SupabaseClient, findingIds: string[]) {
+  return sb
+    .from('dev_autopilot_executions')
+    .select('id, finding_id, status, failure_stage, pr_url, pr_number, created_at, updated_at, completed_at')
+    .in('finding_id', findingIds)
+    .order('created_at', { ascending: false })
+    .limit(Math.max(findingIds.length * 5, 20));
 }
 
 // ==================== feedback_handoff_events ====================

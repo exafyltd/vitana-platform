@@ -128,6 +128,12 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   // Persona hand-off
   'switch_persona',
   'report_to_specialist',
+  // VTID-04332: the specialist's way to enrich the hand-off ticket, and the
+  // two filing tools the system prompt's AVAILABLE TOOLS section describes —
+  // kept so the prompt and the trimmed Nova catalog agree.
+  'append_to_ticket',
+  'submit_bug_report',
+  'submit_support_ticket',
   // Day / calendar
   'get_day_summary',
   'get_schedule',

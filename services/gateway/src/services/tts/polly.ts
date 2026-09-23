@@ -118,6 +118,50 @@ const POLLY_VOICES: Record<string, PollyVoiceConfig> = {
 };
 
 /**
+ * VTID-04336 — which persona a synthesis request speaks for. `receptionist`
+ * (the default, and every existing caller) is Vitana: `POLLY_VOICES` above,
+ * byte-for-byte unchanged. `specialist` is the hand-off colleague (Devon, the
+ * only enabled specialist — male, registry voice `Charon`) on the cascade
+ * voice path, where there is no Nova/Gemini voice to switch to.
+ */
+export type PollyVoiceRole = 'receptionist' | 'specialist';
+
+/**
+ * VTID-04336 — the specialist's voice per language: the male counterpart of
+ * the female receptionist voice above, same language code, so a member hears
+ * a different colleague pick up after the hand-off.
+ *
+ * Deliberately ABSENT, because Polly has no male voice in that language at
+ * all (Polly's documented voice list): `zh` (cmn-CN has only Zhiyu) and `tr`
+ * (Burcu and Filiz, both female). Those languages keep the receptionist voice
+ * for the specialist — the persona and prompt still switch, only the timbre
+ * cannot. Never substitute another language's voice to manufacture a
+ * difference: fluent audio in the wrong accent is worse than the same voice.
+ *
+ * `ru` (Maxim) and `pl` (Jacek) are standard-engine only — the same quality
+ * floor `ru`'s receptionist voice already has; Polly has no neural male voice
+ * in either language.
+ *
+ * NOT verified against the live API by the session that added it (no AWS
+ * credentials) — derived from Polly's documented voice list, the same posture
+ * this file's own header records for the original table. The cascade backend
+ * therefore retries with the receptionist voice when a specialist synthesis
+ * returns null (`cascaded/tts-backend.ts`), so an unservable entry here can
+ * only cost the timbre change, never the audio. `scripts/tts/verify-polly-
+ * voices.ts` checks both tables.
+ */
+const POLLY_SPECIALIST_VOICES: Record<string, PollyVoiceConfig> = {
+  en: { voiceId: 'Matthew' as VoiceId, engine: 'neural' as Engine, languageCode: 'en-US' },
+  de: { voiceId: 'Daniel' as VoiceId, engine: 'neural' as Engine, languageCode: 'de-DE' },
+  fr: { voiceId: 'Remi' as VoiceId, engine: 'neural' as Engine, languageCode: 'fr-FR' },
+  es: { voiceId: 'Sergio' as VoiceId, engine: 'neural' as Engine, languageCode: 'es-ES' },
+  ar: { voiceId: 'Zayd' as VoiceId, engine: 'neural' as Engine, languageCode: 'ar-AE' },
+  ru: { voiceId: 'Maxim' as VoiceId, engine: 'standard' as Engine, languageCode: 'ru-RU' },
+  pt: { voiceId: 'Thiago' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
+  pl: { voiceId: 'Jacek' as VoiceId, engine: 'standard' as Engine, languageCode: 'pl-PL' },
+};
+
+/**
  * Polly's `pcm` OutputFormat accepts only 8000 or 16000 Hz. The greeting
  * bridge's Cloud TTS path uses 24000; callers must read the rate off the
  * synthesis result rather than assuming either value.
@@ -147,6 +191,22 @@ export function resolvePollyVoice(lang: string): PollyVoiceConfig | null {
   const normalized = normalizeLang(lang);
   if (POLLY_UNSUPPORTED_LANGS.has(normalized)) return null;
   return POLLY_VOICES[normalized] ?? null;
+}
+
+/**
+ * VTID-04336 — the specialist's Polly voice for `lang`, or null when Polly
+ * has no distinct specialist voice there (see `POLLY_SPECIALIST_VOICES`).
+ * Null means "use the receptionist voice", never another language's voice.
+ */
+export function resolvePollySpecialistVoice(lang: string): PollyVoiceConfig | null {
+  const normalized = normalizeLang(lang);
+  if (POLLY_UNSUPPORTED_LANGS.has(normalized)) return null;
+  return POLLY_SPECIALIST_VOICES[normalized] ?? null;
+}
+
+/** Test/verification seam: the specialist table, read-only. */
+export function listPollySpecialistVoices(): Readonly<Record<string, PollyVoiceConfig>> {
+  return POLLY_SPECIALIST_VOICES;
 }
 
 /** XML-escape text destined for an SSML payload. */
@@ -223,11 +283,23 @@ export async function synthesizePolly(opts: {
   lang: string;
   format: 'mp3' | 'pcm';
   speakingRate?: number;
+  /**
+   * VTID-04336 — omitted (every pre-existing caller) = receptionist voice,
+   * unchanged. `specialist` resolves `POLLY_SPECIALIST_VOICES` and returns
+   * null when that language has no specialist voice; the caller decides
+   * whether to retry with the receptionist voice.
+   */
+  voiceRole?: PollyVoiceRole;
 }): Promise<PollySynthesisResult | null> {
   const { text, lang, format } = opts;
   if (!text || text.trim().length === 0) return null;
 
-  const voice = resolvePollyVoice(lang);
+  const voice =
+    opts.voiceRole === 'specialist' ? resolvePollySpecialistVoice(lang) : resolvePollyVoice(lang);
+  if (!voice && opts.voiceRole === 'specialist') {
+    console.warn(`[POLLY] No specialist voice for lang='${normalizeLang(lang)}' — caller keeps the receptionist voice.`);
+    return null;
+  }
   if (!voice) {
     // Name BOTH reasons a lang can land here — explicitly unsupported, or
     // simply not in the voice table — because they need different fixes and

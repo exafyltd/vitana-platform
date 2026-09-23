@@ -24,6 +24,7 @@ import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-ou
 import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
+import { feedbackTicketRefFor } from '../services/feedback-ticket-ref';
 
 const router = Router();
 
@@ -668,7 +669,9 @@ const PENDING_APPROVALS_PREDICATE =
 
 const PENDING_APPROVALS_SELECT =
   'id,title,summary,domain,risk_class,impact_score,effort_score,' +
-  'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot';
+  'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot,' +
+  // VTID-04333: source_ref + activated_vtid drive the feedback_ticket field.
+  'source_ref,activated_vtid';
 
 router.get('/pending-approvals', requireDevRole, async (req: Request, res: Response) => {
   const supa = getSupabase();
@@ -685,7 +688,8 @@ router.get('/pending-approvals', requireDevRole, async (req: Request, res: Respo
 
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  const recommendations = r.data || [];
+  const recommendations = ((r.data || []) as Array<Record<string, unknown>>)
+    .map((rec) => ({ ...rec, feedback_ticket: feedbackTicketRefFor(rec) }));
   return res.json({ ok: true, recommendations, count: recommendations.length });
 });
 
@@ -784,6 +788,8 @@ router.get('/queue', requireDevRole, async (req: Request, res: Response) => {
     });
     return {
       ...f,
+      // VTID-04333: { ticket_id, ticket_number, linked_vtid } | null
+      feedback_ticket: feedbackTicketRefFor(f),
       auto_actionable: pf.auto_actionable,
       block_reason: pf.block_reason,
       block_message: pf.block_message,
@@ -810,7 +816,8 @@ router.get('/findings/:id', requireDevRole, async (req: Request, res: Response) 
     supa,
     `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${id}&order=version.desc`,
   );
-  return res.json({ ok: true, finding: rec, plan_versions: plansR.data || [] });
+  const finding = { ...(rec as Record<string, unknown>), feedback_ticket: feedbackTicketRefFor(rec as Record<string, unknown>) };
+  return res.json({ ok: true, finding, plan_versions: plansR.data || [] });
 });
 
 // =============================================================================
@@ -1277,14 +1284,16 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
     .map((e) => (typeof e.finding_id === 'string' ? e.finding_id : null))
     .filter((id): id is string => id !== null)));
   if (findingIds.length > 0) {
-    const recR = await supaGet<Array<{ id: string; title: string; source_type: string | null; spec_snapshot: Record<string, unknown> | null }>>(
+    const recR = await supaGet<Array<{ id: string; title: string; source_type: string | null; spec_snapshot: Record<string, unknown> | null; source_ref: string | null; activated_vtid: string | null }>>(
       supa,
-      `/rest/v1/autopilot_recommendations?id=in.(${findingIds.join(',')})&select=id,title,source_type,spec_snapshot`,
+      `/rest/v1/autopilot_recommendations?id=in.(${findingIds.join(',')})&select=id,title,source_type,spec_snapshot,source_ref,activated_vtid`,
     );
     if (recR.ok && recR.data) {
       const byId = new Map(recR.data.map((r) => [r.id, r]));
       for (const exec of executions) {
         const rec = typeof exec.finding_id === 'string' ? byId.get(exec.finding_id) : undefined;
+        // VTID-04333: { ticket_id, ticket_number, linked_vtid } | null
+        exec.feedback_ticket = rec ? feedbackTicketRefFor(rec) : null;
         if (rec && !exec.recommendation) {
           const snap = rec.spec_snapshot || {};
           exec.recommendation = {
@@ -1295,6 +1304,9 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
         }
       }
     }
+  }
+  for (const exec of executions) {
+    if (exec.feedback_ticket === undefined) exec.feedback_ticket = null;
   }
 
   return res.json({ ok: true, executions });

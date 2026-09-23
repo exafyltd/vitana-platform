@@ -48,6 +48,7 @@ import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
 import { loadAutopilotContext } from './dev-autopilot/context-loader';
 // VTID-04002: deterministic validator-compliant PR title/body + evidence pack.
 import { applyPrContract } from './dev-autopilot-pr-contract';
+import { resolveFeedbackTicketRef } from './feedback-ticket-ref';
 // VTID-02984 (PR-M1.x): shared allowlist for executable source_types so
 // test-contract scanner recommendations (PR-L2/L3) reach the executor.
 import {
@@ -1760,9 +1761,9 @@ export async function runExecutionSession(
   // task's own OASIS Event Tracking panel / Agents Control Plane trace
   // view, because it was never tagged with the vtid either of those
   // already reads events by.
-  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null; activated_vtid: string | null }>>(
+  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null; activated_vtid: string | null; source_ref?: string | null }>>(
     s,
-    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid&limit=1`,
+    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid,source_ref&limit=1`,
   );
   const findingScanner: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.spec_snapshot?.scanner
     ? String(findingMetaR.data[0].spec_snapshot.scanner)
@@ -2009,8 +2010,12 @@ export async function runExecutionSession(
   // still measures the model's own diff, never the pack.
   const rawTitle = parsed.pr_title || `DEV-AUTOPILOT: execute plan ${executionId.slice(0, 8)}`;
   const rawBody = parsed.pr_body || `Automated PR from Dev Autopilot execution \`${executionId}\`.\n\n---\n\n${plan.plan_markdown.slice(0, 40_000)}`;
+  // VTID-04333: a finding that came from a member's feedback ticket carries
+  // the ticket number (FB-…) on the PR title and body, next to the VTID.
+  const ticketRef = await resolveFeedbackTicketRef(s, findingMetaR.ok && findingMetaR.data ? findingMetaR.data[0] as Record<string, unknown> : null);
   const contract = applyPrContract({
     vtid: activatedVtid,
+    ticketNumber: ticketRef?.ticket_number ?? null,
     title: rawTitle,
     body: rawBody,
     files: parsed.files.map(f => ({ path: f.path, action: f.action })),
@@ -2834,12 +2839,14 @@ export async function backgroundExecutorTick(): Promise<void> {
 
   // 0c-bis. VTID-04311: replace placeholder specs on spec_ready bug/ux
   // tickets with a real Devon draft (triage stage). Self-throttled (5 min),
-  // FEEDBACK_SPEC_DRAFT_ENABLED=false disables it.
+  // FEEDBACK_SPEC_DRAFT_ENABLED=false disables it. VTID-04333: the same pass
+  // auto-dispatches tickets with a real spec when
+  // FEEDBACK_AUTO_DISPATCH_ENABLED=true (kill switch checked inside).
   try {
     const { draftPlaceholderSpecsTick } = await import('./feedback-spec-drafter');
     const d = await draftPlaceholderSpecsTick(s);
-    if (d.drafted > 0 || d.failed > 0) {
-      console.log(`${LOG_PREFIX} feedback-spec-draft: drafted=${d.drafted} failed=${d.failed}`);
+    if (d.drafted > 0 || d.failed > 0 || d.dispatched > 0 || d.dispatch_failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-spec-draft: drafted=${d.drafted} failed=${d.failed} auto_dispatched=${d.dispatched} auto_dispatch_failed=${d.dispatch_failed}`);
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} feedback-spec-draft error:`, err);

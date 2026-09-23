@@ -44,13 +44,18 @@ function decodeJwtSub(token: string): string | null {
   catch { return null; }
 }
 function emitFeedbackEvent(type: string, ticket: Record<string, unknown>, payload: Record<string, unknown> = {}, actorId?: string) {
+  // VTID-04333: an event about a ticket that has its own VTID is filed under
+  // it, so the ticket's ledger row carries its own trail.
+  const ownVtid = typeof payload.vtid === 'string' && /^VTID-\d{4,5}$/.test(payload.vtid) ? payload.vtid
+    : typeof ticket.linked_vtid === 'string' && /^VTID-\d{4,5}$/.test(ticket.linked_vtid) ? ticket.linked_vtid
+    : null;
   emitOasisEvent({
-    vtid: VTID,
+    vtid: ownVtid ?? VTID,
     type: type as any,
     source: 'feedback-actions-gateway',
     status: 'info',
     message: `${type} for ${ticket.ticket_number ?? ticket.id}`,
-    payload: { ticket_id: ticket.id, ticket_number: ticket.ticket_number, ...payload },
+    payload: { ticket_id: ticket.id, ticket_number: ticket.ticket_number, linked_vtid: ownVtid, ...payload },
     actor_id: actorId,
     actor_role: actorId ? 'operator' : 'system',
     surface: 'command-hub',

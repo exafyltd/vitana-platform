@@ -1,0 +1,19 @@
+Full gateway run (before the vtid-03821 select-string pin was updated):
+  tsc --noEmit: exit 0
+  Test Suites: 1 failed, 1 skipped, 1085 passed, 1086 of 1087 total
+  Tests:       1 failed, 29 skipped, 6 todo, 17596 passed, 17632 total
+  failing: vtid-03821-execution-telemetry-vtid.test.ts (source pin of the findingMetaR select; updated)
+
+After the update:
+  test/vtid-03821-execution-telemetry-vtid.test.ts + test/vtid-04333-*: 6 suites, 40 tests, all passed
+
+New/changed VTID-04333 suites:
+  dev-autopilot-pr-contract.test.ts                     +7 tests
+  vtid-04333-feedback-ticket-ref.test.ts                 5 tests
+  vtid-04333-feedback-completion-events.test.ts          5 tests
+  vtid-04333-feedback-bridge-ticket-ref.test.ts          6 tests
+  vtid-04333-feedback-auto-dispatch.test.ts             14 tests
+  vtid-04333-staging-feedback-auto-dispatch-pinned.test.ts 5 tests
+  feedback-pipeline.test.ts                             +1 test
+  routes/dev-autopilot.test.ts                          +2 tests, 2 assertions updated (feedback_ticket: null)
+  vtid-04311-feedback-spec-drafter.test.ts               1 assertion updated (new result fields)

@@ -29,7 +29,8 @@ const SOURCE: string = fs.readFileSync(
 
 describe('runExecutionSession telemetry vtid resolution (VTID-03821, source check)', () => {
   it('selects activated_vtid alongside spec_snapshot in the unconditional findingMetaR query', () => {
-    const idx = SOURCE.indexOf('autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid&limit=1');
+    // VTID-04333 appended source_ref (feedback-ticket number for the PR contract).
+    const idx = SOURCE.indexOf('autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid,source_ref&limit=1');
     expect(idx).toBeGreaterThan(-1);
   });
 

@@ -40,6 +40,29 @@
  * follow-up increment rather than a redesign. Shipping conversation-only for
  * languages that today produce garbled fragments is a strict improvement;
  * claiming tool parity it does not have would not be.
+ *
+ * VTID-04336 — THE ONE EXCEPTION: THE HAND-OFF TOOLS, AND PERSONA SWAP
+ * ------------------------------------------------------------------
+ * The owner decided the Vitana → Devon hand-off must work in every language.
+ * So exactly the tools in `CASCADE_TOOL_ALLOWLIST` (`report_to_specialist`,
+ * `switch_persona`) are declared to the model — filtered out of whatever
+ * catalog `connect()` receives, so the rest of the catalog stays off this
+ * path as before. One bounded round per turn: the model may call them,
+ * `onToolCall` fires, the session layer answers through `sendToolResult()`,
+ * and one tool-less continuation call produces the spoken bridge. A result
+ * that never arrives is answered with a synthetic error after
+ * `CASCADE_TOOL_RESULT_TIMEOUT_MS` — this client never hangs on an
+ * unanswered call.
+ *
+ * The hand-off then happens IN PROCESS (`applyPersona()`): there is no
+ * upstream stream to close and reopen, so the session layer swaps the system
+ * instruction and the TTS voice role on this same client instead of closing
+ * it with reason `persona_swap` the way Nova/Vertex do.
+ *
+ * A bounded rolling history (`CASCADE_HISTORY_MAX_MESSAGES`) is kept too:
+ * without it every turn saw only the latest utterance, so the hand-off's own
+ * rule — propose, then call only after the member says yes — could never be
+ * satisfied (the "yes" turn had no memory of the proposal).
  */
 
 import type {
@@ -58,7 +81,13 @@ import type {
 import { TranscribeStreamSession } from './cascaded/transcribe-stream';
 import { synthesizeCascadeReply } from './cascaded/tts-backend';
 import { evaluateCascadeEligibility } from './cascaded-config';
-import { callViaRouter } from '../../../services/llm-router';
+import {
+  callViaRouter,
+  type LLMRouterMessage,
+  type LLMRouterTool,
+  type LLMRouterToolCall,
+} from '../../../services/llm-router';
+import type { PollyVoiceRole } from '../../../services/tts/polly';
 
 export interface CascadedLiveClientDeps {
   /** Session language (base code, e.g. `ru`). Decides Transcribe + Polly. */
@@ -98,6 +127,100 @@ const PLAYBACK_MARGIN_MS = 400;
  */
 export const DEFAULT_CASCADE_VAD_SILENCE_MS = 900;
 
+/**
+ * VTID-04336 — the only tools the cascade declares: the two that move a
+ * member between Vitana and a specialist. Anything else in the catalog
+ * `connect()` receives is dropped here, so this path does not silently grow
+ * tool parity it has never been tested for.
+ */
+export const CASCADE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
+  'report_to_specialist',
+  'switch_persona',
+]);
+
+/** VTID-04336 — how long one tool call may take before a synthetic error result. */
+export const CASCADE_TOOL_RESULT_TIMEOUT_MS = 20_000;
+
+/** VTID-04336 — rolling history bound (messages, oldest dropped first). */
+export const CASCADE_HISTORY_MAX_MESSAGES = 12;
+const CASCADE_HISTORY_MAX_CHARS_PER_MESSAGE = 2_000;
+
+/**
+ * VTID-04336 — the continuation after the hand-off tools ran. A stage
+ * direction (INTENT), never a spoken sentence — NEVER-rule 41: the model
+ * composes the bridge from the tool result's own guidance.
+ */
+export const CASCADE_TOOL_CONTINUE_PROMPT =
+  '(Stage direction, not the user speaking: the tool results are above. Now say what you say to the user, following the tool result guidance, in your own words and in the language of the conversation. Do not mention tools or this direction.)';
+
+/**
+ * VTID-04336 — the specialist's first turn after an in-process swap. The Nova
+ * path gets the same cue as a reconnect "greeting nudge"; here it is an
+ * INTENT the specialist's own prompt turns into words (NEVER-rule 41).
+ */
+export const CASCADE_PERSONA_OPENING_PROMPT =
+  '(Stage direction, not the user speaking: the member has just been handed over to you on this voice call. Open now as your instructions describe, in your own words and in the language of the conversation, then stop and wait for the member.)';
+
+/** VTID-04336 — input to `CascadedLiveClient.applyPersona()`. */
+export interface CascadePersonaInput {
+  /** Persona key now speaking (`vitana`, `devon`, …) — telemetry only. */
+  persona: string;
+  /**
+   * The persona's full system instruction. Null/empty restores the
+   * instruction the session connected with (Vitana's), plus `appendix`.
+   */
+  systemInstruction?: string | null;
+  /** Extra context appended when restoring the connect-time instruction. */
+  appendix?: string | null;
+  /** Which TTS voice speaks from the next turn on. */
+  voiceRole: PollyVoiceRole;
+  /** Run the persona's opening turn right away (specialists: yes). */
+  openWithGreeting: boolean;
+}
+
+export interface CascadePersonaApplied {
+  persona: string;
+  voiceRole: PollyVoiceRole;
+  instructionChars: number;
+  restoredBaseInstruction: boolean;
+}
+
+/**
+ * VTID-04336 — flatten a provider-neutral tool catalog (Vertex-style
+ * `{function_declarations:[…]}` entries or bare declarations) into router
+ * tools, keeping only the allowlisted names.
+ */
+export function extractCascadeTools(
+  tools: ReadonlyArray<Record<string, unknown>> | undefined,
+): LLMRouterTool[] {
+  if (!tools || tools.length === 0) return [];
+  const flat: Array<Record<string, unknown>> = [];
+  for (const entry of tools) {
+    const decls =
+      (entry as { function_declarations?: unknown }).function_declarations ??
+      (entry as { functionDeclarations?: unknown }).functionDeclarations;
+    if (Array.isArray(decls)) flat.push(...(decls as Array<Record<string, unknown>>));
+    else if (typeof (entry as { name?: unknown }).name === 'string') flat.push(entry);
+  }
+  const out: LLMRouterTool[] = [];
+  const seen = new Set<string>();
+  for (const d of flat) {
+    const name = d.name as string;
+    if (!CASCADE_TOOL_ALLOWLIST.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    const params = d.parameters;
+    out.push({
+      name,
+      description: typeof d.description === 'string' ? d.description : '',
+      inputSchema:
+        params && typeof params === 'object' && !Array.isArray(params)
+          ? (params as Record<string, unknown>)
+          : { type: 'object', properties: {} },
+    });
+  }
+  return out;
+}
+
 export class CascadedLiveClient implements UpstreamLiveClient {
   private state: UpstreamConnectionState = 'idle';
   private readonly lang: string;
@@ -105,6 +228,23 @@ export class CascadedLiveClient implements UpstreamLiveClient {
 
   private transcribe: TranscribeStreamSession | null = null;
   private systemInstruction = '';
+  /** VTID-04336 — the instruction the session connected with (Vitana's). */
+  private baseInstruction = '';
+  /** VTID-04336 — allowlisted hand-off tools declared to the model. */
+  private tools: LLMRouterTool[] = [];
+  /** VTID-04336 — bounded rolling conversation history, oldest first. */
+  private history: LLMRouterMessage[] = [];
+  /** VTID-04336 — which TTS voice speaks (receptionist until a swap). */
+  private voiceRole: PollyVoiceRole = 'receptionist';
+  private persona = 'vitana';
+  /** VTID-04336 — an opening turn queued while another turn was generating. */
+  private queuedOpener: string | null = null;
+  private toolCallSeq = 0;
+  private readonly pendingToolResults = new Map<
+    string,
+    (r: { result: string; isError: boolean }) => void
+  >();
+  private toolCallHandler: ((e: ToolCallEvent) => void) | null = null;
 
   /** Final user speech accumulated since the last turn boundary. */
   private pendingUserText = '';
@@ -168,6 +308,8 @@ export class CascadedLiveClient implements UpstreamLiveClient {
     }
 
     this.systemInstruction = options.systemInstruction || '';
+    this.baseInstruction = this.systemInstruction;
+    this.tools = extractCascadeTools(options.tools);
     // Guard the range: a 0/absent value would end the turn on the first final
     // fragment (cutting the user off mid-sentence), and an enormous one would
     // hang the turn forever. Both are worse than the default.
@@ -251,12 +393,148 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   }
 
   /**
-   * Tools are not wired on this path — see the header. Returns `false`
-   * rather than throwing, and is unreachable in practice because
-   * `onToolCall` never fires.
+   * VTID-04336 — answers a hand-off tool call this client emitted. Returns
+   * `false` for a call id it is not waiting on (a late result after the
+   * timeout, or no call at all), exactly like "not delivered" elsewhere.
    */
-  sendToolResult(_result: UpstreamToolResult): boolean {
-    return false;
+  sendToolResult(result: UpstreamToolResult): boolean {
+    const key = result.callId ?? '';
+    const resolve = this.pendingToolResults.get(key);
+    if (!resolve) return false;
+    this.pendingToolResults.delete(key);
+    resolve({
+      result: result.success ? result.output : result.error || result.output || 'tool failed',
+      isError: !result.success,
+    });
+    return true;
+  }
+
+  /**
+   * VTID-04336 — in-process persona swap. The cascade has no upstream stream
+   * to reconnect, so instead of the Nova/Vertex close-with-`persona_swap` the
+   * session layer calls this: the system instruction and TTS voice role are
+   * replaced for every subsequent turn, the rolling history is cleared (the
+   * specialist's prompt carries the hand-off transcript, the same way the
+   * Nova reconnect rebuilds from it), and — for a specialist — the persona's
+   * opening turn runs right after the current one finishes.
+   */
+  applyPersona(input: CascadePersonaInput): CascadePersonaApplied {
+    const override = (input.systemInstruction ?? '').trim();
+    const restoredBaseInstruction = !override;
+    if (override) {
+      this.systemInstruction = override;
+    } else {
+      const appendix = (input.appendix ?? '').trim();
+      this.systemInstruction = appendix ? `${this.baseInstruction}\n\n${appendix}` : this.baseInstruction;
+    }
+    this.voiceRole = input.voiceRole;
+    this.persona = input.persona;
+    this.history = [];
+    if (input.openWithGreeting) {
+      this.queuedOpener = CASCADE_PERSONA_OPENING_PROMPT;
+      if (!this.turnInFlight) this.runQueuedOpener();
+    } else {
+      this.queuedOpener = null;
+    }
+    return {
+      persona: this.persona,
+      voiceRole: this.voiceRole,
+      instructionChars: this.systemInstruction.length,
+      restoredBaseInstruction,
+    };
+  }
+
+  /** VTID-04336 — test/telemetry seam: what the next turn will run with. */
+  getPersonaState(): {
+    persona: string;
+    voiceRole: PollyVoiceRole;
+    systemInstruction: string;
+    toolNames: string[];
+    historyLength: number;
+  } {
+    return {
+      persona: this.persona,
+      voiceRole: this.voiceRole,
+      systemInstruction: this.systemInstruction,
+      toolNames: this.tools.map((t) => t.name),
+      historyLength: this.history.length,
+    };
+  }
+
+  private runQueuedOpener(): void {
+    const opener = this.queuedOpener;
+    this.queuedOpener = null;
+    if (!opener || this.state !== 'open') return;
+    this.pendingUserText = this.pendingUserText ? `${opener} ${this.pendingUserText}` : opener;
+    void this.runTurn();
+  }
+
+  private pushHistory(...messages: LLMRouterMessage[]): void {
+    for (const m of messages) {
+      if (!('toolCalls' in m) && 'content' in m && typeof m.content === 'string') {
+        this.history.push({ role: m.role, content: m.content.slice(0, CASCADE_HISTORY_MAX_CHARS_PER_MESSAGE) });
+      } else {
+        this.history.push(m);
+      }
+    }
+    // Trim from the front, never leaving a tool-result or an assistant
+    // message first — a provider rejects a tool_result without its tool_use,
+    // and a transcript must open on a user turn.
+    while (this.history.length > CASCADE_HISTORY_MAX_MESSAGES) this.history.shift();
+    while (
+      this.history.length > 0 &&
+      (this.history[0].role !== 'user' || 'toolResults' in this.history[0])
+    ) {
+      this.history.shift();
+    }
+  }
+
+  /**
+   * VTID-04336 — fire `onToolCall` for the model's hand-off calls and wait
+   * for every result (or a synthetic timeout error). Never hangs.
+   */
+  private async runToolCalls(calls: LLMRouterToolCall[]): Promise<{
+    withIds: LLMRouterToolCall[];
+    results: Array<{ id?: string; name: string; result: string; isError?: boolean }>;
+  }> {
+    const withIds = calls.map((c) => ({
+      ...c,
+      arguments: c.arguments || {},
+      id: c.id || `cascade-tool-${++this.toolCallSeq}`,
+    }));
+    const handler = this.toolCallHandler;
+    const waits = withIds.map((c) => {
+      if (!CASCADE_TOOL_ALLOWLIST.has(c.name) || !handler) {
+        return Promise.resolve({ result: `tool ${c.name} is not available on this voice path`, isError: true });
+      }
+      const id = c.id as string;
+      return new Promise<{ result: string; isError: boolean }>((resolve) => {
+        const timer = setTimeout(() => {
+          if (this.pendingToolResults.delete(id)) {
+            resolve({ result: `tool ${c.name} did not answer in time`, isError: true });
+          }
+        }, CASCADE_TOOL_RESULT_TIMEOUT_MS);
+        (timer as unknown as { unref?: () => void }).unref?.();
+        this.pendingToolResults.set(id, (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        });
+      });
+    });
+    const dispatchable = withIds.filter((c) => CASCADE_TOOL_ALLOWLIST.has(c.name));
+    if (dispatchable.length > 0 && handler) {
+      handler({ calls: dispatchable.map((c) => ({ name: c.name, args: c.arguments, id: c.id })) });
+    }
+    const outcomes = await Promise.all(waits);
+    return {
+      withIds,
+      results: withIds.map((c, i) => ({
+        id: c.id,
+        name: c.name,
+        result: outcomes[i].result,
+        isError: outcomes[i].isError,
+      })),
+    };
   }
 
   /**
@@ -314,11 +592,36 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       // persona, memory and context — leaving a generic assistant that
       // sounded fine and knew nothing. That cast is gone; this call is fully
       // typed so the compiler owns the contract.
-      const completion = await callViaRouter('operator', userText, {
+      const priorHistory = [...this.history];
+      let completion = await callViaRouter('operator', userText, {
         service: 'orb-cascaded-voice',
         systemPrompt: this.systemInstruction,
         maxTokens: 400,
+        // VTID-04336: bounded rolling history + the allowlisted hand-off
+        // tools, each only when present — a first turn with no tools is the
+        // exact pre-VTID-04336 request.
+        ...(priorHistory.length > 0 ? { history: priorHistory } : {}),
+        ...(this.tools.length > 0 ? { tools: this.tools } : {}),
       });
+
+      // VTID-04336: one bounded tool round (hand-off tools only), then one
+      // tool-less continuation that produces the spoken bridge.
+      let toolRound: LLMRouterMessage[] = [];
+      const requested =
+        completion.ok && completion.toolCalls && completion.toolCalls.length > 0 ? completion.toolCalls : [];
+      if (requested.length > 0) {
+        const { withIds, results } = await this.runToolCalls(requested);
+        toolRound = [
+          { role: 'assistant', toolCalls: withIds, content: completion.text || undefined },
+          { role: 'user', toolResults: results },
+        ];
+        completion = await callViaRouter('operator', CASCADE_TOOL_CONTINUE_PROMPT, {
+          service: 'orb-cascaded-voice',
+          systemPrompt: this.systemInstruction,
+          maxTokens: 400,
+          history: [...priorHistory, { role: 'user', content: userText }, ...toolRound],
+        });
+      }
 
       if (!completion.ok) {
         this.errorHandler?.({
@@ -343,10 +646,13 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       // fallback model (bedrock/eu.anthropic.claude-sonnet-4-6 — confirmed
       // live-invokable, CLAUDE.md §2b) before giving up for real.
       if (!replyText && !completion.fallbackUsed) {
-        const retry = await callViaRouter('operator', userText, {
+        const retryHistory: LLMRouterMessage[] =
+          toolRound.length > 0 ? [...priorHistory, { role: 'user', content: userText }, ...toolRound] : priorHistory;
+        const retry = await callViaRouter('operator', toolRound.length > 0 ? CASCADE_TOOL_CONTINUE_PROMPT : userText, {
           service: 'orb-cascaded-voice',
           systemPrompt: this.systemInstruction,
           maxTokens: 400,
+          ...(retryHistory.length > 0 ? { history: retryHistory } : {}),
           providerOverride: 'bedrock',
           modelOverride: 'eu.anthropic.claude-sonnet-4-6',
           allowFallback: false,
@@ -365,6 +671,19 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       }
 
       this.transcriptHandler?.({ direction: 'output', text: replyText, isFinal: true });
+      // VTID-04336: record the exchange (tool round included) so the next
+      // turn knows what was proposed. A turn that failed above records
+      // nothing — the member will repeat themselves anyway.
+      if (toolRound.length > 0) {
+        this.pushHistory(
+          { role: 'user', content: userText },
+          ...toolRound,
+          { role: 'user', content: CASCADE_TOOL_CONTINUE_PROMPT },
+          { role: 'assistant', content: replyText },
+        );
+      } else {
+        this.pushHistory({ role: 'user', content: userText }, { role: 'assistant', content: replyText });
+      }
 
       // VTID-03987: TTS backend selection (Polly first, Fish only when
       // Polly has no voice for the language at all) now lives in
@@ -372,7 +691,12 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       // drawn there and what does/doesn't need a Polly-backed regression
       // test when changed. Behaviour here is unchanged from before the
       // extraction (VTID-03970's original selection).
-      const speech = await synthesizeCascadeReply(replyText, this.lang);
+      // VTID-04336: the voice role only tells the backends WHO is speaking
+      // (receptionist = the exact pre-swap request); selection is unchanged.
+      const speech =
+        this.voiceRole === 'specialist'
+          ? await synthesizeCascadeReply(replyText, this.lang, { voiceRole: 'specialist' })
+          : await synthesizeCascadeReply(replyText, this.lang);
 
       if (!speech?.audioB64) {
         // Eligibility already proved a TTS provider has a voice for this
@@ -395,6 +719,9 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       });
     } finally {
       this.turnInFlight = false;
+      // VTID-04336: a persona swap applied during this turn (from its own
+      // turn-complete handler) queued the specialist's opening turn.
+      if (this.queuedOpener) this.runQueuedOpener();
     }
   }
 
@@ -420,8 +747,9 @@ export class CascadedLiveClient implements UpstreamLiveClient {
   onTranscript(handler: (e: TranscriptEvent) => void): void {
     this.transcriptHandler = handler;
   }
-  onToolCall(_handler: (e: ToolCallEvent) => void): void {
-    // Accepted and never fired — see the header's tools note.
+  onToolCall(handler: (e: ToolCallEvent) => void): void {
+    // VTID-04336: fired only for the allowlisted hand-off tools — see header.
+    this.toolCallHandler = handler;
   }
   onTurnComplete(handler: (e: TurnCompleteEvent) => void): void {
     this.turnCompleteHandler = handler;
@@ -440,6 +768,13 @@ export class CascadedLiveClient implements UpstreamLiveClient {
     if (this.state === 'closed' || this.state === 'closing') return;
     this.state = 'closing';
     this.clearSilenceTimer();
+    this.queuedOpener = null;
+    // VTID-04336: never leave a turn waiting on a tool result that can no
+    // longer arrive.
+    for (const [id, resolve] of this.pendingToolResults) {
+      this.pendingToolResults.delete(id);
+      resolve({ result: 'voice session closed', isError: true });
+    }
     await this.transcribe?.stop();
     this.transcribe = null;
     this.state = 'closed';
