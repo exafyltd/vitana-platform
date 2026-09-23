@@ -957,6 +957,19 @@ Migration `20260923130000_vtid_04331_calendar_data_model.sql`, applied live 2026
 
 **Note (2026-09-23):** the `pillar` / `contribution_vector` columns documented above were not present in the live database until VTID-04331 applied `20260428000000_calendar_pillar_contribution_vector.sql`; its backfill matched 0 rows.
 
+### reminders ← calendar_events (VTID-04338 default reminders)
+
+Migration `20260923140000_vtid_04338_calendar_default_reminders.sql`, applied live 2026-09-23.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `calendar_occurrence_start` | TIMESTAMPTZ | Start of the calendar occurrence this reminder is for (a recurring entry has many). NULL for voice/UI reminders. |
+| `reminder_offset_minutes` | INTEGER | Minutes before `calendar_occurrence_start` the reminder fires. |
+
+Unique index `uniq_reminders_calendar_occurrence_offset (calendar_event_id, calendar_occurrence_start, reminder_offset_minutes)` — deliberately not partial, so PostgREST `on_conflict` can upsert against it; voice/UI rows have NULLs there and never collide. Index `idx_reminders_calendar_pending (calendar_event_id) WHERE calendar_event_id IS NOT NULL AND status = 'pending'`.
+
+Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAULT_REMINDERS_ENABLED=true`, every 60 s): one `created_via='system'` row per (entry, occurrence in the next 36 h, offset). Defaults: meeting/event 10 min, workout 30 min, lab test the evening before at 19:00 local + 1 h before, habit/nutrition/autopilot at start; an entry's own `reminder_offsets` win and `{}` means none. Pending rows whose entry moved, was cancelled, completed or deleted are cancelled on the next pass. Delivery is the existing reminders tick.
+
 ### calendar_events ← global_event_participants (VTID-04321 triggers)
 
 **Purpose:** community event sign-ups land in the calendar on every path (web, voice `rsvp_event`, tickets). Migration `20260923120000_vtid_04321_rsvp_calendar_global_events.sql`, applied live 2026-09-23.

@@ -638,6 +638,8 @@ jobs:
 #     and sweeper run in-process; no external scheduler has called
 #     /reminders-tick since GCP was shut down, so no reminder fired. The
 #     claim RPC uses SKIP LOCKED, so several tasks (or prod too) are safe.
+#   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338) -- every calendar entry
+#     gets default reminders (reconciled into `reminders` every minute).
 # Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
 # if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
 # gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
@@ -889,7 +891,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
@@ -945,6 +947,7 @@ jobs:
                           {name:"OPERATOR_THREADS_ENABLED", value:"true"},
                           {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
                           {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"},
+                          {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},

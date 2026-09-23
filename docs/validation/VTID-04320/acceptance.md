@@ -120,6 +120,27 @@ ROUTE_MOUNT: `router.get('/events/window')` on the existing calendar router, mou
 FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/calendar/events/window?from=<iso>&to=<iso>
 CURL_PROOF: before merge, 2026-09-23 — `GET /api/v1/calendar/health` → `200 application/json` `{"ok":true,"service":"intelligent-calendar",…}` (router mounted); `GET /api/v1/calendar/events/window?...` unauthenticated → `401 {"ok":false,"error":"UNAUTHENTICATED"}` (router-level auth answers first). After merge the same authenticated call returns `{"ok":true,"data":[…]}`; recorded in outputs/ after deploy.
 
+## Step 3 in the same PR — VTID-04338 (every entry reminds by default)
+
+Owner-approved defaults: meeting/event 10 min before, workout 30 min, lab test
+the evening before (19:00 local) and 1 h before, habit/nutrition/autopilot at
+the time. An entry's own `reminder_offsets` override; `{}` means none.
+
+AC-15 — Each entry kind gets the approved default offsets; an entry's own offsets win; `{}` means no reminders; the emoji falls back per kind.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
+AC-16 — Desired reminders cover every occurrence starting within 36 h (recurrence expanded in the user's zone); cancelled, completed and out-of-horizon entries get none; a lab test tomorrow 08:00 Berlin gets 19:00 local the evening before and 07:00 local.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
+AC-17 — Reminder text comes from the `tt()` catalog (`notif.calendar_reminder.*`) in the user's locale, with the emoji and local time; the keys exist in every shipped locale.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
+AC-18 — Reconcile is idempotent: a missing reminder is created once with tenant, link columns and `created_via='system'`; an existing one is left alone; a moved entry's old reminder is cancelled and a new one created; a cancelled or deleted entry's pending reminders are cancelled; a user without a tenant is skipped, not failed.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
+AC-19 — The loop starts only on `CALENDAR_DEFAULT_REMINDERS_ENABLED` exactly `true`; staging pins it, prod does not.
+TEST: services/gateway/test/vtid-04338-calendar-default-reminders.test.ts
+
 ## Not done here, on purpose
 
 - Production: the prod gateway workflow does not set the flag. Staging and
@@ -132,6 +153,10 @@ CURL_PROOF: before merge, 2026-09-23 — `GET /api/v1/calendar/health` → `200 
 - `/calendar/reschedule` and `/reprioritize` are still unscheduled and
   JWT-gated — they need a user-free entry point, which belongs with step 2.
 - `/meetup-reminders` still reads the never-deployed `community_meetups`
-  tables; replaced by per-entry default reminders in step 3.
+  tables; per-entry default reminders (step 3) now cover meetups too, so it can
+  be retired in a follow-up.
+- Default reminders do not yet respect quiet hours or working hours, and a
+  title change after a reminder was written keeps the old text until the
+  occurrence moves.
 
 OASIS_PROOF: new topic `reminder.stale_skipped` (warning) from the tick; `reminder.fired` unchanged.

@@ -1659,6 +1659,19 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04338: default reminders for calendar entries — reconciles the
+      // reminders table against upcoming entries every minute.
+      try {
+        const { startCalendarRemindersLoop } = require('./services/calendar-reminders');
+        if (startCalendarRemindersLoop()) {
+          console.log('📅 Calendar default-reminders loop started');
+        } else {
+          console.log('⏸️ Calendar default-reminders loop disabled — set CALENDAR_DEFAULT_REMINDERS_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {
