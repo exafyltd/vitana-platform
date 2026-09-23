@@ -1,0 +1,15 @@
+services/gateway, 2026-09-23
+
+jest test/acceptance-gate.test.ts test/offer-action.test.ts test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts
+Test Suites: 3 passed, 3 total
+Tests:       69 passed, 69 total
+
+jest test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts
+     test/services/assistant-continuation/providers/next-action/autopilot-recommendation.test.ts
+     test/services/orb/orb-session-state-repository.test.ts test/services/orb-session-state.test.ts
+     test/offer-action.test.ts test/acceptance-gate.test.ts test/nav-guided-journey.test.ts
+     test/voice-activate-recommendation-shared.test.ts test/orb
+Test Suites: 229 passed, 229 total
+Tests:       6 todo, 3898 passed, 3904 total
+
+tsc --noEmit -p .  -> exit 0

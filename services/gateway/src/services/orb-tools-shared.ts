@@ -5512,12 +5512,18 @@ export async function tool_offer_action(
     ttl,
   );
   if (!res.ok) return { ok: false, error: res.reason ?? 'offer_action: failed to store pending action.' };
+  // VTID-04355: only a well-formed navigate_to_screen is run by the acceptance
+  // gate. Telling the model every offer "runs automatically" made it stand
+  // down on "yes" for offers nothing then ran.
+  const { isAutoRunnableOffer } = await import('./assistant-continuation/acceptance-gate');
+  const autoRuns = isAutoRunnableOffer({ tool, payload });
   return {
     ok: true,
-    result: { stored: true, tool },
-    // LLM-facing guidance (not user-visible): ask the yes/no and wait — the
-    // offered action fires automatically on acceptance, so don't re-resolve it.
-    text: 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the offered action runs automatically — do not re-resolve or re-search it.',
+    result: { stored: true, tool, auto_runs: autoRuns },
+    // LLM-facing guidance (not user-visible).
+    text: autoRuns
+      ? 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the navigation runs automatically — do not re-resolve or re-search it.'
+      : `OFFER_REGISTERED: Ask your yes/no question naturally and wait. Nothing runs automatically for this offer: if the user accepts, call \`${tool}\` yourself with exactly this payload: ${JSON.stringify(payload)}. If they decline, drop it.`,
   };
 }
 

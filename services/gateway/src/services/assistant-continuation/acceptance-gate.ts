@@ -95,6 +95,27 @@ export function detectAcceptance(text: string | null | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Which offers the gate runs itself (VTID-04355).
+// ---------------------------------------------------------------------------
+
+/**
+ * True when the gate itself can execute this offer on a bare "yes".
+ *
+ * Only a well-formed navigate_to_screen qualifies: both turn-loop call sites
+ * dispatch nothing else. Every other offer (activate_recommendation, a tool
+ * recorded via offer_action, …) is left in orb_session_state for the model's
+ * own tool call and for the tools that read pending_cta as their fallback —
+ * consuming it here and then doing nothing is exactly how an accepted
+ * non-navigation offer used to vanish.
+ */
+export function isAutoRunnableOffer(cta: { tool?: unknown; payload?: unknown } | null | undefined): boolean {
+  if (!cta || cta.tool !== 'navigate_to_screen') return false;
+  const p = (cta.payload ?? {}) as { screen_id?: unknown; route?: unknown };
+  return typeof p.screen_id === 'string' && p.screen_id.trim() !== '' &&
+    typeof p.route === 'string' && p.route.trim() !== '';
+}
+
+// ---------------------------------------------------------------------------
 // Pending-CTA resolution (one-shot).
 // ---------------------------------------------------------------------------
 
@@ -127,9 +148,11 @@ export interface MaybeBindInput {
 }
 
 /**
- * The keystone: if `userText` is an acceptance AND a live pending_cta exists,
- * return the exact stored action to execute (and consume it, so a second "ja"
- * can't re-fire). Otherwise null — the caller proceeds normally (LLM turn).
+ * The keystone: if `userText` is an acceptance AND a live pending_cta exists
+ * that the gate can run itself (isAutoRunnableOffer), return the exact stored
+ * action to execute (and consume it, so a second "ja" can't re-fire).
+ * Otherwise null and the offer is left untouched — the caller proceeds
+ * normally (LLM turn), and the model runs a non-navigation offer itself.
  *
  * Fails open: any error → null (never blocks the conversation).
  */
@@ -143,6 +166,8 @@ export async function maybeBindAcceptance(
   try {
     const cta = await deps.readPendingCta(userId, input.now ?? Date.now());
     if (!cta) return null;
+    // VTID-04355: never consume an offer the gate will not run.
+    if (!isAutoRunnableOffer(cta)) return null;
     // One-shot: consume before returning so the acceptance can't double-execute
     // (e.g. user says "ja" twice while the action is already running).
     await deps.clearPendingCta(userId);
