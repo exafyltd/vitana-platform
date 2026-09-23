@@ -24,7 +24,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
-import { DELEGATION_COMPANION_TOOLS } from './delegation-tools';
+import { DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -207,7 +207,26 @@ function applyCommerceGate(tools: object[]): object[] {
   return out;
 }
 
+/**
+ * VTID-04397 — the member ORB gets the support specialist (and the async
+ * companions) when ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is 'true'. Off:
+ * the catalog is returned untouched, byte for byte.
+ */
+function applyMemberDelegation(tools: object[]): object[] {
+  const extra = memberDelegationTools() as Array<{ name?: unknown }>;
+  if (extra.length === 0) return tools;
+  let added = false;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (added || !Array.isArray(group.function_declarations)) return group;
+    added = true;
+    const decls = group.function_declarations as Array<{ name?: unknown }>;
+    const present = new Set(decls.map((d) => String(d?.name ?? '')));
+    return { ...group, function_declarations: [...decls, ...extra.filter((t) => !present.has(String(t.name)))] };
+  });
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
+  if (surface === 'vitanaland') return mode === 'authenticated' ? applyMemberDelegation(tools) : tools;
   if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
   if (surface === 'commerce') return mode === 'authenticated' ? applyCommerceGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;

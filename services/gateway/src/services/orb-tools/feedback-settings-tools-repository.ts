@@ -29,6 +29,24 @@ export async function fetchOpenFeedbackTickets(sb: SupabaseClient, userId: strin
     .limit(8);
 }
 
+/**
+ * VTID-04397: one of the member's OWN tickets, for the support specialist.
+ * Always filtered by `user_id` — there is no lookup by number alone. A full
+ * `FB-YYYY-MM-NNNNNN` matches exactly; a bare number ("137") matches the
+ * member's own ticket ending in `-000137`. The unapproved draft answer and
+ * the dev spec are deliberately not selected.
+ */
+export async function fetchOwnFeedbackTicketByNumber(sb: SupabaseClient, userId: string, ticketNumber: string) {
+  const q = sb
+    .from('feedback_tickets')
+    .select('ticket_number, kind, status, created_at, resolved_at, resolution_md, linked_vtid')
+    .eq('user_id', userId);
+  const filtered = /^\d{1,6}$/.test(ticketNumber)
+    ? q.like('ticket_number', `%-${ticketNumber.padStart(6, '0')}`)
+    : q.eq('ticket_number', ticketNumber);
+  return filtered.order('created_at', { ascending: false }).limit(1).maybeSingle();
+}
+
 // ==================== user_preferences ====================
 
 export async function upsertLanguagePreference(sb: SupabaseClient, userId: string, sttLanguage: string, nowIso: string) {
