@@ -189,9 +189,29 @@ async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise
   return null;
 }
 
+/** VTID-04377: the finding's own ledger VTID (VTID-04246), excluded from blast radius. */
+async function loadFindingVtid(s: SupaConfig, findingId: string): Promise<string | null> {
+  if (!findingId) return null;
+  const r = await supa<Array<{ activated_vtid: string | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=activated_vtid&limit=1`,
+  );
+  const v = r.ok && r.data && r.data[0] ? r.data[0].activated_vtid : null;
+  return typeof v === 'string' && v ? v : null;
+}
+
 // =============================================================================
 // Pure analyzers (unit-testable)
 // =============================================================================
+
+/** VTID-04379: max times the watcher merges main into one PR before leaving it to a human. */
+export const MAX_BRANCH_UPDATES = 5;
+
+/** VTID-04379: pure. `merge` = up to date, go on; `update` = merge main in; `give_up` = keeps falling behind. */
+export function decideBranchUpdate(behindBy: number, updatesSoFar: number): 'merge' | 'update' | 'give_up' {
+  if (!(behindBy > 0)) return 'merge';
+  return updatesSoFar >= MAX_BRANCH_UPDATES ? 'give_up' : 'update';
+}
 
 export type CiStateName = 'passing' | 'failing' | 'pending';
 export interface CiAnalysis {
@@ -333,14 +353,59 @@ export interface VerificationAnalysis {
   reason?: string;
 }
 
+export interface VerificationWindowOptions {
+  /** The execution's own ledger VTID(s) (VTID-04246 activated_vtid); never blast radius. */
+  ownVtids?: string[];
+}
+
+/**
+ * VTID-04377: topics that are never production blast radius of THIS merge —
+ * autopilot/self-heal/CI bookkeeping (VTID-02699), ledger lifecycle and
+ * on-ramp events about other VTIDs (VTID-04043), and deploy results, which
+ * the deploy watcher already judged before the row reached `verifying`.
+ */
+export function isVerificationNoiseTopic(type: string | undefined): boolean {
+  if (typeof type !== 'string') return false;
+  return (
+    type.startsWith('dev_autopilot.') ||
+    type.startsWith('self_healing.') ||
+    type.startsWith('cicd.') ||
+    type.startsWith('vtid.lifecycle.') ||
+    type.startsWith('operator.execution_onramp.') ||
+    type.startsWith('deploy.') ||
+    type.startsWith('staging.deploy.') ||
+    type.startsWith('prod.deploy.')
+  );
+}
+
 export function analyzeVerificationWindow(
   events: Array<{ type: string; vtid?: string; status?: string; created_at?: string }>,
   windowStartIso: string,
   windowMs: number,
   ourVtidPrefix: string,
+  opts: VerificationWindowOptions = {},
 ): VerificationAnalysis {
   const start = new Date(windowStartIso).getTime();
   const elapsed = Date.now() - start;
+  const ownVtids = new Set((opts.ownVtids || []).filter(Boolean));
+  const attributable = (e: { type: string; vtid?: string; status?: string }): boolean => {
+    if (e.status !== 'error') return false;
+    if (!e.vtid || e.vtid.startsWith(ourVtidPrefix) || ownVtids.has(e.vtid)) return false;
+    // VTID-04377: BOOTSTRAP-* rows are sessions' own untracked work, not runtime errors.
+    if (e.vtid.startsWith('BOOTSTRAP-')) return false;
+    return !isVerificationNoiseTopic(e.type);
+  };
+  // VTID-04377: the baseline is the same-length span BEFORE the window. An
+  // error type that was already firing at that rate is not this merge's doing
+  // — the tenant-wide read used to fail (and revert) a correct PR for any
+  // error that happened to land in its five minutes.
+  const baseline = new Map<string, number>();
+  for (const e of events) {
+    const at = e.created_at ? new Date(e.created_at).getTime() : 0;
+    if (at >= start || at < start - windowMs) continue;
+    if (!attributable(e)) continue;
+    baseline.set(e.type, (baseline.get(e.type) || 0) + 1);
+  }
   // New error events emitted DURING the window that are NOT for our own
   // execution VTID lineage count as blast-radius signal.
   //
@@ -352,26 +417,16 @@ export function analyzeVerificationWindow(
   // autopilot lifecycle errors. "Blast radius" should mean "user-facing
   // production errors after my deploy" — not noise from the autopilot
   // pipeline itself, especially during a multi-execution batch.
-  const blastRadius = events.filter((e) => {
+  // VTID-04043 (kept in isVerificationNoiseTopic): ledger lifecycle and
+  // on-ramp bookkeeping about OTHER VTIDs — measured 2026-09-18, a chat cancel
+  // of VTID-04040 failed + escalated VTID-04038 while its PR #3412 was green.
+  const inWindow = events.filter((e) => {
     const at = e.created_at ? new Date(e.created_at).getTime() : 0;
-    if (at < start) return false;
-    if (e.status !== 'error') return false;
-    if (!e.vtid || e.vtid.startsWith(ourVtidPrefix)) return false;
-    if (typeof e.type === 'string' && (
-      e.type.startsWith('dev_autopilot.') ||
-      e.type.startsWith('self_healing.') ||
-      e.type.startsWith('cicd.') ||
-      // VTID-04043: ledger lifecycle transitions and Operator on-ramp
-      // bookkeeping are task-plane events about OTHER VTIDs, never a
-      // production runtime error. Measured 2026-09-18: a chat cancel of
-      // VTID-04040 emitted `vtid.lifecycle.failed` (status error) inside
-      // f8d79e6c's window and failed + escalated VTID-04038 while its PR
-      // #3412 was green.
-      e.type.startsWith('vtid.lifecycle.') ||
-      e.type.startsWith('operator.execution_onramp.')
-    )) return false;
-    return true;
+    return at >= start && attributable(e);
   });
+  const windowCounts = new Map<string, number>();
+  for (const e of inWindow) windowCounts.set(e.type, (windowCounts.get(e.type) || 0) + 1);
+  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) > (baseline.get(e.type) || 0));
   if (blastRadius.length > 0) {
     return {
       state: 'fail',
@@ -519,6 +574,57 @@ export async function ciWatcherTick(): Promise<void> {
     //   'dirty'    — merge conflicts → fail
     //   'unknown' / 'has_hooks' / 'behind' — still settling → wait
     const mState = (prStatus as { pr?: { mergeable_state?: string } }).pr?.mergeable_state;
+
+    // VTID-04379: CI on a PR proves the PR against the main it branched from,
+    // not the main it will land on — two PRs green on their own broke main
+    // together on 2026-09-21 (VTID-04219). Before a clean PR may merge, bring
+    // it up to date; its CI then re-runs on the combined head and a later tick
+    // judges that. `behind` used to be waited on forever.
+    if (mState === 'clean' || mState === 'behind') {
+      const pr = (prStatus as { pr?: { head?: { sha?: string }; base?: { ref?: string } } }).pr;
+      const headSha = pr?.head?.sha;
+      if (headSha) {
+        let behindBy = 0;
+        try {
+          behindBy = await githubService.getBehindBy(GITHUB_REPO, pr?.base?.ref || 'main', headSha);
+        } catch (err) {
+          console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] compare failed: ${err}; refusing merge this tick`);
+          continue;
+        }
+        const updates = Number((exec.metadata as Record<string, unknown> | null)?.branch_updates || 0);
+        const decision = decideBranchUpdate(behindBy, updates);
+        if (decision === 'update') {
+          try {
+            await githubService.updatePullRequestBranch(GITHUB_REPO, exec.pr_number, headSha);
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] update-branch failed for #${exec.pr_number}: ${err}`);
+            continue;
+          }
+          await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.ci`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              updated_at: new Date().toISOString(),
+              metadata: { ...(exec.metadata || {}), branch_updates: updates + 1, branch_updated_from: headSha, branch_behind_by: behindBy },
+            }),
+          });
+          await emitOasisEvent({
+            vtid: WATCHER_VTID,
+            type: 'dev_autopilot.execution.branch_updated',
+            source: 'dev-autopilot-watcher',
+            status: 'info',
+            message: `Execution ${exec.id.slice(0, 8)}: PR #${exec.pr_number} was ${behindBy} commit(s) behind main — updated, waiting for CI on the new head`,
+            payload: { execution_id: exec.id, pr_url: exec.pr_url, behind_by: behindBy, from_head: headSha, update_number: updates + 1 },
+          });
+          continue;
+        }
+        if (decision === 'give_up') {
+          console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} still behind main after ${updates} updates; leaving it unmerged`);
+          continue;
+        }
+      }
+    }
+
     if (mState === 'unknown' || mState === 'has_hooks' || mState === 'behind' || !mState) {
       continue;
     }
@@ -839,7 +945,8 @@ async function loadRecentEventsForVerification(
 ): Promise<Array<{ type: string; vtid?: string; status?: string; created_at?: string }>> {
   const r = await supa<Array<{ topic: string; vtid?: string; status?: string; created_at?: string }>>(
     s,
-    `/rest/v1/oasis_events?status=eq.error&created_at=gte.${encodeURIComponent(windowStartIso)}&select=topic,vtid,status,created_at&order=created_at.desc&limit=500`,
+    // VTID-04377: from one window BEFORE the start, for the baseline.
+    `/rest/v1/oasis_events?status=eq.error&created_at=gte.${encodeURIComponent(new Date(new Date(windowStartIso).getTime() - VERIFICATION_WINDOW_MS).toISOString())}&select=topic,vtid,status,created_at&order=created_at.desc&limit=1000`,
   );
   if (!r.ok || !r.data) return [];
   return r.data.map((row) => ({
@@ -882,7 +989,10 @@ export async function verificationWatcherTick(): Promise<void> {
 
     const events = await loadRecentEventsForVerification(s, windowStart);
     const ourVtidPrefix = `VTID-DA-${exec.id.slice(0, 8)}`;
-    const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix);
+    const ownVtid = await loadFindingVtid(s, exec.finding_id);
+    const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix, {
+      ownVtids: ownVtid ? [ownVtid] : [],
+    });
 
     if (verdict.state === 'pending') continue;
 
