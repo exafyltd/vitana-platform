@@ -20,19 +20,23 @@
  *   fr → ambre
  *   es → lupe
  *
- * VTID-03704 — ONE VOICE PER LANGUAGE, ALWAYS FEMALE.
- * ---------------------------------------------------
- * This map used to be `{ feminine, masculine }` per language, with `devon`
- * and `atlas` selecting the masculine voice. That is gone. Vitana speaks with
- * a female voice in every language, so the persona no longer picks the vocal
- * cords — it still drives the system instruction, tone and tools.
+ * VTID-04445 — VITANA FEMALE, DEVON MALE, EVERY LANGUAGE.
+ * -------------------------------------------------------
+ * Owner rule 2026-09-23 (`persona-voice-gender.ts`): every Vitana voice is a
+ * woman's voice and every Devon voice is a man's voice. `NOVA_VOICES` below
+ * is Vitana's table; `NOVA_MALE_VOICES` is Devon's. The persona that is
+ * speaking selects the table — only a persona the rule marks `male` (Devon)
+ * reaches the male table, so everyone else keeps Vitana's female voice.
  *
- * The pair-shaped table is removed rather than left half-read: keeping
- * `masculine` keys nothing resolves would be a mechanism that looks live and
- * cannot fire, and the next reader would reasonably assume persona still
- * switches the voice. Nova's masculine ids (`lennart`, `florian`, `carlos`)
- * are recorded here in prose so reinstating the split is a lookup, not a
- * research task.
+ * VTID-03704 had removed the split (Devon spoke with Vitana's female voice on
+ * every Nova session). Its reason still holds and is kept: the voice must not
+ * differ across the sign-in boundary. It no longer can — the persona is not
+ * carried across sessions; `activePersona` is only ever set by a hand-off
+ * inside one session, and a new session always starts as Vitana.
+ *
+ * The male ids are AWS's own masculine voice per locale (Nova 2 user guide,
+ * "Language support"), each invoked for real on Bedrock and pitch-checked —
+ * see `NOVA_VOICE_GENDER`.
  *
  * `pt` is ROUTED to the Polly cascade (Nova answered a live Portuguese
  * session in English — see `nova-sonic-config.ts`) but KEEPS its Nova voice
@@ -53,6 +57,8 @@
  * reports the substitution rather than hiding it.
  */
 
+import { personaVoiceGender } from './persona-voice-gender';
+
 const NOVA_VOICES = {
   en: 'amy',
   de: 'tina',
@@ -69,7 +75,34 @@ const NOVA_VOICES = {
   pt: 'carolina',
 } as const;
 
-export type NovaSonicVoiceId = (typeof NOVA_VOICES)[keyof typeof NOVA_VOICES];
+/**
+ * VTID-04445 — Devon's Nova voice per language: AWS's masculine voice for the
+ * same locale (`en` is en-US `matthew`: en-GB has no masculine Nova voice).
+ */
+const NOVA_MALE_VOICES = {
+  en: 'matthew',
+  de: 'lennart',
+  fr: 'florian',
+  es: 'carlos',
+  pt: 'leo',
+} as const;
+
+export type NovaSonicVoiceId =
+  | (typeof NOVA_VOICES)[keyof typeof NOVA_VOICES]
+  | (typeof NOVA_MALE_VOICES)[keyof typeof NOVA_MALE_VOICES];
+
+/** True when the speaking persona must use a male voice (Devon). */
+function wantsMaleVoice(persona: string | null | undefined): boolean {
+  return personaVoiceGender(persona) === 'male';
+}
+
+/** Test/verification seam: both tables, read-only. */
+export function listNovaSonicVoices(): {
+  female: Readonly<Record<string, string>>;
+  male: Readonly<Record<string, string>>;
+} {
+  return { female: NOVA_VOICES, male: NOVA_MALE_VOICES };
+}
 
 export interface NovaSonicVoiceQuery {
   /** Application language (BCP-47 tag or bare code; base tag is used). */
@@ -113,21 +146,10 @@ export interface NovaSonicVoiceQuery {
  */
 export function resolveNovaSonicVoice(query: NovaSonicVoiceQuery): NovaSonicVoiceId | null {
   const base = query.language.trim().toLowerCase().split(/[-_]/)[0] as keyof typeof NOVA_VOICES;
-  const voice = NOVA_VOICES[base];
-  if (!voice) return null;
-  // VTID-03704 — Vitana speaks with a FEMALE voice in every language, and the
-  // persona no longer changes that.
-  //
-  // This is what made the voice differ across the sign-in boundary, which is
-  // how it was reported: an anonymous session has no `activePersona`, so it
-  // resolved `vitana` → feminine, while a signed-in user carrying `devon` or
-  // `atlas` resolved masculine. Same user, same language, different voice
-  // before and after login, with nothing in the telemetry naming the cause
-  // (`persona` was not recorded on the session — VTID-03704 adds it).
-  //
-  // Persona still drives everything else it always did (system instruction,
-  // tone, tools). It just no longer picks the vocal cords.
-  return voice;
+  // VTID-04445 — the speaking persona picks the table: Devon male, everyone
+  // else Vitana's female voice. Both tables cover the same languages.
+  const voice = wantsMaleVoice(query.persona) ? NOVA_MALE_VOICES[base] : NOVA_VOICES[base];
+  return voice ?? null;
 }
 
 /**
@@ -141,6 +163,14 @@ export function resolveNovaSonicVoice(query: NovaSonicVoiceQuery): NovaSonicVoic
  * so the substitution reuses a voice this product already ships knowingly.
  */
 export const NOVA_SONIC_FALLBACK_VOICE: NovaSonicVoiceId = 'tina';
+
+/**
+ * VTID-04445 — Devon's counterpart of `NOVA_SONIC_FALLBACK_VOICE`: `lennart`,
+ * the masculine voice of the same German locale, so a language with no native
+ * Nova voice gets the same accent compromise for both personas and Devon
+ * never falls back to Vitana's female voice.
+ */
+export const NOVA_SONIC_MALE_FALLBACK_VOICE: NovaSonicVoiceId = 'lennart';
 
 export interface NovaSonicVoiceResolution {
   voice: NovaSonicVoiceId;
@@ -179,9 +209,11 @@ export function resolveNovaSonicVoiceOrFallback(
   query: NovaSonicVoiceQuery,
 ): NovaSonicVoiceResolution {
   const native = resolveNovaSonicVoice(query);
-  return native === null
-    ? { voice: NOVA_SONIC_FALLBACK_VOICE, fallback: true }
-    : { voice: native, fallback: false };
+  if (native !== null) return { voice: native, fallback: false };
+  return {
+    voice: wantsMaleVoice(query.persona) ? NOVA_SONIC_MALE_FALLBACK_VOICE : NOVA_SONIC_FALLBACK_VOICE,
+    fallback: true,
+  };
 }
 
 // Dedupe log lines: a per-session resolve must not spam the logger. One

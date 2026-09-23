@@ -27,6 +27,7 @@ jest.mock('../../../../src/services/tts/polly', () => ({
 jest.mock('../../../../src/services/tts/fish', () => ({
   synthesizeFish: jest.fn(),
   resolveFishVoice: jest.fn(),
+  isFishConfigured: jest.fn(() => true),
 }));
 jest.mock('../../../../src/orb/live/upstream/cascaded-config', () => ({
   evaluateCascadeEligibility: jest.fn((lang: string) => ({
@@ -266,8 +267,9 @@ describe.each(['ru', 'sr'] as const)('end-to-end cascade hand-off through the re
       expect(mockPolly).toHaveBeenCalledWith({ text: 'Hi, tell me what happens on save.', lang: 'ru', format: 'pcm', voiceRole: 'specialist' });
     } else {
       // Serbian keeps the single curated Fish voice for both.
-      expect(mockFish).toHaveBeenCalledWith({ text: 'Tech support takes over now.', lang: 'sr', format: 'pcm' });
-      expect(mockFish).toHaveBeenCalledWith({ text: 'Hi, tell me what happens on save.', lang: 'sr', format: 'pcm' });
+      // VTID-04445: Vitana's bridge in her voice (Milica), Devon in his male voice (Nikola).
+      expect(mockFish).toHaveBeenCalledWith({ text: 'Tech support takes over now.', lang: 'sr', format: 'pcm', voiceRole: 'receptionist' });
+      expect(mockFish).toHaveBeenCalledWith({ text: 'Hi, tell me what happens on save.', lang: 'sr', format: 'pcm', voiceRole: 'specialist' });
     }
     await client.close('done');
   });

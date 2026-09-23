@@ -132,23 +132,23 @@ export type PollyVoiceRole = 'receptionist' | 'specialist';
  * a different colleague pick up after the hand-off.
  *
  * Deliberately ABSENT, because Polly has no male voice in that language at
- * all (Polly's documented voice list): `zh` (cmn-CN has only Zhiyu) and `tr`
- * (Burcu and Filiz, both female). Those languages keep the receptionist voice
- * for the specialist — the persona and prompt still switch, only the timbre
- * cannot. Never substitute another language's voice to manufacture a
- * difference: fluent audio in the wrong accent is worse than the same voice.
+ * all: `zh` (cmn-CN has only Zhiyu) and `tr` (Burcu and Filiz, both female).
+ * VTID-04445 (owner rule: every Devon voice is a man's voice) — Devon speaks
+ * those languages with the male Fish Official voices (`fish.ts`,
+ * `FISH_SPECIALIST_VOICES`), never with the receptionist's female voice, and
+ * when Fish is not configured the hand-off does not happen at all
+ * (`specialist-voice-availability.ts`). Never substitute another language's
+ * voice to manufacture a difference.
  *
  * `ru` (Maxim) and `pl` (Jacek) are standard-engine only — the same quality
  * floor `ru`'s receptionist voice already has; Polly has no neural male voice
  * in either language.
  *
- * NOT verified against the live API by the session that added it (no AWS
- * credentials) — derived from Polly's documented voice list, the same posture
- * this file's own header records for the original table. The cascade backend
- * therefore retries with the receptionist voice when a specialist synthesis
- * returns null (`cascaded/tts-backend.ts`), so an unservable entry here can
- * only cost the timbre change, never the audio. `scripts/tts/verify-polly-
- * voices.ts` checks both tables.
+ * VERIFIED against the live API 2026-09-23 (VTID-04445): every id below
+ * exists in `DescribeVoices` (eu-central-1) with `Gender: Male` and supports
+ * its pinned engine; every `POLLY_VOICES` id above reports `Gender: Female`.
+ * A failed specialist synthesis is retried once with the SAME male voice and
+ * never falls back to the receptionist voice (`cascaded/tts-backend.ts`).
  */
 const POLLY_SPECIALIST_VOICES: Record<string, PollyVoiceConfig> = {
   en: { voiceId: 'Matthew' as VoiceId, engine: 'neural' as Engine, languageCode: 'en-US' },

@@ -29,6 +29,7 @@ jest.mock('../../../../src/services/tts/polly', () => ({
 jest.mock('../../../../src/services/tts/fish', () => ({
   synthesizeFish: jest.fn(),
   resolveFishVoice: jest.fn(),
+  isFishConfigured: jest.fn(() => true),
 }));
 
 // `evaluateCascadeEligibility` checks Fish configuration for `sr`; the
@@ -170,10 +171,10 @@ describe.each(['ru', 'sr'] as const)('VTID-04336 cascade persona swap — lang=%
       expect(mockPolly).toHaveBeenCalledWith({ text: 'Devon here', lang: 'ru', format: 'pcm', voiceRole: 'specialist' });
       expect(mockFish).not.toHaveBeenCalled();
     } else {
-      // Serbian: no Polly specialist voice → one receptionist Polly attempt
-      // (null) → the single curated Fish voice. Never an unvetted voice.
-      expect(mockPolly).not.toHaveBeenCalledWith(expect.objectContaining({ voiceRole: 'specialist' }));
-      expect(mockFish).toHaveBeenCalledWith({ text: 'Devon here', lang: 'sr', format: 'pcm' });
+      // VTID-04445: Serbian has no Polly voice → Devon's male Fish voice
+      // (a Fish Official voice, never an unvetted one, never Milica).
+      expect(mockPolly).not.toHaveBeenCalled();
+      expect(mockFish).toHaveBeenCalledWith({ text: 'Devon here', lang: 'sr', format: 'pcm', voiceRole: 'specialist' });
     }
   });
 
@@ -282,7 +283,7 @@ describe.each(['ru', 'sr'] as const)('VTID-04336 cascade persona swap — lang=%
 });
 
 describe('VTID-04336 Polly specialist voice fallback (ru)', () => {
-  it('falls back to the receptionist voice when the specialist synthesis returns null', async () => {
+  it('VTID-04445: never falls back to the receptionist (female) voice — retries the male voice once', async () => {
     setUpVoices('ru');
     mockPolly.mockReset();
     mockPolly.mockResolvedValueOnce(null).mockResolvedValueOnce({ audioB64: 'CCCC' });
@@ -292,8 +293,10 @@ describe('VTID-04336 Polly specialist voice fallback (ru)', () => {
     client.onAudioOutput((e) => audio.push(e));
     client.applyPersona({ persona: 'devon', systemInstruction: 'Devon', voiceRole: 'specialist', openWithGreeting: true });
     await flush();
+    expect(mockPolly).toHaveBeenCalledTimes(2);
     expect(mockPolly.mock.calls[0][0]).toMatchObject({ voiceRole: 'specialist' });
-    expect(mockPolly.mock.calls[1][0]).toEqual({ text: 'Devon here', lang: 'ru', format: 'pcm' });
+    expect(mockPolly.mock.calls[1][0]).toMatchObject({ voiceRole: 'specialist' });
     expect(audio.length).toBeGreaterThan(0);
   });
+
 });

@@ -40,7 +40,7 @@ import {
   resolvePollySpecialistVoice,
   type PollyVoiceRole,
 } from '../../../../services/tts/polly';
-import { synthesizeFish, resolveFishVoice } from '../../../../services/tts/fish';
+import { synthesizeFish, resolveFishVoice, isFishConfigured } from '../../../../services/tts/fish';
 
 export interface CascadeTtsResult {
   audioB64: string;
@@ -62,15 +62,18 @@ export interface CascadeTtsBackend {
 export const pollyBackend: CascadeTtsBackend = {
   name: 'polly',
   synthesize: async (text, lang, opts) => {
-    // VTID-04336 — backend-local: the specialist speaks in Polly's
-    // specialist voice for the language when one exists. When it does not,
-    // or the specialist synthesis fails (the table is docs-derived, see
-    // polly.ts), the receptionist request below runs exactly as before — a
-    // voice-table gap costs the timbre change, never the audio.
-    if (opts?.voiceRole === 'specialist' && resolvePollySpecialistVoice(lang)) {
-      const specialist = await synthesizePolly({ text, lang, format: 'pcm', voiceRole: 'specialist' });
-      if (specialist?.audioB64) return { audioB64: specialist.audioB64 };
-      console.warn(`[VTID-04336] specialist Polly voice failed for lang='${lang}' — using the receptionist voice`);
+    if (opts?.voiceRole === 'specialist') {
+      // VTID-04445 — Devon speaks ONLY with a male voice. When Polly has one
+      // for the language, it gets one retry on a transient failure; there is
+      // no fall-back to Vitana's female voice any more (VTID-04336 had one).
+      // No male Polly voice (tr, zh, sr) → null, and the caller tries Fish.
+      if (!resolvePollySpecialistVoice(lang)) return null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const specialist = await synthesizePolly({ text, lang, format: 'pcm', voiceRole: 'specialist' });
+        if (specialist?.audioB64) return { audioB64: specialist.audioB64 };
+        console.warn(`[VTID-04445] specialist Polly voice failed for lang='${lang}' (attempt ${attempt}/2) — never falling back to the female voice`);
+      }
+      return null;
     }
     const result = await synthesizePolly({ text, lang, format: 'pcm' });
     return result?.audioB64 ? { audioB64: result.audioB64 } : null;
@@ -79,38 +82,52 @@ export const pollyBackend: CascadeTtsBackend = {
 
 export const fishBackend: CascadeTtsBackend = {
   name: 'fish',
-  // VTID-04336 — `opts` is accepted and deliberately ignored: Fish has
-  // exactly one curated voice per language (`FISH_VOICES`, `sr` = Milica),
-  // and a second one may only come from a manual review of a Fish-official
-  // voice — never an unvetted community clone (VTID-03970 rejected one with
-  // adult-content tags). The specialist keeps the curated voice; the prompt
-  // still switches.
-  synthesize: async (text, lang, _opts) => {
-    const result = await synthesizeFish({ text, lang, format: 'pcm' });
+  // VTID-04445 — the role picks the voice: Milica for Vitana (sr), and the
+  // male Fish Official voices for Devon (sr Nikola, tr Kerem, zh Zixuan).
+  // Only voices from Fish's official account are ever curated (VTID-03970).
+  synthesize: async (text, lang, opts) => {
+    const result = await synthesizeFish({
+      text,
+      lang,
+      format: 'pcm',
+      voiceRole: opts?.voiceRole === 'specialist' ? 'specialist' : 'receptionist',
+    });
     return result?.audioB64 ? { audioB64: result.audioB64 } : null;
   },
 };
 
 /**
+ * VTID-04445 — the voice Devon (the specialist) would speak with on the
+ * cascade in `lang`: Polly's male voice, else the male Fish voice when Fish
+ * is configured, else none. `null` means a hand-off to Devon cannot happen
+ * in this language on the cascade — Devon never speaks with Vitana's voice.
+ */
+export function resolveCascadeSpecialistVoice(
+  lang: string,
+): { backend: CascadeTtsBackend['name']; voice: string } | null {
+  const polly = resolvePollySpecialistVoice(lang);
+  if (polly) return { backend: 'polly', voice: String(polly.voiceId) };
+  const fish = isFishConfigured() ? resolveFishVoice(lang, 'specialist') : null;
+  if (fish) return { backend: 'fish', voice: fish.label };
+  return null;
+}
+
+/**
  * VTID-04336 — what a cascade session in `lang` will sound like for `role`,
- * for telemetry on an in-process persona swap. Mirrors the selection order
- * of `synthesizeCascadeReply()` (Polly first, Fish only where Polly has no
- * voice). `distinct` is false when the specialist has to reuse the
- * receptionist's timbre (zh, tr, sr).
+ * for telemetry on an in-process persona swap. `distinct` is true when the
+ * specialist has a voice of their own (VTID-04445: always the case when a
+ * hand-off was allowed — see `resolveCascadeSpecialistVoice`).
  */
 export function describeCascadeVoice(
   lang: string,
   role: PollyVoiceRole,
 ): { backend: CascadeTtsBackend['name'] | null; voice: string | null; distinct: boolean } {
-  const receptionist = resolvePollyVoice(lang);
-  if (receptionist) {
-    const specialist = role === 'specialist' ? resolvePollySpecialistVoice(lang) : null;
-    return {
-      backend: 'polly',
-      voice: String((specialist ?? receptionist).voiceId),
-      distinct: !!specialist,
-    };
+  if (role === 'specialist') {
+    const specialist = resolveCascadeSpecialistVoice(lang);
+    return { backend: specialist?.backend ?? null, voice: specialist?.voice ?? null, distinct: !!specialist };
   }
+  const receptionist = resolvePollyVoice(lang);
+  if (receptionist) return { backend: 'polly', voice: String(receptionist.voiceId), distinct: false };
   const fish = resolveFishVoice(lang);
   return { backend: fish ? 'fish' : null, voice: fish ? fish.label : null, distinct: false };
 }
@@ -134,6 +151,15 @@ export async function synthesizeCascadeReply(
   // order below (Polly first, Fish only on a Polly coverage gap) is unchanged.
   const pollyResult = await pollyBackend.synthesize(text, lang, opts);
   if (pollyResult) return { ...pollyResult, backend: 'polly' };
+
+  // VTID-04445 — Devon: Fish is his only voice where Polly has no male one
+  // (tr, zh, sr). Where Polly does have one and it failed, there is no Fish
+  // male voice to try and no female fallback: the turn fails loudly.
+  if (opts?.voiceRole === 'specialist') {
+    if (resolvePollySpecialistVoice(lang)) return null;
+    const fishSpecialist = await fishBackend.synthesize(text, lang, opts);
+    return fishSpecialist ? { ...fishSpecialist, backend: 'fish' } : null;
+  }
 
   if (!resolvePollyVoice(lang)) {
     const fishResult = await fishBackend.synthesize(text, lang, opts);

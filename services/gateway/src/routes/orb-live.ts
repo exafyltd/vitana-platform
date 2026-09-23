@@ -1890,6 +1890,7 @@ import {
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
 import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -1910,6 +1911,7 @@ import {
   isVertexSerbianBridgeEnabled,
   isVertexSerbianBridgeLanguage,
   resolveVertexLivePersonaVoice,
+  enforceVertexVoiceGender,
 } from '../orb/live/upstream/vertex-serbian-bridge';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -3959,6 +3961,24 @@ async function executeLiveApiToolInner(
             (session as any).swapCooldownUntil = Date.now() + 90_000;
             console.log(`[VTID-02670] switch_persona: ${currentPersona} → vitana queued (silent; swapCount=${(session as any).swapCount}, cooldown=90s)`);
           } else {
+            // VTID-04445: Devon only ever speaks with a man's voice — refuse
+            // the swap when this pipeline has none for the language.
+            const _swapVoice = personaVoiceAvailability({ persona: target, lang: session.lang, provider: session.upstreamProvider });
+            if (!_swapVoice.ok) {
+              emitDiag(session, 'persona_handoff_voice_unavailable', {
+                persona: target,
+                lang: session.lang,
+                pipeline: _swapVoice.pipeline,
+                reason: _swapVoice.reason,
+              });
+              return {
+                success: false,
+                result: '',
+                error:
+                  `The ${target} colleague cannot join this call in the user's language. Stay with the user yourself; ` +
+                  `in their language and your own words, help them directly or offer to file a report the team will follow up on.`,
+              };
+            }
             // Swap to a specialist — load their prompt + voice from
             // agent_personas. No ticket created; just navigation.
             const url2 = process.env.SUPABASE_URL!;
@@ -4249,7 +4269,22 @@ async function executeLiveApiToolInner(
           // VTID-02651: any active non-receptionist persona is a valid
           // swap target. Validates against the registry so newly-added
           // specialists work immediately.
-          if (pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY && (await registryIsValidPersona(pickedPersona))) {
+          // VTID-04445: Devon only ever speaks with a man's voice. When this
+          // session's voice pipeline has none for the language, the ticket
+          // stays filed and Vitana keeps the call (ticket_filed_no_handoff).
+          const _handoffVoice = pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY
+            ? personaVoiceAvailability({ persona: pickedPersona, lang: session.lang, provider: session.upstreamProvider })
+            : null;
+          if (_handoffVoice && !_handoffVoice.ok) {
+            console.warn(`[VTID-04445] hand-off to ${pickedPersona} skipped: no male voice for lang=${session.lang} on ${_handoffVoice.pipeline}`);
+            emitDiag(session, 'persona_handoff_voice_unavailable', {
+              persona: pickedPersona,
+              lang: session.lang,
+              pipeline: _handoffVoice.pipeline,
+              reason: _handoffVoice.reason,
+            });
+          }
+          if (pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY && (!_handoffVoice || _handoffVoice.ok) && (await registryIsValidPersona(pickedPersona))) {
             const swapTo = pickedPersona;
             try {
               const url2 = process.env.SUPABASE_URL!;
@@ -7894,6 +7929,8 @@ async function connectToLiveAPI(
       // VTID-04336: only a Gemini prebuilt voice may reach speech_config —
       // a specialist whose registry voice is a Nova/Polly id gets Charon.
       _personaVoice = resolveVertexLivePersonaVoice(_personaVoice, _persona) || getLiveApiVoice(session.lang);
+      // VTID-04445: Vitana female, Devon male — whatever the rows above said.
+      _personaVoice = enforceVertexVoiceGender(_personaVoice, _persona);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
@@ -8619,7 +8656,11 @@ async function connectToLiveAPI(
         // change for every session this doesn't apply to.
         // VTID-03848: never reuse the (community-persona, no-route) login prewarm on a work surface.
         const sessionSurface = resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile });
-        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface)
+        // VTID-04445: a login prewarm is always Vitana (female voice, Vitana's
+        // prompt) — a Devon hand-off reconnect must never claim it.
+        const _prewarmPersonaIsVitana =
+          (((session as any).activePersona as string | undefined) || 'vitana') === 'vitana';
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
