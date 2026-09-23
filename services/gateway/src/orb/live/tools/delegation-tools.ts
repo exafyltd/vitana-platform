@@ -27,6 +27,13 @@ import {
 } from '../../../services/orchestrator/dispatcher';
 import { registerDefaultDelegationTargets } from '../../../services/orchestrator/delegation-targets';
 import { isSupportSpecialistEnabled, SUPPORT_SPECIALIST_AGENT_ID } from '../../../services/orchestrator/support-specialist';
+import {
+  COMMERCE_SPECIALIST_AGENT_ID,
+  defaultCommerceDeps,
+  isCommerceSpecialistEnabled,
+  membershipsToOrgContext,
+  type CommerceMembership,
+} from '../../../services/orchestrator/commerce-specialist';
 import { resolveOrbSurface } from '../surface';
 
 export const GET_DELEGATION_RESULT_TOOL_NAME = 'get_delegation_result';
@@ -79,6 +86,32 @@ export const ASK_SUPPORT_SPECIALIST_TOOL = {
 /** The member-surface delegation tools, or none when the specialist is off. */
 export function memberDelegationTools(env: NodeJS.ProcessEnv = process.env): object[] {
   return isSupportSpecialistEnabled(env) ? [ASK_SUPPORT_SPECIALIST_TOOL, ...DELEGATION_COMPANION_TOOLS] : [];
+}
+
+/**
+ * VTID-04400: the business ORB's commerce onboarding specialist. Declared
+ * only on the commerce surface, only when ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED
+ * is 'true'.
+ */
+export const ASK_COMMERCE_SPECIALIST_TOOL_NAME = 'ask_commerce_specialist';
+export const ASK_COMMERCE_SPECIALIST_TOOL = {
+  name: ASK_COMMERCE_SPECIALIST_TOOL_NAME,
+  description: [
+    "Ask the commerce specialist about the user's own business on Vitana: whether the organization is still in review or active,",
+    'who is on the team, pending invites, whether a health organization is connected for orders, or how onboarding works.',
+    'It looks things up and returns findings; it changes nothing. Answer from the findings in your own words.',
+    'If it is still working, say briefly that you are checking, then call get_delegation_result on a later turn.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: { question: { type: 'string', description: "The user's question, restated clearly (include the organization name if they gave one)." } },
+    required: ['question'],
+  },
+};
+
+/** The commerce-surface delegation tools, or none when the specialist is off. */
+export function commerceDelegationTools(env: NodeJS.ProcessEnv = process.env): object[] {
+  return isCommerceSpecialistEnabled(env) ? [ASK_COMMERCE_SPECIALIST_TOOL, ...DELEGATION_COMPANION_TOOLS] : [];
 }
 
 export interface DelegationSession {
@@ -170,6 +203,51 @@ export async function runAskSupportSpecialist(session: DelegationSession, args: 
       };
     case 'failed':
       return { success: false, result: '', error: `Support specialist failed: ${r.error}` };
+    case 'escalate':
+      return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
+    default:
+      return { success: false, result: '', error: r.error };
+  }
+}
+
+/**
+ * ask_commerce_specialist, through the dispatcher. Commerce authority comes
+ * from organization membership, so the caller's memberships are loaded
+ * first and handed to the policy; none → the dispatcher refuses.
+ */
+export async function runAskCommerceSpecialist(
+  session: DelegationSession,
+  args: Record<string, unknown>,
+  loadMemberships: (userId: string) => Promise<CommerceMembership[]> = defaultCommerceDeps.listMemberships,
+): Promise<ToolResult> {
+  if (!isCommerceSpecialistEnabled()) {
+    return { success: false, result: '', error: 'the commerce specialist is not enabled' };
+  }
+  registerDefaultDelegationTargets();
+  const caller = callerFromSession(session);
+  if (caller.user_id) {
+    try {
+      caller.orgs = membershipsToOrgContext(await loadMemberships(caller.user_id));
+    } catch (e) {
+      return { success: false, result: '', error: `could not read the user's organizations: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  }
+  const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
+  const r = await delegateToAgent(COMMERCE_SPECIALIST_AGENT_ID, question, caller);
+  switch (r.status) {
+    case 'done':
+      return { success: true, result: JSON.stringify(r.result) };
+    case 'working':
+      return {
+        success: true,
+        result: JSON.stringify({
+          status: 'working',
+          job_id: r.job_id,
+          note: 'The commerce specialist is still looking it up. Tell the user briefly that you are checking; call get_delegation_result with this job_id on a later turn or when they ask.',
+        }),
+      };
+    case 'failed':
+      return { success: false, result: '', error: `Commerce specialist failed: ${r.error}` };
     case 'escalate':
       return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
     default:

@@ -30,7 +30,7 @@
 
 import { randomUUID } from 'crypto';
 import type { OrbSurface } from '../../orb/live/surface';
-import type { AgentChannel } from './context';
+import type { AgentChannel, AgentOrgContext } from './context';
 import { evaluatePolicy, type PolicyDecision, type PolicyDomain, type PolicyTier } from './policy';
 
 export interface DelegationCaller {
@@ -41,6 +41,12 @@ export interface DelegationCaller {
   surface: OrbSurface;
   channel: AgentChannel;
   session_id: string | null;
+  /**
+   * VTID-04400: the caller's partner-organization memberships. Commerce
+   * authority comes only from these (policy.ts roleCeiling); omitted means
+   * none, so a commerce agent is refused.
+   */
+  orgs?: AgentOrgContext[];
   /** Transport-specific data an adapter needs (e.g. the operator thread id). */
   extras?: Record<string, unknown>;
 }
@@ -156,7 +162,7 @@ export async function delegateToAgent(
   const text = (request || '').trim();
   if (!text) return { status: 'refused', agent_id: agentId, error: 'request is required' };
 
-  const policy = evaluatePolicy({ platform_role: caller.platform_role, orgs: [], channel: caller.channel }, target.domain, target.tier);
+  const policy = evaluatePolicy({ platform_role: caller.platform_role, orgs: caller.orgs ?? [], channel: caller.channel }, target.domain, target.tier);
   if (policy.decision === 'deny') {
     return { status: 'refused', agent_id: agentId, error: policy.reason, policy };
   }

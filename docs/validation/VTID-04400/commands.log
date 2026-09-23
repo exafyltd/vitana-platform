@@ -1,0 +1,8 @@
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ npx jest test/services/orchestrator test/orb/live/tools test/orb/live/surface
+Test Suites: 11 passed, 11 total
+Tests:       144 passed, 144 total
+$ npx jest <every suite referencing applySurfaceGate|ORG_ROLE_CEILINGS|roleCeiling|'/commerce'|FLAG_GATED_PRIORITY_TOOLS|delegateToAgent>
+Test Suites: 6 passed, 6 total
+Tests:       80 passed, 80 total

@@ -12,6 +12,7 @@
 
 import { registerDelegationTarget, type DelegationTarget } from './dispatcher';
 import { isSupportSpecialistEnabled, SUPPORT_TARGET } from './support-specialist';
+import { COMMERCE_TARGET, isCommerceSpecialistEnabled } from './commerce-specialist';
 
 /** Upper bound for one operator turn run as a delegated job. */
 export const OPERATOR_JOB_MAX_MS = 5 * 60 * 1000;
@@ -50,6 +51,8 @@ export function registerDefaultDelegationTargets(): void {
   registerDelegationTarget(OPERATOR_TARGET);
   // VTID-04397: the member-side support specialist, only when switched on.
   if (isSupportSpecialistEnabled()) registerDelegationTarget(SUPPORT_TARGET);
+  // VTID-04400: the business-side commerce onboarding specialist, same rule.
+  if (isCommerceSpecialistEnabled()) registerDelegationTarget(COMMERCE_TARGET);
 }
 
 /** Test helper. */
