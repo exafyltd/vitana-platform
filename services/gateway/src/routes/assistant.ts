@@ -33,6 +33,7 @@ import {
 } from '../services/assistant-core';
 // VTID-0538: Knowledge Hub integration
 import { searchKnowledge } from '../services/knowledge-hub';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -80,7 +81,9 @@ const KnowledgeSearchSchema = z.object({
  * Global assistant brain entrypoint for the ORB.
  * VTID-0150-B: Dev-only, text-only, read-only Q&A.
  */
-router.post('/chat', async (req: Request, res: Response) => {
+// VTID-04339: optionalAuth never rejects; it only attaches a verified identity
+// so the brain path can use the caller's real user_id/tenant_id.
+router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log(`[VTID-0150-B] Assistant chat request received`);
 
   try {
@@ -105,7 +108,8 @@ router.post('/chat', async (req: Request, res: Response) => {
       role,
       tenant,
       route || '',
-      selectedId || ''
+      selectedId || '',
+      req.identity ? { user_id: req.identity.user_id, tenant_id: req.identity.tenant_id } : null
     );
 
     // Return response

@@ -1033,7 +1033,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
   // VITANA-BRAIN: Temporary test endpoint for brain integration testing (Phase 1)
-  app.post('/api/v1/brain/test', async (req, res) => {
+  // VTID-04339: admin only — it runs a full brain turn (LLM spend + memory
+  // reads/writes) for any user_id/tenant_id supplied in the body.
+  const brainTestAuth = require('./middleware/auth-supabase-jwt');
+  app.post('/api/v1/brain/test', brainTestAuth.requireAuth, brainTestAuth.requireExafyAdmin, async (req, res) => {
     try {
       const { processBrainTurn } = require('./services/vitana-brain');
       const { message, user_id, tenant_id, role, channel } = req.body;
