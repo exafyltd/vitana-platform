@@ -75,9 +75,54 @@ Not verified in Phase 1:
 - The first live signal is a `memory.session.summarized` OASIS event after this deploys to staging.
 - `mem_tier2_dual_write_enabled` and the relationship-edge mirror trigger stay in place while production still runs the old reader.
 
+## Phase 2 acceptance (VTID-04387 / 04388 / 04389 / 04390 / 04391 / 04392)
+
+AC-13: every raw user/assistant turn written through `writeMemoryItemWithIdentity` is also recorded in `memory_transcript_turns`. Recent-turn grounding and transcript rebuilds read that table first, and pg_cron deletes rows older than 90 days. `MEMORY_RAW_TURNS_TO_ITEMS=false` stops the memory_items copy. (VTID-04387)
+TEST: services/gateway/test/services/memory/transcript.test.ts
+TEST: services/gateway/test/services/orb-memory-bridge.test.ts
+
+AC-14: the Garden API lists current facts plus non-raw episodes in 13 categories. User edits win: facts go through rememberFact with `user_stated_via_memory_garden_ui`, and forgetting a fact deletes its whole key history. Every query is filtered by the JWT tenant and user. (VTID-04388)
+TEST: services/gateway/test/services/memory/garden.test.ts
+TEST: services/gateway/test/routes/memory-garden.test.ts
+
+AC-15: the Garden UI (vitana-v1#1132) reads and writes only through the Garden API. Its progress counts the real entries per category, and the legacy tables, `user_memory_metadata` and the Gemini edge functions are not referenced. Legacy `ai_memory` and diary content was copied into `memory_items` (applied live, 0 notifications). (VTID-04389)
+TEST: vitana-v1 src/hooks/useMemoryMetadata.garden.test.ts
+
+AC-16: one diary write path. `POST /api/v1/memory/diary/entries` writes the diary row, one diary episode (importance ≤ 50) and the Index sync; delete removes both. All 5 frontend writers use it. (VTID-04390)
+TEST: services/gateway/test/services/memory/diary.test.ts
+TEST: services/gateway/test/routes/memory-garden.test.ts
+
+AC-17: AP-0914 writes at most one localized `daily_learning` episode per user per local date. It runs in the user's local 22:00 hour, is skipped in shadow mode, and is read by `GET /api/v1/memory/daily-learning` and the Daily summary screen. (VTID-04391)
+TEST: services/gateway/test/services/memory/daily-learning.test.ts
+TEST: services/gateway/test/vtid-04349-automation-shadow.test.ts
+
+AC-18: the golden recall eval covers:
+- fact recall and supersession
+- session summary, daily learning and diary recall
+- role scope in both directions
+- cross-user isolation
+- Garden forget
+- the Garden never listing raw turns
+
+It fails the build on any regression, and was mutation-verified. (VTID-04392)
+TEST: services/gateway/test/memory-golden-eval.test.ts
+
+Live changes made in Phase 2 (all additive except the purge):
+- tables `memory_transcript_turns` and `purge_memory_transcript_turns` (daily);
+- categories `daily_learning` plus the 13 Garden keys, the `personal` mapping, and index `uq_memory_items_daily_learning`;
+- copies of about 370 raw turns (last 90 days), 112 `ai_memory` notes and 273 diary entries.
+
+Before the copy I checked `trg_notify_memory_garden`, which notifies above importance 50. All copied and automatic rows are ≤ 50, and `memory_garden_grew` notifications created during the copy: 0.
+
+Not verified in Phase 2:
+- The endpoints are not deployed anywhere yet.
+- The UI was verified locally with every network call intercepted (screenshots at 1400×900 and 390×844).
+- AP-0914 needs the EventBridge schedule, which is owner-run.
+
 ## OASIS
 
 OASIS_PROOF:
+- New (Phase 2): `memory.garden.edited`, `memory.diary.saved`, `autopilot.memory.daily_learning_written` (outcome counts per run).
 - `memory.session.summarized` (new, VTID-04365) is emitted once per written session summary, with session id, channel, trigger, memory_item_id and provider. `orb.live.memory.committed` now carries `summary_queued`.
 - `autopilot.memory.embeddings_backfilled` (emitted by AP-0910) now carries `model`, `facts_embedded`, `facts_failed`, `items_embedded` and `items_failed`. It is emitted only when something was attempted.
 - The five `cognee.extraction.*` event types are removed; nothing emitted them since 2026-04-29.

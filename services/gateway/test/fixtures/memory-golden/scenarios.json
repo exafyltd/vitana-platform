@@ -1,0 +1,100 @@
+{
+  "_doc": "VTID-04392 golden recall set. Each scenario seeds a store, runs one recall, and names what the recalled context MUST and MUST NOT contain. Add a scenario for every memory bug that is fixed.",
+  "now": "2026-09-23T12:00:00Z",
+  "scenarios": [
+    {
+      "name": "recalls the user's name from facts",
+      "store": { "memory_facts": [
+        { "fact_key": "user_name", "fact_value": "Dragan", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-09-01T00:00:00Z" }
+      ] },
+      "recall": { "blocks": ["SEMANTIC"], "query": "what is my name" },
+      "expect": { "contains": ["Dragan"] }
+    },
+    {
+      "name": "a superseded fact is never recalled, the current one is",
+      "store": { "memory_facts": [
+        { "fact_key": "user_residence", "fact_value": "Belgrade", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-08-01T00:00:00Z", "superseded_at": "2026-09-01T00:00:00Z" },
+        { "fact_key": "user_residence", "fact_value": "Dubai", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-09-01T00:00:00Z" }
+      ] },
+      "recall": { "blocks": ["SEMANTIC"], "query": "where do I live" },
+      "expect": { "contains": ["Dubai"], "not_contains": ["Belgrade"] }
+    },
+    {
+      "name": "a session summary is recalled by topic",
+      "store": { "memory_items": [
+        { "category_key": "session_summary", "source": "system", "content": "The user talked about poor sleep and plans to go to bed at ten.", "content_json": { "kind": "session_summary" }, "importance": 50, "occurred_at": "2026-09-22T09:00:00Z" },
+        { "category_key": "notes", "source": "system", "content": "The user asked about a pasta recipe.", "content_json": { "kind": "garden_note" }, "importance": 30, "occurred_at": "2026-09-10T09:00:00Z" }
+      ] },
+      "recall": { "blocks": ["EPISODIC"], "query": "how did I sleep lately" },
+      "expect": { "contains": ["poor sleep"] }
+    },
+    {
+      "name": "memory written in a work role stays in that role",
+      "store": { "memory_items": [
+        { "category_key": "notes", "source": "system", "content": "Deploy checklist for the gateway release.", "active_role": "developer", "importance": 40, "occurred_at": "2026-09-22T09:00:00Z" },
+        { "category_key": "notes", "source": "system", "content": "The user enjoys morning walks by the sea.", "importance": 40, "occurred_at": "2026-09-22T08:00:00Z" }
+      ] },
+      "recall": { "blocks": ["EPISODIC"], "query": "remind me what we talked about", "role": "community" },
+      "expect": { "contains": ["morning walks"], "not_contains": ["Deploy checklist"] }
+    },
+    {
+      "name": "personal memory is still visible in a work role",
+      "store": { "memory_items": [
+        { "category_key": "notes", "source": "system", "content": "Deploy checklist for the gateway release.", "active_role": "developer", "importance": 40, "occurred_at": "2026-09-22T09:00:00Z" },
+        { "category_key": "notes", "source": "system", "content": "The user enjoys morning walks by the sea.", "importance": 40, "occurred_at": "2026-09-22T08:00:00Z" }
+      ] },
+      "recall": { "blocks": ["EPISODIC"], "query": "remind me what we talked about", "role": "developer" },
+      "expect": { "contains": ["morning walks", "Deploy checklist"] }
+    },
+    {
+      "name": "another user's memory is never recalled",
+      "store": {
+        "memory_facts": [
+          { "fact_key": "user_name", "fact_value": "Dragan", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-09-01T00:00:00Z" },
+          { "user": "other", "fact_key": "user_name", "fact_value": "Mallory", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-09-05T00:00:00Z" }
+        ],
+        "memory_items": [
+          { "user": "other", "category_key": "session_summary", "source": "system", "content": "Mallory talked about her secret plans.", "importance": 50, "occurred_at": "2026-09-22T09:00:00Z" }
+        ]
+      },
+      "recall": { "blocks": ["SEMANTIC", "EPISODIC"], "query": "what are my plans" },
+      "expect": { "contains": ["Dragan"], "not_contains": ["Mallory"] }
+    },
+    {
+      "name": "today's diary reaches the context",
+      "store": { "diary_entries": [
+        { "text": "Skipped the walk today, feeling tired after a short night.", "tags": ["diary", "text"], "created_at": "2026-09-23T07:00:00Z" }
+      ] },
+      "recall": { "blocks": ["DIARY"], "query": "how was my day" },
+      "expect": { "contains": ["Skipped the walk"] }
+    },
+    {
+      "name": "yesterday's daily learning is recalled",
+      "store": { "memory_items": [
+        { "category_key": "daily_learning", "source": "system", "content": "The user slept six hours and skipped the evening walk.", "content_json": { "kind": "daily_learning", "date": "2026-09-22" }, "importance": 50, "occurred_at": "2026-09-22T20:00:00Z" }
+      ] },
+      "recall": { "blocks": ["EPISODIC"], "query": "did I skip my walk" },
+      "expect": { "contains": ["skipped the evening walk"] }
+    },
+    {
+      "name": "a fact the user forgot in the Garden is gone from recall and from the Garden",
+      "store": { "memory_facts": [
+        { "id": "f-spouse-old", "fact_key": "spouse_name", "fact_value": "Ana", "provenance_source": "assistant_inferred", "provenance_confidence": 0.8, "extracted_at": "2026-08-01T00:00:00Z", "superseded_at": "2026-09-01T00:00:00Z" },
+        { "id": "f-spouse", "fact_key": "spouse_name", "fact_value": "Ana Maria", "provenance_source": "assistant_inferred", "provenance_confidence": 0.8, "extracted_at": "2026-09-01T00:00:00Z" },
+        { "fact_key": "user_name", "fact_value": "Dragan", "provenance_source": "user_stated", "provenance_confidence": 1, "extracted_at": "2026-09-01T00:00:00Z" }
+      ] },
+      "before": [{ "op": "garden_forget_fact", "id": "f-spouse" }],
+      "recall": { "blocks": ["SEMANTIC"], "query": "who is my wife", "garden": true },
+      "expect": { "contains": ["Dragan"], "not_contains": ["Ana"] }
+    },
+    {
+      "name": "the Garden never lists raw conversation turns",
+      "store": { "memory_items": [
+        { "category_key": "notes", "source": "orb_voice", "content": "uh can you hear me", "content_json": { "direction": "user" }, "importance": 10, "occurred_at": "2026-09-23T09:00:00Z" },
+        { "category_key": "session_summary", "source": "system", "content": "The user asked about magnesium before bed.", "content_json": { "kind": "session_summary" }, "importance": 50, "occurred_at": "2026-09-23T09:05:00Z" }
+      ] },
+      "recall": { "blocks": [], "garden": true },
+      "expect": { "contains": ["magnesium"], "not_contains": ["can you hear me"] }
+    }
+  ]
+}

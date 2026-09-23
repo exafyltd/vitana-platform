@@ -315,11 +315,18 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
 - [x] Role scope on write (`memory_items.active_role`) and on read (broker, context pack) (fixes D9). VTID-04367.
 
 ### Phase 2 — Make users feel it (≈2–3 weeks)
-- [ ] **Memory Garden on the canonical store** (vitana-v1): gateway API for list/add/edit/delete; migrate `ai_memory` and diary tags; fix category counting (fixes D4, D5); retire the Gemini edge functions (fixes D12).
-- [ ] All 4 diary writers → one gateway endpoint.
-- [ ] Nightly `daily_learning` episode per active user; real "Daily summary" screen replacing the mock.
-- [ ] Raw transcripts move to a transcript table with TTL; `memory_items` holds summaries only.
-- [ ] Golden recall eval in CI.
+- [x] **Memory Garden on the canonical store:**
+  - Gateway API `/api/v1/memory/garden/{entries,categories}` for list, add, edit and delete (VTID-04388).
+  - vitana-v1 Garden hooks rebuilt on it; exafyltd/vitana-v1#1132 (VTID-04389).
+  - `ai_memory` and diary entries copied into `memory_items` (applied live).
+  - Category counting fixed (D4, D5).
+  - The Garden no longer calls the Gemini edge functions. `ai-chat` (health coach) still uses them: part of D12 remains.
+- [x] All 5 diary writers go through one endpoint, `POST /api/v1/memory/diary/entries`: diary row, memory episode and Index sync (VTID-04390).
+- [x] Nightly `daily_learning` episode per active user (AP-0914, the user's local 22:00), and the real "Daily summary" screen replacing the mock (VTID-04391). The scheduler is the owner-run EventBridge `--apply`.
+- [x] Raw transcripts go to `memory_transcript_turns` with a 90-day pg_cron purge; the last 90 days were backfilled (VTID-04387).
+  - `memory_items` still also receives raw turns until `MEMORY_RAW_TURNS_TO_ITEMS=false` is set, after session summaries are observed live.
+  - Deleting the 2,666 old raw-turn rows from `memory_items` is a follow-up for after that flip.
+- [x] Golden recall eval in CI: `test/memory-golden-eval.test.ts` plus `test/fixtures/memory-golden/scenarios.json`. 10 scenarios; mutation-checked, and it fails when the superseded-fact or role filter is removed (VTID-04392).
 
 ### Phase 3 — Developer memory (≈1–2 weeks)
 - [ ] `author_user_id` + `handoff` category on `dev_agent_memory`; end-of-thread and nightly handoff.
