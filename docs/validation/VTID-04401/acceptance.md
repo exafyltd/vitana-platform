@@ -72,3 +72,13 @@ A connect flow that was already in progress at deploy time carries an old
 unsigned state, so it fails once with `invalid_state`, and the member taps
 Connect again. `OAUTH_STATE_SECRET` is optional; if it is ever set, it must
 be the same on every gateway task.
+
+## Route mount evidence
+
+No new route is added. The diff adds `router.use(optionalAuth)` to two
+existing routers, so the verifying middleware runs before every handler.
+The mounts are unchanged:
+
+ROUTE_MOUNT: services/gateway/src/index.ts → mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter) and mountRouterSync(app, '/api/v1/capabilities', capabilitiesRouter)
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/social-accounts/connections (and POST /api/v1/capabilities/:capability)
+CURL_PROOF: `curl -s -o /dev/null -w "%{http_code} %{content_type}" …/api/v1/social-accounts/connections` → `401 application/json; charset=utf-8` `{"ok":false,"error":"Authentication required"}`; `curl -X POST …/api/v1/capabilities/email.read` → `401 application/json; charset=utf-8`. These are JSON, not an HTML 404, so the routes are mounted. Read-only and without a token, against staging; the result is the same before and after this change.
