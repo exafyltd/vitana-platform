@@ -811,34 +811,26 @@ that use report_to_specialist (creates ticket AND swaps).",
       {
         "description": "File a customer-support ticket and hand the call to Devon, our
 tech-support colleague (VTID-03044 canary: Devon is the ONLY
-enabled specialist; Sage / Atlas / Mira are disabled). This is
-RARE — typically less than 5% of conversations. You ARE the
-instruction manual; almost every question is yours to answer.
+enabled specialist; Sage / Atlas / Mira are disabled).
 
-YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
-first say something like "Shall I bring in Devon to file this?"
-and wait for the user to say yes. Implicit consent does NOT count.
-Vary the proposal phrasing every time.
+CALL IT when the user reports a CONCRETE PROBLEM: a bug, something
+that does not work, a problem with their account, a refund or
+claim. That IS a hand-off case. Confirm once, in your own words,
+that they want it filed and passed to support; when they agree,
+call it. One short confirmation is enough.
 
-CALL ONLY WHEN ALL THREE are true:
-  (1) the user has described a CONCRETE PROBLEM (bug, broken
-      state, refund, account lockout, claim) — not a question
-      about how something works,
-  (2) the user has EXPLICITLY agreed to be connected to a
-      specialist (after you proposed it), and
-  (3) you can write a SPECIFIC \`summary\` (>= 15 words) that
-      describes WHAT broke, on WHICH screen/feature, with the
-      user's own words. If you cannot — because the user only
-      said "I want to report a bug" without details — DO NOT
-      CALL THIS TOOL YET. Instead ask ONE follow-up question:
-      "What's breaking — which screen or feature?" Get the
-      details, THEN call this tool. A vague summary causes the
-      specialist to invent the issue, which is worse than not
-      forwarding at all. Generic summaries like "user wants to
-      report a bug" are FORBIDDEN.
+\`summary\`: what went wrong and where, in the user's own words. A
+short sentence is fine. If the user only said they want to report
+something without saying what, ask one short question about what
+is broken first. Placeholder summaries ("user wants to report a
+bug") are rejected.
 
-NEVER CALL for any of these — answer them yourself inline using
-search_knowledge first:
+The reply begins with a STATUS line. Only "STATUS: handoff_created."
+means a colleague is joining; every other STATUS means you stay
+with the user — follow its ACTION line.
+
+Do NOT call for how-to questions — you are the instruction manual
+for those; answer them yourself inline using search_knowledge first:
   - "How does X work?" / "What is X?" / "Explain X"
   - "Show me how to use X" / "How do I X?" / "Teach me"
   - "Tell me about X" / "I want to learn X" / "I am new"
@@ -849,17 +841,12 @@ search_knowledge first:
     report. First-time users asking how to use the diary is a
     teaching moment, NOT a customer-support ticket.
 
-GATE-A enforcement: the backend re-checks the user's actual
-recent words (not your summary). If the gate returns STAY_INLINE,
-do NOT mention the routing decision out loud — silently answer
-the question. Same if the conversation's forward budget is
-exhausted (max 1 forward + 1 return per conversation).
+The backend re-checks the user's actual recent words (not your
+summary); max 1 forward + 1 return per conversation.
 
-AFTER A FORWARD FIRES: speak ONE short bridge sentence in your
-own natural words. ANNOUNCE the handoff — never INTRODUCE the
-specialist ("Hi, here is Devon" — that is DEVON'S job in his
-own voice). Vary your phrasing every time, never recite a
-template. Then STOP — the next voice is the specialist's.",
+AFTER STATUS handoff_created: one short turn in your own words
+announcing the colleague by role — never introduce them or speak
+for them (they greet in their own voice). Then STOP.",
         "name": "report_to_specialist",
         "parameters": {
           "properties": {
@@ -881,13 +868,38 @@ template. Then STOP — the next voice is the specialist's.",
               "type": "string",
             },
             "summary": {
-              "description": "CONCRETE one-paragraph summary using the user's OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.",
+              "description": "What went wrong and where, in the user's own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.",
               "type": "string",
             },
           },
           "required": [
             "kind",
             "summary",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Support colleague only (not Vitana): add a detail the user gives
+you to the ticket Vitana filed when she handed the user to you.
+Call it for each substantive detail — what they did, what
+happened, which screen, error text, device. Use ticket_id
+"current" for this hand-off's ticket. Do not read the note back
+to the user. Vitana files new reports with report_to_specialist.",
+        "name": "append_to_ticket",
+        "parameters": {
+          "properties": {
+            "note": {
+              "description": "The detail to record, in plain words.",
+              "type": "string",
+            },
+            "ticket_id": {
+              "description": ""current" for the ticket of this hand-off (default), or that ticket's id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "note",
           ],
           "type": "object",
         },
@@ -3859,7 +3871,9 @@ wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 The summary must be a concrete description of at least 15 words in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
-For live handoff to a specialist use report_to_specialist instead.",
+Prefer report_to_specialist, which files the same ticket AND hands the
+user to tech support; use this only when the user wants it logged
+without talking to support.",
         "name": "submit_bug_report",
         "parameters": {
           "properties": {
@@ -13702,34 +13716,26 @@ that use report_to_specialist (creates ticket AND swaps).",
       {
         "description": "File a customer-support ticket and hand the call to Devon, our
 tech-support colleague (VTID-03044 canary: Devon is the ONLY
-enabled specialist; Sage / Atlas / Mira are disabled). This is
-RARE — typically less than 5% of conversations. You ARE the
-instruction manual; almost every question is yours to answer.
+enabled specialist; Sage / Atlas / Mira are disabled).
 
-YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
-first say something like "Shall I bring in Devon to file this?"
-and wait for the user to say yes. Implicit consent does NOT count.
-Vary the proposal phrasing every time.
+CALL IT when the user reports a CONCRETE PROBLEM: a bug, something
+that does not work, a problem with their account, a refund or
+claim. That IS a hand-off case. Confirm once, in your own words,
+that they want it filed and passed to support; when they agree,
+call it. One short confirmation is enough.
 
-CALL ONLY WHEN ALL THREE are true:
-  (1) the user has described a CONCRETE PROBLEM (bug, broken
-      state, refund, account lockout, claim) — not a question
-      about how something works,
-  (2) the user has EXPLICITLY agreed to be connected to a
-      specialist (after you proposed it), and
-  (3) you can write a SPECIFIC \`summary\` (>= 15 words) that
-      describes WHAT broke, on WHICH screen/feature, with the
-      user's own words. If you cannot — because the user only
-      said "I want to report a bug" without details — DO NOT
-      CALL THIS TOOL YET. Instead ask ONE follow-up question:
-      "What's breaking — which screen or feature?" Get the
-      details, THEN call this tool. A vague summary causes the
-      specialist to invent the issue, which is worse than not
-      forwarding at all. Generic summaries like "user wants to
-      report a bug" are FORBIDDEN.
+\`summary\`: what went wrong and where, in the user's own words. A
+short sentence is fine. If the user only said they want to report
+something without saying what, ask one short question about what
+is broken first. Placeholder summaries ("user wants to report a
+bug") are rejected.
 
-NEVER CALL for any of these — answer them yourself inline using
-search_knowledge first:
+The reply begins with a STATUS line. Only "STATUS: handoff_created."
+means a colleague is joining; every other STATUS means you stay
+with the user — follow its ACTION line.
+
+Do NOT call for how-to questions — you are the instruction manual
+for those; answer them yourself inline using search_knowledge first:
   - "How does X work?" / "What is X?" / "Explain X"
   - "Show me how to use X" / "How do I X?" / "Teach me"
   - "Tell me about X" / "I want to learn X" / "I am new"
@@ -13740,17 +13746,12 @@ search_knowledge first:
     report. First-time users asking how to use the diary is a
     teaching moment, NOT a customer-support ticket.
 
-GATE-A enforcement: the backend re-checks the user's actual
-recent words (not your summary). If the gate returns STAY_INLINE,
-do NOT mention the routing decision out loud — silently answer
-the question. Same if the conversation's forward budget is
-exhausted (max 1 forward + 1 return per conversation).
+The backend re-checks the user's actual recent words (not your
+summary); max 1 forward + 1 return per conversation.
 
-AFTER A FORWARD FIRES: speak ONE short bridge sentence in your
-own natural words. ANNOUNCE the handoff — never INTRODUCE the
-specialist ("Hi, here is Devon" — that is DEVON'S job in his
-own voice). Vary your phrasing every time, never recite a
-template. Then STOP — the next voice is the specialist's.",
+AFTER STATUS handoff_created: one short turn in your own words
+announcing the colleague by role — never introduce them or speak
+for them (they greet in their own voice). Then STOP.",
         "name": "report_to_specialist",
         "parameters": {
           "properties": {
@@ -13772,13 +13773,38 @@ template. Then STOP — the next voice is the specialist's.",
               "type": "string",
             },
             "summary": {
-              "description": "CONCRETE one-paragraph summary using the user's OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.",
+              "description": "What went wrong and where, in the user's own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.",
               "type": "string",
             },
           },
           "required": [
             "kind",
             "summary",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Support colleague only (not Vitana): add a detail the user gives
+you to the ticket Vitana filed when she handed the user to you.
+Call it for each substantive detail — what they did, what
+happened, which screen, error text, device. Use ticket_id
+"current" for this hand-off's ticket. Do not read the note back
+to the user. Vitana files new reports with report_to_specialist.",
+        "name": "append_to_ticket",
+        "parameters": {
+          "properties": {
+            "note": {
+              "description": "The detail to record, in plain words.",
+              "type": "string",
+            },
+            "ticket_id": {
+              "description": ""current" for the ticket of this hand-off (default), or that ticket's id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "note",
           ],
           "type": "object",
         },
@@ -16750,7 +16776,9 @@ wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 The summary must be a concrete description of at least 15 words in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
-For live handoff to a specialist use report_to_specialist instead.",
+Prefer report_to_specialist, which files the same ticket AND hands the
+user to tech support; use this only when the user wants it logged
+without talking to support.",
         "name": "submit_bug_report",
         "parameters": {
           "properties": {

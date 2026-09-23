@@ -32,3 +32,26 @@ export async function insertFeedbackTicket(sb: SupabaseClient, row: Record<strin
 export async function insertFeedbackHandoffEvent(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('feedback_handoff_events').insert(row);
 }
+
+// VTID-04332 — append_to_ticket data access.
+export async function fetchTicketForAppend(sb: SupabaseClient, ticketId: string) {
+  return sb
+    .from('feedback_tickets')
+    .select('id, user_id, ticket_number, intake_messages')
+    .eq('id', ticketId)
+    .maybeSingle();
+}
+
+export async function updateTicketIntakeMessages(
+  sb: SupabaseClient,
+  ticketId: string,
+  userId: string,
+  intakeMessages: unknown[],
+) {
+  // user_id in the filter too, so the owner check holds at write time.
+  return sb
+    .from('feedback_tickets')
+    .update({ intake_messages: intakeMessages })
+    .eq('id', ticketId)
+    .eq('user_id', userId);
+}
