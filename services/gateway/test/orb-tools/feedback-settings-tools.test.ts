@@ -12,6 +12,7 @@ jest.mock('../../src/services/report-to-specialist-core', () => {
   return {
     executeReportToSpecialist: jest.fn(),
     isVagueSummary: actual.isVagueSummary,
+    feedbackSurfaceForOrb: actual.feedbackSurfaceForOrb,
     REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS: actual.REPORT_TO_SPECIALIST_MIN_SUMMARY_WORDS,
   };
 });
@@ -174,6 +175,23 @@ describe('tool_submit_bug_report', () => {
     expect(executeReportToSpecialist).not.toHaveBeenCalled();
   });
 
+  it('passes surface, session and route to the shared core (VTID-04382)', async () => {
+    (pickPersonaForKindForTenant as jest.Mock).mockResolvedValue('devon');
+    (executeReportToSpecialist as jest.Mock).mockResolvedValueOnce({
+      decision: 'created',
+      ticket: { id: 'tk-3', ticket_number: 'FB-2026-09-000002' },
+      persona: 'devon', matched_keyword: null, confidence: null, rpc_decision: null, rpc_gate: null,
+    });
+    await tool_submit_bug_report(
+      { summary: LONG_BUG_SUMMARY },
+      { ...IDENT, lang: 'sr', session_id: 'live-s2', current_route: '/admin/feedback' },
+      makeSb(),
+    );
+    const options = (executeReportToSpecialist as jest.Mock).mock.calls[0][3];
+    expect(options).toMatchObject({ surface: 'admin', session_id: 'live-s2', current_route: '/admin/feedback' });
+    expect((executeReportToSpecialist as jest.Mock).mock.calls[0][1]).toMatchObject({ lang: 'sr', tenant_id: 't-1' });
+  });
+
   it('files a short but concrete 5-word bug report (VTID-04359)', async () => {
     (pickPersonaForKindForTenant as jest.Mock).mockResolvedValue('devon');
     (executeReportToSpecialist as jest.Mock).mockResolvedValueOnce({
@@ -226,6 +244,33 @@ describe('typed tickets without an enabled specialist (VTID-03044 canary)', () =
     expect(emitOasisEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'feedback.ticket.created' }),
     );
+  });
+
+  it('carries surface, tenant, language, session and route like report_to_specialist (VTID-04382)', async () => {
+    (pickPersonaForKindForTenant as jest.Mock).mockResolvedValue(null);
+    const { sb, builder } = insertCapture();
+    const id = {
+      ...IDENT, lang: 'de', session_id: 'live-s1', current_route: '/command-hub/autopilot', is_mobile: false,
+    };
+    await tool_submit_support_ticket(
+      { summary: 'How can I export all of my health data as a file' }, id, sb,
+    );
+    const inserted = builder.insert.mock.calls[0][0];
+    expect(inserted.surface).toBe('command-hub');
+    expect(inserted.structured_fields).toMatchObject({
+      tenant_id: 't-1', language: 'de', session_id: 'live-s1', current_route: '/command-hub/autopilot',
+    });
+    const event = (emitOasisEvent as jest.Mock).mock.calls[0][0];
+    expect(event.payload).toMatchObject({ surface: 'command-hub', language: 'de', session_id: 'live-s1' });
+  });
+
+  it('files on the community surface when the route is unknown (VTID-04382)', async () => {
+    (pickPersonaForKindForTenant as jest.Mock).mockResolvedValue(null);
+    const { sb, builder } = insertCapture();
+    await tool_submit_account_issue(
+      { summary: 'I cannot log in since I changed my email address' }, IDENT, sb,
+    );
+    expect(builder.insert.mock.calls[0][0].surface).toBe('community');
   });
 
   it('submit_marketplace_dispute stores the order reference', async () => {

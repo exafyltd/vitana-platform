@@ -6813,6 +6813,9 @@ async function executeLiveApiToolInner(
                 turn_number: session.turn_count,
                 session_started_iso: session.createdAt.toISOString(),
                 lang: session.lang ?? null,
+                // VTID-04382: the typed feedback tools file on this surface.
+                current_route: session.current_route ?? null,
+                is_mobile: session.is_mobile === true,
               },
               supabase,
             );

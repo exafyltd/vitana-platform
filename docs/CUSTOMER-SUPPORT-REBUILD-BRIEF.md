@@ -311,6 +311,20 @@ Follow-ups after the merge:
   `isVagueSummary()` (5 words and the placeholder patterns). `/mine`
   returns the member's own report text (`raw_transcript`, clipped to
   2,000 characters) so the member list can show what they reported.
+- **VTID-04382 (platform):** typed `submit_*` tickets carry surface,
+  tenant, language, session and route on both the routed and the unrouted
+  path (they filed every ticket as `community` with no session before).
+- **VTID-04383 (platform):** the `feedback_ticket_resolved` push opens the
+  specific ticket (`?ticket=` in `data.url`; the service worker opens the
+  url as-is).
+- **VTID-04384 (platform):** a sibling of the spec drafter replaces the
+  placeholder Sage answer on every auto-triaged support question with a
+  real draft for review. Never sends; `FEEDBACK_ANSWER_DRAFT_ENABLED=false`
+  turns it off. Support → Contact tickets (`surface='support'`) stay in the
+  human-only queue by design and are not auto-drafted.
+- **VTID-04385 (vitana-v1 + platform):** the member sees the ticket number
+  and a link after a spoken report, and Support → "report by voice" opens
+  the ORB for a report.
 - **VTID-04360 (vitana-v1):** translate the admin drawer labels, drop the
   retired `NewTicketPopup` from `docs/SCREEN_REGISTRY.md`, show the report
   text in the member ticket list.
