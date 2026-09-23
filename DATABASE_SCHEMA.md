@@ -885,6 +885,7 @@ CREATE TABLE my_new_table (
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
+| 2026-09-23 | `calendar_events`: `rrule`, `timezone`, `reminder_offsets`, `emoji` + CHECKs; role_context adds `professional`; source_type adds six producer types. Also applied the never-applied 2026-04-28 `pillar`/`contribution_vector` migration. | Claude | VTID-04331 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -940,6 +941,21 @@ CREATE INDEX idx_calendar_events_pillar_upcoming
 **Backfill:** the migration extracts the first `pillar:<key>` entry from `wellness_tags` into the new `pillar` column for legacy rows that already had the heuristic tag, using `UNNEST(...) WITH ORDINALITY` + `DISTINCT ON` so the choice is deterministic when an event has multiple pillar tags.
 
 **Notes:** the frontend's `derivePillar` helper now reads `event.pillar` first; falls back to the existing `wellness_tags` and `event_type` heuristic when both new columns are null.
+
+### calendar_events — recurrence, reminders, emoji, lenses (VTID-04331)
+
+Migration `20260923130000_vtid_04331_calendar_data_model.sql`, applied live 2026-09-23.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `rrule` | TEXT | RFC 5545 RRULE body without DTSTART (`FREQ=DAILY\|WEEKLY\|MONTHLY`, `INTERVAL`, `COUNT`, `UNTIL` in UTC, `BYDAY`). `start_time` is DTSTART; every occurrence has `end_time - start_time` duration. Expanded by the gateway (`services/calendar-recurrence.ts`). CHECK `valid_rrule`. |
+| `timezone` | TEXT | IANA zone the rule is expanded in; NULL = the user's zone. |
+| `reminder_offsets` | INTEGER[] | Minutes before start to remind; NULL = category default, `{}` = none. ≤5 values, 0..40320. CHECK `valid_reminder_offsets`. |
+| `emoji` | TEXT | Display emoji; NULL = category default. CHECK `valid_emoji`. |
+
+`valid_role_context` now allows `community, professional, admin, developer, personal`; `valid_source_type` adds `health_plan, lab_order, appointment, live_room, goal_plan, guided_journey`. Index `idx_calendar_events_recurring (user_id) WHERE rrule IS NOT NULL AND status <> 'cancelled'`.
+
+**Note (2026-09-23):** the `pillar` / `contribution_vector` columns documented above were not present in the live database until VTID-04331 applied `20260428000000_calendar_pillar_contribution_vector.sql`; its backfill matched 0 rows.
 
 ### calendar_events ← global_event_participants (VTID-04321 triggers)
 

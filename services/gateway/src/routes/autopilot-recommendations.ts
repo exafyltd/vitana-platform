@@ -36,6 +36,7 @@ import * as repo from './autopilot-recommendations-repository';
 // check to the shared manual-activation allowlist (adds community/health)
 // - kept in sync with what bridgeActivationToExecution() itself accepts.
 import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
+import { completeCalendarEntriesForSource } from '../services/calendar-producers';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -2125,6 +2126,12 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
 
     const sourceRef: string | null = response.source_ref || null;
     const alreadyCompleted: boolean = response.already_completed === true;
+
+    // VTID-04331: completing the recommendation ticks its calendar entry off
+    // too, so the calendar never shows an open task for finished work.
+    if (!alreadyCompleted) {
+      completeCalendarEntriesForSource(userId, 'autopilot_recommendation', recId).catch(() => 0);
+    }
 
     // OASIS event — visibility only, never block the response on this.
     try {

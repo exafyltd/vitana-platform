@@ -14,7 +14,12 @@ import { z } from 'zod';
 // Role Context
 // =============================================================================
 
-export type CalendarRoleContext = 'community' | 'admin' | 'developer' | 'personal';
+export type CalendarRoleContext = 'community' | 'professional' | 'admin' | 'developer' | 'personal';
+
+/** The calendar_events.role_context CHECK list (valid_role_context, VTID-04331). */
+export const CALENDAR_ROLE_CONTEXTS: readonly CalendarRoleContext[] = [
+  'community', 'professional', 'admin', 'developer', 'personal',
+] as const;
 
 /**
  * Maps an active user role → which role_context values are visible in calendar.
@@ -23,7 +28,9 @@ export type CalendarRoleContext = 'community' | 'admin' | 'developer' | 'persona
 export const ROLE_TO_CONTEXTS: Record<string, CalendarRoleContext[]> = {
   community:   ['community', 'personal'],
   patient:     ['community', 'personal'],
-  professional:['community', 'personal'],
+  // VTID-04331: professionals get their own work view; community entries
+  // show there as grey busy blocks instead of mixing in.
+  professional:['professional', 'personal'],
   staff:       ['admin', 'personal'],
   admin:       ['admin', 'personal'],
   // VTID-04321: backoffice (VTID-03832) sits between staff and admin on the
@@ -32,7 +39,7 @@ export const ROLE_TO_CONTEXTS: Record<string, CalendarRoleContext[]> = {
   developer:   ['developer', 'personal'],
   infra:       ['developer', 'personal'],
   // Super admin (exafy_admin=true) → no filter, sees everything
-  super_admin: ['community', 'admin', 'developer', 'personal'],
+  super_admin: ['community', 'professional', 'admin', 'developer', 'personal'],
   DEV:         ['developer', 'personal'],
 };
 
@@ -66,8 +73,10 @@ export function toWritableRoleContext(role: string | null | undefined): Calendar
     case 'staff':
     case 'backoffice':
       return 'admin';
+    case 'professional':
+      return 'professional';
     default:
-      // community, patient, professional, null, unknown → community
+      // community, patient, null, unknown → community
       return 'community';
   }
 }
@@ -135,6 +144,12 @@ export interface CalendarEvent {
   // consumers fall back to a `pillar:*` entry inside wellness_tags).
   pillar: CalendarPillarKey | null;
   contribution_vector: ContributionVector | null;
+
+  // VTID-04331
+  rrule: string | null;
+  timezone: string | null;
+  reminder_offsets: number[] | null;
+  emoji: string | null;
 }
 
 // =============================================================================
@@ -183,6 +198,28 @@ export interface CalendarContextHit {
 // Zod Schemas (API validation)
 // =============================================================================
 
+/**
+ * RFC 5545 RRULE body the valid_rrule CHECK accepts (VTID-04331): FREQ
+ * DAILY|WEEKLY|MONTHLY plus INTERVAL, COUNT, UNTIL (UTC) and BYDAY.
+ */
+export const RRULE_PATTERN =
+  /^FREQ=(DAILY|WEEKLY|MONTHLY)(;(INTERVAL=[1-9][0-9]*|COUNT=[1-9][0-9]*|UNTIL=[0-9]{8}T[0-9]{6}Z|BYDAY=(MO|TU|WE|TH|FR|SA|SU)(,(MO|TU|WE|TH|FR|SA|SU))*))*$/;
+
+const RecurrenceFields = {
+  rrule: z.string().regex(RRULE_PATTERN, 'rrule must be FREQ=DAILY|WEEKLY|MONTHLY with INTERVAL/COUNT/UNTIL/BYDAY').optional().nullable(),
+  timezone: z.string().min(1).max(64).optional().nullable(),
+  reminder_offsets: z.array(z.number().int().min(0).max(40320)).max(5).optional().nullable(),
+  emoji: z.string().min(1).max(16).optional().nullable(),
+};
+
+/** The calendar_events.source_type CHECK list (valid_source_type, VTID-04331). */
+export const CALENDAR_SOURCE_TYPES = [
+  'manual', 'invite', 'imported',
+  'autopilot', 'community_rsvp', 'assistant', 'journey',
+  'vtid', 'ci_cd', 'nudge_engine',
+  'health_plan', 'lab_order', 'appointment', 'live_room', 'goal_plan', 'guided_journey',
+] as const;
+
 /** The calendar_events.event_type CHECK list (valid_event_type). */
 export const CALENDAR_EVENT_TYPES = [
   'personal', 'community', 'professional', 'health', 'workout', 'nutrition',
@@ -199,12 +236,8 @@ export const CreateCalendarEventSchema = z.object({
   event_type: z.enum(CALENDAR_EVENT_TYPES).default('personal'),
   status: z.enum(['confirmed', 'pending', 'conflict', 'cancelled']).default('confirmed'),
   priority: z.enum(['low', 'medium', 'high']).default('medium'),
-  role_context: z.enum(['community', 'admin', 'developer', 'personal']).default('community'),
-  source_type: z.enum([
-    'manual', 'invite', 'imported',
-    'autopilot', 'community_rsvp', 'assistant', 'journey',
-    'vtid', 'ci_cd', 'nudge_engine',
-  ]).default('manual'),
+  role_context: z.enum(['community', 'professional', 'admin', 'developer', 'personal']).default('community'),
+  source_type: z.enum(CALENDAR_SOURCE_TYPES).default('manual'),
   source_ref_id: z.string().optional().nullable(),
   source_ref_type: z.string().optional().nullable(),
   priority_score: z.number().int().min(0).max(100).default(50),
@@ -214,6 +247,7 @@ export const CreateCalendarEventSchema = z.object({
   recurring_pattern: z.record(z.any()).optional().nullable(),
   pillar: z.enum(['nutrition', 'hydration', 'exercise', 'sleep', 'mental']).optional().nullable(),
   contribution_vector: ContributionVectorSchema.optional().nullable(),
+  ...RecurrenceFields,
 });
 
 export type CreateCalendarEventInput = z.infer<typeof CreateCalendarEventSchema>;
@@ -231,6 +265,7 @@ export const UpdateCalendarEventSchema = z.object({
   metadata: z.record(z.any()).optional(),
   pillar: z.enum(['nutrition', 'hydration', 'exercise', 'sleep', 'mental']).optional().nullable(),
   contribution_vector: ContributionVectorSchema.optional().nullable(),
+  ...RecurrenceFields,
 });
 
 export const ListCalendarEventsSchema = z.object({

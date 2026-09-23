@@ -12,8 +12,8 @@
 
 import { toWritableRoleContext, CalendarRoleContext } from '../../src/types/calendar';
 
-// Mirror of the DB CHECK constraint `valid_role_context`.
-const VALID: ReadonlySet<string> = new Set(['community', 'admin', 'developer', 'personal']);
+// Mirror of the DB CHECK constraint `valid_role_context` (widened with 'professional' by VTID-04331).
+const VALID: ReadonlySet<string> = new Set(['community', 'professional', 'admin', 'developer', 'personal']);
 
 describe('toWritableRoleContext — calendar role_context coercion', () => {
   // Every role the gateway may carry on a session, plus edge cases.
@@ -39,7 +39,7 @@ describe('toWritableRoleContext — calendar role_context coercion', () => {
     expect(toWritableRoleContext('DEV')).toBe('developer');
     expect(toWritableRoleContext('infra')).toBe('developer');
     expect(toWritableRoleContext('patient')).toBe('community');
-    expect(toWritableRoleContext('professional')).toBe('community');
+    expect(toWritableRoleContext('professional')).toBe('professional'); // own lens since VTID-04331
   });
 
   it('passes through already-valid contexts unchanged', () => {

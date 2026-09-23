@@ -80,6 +80,46 @@ TEST: services/gateway/test/services/action-executors.test.ts
 AC-8 — Live, after the staging deploy: a `[reminders-tick]` log line and `reminder.fired` / `reminder.stale_skipped` OASIS events appear without any external scheduler; the five overdue rows end `failed` / `stale_skipped`.
 TEST: outputs/ — recorded after merge; NOT verified at PR time.
 
+## Step 2 in the same PR — VTID-04331 (data model, producer contract, window read)
+
+Approved in conversation ("continue developing") as step 2. Migrations
+applied live 2026-09-23 before merge:
+
+- `20260923130000_vtid_04331_calendar_data_model.sql` — `rrule`, `timezone`,
+  `reminder_offsets`, `emoji`; CHECKs `valid_rrule`, `valid_reminder_offsets`,
+  `valid_emoji`; `role_context` + `professional`; `source_type` + six producer
+  types. Tested first on a local Postgres (valid/invalid inserts, re-run).
+- `20260428000000_calendar_pillar_contribution_vector.sql` — **found never
+  applied** (the columns were absent live although DATABASE_SCHEMA.md
+  documented them, so any client sending `pillar` got a failing insert).
+  Applied unchanged; its backfill matched 0 rows.
+
+New code: `services/calendar-producers.ts` (the one write path for every
+producer), `services/calendar-recurrence.ts` (RRULE expansion in local wall
+time), `listCalendarWindow` + `GET /api/v1/calendar/events/window`.
+
+AC-9 — The types mirror the migration's CHECK lists (source types, role contexts, the identical RRULE regex); the create schema accepts the new columns and rejects invalid ones.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+AC-10 — Recurrence expands DAILY/WEEKLY(BYDAY)/MONTHLY with INTERVAL/COUNT/UNTIL, keeps local time across DST, skips missing month days.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+AC-11 — The window read shows the active lens in full and every other lens as grey busy blocks carrying time only (no title, description, location, metadata or source); `include_busy=false` hides them; cancelled entries never show.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+AC-12 — A producer write is idempotent per (user, source_ref_type, source_ref_id): created once, unchanged on replay, only changed fields patched, completed entries never moved, cancelled ones reactivated, a lost insert race resolved as an update.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+AC-13 — Replacing a series (a plan) cancels the entries whose keys dropped out, never completed ones.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+AC-14 — Completion syncs both ways for Autopilot recommendations: ticking the entry off completes the recommendation through `complete_autopilot_recommendation`; completing the recommendation ticks its entries off.
+TEST: services/gateway/test/vtid-04331-calendar-data-model.test.ts
+
+ROUTE_MOUNT: `router.get('/events/window')` on the existing calendar router, mounted at `/api/v1/calendar` (services/gateway/src/index.ts).
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/calendar/events/window?from=<iso>&to=<iso>
+CURL_PROOF: before merge, 2026-09-23 — `GET /api/v1/calendar/health` → `200 application/json` `{"ok":true,"service":"intelligent-calendar",…}` (router mounted); `GET /api/v1/calendar/events/window?...` unauthenticated → `401 {"ok":false,"error":"UNAUTHENTICATED"}` (router-level auth answers first). After merge the same authenticated call returns `{"ok":true,"data":[…]}`; recorded in outputs/ after deploy.
+
 ## Not done here, on purpose
 
 - Production: the prod gateway workflow does not set the flag. Staging and

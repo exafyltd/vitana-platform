@@ -35,7 +35,9 @@ import {
   markEventCompleted,
   softDeleteEvent,
   toSummary,
+  listCalendarWindow,
 } from '../services/calendar-service';
+import { completeSourceForCalendarEvent } from '../services/calendar-producers';
 
 // Pillar keys — must match the 5 canonical Vitana pillars.
 const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
@@ -174,6 +176,59 @@ router.get('/events', async (req: Request, res: Response) => {
     return res.json({ ok: true, data, count, limit: parsed.data.limit, offset: parsed.data.offset });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /events error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/window?from&to[&include_busy=false] — VTID-04331
+// Everything the calendar shows in a date range for the active role:
+// recurring entries expanded into occurrences, entries from other lenses as
+// grey busy blocks (time only). Max 62 days per request.
+// =============================================================================
+const WINDOW_MAX_MS = 62 * 86_400_000;
+
+router.get('/events/window', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const from = String(req.query.from ?? '');
+    const to = String(req.query.to ?? '');
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (Number.isNaN(fromMs) || Number.isNaN(toMs) || toMs <= fromMs) {
+      return res.status(400).json({ ok: false, error: 'from and to must be ISO timestamps with to > from' });
+    }
+    if (toMs - fromMs > WINDOW_MAX_MS) {
+      return res.status(400).json({ ok: false, error: 'window may span at most 62 days' });
+    }
+
+    const role = getActiveRole(req);
+    const includeBusy = req.query.include_busy !== 'false';
+    let userTimezone: string | undefined;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const { getUserTimezone } = await import('../services/daily-pace-service');
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE) {
+        userTimezone = await getUserTimezone(
+          createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE) as any,
+          userId,
+        );
+      }
+    } catch {
+      // fall back to the service default inside listCalendarWindow
+    }
+
+    const items = await listCalendarWindow(
+      userId,
+      role,
+      { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
+      { includeBusy, userTimezone },
+    );
+    return res.json({ ok: true, data: items, count: items.length, timezone: userTimezone ?? null });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 });
@@ -418,9 +473,17 @@ router.post('/events/:id/complete', async (req: Request, res: Response) => {
         completion_status: parsed.data.completion_status,
         wellness_tags: event.wellness_tags ?? [],
         event_type: event.event_type,
-        source_ref_type: event.source_type,
+        source_type: event.source_type,
+        source_ref_type: event.source_ref_type,
       },
     }).catch(() => {});
+
+    // VTID-04331: ticking the entry off completes the thing it came from
+    // (an Autopilot recommendation today). Best-effort; never fails the call.
+    let sourceCompletion: Awaited<ReturnType<typeof completeSourceForCalendarEvent>> | null = null;
+    if (parsed.data.completion_status === 'completed') {
+      sourceCompletion = await completeSourceForCalendarEvent(event, userId).catch(() => null);
+    }
 
     // Recompute the Vitana Index for this user (only if the event was
     // actually completed — skips/partials don't yet feed the Index).
@@ -437,6 +500,7 @@ router.post('/events/:id/complete', async (req: Request, res: Response) => {
       ok: true,
       data: event,
       vitana_index: indexDelta,
+      source_completed: sourceCompletion?.completed ?? false,
     });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /events/:id/complete error:`, err.message);
