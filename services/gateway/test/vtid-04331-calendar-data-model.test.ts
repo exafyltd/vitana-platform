@@ -300,9 +300,9 @@ describe('producer contract', () => {
     expect(calls[0].body).toEqual({ p_recommendation_id: 'rec1', p_user_id: 'u1' });
   });
 
-  it('other source types are left alone for now', async () => {
+  it('other source types are left alone', async () => {
     mockFetch();
-    expect((await completeSourceForCalendarEvent({ source_ref_type: 'goal_plan_step', source_ref_id: 'x' }, 'u1')).completed).toBe(false);
+    expect((await completeSourceForCalendarEvent({ source_ref_type: 'provider_appointment', source_ref_id: 'x' }, 'u1')).completed).toBe(false);
     expect(calls).toHaveLength(0);
   });
 

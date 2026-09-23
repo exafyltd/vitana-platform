@@ -1224,25 +1224,30 @@ export async function activateCommunityAutopilotRecommendation(
   let calendarEvent = null;
   if (action.calendar_event && userId) {
     try {
-      const { computeNextAvailableSlot, createCalendarEvent } = await import('../services/calendar-service');
+      const { computeNextAvailableSlot } = await import('../services/calendar-service');
+      const { upsertCalendarEntryFromSource } = await import('../services/calendar-producers');
       const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
       const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
-      calendarEvent = await createCalendarEvent(userId, {
-        title: action.calendar_event.title_template || rec.title,
-        description: rec.summary || action.completion_message,
-        start_time: slot.toISOString(),
-        end_time: endSlot.toISOString(),
-        event_type: action.calendar_event.event_type,
-        status: 'confirmed',
-        priority: 'medium',
-        role_context: 'community',
-        source_type: 'autopilot',
-        source_ref_id: id,
-        source_ref_type: 'autopilot_recommendation',
-        priority_score: 60,
-        wellness_tags: action.calendar_event.wellness_tags,
-        metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
-      } as any);
+      // VTID-04356: through the producer contract, keyed on the recommendation,
+      // so activating again after a snooze moves the one entry instead of
+      // adding a second, and a completed entry is never reopened.
+      const upserted = await upsertCalendarEntryFromSource(
+        userId,
+        { source_type: 'autopilot', source_ref_type: 'autopilot_recommendation', source_ref_id: id },
+        {
+          title: action.calendar_event.title_template || rec.title,
+          description: rec.summary || action.completion_message,
+          start_time: slot.toISOString(),
+          end_time: endSlot.toISOString(),
+          event_type: action.calendar_event.event_type,
+          priority: 'medium',
+          role_context: 'community',
+          priority_score: 60,
+          wellness_tags: action.calendar_event.wellness_tags,
+          metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
+        } as any,
+      );
+      calendarEvent = upserted.event;
       if (calendarEvent) {
         console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
       }

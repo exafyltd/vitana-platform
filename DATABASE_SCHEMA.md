@@ -919,6 +919,7 @@ CREATE TABLE my_new_table (
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
 | 2026-09-23 | Triggers `trg_event_participation_calendar` (global_event_participants → calendar_events) + `trg_calendar_dedupe_event_rsvp`, so community event sign-ups reach the calendar on every path. No table/column change. | Claude | VTID-04321 |
 | 2026-09-23 | `calendar_events`: `rrule`, `timezone`, `reminder_offsets`, `emoji` + CHECKs; role_context adds `professional`; source_type adds six producer types. Also applied the never-applied 2026-04-28 `pillar`/`contribution_vector` migration. | Claude | VTID-04331 |
+| 2026-09-23 | Producer triggers on `goal_plan_steps`, `goal_plans`, `user_health_plans`, `provider_appointments`, `lab_test_orders`, `live_room_sessions`, `live_room_access_grants` → `calendar_events` through one SQL upsert (`calendar_upsert_from_source`); future-only backfill (555 goal-plan entries, 3 health-plan series). No table/column change. | Claude | VTID-04356 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -1010,6 +1011,28 @@ Written by the gateway's `services/calendar-reminders.ts` loop (`CALENDAR_DEFAUL
 - `trg_event_participation_calendar` — AFTER INSERT / UPDATE OF status / DELETE on `global_event_participants` → `fn_event_participation_to_calendar()`. Joining (`status='attending'`) inserts one row: `event_type='community'`, `source_type='community_rsvp'`, `source_ref_id=<event id>`, `source_ref_type='community_event'`, `metadata={meetup_id, meetup_slug}`, `end_time` defaulting to start + 1 h; skipped when a live row for that user+event exists; a cancelled one is reactivated. Leaving cancels every live row matching `source_ref` or `metadata.meetup_id`.
 - `trg_calendar_dedupe_event_rsvp` — AFTER INSERT on `calendar_events` for rows carrying `metadata.meetup_id` from any other source → deletes the trigger-written `community_rsvp` row for the same user+event, so the web client's own row (which it knows how to delete) is the one that stays.
 - The older `trg_rsvp_calendar_sync` / `trg_rsvp_cancel_calendar_sync` on `event_attendance` remain; that table is unused (0 rows).
+
+### calendar_events ← plans, bookings, orders, rooms (VTID-04356 triggers)
+
+**Purpose:** every accepted plan, paid booking, lab order and live-room ticket lands in the owner's calendar, whichever path wrote it (gateway, edge function, Stripe webhook, frontend). Migration `20260923160000_vtid_04356_calendar_source_producers.sql`, applied live 2026-09-23.
+
+Helpers (SECURITY DEFINER, `EXECUTE` revoked from `anon`/`authenticated`/`PUBLIC`):
+- `calendar_upsert_from_source(user, source_type, ref_type, ref_id, title, start, end, event_type, description, location, emoji, rrule, timezone, pillar, role_context, metadata)` — idempotent on `idx_calendar_events_source_ref`; never changes a completed entry; reactivates a cancelled one; does not rewrite an unchanged one.
+- `calendar_cancel_source(user, ref_type, ref_id)`, `calendar_complete_source(user, ref_type, ref_id, done)`.
+- `calendar_user_timezone(user)` — `profiles.timezone`, else `Europe/Berlin`.
+- `calendar_sync_goal_plan_step`, `calendar_sync_health_plan`, `calendar_sync_appointment`, `calendar_sync_lab_order`, `calendar_sync_live_room_entry` — one per source.
+
+| Source table | Trigger | Entry | `source_type` / `source_ref_type` |
+|---|---|---|---|
+| `goal_plan_steps` | `trg_goal_plan_step_calendar` | milestone/checkpoint → 09:00 local on `scheduled_date`; habit → daily series 08:00 local (+30 min per earlier habit) from plan start to target; done ↔ completed (not for habits); `calendar_event_id` set on the step | `goal_plan` / `goal_plan_step` |
+| `goal_plans` | `trg_goal_plan_calendar` | leaving `active` cancels the steps' open entries; returning to `active` restores them | — |
+| `user_health_plans` | `trg_health_plan_calendar` | active → daily series (`COUNT` from `plan_data.duration`, default 28) at a time fitting `plan_type`; inactive/deleted → cancelled | `health_plan` / `user_health_plan` |
+| `provider_appointments` | `trg_appointment_calendar` | `scheduled`/`confirmed` → entry; `pending` (unpaid checkout) never shows; `completed` → completed; anything else → cancelled | `appointment` / `provider_appointment` |
+| `lab_test_orders` | `trg_lab_order_calendar` | `confirmed` with `scheduled_date` → lab entry (lab reminder rules); `sample_collected`/`processing`/`completed` → completed; `cancelled`/`pending` → cancelled | `lab_order` / `lab_test_order` |
+| `live_room_sessions` | `trg_live_room_session_calendar` | host + every valid ticket holder; moving/renaming updates all; `cancelled` cancels all; `ended` left as is | `live_room` / `live_room_session` |
+| `live_room_access_grants` | `trg_live_room_grant_calendar` | valid ticket → the session in the holder's calendar; revoked/invalid/deleted → cancelled unless another valid ticket remains | `live_room` / `live_room_session` |
+
+Every trigger body catches its own errors (`RAISE WARNING`) so a calendar failure never fails the source write. Backfill at apply time wrote future items only: 555 goal-plan entries for 22 users (61 habit series) and 3 health-plan series; no appointments, lab orders or live-room sessions were in the future. `partner_health_test_orders` is not connected (no appointment time exists).
 
 ---
 

@@ -326,10 +326,16 @@ export async function completeCalendarEntriesForSource(
 
 /**
  * The entry was ticked off in the calendar: complete the thing it came from.
- * Today that is an Autopilot recommendation (through the same RPC the
- * recommendation route uses, so its reward and state transition stay in one
- * transaction). Other source types get their handler when step 5 connects
- * them. Best-effort: returns whether a source was completed.
+ *   autopilot_recommendation  through the same RPC the recommendation route
+ *                             uses, so its reward and state transition stay
+ *                             in one transaction;
+ *   goal_plan_step            the step turns done, so My Journey shows it
+ *                             ticked (VTID-04356). Habits are skipped: a
+ *                             habit is a daily series, one tick is not the
+ *                             whole habit done.
+ * Appointments, lab orders, live rooms and health plans are not completed
+ * from the calendar: their state belongs to the provider/lab/host flow.
+ * Best-effort: returns whether a source was completed.
  */
 export async function completeSourceForCalendarEvent(
   event: Pick<CalendarEvent, 'source_ref_type' | 'source_ref_id'>,
@@ -337,10 +343,33 @@ export async function completeSourceForCalendarEvent(
 ): Promise<{ completed: boolean; source_ref_type: string | null; error?: string }> {
   const type = event.source_ref_type ?? null;
   if (!type || !event.source_ref_id) return { completed: false, source_ref_type: type };
-  if (type !== 'autopilot_recommendation') return { completed: false, source_ref_type: type };
+  if (type !== 'autopilot_recommendation' && type !== 'goal_plan_step') {
+    return { completed: false, source_ref_type: type };
+  }
 
   const cfg = getSupabaseConfig();
   if (!cfg) return { completed: false, source_ref_type: type, error: 'supabase_config_missing' };
+
+  if (type === 'goal_plan_step') {
+    const filter =
+      `id=eq.${encodeURIComponent(event.source_ref_id)}&user_id=eq.${encodeURIComponent(userId)}` +
+      `&status=neq.done&kind=neq.habit`;
+    try {
+      const resp = await fetch(`${cfg.url}/rest/v1/goal_plan_steps?${filter}`, {
+        method: 'PATCH',
+        headers: headers(cfg.key, { Prefer: 'return=representation' }),
+        body: JSON.stringify({ status: 'done', completed_at: new Date().toISOString() }),
+      });
+      if (!resp.ok) {
+        const err = (await resp.text()).slice(0, 200);
+        console.warn(`${LOG_PREFIX} completing goal step ${event.source_ref_id} failed (${resp.status}): ${err}`);
+        return { completed: false, source_ref_type: type, error: err };
+      }
+      return { completed: ((await resp.json()) as unknown[]).length > 0, source_ref_type: type };
+    } catch (err: any) {
+      return { completed: false, source_ref_type: type, error: err?.message };
+    }
+  }
   try {
     const resp = await fetch(`${cfg.url}/rest/v1/rpc/complete_autopilot_recommendation`, {
       method: 'POST',
