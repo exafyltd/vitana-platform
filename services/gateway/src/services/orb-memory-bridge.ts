@@ -22,6 +22,13 @@ import { emitOasisEvent } from './oasis-event-service';
 import * as repo from './orb-memory-bridge-repository';
 import { memoryRoleForWrite } from './memory/scope'; // VTID-04367
 import {
+  recordTranscriptTurn,
+  rawTurnsAlsoToMemoryItems,
+  transcriptRoleOf,
+  fetchRecentTranscriptTurns,
+  fetchTranscriptWindow,
+} from './memory/transcript'; // VTID-04387
+import {
   type ScoringContext,
   type ScoredMemoryItem,
   type ScoringMetadata,
@@ -257,6 +264,15 @@ export async function fetchRecentConversationTranscript(
     return null;
   }
 
+  // VTID-04387: the transcript table is the complete record; memory_items
+  // is the fallback for turns written before it existed.
+  const turns = await fetchTranscriptWindow(
+    { tenant_id: tenantId, user_id: userId }, startTime.toISOString(), endTime.toISOString(),
+  );
+  if (turns.length > 0) {
+    return turns.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n');
+  }
+
   try {
     // VTID-01225: Include all ORB-related sources for comprehensive conversation capture
     const { data, error } = await repo.fetchOrbConversationItems(
@@ -303,6 +319,12 @@ export async function fetchRecentOrbUserTurns(
   identity: { user_id: string; tenant_id: string },
   limit: number = 3
 ): Promise<Array<{ content: string; occurred_at: string }>> {
+  // VTID-04387: newest user turns from the transcript table first.
+  const recent = await fetchRecentTranscriptTurns(identity, { limit, role: 'user' });
+  if (recent.length > 0) {
+    return recent.map((t) => ({ content: t.content, occurred_at: t.occurred_at }));
+  }
+
   const client = createMemoryClient();
   if (!client) return [];
 
@@ -603,7 +625,7 @@ export interface MemoryIdentity {
 export async function writeMemoryItemWithIdentity(
   identity: MemoryIdentity,
   params: {
-    source: 'orb_text' | 'orb_voice' | 'system';
+    source: 'orb_text' | 'orb_voice' | 'system' | 'diary' | 'upload';
     content: string;
     content_json?: Record<string, unknown>;
     importance?: number;
@@ -617,6 +639,31 @@ export async function writeMemoryItemWithIdentity(
   if (!identity.user_id || !identity.tenant_id) {
     console.error('[VTID-01186] writeMemoryItemWithIdentity: Missing user_id or tenant_id');
     return { ok: false, error: 'Identity incomplete: user_id and tenant_id required' };
+  }
+
+  // VTID-04387: a raw conversation turn goes to memory_transcript_turns
+  // (90-day TTL), the complete record used for session transcripts and
+  // recent-turn grounding. It is recorded before the trivial-message filter.
+  const transcriptRole = transcriptRoleOf(params.content_json);
+  if (transcriptRole) {
+    const cj = params.content_json || {};
+    void recordTranscriptTurn({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      role: transcriptRole,
+      content: params.content,
+      source: params.source,
+      session_id: (cj.orb_session_id as string) ?? (cj.session_id as string) ?? null,
+      conversation_id: (cj.conversation_id as string) ?? null,
+      channel: (cj.channel as string) ?? null,
+      active_role: identity.active_role ?? null,
+      occurred_at: params.occurred_at,
+    });
+    // Transition switch: once session summaries are observed live, raw turns
+    // stop landing in memory_items (MEMORY_RAW_TURNS_TO_ITEMS=false).
+    if (!rawTurnsAlsoToMemoryItems()) {
+      return { ok: true, skipped: true };
+    }
   }
 
   // Filter trivial messages to prevent memory flooding

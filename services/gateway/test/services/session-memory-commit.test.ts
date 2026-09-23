@@ -258,6 +258,7 @@ describe('session summary write', () => {
     expect(mockWriteMemoryItem).toHaveBeenCalledTimes(1);
     const [identity, item] = mockWriteMemoryItem.mock.calls[0];
     expect(identity).toEqual({ tenant_id: 'tenant-aaa', user_id: 'user-bbb', active_role: 'community' });
+    expect(item.importance).toBeLessThanOrEqual(50); // trg_notify_memory_garden fires above 50
     expect(item).toMatchObject({
       source: 'system',
       category_key: 'session_summary',

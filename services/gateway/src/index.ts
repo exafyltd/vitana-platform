@@ -148,6 +148,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-04388: Memory Garden on the canonical store
+  const memoryGardenRouter = require('./routes/memory-garden').default;
   // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
   const memoryGovernanceRouter = require('./routes/memory-governance').default;
   // VTID-01184: Supabase Semantic Memory Routes - pgvector search + embeddings
@@ -1081,6 +1083,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory', memoryGovernanceRouter, { owner: 'memory-governance' });
   // VTID-01184: Supabase Semantic Memory - pgvector similarity search + embedding pipeline
   mountRouterSync(app, '/api/v1/memory', semanticMemoryRouter, { owner: 'semantic-memory' });
+  // VTID-04388: /api/v1/memory/garden/{entries,categories}
+  mountRouterSync(app, '/api/v1', memoryGardenRouter, { owner: 'memory-garden' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });

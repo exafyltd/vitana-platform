@@ -142,7 +142,9 @@ async function writeSessionSummary(args: CommitSessionMemoryArgs, transcript: st
       source: 'system',
       content: summary,
       category_key: 'session_summary',
-      importance: 60,
+      // <= 50: trg_notify_memory_garden notifies above 50; a summary per
+      // session must not become a notification per session.
+      importance: 50,
       skipFiltering: true,
       content_json: {
         kind: 'session_summary',

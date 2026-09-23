@@ -50,8 +50,13 @@ function makeBuilder(resolver: (table: string, calls: ChainCall[]) => TableResul
 function makeSupabaseClient(opts: {
   fromResolver?: (table: string, calls: ChainCall[]) => TableResult;
   rpcImpl?: (...args: any[]) => Promise<any>;
+  transcriptRows?: any[];
 } = {}) {
-  const fromResolver = opts.fromResolver ?? (() => ({ data: [], error: null }));
+  const userResolver = opts.fromResolver ?? (() => ({ data: [], error: null }));
+  // VTID-04387: the transcript table is its own store; the per-test
+  // resolvers describe memory_items, so the transcript reads empty here.
+  const fromResolver = (table: string, calls: ChainCall[]): TableResult =>
+    table === 'memory_transcript_turns' ? { data: opts.transcriptRows ?? [], error: null } : userResolver(table, calls);
   const fromMock = jest.fn((table: string) => makeBuilder(fromResolver, table));
   const rpcMock = jest.fn(opts.rpcImpl ?? (() => Promise.resolve({ data: null, error: null })));
   return { from: fromMock, rpc: rpcMock };
@@ -336,7 +341,7 @@ describe('writeMemoryItemWithIdentity', () => {
     expect(mockClient.from).not.toHaveBeenCalled();
   });
 
-  it('skips trivial user messages without writing', async () => {
+  it('skips trivial user messages in memory_items but keeps them in the transcript (VTID-04387)', async () => {
     mockClient = makeSupabaseClient();
     const result = await writeMemoryItemWithIdentity(IDENTITY, {
       source: 'orb_voice',
@@ -344,7 +349,39 @@ describe('writeMemoryItemWithIdentity', () => {
       content_json: { direction: 'user' },
     });
     expect(result).toEqual({ ok: true, skipped: true });
-    expect(mockClient.from).not.toHaveBeenCalled();
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).not.toContain('memory_items');
+    expect(tables).toContain('memory_transcript_turns');
+  });
+
+  it('with MEMORY_RAW_TURNS_TO_ITEMS=false a raw turn goes only to the transcript (VTID-04387)', async () => {
+    const prev = process.env.MEMORY_RAW_TURNS_TO_ITEMS;
+    process.env.MEMORY_RAW_TURNS_TO_ITEMS = 'false';
+    try {
+      mockClient = makeSupabaseClient();
+      const result = await writeMemoryItemWithIdentity(IDENTITY, {
+        source: 'orb_voice',
+        content: 'I want to sleep eight hours every night from now on because my health matters',
+        content_json: { direction: 'user', orb_session_id: 'sess-1' },
+      });
+      expect(result).toEqual({ ok: true, skipped: true });
+      const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+      expect(tables).toEqual(['memory_transcript_turns']);
+    } finally {
+      process.env.MEMORY_RAW_TURNS_TO_ITEMS = prev;
+    }
+  });
+
+  it('a system note (navigator, person focus) is never a transcript turn', async () => {
+    mockClient = makeSupabaseClient();
+    await writeMemoryItemWithIdentity(IDENTITY, {
+      source: 'orb_voice',
+      content: 'Vitana navigated to Settings',
+      content_json: { direction: 'system' },
+      skipFiltering: true,
+    });
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).not.toContain('memory_transcript_turns');
   });
 
   it('writes under the GIVEN identity\'s tenant_id/user_id — never DEV_IDENTITY\'s', async () => {
@@ -593,6 +630,16 @@ describe('fetchMemoryContextWithIdentity', () => {
 // =============================================================================
 
 describe('fetchRecentOrbUserTurns', () => {
+  it('reads the transcript table first and does not touch memory_items when it has turns (VTID-04387)', async () => {
+    mockClient = makeSupabaseClient({
+      transcriptRows: [{ role: 'user', content: 'from the transcript', occurred_at: '2026-09-23T10:00:00Z', session_id: 's' }],
+    });
+    const out = await fetchRecentOrbUserTurns({ user_id: 'u-1', tenant_id: 't-1' }, 3);
+    expect(out).toEqual([{ content: 'from the transcript', occurred_at: '2026-09-23T10:00:00Z' }]);
+    const tables = (mockClient.from as jest.Mock).mock.calls.map((c: any[]) => c[0]);
+    expect(tables).toEqual(['memory_transcript_turns']);
+  });
+
   it('returns [] when Supabase is not configured', async () => {
     delete process.env.SUPABASE_URL;
     const result = await fetchRecentOrbUserTurns({ user_id: 'u1', tenant_id: 't1' });
