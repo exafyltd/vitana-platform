@@ -783,6 +783,9 @@ export type CicdEventType =
   | 'dev_autopilot.plan.version_added'
   | 'dev_autopilot.finding.rejected'
   | 'dev_autopilot.finding.snoozed'
+  // VTID-04368: LLM provider outage gate on the autopilot loop
+  | 'dev_autopilot.provider_outage.detected'
+  | 'dev_autopilot.provider_outage.cleared'
   | 'dev_autopilot.finding.completed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'

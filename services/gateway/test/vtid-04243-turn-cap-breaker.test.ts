@@ -33,23 +33,22 @@ describe('VTID-04243 isTurnCapFailure / hasTurnCapFailure', () => {
 });
 
 describe('VTID-04243 autoApproveTick wiring (source contract)', () => {
+  // VTID-04368 moved the breaker into retryBreakerAdmits(), shared by the
+  // baseline and impact passes; decideRetryBreaker() checks the turn cap
+  // before the retry cap (unit-tested in vtid-04368-retry-storm-outage-gate).
   const src = fs.readFileSync(path.resolve(__dirname, '../src/services/dev-autopilot-execute.ts'), 'utf8');
-  const tick = src.slice(src.indexOf('export async function autoApproveTick('), src.indexOf('const LAZY_PLAN_BATCH_SIZE'));
+  const helper = src.slice(src.indexOf('async function retryBreakerAdmits('), src.indexOf('export async function autoApproveTick('));
 
-  it('reads metadata on the terminal-failure rows and runs the breaker before the retry cap', () => {
-    expect(tick).toMatch(/&status=in\.\(failed,reverted,failed_escalated\)`[\s\S]*?&select=id,metadata&limit=10`/);
-    const breaker = tick.indexOf('hasTurnCapFailure(failuresR.data)');
-    const cap = tick.indexOf('const AUTO_RETRY_CAP = 5;');
-    expect(breaker).toBeGreaterThan(0);
-    expect(breaker).toBeLessThan(cap);
+  it('reads metadata on the terminal-failure rows and decides with the breaker', () => {
+    expect(helper).toMatch(/&status=in\.\(failed,reverted,failed_escalated\)`[\s\S]*?&select=id,metadata&limit=\d+`/);
+    expect(helper).toContain('decideRetryBreaker(failuresR.data)');
   });
 
-  it('snoozes the finding 7 days, emits an OASIS event, and skips the approval', () => {
-    const block = tick.slice(tick.indexOf('hasTurnCapFailure(failuresR.data)'), tick.indexOf('const AUTO_RETRY_CAP = 5;'));
-    expect(block).toMatch(/7 \* 24 \* 3600 \* 1000/);
-    expect(block).toMatch(/status: 'snoozed'/);
-    expect(block).toMatch(/type: 'dev_autopilot\.finding\.snoozed'/);
-    expect(block).toMatch(/reason: 'turn_cap_failure'/);
-    expect(block.trim().endsWith('continue;\n    }')).toBe(true);
+  it('snoozes the finding 7 days, emits an OASIS event, and refuses the approval', () => {
+    expect(helper).toMatch(/7 \* 24 \* 3600 \* 1000/);
+    expect(helper).toMatch(/status: 'snoozed'/);
+    expect(helper).toMatch(/type: 'dev_autopilot\.finding\.snoozed'/);
+    expect(helper).toMatch(/'turn_cap_failure'/);
+    expect(helper.trimEnd().endsWith('return false;\n}')).toBe(true);
   });
 });
