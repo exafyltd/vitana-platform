@@ -1937,6 +1937,7 @@ export {
   describeTimeSince,
   describeRoute,
 } from '../orb/live/instruction/live-system-instruction';
+import type { BootstrapPackResult } from '../orb/live/instruction/bootstrap-packer'; // VTID-04393
 // A5 (orb-live-refactor): buildLiveApiTools lifted to orb/live/tools/live-tool-catalog.ts.
 // Same function, same callers, same admin-tool injection. Zero behavior change.
 // Re-exported here so external callers (including the A0.1 tool-catalog
@@ -8001,6 +8002,11 @@ async function connectToLiveAPI(
                         // not yet resolved (feature flag off, or still
                         // in-flight) — the header simply doesn't render.
                         (session as any).greetingFirstName ?? null,
+                        // VTID-04393 (WS-1.1): record what the bootstrap
+                        // packer kept, shortened and dropped. One diag per
+                        // distinct build (a rebuilt identical envelope does
+                        // not repeat it).
+                        (pack) => recordBrainContextBuilt(session, pack),
                       ))) as string
             }]
           },
@@ -15336,6 +15342,35 @@ async function emitLiveSessionEvent(
  * Captures session state snapshot at critical pipeline points so we can
  * trace exactly where/why sessions stall without Cloud Run log access.
  */
+/**
+ * VTID-04393 (WS-1.1): `brain_context_built` diag — what the bootstrap packer
+ * did for this session's instruction. Deduplicated per session on the pack's
+ * shape so a re-measured envelope does not emit twice.
+ */
+export function brainContextBuiltPayload(pack: BootstrapPackResult): Record<string, unknown> {
+  const keysBy = (o: 'kept' | 'shortened' | 'dropped') => pack.sections.filter((s) => s.outcome === o).map((s) => s.key);
+  return {
+    chars_before: pack.chars_before,
+    chars_after: pack.chars_after,
+    packed: pack.packed,
+    section_count: pack.sections.length,
+    pinned_chars: pack.sections.filter((s) => s.priority === 0).reduce((a, s) => a + s.chars, 0),
+    shortened: keysBy('shortened'),
+    dropped: keysBy('dropped'),
+    kept: keysBy('kept').filter((k) => !k.startsWith('end:')).slice(0, 40),
+  };
+}
+
+function recordBrainContextBuilt(session: GeminiLiveSession, pack: BootstrapPackResult): void {
+  try {
+    const payload = brainContextBuiltPayload(pack);
+    const signature = `${payload.chars_before}|${payload.chars_after}|${(payload.dropped as string[]).join(',')}`;
+    if ((session as any)._brainContextSignature === signature) return;
+    (session as any)._brainContextSignature = signature;
+    emitDiag(session, 'brain_context_built', payload);
+  } catch { /* telemetry only */ }
+}
+
 function emitDiag(session: GeminiLiveSession, stage: string, extra?: Record<string, unknown>): void {
   emitLiveSessionEvent('orb.live.diag', {
     session_id: session.sessionId,
