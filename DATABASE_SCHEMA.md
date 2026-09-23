@@ -2399,6 +2399,32 @@ get full access to every `partner_registry` row linked to their org;
 `professional` gets access only to orders where
 `assigned_professional_user_id` matches them.
 
-**Not applied to the live database — file only (rule 4).** No
-Supabase/gateway credentials were reachable from this session; see
-`docs/validation/VTID-03932/acceptance.md`.
+**Superseded note (VTID-04337, 2026-09-23):** the VTID-03932 session
+recorded this section as "not applied — file only", but it was applied on
+2026-09-17 under VTID-03957 (see the heading above). The live tables are
+currently empty (0 organizations, 0 members).
+
+### RLS (VTID-04337, applied 2026-09-23)
+
+The original VTID-03932 SELECT policy on `partner_organization_members`
+queried `partner_organization_members` inside its own `USING` clause. Every
+browser read failed with `42P17 infinite recursion detected in policy`, and
+the `partner_organizations` policy re-entered it for any non-owner member.
+Migration `20260923120000_vtid_04337_partner_org_members_rls_no_recursion.sql`
+replaces both policies with calls to one helper:
+
+- **`public.is_partner_org_member(p_org_id uuid) → boolean`**
+  - `SECURITY DEFINER`, `SET search_path = public`, `STABLE`.
+  - True if the **calling** user (`current_user_id()`) is a member of the org.
+    There is no user-id parameter, so it cannot be used to probe other users.
+  - Revoked from `PUBLIC`; granted to `anon`, `authenticated` and `service_role`.
+    `anon` needs it because it holds SELECT on `partner_organizations`, and
+    Postgres checks EXECUTE on a policy's functions even when an earlier OR
+    branch is already true. For `anon` it always returns false.
+- **`partner_organization_members_select`:**
+  `is_partner_org_member(partner_organization_id)`.
+- **`partner_organizations_select`:**
+  `status = 'active' OR owner_user_id = current_user_id() OR is_partner_org_member(id)`.
+
+Evidence: `docs/validation/VTID-04337/outputs/` (42P17 before; clean reads for
+`authenticated` and `anon` after).
