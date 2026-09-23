@@ -12,6 +12,10 @@
 #   def (VITANA_ENV, feature flags, SUPABASE_JWT_SECRET, …) carry forward —
 #   the task def is the AWS analogue of STAGE-DEPLOY.yml's authoritative
 #   ENV_VARS block, so this workflow does not re-declare it.
+#   Exception (VTID-04363): VITANA_ENV=staging IS pinned now — the Dev
+#   Autopilot loop runs only on its owner env (dev-autopilot-loop-owner.ts,
+#   default staging), so losing it from live state would silently stop the
+#   loop everywhere.
 # - Smoke gate mirrors STAGE-DEPLOY.yml: /api/v1/admin/health must report
 #   env=staging AND /api/v1/admin/build-info must report the deployed
 #   commit — otherwise the job fails loudly (CLAUDE.md §15).
@@ -911,7 +915,7 @@ jobs:
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
-                                                "NAV_CONTINUATION_BIND",
+                                                "NAV_CONTINUATION_BIND","VITANA_ENV",
                                                 "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
@@ -932,6 +936,7 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"VITANA_ENV", value:"staging"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
