@@ -85,8 +85,12 @@ describe('VTID-04354 Orchestrator view — wiring', () => {
       '/api/v1/orchestrator/runs?limit=50&plane=dev_autopilot&status=failed',
       '/api/v1/orchestrator/agents',
       '/api/v1/orchestrator/policy',
+      // VTID-04396: budget, policy-shadow and delegation panels.
+      '/api/v1/orchestrator/policy/shadow',
+      '/api/v1/orchestrator/budgets',
+      '/api/v1/orchestrator/delegations',
     ]);
-    for (const path of ["'/runs/summary'", "'/runs'", "'/agents'", "'/policy'"]) {
+    for (const path of ["'/runs/summary'", "'/runs'", "'/agents'", "'/policy'", "'/policy/shadow'", "'/budgets'", "'/delegations'"]) {
       expect(ROUTES_SRC).toContain(`router.get(${path}`);
     }
   });
@@ -118,12 +122,12 @@ describe('VTID-04354 Orchestrator view — render', () => {
     expect(root.allText()).toContain('Loading');
   });
 
-  it('fetches all four sections, each independently', async () => {
+  it('fetches every section, each independently (four from VTID-04354, three added by VTID-04396)', async () => {
     const { api, calls, state } = loadView(null);
     api.fetchView();
     await new Promise((r) => setImmediate(r));
-    expect(calls).toHaveLength(4);
-    expect(Object.keys(state.autopilot.orchestrator.sections).sort()).toEqual(['agents', 'policy', 'runs', 'summary']);
+    expect(calls).toHaveLength(7);
+    expect(Object.keys(state.autopilot.orchestrator.sections).sort()).toEqual(['agents', 'budgets', 'delegations', 'policy', 'runs', 'shadow', 'summary']);
   });
 
   it('renders planes, runs, agents and the grant matrix from real-shaped payloads', () => {
