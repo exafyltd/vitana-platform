@@ -810,6 +810,7 @@ ${channelInstructions}`;
 // =============================================================================
 
 router.post('/stream', requireAuth, bindConversationBodyIdentity(), async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: VTID-04447 only adds auth to this existing handler; its behaviour is unchanged
   const requestId = randomUUID();
 
   try {

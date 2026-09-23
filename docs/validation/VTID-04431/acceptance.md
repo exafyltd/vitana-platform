@@ -26,3 +26,13 @@ TEST: services/gateway/test/vtid-04311-feedback-spec-drafter.test.ts
 ## Not verified live
 
 No `support_ticket` rows exist yet (0 at 2026-09-23, VTID-04412 is not deployed), and the 5 resolved tickets carry no resolution text, so there is nothing to backfill. The first real signal is a drafted answer on staging after a resolved ticket has been embedded.
+
+## Route mount evidence (VTID-04447, same PR)
+
+VTID-04447 adds `requireAuth` and an identity binder to four existing routes in
+`services/gateway/src/routes/conversation.ts`. No new route or router mount is added;
+the validator counts the changed registration lines as additions.
+
+ROUTE_MOUNT: `mountRouterSync(app, '/api/v1/conversation', conversationRouter)` in services/gateway/src/index.ts (unchanged)
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/conversation/turn (also /stream, /history/:threadId, /threads/active)
+CURL_PROOF: on staging before this PR (git_commit e09eb264), `curl -X POST .../api/v1/conversation/turn -H 'Content-Type: application/json' -d '{}'` returned `400 application/json` `{"ok":false,"error":"Validation failed","details":"channel: Required, tenant_id: Required, user_id: Required, message: Required"}`. The route exists, and an anonymous caller reaches body validation, which asks for `user_id`/`tenant_id` from the body. After this PR deploys, the same request returns 401 `UNAUTHENTICATED` JSON. The empty body was chosen so nothing could be read or written.

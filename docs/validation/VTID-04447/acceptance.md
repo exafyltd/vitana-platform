@@ -16,12 +16,12 @@ No caller of these routes was found in either repo (the Command Hub only reads
 `/health`, `/tools`, `/tool-health`, which stay public).
 
 ## Acceptance criteria
-- AC-1: a request with no verified identity is refused with 401. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
-- AC-2: a `user_id` that is not the caller is refused with 403 IDENTITY_MISMATCH, never silently replaced. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
-- AC-3: user and tenant default to the JWT when omitted. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
-- AC-4: another tenant is allowed only for a member; the check fails closed when the store is unavailable. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
-- AC-5: `/turn`, `/stream`, `/history/:threadId`, `/threads/active` all run `requireAuth`; only the catalog/health routes stay public. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
-- AC-6: history is filtered to the caller's own messages. TEST: services/gateway/test/vtid-04447-conversation-identity.test.ts
+- AC-1: a request with no verified identity is refused with 401. TEST: services/gateway/test/conversation-identity.test.ts
+- AC-2: a `user_id` that is not the caller is refused with 403 IDENTITY_MISMATCH, never silently replaced. TEST: services/gateway/test/conversation-identity.test.ts
+- AC-3: user and tenant default to the JWT when omitted. TEST: services/gateway/test/conversation-identity.test.ts
+- AC-4: another tenant is allowed only for a member; the check fails closed when the store is unavailable. TEST: services/gateway/test/conversation-identity.test.ts
+- AC-5: `/turn`, `/stream`, `/history/:threadId`, `/threads/active` all run `requireAuth`; only the catalog/health routes stay public. TEST: services/gateway/test/conversation-identity.test.ts
+- AC-6: history is filtered to the caller's own messages. TEST: services/gateway/test/conversation-identity.test.ts
 
 ## Not verified live
 No request was sent to staging or production (that would read real memory). The next
