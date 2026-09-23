@@ -194,6 +194,7 @@ describe('VTID-04420: provider candidates', () => {
         { key: 'real_life_invite', status: 'suppressed', latency_ms: 3, reason: 'flag_off' },
         { key: 'feature_discovery_teacher', status: 'errored', latency_ms: 800, reason: 'provider_timeout' },
       ],
+      shadow: null,
     });
     expect(summarizeWakeTimeline(null)).toBeNull();
     expect(summarizeWakeTimeline([])).toBeNull();

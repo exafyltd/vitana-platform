@@ -7708,7 +7708,7 @@ function _convRenderOfferOutcomes(host, days) {
         }, { made: 0, accepted: 0, declined: 0, ignored: 0, open: 0 });
         var settled = tot.accepted + tot.declined + tot.ignored;
         body.appendChild(_convTileGrid([
-            _convTile('Suggestions made', String(tot.made), 'last ' + d.days + ' day(s)'),
+            _convTile('Suggestions made', String(tot.made), 'last ' + (d.days || days) + ' day(s)'),
             _convTile('Accepted', settled ? Math.round(tot.accepted / settled * 1000) / 10 + '%' : '—', tot.accepted + ' of ' + settled + ' settled'),
             _convTile('Declined', String(tot.declined)),
             _convTile('Ignored', String(tot.ignored), 'replaced, or unanswered for a day'),
@@ -7726,6 +7726,45 @@ function _convRenderOfferOutcomes(host, days) {
     }).catch(function (err) { _convError(body, err); });
 }
 
+// VTID-04422 (WS-2.2): the live fixed-priority ranking vs the shadow
+// relevance score, over the sessions in the window.
+function _convRenderShadowRanking(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Ranking: live vs shadow score'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderShadowRanking(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/shadow-ranking?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        body.appendChild(_convEl('div', {
+            text: 'Shadow mode: the weighted score is recorded next to the live ranking and changes nothing Vitana says. Weights: ' +
+                (Object.keys(d.weights_versions || {}).map(function (v) { return 'v' + v + ' (' + d.weights_versions[v] + ')'; }).join(', ') || 'none yet') + '.',
+            cls: 'conv-metric-muted'
+        }));
+        body.appendChild(_convTileGrid([
+            _convTile('Openings ranked', String(d.sessions_ranked || 0), 'of ' + (d.sessions_read || 0) + ' sessions in ' + (d.days || days) + ' day(s)'),
+            _convTile('Agreement', d.agree_rate == null ? '—' : Math.round(d.agree_rate * 1000) / 10 + '%', d.agree + ' same winner'),
+            _convTile('Would differ', String(d.sessions_ranked - d.agree), 'the shadow score picks another provider',
+                d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null)
+        ]));
+        if ((d.disagreements || []).length) {
+            body.appendChild(_convTable([{ key: 'live', label: 'Live pick' }, { key: 'shadow', label: 'Shadow pick' }, { key: 'count', label: 'Openings' }], d.disagreements));
+        }
+        if ((d.wins || []).length) {
+            body.appendChild(_convTable([{ key: 'provider', label: 'Provider' }, { key: 'live', label: 'Live wins' }, { key: 'shadow', label: 'Shadow wins' }], d.wins));
+        }
+        if (!d.sessions_ranked) body.appendChild(_convEl('div', { text: 'No shadow rankings recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
 function renderConversationMonitorView() {
     var ui = _convPanel('Conversation · Monitor', 'Performance from the hourly rollup, then the most recent greeting decisions (oasis_events greeting_sent).');
     ui.body.innerHTML = '';
@@ -7735,6 +7774,9 @@ function renderConversationMonitorView() {
     var offers = _convEl('div', { cls: 'conv-metric-section' });
     ui.body.appendChild(offers);
     _convRenderOfferOutcomes(offers, 7);
+    var shadow = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(shadow);
+    _convRenderShadowRanking(shadow, 7);
     var feed = _convEl('div', { cls: 'conv-metric-section' });
     feed.appendChild(_convHeading('Recent greeting decisions'));
     var feedBody = _convEl('div');
@@ -7909,6 +7951,22 @@ function _convBrainRender(host, d) {
                 return { key: x.key, status: x.status, latency: x.latency_ms == null ? '' : x.latency_ms + ' ms', reason: x.reason || '' };
             })
         ));
+        // VTID-04422 (WS-2.2): the shadow relevance ranking for this opening.
+        var sh = cand.shadow;
+        if (sh) {
+            host.appendChild(_convEl('div', {
+                text: 'Shadow score (weights v' + (sh.weights_version == null ? '?' : sh.weights_version) + '): ' +
+                    (sh.agree ? 'agrees with the live pick (' + (sh.live_winner || 'none') + ')' :
+                        'would pick ' + (sh.shadow_winner || 'none') + ' instead of ' + (sh.live_winner || 'none')),
+                cls: sh.agree ? 'conv-metric-muted' : 'conv-brain__shadow-diff'
+            }));
+            host.appendChild(_convTable(
+                [{ key: 'provider', label: 'Provider' }, { key: 'score', label: 'Shadow score' }, { key: 'priority', label: 'Fixed priority' }],
+                (sh.scores || []).map(function (x) {
+                    return { provider: x.provider, score: x.score == null ? '' : x.score.toFixed(3), priority: x.priority == null ? '' : String(x.priority) };
+                })
+            ));
+        }
     } else {
         host.appendChild(_convEl('div', { text: 'No provider results recorded for this session.', cls: 'conv-metric-muted' }));
     }

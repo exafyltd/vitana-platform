@@ -117,6 +117,20 @@ GET /api/v1/admin/conversation/decisions      -> 401 application/json; charset=u
 
 Post-merge expectation: `401 application/json` anonymously.
 
+**Added by VTID-04422 (WS-2.2), same PR.** One more `router.get(...)` handler on
+the same `conversation-hub` router, same `requireAuth` + `requireExafyAdmin`:
+
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/shadow-ranking`
+
+Pre-merge, anonymous, staging, 2026-09-23:
+
+```
+GET /api/v1/admin/conversation/shadow-ranking -> 404 text/html; charset=utf-8   (not deployed yet)
+GET /api/v1/admin/conversation/decisions      -> 401 application/json; charset=utf-8   (same router, mounted)
+```
+
+Post-merge expectation: `401 application/json` anonymously.
+
 ### Post-deploy check (AC-6)
 
 ```
@@ -166,6 +180,11 @@ or heartbeat:
   unchanged; the default emitter also writes one `conversation_offer_outcomes`
   row per offer.
   TEST: services/gateway/test/services/conversation/vtid-04421-offer-outcomes-table.test.ts
+- No new topic for VTID-04422: a `continuation_shadow_ranked` wake-timeline
+  event (orb_wake_timelines, not oasis_events), and the wake-brief offer's
+  `provider` field on `conversation.offer.*` now carries the producing
+  provider key instead of the candidate kind.
+  TEST: services/gateway/test/services/conversation/vtid-04422-candidate-scoring.test.ts
 
 Live signal after merge (staging): rows with these topics in `oasis_events`.
 

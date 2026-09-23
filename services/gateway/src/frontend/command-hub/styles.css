@@ -17928,3 +17928,10 @@ button.fb-chip:focus-visible,
   .conv-brain__input { flex: 0 0 auto; }
   .conv-brain__chips-label { min-width: 0; width: 100%; }
 }
+
+/* VTID-04422: a shadow score that would pick a different provider. */
+.conv-brain__shadow-diff {
+    color: #e0b25b;
+    font-size: 13px;
+    margin: 6px 0;
+}

@@ -99,6 +99,14 @@ export interface SessionBrainSummary {
     none_with_reason: string | null;
     duration_ms: number | null;
     providers: Array<{ key: string; status: string; latency_ms: number | null; reason: string | null }>;
+    /** VTID-04422: the shadow relevance ranking recorded beside the live one. */
+    shadow: {
+      weights_version: number | null;
+      live_winner: string | null;
+      shadow_winner: string | null;
+      agree: boolean | null;
+      scores: Array<{ provider: string; score: number | null; priority: number | null }>;
+    } | null;
   } | null;
   tools: { bytes_before: number | null; bytes_after: number | null; dropped_count: number | null; provider: string | null } | null;
   errors: Array<{ at: string; stage: string; failure_kind: string | null; code: string | null }>;
@@ -294,7 +302,7 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
 export function summarizeWakeTimeline(events: unknown): SessionBrainSummary['candidates'] {
   if (!Array.isArray(events)) return null;
   let out: NonNullable<SessionBrainSummary['candidates']> | null = null;
-  const ensure = () => (out ??= { selected_kind: null, none_with_reason: null, duration_ms: null, providers: [] });
+  const ensure = () => (out ??= { selected_kind: null, none_with_reason: null, duration_ms: null, providers: [], shadow: null });
   for (const e of events as Array<Record<string, unknown>>) {
     const name = str(e?.name);
     const m = (e?.metadata ?? {}) as Record<string, unknown>;
@@ -302,6 +310,16 @@ export function summarizeWakeTimeline(events: unknown): SessionBrainSummary['can
       const o = ensure();
       o.selected_kind = str(m.selected_continuation_kind);
       o.none_with_reason = str(m.none_with_reason);
+    } else if (name === 'continuation_shadow_ranked') {
+      const o = ensure();
+      const cands = Array.isArray(m.candidates) ? (m.candidates as Array<Record<string, unknown>>) : [];
+      o.shadow = {
+        weights_version: num(m.weights_version),
+        live_winner: str(m.live_winner),
+        shadow_winner: str(m.shadow_winner),
+        agree: bool(m.agree),
+        scores: cands.slice(0, 15).map((c) => ({ provider: str(c.provider) ?? '?', score: num(c.score), priority: num(c.priority) })),
+      };
     } else if (name === 'continuation_decision_finished') {
       const o = ensure();
       o.duration_ms = num(m.durationMs);

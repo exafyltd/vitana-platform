@@ -430,6 +430,33 @@ CREATE TABLE conversation_metrics_hourly (
   no context; value = empty, sample_count = measured), `context_setup_source`
   (dimension `source:fresh|snapshot|none|unknown`) and `diag_core_snapshot_used`.
 
+### conversation_scoring_weights — APPLIED 2026-09-23 (VTID-04422)
+
+Versioned weights for the shadow relevance score of continuation candidates
+(`candidate-scoring.ts`). Migration
+`20260923200000_vtid_04422_conversation_scoring_weights.sql`, applied to the
+live project 2026-09-23 (additive), seeded with version 1 (active).
+
+```sql
+CREATE TABLE conversation_scoring_weights (
+  version         INTEGER     PRIMARY KEY,
+  active          BOOLEAN     NOT NULL DEFAULT false,
+  weights         JSONB       NOT NULL,   -- urgency, freshness, screen, time_of_day, outcome, profile (>= 0)
+  time_of_day_fit JSONB       NOT NULL DEFAULT '{}',  -- kind -> {morning|afternoon|evening|night: 0..1}
+  note            TEXT,
+  created_by      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+- The gateway reads the highest `active` version (5-minute cache) and falls
+  back to identical built-in defaults when unreadable. To change weights, add a
+  higher version with `active = true` and deactivate the old row.
+- Shadow mode: the score is recorded as `continuation_shadow_ranked` in the
+  session's `orb_wake_timelines` row and changes nothing spoken. Read by
+  `GET /api/v1/admin/conversation/shadow-ranking` (exafy_admin).
+- RLS on, no policies; `anon`/`authenticated` revoked.
+
 ### conversation_offer_outcomes — APPLIED 2026-09-23 (VTID-04421)
 
 One row per action Vitana offered (`pending_cta`), settled by its first
@@ -982,6 +1009,7 @@ CREATE TABLE my_new_table (
 | 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
+| 2026-09-23 | Added `conversation_scoring_weights` (versioned shadow-score weights, version 1 seeded active). Migration `20260923200000_vtid_04422_conversation_scoring_weights.sql` **applied to the live project 2026-09-23** (additive). | Claude | VTID-04422 |
 | 2026-09-23 | Added `conversation_offer_outcomes` (one row per offered action, settled by its first outcome) and `conversation_offer_outcome_stats()`. Migration `20260923190000_vtid_04421_conversation_offer_outcomes.sql` **applied to the live project 2026-09-23** (additive; empty at apply; RLS on, anon/authenticated verified without SELECT). | Claude | VTID-04421 |
 | 2026-09-23 | `conversation_metrics_rollup_hour()` gains `context_setup_empty` / `context_setup_source` / `diag_core_snapshot_used` (migration `20260923160000`, applied live, 168 h re-rolled; baseline 52 of 157 signed-in sessions set up with no context). New `user_assistant_state` signal `brain_core_snapshot_v1` (no schema change). | Claude | VTID-04399 |
 | 2026-09-23 | Added `conversation_metrics_hourly` plus `conversation_metrics_rollup_hour()` / `conversation_metrics_backfill()` and the pg_cron job `conversation-metrics-hourly`. Migration `20260923140000_vtid_04371_conversation_metrics_hourly.sql` **applied to the live project 2026-09-23**; 168 h backfilled in 1.3 s; the heaviest part (24 h opener-repeat join) measured at 3.4 ms on index range scans. | Claude | VTID-04371 |

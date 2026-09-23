@@ -46,6 +46,7 @@ import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
 import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } from '../services/conversation/session-brain-inspector';
 import { readOfferOutcomeStats, OFFER_STATS_MAX_DAYS } from '../services/conversation/offer-outcome-stats';
+import { readShadowComparison, SHADOW_MAX_DAYS } from '../services/conversation/shadow-comparison';
 import {
   summarizeConversationMetrics,
   buildMetricSeries,
@@ -376,6 +377,24 @@ router.get('/admin/conversation/offer-outcomes', ...adminOnly, async (req: Authe
     return res.json({ ok: true, data: { days, user_id: userId, providers: rows } });
   } catch (e) {
     return jsonError(res, 500, e instanceof Error ? e.message : 'offer outcomes read failed');
+  }
+});
+
+/**
+ * VTID-04422 (WS-2.2): GET /admin/conversation/shadow-ranking
+ * How often the shadow relevance score agrees with the live fixed-priority
+ * ranker, the winner pairs where they differ, and recent disagreements.
+ */
+router.get('/admin/conversation/shadow-ranking', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 7, 1), SHADOW_MAX_DAYS);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { summary, error } = await readShadowComparison(supabase, { days });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: summary });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'shadow ranking read failed');
   }
 });
 

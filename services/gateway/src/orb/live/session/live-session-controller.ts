@@ -1891,6 +1891,8 @@ export async function handleLiveSessionStart(
       // day in user TZ". Missing → provider suppresses with reason
       // 'no_timezone' and falls through to wake-brief, same as before.
       timezone: session.clientContext?.timezone ?? null,
+      // VTID-04422: the screen, for the shadow relevance score only.
+      currentRoute: session.current_route ?? null,
       // wake_origin is not yet plumbed from the client envelope on
       // Vertex; default 'unknown' so the B1 policy doesn't fire the
       // push_tap nudge. When the envelope ships this field through

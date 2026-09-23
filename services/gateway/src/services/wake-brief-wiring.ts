@@ -24,6 +24,15 @@
  */
 
 import { decideContinuation } from './assistant-continuation/decide-continuation';
+// VTID-04422 (WS-2.2): shadow relevance scoring.
+import {
+  loadScoringWeights,
+  loadUserOutcomes,
+  localHourIn,
+  partOfDayForHour,
+  rankInShadow,
+  type ScorableCandidate,
+} from './conversation/candidate-scoring';
 import {
   defaultProviderRegistry,
 } from './assistant-continuation/provider-registry';
@@ -390,6 +399,11 @@ export interface DecideWakeBriefArgs {
    * fall back to wake-brief, same as before this slice.
    */
   timezone?: string | null;
+  /**
+   * VTID-04422 (WS-2.2): the screen the user opened the ORB on. Only the
+   * shadow relevance score reads it (screen fit); the live ranking does not.
+   */
+  currentRoute?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -801,7 +815,9 @@ export async function decideWakeBriefForSession(
             tool: onYesTool,
             payload: ctaPayload,
             source: 'wake_brief',
-            provider: (sel as { kind?: string } | null)?.kind ?? null,
+            // VTID-04422: the provider that produced the winning candidate (was
+            // the candidate's kind), so outcomes can be scored per provider.
+            provider: winningProviderKey(decision) ?? (sel as { kind?: string } | null)?.kind ?? null,
             key: sel?.dedupeKey ?? null,
             ttlMinutes: 5, // the offer is only live for the immediate follow-up
           }),
@@ -810,12 +826,81 @@ export async function decideWakeBriefForSession(
     }
   }
 
+  // VTID-04422 (WS-2.2): score the same candidates with the weighted formula
+  // and record both rankings. SHADOW ONLY — nothing here changes the decision
+  // returned above, and it runs after it, off the session-start path. An
+  // explicit selection (tapped topic / focus step) is not a ranking question
+  // and is skipped.
+  if (!isExplicitSelection) {
+    void recordShadowRanking(recorder, args, decision, storedRecentOpeners).catch(() => {
+      /* shadow scoring is best-effort */
+    });
+  }
+
   return decision;
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** VTID-04422: the provider key whose candidate the ranker selected. */
+function winningProviderKey(decision: AssistantContinuationDecision): string | null {
+  const sel = decision.selectedContinuation;
+  if (!sel) return null;
+  const r = decision.sourceProviderResults.find((x) => x.candidate === sel || (x.candidate && x.candidate.id === sel.id));
+  return r?.providerKey ?? null;
+}
+
+/** VTID-04422: the returned candidates in the scorer's shape. */
+export function toScorableCandidates(decision: AssistantContinuationDecision): ScorableCandidate[] {
+  return decision.sourceProviderResults
+    .filter((r) => r.status === 'returned' && r.candidate && r.candidate.kind !== 'none_with_reason')
+    .map((r) => {
+      const c = r.candidate!;
+      const cta = c.cta as { type?: string; route?: string } | undefined;
+      return {
+        provider: r.providerKey,
+        kind: c.kind,
+        dedupeKey: c.dedupeKey ?? null,
+        priority: typeof c.priority === 'number' ? c.priority : 0,
+        ctaRoute: cta?.type === 'navigate' && typeof cta.route === 'string' ? cta.route : null,
+      };
+    });
+}
+
+async function recordShadowRanking(
+  recorder: typeof defaultWakeTimelineRecorder,
+  args: DecideWakeBriefArgs,
+  decision: AssistantContinuationDecision,
+  recentlyServed: string[],
+): Promise<void> {
+  const candidates = toScorableCandidates(decision);
+  if (candidates.length === 0) return;
+  const t0 = Date.now();
+  const weights = await loadScoringWeights(args.supabase ?? null);
+  let outcomes: Record<string, { accepted: number; settled: number }> = {};
+  if (args.supabase && args.userId) {
+    try {
+      outcomes = await loadUserOutcomes(args.supabase, args.userId);
+    } catch {
+      outcomes = {};
+    }
+  }
+  const ranking = rankInShadow(candidates, winningProviderKey(decision), {
+    recentlyServed,
+    recentWindow: RECENT_OPENERS_WINDOW,
+    currentRoute: args.currentRoute ?? null,
+    partOfDay: partOfDayForHour(localHourIn(args.timezone ?? null)),
+    outcomes,
+  }, weights);
+  safeRecord(recorder, args.sessionId, 'continuation_shadow_ranked', {
+    decisionId: decision.decisionId,
+    ...ranking,
+    outcome_providers: Object.keys(outcomes).length,
+    durationMs: Date.now() - t0,
+  });
+}
 
 function safeRecord(
   recorder: typeof defaultWakeTimelineRecorder,
