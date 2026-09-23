@@ -80,6 +80,20 @@ export interface AgentLoopResult {
 export const CONTINUE_PROMPT = 'Tool results above. Continue — read, edit, run checks as needed; when done and checks pass, call finish.';
 export const NUDGE_PROMPT = 'You answered with text only. This runner acts only on tool calls: either continue with read_file / search_text / edit_file / run_check, or call finish(summary, pr_title, pr_body) if the change is complete and verified.';
 const MAX_CONSECUTIVE_NUDGES = 3;
+
+/**
+ * VTID-04381: a reply cut off at the output-token limit is not an answer.
+ * Its last tool call can be half-written (DeepSeek returns non-JSON arguments,
+ * which the router used to drop silently) and its text is incomplete — so the
+ * loop used to either run a partial set of calls or read the turn as
+ * "answered with text only" and burn the nudge budget with a misleading error.
+ * Now the turn's calls are NOT executed, the model is told why, and three cut
+ * turns in a row end the run with the real reason.
+ */
+export const MAX_CONSECUTIVE_TRUNCATIONS = 3;
+export const TRUNCATED_PROMPT =
+  'Your last reply was cut off at the output-token limit, so none of its tool calls were run. '
+  + 'Make smaller moves: one tool call per turn, and split a large write_file into several edit_file calls of a few dozen lines each.';
 const TOOL_RESULT_MAX_CHARS = 30_000;
 
 /**
@@ -189,6 +203,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   let turns = 0;
   let toolCalls = 0;
   let nudges = 0;
+  let truncations = 0;
   let hasEdited = false;
   let provider: string | undefined;
   let model: string | undefined;
@@ -226,6 +241,20 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     step({ turn: turns, kind: 'llm', detail: calls.length ? `${calls.length} tool call(s): ${calls.map((c) => c.name).join(', ')}` : `text (${(r.text || '').length} chars)`, ms });
 
     history.push({ role: 'user', content: prompt });
+    if (r.truncated) {
+      // VTID-04381: record what the model said (text only — its tool calls get
+      // no results, and a tool_use without a result is rejected by Bedrock).
+      history.push({ role: 'assistant', content: r.text || '[reply cut off at the output-token limit]' });
+      truncations += 1;
+      if (truncations >= MAX_CONSECUTIVE_TRUNCATIONS) {
+        step({ turn: turns, kind: 'error', detail: `output limit hit ${truncations} turns in a row`, isError: true });
+        return { ok: false, error: `model reply hit the output-token limit ${truncations} turns in a row (stop_reason=${r.stopReason || 'unknown'})`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
+      }
+      step({ turn: turns, kind: 'nudge', detail: `truncated (stop_reason=${r.stopReason || 'unknown'}) — ${calls.length} call(s) not run` });
+      prompt = TRUNCATED_PROMPT;
+      continue;
+    }
+    truncations = 0;
     if (calls.length === 0) {
       history.push({ role: 'assistant', content: r.text || '' });
       nudges += 1;

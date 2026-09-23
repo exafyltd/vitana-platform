@@ -516,6 +516,24 @@ export async function spawnChildExecution(
 // Main entry point
 // =============================================================================
 
+/**
+ * VTID-04378: a `failed_escalated` execution is terminal for its ledger VTID —
+ * nothing will retry it without a human. The bridge writes that status with a
+ * raw PATCH, which bypassed applyExecTerminalSideEffects, so the on-ramp /
+ * auto-approve VTID sat `in_progress` forever. `reverted` is deliberately NOT
+ * closed here: a child execution carries the same finding and VTID onward.
+ * Lazy require: execute already requires this module the same way.
+ */
+function closeLedgerForEscalation(s: SupaConfig, executionId: string): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { applyExecTerminalSideEffects } = require('./dev-autopilot-execute');
+    applyExecTerminalSideEffects(s, executionId, 'failed_escalated');
+  } catch (err) {
+    console.error(`${LOG_PREFIX} ledger close for escalated ${executionId.slice(0, 8)} failed:`, err);
+  }
+}
+
 export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<BridgeResult> {
   const s = getSupabase();
   if (!s) {
@@ -568,6 +586,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         completed_at: new Date().toISOString(),
       }),
     });
+    closeLedgerForEscalation(s, exec.id);
     await writeSelfHealingLogEntry(s, {
       execution_id: exec.id,
       vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
@@ -649,6 +668,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         completed_at: new Date().toISOString(),
       }),
     });
+    closeLedgerForEscalation(s, exec.id);
     await writeSelfHealingLogEntry(s, {
       execution_id: exec.id,
       vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
@@ -758,6 +778,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
           completed_at: new Date().toISOString(),
         }),
       });
+      closeLedgerForEscalation(s, exec.id);
       await writeSelfHealingLogEntry(s, {
         execution_id: exec.id,
         vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
@@ -862,6 +883,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       completed_at: new Date().toISOString(),
     }),
   });
+  closeLedgerForEscalation(s, exec.id);
 
   await writeSelfHealingLogEntry(s, {
     execution_id: exec.id,
