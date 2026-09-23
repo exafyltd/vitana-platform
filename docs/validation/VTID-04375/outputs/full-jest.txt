@@ -1,0 +1,40 @@
+      ✓ returns null when both Polly and Fish fail for a Fish-only language (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts
+  orb-widget guided-topic completion idempotency guard (VTID-03781)
+    ✓ declares the _guidedTopicTeachingEnded state flag, defaulting false (1 ms)
+    ✓ _endGuidedTopicTeaching() checks the guard and returns before any async work if already ended (1 ms)
+    ✓ the guard set happens unconditionally on entry — not nested inside the audio-drain poll (1 ms)
+    ✓ focusGuidedTopic() resets the guard for a fresh tap, so a new teaching session gets its own completion (1 ms)
+    ✓ _hide() does not also reset the guard mid-teaching (only a fresh tap re-arms it)
+
+PASS test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts
+  calendar-upcoming pure helpers
+    ✓ priorityForMinutes banding (1 ms)
+    ✓ computeMinutesUntil (1 ms)
+    ✓ renderLine — bands (3 ms)
+  produceCalendarUpcoming source
+    ✓ no rows → no_eligible_record
+    ✓ supabase error → source_unavailable
+    ✓ throw → errored
+    ✓ event 15min ahead → priority 92, confidence high, dedupe by id (1 ms)
+    ✓ event 5h ahead → priority 72, confidence low
+    ✓ empty title falls back to generic phrase
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1105 passed, 1105 of 1106 total
+Tests:       29 skipped, 6 todo, 17911 passed, 17946 total
+Snapshots:   42 passed, 42 total
+Time:        97.737 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

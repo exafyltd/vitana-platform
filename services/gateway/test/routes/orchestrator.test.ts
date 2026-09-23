@@ -9,6 +9,7 @@
  * AC-4 migration: additive, service-role only, view is security_invoker.
  * VTID-04325 AC-5 /policy: any signed-in user sees the defaults, their own
  *      ceilings and an optional dry evaluation; bad input is a 400.
+ * VTID-04375 AC-7 /delegations: exafy_admin only; targets + job counts.
  * VTID-04370 AC-6 /budgets: exafy_admin only; today's spend vs budgets, over
  *      lines listed as would_deny; a read error is a 502.
  * VTID-04362 AC-6 /policy/shadow: exafy_admin only; returns the shadow window
@@ -223,6 +224,16 @@ describe('routes', () => {
     expect(res.body.data.would_deny.map((l: any) => l.key)).toEqual(expect.arrayContaining(['dev-autopilot-planning', 'VTID-1']));
     tables.oasis_events = { error: { message: 'boom' } };
     expect((await request(app()).get('/api/v1/orchestrator/budgets')).status).toBe(502);
+  });
+
+  test('/delegations: 403 for a member; targets and job counts for an admin (VTID-04375)', async () => {
+    identity.current = member;
+    expect((await request(app()).get('/api/v1/orchestrator/delegations')).status).toBe(403);
+    identity.current = admin;
+    const res = await request(app()).get('/api/v1/orchestrator/delegations');
+    expect(res.status).toBe(200);
+    expect(res.body.data.targets.map((t: any) => t.agent_id)).toContain('operator');
+    expect(res.body.data.jobs).toHaveProperty('total');
   });
 
   test('/agents returns agent cards; a read error is a 502, not a crash', async () => {
