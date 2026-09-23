@@ -3160,6 +3160,24 @@
         _announceDisconnect('connection');
         break;
 
+      case 'support_ticket_filed':
+        // VTID-04385: a spoken report became a ticket. The host app shows the
+        // ticket number with a link (window event, like
+        // vitana:guided-topic-teaching-complete — no init() option to drop).
+        try {
+          window.dispatchEvent(new CustomEvent('vitana:support-ticket-filed', {
+            detail: {
+              ticketId: msg.ticket_id || null,
+              ticketNumber: msg.ticket_number || null,
+              kind: msg.kind || null,
+              url: msg.url || null,
+            },
+          }));
+        } catch (e) {
+          console.warn('[VTOrb] support_ticket_filed dispatch failed:', e);
+        }
+        break;
+
       case 'persona_swap_reconnecting':
         // VTID-02047 voice channel-swap: the server is closing+reopening the
         // upstream WS to hand off from Vitana to a specialist (or back).

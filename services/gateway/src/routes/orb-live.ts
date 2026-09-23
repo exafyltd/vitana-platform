@@ -158,6 +158,10 @@ import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../se
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
 import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
+import {
+  buildSupportTicketFiledMessage,
+  ticketFromTypedToolResult,
+} from '../orb/live/support/support-ticket-filed-signal';
 // VTID-04332: STATUS contract of report_to_specialist + append_to_ticket.
 import {
   buildReportToSpecialistToolMessage,
@@ -4234,6 +4238,8 @@ async function executeLiveApiToolInner(
           // number read these.
           (session as any).handoffTicketId = ticket.id;
           (session as any).handoffTicketNumber = ticket.ticket_number ?? null;
+          // VTID-04385: the member sees the ticket number on screen too.
+          sendSupportTicketFiledToClient(session, { id: ticket.id, ticket_number: ticket.ticket_number, kind });
           // VTID-04332: only a hand-off that was actually queued below may be
           // reported as STATUS handoff_created; a filed ticket without a
           // queued swap is ticket_filed_no_handoff.
@@ -6812,7 +6818,7 @@ async function executeLiveApiToolInner(
           const { ORB_TOOL_NAMES, dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
           if (ORB_TOOL_NAMES.includes(toolName)) {
             const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-            return await dispatchOrbToolForVertex(
+            const dispatched = await dispatchOrbToolForVertex(
               toolName,
               args ?? {},
               {
@@ -6831,6 +6837,11 @@ async function executeLiveApiToolInner(
               },
               supabase,
             );
+            // VTID-04385: a typed feedback tool that filed a ticket → show it.
+            const filed = dispatched.success ? ticketFromTypedToolResult(toolName, dispatched.data) : null;
+            if (filed) sendSupportTicketFiledToClient(session, filed);
+            const { data: _data, ...forModel } = dispatched;
+            return forModel;
           }
         }
         return {
@@ -7208,6 +7219,25 @@ const STILL_HERE_COMPLAINT_PATTERNS = [
   /\bdu\s+bist\s+(ja\s+)?(immer\s+)?noch\s+da\b/i,
   /\bbist\s+du\s+(ja\s+)?(immer\s+)?noch\s+da\b/i,
 ];
+
+/**
+ * VTID-04385: tell the member's client a spoken report became a ticket, on
+ * whichever transport this session uses. Best effort — the ticket and the
+ * spoken confirmation are the source of truth.
+ */
+function sendSupportTicketFiledToClient(
+  session: { sseResponse?: any; clientWs?: any } | null | undefined,
+  ticket: { id: string; ticket_number?: string | null; kind?: string | null },
+): void {
+  const msg = buildSupportTicketFiledMessage(ticket);
+  if (!msg || !session) return;
+  if (session.sseResponse) {
+    try { session.sseResponse.write(`data: ${JSON.stringify(msg)}\n\n`); } catch (_e) { /* SSE closed */ }
+  }
+  if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+    try { sendWsMessage(session.clientWs, msg); } catch (_e) { /* WS closed */ }
+  }
+}
 
 export function detectStillHereComplaint(text: string): boolean {
   const lower = text.toLowerCase();
