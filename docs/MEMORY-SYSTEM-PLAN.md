@@ -329,9 +329,9 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
 - [x] Golden recall eval in CI: `test/memory-golden-eval.test.ts` plus `test/fixtures/memory-golden/scenarios.json`. 10 scenarios; mutation-checked, and it fails when the superseded-fact or role filter is removed (VTID-04392).
 
 ### Phase 3 — Developer memory (≈1–2 weeks)
-- [ ] `author_user_id` + `handoff` category on `dev_agent_memory`; end-of-thread and nightly handoff.
-- [ ] `GET /api/v1/dev-memory/morning-pack` + Claude Code SessionStart hook.
-- [ ] Server-side Operator thread list.
+- [x] `author_user_id` + `handoff` category on `dev_agent_memory` (VTID-04407, migration `20260923190000`, applied live). One hourly sweep (`POST /api/v1/dev-memory/handoffs/sweep`, EventBridge job `gateway-dev-memory-handoff-sweep`) writes a handoff for every owned Operator thread that has been quiet for 60 minutes. That covers both end-of-thread and end-of-day. A newer handoff supersedes the older one, and a thread whose handoff is already current is skipped. Handoffs are left out of semantic recall; only the morning pack reads them.
+- [x] `GET /api/v1/dev-memory/morning-pack` (VTID-04408). It returns the owner's handoffs from the last 7 days, the repo-wide decisions/incidents/gotchas/conventions from the last 7 days, and VTIDs in progress. `?format=text` returns plain text. Hook script: `.claude/hooks/session-start-dev-memory-pack.sh`, read-only through `X-Dev-Memory-Token`. **Owner step:** register the hook in `.claude/settings.json` (a session is not allowed to edit its own settings), then set `DEV_MEMORY_PACK_TOKEN` in the gateway task def and in the Claude Code environment.
+- [x] Server-side Operator thread list: `GET /api/v1/operator/threads` (VTID-04409). The Command Hub `app.js` wiring is separate and needs the Command Hub ownership allowlist.
 
 ### Phase 4 — Customer & support memory (≈2 weeks, after Phase 2)
 - [ ] `scope=customer:<id>` episodes from BackOffice notes and assistant turns; `recall()` for the BackOffice surface.

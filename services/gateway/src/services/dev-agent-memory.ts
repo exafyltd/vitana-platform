@@ -24,7 +24,9 @@ export type DevMemoryCategory =
   | 'incident'
   | 'preference'
   | 'task_outcome'
-  | 'gotcha';
+  | 'gotcha'
+  /** VTID-04407: one person's end-of-thread working state; read by the morning pack, excluded from semantic recall. */
+  | 'handoff';
 export type DevMemorySource = 'session' | 'autopilot' | 'manual' | 'backfill';
 /** Which LLM routing stage produced a row. Provenance only -- see the migration header. */
 export type DevMemoryStage = 'operator' | 'planner' | 'worker' | 'validator';
@@ -42,6 +44,8 @@ export interface WriteDevMemoryInput {
   /** Concrete repo-relative files this memory is about (e.g. the diff's changed files). */
   filePaths?: string[];
   stage?: DevMemoryStage;
+  /** VTID-04407: whose working state this is. Omit for repo-wide knowledge. */
+  authorUserId?: string;
 }
 
 export interface DevMemoryHit {
@@ -111,6 +115,7 @@ export async function writeDevMemory(
         p_supersedes: input.supersedes ?? null,
         p_file_paths: input.filePaths ?? [],
         p_stage: input.stage ?? null,
+        p_author_user_id: input.authorUserId ?? null,
       }),
     },
   );

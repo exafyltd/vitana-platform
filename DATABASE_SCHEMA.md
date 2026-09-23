@@ -260,6 +260,24 @@ ON CONFLICT (user_id) DO NOTHING;
 
 ---
 
+### dev_agent_memory — handoffs + author — APPLIED 2026-09-23 (VTID-04407)
+**Purpose:** Phase 3 of `docs/MEMORY-SYSTEM-PLAN.md`. This gives each developer their own
+working state next to the repo-wide knowledge.
+
+- `author_user_id uuid` (nullable) is the person a row belongs to. NULL means repo-wide
+  knowledge, which is what every row before this change was. Partial index
+  `dev_agent_memory_author_recent_idx (author_user_id, category, created_at desc) WHERE superseded_by IS NULL`.
+- Category `handoff` was added to the CHECK constraint. It is an end-of-thread note written by
+  `POST /api/v1/dev-memory/handoffs/sweep` and read by `GET /api/v1/dev-memory/morning-pack`.
+- `write_dev_memory()` was dropped and recreated with a trailing `p_author_user_id uuid default null`.
+  Exactly one overload exists. Execute is revoked from `public`/`anon`/`authenticated` and granted
+  to `service_role` only.
+- `recall_dev_memory()` now leaves out `handoff` rows unless `p_category = 'handoff'`, so stale
+  "next steps" never compete with knowledge in semantic recall.
+
+**Status:** migration `20260923190000_vtid_04407_dev_agent_memory_handoff.sql`, applied live
+2026-09-23. Checked after applying: one overload, `anon` has no execute, 219 existing rows untouched.
+
 ### dev_agent_memory — file-scoped recall + stage provenance — APPLIED 2026-09-21 (VTID-04224)
 **Purpose:** extends `dev_agent_memory` (VTID-03889, Operator Console engineering
 memory) with two additive columns so the Planner/Worker/Validator LLM
@@ -897,6 +915,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
 | 2026-09-23 | Memory Phase 2, **applied to the live project 2026-09-23**: new table `memory_transcript_turns` (raw conversation turns, RLS own-rows SELECT, service-role writes) with `purge_memory_transcript_turns(p_days >= 30)` scheduled daily by pg_cron `purge-memory-transcript-turns` (90 days); the last 90 days of raw turns in `memory_items` copied into it. `memory_categories` gains the 13 Garden category keys, and `memory_category_mapping` gains `personal → personal_identity`. `ai_memory` (112 active) and `diary_entries` (273) copied into `memory_items` as episodes (`content_json.kind = legacy_ai_memory / diary`, linked by id, importance ≤ 50 so `trg_notify_memory_garden` did not fire — 0 notifications). Legacy tables untouched. | Claude Code | VTID-04387 / VTID-04388 / VTID-04389 / VTID-04390 |
 | 2026-09-23 | Memory Phase 1 (docs/MEMORY-SYSTEM-PLAN.md), **applied to the live project 2026-09-23**: `memory_categories` row `session_summary` (mapped to Garden `uncategorized`) and partial unique index `uq_memory_items_session_summary` on `memory_items (user_id, (content_json->>'session_id')) WHERE category_key = 'session_summary'` — at most one session-summary episode per session. No DDL for role scope: `memory_items.active_role` (existing column, 3,183 rows all NULL) is now written — NULL for personal roles, the role otherwise — and read through the existing `p_active_role` parameter of `memory_semantic_search`. The gateway no longer writes or reads the tier-2 mirrors `mem_facts` / `mem_episodes`. | Claude Code | VTID-04364 / VTID-04365 / VTID-04366 / VTID-04367 |

@@ -140,6 +140,9 @@ JOBS=(
   # VTID-04226 — test-contract scanners (see header). Cadence chosen, not restored.
   "gateway-test-contracts-scheduled-run|*/15 * * * *|UTC|/api/v1/test-contracts/scheduled-run|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
   "gateway-test-contracts-missing|30 6 * * *|UTC|/api/v1/test-contracts/missing|{}|{\"method\":\"GET\",\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-04407 — Operator thread handoffs (developer memory). Staging: that is
+  # where OPERATOR_THREADS_ENABLED records threads. Hourly; idempotent.
+  "gateway-dev-memory-handoff-sweep|20 * * * *|UTC|/api/v1/dev-memory/handoffs/sweep|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
 
 echo "Region:   $REGION"

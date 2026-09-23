@@ -119,9 +119,42 @@ Not verified in Phase 2:
 - The UI was verified locally with every network call intercepted (screenshots at 1400×900 and 390×844).
 - AP-0914 needs the EventBridge schedule, which is owner-run.
 
+## Phase 3 acceptance (VTID-04407 / 04408 / 04409)
+
+AC-19: `dev_agent_memory` has `author_user_id` and a `handoff` category (applied live, 219 existing rows untouched). `write_dev_memory()` is one overload, executable by `service_role` only. `recall_dev_memory()` leaves handoffs out unless they are asked for. (VTID-04407)
+TEST: services/gateway/test/services/dev-agent-memory.test.ts
+
+AC-20: the hourly handoff sweep writes one handoff per owned Operator thread that has been quiet for 60 minutes.
+- The handoff is written by the `memory` stage, tagged `thread:<id>`, with the thread's VTIDs.
+- It supersedes the thread's previous handoff.
+- It is skipped when the thread has no owner, when the latest handoff is already newer than the last message, or when the model answers NONE.
+- A failed model call or write is counted, never thrown.
+(VTID-04407)
+TEST: services/gateway/test/services/dev-memory/handoff.test.ts
+TEST: services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+
+AC-21: `GET /api/v1/dev-memory/morning-pack` returns:
+- the caller's handoffs from the last 7 days (an admin session gets its own; the pack token may name an author);
+- repo-wide decisions/incidents/gotchas/conventions from the last 7 days;
+- VTIDs in progress.
+
+Each section fails open with its reason listed. `?format=text` is capped at 8 KB. The read-only `X-Dev-Memory-Token` cannot trigger the sweep. (VTID-04408)
+TEST: services/gateway/test/services/dev-memory/morning-pack.test.ts
+TEST: services/gateway/test/routes/dev-memory.test.ts
+
+AC-22: `GET /api/v1/operator/threads` lists only the caller's own threads (exafy_admin), newest activity first, with summaries clipped. A caller without a UUID identity has no threads. The route is registered before `/threads/:threadId/messages`. (VTID-04409)
+TEST: services/gateway/test/vtid-04409-operator-thread-list.test.ts
+
+Not done in Phase 3, owner steps:
+- The SessionStart hook script `.claude/hooks/session-start-dev-memory-pack.sh` exists and is tested (bash -n, and it skips cleanly without a token). Registering it in `.claude/settings.json` was refused to this session as self-modification, so the owner adds the entry.
+- `DEV_MEMORY_PACK_TOKEN` has to be set in the staging gateway task def and in the Claude Code environment. Until then the hook prints nothing.
+- The sweep schedule runs only after `setup-eventbridge-cron-migration.sh --apply`.
+- The Command Hub thread-list UI is not built. It needs a Command Hub ownership allowlist entry.
+
 ## OASIS
 
 OASIS_PROOF:
+- New (Phase 3): `dev_memory.handoffs.written`, emitted only when a sweep wrote at least one handoff (candidates, outcomes, written).
 - New (Phase 2): `memory.garden.edited`, `memory.diary.saved`, `autopilot.memory.daily_learning_written` (outcome counts per run).
 - `memory.session.summarized` (new, VTID-04365) is emitted once per written session summary, with session id, channel, trigger, memory_item_id and provider. `orb.live.memory.committed` now carries `summary_queued`.
 - `autopilot.memory.embeddings_backfilled` (emitted by AP-0910) now carries `model`, `facts_embedded`, `facts_failed`, `items_embedded` and `items_failed`. It is emitted only when something was attempted.
@@ -155,4 +188,23 @@ CURL_PROOF: **not yet run.** The routes are new and deployed nowhere, so there i
 
   ```
   curl -s -o /dev/null -w "%{http_code} %{content_type}\n" https://preview-aws-gateway.vitanaland.com/api/v1/memory/garden/categories
+  ```
+
+## Route mount evidence (new routes in Phase 3)
+
+ROUTE_MOUNT:
+- `services/gateway/src/index.ts` → `mountRouterSync(app, '/api/v1/dev-memory', devMemoryRouter, { owner: 'dev-memory' })` (router `services/gateway/src/routes/dev-memory.ts`)
+- `services/gateway/src/routes/operator.ts` (already mounted at `/api/v1/operator`) → `router.get('/threads', requireAdminAuth, …)`
+
+FINAL_URL:
+- `GET  /api/v1/dev-memory/morning-pack`
+- `POST /api/v1/dev-memory/handoffs/sweep`
+- `GET  /api/v1/operator/threads`
+
+CURL_PROOF: **not yet run.** These routes are new and not deployed anywhere, so a response written down now would be invented.
+- **Before merge:** `test/routes/dev-memory.test.ts` mounts the real router (401 without credentials, 400 on a bad author, 200 JSON/text, pack token refused on the sweep). `test/vtid-04409-operator-thread-list.test.ts` covers the thread list.
+- **After the staging deploy:** a check with no token; `401 application/json` means the route exists.
+
+  ```
+  curl -s -o /dev/null -w "%{http_code} %{content_type}\n" https://preview-aws-gateway.vitanaland.com/api/v1/dev-memory/morning-pack
   ```
