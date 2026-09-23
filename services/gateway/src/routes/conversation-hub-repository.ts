@@ -28,3 +28,56 @@ export async function fetchOasisEventsByStage(sb: SupabaseClient, stage: string,
     .order('created_at', { ascending: false })
     .limit(limit);
 }
+
+// VTID-04371: the hourly rollup. PostgREST caps a response at 1000 rows, so
+// the read pages until a short page (at most MAX_METRIC_PAGES pages).
+const METRIC_PAGE = 1000;
+const MAX_METRIC_PAGES = 40;
+
+export async function fetchConversationMetricsSince(sb: SupabaseClient, sinceIso: string) {
+  const rows: Array<Record<string, unknown>> = [];
+  for (let page = 0; page < MAX_METRIC_PAGES; page++) {
+    const from = page * METRIC_PAGE;
+    const { data, error } = await sb
+      .from('conversation_metrics_hourly')
+      .select('hour_start, metric, dimension, value, sample_count, computed_at')
+      .gte('hour_start', sinceIso)
+      .order('hour_start', { ascending: true })
+      .order('metric', { ascending: true })
+      .order('dimension', { ascending: true })
+      .range(from, from + METRIC_PAGE - 1);
+    if (error) return { data: null, error };
+    rows.push(...((data as Array<Record<string, unknown>>) || []));
+    if (!data || data.length < METRIC_PAGE) break;
+  }
+  return { data: rows, error: null };
+}
+
+export async function fetchConversationMetricSeries(sb: SupabaseClient, metric: string, dimension: string, sinceIso: string) {
+  return sb
+    .from('conversation_metrics_hourly')
+    .select('hour_start, metric, dimension, value, sample_count, computed_at')
+    .eq('metric', metric)
+    .eq('dimension', dimension)
+    .gte('hour_start', sinceIso)
+    .order('hour_start', { ascending: true })
+    .limit(1000);
+}
+
+export async function fetchLearningAutomationRuns(sb: SupabaseClient, automationIds: readonly string[]) {
+  return sb
+    .from('automation_runs')
+    .select('automation_id, status, started_at, completed_at, error_message')
+    .in('automation_id', automationIds as string[])
+    .order('started_at', { ascending: false })
+    .limit(500);
+}
+
+export async function fetchProfileNarrativeStamps(sb: SupabaseClient, signalName: string) {
+  return sb
+    .from('user_assistant_state')
+    // Only the timestamp: the narrative text itself never leaves the DB here.
+    .select('generated_at:value->>generated_at')
+    .eq('signal_name', signalName)
+    .limit(5000);
+}

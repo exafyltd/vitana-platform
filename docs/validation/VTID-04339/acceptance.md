@@ -52,7 +52,8 @@ CURL: see "Post-deploy check" below — to be run after merge on preview-aws-gat
 
 ## Route evidence
 
-Existing routes — only their middleware chains change; no route is added.
+Existing routes — only their middleware chains change. The PR also adds three
+read-only admin routes for companion VTID-04371, listed after the curl proof.
 
 ROUTE_MOUNT: `voice-awareness` router via `mountRouterSync(app, '/api/v1', voiceAwarenessRouter)` (index.ts); `/api/v1/brain/test` registered directly on `app` in index.ts; `assistant` router via `mountRouterSync(app, '/api/v1/assistant', assistantRouter)`.
 
@@ -68,6 +69,24 @@ POST /api/v1/assistant/chat            -> 400 application/json; charset=utf-8
 
 All three routes exist (JSON, not an HTML 404). The 200 and the 400 from
 `/brain/test` are the defects: both were reachable without a login.
+
+**Added by VTID-04371 (WS-0.7), same PR.** Three `router.get(...)` handlers in
+`services/gateway/src/routes/conversation-hub.ts`, on the pre-existing
+`conversation-hub` router (mounted at `/api/v1`), each behind
+`requireAuth` + `requireExafyAdmin`:
+
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/metrics/summary`
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/metrics/series`
+- `https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/metrics/learning`
+
+Pre-merge, anonymous, staging, 2026-09-23:
+
+```
+GET /api/v1/admin/conversation/metrics/summary -> 404 text/html; charset=utf-8   (not deployed yet)
+GET /api/v1/admin/conversation/decisions       -> 401 application/json; charset=utf-8   (sibling on the same router: mounted, admin gate live)
+```
+
+Post-merge expectation: all three return `401 application/json` anonymously.
 
 ### Post-deploy check (AC-6)
 

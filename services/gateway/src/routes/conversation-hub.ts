@@ -16,6 +16,9 @@
  *   GET /admin/conversation/preview           → Simulator: dry-run the decision for a user (no speaking)
  *   GET /admin/conversation/decisions         → Monitor: recent greeting decisions (oasis_events)
  *   GET /admin/conversation/tool-failures     → Tool Health: recent tool failures (oasis_events)
+ *   GET /admin/conversation/metrics/summary   → Monitor dashboard: window totals/rates (hourly rollup, VTID-04371)
+ *   GET /admin/conversation/metrics/series    → one hourly series for a chart (hourly rollup, VTID-04371)
+ *   GET /admin/conversation/metrics/learning  → Learning health: nightly jobs, profile freshness, coverage (VTID-04371)
  *
  * See docs/CONVERSATION_FLOW_HANDOFF.md §8–§9.
  */
@@ -41,6 +44,19 @@ import {
 } from '../services/conversation/screen-surface';
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
+import {
+  summarizeConversationMetrics,
+  buildMetricSeries,
+  summarizeLearningJobs,
+  summarizeNarrativeFreshness,
+  LEARNING_AUTOMATIONS,
+  type MetricRow,
+  type AutomationRunRow,
+} from '../services/conversation/conversation-metrics';
+// Same value as SIGNAL_PROFILE_NARRATIVE in services/user-model-synthesis.ts,
+// kept local so this router does not load the synthesis module (and the LLM
+// router) at import time. A test pins the two together.
+export const PROFILE_NARRATIVE_SIGNAL = 'user_profile_narrative_v1';
 
 const router = Router();
 
@@ -290,6 +306,114 @@ router.get('/admin/conversation/tool-failures', ...adminOnly, async (req: Authen
     return res.json({ ok: true, data: { window_hours: windowHours, count: rows.length, failures: rows } });
   } catch (e) {
     return jsonError(res, 500, e instanceof Error ? e.message : 'tool-failures read failed');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// VTID-04371 (WS-0.7) — dashboards over the hourly rollup
+// (`conversation_metrics_hourly`, filled by pg_cron at :07). These handlers
+// never read oasis_events.
+// ---------------------------------------------------------------------------
+
+function metricsWindowHours(raw: unknown): number {
+  return Math.min(Math.max(Number(raw) || 24, 1), 720);
+}
+
+function windowStartIso(windowHours: number, nowMs = Date.now()): string {
+  const currentHour = Math.floor(nowMs / 3_600_000) * 3_600_000;
+  return new Date(currentHour - windowHours * 3_600_000).toISOString();
+}
+
+function toMetricRows(data: Array<Record<string, unknown>> | null | undefined): MetricRow[] {
+  return (data || []).map((r) => ({
+    hour_start: String(r.hour_start),
+    metric: String(r.metric),
+    dimension: String(r.dimension ?? ''),
+    value: Number(r.value),
+    sample_count: Number(r.sample_count) || 0,
+    computed_at: r.computed_at ? String(r.computed_at) : undefined,
+  }));
+}
+
+/**
+ * GET /admin/conversation/metrics/summary?window_hours=24
+ * Window totals and rates: first speech, context-wait timeouts, reconnects and
+ * premature closes, errors by kind, turns and duration per session, opener
+ * distribution and repeat rate, offers, finalize coverage.
+ */
+router.get('/admin/conversation/metrics/summary', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const windowHours = metricsWindowHours(req.query.window_hours);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { data, error } = await repo.fetchConversationMetricsSince(supabase, windowStartIso(windowHours));
+    if (error) return jsonError(res, 500, error.message);
+    return res.json({ ok: true, data: summarizeConversationMetrics(toMetricRows(data), windowHours) });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'metrics summary read failed');
+  }
+});
+
+/**
+ * GET /admin/conversation/metrics/series?metric=&dimension=&window_hours=
+ * One hourly series, oldest first; hours without a row are null.
+ */
+router.get('/admin/conversation/metrics/series', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const metric = typeof req.query.metric === 'string' ? req.query.metric.trim() : '';
+  const dimension = typeof req.query.dimension === 'string' ? req.query.dimension.trim() : '';
+  if (!/^[a-z0-9_]{1,64}$/.test(metric)) return jsonError(res, 400, 'metric is required (a-z, 0-9, _)');
+  if (dimension.length > 120) return jsonError(res, 400, 'dimension is too long');
+  const windowHours = Math.min(metricsWindowHours(req.query.window_hours), 336);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const nowMs = Date.now();
+    const { data, error } = await repo.fetchConversationMetricSeries(supabase, metric, dimension, windowStartIso(windowHours, nowMs));
+    if (error) return jsonError(res, 500, error.message);
+    const series = buildMetricSeries(toMetricRows(data as Array<Record<string, unknown>>), metric, dimension, windowHours, nowMs);
+    return res.json({ ok: true, data: { metric, dimension, window_hours: windowHours, series } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'metrics series read failed');
+  }
+});
+
+/**
+ * GET /admin/conversation/metrics/learning?window_hours=168
+ * Learning health: last run of each nightly learning job (AP-0906..AP-0913),
+ * profile-narrative freshness, and finalize/fact coverage from the rollup.
+ * Each part degrades on its own: a failed read is reported, not fatal.
+ */
+router.get('/admin/conversation/metrics/learning', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const windowHours = metricsWindowHours(req.query.window_hours ?? 168);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  const nowMs = Date.now();
+  const sinceIso = windowStartIso(windowHours, nowMs);
+  const errors: string[] = [];
+  try {
+    const [runs, narratives, metrics] = await Promise.all([
+      repo.fetchLearningAutomationRuns(supabase, LEARNING_AUTOMATIONS),
+      repo.fetchProfileNarrativeStamps(supabase, PROFILE_NARRATIVE_SIGNAL),
+      repo.fetchConversationMetricsSince(supabase, sinceIso),
+    ]);
+    if (runs.error) errors.push(`automation_runs: ${runs.error.message}`);
+    if (narratives.error) errors.push(`user_assistant_state: ${narratives.error.message}`);
+    if (metrics.error) errors.push(`conversation_metrics_hourly: ${metrics.error.message}`);
+    const summary = metrics.error ? null : summarizeConversationMetrics(toMetricRows(metrics.data), windowHours);
+    return res.json({
+      ok: true,
+      data: {
+        window_hours: windowHours,
+        jobs: runs.error ? null : summarizeLearningJobs((runs.data || []) as AutomationRunRow[], Date.parse(sinceIso), nowMs),
+        profile_narrative: narratives.error
+          ? null
+          : summarizeNarrativeFreshness((narratives.data || []) as Array<{ generated_at?: unknown }>, nowMs),
+        coverage: summary ? summary.learning : null,
+        errors,
+      },
+    });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'learning health read failed');
   }
 });
 

@@ -394,6 +394,37 @@ CREATE TABLE operator_messages (
 
 ---
 
+### conversation_metrics_hourly — APPLIED 2026-09-23 (VTID-04371)
+
+Hourly conversation metrics for Command Hub → Conversation → Monitor and
+Assistant → Metrics. Migration
+`20260923140000_vtid_04371_conversation_metrics_hourly.sql`, applied to the
+live project 2026-09-23 (Supabase MCP `apply_migration`, additive), then
+backfilled for 168 hours (1.3 s).
+
+```sql
+CREATE TABLE conversation_metrics_hourly (
+  hour_start   TIMESTAMPTZ      NOT NULL,
+  metric       TEXT             NOT NULL,   -- e.g. sessions_started, first_audio_ms_p50
+  dimension    TEXT             NOT NULL DEFAULT '',  -- '' = total, else 'lang:de', 'opener:x', 'kind:y', ...
+  value        DOUBLE PRECISION NOT NULL,   -- count, sum, average or percentile, per metric
+  sample_count INTEGER          NOT NULL DEFAULT 0,   -- rows the value came from; rate = value / sample_count
+  computed_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (hour_start, metric, dimension)
+);
+-- idx_conversation_metrics_hourly_metric_hour (metric, hour_start DESC)
+```
+
+- Written only by `conversation_metrics_rollup_hour(p_hour)` (SECURITY
+  DEFINER, idempotent per hour: delete + insert). `conversation_metrics_backfill(p_hours)`
+  re-rolls the last N full hours (cap 720). Both service_role only.
+- Sources: `oasis_events` filtered by topic first (`vtid.live.session.start/stop`,
+  `voice.latency.measured`, `orb.live.diag`, `orb.live.stall_detected`,
+  `conversation.session.finalized`, `conversation.offer.*`) plus `memory_facts.extracted_at`.
+- pg_cron job `conversation-metrics-hourly` (`7 * * * *`) re-rolls the previous two hours.
+- RLS on, a service_role policy only; `anon`/`authenticated` revoked. Read by
+  `GET /api/v1/admin/conversation/metrics/{summary,series,learning}` (exafy_admin).
+
 ### agent_runs / agent_run_steps / agent_run_signals / agent_runs_unified — APPLIED 2026-09-23 (VTID-04319)
 
 Orchestrator v2 run ledger (`docs/ORCHESTRATOR-REDESIGN-PLAN.md` §3.3). Migration
@@ -900,6 +931,7 @@ CREATE TABLE my_new_table (
 | 2026-09-18 | `lab_reports` RLS replaced by the user-scoped `lab_reports_user_policy` (`user_id = auth.uid()`, FOR ALL) and `trg_notify_lab_report` moved from AFTER INSERT to AFTER UPDATE OF `processing_status` → `parsed`. The c1 tenant-gated policies depended on `current_tenant_id()`, which is NULL for browser JWTs, so the health-report upload had never inserted a single row (22 orphaned `health-reports` objects from 4 real users, 0 rows, RLS violations in the Postgres logs for the latest two attempts 2026-09-17 14:45 UTC). Migration `20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql`, applied to the live project 2026-09-18 on the owner's "proceed and make it work"; pre/post-checked. New `lab_reports` section above. | Claude | VTID-04044 |
 | 2026-09-18 | `dev_autopilot_executions.metadata` gains three documented keys, no DDL (VTID-04032, cancel a running agent): `ecs_task_arn` + `dispatched_at` (written by the executor tick when the AWS `RunTask` dispatch succeeds, so a cancel can `StopTask` it), and `cancelled = { by, at, reason, was, ecs_task_arn?, ecs_task_stopped?, ecs_task_error? }` written by `POST /api/v1/dev-autopilot/executions/:id/cancel` on a `cooling` or `running` row (or by the agent itself, `by: "agent"`, when its own cancel check fires first). `status` moves to `cancelled` with `cancelled_at` in the same PATCH; a later result from the agent never overwrites it. | Claude | VTID-04032 |
 | 2026-09-17 | `dev_autopilot_executions.status` CHECK widened with `awaiting_approval` (diff review before a PR, W4e): the agent executor pushes its branch and, when the row carries `metadata.require_approval` (or the executor runs with `DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true`), stops there with `metadata.pending_approval = { branch, base_sha, head_sha, pr_title, pr_body, session_id, staged_at, diff{stat,patch,files,…,truncated} }`; `POST /api/v1/dev-autopilot/executions/:id/approve` opens the PR and moves the row to `ci` (`metadata.approved`), `/reject` deletes the branch and moves it to `cancelled` (`metadata.rejected`). Migration `20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql`, constraint change only, applied to the live project before merge (Migration Drift Check); inert until a row is actually held. | Claude | VTID-04029 |
+| 2026-09-23 | Added `conversation_metrics_hourly` plus `conversation_metrics_rollup_hour()` / `conversation_metrics_backfill()` and the pg_cron job `conversation-metrics-hourly`. Migration `20260923140000_vtid_04371_conversation_metrics_hourly.sql` **applied to the live project 2026-09-23**; 168 h backfilled in 1.3 s; the heaviest part (24 h opener-repeat join) measured at 3.4 ms on index range scans. | Claude | VTID-04371 |
 | 2026-09-23 | Added `agent_runs` / `agent_run_steps` / `agent_run_signals` and the `agent_runs_unified` projection view; `agents_registry` agent-card columns + seed. Migration `20260923120000_vtid_04319_orchestrator_run_ledger.sql` **applied to the live project 2026-09-23** (additive; view unions 4,442 existing runs; anon/authenticated verified without SELECT). | Claude | VTID-04319 |
 | 2026-09-17 | Added `operator_threads` / `operator_messages` (server-side Operator Console threads + rolling summaries, W4b). Migration `20260917230000_vtid_04022_operator_threads.sql` **applied to the live project 2026-09-17 22:20 UTC** (Supabase MCP `apply_migration`; pre/post-checked, both tables empty, RLS + service_role policy + indexes present) because the Migration Drift Check requires it before merge; gateway code stays fail-open and inert until `OPERATOR_THREADS_ENABLED` is pinned. | Claude | VTID-04022 |
 | 2026-09-17 | Commerce Partner Onboarding landing: marked the `partner_organizations`/roster/`patient_profiles` section APPLIED (Phase A, VTID-03957); documented `partner_organizations.commerce_vertical` (VTID-03974) and the VTID-03995 `get_my_permitted_roles()`/`set_role_preference()` changes — both migrations applied to the live project 2026-09-17 on the platform owner's explicit instruction, post-checked (column + CHECK + comment present; both function bodies replaced, `validate_role_assignment()` no longer called from `set_role_preference()`). | Claude | VTID-03996 |

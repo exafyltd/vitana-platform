@@ -7560,16 +7560,191 @@ function renderConversationConfigView() {
     return ui.panel;
 }
 
+// VTID-04371 (WS-0.7): Monitor dashboard + Assistant › Metrics learning health,
+// both read from the hourly rollup (conversation_metrics_hourly), never from
+// oasis_events directly. Class-based styling only (CSP gate).
+var CONV_METRIC_WINDOWS = [{ hours: 24, label: '24 h' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
+
+function _convPct(r) {
+    if (!r || r.rate == null) return '—';
+    return (Math.round(r.rate * 1000) / 10) + '%';
+}
+
+function _convWhen(iso) {
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+function _convMs(v) {
+    if (!v || v.value == null) return '—';
+    return v.value >= 10000 ? (Math.round(v.value / 100) / 10) + ' s' : Math.round(v.value) + ' ms';
+}
+
+function _convTile(label, value, sub, tone) {
+    var t = _convEl('div', { cls: 'conv-metric-tile' + (tone ? ' conv-metric-tile--' + tone : '') });
+    t.appendChild(_convEl('div', { text: label, cls: 'conv-metric-tile__label' }));
+    t.appendChild(_convEl('div', { text: value, cls: 'conv-metric-tile__value' }));
+    if (sub) t.appendChild(_convEl('div', { text: sub, cls: 'conv-metric-tile__sub' }));
+    return t;
+}
+
+function _convTileGrid(tiles) {
+    var g = _convEl('div', { cls: 'conv-metric-grid' });
+    tiles.forEach(function (t) { g.appendChild(t); });
+    return g;
+}
+
+function _convHeading(text) {
+    return _convEl('h3', { text: text, cls: 'conv-metric-heading' });
+}
+
+function _convBreakdownRows(list) {
+    return (list || []).map(function (b) {
+        return { key: b.key, count: b.count, share: b.share == null ? '—' : (Math.round(b.share * 1000) / 10) + '%' };
+    });
+}
+
+function _convWindowPicker(current, onPick) {
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_METRIC_WINDOWS.forEach(function (w) {
+        var b = _convEl('button', { text: w.label, cls: 'conv-metric-window' + (w.hours === current ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { onPick(w.hours); });
+        bar.appendChild(b);
+    });
+    return bar;
+}
+
+function _convRenderPerformance(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderPerformance(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/summary?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        body.appendChild(_convEl('div', {
+            text: d.hours_with_data + ' hour(s) with data in the last ' + d.window_hours + ' h · rollup last computed ' + (_convWhen(d.last_computed_at) || 'never') +
+                ' · window percentiles are sample-weighted means of hourly values (approximate)',
+            cls: 'conv-metric-muted'
+        }));
+        var s = d.sessions, sp = d.speed, r = d.reliability, o = d.openers, of = d.offers;
+        body.appendChild(_convHeading('Speed'));
+        body.appendChild(_convTileGrid([
+            _convTile('First speech p50', _convMs(sp.first_audio_ms_p50), sp.first_audio_ms_p50.samples + ' sessions'),
+            _convTile('First speech p90', _convMs(sp.first_audio_ms_p90), 'target < 3 s', sp.first_audio_ms_p90.value != null && sp.first_audio_ms_p90.value > 3000 ? 'warn' : null),
+            _convTile('Context wait timed out', _convPct(sp.context_wait_timeouts), sp.context_wait_timeouts.numerator + ' of ' + sp.context_wait_timeouts.denominator, sp.context_wait_timeouts.rate > 0.5 ? 'warn' : null)
+        ]));
+        body.appendChild(_convHeading('Sessions'));
+        body.appendChild(_convTileGrid([
+            _convTile('Started', String(s.started)),
+            _convTile('With a stop event', _convPct(s.stop_coverage), s.stopped + ' stopped · ' + s.stop_duplicates + ' duplicate stop(s)', s.stop_coverage.rate != null && s.stop_coverage.rate < 0.9 ? 'warn' : null),
+            _convTile('Silent (no model audio)', _convPct(s.silent), s.silent.numerator + ' of ' + s.silent.denominator, s.silent.rate > 0.1 ? 'warn' : null),
+            _convTile('User turns / session', s.user_turns_avg.value == null ? '—' : String(s.user_turns_avg.value)),
+            _convTile('Duration p50', _convMs(s.duration_ms_p50))
+        ]));
+        body.appendChild(_convHeading('Reliability'));
+        body.appendChild(_convTileGrid([
+            _convTile('Upstream errors', String(r.upstream_errors)),
+            _convTile('Premature-close retries', String(r.premature_close_retries)),
+            _convTile('Reconnects', String(r.reconnects)),
+            _convTile('Greeting recoveries', String(r.greeting_recoveries)),
+            _convTile('Watchdog fired', String(r.watchdog_fired)),
+            _convTile('Tool failures', String(r.tool_failures))
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Error kind' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(r.upstream_errors_by_kind)));
+        body.appendChild(_convHeading('Openers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Greetings sent', String(r.greetings_sent)),
+            _convTile('Same opener within 24 h', _convPct(o.repeat_24h), o.repeat_24h.numerator + ' of ' + o.repeat_24h.denominator + ' (other sessions only)', o.repeat_24h.rate > 0.5 ? 'warn' : null)
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Opener' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(o.distribution)));
+        body.appendChild(_convHeading('Offers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Made', String(of.made)),
+            _convTile('Accepted', _convPct(of.acceptance), of.accepted + ' accepted'),
+            _convTile('Declined', String(of.declined)),
+            _convTile('Replaced', String(of.replaced)),
+            _convTile('Unanswered', String(of.unanswered))
+        ]));
+        body.appendChild(_convHeading('Languages'));
+        body.appendChild(_convTable([{ key: 'key', label: 'Language' }, { key: 'count', label: 'Sessions' }, { key: 'share', label: 'Share' }], _convBreakdownRows(s.by_lang)));
+    }).catch(function (err) { _convError(body, err); });
+}
+
 function renderConversationMonitorView() {
-    var ui = _convPanel('Conversation · Monitor', 'Recent greeting decisions (oasis_events greeting_sent) — which opener fired, register, recency bucket, chosen NBA, and the screen the user was on.');
+    var ui = _convPanel('Conversation · Monitor', 'Performance from the hourly rollup, then the most recent greeting decisions (oasis_events greeting_sent).');
+    ui.body.innerHTML = '';
+    var perf = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(perf);
+    _convRenderPerformance(perf, 24);
+    var feed = _convEl('div', { cls: 'conv-metric-section' });
+    feed.appendChild(_convHeading('Recent greeting decisions'));
+    var feedBody = _convEl('div');
+    feedBody.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    feed.appendChild(feedBody);
+    ui.body.appendChild(feed);
     _convFetch('/admin/conversation/decisions?limit=100').then(function (data) {
-        ui.body.innerHTML = '';
-        ui.body.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', css: 'color:#8a94a6;margin-bottom:10px;font-size:12px;' }));
-        ui.body.appendChild(_convTable(
+        feedBody.innerHTML = '';
+        feedBody.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', cls: 'conv-metric-muted' }));
+        feedBody.appendChild(_convTable(
             [{ key: 'created_at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' }, { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'NBA' }, { key: 'nba_domain', label: 'Domain' }, { key: 'current_route', label: 'Route' }, { key: 'lang', label: 'Lang' }],
             data.decisions || []
         ));
-    }).catch(function (err) { _convError(ui.body, err); });
+    }).catch(function (err) { _convError(feedBody, err); });
+    return ui.panel;
+}
+
+function _convRenderLearning(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderLearning(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/learning?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        (d.errors || []).forEach(function (e) {
+            body.appendChild(_convEl('div', { text: 'Could not read ' + e, cls: 'conv-metric-error' }));
+        });
+        var c = d.coverage;
+        if (c) {
+            body.appendChild(_convHeading('What each session leaves behind'));
+            body.appendChild(_convTileGrid([
+                _convTile('Sessions finalized', String(c.sessions_finalized)),
+                _convTile('Summary written', _convPct(c.summary_coverage), c.summary_coverage.numerator + ' of ' + c.summary_coverage.denominator, c.summary_coverage.rate != null && c.summary_coverage.rate < 0.8 ? 'warn' : null),
+                _convTile('Memory committed', _convPct(c.memory_committed)),
+                _convTile('Facts learned', String(c.facts_extracted), c.facts_per_finalized_session == null ? null : c.facts_per_finalized_session + ' per finalized session'),
+                _convTile('Open threads', String(c.threads_written), c.threads_touched + ' re-touched'),
+                _convTile('Promises recorded', String(c.promises_written))
+            ]));
+        }
+        var n = d.profile_narrative;
+        if (n) {
+            body.appendChild(_convHeading('Profile narrative (nightly synthesis)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Users with a narrative', String(n.users_with_narrative)),
+                _convTile('Fresh (≤ 7 days)', String(n.fresh_7d), 'older ones are no longer injected', n.users_with_narrative > 0 && n.fresh_7d === 0 ? 'warn' : null),
+                _convTile('Newest', _convWhen(n.newest_generated_at) || '—')
+            ]));
+        }
+        if (d.jobs) {
+            body.appendChild(_convHeading('Nightly learning jobs'));
+            body.appendChild(_convTable(
+                [{ key: 'automation_id', label: 'Job' }, { key: 'last_started_at', label: 'Last run' }, { key: 'age_hours', label: 'Age (h)' }, { key: 'last_status', label: 'Status' }, { key: 'runs_in_window', label: 'Runs in window' }, { key: 'state', label: 'State' }, { key: 'last_error', label: 'Last error' }],
+                d.jobs.map(function (j) { return Object.assign({}, j, { last_started_at: _convWhen(j.last_started_at), state: j.stale ? 'STALE' : 'ok' }); })
+            ));
+        }
+    }).catch(function (err) { _convError(body, err); });
+}
+
+function renderAssistantLearningHealthView() {
+    var ui = _convPanel('Assistant · Metrics — Learning health', 'Is the assistant learning? Nightly job runs, profile freshness, facts per session and summary coverage (hourly rollup + automation_runs).');
+    ui.body.innerHTML = '';
+    var host = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(host);
+    _convRenderLearning(host, 168);
     return ui.panel;
 }
 
@@ -7695,7 +7870,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderVoiceLabExperimentsPanel());
     } else if (moduleKey === 'assistant' && tab === 'metrics') {
         state.voiceLab.activeSubTab = 'metrics';
-        container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+        // VTID-04371: was a placeholder (VTID-01218D); now the learning-health view.
+        container.appendChild(renderAssistantLearningHealthView());
 
     // ──── Conversation-flow roadmap Step 4: read-only cockpit ────
     } else if (moduleKey === 'conversation' && tab === 'config') {
@@ -16741,7 +16917,7 @@ function renderVoiceLabView() {
             content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
             break;
         case 'metrics':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+            content.appendChild(renderAssistantLearningHealthView()); // VTID-04371
             break;
         case 'personality':
             content.appendChild(renderVoiceLabPersonalityPanel());
