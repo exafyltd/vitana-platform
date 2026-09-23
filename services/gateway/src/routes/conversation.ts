@@ -11,6 +11,11 @@
  * - GET  /api/v1/conversation/tools      - Tool registry
  * - GET  /api/v1/conversation/health     - Health check
  *
+ * Auth (VTID-04447): /turn, /stream, /history and /threads/active require a
+ * Supabase JWT. user_id comes from the token (a different one is refused);
+ * tenant_id defaults to the token's active tenant and may name another tenant
+ * only if the caller is a member. See conversation-identity.ts.
+ *
  * Architecture:
  * ```
  * ORB UI ─┐
@@ -80,6 +85,10 @@ import { deduplicatedExtract } from '../services/extraction-dedup-manager';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
 import * as repo from './conversation-repository';
+// VTID-04447: every conversation route is bound to the caller's verified identity
+import { requireAuth } from '../middleware/auth-supabase-jwt';
+import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { bindConversationBodyIdentity, bindConversationQueryIdentity } from './conversation-identity';
 
 const router = Router();
 
@@ -179,7 +188,7 @@ function getOrCreateThread(
 // POST /turn - Process a conversation turn
 // =============================================================================
 
-router.post('/turn', async (req: Request, res: Response) => {
+router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Request, res: Response) => {
   const requestId = randomUUID();
   const startTime = Date.now();
 
@@ -800,7 +809,7 @@ ${channelInstructions}`;
 // POST /stream - Stream response (for ORB voice)
 // =============================================================================
 
-router.post('/stream', async (req: Request, res: Response) => {
+router.post('/stream', requireAuth, bindConversationBodyIdentity(), async (req: Request, res: Response) => {
   const requestId = randomUUID();
 
   try {
@@ -1000,7 +1009,7 @@ Instructions:
 // GET /history/:threadId - Fetch persisted message history for a thread
 // =============================================================================
 
-router.get('/history/:threadId', async (req: Request, res: Response) => {
+router.get('/history/:threadId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { threadId } = req.params;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const before = req.query.before as string | undefined; // cursor-based pagination
@@ -1015,7 +1024,7 @@ router.get('/history/:threadId', async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await repo.fetchConversationHistoryQuery(supabase, threadId, limit, before);
+    const { data, error } = await repo.fetchConversationHistoryQuery(supabase, threadId, limit, before, req.identity!.user_id);
 
     if (error) {
       console.error('[conversation] History fetch failed:', error.message);
@@ -1039,7 +1048,7 @@ router.get('/history/:threadId', async (req: Request, res: Response) => {
 // GET /threads/active - Get user's most recent active thread
 // =============================================================================
 
-router.get('/threads/active', async (req: Request, res: Response) => {
+router.get('/threads/active', requireAuth, bindConversationQueryIdentity(), async (req: Request, res: Response) => {
   const tenant_id = req.query.tenant_id as string;
   const user_id = req.query.user_id as string;
 
