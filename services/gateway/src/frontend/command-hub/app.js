@@ -3574,7 +3574,8 @@ const NAVIGATION_CONFIG = [
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
             { "key": "growth", "path": "/command-hub/autopilot/growth/" },
-            { "key": "mission-alignment", "path": "/command-hub/autopilot/mission-alignment/" }
+            { "key": "mission-alignment", "path": "/command-hub/autopilot/mission-alignment/" },
+            { "key": "orchestrator", "path": "/command-hub/autopilot/orchestrator/" }
         ]
     },
     {
@@ -8027,6 +8028,8 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'autopilot' && tab === 'mission-alignment') {
         container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotMissionAlignmentView());
+    } else if (moduleKey === 'autopilot' && tab === 'orchestrator') {
+        container.appendChild(renderAutopilotOrchestratorView()); // VTID-04354
 
     // ──── Knowledge Base → Checklist (VTID-03278: Guided Journey curriculum) ────
     } else if (moduleKey === 'knowledge-base' && tab === 'checklist') {
@@ -47435,6 +47438,7 @@ if (!state.autopilot) {
         engine: { loading: false, loopStatus: null, cronJobs: null },
         growth: { loading: false, metrics: null, period: '7d' },
         missionAlignment: { loading: false, recs: null, error: null, lastFetchAt: null, statusFilter: 'new' },
+        orchestrator: { loading: false, sections: null, fetchedAt: null, days: 7, plane: '', status: '' }, // VTID-04354
         // VTID-04282: shared supervisor snapshot for every Autopilot tab.
         supervisor: { loading: false, data: null, error: null, signature: null, fetchedAt: null, timer: null },
         selectedAutomation: null,
@@ -49688,6 +49692,262 @@ function renderMissionAlignmentBreakdown(title, keys, counts, total, formatter, 
     });
 
     return card;
+}
+
+// =============================================================================
+// VTID-04354 (Orchestrator v2, P7 v0): Autopilot › Orchestrator — a read-only
+// view over GET /api/v1/orchestrator/{runs/summary,runs,agents,policy}.
+// Every section loads on its own: a 403 / 404 / 502 on one endpoint shows
+// that section's error and leaves the others intact. Nothing here writes.
+// =============================================================================
+
+var ORCH_ENDPOINTS = {
+    summary: function (o) { return '/api/v1/orchestrator/runs/summary?days=' + encodeURIComponent(o.days); },
+    runs: function (o) {
+        var q = '/api/v1/orchestrator/runs?limit=50';
+        if (o.plane) q += '&plane=' + encodeURIComponent(o.plane);
+        if (o.status) q += '&status=' + encodeURIComponent(o.status);
+        return q;
+    },
+    agents: function () { return '/api/v1/orchestrator/agents'; },
+    policy: function () { return '/api/v1/orchestrator/policy'; },
+};
+
+var ORCH_RUN_STATUSES = ['queued', 'running', 'waiting_signal', 'awaiting_approval', 'succeeded', 'failed', 'cancelled'];
+
+function orchestratorFetchSection(key, url) {
+    return fetch(url, { credentials: 'include', headers: buildContextHeaders() })
+        .then(function (r) {
+            return r.json().catch(function () { return { ok: false, error: 'HTTP ' + r.status + ' (not JSON — route not deployed?)' }; })
+                .then(function (j) { return { key: key, ok: !!(j && j.ok), data: j && j.data, error: (j && j.ok) ? null : ((j && j.error) || ('HTTP ' + r.status)) }; });
+        })
+        .catch(function (err) { return { key: key, ok: false, data: null, error: String(err) }; });
+}
+
+function fetchOrchestratorView() {
+    var o = state.autopilot.orchestrator;
+    o.loading = true;
+    renderApp();
+    var keys = Object.keys(ORCH_ENDPOINTS);
+    Promise.all(keys.map(function (k) { return orchestratorFetchSection(k, ORCH_ENDPOINTS[k](o)); }))
+        .then(function (results) {
+            o.loading = false;
+            o.sections = {};
+            results.forEach(function (res) { o.sections[res.key] = res; });
+            o.fetchedAt = new Date().toISOString();
+            renderApp();
+        });
+}
+
+function orchEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+}
+
+function orchSectionShell(title, section) {
+    var box = orchEl('section', 'orch-section');
+    box.appendChild(orchEl('h3', 'orch-section-title', title));
+    if (!section) {
+        box.appendChild(orchEl('div', 'orch-muted', 'Loading…'));
+        return { box: box, ok: false };
+    }
+    if (!section.ok) {
+        box.appendChild(orchEl('div', 'orch-error', section.error || 'Unavailable'));
+        return { box: box, ok: false };
+    }
+    return { box: box, ok: true };
+}
+
+function orchStatusPill(status) {
+    return orchEl('span', 'orch-pill orch-pill--' + String(status || 'unknown').replace(/[^a-z_]/g, ''), status || 'unknown');
+}
+
+function renderOrchestratorSummary(section, o) {
+    var s = orchSectionShell('Runs by plane — last ' + o.days + ' days', section);
+    if (!s.ok) return s.box;
+    var planes = (section.data && section.data.planes) || [];
+    if (section.data && section.data.truncated) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'Counts truncated — the window holds more rows than one read returns.'));
+    }
+    if (!planes.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No runs in this window.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-plane-grid');
+    planes.forEach(function (p) {
+        var card = orchEl('button', 'orch-plane-card' + (o.plane === p.plane ? ' is-active' : ''));
+        card.type = 'button';
+        card.title = 'Filter the run list to this plane';
+        card.appendChild(orchEl('div', 'orch-plane-name', p.plane));
+        card.appendChild(orchEl('div', 'orch-plane-total', p.total));
+        var chips = orchEl('div', 'orch-plane-chips');
+        ORCH_RUN_STATUSES.forEach(function (st) {
+            var n = p.by_status && p.by_status[st];
+            if (!n) return;
+            var chip = orchStatusPill(st);
+            chip.textContent = st + ' ' + n;
+            chips.appendChild(chip);
+        });
+        card.appendChild(chips);
+        card.onclick = function () {
+            o.plane = o.plane === p.plane ? '' : p.plane;
+            fetchOrchestratorView();
+        };
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
+function renderOrchestratorRuns(section, o) {
+    var s = orchSectionShell('Unified runs' + (o.plane ? ' — ' + o.plane : '') + (o.status ? ' · ' + o.status : ''), section);
+    var filters = orchEl('div', 'orch-filter-row');
+    ['', 'running', 'awaiting_approval', 'failed', 'succeeded'].forEach(function (st) {
+        var b = orchEl('button', 'orch-filter-btn' + (o.status === st ? ' is-active' : ''), st || 'all');
+        b.type = 'button';
+        b.onclick = function () { if (o.status === st) return; o.status = st; fetchOrchestratorView(); };
+        filters.appendChild(b);
+    });
+    s.box.insertBefore(filters, s.box.children[1] || null);
+    if (!s.ok) return s.box;
+    var runs = (section.data && section.data.runs) || [];
+    if (!runs.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No runs match.'));
+        return s.box;
+    }
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var head = orchEl('tr');
+    ['When', 'Plane', 'Agent', 'Status', 'VTID', 'Title / error'].forEach(function (h) { head.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(head); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    runs.forEach(function (r) {
+        var tr = orchEl('tr');
+        tr.appendChild(orchEl('td', 'orch-nowrap', r.created_at ? fmtOrchTime(r.created_at) : '—'));
+        tr.appendChild(orchEl('td', null, r.plane));
+        tr.appendChild(orchEl('td', 'orch-mono', r.agent_id));
+        var st = orchEl('td'); st.appendChild(orchStatusPill(r.status)); tr.appendChild(st);
+        tr.appendChild(orchEl('td', 'orch-mono', r.vtid || '—'));
+        var t = orchEl('td', 'orch-title-cell', r.title || '—');
+        if (r.error) t.appendChild(orchEl('div', 'orch-run-error', r.error));
+        tr.appendChild(t);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+function fmtOrchTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+}
+
+function renderOrchestratorAgents(section) {
+    var s = orchSectionShell('Agent registry', section);
+    if (!s.ok) return s.box;
+    var agents = (section.data && section.data.agents) || [];
+    if (!agents.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No agents registered.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-agent-grid');
+    agents.forEach(function (a) {
+        var card = orchEl('div', 'orch-agent-card' + (a.enabled === false ? ' is-disabled' : ''));
+        var top = orchEl('div', 'orch-agent-top');
+        top.appendChild(orchEl('span', 'orch-agent-name', a.display_name || a.agent_id));
+        top.appendChild(orchStatusPill(a.enabled === false ? 'disabled' : (a.status || 'unknown')));
+        card.appendChild(top);
+        card.appendChild(orchEl('div', 'orch-mono orch-muted', a.agent_id));
+        if (a.description) card.appendChild(orchEl('div', 'orch-agent-desc', a.description));
+        var meta = orchEl('div', 'orch-agent-meta');
+        [
+            ['stage', a.llm_stage], ['model', a.llm_model || a.llm_provider], ['max tier', a.max_tier],
+            ['surfaces', Array.isArray(a.surfaces_allowed) ? a.surfaces_allowed.join(', ') : null],
+            ['roles', Array.isArray(a.roles_allowed) ? a.roles_allowed.join(', ') : null],
+            ['owner', a.owner],
+        ].forEach(function (kv) {
+            if (kv[1] === undefined || kv[1] === null || kv[1] === '') return;
+            var row = orchEl('div', 'orch-kv');
+            row.appendChild(orchEl('span', 'orch-k', kv[0]));
+            row.appendChild(orchEl('span', 'orch-v', kv[1]));
+            meta.appendChild(row);
+        });
+        card.appendChild(meta);
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
+function renderOrchestratorPolicy(section) {
+    var s = orchSectionShell('Default role grants (shadow — not enforced yet)', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var def = d.defaults || {};
+    var domains = def.domains || [];
+    var roles = def.roles || {};
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Your role: ' + (d.platform_role || '—') + ' · channel: ' + (d.channel || '—') + ' · voice is capped at ' + ((def.channels || {}).voice || '—') + '; high-risk actions need a second approver over ' + (def.approval_channels || []).join('/') + '.'));
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table orch-policy-table');
+    var head = orchEl('tr');
+    head.appendChild(orchEl('th', null, 'Role'));
+    domains.forEach(function (dm) { head.appendChild(orchEl('th', null, dm)); });
+    var thead = orchEl('thead'); thead.appendChild(head); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    Object.keys(roles).forEach(function (role) {
+        var tr = orchEl('tr', role === d.platform_role ? 'is-current' : null);
+        tr.appendChild(orchEl('td', 'orch-mono', role));
+        domains.forEach(function (dm) {
+            var tier = (roles[role] && roles[role][dm]) || (dm === 'commerce' ? 'org' : 'none');
+            tr.appendChild(orchEl('td', 'orch-tier orch-tier--' + tier, tier));
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Commerce authority comes from organisation membership (owner/admin commit, member draft), never from the platform role.'));
+    return s.box;
+}
+
+function renderAutopilotOrchestratorView() {
+    var o = state.autopilot.orchestrator;
+    var container = orchEl('div', 'orch-container');
+    var header = orchEl('div', 'orch-header');
+    var tb = orchEl('div');
+    tb.appendChild(orchEl('h2', null, 'Orchestrator'));
+    tb.appendChild(orchEl('p', 'section-subtitle', 'One read-only view across every agent plane: what ran, which agents exist, and the default grants each role gets. Nothing on this page changes behaviour.'));
+    header.appendChild(tb);
+    var controls = orchEl('div', 'orch-controls');
+    [1, 7, 30].forEach(function (days) {
+        var b = orchEl('button', 'orch-filter-btn' + (o.days === days ? ' is-active' : ''), days + 'd');
+        b.type = 'button';
+        b.onclick = function () { if (o.days === days) return; o.days = days; fetchOrchestratorView(); };
+        controls.appendChild(b);
+    });
+    var refresh = orchEl('button', 'orch-filter-btn', o.loading ? 'Refreshing…' : 'Refresh');
+    refresh.type = 'button';
+    refresh.disabled = !!o.loading;
+    refresh.onclick = function () { fetchOrchestratorView(); };
+    controls.appendChild(refresh);
+    header.appendChild(controls);
+    container.appendChild(header);
+
+    if (!o.sections && !o.loading) {
+        setTimeout(function () { fetchOrchestratorView(); }, 0);
+    }
+    var sec = o.sections || {};
+    container.appendChild(renderOrchestratorSummary(sec.summary, o));
+    container.appendChild(renderOrchestratorRuns(sec.runs, o));
+    container.appendChild(renderOrchestratorAgents(sec.agents));
+    container.appendChild(renderOrchestratorPolicy(sec.policy));
+    if (o.fetchedAt) container.appendChild(orchEl('div', 'orch-muted orch-footer', 'Fetched ' + fmtOrchTime(o.fetchedAt)));
+    return container;
 }
 
 function renderAutopilotMissionAlignmentView() {
