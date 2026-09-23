@@ -12,6 +12,9 @@
  *   GET /api/v1/orchestrator/policy/shadow  — what the policy WOULD have decided for real ORB
  *                                             tool calls since this process started, plus the
  *                                             tool catalog summary (VTID-04362, exafy_admin)
+ *   GET /api/v1/orchestrator/budgets        — today's LLM spend vs the platform/agent/run budgets
+ *                                             and what enforcement would deny (VTID-04370, exafy_admin,
+ *                                             shadow)
  *
  * Nothing here writes or changes any plane's behaviour.
  */
@@ -34,6 +37,14 @@ import {
   policyDefaults,
 } from '../services/orchestrator/policy';
 import { shadowSnapshot } from '../services/orchestrator/policy-shadow';
+import {
+  BUDGET_DEFAULTS,
+  MONTHLY_ENVELOPE_CAP_USD,
+  MONTHLY_ENVELOPE_USD,
+  aggregateSpend,
+  budgetLines,
+  loadSpendToday,
+} from '../services/orchestrator/budgets';
 import { buildToolCatalog, summarizeCatalog } from '../services/orchestrator/tool-catalog';
 
 const router = Router();
@@ -122,6 +133,28 @@ router.get('/policy/shadow', requireDevRole, async (_req: Request, res: Response
     console.warn('[orchestrator] tool catalog unavailable:', e instanceof Error ? e.message : e);
   }
   return res.json({ ok: true, data: { shadow: shadowSnapshot(), catalog } });
+});
+
+router.get('/budgets', requireDevRole, async (_req: Request, res: Response) => {
+  const sb = db(res);
+  if (!sb) return;
+  const { rows, since, truncated, error } = await loadSpendToday(sb);
+  if (error) return res.status(502).json({ ok: false, error });
+  const spend = aggregateSpend(rows);
+  const lines = budgetLines(spend);
+  return res.json({
+    ok: true,
+    data: {
+      enforced: false,
+      since,
+      truncated,
+      envelope: { monthly_usd: MONTHLY_ENVELOPE_USD, monthly_cap_usd: MONTHLY_ENVELOPE_CAP_USD },
+      limits: BUDGET_DEFAULTS,
+      spend: { platform_usd: spend.platform_usd, calls: spend.calls, repriced_calls: spend.repriced_calls, unpriced_calls: spend.unpriced_calls },
+      would_deny: lines.filter((l) => l.over),
+      lines: lines.slice(0, 50),
+    },
+  });
 });
 
 router.get('/policy', requireAuth as any, async (req: Request, res: Response) => {
