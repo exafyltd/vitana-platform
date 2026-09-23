@@ -85,6 +85,9 @@ const KnowledgeSearchSchema = z.object({
 // so the brain path can use the caller's real user_id/tenant_id.
 router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log(`[VTID-0150-B] Assistant chat request received`);
+  // impact-allow-no-oasis: the route itself mutates nothing; the turn is recorded
+  // in OASIS downstream — assistant-service.ts on the stateless path,
+  // processBrainTurn() on the brain path. VTID-04339 only added optionalAuth here.
 
   try {
     // Validate request body
