@@ -45,6 +45,7 @@ import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './
 import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
 import { FEEDBACK_SETTINGS_TOOL_HANDLERS, FEEDBACK_SETTINGS_TOOL_DECLARATIONS } from './orb-tools/feedback-settings-tools';
 import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/discovery-tools';
+import { COMMUNITY_AUTOPILOT_TOOL_HANDLERS, activateForVoice } from './orb-tools/community-autopilot-tools';
 import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
 import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
 import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
@@ -2617,9 +2618,9 @@ export async function tool_send_chat_message(
  * registry; LiveKit's tool runner uses it via the same registry. Single
  * source — no per-pipeline divergence.
  *
- * Verifies ownership (rec.user_id must be set and match the actor — VTID-04464),
- * that it is a community item in an activatable state, flips status
- * new/snoozed→activated only if not already activated, and emits
+ * Delegates to the canonical community activation (VTID-04493): owner,
+ * community source and activatable status are checked there, and the same
+ * calendar slot / OASIS event / notification as the popup are produced. Emits
  * guide.initiative.executed telemetry fire-and-forget so the funnel
  * dashboards stay accurate regardless of which surface drove activation.
  */
@@ -2671,56 +2672,17 @@ export async function tool_activate_recommendation(
     return { ok: false, error: 'not_signed_in' };
   }
   try {
-    const { data: rec, error: fetchErr } = await sb
-      .from('autopilot_recommendations')
-      .select('id, title, summary, status, user_id, source_type')
-      .eq('id', recId)
-      .maybeSingle();
-
-    if (fetchErr) {
-      return { ok: false, error: fetchErr.message };
-    }
-    if (!rec) {
-      return { ok: false, error: 'recommendation_not_found' };
-    }
-    const recRow = rec as {
-      id: string;
-      title: string | null;
-      summary: string | null;
-      status: string | null;
-      user_id: string | null;
-      source_type: string | null;
-    };
-    // VTID-04464: owner must be present and equal. The old check let an
-    // ownerless row (user_id null) be activated by any signed-in member.
-    if (!recRow.user_id || recRow.user_id !== id.user_id) {
-      return { ok: false, error: 'recommendation_belongs_to_another_user' };
-    }
-    // VTID-04464: a member's voice "yes" only activates community Autopilot
-    // items. Dev Autopilot findings have their own governed activation path
-    // (autopilot_activate_recommendation in the Operator Console).
-    if (recRow.source_type !== 'community') {
-      return { ok: false, error: 'not_a_community_recommendation' };
+    // VTID-04493 (CA-1): one activation for every surface. The canonical
+    // community activation checks owner + source_type + status and books the
+    // calendar slot, emits the OASIS event and notifies — the same result the
+    // popup's Go button produces. This tool used to only flip the status.
+    const outcome = await activateForVoice(id.user_id, recId, id.tenant_id);
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.error ?? 'activation_failed' };
     }
 
-    const alreadyActive = recRow.status === 'activated';
-    // VTID-04464: rejected / expired / completed items are not re-opened by voice.
-    if (!alreadyActive && recRow.status !== 'new' && recRow.status !== 'snoozed') {
-      return { ok: false, error: `recommendation_not_activatable:${recRow.status ?? 'unknown'}` };
-    }
-    if (!alreadyActive) {
-      const { error: updErr } = await sb
-        .from('autopilot_recommendations')
-        .update({ status: 'activated', updated_at: new Date().toISOString() })
-        .eq('id', recId);
-      if (updErr) {
-        return { ok: false, error: updErr.message };
-      }
-    }
-
-    // Fire-and-forget telemetry. Mirrors the inline Vertex case path so
-    // funnel dashboards (`guide.initiative.executed`) keep counting both
-    // voice and REST activations under the same event type.
+    // Fire-and-forget telemetry: funnel dashboards (`guide.initiative.executed`)
+    // keep counting voice activations under the same event type.
     import('./guide')
       .then(({ emitGuideTelemetry }) => {
         emitGuideTelemetry('guide.initiative.executed', {
@@ -2728,30 +2690,31 @@ export async function tool_activate_recommendation(
           initiative_key: 'autopilot_top_recommendation',
           on_yes_tool: 'activate_recommendation',
           recommendation_id: recId,
-          already_active: alreadyActive,
+          already_active: outcome.already_active,
         }).catch(() => {});
       })
       .catch(() => {});
 
-    // DEV-COMHU-0505 (review follow-up): consume the pending CTA ONLY now that
-    // activation has verified+succeeded, so a transient fetch/update error
-    // above leaves the row intact for the user's retry. Fire-and-forget.
+    // DEV-COMHU-0505: consume the pending CTA ONLY after activation succeeded,
+    // so a transient error leaves it intact for the user's retry.
     if (recIdFromPendingCta && id.user_id) {
       void import('./orb/orb-session-state')
         .then(({ clearOrbSessionState }) => clearOrbSessionState(sb, id.user_id, 'pending_cta'))
         .catch(() => {});
     }
 
-    const title = recRow.title ?? 'that recommendation';
+    const title = outcome.title ?? 'that recommendation';
     return {
       ok: true,
       result: {
-        title: recRow.title,
-        already_active: alreadyActive,
+        title: outcome.title,
+        already_active: outcome.already_active,
+        calendar_event_id: outcome.calendar_event_id,
       },
-      text: alreadyActive
-        ? `"${title}" was already on your active list — I'll keep it there.`
-        : `Done — "${title}" is on your active list. Open Autopilot when you're ready to start it.`,
+      text: outcome.already_active
+        ? `"${title}" was already active; nothing changed.`
+        : `Activated "${title}"` +
+          (outcome.calendar_event_id ? '; a calendar slot was booked for it.' : '.'),
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'activate_recommendation error';
@@ -5767,6 +5730,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...CHAT_PRIVACY_TOOL_HANDLERS,
   ...FEEDBACK_SETTINGS_TOOL_HANDLERS,
   ...DISCOVERY_TOOL_HANDLERS,
+  // VTID-04493: member Autopilot list/activate — declared in live-tool-catalog.ts.
+  ...COMMUNITY_AUTOPILOT_TOOL_HANDLERS,
   ...AWARENESS_TOOL_HANDLERS,
   ...DEVELOPER_TOOL_HANDLERS,
   ...P0_GAP_TOOL_HANDLERS,

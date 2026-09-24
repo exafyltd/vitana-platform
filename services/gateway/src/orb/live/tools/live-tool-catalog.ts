@@ -2021,9 +2021,11 @@ function buildLiveApiToolsUngated(
             '',
             'You normally call this with NO arguments right after',
             'get_autopilot_recommendations — it activates the actions you',
-            'just read aloud. To activate a subset, pass `ids` with the',
-            'specific recommendation ids from the items list (never guess an',
-            'id). Returns { ok, activated, spoken }; speak `spoken` verbatim.',
+            'just read aloud. To activate a subset, pass `positions` (1-based',
+            'numbers as read aloud: "the second one" → [2]) or `ids` from the',
+            'items list (never guess an id). Returns per-item results; confirm',
+            'in your own words what was activated and where it landed (calendar',
+            'slot), and say plainly if something could not be activated.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2033,6 +2035,12 @@ function buildLiveApiToolsUngated(
                 items: { type: 'string' },
                 description:
                   'OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.',
+              },
+              positions: {
+                type: 'array',
+                items: { type: 'integer' },
+                description:
+                  'OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").',
               },
             },
             required: [],

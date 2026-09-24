@@ -266,7 +266,8 @@
     {
       "name": "activate_recommendation",
       "implementations": [
-        "vertex"
+        "vertex",
+        "livekit"
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-01180"
@@ -274,16 +275,18 @@
     {
       "name": "get_autopilot_recommendations",
       "implementations": [
-        "vertex"
+        "vertex",
+        "livekit"
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-03201",
-      "notes": "Read the user's Autopilot queue aloud — same list as the popup. Session-state-coupled (remembers listed ids)."
+      "notes": "Read the user's Autopilot queue aloud — same list as the popup. Shared registry since VTID-04493; listed ids live in orb_session_state (autopilot_listed_ids)."
     },
     {
       "name": "activate_autopilot_recommendations",
       "implementations": [
-        "vertex"
+        "vertex",
+        "livekit"
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-03201",
