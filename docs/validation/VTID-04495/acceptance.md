@@ -15,13 +15,17 @@ passes `identity.role` into memory too, which is how this row was written.
 
 ## Acceptance criteria
 
-- AC-1: database roles (authenticated, anon, service_role, supabase_admin)
-  are stored as personal memory (NULL) and read as community.
-  TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
-- AC-2: real work roles still scope the row.
-  TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
-- AC-3: ORB recall sends no role or lens for the JWT role.
-  TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
-- AC-4: the ORB turn writers no longer fall back to `identity.role`.
-  TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
-- AC-5: the one affected row is repaired (active_role -> NULL). See commands.log.
+AC-1: database roles (authenticated, anon, service_role, supabase_admin) are stored as personal memory (NULL) and read as community.
+TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
+
+AC-2: real work roles still scope the row.
+TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
+
+AC-3: ORB recall sends no role or lens for the JWT role.
+TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
+
+AC-4: the ORB turn writers no longer fall back to `identity.role`.
+TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts
+
+AC-5: the one affected row is repaired (active_role -> NULL). See commands.log.
+TEST: services/gateway/test/vtid-04495-memory-role-not-jwt-role.test.ts (live SQL evidence in docs/validation/VTID-04495/commands.log)
