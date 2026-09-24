@@ -1,398 +1,136 @@
 /**
- * VTID-02975: activate_recommendation reachable via the shared dispatcher.
+ * activate_recommendation on the shared ORB tool registry.
  *
- * Closes the conversational-activation gap reported in the VTID-02969
- * live smoke test: the canonical autopilot REST endpoint activates
- * recommendations, and ORB voice send_chat_message returns next_actions
- * referencing them, but /api/v1/orb/tool previously returned 404 for
- * activate_recommendation and /api/v1/orb/chat rejected the spoken-yes
- * intent. After this lift, the same handler is reachable from:
- *   - Vertex voice (orb-live.ts case → dispatchOrbToolForVertex)
- *   - LiveKit (uses ORB_TOOL_REGISTRY directly)
- *   - /api/v1/orb/tool (HTTP wrapper around dispatchOrbTool)
- * No path-specific divergence is possible.
- *
- * These tests pin the contract:
- *   1. Dispatch via the shared registry succeeds (status new → activated).
- *   2. Already-active recs return ok:true + already_active:true (idempotent).
- *   3. Ownership: a rec owned by another user is rejected.
- *   4. Missing rec returns recommendation_not_found.
- *   5. Result.text is the celebratory close — what Gemini will speak.
+ * VTID-02975 lifted it into the shared dispatcher (Vertex, LiveKit,
+ * /api/v1/orb/tool). VTID-04464 closed the ownerless-row bypass. VTID-04493
+ * (Community Autopilot CA-1) made it delegate to the canonical community
+ * activation, so a spoken "yes" produces the same calendar slot, OASIS event
+ * and notification as the popup's Go button. Owner / source_type / status
+ * checks live in that canonical function and are covered by
+ * test/routes/autopilot-recommendations.test.ts; this file pins the delegation,
+ * the error mapping and the pending-CTA fallback.
  */
 
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 
-import {
-  dispatchOrbTool,
-  tool_activate_recommendation,
-} from '../src/services/orb-tools-shared';
+jest.mock('../src/routes/autopilot-recommendations', () => ({
+  activateCommunityAutopilotRecommendation: jest.fn(),
+}));
 
-const SENDER_UUID = 'aaaa1111-1111-4111-8111-111111111111';
-const OTHER_USER_UUID = 'bbbb2222-2222-4222-8222-222222222222';
-const REC_UUID_NEW = 'cccc3333-3333-4333-8333-333333333333';
-const REC_UUID_ACTIVATED = 'dddd4444-4444-4444-8444-444444444444';
-const REC_UUID_FOREIGN = 'eeee5555-5555-4555-8555-555555555555';
+import { activateCommunityAutopilotRecommendation } from '../src/routes/autopilot-recommendations';
+import { dispatchOrbTool, tool_activate_recommendation } from '../src/services/orb-tools-shared';
+import { mapActivationError } from '../src/services/orb-tools/community-autopilot-tools';
 
-interface CapturedUpdate {
-  recId: string;
-  patch: Record<string, unknown>;
-}
+const activate = activateCommunityAutopilotRecommendation as jest.Mock;
 
-function makeStubSupabase(opts: {
-  recs: Record<string, { id: string; title?: string | null; summary?: string | null; status: string; user_id: string | null; source_type?: string | null }>;
-  updateError?: { message: string } | null;
-  fetchError?: { message: string } | null;
-  updates: CapturedUpdate[];
-  // DEV-COMHU-0505: optional persisted pending CTA (orb_session_state row).
-  pendingCta?: { value: unknown; expires_at: string } | null;
-  pendingCtaDeletes?: string[];
-}) {
+const USER = 'aaaa1111-1111-4111-8111-111111111111';
+const REC = 'cccc3333-3333-4333-8333-333333333333';
+const IDENT = { user_id: USER, tenant_id: 'tenant-1', role: 'community', vitana_id: 'vit_send' };
+
+function stubSb(opts: { pendingCta?: unknown; deletes?: string[] } = {}) {
   return {
     from(table: string) {
-      if (table === 'orb_session_state') {
-        // Minimal chain used by readOrbSessionState / clearOrbSessionState:
-        //   .select(...).eq(user_id).eq(key).maybeSingle()
-        //   .delete().eq(user_id).eq(key)
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                maybeSingle: async () => ({ data: opts.pendingCta ?? null, error: null }),
-              }),
-            }),
-          }),
-          delete: () => ({
-            eq: () => ({
-              eq: async () => {
-                opts.pendingCtaDeletes?.push('pending_cta');
-                return { error: null };
-              },
-            }),
-          }),
-        } as unknown;
-      }
-      if (table !== 'autopilot_recommendations') {
-        return {} as never;
-      }
+      if (table !== 'orb_session_state') return {} as never;
       return {
         select: () => ({
-          eq: (_col: string, value: string) => ({
-            maybeSingle: async () => ({
-              // VTID-04464: rows default to community items unless a test says otherwise.
-              data: opts.recs[value] ? { source_type: 'community', ...opts.recs[value] } : null,
-              error: opts.fetchError ?? null,
-            }),
+          eq: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: opts.pendingCta ?? null, error: null }) }),
           }),
         }),
-        update: (patch: Record<string, unknown>) => ({
-          eq: async (_col: string, value: string) => {
-            opts.updates.push({ recId: value, patch });
-            return { error: opts.updateError ?? null };
-          },
+        delete: () => ({
+          eq: () => ({
+            eq: async () => {
+              opts.deletes?.push('pending_cta');
+              return { error: null };
+            },
+          }),
         }),
       } as unknown;
     },
   } as never;
 }
 
-describe('VTID-02975 — activate_recommendation lifted to shared dispatcher', () => {
-  test('1. status new → activated via shared dispatch (dispatchOrbTool path)', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: {
-        [REC_UUID_NEW]: {
-          id: REC_UUID_NEW,
-          title: 'Investigate deploy failure: gateway',
-          summary: 'Smoke test rec',
-          status: 'new',
-          user_id: SENDER_UUID,
-        },
-      },
-    });
+beforeEach(() => activate.mockReset());
 
-    const result = await dispatchOrbTool(
-      'activate_recommendation',
-      { id: REC_UUID_NEW },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok === true) {
-      const r = result.result as { title: string; already_active: boolean };
-      expect(r.already_active).toBe(false);
-      expect(r.title).toBe('Investigate deploy failure: gateway');
-      expect(result.text).toMatch(/Done — "Investigate deploy failure: gateway" is on your active list/);
-    }
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({
-      recId: REC_UUID_NEW,
-      patch: { status: 'activated' },
-    });
-  });
-
-  test('2. already-activated rec returns ok:true + already_active:true (idempotent)', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: {
-        [REC_UUID_ACTIVATED]: {
-          id: REC_UUID_ACTIVATED,
-          title: 'Already active rec',
-          summary: null,
-          status: 'activated',
-          user_id: SENDER_UUID,
-        },
-      },
-    });
-
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_ACTIVATED },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok === true) {
-      const r = result.result as { already_active: boolean };
-      expect(r.already_active).toBe(true);
-      expect(result.text).toMatch(/was already on your active list/);
-    }
-    // No UPDATE issued — idempotent.
-    expect(updates).toHaveLength(0);
-  });
-
-  test('3. rec owned by another user → recommendation_belongs_to_another_user', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: {
-        [REC_UUID_FOREIGN]: {
-          id: REC_UUID_FOREIGN,
-          title: 'Not yours',
-          summary: null,
-          status: 'new',
-          user_id: OTHER_USER_UUID,
-        },
-      },
-    });
-
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_FOREIGN },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok === false) {
-      expect(result.error).toBe('recommendation_belongs_to_another_user');
-    }
-    expect(updates).toHaveLength(0); // never mutated
-  });
-
-  test('4. missing rec → recommendation_not_found', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({ updates, recs: {} });
-
-    const result = await tool_activate_recommendation(
-      { id: 'ffff6666-6666-4666-8666-666666666666' },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok === false) {
-      expect(result.error).toBe('recommendation_not_found');
-    }
-    expect(updates).toHaveLength(0);
-  });
-
-  test('5. VTID-04464: ownerless rec (user_id=null) is NOT activatable by another user', async () => {
-    // The old check `rec.user_id && rec.user_id !== identity` let any signed-in
-    // member activate a row with no owner. That was an ownership bypass.
-    const updates: CapturedUpdate[] = [];
-    const sysRecId = '99999999-9999-4999-8999-999999999999';
-    const sb = makeStubSupabase({
-      updates,
-      recs: {
-        [sysRecId]: { id: sysRecId, title: 'System rec', summary: null, status: 'new', user_id: null },
-      },
-    });
-
-    const result = await tool_activate_recommendation(
-      { id: sysRecId },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.error).toBe('recommendation_belongs_to_another_user');
-    expect(updates).toHaveLength(0);
-  });
-
-  test('5b. VTID-04464: anonymous caller cannot activate anything', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'new', user_id: null } },
-    });
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_NEW },
-      { user_id: '', tenant_id: 'tenant-1', role: 'user', vitana_id: null } as any,
-      sb,
-    );
-    expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.error).toBe('not_signed_in');
-    expect(updates).toHaveLength(0);
-  });
-
-  test('5c. VTID-04464: a Dev Autopilot finding is not activated by a member voice "yes"', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: {
-        [REC_UUID_NEW]: {
-          id: REC_UUID_NEW, title: 'Fix gateway', status: 'new', user_id: SENDER_UUID, source_type: 'dev_autopilot',
-        },
-      },
-    });
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_NEW },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-    expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.error).toBe('not_a_community_recommendation');
-    expect(updates).toHaveLength(0);
-  });
-
-  test('5d. VTID-04464: a rejected rec is not re-opened by voice', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'rejected', user_id: SENDER_UUID } },
-    });
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_NEW },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-    expect(result.ok).toBe(false);
-    if (result.ok === false) expect(result.error).toBe('recommendation_not_activatable:rejected');
-    expect(updates).toHaveLength(0);
-  });
-
-  test('5e. VTID-04464: a snoozed rec can be activated', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'snoozed', user_id: SENDER_UUID } },
-    });
-    const result = await tool_activate_recommendation(
-      { id: REC_UUID_NEW },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-    expect(result.ok).toBe(true);
-    expect(updates).toHaveLength(1);
-  });
-
-  test('6. missing id → "id is required"', async () => {
-    const updates: CapturedUpdate[] = [];
-    const sb = makeStubSupabase({ updates, recs: {} });
-
-    const result = await tool_activate_recommendation(
-      { id: '' },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok === false) {
-      expect(result.error).toBe('id is required');
+describe('activate_recommendation → canonical community activation (VTID-04493)', () => {
+  test('1. dispatches by name and delegates with the caller, tenant and skipReplenish', async () => {
+    activate.mockResolvedValue({ ok: true, httpStatus: 200, title: 'Evening walk', calendar_event_id: 'ev-9' });
+    const r = await dispatchOrbTool('activate_recommendation', { id: REC }, IDENT, stubSb());
+    expect(r.ok).toBe(true);
+    expect(activate).toHaveBeenCalledWith(USER, REC, { tenantId: 'tenant-1', skipReplenish: true });
+    if (r.ok === true) {
+      expect(r.result).toMatchObject({ title: 'Evening walk', already_active: false, calendar_event_id: 'ev-9' });
+      expect(r.text).toMatch(/Activated "Evening walk"; a calendar slot was booked/);
     }
   });
 
-  // DEV-COMHU-0505 (review follow-up): "yes" with no id falls back to the
-  // persisted pending CTA so the affirmative turn resolves deterministically.
-  test('6b. empty id → resolves rec from persisted pending_cta + consumes it', async () => {
-    const updates: CapturedUpdate[] = [];
-    const pendingCtaDeletes: string[] = [];
-    const sb = makeStubSupabase({
-      updates,
-      pendingCtaDeletes,
-      recs: {
-        [REC_UUID_NEW]: {
-          id: REC_UUID_NEW,
-          title: 'Schedule a focus block',
-          summary: null,
-          status: 'new',
-          user_id: SENDER_UUID,
-        },
-      },
+  test('2. already-activated is idempotent', async () => {
+    activate.mockResolvedValue({ ok: true, httpStatus: 200, already_activated: true, title: 'Walk' });
+    const r = await tool_activate_recommendation({ id: REC }, IDENT, stubSb());
+    expect(r.ok).toBe(true);
+    if (r.ok === true) expect((r.result as { already_active: boolean }).already_active).toBe(true);
+  });
+
+  test.each([
+    [403, 'Recommendation belongs to another user', 'recommendation_belongs_to_another_user'],
+    [403, 'Not a community recommendation', 'not_a_community_recommendation'],
+    [404, 'Recommendation not found', 'recommendation_not_found'],
+    [400, 'Cannot activate recommendation in status: rejected', 'recommendation_not_activatable:rejected'],
+    [401, 'Authentication required', 'not_signed_in'],
+  ])('3. canonical %s "%s" → %s', async (httpStatus, error, code) => {
+    activate.mockResolvedValue({ ok: false, httpStatus, error });
+    const r = await tool_activate_recommendation({ id: REC }, IDENT, stubSb());
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.error).toBe(code);
+    expect(mapActivationError(httpStatus, error)).toBe(code);
+  });
+
+  test('4. anonymous caller never reaches the activation', async () => {
+    const r = await tool_activate_recommendation({ id: REC }, { ...IDENT, user_id: '' }, stubSb());
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.error).toBe('not_signed_in');
+    expect(activate).not.toHaveBeenCalled();
+  });
+
+  test('5. missing id and no pending offer → "id is required"', async () => {
+    const r = await tool_activate_recommendation({ id: '' }, IDENT, stubSb());
+    expect(r.ok).toBe(false);
+    if (r.ok === false) expect(r.error).toBe('id is required');
+    expect(activate).not.toHaveBeenCalled();
+  });
+
+  test('6. empty id resolves the pending offer and consumes it only after success', async () => {
+    activate.mockResolvedValue({ ok: true, httpStatus: 200, title: 'Focus block' });
+    const deletes: string[] = [];
+    const sb = stubSb({
+      deletes,
       pendingCta: {
-        value: { tool: 'activate_recommendation', payload: { id: REC_UUID_NEW } },
+        value: { tool: 'activate_recommendation', payload: { id: REC } },
         expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
       },
     });
-
-    const result = await tool_activate_recommendation(
-      { id: '' }, // model said "yes" — no id in context
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-
-    expect(result.ok).toBe(true);
-    expect(updates).toHaveLength(1);
-    expect(updates[0]).toMatchObject({ recId: REC_UUID_NEW, patch: { status: 'activated' } });
-    // pending CTA consumed ONLY after activation succeeds — the clear is a
-    // fire-and-forget dynamic import on the success path, so let pending
-    // microtasks/timers drain before asserting the delete happened.
-    await new Promise((r) => setTimeout(r, 20));
-    expect(pendingCtaDeletes).toContain('pending_cta');
+    const r = await tool_activate_recommendation({ id: '' }, IDENT, sb);
+    expect(r.ok).toBe(true);
+    expect(activate).toHaveBeenCalledWith(USER, REC, expect.any(Object));
+    await new Promise((res) => setTimeout(res, 20));
+    expect(deletes).toContain('pending_cta');
   });
 
-  test('6c. empty id + no pending_cta → still "id is required"', async () => {
-    const sb = makeStubSupabase({ updates: [], recs: {}, pendingCta: null });
-    const result = await tool_activate_recommendation(
-      { id: '' },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-    expect(result.ok).toBe(false);
-    if (result.ok === false) {
-      expect(result.error).toBe('id is required');
-    }
-  });
-
-  test('7. dispatchOrbTool exposes activate_recommendation by name (no more "unknown tool")', async () => {
-    // Regression guard for the gap the user reported: /api/v1/orb/tool used
-    // to return 404 because activate_recommendation was not in
-    // ORB_TOOL_REGISTRY. This test fails loud if anyone removes it.
-    const sb = makeStubSupabase({
-      updates: [],
-      recs: {
-        [REC_UUID_NEW]: {
-          id: REC_UUID_NEW,
-          title: 'Discoverable',
-          summary: null,
-          status: 'new',
-          user_id: SENDER_UUID,
-        },
+  test('7. a failed activation keeps the pending offer for a retry', async () => {
+    activate.mockResolvedValue({ ok: false, httpStatus: 503, error: 'Supabase not configured' });
+    const deletes: string[] = [];
+    const sb = stubSb({
+      deletes,
+      pendingCta: {
+        value: { tool: 'activate_recommendation', payload: { id: REC } },
+        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
       },
     });
-    const r = await dispatchOrbTool(
-      'activate_recommendation',
-      { id: REC_UUID_NEW },
-      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
-      sb,
-    );
-    if (r.ok === false) {
-      expect(r.error).not.toMatch(/^unknown tool:/);
-    }
-    expect(r.ok).toBe(true);
+    const r = await tool_activate_recommendation({ id: '' }, IDENT, sb);
+    expect(r.ok).toBe(false);
+    await new Promise((res) => setTimeout(res, 20));
+    expect(deletes).toHaveLength(0);
   });
 });

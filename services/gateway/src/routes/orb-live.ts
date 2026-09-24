@@ -1040,10 +1040,6 @@ export interface GeminiLiveSession {
   thread_id?: string;
   conversation_id?: string;
   turn_count: number;
-  // VTID-03201: ids of the Autopilot recommendations most recently read aloud
-  // by get_autopilot_recommendations, so a follow-up "activate those" resolves
-  // to exactly what Vitana just listed (in order).
-  lastListedAutopilotIds?: { ids: string[]; ts: number };
   // VTID-01224: Bootstrap context (injected into system instruction)
   contextInstruction?: string;
   contextPack?: ContextPack;
@@ -5728,98 +5724,35 @@ async function executeLiveApiToolInner(
         );
       }
 
-      // VTID-03201: read + activate the user's Autopilot queue by voice, via
-      // the SAME shared service the popup uses (listCommunity… / activateCommunity…),
-      // so the spoken list and the visual list never diverge.
-      case 'get_autopilot_recommendations': {
-        const userId = lens.user_id;
-        if (!userId) {
-          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
-        }
-        const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
-        const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
-        // autoGenerate: explicit "what's in my Autopilot?" must match opening the
-        // popup, which generates recs for first-time/expired/all-activated users
-        // rather than returning empty. VTID-03201 (Codex review #2486).
-        const recs = await listCommunityAutopilotRecommendations(userId, limit, { autoGenerate: true });
-        const summary = summarizeAutopilotForVoice(recs);
-        // Remember exactly what we read aloud so "activate those" resolves to it.
-        session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
-        return {
-          success: true,
-          result: JSON.stringify({
-            ok: true,
-            count: summary.count,
-            spoken: summary.spoken,
-            items: recs.map(r => ({ id: r.id, title: r.title })),
-          }),
-        };
-      }
-
+      // VTID-03201 / VTID-04493: read + activate the user's Autopilot queue by
+      // voice. Lifted to services/orb-tools/community-autopilot-tools.ts so
+      // every transport (this one, LiveKit, /api/v1/orb/tool) runs the same
+      // canonical activation; the read-out ids live in orb_session_state.
+      case 'get_autopilot_recommendations':
       case 'activate_autopilot_recommendations': {
-        const userId = lens.user_id;
-        if (!userId) {
+        if (!lens.user_id) {
           return { success: false, result: '', error: 'NOT_SIGNED_IN' };
         }
-        const { activateCommunityAutopilotRecommendation } = await import('./autopilot-recommendations');
-
-        // Resolve target ids: explicit `ids` arg, else the last-listed set.
-        const explicit: string[] = Array.isArray(args?.ids)
-          ? (args.ids as unknown[]).filter((x): x is string => typeof x === 'string')
-          : [];
-        const listed = session.lastListedAutopilotIds?.ids ?? [];
-        const targetIds = explicit.length > 0 ? explicit : listed;
-
-        if (targetIds.length === 0) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: false,
-              activated: 0,
-              spoken: "I don't have any prepared actions queued to activate yet — ask me what's in your Autopilot first.",
-            }),
-          };
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        // Activate sequentially (calendar slotting reads the live calendar, so
-        // parallel runs could double-book the same slot). Replenishment is
-        // skipped inline for voice latency — the popup refills on next open.
-        const tenantId = lens.tenant_id ?? '';
-        const activated: string[] = [];
-        const failed: string[] = [];
-        for (const id of targetIds) {
-          try {
-            const r = await activateCommunityAutopilotRecommendation(userId, id, {
-              tenantId: tenantId || undefined,
-              skipReplenish: true,
-            });
-            if (r.ok) activated.push(r.title || id);
-            else failed.push(id);
-          } catch {
-            failed.push(id);
-          }
-        }
-
-        let spoken: string;
-        if (activated.length === 0) {
-          spoken = "I couldn't activate those — they may have already been done or aren't yours to action.";
-        } else if (activated.length === 1) {
-          spoken = `Done — I've activated "${activated[0]}".`;
-        } else {
-          spoken = `Done — I've activated ${activated.length} actions: ${activated.join('; ')}.`;
-        }
-        // Clear the remembered list so a stray repeat call can't re-activate.
-        session.lastListedAutopilotIds = { ids: [], ts: Date.now() };
-
-        return {
-          success: true,
-          result: JSON.stringify({
-            ok: activated.length > 0,
-            activated: activated.length,
-            failed: failed.length,
-            spoken,
-          }),
-        };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'share_link': {
