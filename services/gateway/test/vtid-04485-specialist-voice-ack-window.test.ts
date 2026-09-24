@@ -64,3 +64,28 @@ test('AC-4 a support answer that takes 3 s is spoken in the same turn, not defer
   expect(r.success).toBe(true);
   expect(JSON.parse(r.result)).toEqual({ findings: 'no open tickets' });
 });
+
+describe('AC-5 the voice tool budget does not cut the specialist off before its ack window', () => {
+  // Measured live on staging (gateway e7a8531): a 3.2 s support lookup hit
+  // orb-live's flat 3 s TOOL_TIMEOUT_MS and returned "timed out after 3000ms",
+  // so the 4.5 s ack window never took effect on the Nova path.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../src/routes/orb-live.ts'), 'utf8') as string;
+
+  test('both specialist tools are in the extended-budget set', () => {
+    expect(src).toMatch(/SPECIALIST_VOICE_TOOLS = new Set\(\['ask_support_specialist', 'ask_commerce_specialist'\]\)/);
+  });
+
+  test('their budget is max(3 s, ack window + 1 s), taken from specialistAckWindowMs', () => {
+    expect(src).toMatch(/SPECIALIST_VOICE_TOOLS\.has\(toolName\) \? Math\.max\(3_000, \(specialistAckWindowMs\('voice'\) \?\? SPECIALIST_VOICE_ACK_DEFAULT_MS\) \+ 1_000\)/);
+  });
+
+  test('the budget always exceeds the ack window, across the whole clamp range', () => {
+    for (const v of ['1500', '4500', '8000', undefined]) {
+      if (v === undefined) delete process.env[ENV]; else process.env[ENV] = v;
+      const ack = specialistAckWindowMs('voice') as number;
+      const budget = Math.max(3_000, ack + 1_000); // mirrors orb-live.ts
+      expect(budget).toBeGreaterThan(ack);
+      expect(budget).toBeGreaterThanOrEqual(3_000); // never shorter than the old flat budget
+    }
+  });
+});
