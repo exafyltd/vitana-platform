@@ -1582,6 +1582,14 @@ async def confirm_pending_action(context: RunContext, confirm: bool | None = Non
 
 
 @function_tool
+async def start_autopilot_slot(context: RunContext, event_id: str) -> str:
+    """Start the Autopilot calendar slot that is due now and mark it done with
+    its suggestion; returns the screen to open (VTID-04506)."""
+    body = await _dispatch(context, "start_autopilot_slot", {"event_id": event_id})
+    return summarize(body)
+
+
+@function_tool
 async def get_autopilot_recommendations(context: RunContext, limit: int | None = None) -> str:
     """Read the user's Autopilot queue: the same list the Autopilot popup shows.
 
@@ -6394,7 +6402,7 @@ def all_tool_names() -> list[str]:
         "resolve_recipient", "send_chat_message",
         # Autopilot activation (3) — VTID-04493 adds list + batch activate
         "activate_recommendation", "get_autopilot_recommendations",
-        "activate_autopilot_recommendations", "confirm_pending_action",
+        "activate_autopilot_recommendations", "confirm_pending_action", "start_autopilot_slot",
         # Sharing (1)
         "share_link",
         # Vitana Intent Engine (8)

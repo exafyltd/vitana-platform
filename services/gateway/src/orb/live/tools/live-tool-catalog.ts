@@ -2015,6 +2015,23 @@ function buildLiveApiToolsUngated(
           },
         },
         {
+          // VTID-04506 (Community Autopilot CA-6)
+          name: 'start_autopilot_slot',
+          description: [
+            'Start an Autopilot calendar slot that is due now and mark it done,',
+            'together with the suggestion it came from. Use it when the user',
+            'agrees to the due slot you offered (confirm_pending_action runs it',
+            'for you after a "yes"). Returns the screen to open, if any.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'The calendar event id of the due slot.' },
+            },
+            required: ['event_id'],
+          },
+        },
+        {
           name: 'get_autopilot_recommendations',
           description: [
             'Read out what is prepared in the user\'s Autopilot — the SAME',

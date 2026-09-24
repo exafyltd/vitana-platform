@@ -1465,6 +1465,12 @@ If the result says awaiting_confirmation, read the details back in
 your own words and, if the user agrees, call again with confirm=true.
 If it says there is no open offer, ask what they would like to do.
 
+### start_autopilot_slot
+Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.
+
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME
 list shown in the Autopilot popup. Call this when the user asks
@@ -4436,6 +4442,12 @@ offer you made. Runs exactly that stored offer — no id needed.
 If the result says awaiting_confirmation, read the details back in
 your own words and, if the user agrees, call again with confirm=true.
 If it says there is no open offer, ask what they would like to do.
+
+### start_autopilot_slot
+Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.
 
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME

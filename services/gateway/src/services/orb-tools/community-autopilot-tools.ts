@@ -313,8 +313,38 @@ export async function tool_confirm_pending_action(
   return r;
 }
 
+// ---------------------------------------------------------------------------
+// start_autopilot_slot (VTID-04506)
+// ---------------------------------------------------------------------------
+
+/**
+ * The member agreed to start an Autopilot slot that is due now (offered by the
+ * autopilot-slot-due wake provider). Completes the slot and the suggestion it
+ * came from, and returns the screen to open. Own data only.
+ */
+export async function tool_start_autopilot_slot(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.user_id) return { ok: false, error: 'not_signed_in' };
+  const eventId = typeof args.event_id === 'string' ? args.event_id.trim() : '';
+  if (!eventId) return { ok: false, error: 'event_id is required' };
+  const { startAutopilotSlot } = await import('../community-autopilot/slot-due');
+  const r = await startAutopilotSlot(id.user_id, eventId);
+  if (!r.ok) return { ok: false, error: r.error ?? 'slot_start_failed' };
+  return {
+    ok: true,
+    result: r,
+    text: r.route
+      ? `Started and marked done. If they want to go there now, open ${r.route} with navigate_to_screen.`
+      : 'Started and marked done.',
+  };
+}
+
 export const COMMUNITY_AUTOPILOT_TOOL_HANDLERS: Record<string, Handler> = {
   confirm_pending_action: tool_confirm_pending_action,
+  start_autopilot_slot: tool_start_autopilot_slot,
   get_autopilot_recommendations: tool_get_autopilot_recommendations,
   activate_autopilot_recommendations: tool_activate_autopilot_recommendations,
 };

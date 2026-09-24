@@ -106,6 +106,11 @@ import {
   PARTNER_HEALTH_RESULT_READY_EXTRA_KEY,
   PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY,
 } from './assistant-continuation/providers/partner-health-result-ready';
+import {
+  makeAutopilotSlotDueProvider,
+  AUTOPILOT_SLOT_DUE_PROVIDER_KEY,
+  AUTOPILOT_SLOT_DUE_EXTRA_KEY,
+} from './assistant-continuation/providers/autopilot-slot-due';
 // VTID-03164: new-day-return provider — fires first session of a new
 // calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
 // and wake-brief (80). Suppresses cleanly when same-day repeat or when
@@ -282,6 +287,11 @@ export function ensureWakeBriefProviderRegistered(): void {
   // cleanly (no_unsurfaced_result) so registering always is safe.
   if (!defaultProviderRegistry.get(PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makePartnerHealthResultReadyProvider());
+  }
+  // VTID-04506 (CA-6): a due Autopilot calendar slot leads the wake as an offer
+  // (priority 93). Suppresses cleanly (no_due_slot) so registering is safe.
+  if (!defaultProviderRegistry.get(AUTOPILOT_SLOT_DUE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeAutopilotSlotDueProvider());
   }
   // VTID-03307 (SAFE rebuild): Conversation Flow v3 at priority 88. Speak-only;
   // self-suppresses when its flag is off, so registering always is safe.
@@ -643,6 +653,8 @@ export async function decideWakeBriefForSession(
         tenantId: args.tenantId,
         lang: args.lang,
       };
+      // VTID-04506: autopilot-slot-due inputs (suppresses with no due slot).
+      extra[AUTOPILOT_SLOT_DUE_EXTRA_KEY] = { supabase: args.supabase, userId: args.userId };
       // Advice #4: real-life-invite inputs. Always forwarded — the provider
       // self-suppresses unless its flag is on, so passing it is safe.
       extra[REAL_LIFE_INVITE_EXTRA_KEY] = {
