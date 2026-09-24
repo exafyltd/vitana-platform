@@ -4,8 +4,9 @@
  *
  * This slice: POST /start, GET /:orgId, PATCH /:orgId/company,
  * POST /:orgId/terms/accept, POST /:orgId/submit, and (VTID-04481)
- * POST /:orgId/detect. The remaining §6.2 endpoints (catalogue,
- * connections, tracking test, DPA, billing mandate, verification) each
+ * POST /:orgId/detect, and (VTID-04486) POST /:orgId/verification/check.
+ * The remaining §6.2 endpoints (catalogue, connections, tracking test, DPA,
+ * billing mandate, Stripe Connect verification) each
  * write their own step row into
  * partner_onboarding_steps when they land; the checklist here already reads
  * those rows.
@@ -37,6 +38,26 @@ import {
 } from '../services/partner-onboarding-checklist';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
 import { detectPlatform } from '../services/platform-detect';
+import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
+import {
+  computeVerification,
+  domainProofInstructions,
+  domainsMatch,
+  emailDomainOf,
+  hostOf,
+  htmlContainsMetaToken,
+  isEuCountry,
+  normalizeVatNumber,
+  txtRecordsContainToken,
+  type CheckStatus,
+  type VerificationChecks,
+} from '../services/partner-verification';
+import {
+  checkVatVies,
+  fetchSiteHtml,
+  lookupDomainProofTxt,
+  readEmailConfirmation,
+} from '../services/partner-verification-io';
 
 const router = Router();
 
@@ -332,6 +353,162 @@ router.post('/:orgId/detect', requireAuth, requireOrgAdmin(), async (req: Reques
   return respondWithState(res, supabase, orgId, 200, {
     detection: record,
     suggested: { website, display_name: detection.site_name ?? null },
+  });
+});
+
+// ==================== Verification (VTID-04486) ====================
+
+/**
+ * Runs the automated verification checks of spec §7 and records the result
+ * as the `verification` step row: the checks, the level reached, the facts
+ * checked (a later change to them voids the result) and, while ownership is
+ * unproven, the token the partner puts in DNS or a meta tag. trust_level is
+ * set to the level reached (0 when none, the column's floor).
+ */
+router.post('/:orgId/verification/check', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const orgId = req.params.orgId;
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+
+  const { org, error } = await loadOrg(supabase, orgId);
+  if (error) return res.status(500).json({ ok: false, error });
+  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
+  if (!isPartnerType(org.partner_type)) return res.status(409).json({ ok: false, error: 'PARTNER_TYPE_MISSING' });
+  if (org.lifecycle_state === 'rejected') {
+    return res.status(409).json({ ok: false, error: 'NOT_CHECKABLE', lifecycle_state: org.lifecycle_state });
+  }
+  const required = VERIFICATION_LEVEL_REQUIRED[org.partner_type];
+
+  const prior = await supabase
+    .from('partner_onboarding_steps')
+    .select('detail')
+    .eq('partner_organization_id', orgId)
+    .eq('step_key', 'verification')
+    .maybeSingle();
+  if (prior.error) return res.status(500).json({ ok: false, error: prior.error.message });
+  const priorToken = (prior.data as { detail?: { domain_token?: unknown } } | null)?.detail?.domain_token;
+  const token = typeof priorToken === 'string' && /^[a-f0-9]{32}$/.test(priorToken) ? priorToken : randomBytes(16).toString('hex');
+
+  // Level 0: the org owner's confirmed email (the account the org belongs
+  // to, whoever runs the check), and ownership of the website.
+  const email = await readEmailConfirmation(supabase as any, org.owner_user_id);
+  const emailStatus: CheckStatus =
+    email.status === 'confirmed' ? 'passed' : email.status === 'unconfirmed' ? 'failed' : 'unavailable';
+
+  const host = hostOf(org.website);
+  let domainStatus: CheckStatus = 'pending';
+  let domainMethod: 'email_domain' | 'dns_txt' | 'meta_tag' | null = null;
+  if (host) {
+    const emailDomain = emailDomainOf(email.email);
+    if (email.status === 'confirmed' && emailDomain && domainsMatch(host, emailDomain)) {
+      domainMethod = 'email_domain';
+    } else if (txtRecordsContainToken(await lookupDomainProofTxt(host), token)) {
+      domainMethod = 'dns_txt';
+    } else {
+      const html = await fetchSiteHtml(org.website as string);
+      if (html !== null && htmlContainsMetaToken(html, token)) domainMethod = 'meta_tag';
+    }
+    if (domainMethod) domainStatus = 'passed';
+  }
+
+  // Level 1: EU VAT id in VIES (not required outside the EU). Only looked
+  // up for types that need level 1+; otherwise left `pending`, never
+  // `not_required`, so a level-0 type is not credited with a check that
+  // never ran.
+  let vatStatus: CheckStatus = isEuCountry(org.country) ? 'pending' : org.country ? 'not_required' : 'pending';
+  let vatRegisteredName: string | null = null;
+  let vatError: string | undefined;
+  if (required >= 1 && isEuCountry(org.country)) {
+    const vat = org.vat_id ? normalizeVatNumber(org.vat_id, org.country as string) : null;
+    if (!org.vat_id) vatStatus = 'pending';
+    else if (!vat) vatStatus = 'failed';
+    else {
+      const vies = await checkVatVies(vat.country_code, vat.number);
+      vatStatus = vies.status === 'valid' ? 'passed' : vies.status === 'invalid' ? 'failed' : 'unavailable';
+      vatRegisteredName = vies.name;
+      vatError = vies.error;
+    }
+  }
+
+  const checks: VerificationChecks = {
+    email_verified: emailStatus,
+    domain: domainStatus,
+    vat: vatStatus,
+    // Spec Q2 (Stripe Connect or VIES + billing mandate) and Q6 (licence
+    // sources) are open, so neither provider exists yet. Reported for every
+    // type: only the levels a type needs appear in `missing`, and the level
+    // reached is never credited above what was actually checked.
+    business_verification: 'not_configured',
+    licence: 'not_configured',
+  };
+  const outcome = computeVerification(required, checks);
+  if (!host) outcome.missing.unshift('website');
+  const checkedAt = new Date().toISOString();
+
+  const detail = {
+    level_required: required,
+    level_reached: outcome.level_reached,
+    checks,
+    missing: outcome.missing,
+    domain_method: domainMethod,
+    domain_token: token,
+    vat_registered_name: vatRegisteredName,
+    ...(vatError ? { vat_error: vatError } : {}),
+    facts: { website: org.website, country: org.country, vat_id: org.vat_id },
+    checked_at: checkedAt,
+  };
+  const { error: upErr } = await supabase.from('partner_onboarding_steps').upsert(
+    {
+      partner_organization_id: orgId,
+      step_key: 'verification',
+      status: outcome.step_status,
+      detail,
+      updated_by: callerId,
+      updated_at: checkedAt,
+    },
+    { onConflict: 'partner_organization_id,step_key' },
+  );
+  if (upErr) return res.status(500).json({ ok: false, error: upErr.message });
+
+  const trustLevel = outcome.level_reached ?? 0;
+  if (trustLevel !== org.trust_level) {
+    const { error: trustErr } = await supabase
+      .from('partner_organizations')
+      .update({ trust_level: trustLevel, updated_at: checkedAt })
+      .eq('id', orgId);
+    if (trustErr) return res.status(500).json({ ok: false, error: trustErr.message });
+  }
+
+  await emitOasisEvent({
+    vtid: 'VTID-04486',
+    type: 'partner_org.verification_checked',
+    source: 'partner-onboarding',
+    status: outcome.step_status === 'done' ? 'success' : outcome.step_status === 'failed' ? 'warning' : 'info',
+    message: `Partner organization ${orgId}: verification level ${outcome.level_reached ?? 'none'} of ${required} (${outcome.step_status}).`,
+    // Check statuses only: the VAT id, email and registered name stay in the step row.
+    payload: {
+      partner_organization_id: orgId,
+      level_required: required,
+      level_reached: outcome.level_reached,
+      step_status: outcome.step_status,
+      checks,
+      domain_method: domainMethod,
+    },
+    actor_id: callerId,
+  });
+
+  return respondWithState(res, supabase, orgId, 200, {
+    verification: {
+      level_required: required,
+      level_reached: outcome.level_reached,
+      status: outcome.step_status,
+      checks,
+      missing: outcome.missing,
+      domain_method: domainMethod,
+      domain_proof: host && domainStatus !== 'passed' ? domainProofInstructions(host, token) : null,
+    },
   });
 });
 

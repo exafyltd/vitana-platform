@@ -2733,6 +2733,8 @@ new one-member `draft` org (owner = `org_admin`). Zero such rows existed on
 
 Written only by the gateway (service role); members read their own org's rows via `is_partner_org_member()` (RLS). Read by `services/partner-onboarding-checklist.ts`.
 
+`step_key = 'verification'` (VTID-04486, written by `POST /api/v1/partner-onboarding/:orgId/verification/check`): `detail` = `{level_required, level_reached, checks: {email_verified, domain, vat, business_verification, licence}, missing, domain_method, domain_token, vat_registered_name, vat_error?, facts: {website, country, vat_id}, checked_at}`. The checklist treats the row as void (`todo`, `facts_changed`) once the org's website, country or VAT id no longer equals `detail.facts`. The same check writes `partner_organizations.trust_level` (level reached, 0 when none). No schema change.
+
 ### partner_terms_acceptances (VTID-04478)
 
 | Column | Type | Notes |
