@@ -1,0 +1,72 @@
+{
+ "tag": "desktop",
+ "report": [
+  {
+   "name": "monitor",
+   "tiles": 21,
+   "warn": 5,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "FIRST SPEECH P50 | 3876 ms | 204 sessions",
+    "FIRST SPEECH P90 | 5433 ms | target < 3 s",
+    "CONTEXT WAIT TIMED OUT | 91.5% | 162 of 177",
+    "STARTED | 477",
+    "WITH A STOP EVENT | 45.9% | 219 stopped · 15 duplicate stop(s)",
+    "SILENT (NO MODEL AUDIO) | 33.3% | 73 of 219"
+   ]
+  },
+  {
+   "name": "learning",
+   "tiles": 9,
+   "warn": 1,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "SESSIONS FINALIZED | 0",
+    "SUMMARY WRITTEN | — | 0 of 0",
+    "MEMORY COMMITTED | —",
+    "FACTS LEARNED | 362",
+    "OPEN THREADS | 0 | 0 re-touched",
+    "PROMISES RECORDED | 0"
+   ]
+  }
+ ],
+ "errors": []
+}
+{
+ "tag": "mobile",
+ "report": [
+  {
+   "name": "monitor",
+   "tiles": 21,
+   "warn": 5,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "FIRST SPEECH P50 | 3876 ms | 204 sessions",
+    "FIRST SPEECH P90 | 5433 ms | target < 3 s",
+    "CONTEXT WAIT TIMED OUT | 91.5% | 162 of 177",
+    "STARTED | 477",
+    "WITH A STOP EVENT | 45.9% | 219 stopped · 15 duplicate stop(s)",
+    "SILENT (NO MODEL AUDIO) | 33.3% | 73 of 219"
+   ]
+  },
+  {
+   "name": "learning",
+   "tiles": 9,
+   "warn": 1,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "SESSIONS FINALIZED | 0",
+    "SUMMARY WRITTEN | — | 0 of 0",
+    "MEMORY COMMITTED | —",
+    "FACTS LEARNED | 362",
+    "OPEN THREADS | 0 | 0 re-touched",
+    "PROMISES RECORDED | 0"
+   ]
+  }
+ ],
+ "errors": []
+}

@@ -1,0 +1,7 @@
+{
+  "note": "7-day live totals from conversation_metrics_hourly after migration 20260923160000 (read-only, 2026-09-23 ~15:15 UTC), folded into one hour for the harness.",
+  "rows": [
+    { "hour_start": "2026-09-23T13:00:00.000Z", "metric": "context_setup_empty", "dimension": "", "value": 52, "sample_count": 157, "computed_at": "2026-09-23T15:14:35.245Z" },
+    { "hour_start": "2026-09-23T13:00:00.000Z", "metric": "context_setup_source", "dimension": "source:unknown", "value": 157, "sample_count": 157, "computed_at": "2026-09-23T15:14:35.245Z" }
+  ]
+}

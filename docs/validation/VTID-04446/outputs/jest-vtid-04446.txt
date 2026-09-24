@@ -1,0 +1,25 @@
+    ✓ is off unless the flag is exactly "true" (3 ms)
+    ✓ TTL defaults to 5 min and clamps to [2, 30] min (2 ms)
+    ✓ the watchdog candidate window is the legacy 20 min when off and the TTL when on (1 ms)
+    ✓ flag off: acquire and renew make no call (1 ms)
+    ✓ owner id names environment, host and process
+    ✓ a live lease is never reclaimed, even with an hour-old updated_at (1 ms)
+    ✓ an expired lease is reclaimed, even before the legacy 20 minutes (22 ms)
+    ✓ no lease: the legacy 20-minute rule, both sides of it (1 ms)
+    ✓ isLeaseLive treats a missing or unparseable lease as not live (1 ms)
+    ✓ the claim row carries the legacy window, the mirror pointer and the run key (5 ms)
+    ✓ acquire upserts on the idempotency key (20 ms)
+    ✓ renew moves the lease to now + TTL, scoped to a running row, and takes ownership (1 ms)
+    ✓ release closes the row with the running phase outcome and clears the lease (1 ms)
+    ✓ every call is fail-open (50 ms)
+    ✓ reads leases keyed back to execution ids; a failed read is null (legacy rule) (1 ms)
+    ✓ the heartbeat renews the lease on every beat, and not after stop (4 ms)
+    ✓ closes expired leases whose execution moved on, with the matching outcome, and leaves running ones (1 ms)
+    ✓ maps execution statuses to a running-phase outcome
+    ✓ re-plans once, then forces the tool-less final answer with stalled: true (3 ms)
+    ✓ new calls are progress: a loop that keeps reading different things is not stalled (1 ms)
+    ✓ stall: false keeps the pre-VTID-04446 behaviour
+    ✓ the watchdog asks the lease only when the flag is on, and reclaims legacy-style otherwise (1 ms)
+    ✓ the claim acquires and the result path releases (release gated on the flag)
+    ✓ the migration only adds an index and the view filter (4 ms)
+Tests:       24 passed, 24 total

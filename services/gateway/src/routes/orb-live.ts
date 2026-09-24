@@ -128,8 +128,26 @@ import {
 // that is what closed the bridge with 1007 on the first generation request.
 import {
   enforceToolCatalogBudget,
+  FLAG_GATED_PRIORITY_TOOLS,
   resolveToolCatalogByteBudgetFor,
+  VERTEX_BRIDGE_PRIORITY_TOOLS,
 } from '../orb/live/tools/vertex-tool-catalog-budget';
+// VTID-04426 (WS-3.4): context-aware fill order for the catalog budget, and
+// find_tool / use_tool to reach what the budget dropped.
+import {
+  buildSessionToolPriority,
+  deferredDeclarationMap,
+  FIND_TOOL_NAME,
+  isToolSelectionEnabled,
+  resolveUseTool,
+  runFindTool,
+  USE_TOOL_NAME,
+  withMetaTools,
+} from '../orb/live/tools/session-tool-selection';
+// VTID-04427 (WS-3.2): get_guidance reads the live advisor's note (inert until
+// the advisor routing stage is approved and ORB_LIVE_ADVISOR_ENABLED is on).
+import { GET_GUIDANCE_DECLARATION, GET_GUIDANCE_TOOL_NAME, isLiveAdvisorActive } from '../services/conversation/live-advisor';
+import { answerGetGuidance } from '../orb/live/session/live-advisor-hook';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -185,6 +203,7 @@ import { handleIdentityIntent } from '../services/identity-intent-handler';
 // VTID-01955 Phase 1 — Tier 0 Memorystore Redis turn buffer (multi-instance safe; dual-write w/ in-process buffer)
 import { addTurnRedis, destroySessionBufferRedis } from '../services/redis-turn-buffer';
 import { deduplicatedExtract, clearExtractionState } from '../services/extraction-dedup-manager';
+import { finalizeLiveSession } from '../orb/live/session/finalize-live-session';
 // VTID-04365: every session end goes through the one commit.
 import { commitSessionMemory, renderTranscript } from '../services/session-memory-commit';
 // VTID-01149: Unified Task-Creation Intake
@@ -357,7 +376,7 @@ import {
 // (payloads/ledger, gated by the brain's own shouldAttempt* / newdayHasContent
 // guards so the I/O short-circuit can't diverge from the pure rung), then renders.
 import {
-  computeGreetingDecision,
+  type computeGreetingDecision,
   shouldAttemptNewdayOverview,
   shouldAttemptResumeOverview,
   newdayHasContent,
@@ -366,6 +385,9 @@ import {
   tryDayCloseRung,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
+// VTID-04416 (WS-1.4): every opening decision goes through the brain entry point.
+import { decideOpeningFlow, resolveCandidateOutcome } from '../services/conversation/decide-conversation-flow';
 
 // VTID-03628/03629 — P0 emergency kill switches (see compute-greeting-
 // decision.ts for the full incident writeup): Bedrock's content filter
@@ -952,6 +974,10 @@ export interface GeminiLiveSession {
   // stopped" and for "never successfully started" — two states that need
   // opposite answers here.
   stopEventEmitted?: boolean;
+  // VTID-04353: transcript turns covered by the last finalizeLiveSession() —
+  // makes the end-of-session memory commit + summary idempotent across the
+  // several end paths that can fire for one conversation.
+  finalizedTurnCount?: number;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
   // 'vitana' is the default; report_to_specialist tool flips this to a
   // specialist key, then triggers a transparent reconnect of the upstream
@@ -1028,6 +1054,12 @@ export interface GeminiLiveSession {
   // typically EventSource network blips, not long pauses, so rebuilding would
   // waste 400-1200 ms of Supabase/Gemini calls for zero user benefit.
   contextBootstrapBuiltAt?: number;
+  // VTID-04414 (WS-1.3): how the standing context was built at session start,
+  // so a reconnect rebuild uses the same builder (brain / legacy / lesson),
+  // the same brain role, and re-applies the same extras.
+  contextBuilder?: import('../orb/live/session/session-context-builder').ContextBuilderKind;
+  contextBrainRole?: string;
+  contextExtras?: import('../orb/live/session/session-context-builder').ContextExtras;
   // BOOTSTRAP-ORB-CRITICAL-PATH: Resolves once the heavy context assembly
   // (memory bootstrap, active role lookup, last-session info, admin briefing,
   // stored-language lookup) has populated the fields above. Awaited inside
@@ -1035,6 +1067,12 @@ export interface GeminiLiveSession {
   // overlaps with the Google auth + WS handshake (500-1000ms) instead of
   // serializing with /live/session/start's response.
   contextReadyPromise?: Promise<void>;
+  // VTID-04399 (WS-1.2): rendered per-user core context snapshot (or null),
+  // read in parallel with the fresh build. The stream-open gate uses it only
+  // when the fresh build has not populated contextInstruction by then.
+  coreContextFallback?: Promise<string | null>;
+  // Where the context the upstream setup carried came from.
+  contextSource?: 'fresh' | 'snapshot' | 'none';
   // VTID-03101: wake-brief override block, kept on its own field so the
   // background bootstrap promise (which unconditionally writes
   // contextInstruction = finalContext at the end of its .then) cannot
@@ -1093,6 +1131,13 @@ export interface GeminiLiveSession {
   // short TTL (see TOOL_CACHE_TTL_MS). Session-scoped → torn down with the
   // session; never crosses users.
   toolResultCache?: Map<string, { at: number; result: { success: boolean; result: string; error?: string } }>;
+  /**
+   * VTID-04426 (WS-3.4): tools the catalog budget dropped for this stream,
+   * reachable through find_tool / use_tool; and the names declared directly.
+   * Set only when ORB_TOOL_SELECTION_ENABLED is on and the budget trimmed.
+   */
+  deferredTools?: Map<string, Record<string, unknown>>;
+  declaredToolNames?: Set<string>;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -1249,6 +1294,8 @@ export interface GeminiLiveSession {
   guided_topic_resume?: boolean;
   /** VTID-04395: opened from Support → "report by voice" (support-report intake). */
   support_report?: boolean;
+  /** VTID-04430: the host app's build stamp; voice-filed tickets store it. */
+  app_version?: string | null;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -1355,6 +1402,9 @@ setInterval(() => {
       // Nova item 6: this is the abandoned-session sweep, not a user action —
       // distinguish it from user_stop / client_disconnect in telemetry.
       if (s.upstreamWs) { try { s.upstreamWs.close(1000, `zombie_sweep_${closeReason}`); } catch (_) { /* ignore */ } }
+      // VTID-04353: an abandoned session (stop POST lost, tab killed) used to
+      // be reaped with no memory commit at all.
+      finalizeLiveSession(s, { sessionId: sid, reason: `idle_sweep_${closeReason}` });
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -1447,15 +1497,13 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
     }
 
     // Clean up timers
-    if (existingSession.upstreamPingInterval) {
-      clearInterval(existingSession.upstreamPingInterval);
-      existingSession.upstreamPingInterval = undefined;
-    }
-    if (existingSession.silenceKeepaliveInterval) {
-      clearInterval(existingSession.silenceKeepaliveInterval);
-      existingSession.silenceKeepaliveInterval = undefined;
-    }
+    clearUpstreamKeepalive(existingSession); // VTID-04418: one keepalive teardown
     clearResponseWatchdog(existingSession);
+
+    // VTID-04418: a session superseded by a newer one is an end path too. It
+    // used to close with no memory commit, summary or continuity write — the
+    // one end path VTID-04353 missed. Finalize is idempotent and fire-and-forget.
+    finalizeLiveSession(existingSession, { sessionId: sid, reason: 'superseded_by_new_session' });
 
     existingSession.active = false;
     terminated++;
@@ -1888,6 +1936,7 @@ import {
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
 import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
@@ -1908,8 +1957,9 @@ import {
   isVertexSerbianBridgeEnabled,
   isVertexSerbianBridgeLanguage,
   resolveVertexLivePersonaVoice,
+  enforceVertexVoiceGender,
 } from '../orb/live/upstream/vertex-serbian-bridge';
-import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
+import { bindUpstreamSessionHandlers, isVertexSharedHandlersEnabled } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
 // NOTE: `getVoiceConfig` is already imported above (line ~92).
@@ -1932,6 +1982,8 @@ export {
   describeTimeSince,
   describeRoute,
 } from '../orb/live/instruction/live-system-instruction';
+import type { BootstrapPackResult } from '../orb/live/instruction/bootstrap-packer'; // VTID-04393
+import { applyCoreContextFallback } from '../services/conversation/brain-core-snapshot'; // VTID-04399
 // A5 (orb-live-refactor): buildLiveApiTools lifted to orb/live/tools/live-tool-catalog.ts.
 // Same function, same callers, same admin-tool injection. Zero behavior change.
 // Re-exported here so external callers (including the A0.1 tool-catalog
@@ -1951,6 +2003,7 @@ import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-t
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
 import { buildSessionContext } from '../orb/live/session/session-context';
+import { handleContextUpdateMessage } from '../orb/live/session/context-update';
 import { makeSessionMutator } from '../orb/live/session/session-mutator';
 import { getCurrentScreenHandler } from '../orb/live/tools/handlers/navigator';
 console.log(`[VTID-ORBC] Vertex config at startup: PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, LOCATION=${VERTEX_LOCATION}`);
@@ -2229,6 +2282,10 @@ const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 // promise resolves well under this cap, so behavior is unchanged. Env-tunable
 // for staging without a redeploy.
 const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+// VTID-04399 (WS-1.2): extra time the gate may wait for the core-snapshot
+// read when the fresh build missed CONTEXT_READY_GATE_TIMEOUT_MS. The read
+// starts at session/start, so by the gate it has usually settled already.
+const CORE_SNAPSHOT_GATE_WAIT_MS = Number(process.env.BRAIN_CORE_SNAPSHOT_GATE_WAIT_MS || 150);
 
 // VTID-04100 — hard ceiling on how long the pre-connect greeting bridge may
 // hold the session before the real upstream connect starts. Sized above a
@@ -3083,6 +3140,27 @@ async function executeLiveApiTool(
   toolName: string,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-04426 (WS-3.4): the two meta tools. find_tool searches the tools the
+  // catalog budget dropped for this stream; use_tool runs one of them through
+  // this same dispatcher (same timeout, auth and handlers). Only tools that
+  // were in this session's own catalog are reachable.
+  if (toolName === GET_GUIDANCE_TOOL_NAME) {
+    return answerGetGuidance(session as any, emitDiag);
+  }
+  if (toolName === FIND_TOOL_NAME) {
+    const r = runFindTool(session.deferredTools as any, args);
+    try {
+      const n = (JSON.parse(r.result).tools || []).length;
+      emitDiag(session, 'deferred_tool_search', { results: n });
+    } catch { /* diagnostic only */ }
+    return r;
+  }
+  if (toolName === USE_TOOL_NAME) {
+    const u = resolveUseTool(session.deferredTools as any, session.declaredToolNames, args);
+    if (!u.ok) return u.result;
+    emitDiag(session, 'deferred_tool_used', { tool: u.name });
+    return executeLiveApiTool(session, u.name, u.args);
+  }
   const startTime = Date.now();
   // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
   markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
@@ -3957,6 +4035,24 @@ async function executeLiveApiToolInner(
             (session as any).swapCooldownUntil = Date.now() + 90_000;
             console.log(`[VTID-02670] switch_persona: ${currentPersona} → vitana queued (silent; swapCount=${(session as any).swapCount}, cooldown=90s)`);
           } else {
+            // VTID-04445: Devon only ever speaks with a man's voice — refuse
+            // the swap when this pipeline has none for the language.
+            const _swapVoice = personaVoiceAvailability({ persona: target, lang: session.lang, provider: session.upstreamProvider });
+            if (!_swapVoice.ok) {
+              emitDiag(session, 'persona_handoff_voice_unavailable', {
+                persona: target,
+                lang: session.lang,
+                pipeline: _swapVoice.pipeline,
+                reason: _swapVoice.reason,
+              });
+              return {
+                success: false,
+                result: '',
+                error:
+                  `The ${target} colleague cannot join this call in the user's language. Stay with the user yourself; ` +
+                  `in their language and your own words, help them directly or offer to file a report the team will follow up on.`,
+              };
+            }
             // Swap to a specialist — load their prompt + voice from
             // agent_personas. No ticket created; just navigation.
             const url2 = process.env.SUPABASE_URL!;
@@ -4166,6 +4262,7 @@ async function executeLiveApiToolInner(
               ),
               session_id: session.sessionId ?? null,
               current_route: session.current_route ?? null,
+              app_version: session.app_version ?? null,
             },
           );
 
@@ -4246,7 +4343,22 @@ async function executeLiveApiToolInner(
           // VTID-02651: any active non-receptionist persona is a valid
           // swap target. Validates against the registry so newly-added
           // specialists work immediately.
-          if (pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY && (await registryIsValidPersona(pickedPersona))) {
+          // VTID-04445: Devon only ever speaks with a man's voice. When this
+          // session's voice pipeline has none for the language, the ticket
+          // stays filed and Vitana keeps the call (ticket_filed_no_handoff).
+          const _handoffVoice = pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY
+            ? personaVoiceAvailability({ persona: pickedPersona, lang: session.lang, provider: session.upstreamProvider })
+            : null;
+          if (_handoffVoice && !_handoffVoice.ok) {
+            console.warn(`[VTID-04445] hand-off to ${pickedPersona} skipped: no male voice for lang=${session.lang} on ${_handoffVoice.pipeline}`);
+            emitDiag(session, 'persona_handoff_voice_unavailable', {
+              persona: pickedPersona,
+              lang: session.lang,
+              pipeline: _handoffVoice.pipeline,
+              reason: _handoffVoice.reason,
+            });
+          }
+          if (pickedPersona && pickedPersona !== RECEPTIONIST_PERSONA_KEY && (!_handoffVoice || _handoffVoice.ok) && (await registryIsValidPersona(pickedPersona))) {
             const swapTo = pickedPersona;
             try {
               const url2 = process.env.SUPABASE_URL!;
@@ -6840,6 +6952,7 @@ async function executeLiveApiToolInner(
                 // VTID-04382: the typed feedback tools file on this surface.
                 current_route: session.current_route ?? null,
                 is_mobile: session.is_mobile === true,
+                app_version: session.app_version ?? null,
               },
               supabase,
             );
@@ -7837,11 +7950,22 @@ async function connectToLiveAPI(
         } catch (e) {
           // Defensive: proceed with whatever session fields are populated.
         }
+        // VTID-04399 (WS-1.2): when the fresh build missed the gate and left the
+        // session empty, use the stored core snapshot (bounded extra wait for
+        // its read). Never replaces a context the fresh build already wrote.
+        const coreFallback = await applyCoreContextFallback(session, CORE_SNAPSHOT_GATE_WAIT_MS);
+        if (coreFallback.source === 'snapshot') {
+          emitDiag(session, 'core_snapshot_used', { chars: coreFallback.chars, fresh_timed_out: ctxTimedOut });
+        }
         const ctxAwaitMs = Date.now() - awaitStart;
         // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
         // overlap the handshake. This is the number a context-slim (D.2) would
         // move; if it's already ~0, the win is in the model's first-token time.
-        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs, timed_out: ctxTimedOut });
+        session.establishLatency?.mark('context_awaited', {
+          awaited_ms: ctxAwaitMs,
+          timed_out: ctxTimedOut,
+          context_source: coreFallback.source,
+        });
         console.log(
           `[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms` +
             (ctxTimedOut ? ` (TIMED OUT at ${CONTEXT_READY_GATE_TIMEOUT_MS}ms — proceeding with partial context)` : '') +
@@ -7890,6 +8014,8 @@ async function connectToLiveAPI(
       // VTID-04336: only a Gemini prebuilt voice may reach speech_config —
       // a specialist whose registry voice is a Nova/Polly id gets Charon.
       _personaVoice = resolveVertexLivePersonaVoice(_personaVoice, _persona) || getLiveApiVoice(session.lang);
+      // VTID-04445: Vitana female, Devon male — whatever the rows above said.
+      _personaVoice = enforceVertexVoiceGender(_personaVoice, _persona);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
       // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
@@ -8144,6 +8270,11 @@ async function connectToLiveAPI(
                         // not yet resolved (feature flag off, or still
                         // in-flight) — the header simply doesn't render.
                         (session as any).greetingFirstName ?? null,
+                        // VTID-04393 (WS-1.1): record what the bootstrap
+                        // packer kept, shortened and dropped. One diag per
+                        // distinct build (a rebuilt identical envelope does
+                        // not repeat it).
+                        (pack) => recordBrainContextBuilt(session, pack),
                       ))) as string
             }]
           },
@@ -8257,9 +8388,52 @@ async function connectToLiveAPI(
         try {
           const { budgetBytes: toolBudget, envVar: toolBudgetEnvVar } =
             resolveToolCatalogByteBudgetFor(session.upstreamProvider);
-          const toolsIn = (setupMessage.setup as any)?.tools;
+          let toolsIn = (setupMessage.setup as any)?.tools;
+          // VTID-04427 (WS-3.2): declare get_guidance only while the live
+          // advisor is active for a signed-in session — never otherwise.
+          if (Array.isArray(toolsIn) && !session.isAnonymous && isLiveAdvisorActive()) {
+            const groups = (toolsIn as Array<Record<string, unknown>>).map((g) => ({ ...g }));
+            const first = groups.find((g) => Array.isArray(g.function_declarations));
+            if (first && !(first.function_declarations as Array<{ name?: string }>).some((d) => d?.name === GET_GUIDANCE_TOOL_NAME)) {
+              first.function_declarations = [GET_GUIDANCE_DECLARATION, ...(first.function_declarations as object[])];
+              toolsIn = groups;
+              (setupMessage.setup as any).tools = groups;
+            }
+          }
           if (toolBudget > 0 && Array.isArray(toolsIn)) {
-            const toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+            // get_guidance, when declared, is kept by the default priority
+            // (FLAG_GATED_PRIORITY_TOOLS, VTID-04427).
+            let toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+            // VTID-04426 (WS-3.4): when the budget has to trim, fill it in a
+            // context-aware order (meta tools, the base priority list, the
+            // brain's core tools, then the tools of the screen the session is
+            // on) and keep the dropped tools reachable via find_tool/use_tool.
+            // Same budget; only the order and the reach change.
+            let _selection: { groups: string[]; contextual_kept: number; deferred: number } | null = null;
+            session.deferredTools = undefined;
+            session.declaredToolNames = undefined;
+            if (toolResult.trimmed && isToolSelectionEnabled()) {
+              const sel = buildSessionToolPriority(
+                toolsIn,
+                [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
+                session.current_route,
+              );
+              const selected = enforceToolCatalogBudget(withMetaTools(toolsIn), toolBudget, sel.priority);
+              const declared = new Set<string>();
+              for (const g of selected.tools as Array<{ function_declarations?: Array<{ name?: string }> }>) {
+                for (const d of g.function_declarations ?? []) if (typeof d?.name === 'string') declared.add(d.name);
+              }
+              if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
+                toolResult = selected;
+                session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
+                session.declaredToolNames = declared;
+                _selection = {
+                  groups: sel.groups,
+                  contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
+                  deferred: session.deferredTools.size,
+                };
+              }
+            }
             if (toolResult.trimmed) {
               (setupMessage.setup as any).tools = toolResult.tools;
               console.warn(
@@ -8294,6 +8468,7 @@ async function connectToLiveAPI(
               emitDiag(session, 'tool_catalog_trimmed', {
                 provider: session.upstreamProvider,
                 ..._budgetDiag,
+                ...(_selection ? { selection: 'context', route_groups: _selection.groups, contextual_kept: _selection.contextual_kept, deferred_reachable: _selection.deferred } : {}),
               });
               if (session.upstreamProvider === 'vertex') {
                 emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
@@ -8369,6 +8544,7 @@ async function connectToLiveAPI(
       // (D.2) can be correlated against the gap to greeting_sent/first audio.
       session.establishLatency?.mark('setup_sent', {
         context_chars: session.contextInstruction?.length || 0,
+        context_source: session.contextSource ?? null,
       });
       return setupMessage as unknown as Record<string, unknown>;
     };
@@ -8615,7 +8791,11 @@ async function connectToLiveAPI(
         // change for every session this doesn't apply to.
         // VTID-03848: never reuse the (community-persona, no-route) login prewarm on a work surface.
         const sessionSurface = resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile });
-        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface)
+        // VTID-04445: a login prewarm is always Vitana (female voice, Vitana's
+        // prompt) — a Devon hand-off reconnect must never claim it.
+        const _prewarmPersonaIsVitana =
+          (((session as any).activePersona as string | undefined) || 'vitana') === 'vitana';
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
@@ -9416,6 +9596,39 @@ async function connectToLiveAPI(
     // envelope builder, sends the envelope, and resolves on setup_complete.
     // After it resolves, the raw ws is available via `vertex.getSocket()`
     // so the legacy message + error + close handlers attach as before.
+    // VTID-04418 (Plan v1 WS-1.6): one set of upstream handlers for every
+    // provider. With ORB_VERTEX_SHARED_HANDLERS=true the Vertex path binds the
+    // same provider-neutral handlers Nova and the cascade use, BEFORE connect
+    // (UpstreamLiveClient contract), and the raw frame handler below is not
+    // registered. The route keeps its raw socket error/close handlers, so the
+    // shared ones are bound without connection events.
+    const useSharedVertexHandlers = isVertexSharedHandlersEnabled();
+    if (useSharedVertexHandlers) {
+      bindUpstreamSessionHandlers({
+        session,
+        client: vertex,
+        callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+        deps: {
+          clearResponseWatchdog,
+          detectAuthIntent,
+          detectStillHereComplaint,
+          dispatchEndConversationDirective,
+          emitDiag,
+          emitLiveSessionEvent,
+          executeLiveApiTool,
+          isDevSandbox,
+          sendAudioToLiveAPI,
+          sendFunctionResponseToLiveAPI,
+          sendWsMessage,
+          startResponseWatchdog,
+          markVoiceLatency,
+          finalizeVoiceTurnLatency,
+        },
+        options: { enableSilenceKeepalive: true, bindConnectionEvents: false },
+      });
+      emitDiag(session, 'upstream_handlers_bound', { path: 'shared', provider: 'vertex' });
+    }
+
     let ws: WebSocket;
     try {
       await vertex.connect({
@@ -9502,8 +9715,12 @@ async function connectToLiveAPI(
       },
     });
 
-    // A8.3a.1: register the named handler.
-    ws.on('message', handleUpstreamLiveMessage);
+    // A8.3a.1: register the named handler — only when the shared handlers
+    // were not bound above (VTID-04418). Both at once would process every
+    // frame twice (audio, tools, memory, chat bridge).
+    if (!useSharedVertexHandlers) {
+      ws.on('message', handleUpstreamLiveMessage);
+    }
 
     // Handle WebSocket errors
     ws.on('error', (error) => {
@@ -9511,14 +9728,7 @@ async function connectToLiveAPI(
       emitDiag(session, 'upstream_ws_error', { error: (error as any)?.message || String(error) });
       clearTimeout(connectionTimeout);
       // VTID-STREAM-KEEPALIVE: Clear ping interval on error too
-      if (session.upstreamPingInterval) {
-        clearInterval(session.upstreamPingInterval);
-        session.upstreamPingInterval = undefined;
-      }
-      if (session.silenceKeepaliveInterval) {
-        clearInterval(session.silenceKeepaliveInterval);
-        session.silenceKeepaliveInterval = undefined;
-      }
+      clearUpstreamKeepalive(session); // VTID-04418: one keepalive teardown
       // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
       // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
       // the watchdog will fire later as a backup.
@@ -9610,14 +9820,7 @@ async function connectToLiveAPI(
       clearTimeout(connectionTimeout);
 
       // VTID-STREAM-KEEPALIVE: Clear upstream ping interval
-      if (session.upstreamPingInterval) {
-        clearInterval(session.upstreamPingInterval);
-        session.upstreamPingInterval = undefined;
-      }
-      if (session.silenceKeepaliveInterval) {
-        clearInterval(session.silenceKeepaliveInterval);
-        session.silenceKeepaliveInterval = undefined;
-      }
+      clearUpstreamKeepalive(session); // VTID-04418: one keepalive teardown
       // VTID-03273 Pillar B — a proactive GoAway timer for THIS connection is
       // moot once it's closing; the reconnect (if any) arms a fresh one.
       if ((session as any)._goAwayTimer) {
@@ -9741,15 +9944,9 @@ async function connectToLiveAPI(
 
         // VTID-04365: genuine disconnect ends the session — one commit.
         if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-          commitSessionMemory({
-            transcript: renderTranscript(session.transcriptTurns),
-            tenantId: session.identity.tenant_id,
-            userId: session.identity.user_id,
-            sessionId: session.sessionId,
-            activeRole: session.active_role || session.identity.role || null,
-            channel: 'orb_voice',
-            trigger: 'upstream_disconnect',
-          });
+          // VTID-04353: through the one idempotent finalize — the client's
+          // own stop that follows is then a no-op on the same transcript.
+          finalizeLiveSession(session, { sessionId: session.sessionId, reason: 'upstream_disconnect' });
           // Clean up session buffer and extraction state
           destroySessionBuffer(session.sessionId);
           clearExtractionState(session.sessionId);
@@ -10533,12 +10730,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             if (ws.readyState !== WebSocket.OPEN) return;
 
             // DECIDE — one brain, with the gathered payloads + ledger.
-            const _sfDecision = computeGreetingDecision({
+            const _sfDecision = decideOpeningFlow({
               ..._baseCtxSF,
               newdayOverview: _newdayOverviewSF,
               resumeOverview: _resumeOverviewSF,
               greetingLedger: _ledgerSF,
-            });
+            }, { transport: 'vertex', role: session.active_role ?? null });
 
             // RENDER + perform effects (greetingSent / markOpeningDelivered were
             // already claimed synchronously above; do NOT re-apply here).
@@ -10653,7 +10850,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 });
               }
             }
-            emitDiag(session, 'greeting_sent', _sfDecision.diag);
+            // VTID-04369: every opener carries the Monitor columns.
+            emitDiag(session, 'greeting_sent', withGreetingMonitorFields(_sfDecision.diag, {
+              bucket: _temporalSF.bucket,
+              currentRoute: session.current_route ?? null,
+              lang: greetLang,
+              // VTID-04420: which provider's candidate won and whether it was spoken.
+              candidate: { ...resolveCandidateOutcome(_sfDecision.wakeOpener, (session as any).wakeBriefDecision) },
+            }));
             if (_sfDecision.effects.armWatchdog) {
               startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
             }
@@ -10871,7 +11075,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       // closed a day_close one", so a plain last-value stash is enough; no
       // history, no other reader.
       (session as any)._lastWakeOpener = decision.wakeOpener;
-      emitDiag(session, 'greeting_sent', decision.diag);
+      // VTID-04369: every opener carries the Monitor columns.
+      emitDiag(session, 'greeting_sent', withGreetingMonitorFields(decision.diag, {
+        bucket: _temporalSync.bucket,
+        currentRoute: session.current_route ?? null,
+        lang,
+        // VTID-04420: which provider's candidate won and whether it was spoken.
+        candidate: { ...resolveCandidateOutcome(decision.wakeOpener, (session as any).wakeBriefDecision) },
+      }));
       if (decision.effects.armWatchdog) {
         startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
       }
@@ -11073,11 +11284,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
-            const _decisionNS = computeGreetingDecision({
+            const _decisionNS = decideOpeningFlow({
               ..._ctxNS,
               newdayOverview: _overviewNS,
               greetingLedger: _ledgerNS,
-            });
+            }, { transport: 'vertex', role: session.active_role ?? null });
 
             // VTID-03609 — the three ways this can still not fire, named apart.
             emitDiag(session, 'newday_briefing_eval', {
@@ -11204,13 +11415,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             lang,
           });
           if (ws.readyState !== WebSocket.OPEN) return;
-          const _fallbackNS = computeGreetingDecision(_ctxNS);
+          const _fallbackNS = decideOpeningFlow(_ctxNS, { transport: 'vertex', role: session.active_role ?? null });
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
           _renderSync(_fallbackNS);
           // VTID-03604 — this IS the path a routine evening takes: the user
           // already got their morning briefing, so briefingDue() is false and
           // shouldAttemptNewdayOverview rejected above, but the day-close rung
-          // still runs inside computeGreetingDecision(_ctxNS) and outranks
+          // still runs inside the brain decision on _ctxNS and outranks
           // everything below it.
           // VTID-03743 review fix — deferred until delivery is confirmed,
           // see schedulePersistDayCloseStamp's doc.
@@ -11235,7 +11446,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           });
           try {
             if (ws.readyState !== WebSocket.OPEN) return;
-            const _recoverNS = computeGreetingDecision(_baseCtxSync);
+            const _recoverNS = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
             if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_recoverNS);
             // VTID-03743 review fix — this recovery path renders through the
@@ -11261,7 +11472,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       return true;
     }
 
-    const _syncDecision = computeGreetingDecision(_baseCtxSync);
+    const _syncDecision = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
     // legacy_default historically did NOT advance the opening state machine; the
     // other rungs did. Preserve that exactly.
     if (_syncDecision.wakeOpener !== 'legacy_default') {
@@ -14628,7 +14839,13 @@ router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, r
 
     // 2. Invoke the SAME bootstrap path the voice ORB uses ------------------
     const debugSessionId = `debug-awareness-${Date.now()}`;
-    const bootstrapResult = await buildBootstrapContextPack(identity, debugSessionId);
+    // VTID-04417: the shared builder, so this shows what a real session gets
+    // (the brain when vitana_brain_orb_enabled is on), not the legacy pack.
+    const { buildBaseSessionContext, resolveBrainRole } = await import('../orb/live/session/session-context-builder');
+    const bootstrapResult = await buildBaseSessionContext(
+      { identity, sessionId: debugSessionId, brainRole: resolveBrainRole({ identityRole: (identity as { active_role?: string | null }).active_role ?? null }) },
+      { legacy: buildBootstrapContextPack },
+    );
 
     const contextInstruction = bootstrapResult.contextInstruction || '';
     checks.context_injected = contextInstruction.length > 0;
@@ -14752,6 +14969,7 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
   }
   try {
     const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+    // brain-parity-allow: debug endpoint that renders the brain instruction itself.
     const { instruction } = await buildBrainSystemInstruction({
       user_id: userId,
       tenant_id: tenantId,
@@ -15125,8 +15343,13 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
   console.log(`[VTID-01225] Testing context bootstrap for user=${userId.substring(0, 8)}..., tenant=${tenantId.substring(0, 8)}...`);
 
   try {
-    // Call the exact same function used by Live sessions
-    const bootstrapResult = await buildBootstrapContextPack(testIdentity, testSessionId);
+    // Call the exact same builder used by Live sessions (VTID-04417: the
+    // shared session-context builder, brain when enabled).
+    const { buildBaseSessionContext } = await import('../orb/live/session/session-context-builder');
+    const bootstrapResult = await buildBaseSessionContext(
+      { identity: testIdentity, sessionId: testSessionId, brainRole: 'community' },
+      { legacy: buildBootstrapContextPack },
+    );
 
     // Extract memory items from context pack for detailed response
     const memoryItems = bootstrapResult.contextPack?.memory_hits?.map(hit => ({
@@ -15371,6 +15594,35 @@ async function emitLiveSessionEvent(
  * Captures session state snapshot at critical pipeline points so we can
  * trace exactly where/why sessions stall without Cloud Run log access.
  */
+/**
+ * VTID-04393 (WS-1.1): `brain_context_built` diag — what the bootstrap packer
+ * did for this session's instruction. Deduplicated per session on the pack's
+ * shape so a re-measured envelope does not emit twice.
+ */
+export function brainContextBuiltPayload(pack: BootstrapPackResult): Record<string, unknown> {
+  const keysBy = (o: 'kept' | 'shortened' | 'dropped') => pack.sections.filter((s) => s.outcome === o).map((s) => s.key);
+  return {
+    chars_before: pack.chars_before,
+    chars_after: pack.chars_after,
+    packed: pack.packed,
+    section_count: pack.sections.length,
+    pinned_chars: pack.sections.filter((s) => s.priority === 0).reduce((a, s) => a + s.chars, 0),
+    shortened: keysBy('shortened'),
+    dropped: keysBy('dropped'),
+    kept: keysBy('kept').filter((k) => !k.startsWith('end:')).slice(0, 40),
+  };
+}
+
+function recordBrainContextBuilt(session: GeminiLiveSession, pack: BootstrapPackResult): void {
+  try {
+    const payload = brainContextBuiltPayload(pack);
+    const signature = `${payload.chars_before}|${payload.chars_after}|${(payload.dropped as string[]).join(',')}`;
+    if ((session as any)._brainContextSignature === signature) return;
+    (session as any)._brainContextSignature = signature;
+    emitDiag(session, 'brain_context_built', payload);
+  } catch { /* telemetry only */ }
+}
+
 function emitDiag(session: GeminiLiveSession, stage: string, extra?: Record<string, unknown>): void {
   emitLiveSessionEvent('orb.live.diag', {
     session_id: session.sessionId,
@@ -15574,6 +15826,7 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   if (!identity?.user_id || !identity?.tenant_id) {
     return res.json({ ok: true, prewarm: 'skipped_anonymous' });
   }
+  // brain-parity-allow: cache pre-warm of the legacy fallback; builds nothing for a session.
   void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
     .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
   // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
@@ -15957,13 +16210,30 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     if (bootstrapAgeMs < BOOTSTRAP_REBUILD_MIN_AGE_MS) {
       console.log(`[BOOTSTRAP-ORB-PHASE1] Reconnect within ${Math.round(bootstrapAgeMs / 1000)}s of session-start for ${sessionId} — reusing cached bootstrap context (saved ~${Math.round((session.contextBootstrapLatencyMs || 800))} ms)`);
     } else {
-      console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns, bootstrap age ${Math.round(bootstrapAgeMs / 1000)}s). Rebuilding context pack...`);
+      console.log(`[VTID-01225] Reconnect detected for ${sessionId} (${session.transcriptTurns.length} turns, bootstrap age ${Math.round(bootstrapAgeMs / 1000)}s). Rebuilding context (${session.contextBuilder ?? 'legacy'})...`);
       try {
-        const bootstrapResult = await buildBootstrapContextPack(session.identity, sessionId);
-        if (bootstrapResult.contextInstruction) {
-          session.contextInstruction = bootstrapResult.contextInstruction;
+        // VTID-04414 (WS-1.3): rebuild with the builder, role and extras the
+        // session started with. Before, this was always the legacy pack with no
+        // Autopilot offer, admin briefing or journey block — a brain session
+        // silently switched context, and a lesson got the full community pack.
+        const { rebuildSessionContext } = await import('../orb/live/session/session-context-builder');
+        const { isAdminRole } = await import('../services/admin-scanners/briefing');
+        const rebuilt = await rebuildSessionContext(session, sessionId, {
+          legacy: buildBootstrapContextPack,
+          isAdminRole,
+        });
+        if (rebuilt && rebuilt.contextInstruction) {
+          session.contextInstruction = rebuilt.contextInstruction;
           session.contextBootstrapBuiltAt = Date.now();
-          console.log(`[VTID-01225] Context pack rebuilt on reconnect: ${bootstrapResult.latencyMs}ms, chars=${session.contextInstruction.length}`);
+          console.log(`[VTID-01225] Context rebuilt on reconnect (${rebuilt.builder}): ${rebuilt.latencyMs}ms, chars=${session.contextInstruction.length}`);
+          emitDiag(session, 'context_rebuilt_on_reconnect', {
+            builder: rebuilt.builder,
+            started_builder: session.contextBuilder ?? null,
+            chars: rebuilt.contextInstruction.length,
+            latency_ms: rebuilt.latencyMs,
+            brain_error: rebuilt.brainError ?? null,
+            turns: session.transcriptTurns.length,
+          });
         }
       } catch (err: any) {
         console.warn(`[VTID-01225] Context pack rebuild on reconnect failed: ${err.message}`);
@@ -16229,19 +16499,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       session.sseResponse = null;
     }
 
-    // VTID-04365: the SSE close tears the upstream down below, so this is a
-    // session end — one commit (idempotent if /live/session/stop also runs).
-    if (session.identity && session.identity.tenant_id && session.transcriptTurns.length > 0) {
-      commitSessionMemory({
-        transcript: renderTranscript(session.transcriptTurns),
-        tenantId: session.identity.tenant_id,
-        userId: session.identity.user_id,
-        sessionId,
-        activeRole: session.active_role || session.identity.role || null,
-        channel: 'orb_voice',
-        trigger: 'sse_close',
-      });
-    }
+    // VTID-04353: memory + voice summary through the one idempotent finalize
+    // (was a separate forced extraction racing POST /live/session/stop).
+    finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
@@ -16992,7 +17252,13 @@ router.get('/health', async (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update';
+  // VTID-04425: context_update fields (validated by applyContextUpdate)
+  current_route?: string;
+  recent_routes?: string[];
+  screen_title?: string;
+  app_state?: Record<string, unknown>;
+  is_mobile?: boolean;
   // Text message fields
   text?: string;
   // Start message fields
@@ -17256,6 +17522,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
 }
 
 /**
+ * VTID-04425 (WS-3.3): apply a mid-session context_update from either
+ * transport. A route change emits one bounded diagnostic.
+ */
+export function handleContextUpdate(session: GeminiLiveSession, raw: unknown): void {
+  handleContextUpdateMessage(session, raw, emitDiag);
+}
+
+/**
  * VTID-01222: Handle messages from WebSocket client
  */
 async function handleWsClientMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
@@ -17371,6 +17645,16 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
 
     case 'stop':
       handleWsStopSession(clientSession);
+      break;
+
+    case 'context_update':
+      // VTID-04425 (WS-3.3): the host's screen changed mid-session. Updates
+      // the session state the tools read; never injected into the model
+      // stream (VTID-04424). No error frame without a session — the widget
+      // may report a route change between sessions.
+      if (liveSession && liveSession.active) {
+        handleContextUpdate(liveSession, message);
+      }
       break;
 
     default:
@@ -18196,6 +18480,14 @@ function handleWsStopSession(clientSession: WsClientSession): void {
 
   if (liveSession) {
     liveSession.active = false;
+
+    // VTID-04353: commit memory + summary here too — this handler nulls
+    // clientSession.liveSession, so the socket-close cleanup that follows
+    // can no longer reach the transcript.
+    finalizeLiveSession(liveSession, {
+      sessionId: liveSession.sessionId || sessionId,
+      reason: 'ws_stop',
+    });
 
     // VTID-03616: mirror terminateExistingSessionsForUser's teardown — clear
     // the response watchdog and both keepalive intervals BEFORE dropping the

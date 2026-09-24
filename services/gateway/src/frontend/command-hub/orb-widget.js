@@ -2216,6 +2216,13 @@
       // Console thread on screen, so voice turns land in that thread.
       if (_s.operatorThreadId) startPayload.operator_thread_id = _s.operatorThreadId;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
+      // VTID-04430: the host app's build stamp (<meta name="vitana-app-version">),
+      // so a ticket filed by voice carries the app version like a typed one.
+      try {
+        var _appVerMeta = document.querySelector('meta[name="vitana-app-version"]');
+        var _appVer = _appVerMeta && _appVerMeta.getAttribute('content');
+        if (_appVer && _appVer.charAt(0) !== '%' && _appVer.length <= 64) startPayload.app_version = _appVer;
+      } catch (_) { /* no DOM meta — leave unset */ }
 
       // VTID-03300: "My Journey" next-step focus. When the host opens the orb
       // by tapping a specific Foundation step (VitanaOrb.focusJourneyStep), the
@@ -2415,6 +2422,7 @@
       }
 
       _s.sessionId = data.session_id;
+      _s._lastContextUpdateKey = null; // VTID-04425: a new session has seen nothing yet
       _s.active = true;
       // VTID-03763: this is a fresh (or reconnected) session's connection —
       // any poll loop still ticking from a prior connection is now stale.
@@ -2587,6 +2595,7 @@
           if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during start handshake');
           _s.ws = w;
           _s.sessionId = msg.session_id;
+          _s._lastContextUpdateKey = null; // VTID-04425
           _s.active = true;
           // VTID-03763: this is a fresh (or reconnected) session's connection —
           // any poll loop still ticking from a prior connection is now stale.
@@ -4039,6 +4048,53 @@
     if (_s._audioSendFailCount >= 2) {
       _announceDisconnect('network');
     }
+  }
+
+  // VTID-04425 (WS-3.3): tell a LIVE session that the host's screen changed.
+  // Before this, the screen reached the gateway only in the start payload, so
+  // a screen the user tapped to mid-conversation stayed invisible to
+  // get_current_screen and the navigator. Debounced (a route change and its
+  // title settle together) and deduplicated; never sent without a session.
+  // The gateway updates session state only — nothing is spoken because of it.
+  var CONTEXT_UPDATE_DEBOUNCE_MS = 250;
+  function _buildContextUpdate() {
+    var msg = { type: 'context_update' };
+    if (_s.currentRoute) msg.current_route = _s.currentRoute;
+    if (_s.recentRoutes && _s.recentRoutes.length) msg.recent_routes = _s.recentRoutes;
+    if (typeof _s.screenTitle === 'string' && _s.screenTitle) msg.screen_title = _s.screenTitle;
+    if (_s.appState) msg.app_state = _s.appState;
+    if (typeof _s.isMobileHost === 'boolean') msg.is_mobile = _s.isMobileHost;
+    return msg;
+  }
+  function _scheduleContextUpdate() {
+    if (_s._contextUpdateTimer) clearTimeout(_s._contextUpdateTimer);
+    _s._contextUpdateTimer = setTimeout(function () {
+      _s._contextUpdateTimer = null;
+      _sendContextUpdate();
+    }, CONTEXT_UPDATE_DEBOUNCE_MS);
+  }
+  function _sendContextUpdate() {
+    if (!_s.sessionId || !_s.active) return;
+    var msg = _buildContextUpdate();
+    var key = JSON.stringify(msg);
+    if (key === _s._lastContextUpdateKey) return;
+    if (_s.ws) {
+      try {
+        if (_s.ws.readyState === 1) {
+          _s.ws.send(key);
+          _s._lastContextUpdateKey = key;
+        }
+      } catch (e) { /* the next route change retries */ }
+      return;
+    }
+    var headers = { 'Content-Type': 'application/json' };
+    if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+    _s._lastContextUpdateKey = key;
+    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+      method: 'POST', headers: headers, body: key
+    }).then(function (r) {
+      if (!r.ok) _s._lastContextUpdateKey = null;
+    }, function () { _s._lastContextUpdateKey = null; });
   }
 
   function _sendInterrupt() {
@@ -5622,6 +5678,14 @@
           .filter(function (r) { return typeof r === 'string'; })
           .slice(0, 5);
       }
+      // VTID-04425 (WS-3.3): screen title + small app state, and the mobile
+      // flag, for the mid-session context_update below.
+      if (typeof ctx.screen_title === 'string') _s.screenTitle = ctx.screen_title;
+      if (ctx.app_state && typeof ctx.app_state === 'object' && !Array.isArray(ctx.app_state)) {
+        _s.appState = ctx.app_state;
+      }
+      if (typeof ctx.is_mobile === 'boolean') _s.isMobileHost = ctx.is_mobile;
+      _scheduleContextUpdate();
       // VTID-04309: the host switched Operator Console threads.
       if (typeof ctx.operator_thread_id === 'string') {
         _s.operatorThreadId = ctx.operator_thread_id || null;

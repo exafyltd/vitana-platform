@@ -82,6 +82,8 @@ export interface ReportToSpecialistOptions {
   session_id?: string | null;
   /** VTID-04332: the screen the member was on (session.current_route). */
   current_route?: string | null;
+  /** VTID-04430: the client build stamp (feedback_tickets.app_version). */
+  app_version?: string | null;
 }
 
 /**
@@ -370,6 +372,7 @@ export async function executeReportToSpecialist(
       current_route: options.current_route ?? null,
     },
     screen_path: screenPath,
+    app_version: options.app_version ?? null,
     resolver_agent: pickedPersona || null,
     triaged_at: triagedAt,
   });

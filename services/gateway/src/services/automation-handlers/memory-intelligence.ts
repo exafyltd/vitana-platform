@@ -936,7 +936,32 @@ async function runDailyLearningEpisodes(ctx: AutomationContext) {
   return { usersAffected: written, actionsTaken: written };
 }
 
+// ── AP-0915: Diary Theme Rollup (VTID-04444, WS-4.2) ─────────
+// The nightly consolidator's loop 10, scheduled per tenant. Same rollup, same
+// flag: nothing runs unless CONSOLIDATOR_DIARY_ROLLUP_ENABLED is exactly
+// 'true'. 25 model calls / 4 minutes per run; users whose entries did not
+// change since the last rollup cost no call.
+async function runDiaryThemeRollupHandler(ctx: AutomationContext) {
+  const rollup = await import('../memory/diary-theme-rollup');
+  if (!rollup.isDiaryRollupEnabled()) {
+    ctx.log('diary theme rollup disabled (CONSOLIDATOR_DIARY_ROLLUP_ENABLED is not "true")');
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const r = await rollup.runDiaryThemeRollup(ctx.supabase, { tenantId: ctx.tenantId });
+  for (const note of r.notes) ctx.log(note);
+  await ctx.emitEvent('autopilot.memory.diary_themes_rolled_up', {
+    candidates: r.candidates,
+    processed: r.processed,
+    written: r.written,
+    model_calls: r.model_calls,
+    errors: r.errors,
+    outcomes: r.outcomes,
+  });
+  return { usersAffected: r.written, actionsTaken: r.written };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
+  registerHandler('runDiaryThemeRollup', runDiaryThemeRollupHandler);
   registerHandler('runDailyLearningEpisodes', runDailyLearningEpisodes);
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);

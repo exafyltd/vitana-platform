@@ -1,0 +1,20 @@
+VTID-04340 — commands run
+
+1. Allocated VTID-04340 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
+   set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
+
+2. Live evidence (read-only SQL, Supabase project inmkhvwdcuyhnxkgfvsb):
+   user_assistant_state signal_name='user_profile_narrative_v1':
+     count=26, max(last_seen_at)=2026-07-06 23:14:14Z, rows in last 7 days=0
+   automation_runs AP-0911: 3 runs total, last 2026-07-06 23:12:33Z
+
+3. Readers of the narrative: grep readUserProfileNarrative / "PROFILE SYNTHESIS"
+   -> one reader (user-context-profiler.ts), no test pinning the header text.
+
+4. Tests:
+   node_modules/.bin/jest test/services/vtid-04340-profile-narrative-freshness.test.ts \
+     test/services/user-model-synthesis.test.ts          -> 27 passed
+   node_modules/.bin/jest --testPathPattern "(user-context-profiler|user-model-synthesis|profile-narrative|automation-handlers-phase2|memory-intelligence)"
+                                                          -> 6 suites, 137 passed
+
+5. Typecheck: node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .  -> exit 0

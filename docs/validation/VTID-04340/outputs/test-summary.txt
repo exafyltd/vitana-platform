@@ -1,0 +1,22 @@
+PASS test/services/vtid-04340-profile-narrative-freshness.test.ts
+    ✓ returns a fresh narrative with its age (4 ms)
+    ✓ drops a narrative older than the default max age (the July rows) (1 ms)
+    ✓ keeps a narrative exactly at the max age and drops one just past it (1 ms)
+    ✓ honours an explicit maxAgeDays (1 ms)
+    ✓ returns null for missing generated_at
+    ✓ returns null for unparseable generated_at
+    ✓ returns null for non-string generated_at
+    ✓ returns null for empty narrative
+    ✓ returns null when there is no row or the read errors (1 ms)
+    ✓ defaults to 7 and accepts a positive override
+    ✓ falls back to the default for "0"
+    ✓ falls back to the default for "-2"
+    ✓ falls back to the default for "abc" (1 ms)
+    ✓ falls back to the default for ""
+    ✓ 600000 ms -> "less than an hour"
+    ✓ 3600000 ms -> "1 hour"
+    ✓ 18000000 ms -> "5 hours"
+    ✓ 169200000 ms -> "47 hours"
+    ✓ 259200000 ms -> "3 days"
+    ✓ no longer claims "nightly" and labels the real age (1 ms)
+Tests:       20 passed, 20 total

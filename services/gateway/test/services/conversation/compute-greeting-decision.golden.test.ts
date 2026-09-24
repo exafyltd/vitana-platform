@@ -942,3 +942,68 @@ describe('setNewdayOverviewRungEnabled — new-day overview kill switch', () => 
     expect(computeGreetingDecision(ctx(richContext)).wakeOpener).toBe('newday_overview');
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-04420 (Plan v1 WS-2.1) — one phrasing rule for every rung
+// ---------------------------------------------------------------------------
+
+import {
+  PHRASING_RULE,
+  isVerbatimRecitationDirective,
+} from '../../../src/services/conversation/phrasing-rule';
+
+describe('computeGreetingDecision — VTID-04420 one phrasing rule', () => {
+  const langs = ['de', 'en', 'sr', 'pl', 'ar'];
+  const buckets = ['reconnect', 'recent', 'same_day', 'today', 'yesterday', 'week', 'long', 'first'] as const;
+  const variants: Array<[string, Partial<GreetingDecisionContext>]> = [
+    ['plain', {}],
+    ['no name', { firstName: null }],
+    ['first time', { greetingIsFirstTime: true, greetingNeedsOnboarding: true, hasPriorSession: false }],
+    ['proactive line', { proactiveLine: 'You have two new messages from Ana. Want to read them?' }],
+    ['briefing due', { lastFullBriefingDate: '2026-06-29', newdayOverview: richPayload() }],
+    ['resume payload', { resumeOverview: richPayload({ messages_unread: 2 }) }],
+    ['failure', { wasFailure: true }],
+    ['anonymous', { isAnonymous: true, hasUserId: false }],
+  ];
+
+  test('no rung asks the model to recite a finished sentence', () => {
+    const offenders: string[] = [];
+    for (const lang of langs) {
+      for (const bucket of buckets) {
+        for (const [label, over] of variants) {
+          for (const base of [ctx, safeFastCtx]) {
+            const d = computeGreetingDecision(base({ lang, greetLang: lang, bucket, ...over }));
+            if (isVerbatimRecitationDirective(d.directive)) {
+              offenders.push(`${d.wakeOpener} lang=${lang} bucket=${bucket} ${label}`);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('the two former verbatim rungs carry the shared phrasing rule and the name', () => {
+    const newday = computeGreetingDecision(
+      safeFastCtx({ lang: 'pl', greetLang: 'pl', bucket: 'today', lastFullBriefingDate: '2026-06-30' }),
+    );
+    expect(newday.wakeOpener).toBe('safe_fast_newday');
+    expect(newday.directive).toContain(PHRASING_RULE);
+    expect(newday.directive).toContain('"Dragan"');
+    expect(newday.directive).not.toMatch(/Good morning|Guten Morgen|Добро/);
+
+    const welcome = computeGreetingDecision(
+      safeFastCtx({ greetingIsFirstTime: true, greetingNeedsOnboarding: true, hasPriorSession: false }),
+    );
+    expect(welcome.wakeOpener).toBe('safe_fast_first_time_welcome');
+    expect(welcome.directive).toContain(PHRASING_RULE);
+    expect(welcome.directive).not.toMatch(/Herzlich willkommen|Welcome to Maxina!/);
+  });
+
+  test('the detector accepts the negated "do not recite … word for word" instruction', () => {
+    expect(isVerbatimRecitationDirective('Compose it yourself; do not recite the lead word for word.')).toBe(false);
+    expect(isVerbatimRecitationDirective('Say exactly: "Hallo."')).toBe(true);
+    expect(isVerbatimRecitationDirective('speak it verbatim as audio')).toBe(true);
+    expect(isVerbatimRecitationDirective(null)).toBe(false);
+  });
+});

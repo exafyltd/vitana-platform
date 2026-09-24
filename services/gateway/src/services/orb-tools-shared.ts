@@ -190,6 +190,8 @@ export interface OrbToolIdentity {
    * the surface this resolves to, the way report_to_specialist does.
    */
   current_route?: string | null;
+  /** VTID-04430: the client build stamp; typed feedback tickets store it. */
+  app_version?: string | null;
 }
 
 export type OrbToolResult =
@@ -3701,18 +3703,14 @@ export async function tool_navigate(
     // LLM → navigate_to_screen, and that fresh confident nav supersedes this.
     if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
       try {
-        const { writeOrbSessionState } = await import('./orb/orb-session-state');
-        await writeOrbSessionState(
-          sb,
-          id.user_id,
-          'pending_cta',
-          {
-            tool: 'navigate_to_screen',
-            payload: { screen_id: top.screen_id, route: top.route, title: top.title },
-            offered_at: new Date().toISOString(),
-          },
-          5,
-        );
+        const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+        await recordPendingOffer(sb, id.user_id, {
+          tool: 'navigate_to_screen',
+          payload: { screen_id: top.screen_id, route: top.route, title: top.title },
+          source: 'navigator_ambiguous',
+          key: `nav:${top.screen_id}`,
+          ttlMinutes: 5,
+        });
       } catch (e) {
         console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
       }
@@ -3946,22 +3944,18 @@ export async function tool_navigate(
     // without the model having to re-derive anything.
     if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
       try {
-        const { writeOrbSessionState } = await import('./orb/orb-session-state');
-        await writeOrbSessionState(
-          sb,
-          id.user_id,
-          'pending_cta',
-          {
-            tool: 'navigate_to_screen',
-            payload: {
-              screen_id: consultResult.primary.screen_id,
-              route: consultResult.primary.route,
-              title: consultResult.primary.title,
-            },
-            offered_at: new Date().toISOString(),
+        const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+        await recordPendingOffer(sb, id.user_id, {
+          tool: 'navigate_to_screen',
+          payload: {
+            screen_id: consultResult.primary.screen_id,
+            route: consultResult.primary.route,
+            title: consultResult.primary.title,
           },
-          5,
-        );
+          source: 'navigator_reopened',
+          key: `nav:${consultResult.primary.screen_id}`,
+          ttlMinutes: 5,
+        });
       } catch (e) {
         console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
       }
@@ -4342,6 +4336,14 @@ export async function tool_get_current_screen(
     ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
   const lang = (id.lang || 'en') as string;
+  // VTID-04425: the host's screen title and small app state, reported
+  // mid-session via context_update. Values were validated on arrival.
+  const screenState = args.screen_state && typeof args.screen_state === 'object' && !Array.isArray(args.screen_state)
+    && Object.keys(args.screen_state as Record<string, unknown>).length > 0
+    ? (args.screen_state as Record<string, unknown>)
+    : null;
+  const withState = <T extends Record<string, unknown>>(o: T): T & { screen_state?: Record<string, unknown> } =>
+    (screenState ? { ...o, screen_state: screenState } : o);
 
   if (!route) {
     return {
@@ -4361,34 +4363,28 @@ export async function tool_get_current_screen(
       if (e) trailTitles.push(getContent(e, lang).title);
       if (trailTitles.length >= 4) break;
     }
+    const screen = withState({
+      title: content.title,
+      description: content.description,
+      category: entry.category,
+      screen_id: entry.screen_id,
+      route: entry.route,
+      recent_screens: trailTitles,
+    });
     return {
       ok: true,
-      result: {
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      },
-      text: JSON.stringify({
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      }),
+      result: screen,
+      text: JSON.stringify(screen),
     };
   }
 
   // Unknown route — catalog miss.
-  const fallback = {
+  const fallback = withState({
     title: 'Unknown screen',
     description: 'The user is on a route that is not in the navigation catalog.',
     route,
-    recent_screens: [],
-  };
+    recent_screens: [] as string[],
+  });
   return {
     ok: true,
     result: fallback,
@@ -5524,21 +5520,28 @@ export async function tool_offer_action(
       : {};
   const ttlRaw = Number(args.ttl_minutes);
   const ttl = Number.isFinite(ttlRaw) && ttlRaw > 0 && ttlRaw <= 30 ? ttlRaw : 5;
-  const { writeOrbSessionState } = await import('./orb/orb-session-state');
-  const res = await writeOrbSessionState(
-    sb,
-    id.user_id,
-    'pending_cta',
-    { tool, payload, offered_at: new Date().toISOString() },
-    ttl,
-  );
+  // VTID-04355: the one writer — records the offer and its outcome events.
+  const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+  const res = await recordPendingOffer(sb, id.user_id, {
+    tool,
+    payload,
+    source: 'offer_action',
+    key: typeof args.key === 'string' && args.key.trim() ? args.key.trim() : null,
+    ttlMinutes: ttl,
+  });
   if (!res.ok) return { ok: false, error: res.reason ?? 'offer_action: failed to store pending action.' };
+  // VTID-04355: only a well-formed navigate_to_screen is run by the acceptance
+  // gate. Telling the model every offer "runs automatically" made it stand
+  // down on "yes" for offers nothing then ran.
+  const { isAutoRunnableOffer } = await import('./assistant-continuation/acceptance-gate');
+  const autoRuns = isAutoRunnableOffer({ tool, payload });
   return {
     ok: true,
-    result: { stored: true, tool },
-    // LLM-facing guidance (not user-visible): ask the yes/no and wait — the
-    // offered action fires automatically on acceptance, so don't re-resolve it.
-    text: 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the offered action runs automatically — do not re-resolve or re-search it.',
+    result: { stored: true, tool, auto_runs: autoRuns },
+    // LLM-facing guidance (not user-visible).
+    text: autoRuns
+      ? 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the navigation runs automatically — do not re-resolve or re-search it.'
+      : `OFFER_REGISTERED: Ask your yes/no question naturally and wait. Nothing runs automatically for this offer: if the user accepts, call \`${tool}\` yourself with exactly this payload: ${JSON.stringify(payload)}. If they decline, drop it.`,
   };
 }
 
@@ -5911,7 +5914,17 @@ export async function dispatchOrbTool(
   }
 
   try {
-    return await handler(args, identity, sb);
+    const result = await handler(args, identity, sb);
+    // VTID-04355: an accepted offer the model runs itself is cleared only once
+    // its tool has actually succeeded. In-process check first, so a tool call
+    // with no awaiting offer costs nothing.
+    if (result.ok && identity.user_id) {
+      const { getAwaitingOffer, settleOfferOnToolSuccess } = await import('./assistant-continuation/offer-outcomes');
+      if (getAwaitingOffer(identity.user_id)?.tool === name) {
+        void settleOfferOnToolSuccess(sb, identity.user_id, name).catch(() => {});
+      }
+    }
+    return result;
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'unknown error' };
   }
@@ -5953,6 +5966,8 @@ export interface VertexLikeIdentity {
   is_mobile?: boolean | null;
   /** VTID-04382: forwarded so the typed feedback tools pick the surface. */
   current_route?: string | null;
+  /** VTID-04430: forwarded so typed feedback tickets carry the app version. */
+  app_version?: string | null;
 }
 
 export interface VertexLikeToolResult {
@@ -5990,6 +6005,7 @@ export async function dispatchOrbToolForVertex(
       is_anonymous: identity.is_anonymous ?? null,
       is_mobile: identity.is_mobile ?? null,
       current_route: identity.current_route ?? null,
+      app_version: identity.app_version ?? null,
     },
     sb,
   );

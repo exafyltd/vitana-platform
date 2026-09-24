@@ -1,0 +1,569 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = `
+{
+  "case_id": "find-tool-deferred-wallet",
+  "opening": {
+    "candidate": {
+      "candidate_key": "unread:2",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": "legacy_default",
+      "candidate_provider": "unread_messages_announce",
+      "candidate_spoken": false,
+      "candidates_returned": 1,
+    },
+    "directive_chars": 339,
+    "nba": null,
+    "opener_kind": "legacy_default",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "unread_messages_announce",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 47,
+      "declared_tools_sample": [
+        "add_group_chat_member",
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+      ],
+      "deferred_tool_count": 246,
+      "find_tool_results": [
+        "get_wallet_balance",
+        "get_wallet_summary",
+        "list_wallet_transactions",
+        "exchange_currency",
+        "get_index_improvement_suggestions",
+        "request_payment",
+      ],
+      "index": 0,
+      "leads": [
+        {
+          "provider": "unread_messages_announce",
+          "score": 0.645,
+        },
+      ],
+      "route": "/community",
+      "route_groups": [
+        "community",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`replay first-time-member matches its recorded transcript 1`] = `
+{
+  "case_id": "first-time-member",
+  "opening": {
+    "candidate": {
+      "candidate_key": null,
+      "candidate_kind": null,
+      "candidate_outranked_by": null,
+      "candidate_provider": null,
+      "candidate_spoken": false,
+      "candidates_returned": 0,
+    },
+    "directive_chars": 557,
+    "nba": null,
+    "opener_kind": "safe_fast_first_time_welcome",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": "first_time",
+    "shadow_winner": null,
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 48,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "capture_shopping_goal",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+      ],
+      "deferred_tool_count": 245,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [],
+      "route": "/home",
+      "route_groups": [
+        "journey",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`replay health-screen-logging matches its recorded transcript 1`] = `
+{
+  "case_id": "health-screen-logging",
+  "opening": {
+    "candidate": {
+      "candidate_key": "journey_guide:step3",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": "legacy_default",
+      "candidate_provider": "journey_guide",
+      "candidate_spoken": false,
+      "candidates_returned": 1,
+    },
+    "directive_chars": 339,
+    "nba": null,
+    "opener_kind": "legacy_default",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "journey_guide",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 46,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+        "get_current_screen",
+      ],
+      "deferred_tool_count": 247,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [
+        {
+          "provider": "journey_guide",
+          "score": 0.695,
+        },
+      ],
+      "route": "/health",
+      "route_groups": [
+        "health",
+      ],
+    },
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 46,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+        "get_current_screen",
+      ],
+      "deferred_tool_count": 247,
+      "find_tool_results": null,
+      "index": 1,
+      "leads": [
+        {
+          "provider": "journey_guide",
+          "score": 0.695,
+        },
+      ],
+      "route": "/health",
+      "route_groups": [
+        "health",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`replay outranked-candidate matches its recorded transcript 1`] = `
+{
+  "case_id": "outranked-candidate",
+  "opening": {
+    "candidate": {
+      "candidate_key": "login_briefing:today",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": "legacy_default",
+      "candidate_provider": "login_briefing",
+      "candidate_spoken": false,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 339,
+    "nba": null,
+    "opener_kind": "legacy_default",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "login_briefing",
+    "silent": false,
+  },
+  "turns": [],
+}
+`;
+
+exports[`replay personal-weights-shadow matches its recorded transcript 1`] = `
+{
+  "case_id": "personal-weights-shadow",
+  "opening": {
+    "candidate": {
+      "candidate_key": "login_briefing:today",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": null,
+      "candidate_provider": "login_briefing",
+      "candidate_spoken": true,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 1345,
+    "nba": null,
+    "opener_kind": "override_v2",
+    "personal_weights_applied": true,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "journey_guide",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 45,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_perfect_practitioner",
+        "find_perfect_product",
+        "find_reminders",
+      ],
+      "deferred_tool_count": 248,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [
+        {
+          "provider": "journey_guide",
+          "score": 0.773,
+        },
+        {
+          "provider": "login_briefing",
+          "score": 0.581,
+        },
+      ],
+      "route": "/",
+      "route_groups": [],
+    },
+  ],
+}
+`;
+
+exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
+{
+  "case_id": "returning-wallet-balance",
+  "opening": {
+    "candidate": {
+      "candidate_key": "login_briefing:today",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": null,
+      "candidate_provider": "login_briefing",
+      "candidate_spoken": true,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 1345,
+    "nba": null,
+    "opener_kind": "override_v2",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "login_briefing",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 48,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+        "get_current_screen",
+      ],
+      "deferred_tool_count": 245,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [
+        {
+          "provider": "login_briefing",
+          "score": 0.705,
+        },
+        {
+          "provider": "journey_guide",
+          "score": 0.665,
+        },
+      ],
+      "route": "/wallet",
+      "route_groups": [
+        "wallet",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`replay screen-change-leads matches its recorded transcript 1`] = `
+{
+  "case_id": "screen-change-leads",
+  "opening": {
+    "candidate": {
+      "candidate_key": "journey_guide:step3",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": "legacy_default",
+      "candidate_provider": "journey_guide",
+      "candidate_spoken": false,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 339,
+    "nba": null,
+    "opener_kind": "legacy_default",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "journey_guide",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 48,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "capture_shopping_goal",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+      ],
+      "deferred_tool_count": 245,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [
+        {
+          "provider": "journey_guide",
+          "score": 0.665,
+        },
+        {
+          "provider": "unread_messages_announce",
+          "score": 0.645,
+        },
+      ],
+      "route": "/home",
+      "route_groups": [
+        "journey",
+      ],
+    },
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 46,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_reminders",
+        "find_tool",
+        "get_current_screen",
+      ],
+      "deferred_tool_count": 247,
+      "find_tool_results": null,
+      "index": 1,
+      "leads": [
+        {
+          "provider": "unread_messages_announce",
+          "score": 0.645,
+        },
+        {
+          "provider": "journey_guide",
+          "score": 0.635,
+        },
+      ],
+      "route": "/health/sleep",
+      "route_groups": [
+        "health",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`replay silent-reconnect matches its recorded transcript 1`] = `
+{
+  "case_id": "silent-reconnect",
+  "opening": {
+    "candidate": {
+      "candidate_key": "login_briefing:today",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": "silent_reconnect",
+      "candidate_provider": "login_briefing",
+      "candidate_spoken": false,
+      "candidates_returned": 1,
+    },
+    "directive_chars": 0,
+    "nba": null,
+    "opener_kind": "silent_reconnect",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "login_briefing",
+    "silent": true,
+  },
+  "turns": [],
+}
+`;
+
+exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
+{
+  "case_id": "small-talk-no-advisor",
+  "opening": {
+    "candidate": {
+      "candidate_key": null,
+      "candidate_kind": null,
+      "candidate_outranked_by": null,
+      "candidate_provider": null,
+      "candidate_spoken": false,
+      "candidates_returned": 0,
+    },
+    "directive_chars": 339,
+    "nba": null,
+    "opener_kind": "legacy_default",
+    "personal_weights_applied": false,
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": null,
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": false,
+      "declared_tool_count": 45,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_perfect_practitioner",
+        "find_perfect_product",
+        "find_reminders",
+      ],
+      "deferred_tool_count": 248,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [],
+      "route": "/",
+      "route_groups": [],
+    },
+    {
+      "advisor_eligible": false,
+      "declared_tool_count": 45,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_perfect_practitioner",
+        "find_perfect_product",
+        "find_reminders",
+      ],
+      "deferred_tool_count": 248,
+      "find_tool_results": null,
+      "index": 1,
+      "leads": [],
+      "route": "/",
+      "route_groups": [],
+    },
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 45,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_perfect_practitioner",
+        "find_perfect_product",
+        "find_reminders",
+      ],
+      "deferred_tool_count": 248,
+      "find_tool_results": null,
+      "index": 2,
+      "leads": [],
+      "route": "/",
+      "route_groups": [],
+    },
+  ],
+}
+`;

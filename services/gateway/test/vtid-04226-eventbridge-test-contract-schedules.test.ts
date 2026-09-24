@@ -55,8 +55,9 @@ describe('VTID-04226: EventBridge JOBS carry the two test-contract scanners', ()
 
   it('keeps every pre-existing VTID-03766 job (25) and adds exactly 2', () => {
     // +1: VTID-04391 AP-0914 daily learning episode. +1: VTID-04407 handoff sweep.
-    expect(jobs.length).toBe(29);
-    expect(jobs.filter((l) => l.includes('/api/v1/automations/cron/AP-')).length).toBe(20);
+    // +1: VTID-04444 AP-0915 diary theme rollup.
+    expect(jobs.length).toBe(30);
+    expect(jobs.filter((l) => l.includes('/api/v1/automations/cron/AP-')).length).toBe(21);
   });
 
   it('the schedule Input merges the EXTRA json (method/auth/gateway_url) onto path+body', () => {
@@ -106,7 +107,7 @@ describe('VTID-04226: scripts parse and dry-run', () => {
     }).toString();
     expect(out).toContain('gateway-test-contracts-scheduled-run  (*/15 * * * * UTC)  -> /api/v1/test-contracts/scheduled-run');
     expect(out).toContain('gateway-test-contracts-missing  (30 6 * * * UTC)  -> /api/v1/test-contracts/missing');
-    expect(out).toContain('Jobs:     29');
+    expect(out).toContain('Jobs:     30'); // +1: VTID-04444 AP-0915
   });
 
   it('the token provisioning script is dry-run by default and never defaults to prod', () => {

@@ -7561,16 +7561,307 @@ function renderConversationConfigView() {
     return ui.panel;
 }
 
+// VTID-04371 (WS-0.7): Monitor dashboard + Assistant › Metrics learning health,
+// both read from the hourly rollup (conversation_metrics_hourly), never from
+// oasis_events directly. Class-based styling only (CSP gate).
+var CONV_METRIC_WINDOWS = [{ hours: 24, label: '24 h' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
+
+function _convPct(r) {
+    if (!r || r.rate == null) return '—';
+    return (Math.round(r.rate * 1000) / 10) + '%';
+}
+
+function _convWhen(iso) {
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+function _convMs(v) {
+    if (!v || v.value == null) return '—';
+    return v.value >= 10000 ? (Math.round(v.value / 100) / 10) + ' s' : Math.round(v.value) + ' ms';
+}
+
+function _convTile(label, value, sub, tone) {
+    var t = _convEl('div', { cls: 'conv-metric-tile' + (tone ? ' conv-metric-tile--' + tone : '') });
+    t.appendChild(_convEl('div', { text: label, cls: 'conv-metric-tile__label' }));
+    t.appendChild(_convEl('div', { text: value, cls: 'conv-metric-tile__value' }));
+    if (sub) t.appendChild(_convEl('div', { text: sub, cls: 'conv-metric-tile__sub' }));
+    return t;
+}
+
+function _convTileGrid(tiles) {
+    var g = _convEl('div', { cls: 'conv-metric-grid' });
+    tiles.forEach(function (t) { g.appendChild(t); });
+    return g;
+}
+
+function _convHeading(text) {
+    return _convEl('h3', { text: text, cls: 'conv-metric-heading' });
+}
+
+function _convBreakdownRows(list) {
+    return (list || []).map(function (b) {
+        return { key: b.key, count: b.count, share: b.share == null ? '—' : (Math.round(b.share * 1000) / 10) + '%' };
+    });
+}
+
+function _convWindowPicker(current, onPick) {
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_METRIC_WINDOWS.forEach(function (w) {
+        var b = _convEl('button', { text: w.label, cls: 'conv-metric-window' + (w.hours === current ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { onPick(w.hours); });
+        bar.appendChild(b);
+    });
+    return bar;
+}
+
+function _convRenderPerformance(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderPerformance(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/summary?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        body.appendChild(_convEl('div', {
+            text: d.hours_with_data + ' hour(s) with data in the last ' + d.window_hours + ' h · rollup last computed ' + (_convWhen(d.last_computed_at) || 'never') +
+                ' · window percentiles are sample-weighted means of hourly values (approximate)',
+            cls: 'conv-metric-muted'
+        }));
+        var s = d.sessions, sp = d.speed, r = d.reliability, o = d.openers, of = d.offers;
+        body.appendChild(_convHeading('Speed'));
+        body.appendChild(_convTileGrid([
+            _convTile('First speech p50', _convMs(sp.first_audio_ms_p50), sp.first_audio_ms_p50.samples + ' sessions'),
+            _convTile('First speech p90', _convMs(sp.first_audio_ms_p90), 'target < 3 s', sp.first_audio_ms_p90.value != null && sp.first_audio_ms_p90.value > 3000 ? 'warn' : null),
+            _convTile('Context wait timed out', _convPct(sp.context_wait_timeouts), sp.context_wait_timeouts.numerator + ' of ' + sp.context_wait_timeouts.denominator, sp.context_wait_timeouts.rate > 0.5 ? 'warn' : null),
+            // VTID-04399: signed-in sessions that set the model up with no
+            // memory context at all — the WS-1.2 target is under 5%.
+            sp.context_setup_empty ? _convTile('Started with no context', _convPct(sp.context_setup_empty),
+                sp.context_setup_empty.numerator + ' of ' + sp.context_setup_empty.denominator + ' signed-in · target < 5%',
+                sp.context_setup_empty.rate != null && sp.context_setup_empty.rate > 0.05 ? 'warn' : null) : null,
+            sp.context_sources ? _convTile('Context source', String(sp.core_snapshot_used || 0) + ' from snapshot',
+                sp.context_sources.map(function (b) { return b.key + ' ' + b.count; }).join(' · ') || 'no data') : null
+        ].filter(Boolean)));
+        body.appendChild(_convHeading('Sessions'));
+        body.appendChild(_convTileGrid([
+            _convTile('Started', String(s.started)),
+            _convTile('With a stop event', _convPct(s.stop_coverage), s.stopped + ' stopped · ' + s.stop_duplicates + ' duplicate stop(s)', s.stop_coverage.rate != null && s.stop_coverage.rate < 0.9 ? 'warn' : null),
+            _convTile('Silent (no model audio)', _convPct(s.silent), s.silent.numerator + ' of ' + s.silent.denominator, s.silent.rate > 0.1 ? 'warn' : null),
+            _convTile('User turns / session', s.user_turns_avg.value == null ? '—' : String(s.user_turns_avg.value)),
+            _convTile('Duration p50', _convMs(s.duration_ms_p50))
+        ]));
+        body.appendChild(_convHeading('Reliability'));
+        body.appendChild(_convTileGrid([
+            _convTile('Upstream errors', String(r.upstream_errors)),
+            _convTile('Premature-close retries', String(r.premature_close_retries)),
+            _convTile('Reconnects', String(r.reconnects)),
+            _convTile('Greeting recoveries', String(r.greeting_recoveries)),
+            _convTile('Watchdog fired', String(r.watchdog_fired)),
+            _convTile('Tool failures', String(r.tool_failures))
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Error kind' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(r.upstream_errors_by_kind)));
+        body.appendChild(_convHeading('Openers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Greetings sent', String(r.greetings_sent)),
+            _convTile('Same opener within 24 h', _convPct(o.repeat_24h), o.repeat_24h.numerator + ' of ' + o.repeat_24h.denominator + ' (other sessions only)', o.repeat_24h.rate > 0.5 ? 'warn' : null)
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Opener' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(o.distribution)));
+        body.appendChild(_convHeading('Offers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Made', String(of.made)),
+            _convTile('Accepted', _convPct(of.acceptance), of.accepted + ' accepted'),
+            _convTile('Declined', String(of.declined)),
+            _convTile('Replaced', String(of.replaced)),
+            _convTile('Unanswered', String(of.unanswered))
+        ]));
+        body.appendChild(_convHeading('Languages'));
+        body.appendChild(_convTable([{ key: 'key', label: 'Language' }, { key: 'count', label: 'Sessions' }, { key: 'share', label: 'Share' }], _convBreakdownRows(s.by_lang)));
+    }).catch(function (err) { _convError(body, err); });
+}
+
+// VTID-04421 (WS-2.4): suggestion outcomes per provider, from
+// conversation_offer_outcomes (one row per offer, settled by its first outcome).
+var CONV_OFFER_DAYS = [1, 7, 30];
+
+function _convRenderOfferOutcomes(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Suggestion outcomes'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderOfferOutcomes(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/offer-outcomes?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        var rows = d.providers || [];
+        var tot = rows.reduce(function (a, r) {
+            a.made += r.made; a.accepted += r.accepted; a.declined += r.declined; a.ignored += r.ignored; a.open += r.open; return a;
+        }, { made: 0, accepted: 0, declined: 0, ignored: 0, open: 0 });
+        var settled = tot.accepted + tot.declined + tot.ignored;
+        body.appendChild(_convTileGrid([
+            _convTile('Suggestions made', String(tot.made), 'last ' + (d.days || days) + ' day(s)'),
+            _convTile('Accepted', settled ? Math.round(tot.accepted / settled * 1000) / 10 + '%' : '—', tot.accepted + ' of ' + settled + ' settled'),
+            _convTile('Declined', String(tot.declined)),
+            _convTile('Ignored', String(tot.ignored), 'replaced, or unanswered for a day'),
+            _convTile('Still open', String(tot.open))
+        ]));
+        body.appendChild(_convTable(
+            [{ key: 'provider', label: 'Provider' }, { key: 'made', label: 'Made' }, { key: 'accepted', label: 'Accepted' },
+             { key: 'declined', label: 'Declined' }, { key: 'ignored', label: 'Ignored' }, { key: 'open', label: 'Open' }, { key: 'rate', label: 'Acceptance' }],
+            rows.map(function (r) {
+                return { provider: r.provider, made: r.made, accepted: r.accepted, declined: r.declined, ignored: r.ignored, open: r.open,
+                    rate: r.acceptance_rate == null ? '—' : Math.round(r.acceptance_rate * 1000) / 10 + '%' };
+            })
+        ));
+        if (!rows.length) body.appendChild(_convEl('div', { text: 'No suggestions recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
+// VTID-04422 (WS-2.2): the live fixed-priority ranking vs the shadow
+// relevance score, over the sessions in the window.
+function _convRenderShadowRanking(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Ranking: live vs shadow score'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderShadowRanking(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/shadow-ranking?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        body.appendChild(_convEl('div', {
+            text: 'Shadow mode: the weighted score is recorded next to the live ranking and changes nothing Vitana says. Weights: ' +
+                (Object.keys(d.weights_versions || {}).map(function (v) { return 'v' + v + ' (' + d.weights_versions[v] + ')'; }).join(', ') || 'none yet') + '.',
+            cls: 'conv-metric-muted'
+        }));
+        body.appendChild(_convTileGrid([
+            _convTile('Openings ranked', String(d.sessions_ranked || 0), 'of ' + (d.sessions_read || 0) + ' sessions in ' + (d.days || days) + ' day(s)'),
+            _convTile('Agreement', d.agree_rate == null ? '—' : Math.round(d.agree_rate * 1000) / 10 + '%', d.agree + ' same winner'),
+            _convTile('Would differ', String(d.sessions_ranked - d.agree), 'the shadow score picks another provider',
+                d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null),
+            // VTID-04435 (WS-4.3): openings scored with the user's own weights (their outcomes, within fixed limits).
+            _convTile('Personal weights', String(d.personalized || 0), (d.personal_changed_winner || 0) + ' changed the shadow pick')
+        ]));
+        if ((d.disagreements || []).length) {
+            body.appendChild(_convTable([{ key: 'live', label: 'Live pick' }, { key: 'shadow', label: 'Shadow pick' }, { key: 'count', label: 'Openings' }], d.disagreements));
+        }
+        if ((d.wins || []).length) {
+            body.appendChild(_convTable([{ key: 'provider', label: 'Provider' }, { key: 'live', label: 'Live wins' }, { key: 'shadow', label: 'Shadow wins' }], d.wins));
+        }
+        if (!d.sessions_ranked) body.appendChild(_convEl('div', { text: 'No shadow rankings recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
 function renderConversationMonitorView() {
-    var ui = _convPanel('Conversation · Monitor', 'Recent greeting decisions (oasis_events greeting_sent) — which opener fired, register, recency bucket, chosen NBA, and the screen the user was on.');
+    var ui = _convPanel('Conversation · Monitor', 'Performance from the hourly rollup, then the most recent greeting decisions (oasis_events greeting_sent).');
+    ui.body.innerHTML = '';
+    var perf = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(perf);
+    _convRenderPerformance(perf, 24);
+    var offers = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(offers);
+    _convRenderOfferOutcomes(offers, 7);
+    var shadow = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(shadow);
+    _convRenderShadowRanking(shadow, 7);
+    var feed = _convEl('div', { cls: 'conv-metric-section' });
+    feed.appendChild(_convHeading('Recent greeting decisions'));
+    var feedBody = _convEl('div');
+    feedBody.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    feed.appendChild(feedBody);
+    ui.body.appendChild(feed);
     _convFetch('/admin/conversation/decisions?limit=100').then(function (data) {
-        ui.body.innerHTML = '';
-        ui.body.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', css: 'color:#8a94a6;margin-bottom:10px;font-size:12px;' }));
-        ui.body.appendChild(_convTable(
+        feedBody.innerHTML = '';
+        feedBody.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', cls: 'conv-metric-muted' }));
+        feedBody.appendChild(_convTable(
             [{ key: 'created_at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' }, { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'NBA' }, { key: 'nba_domain', label: 'Domain' }, { key: 'current_route', label: 'Route' }, { key: 'lang', label: 'Lang' }],
             data.decisions || []
         ));
-    }).catch(function (err) { _convError(ui.body, err); });
+    }).catch(function (err) { _convError(feedBody, err); });
+    return ui.panel;
+}
+
+function _convRenderLearning(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderLearning(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/learning?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        (d.errors || []).forEach(function (e) {
+            body.appendChild(_convEl('div', { text: 'Could not read ' + e, cls: 'conv-metric-error' }));
+        });
+        var c = d.coverage;
+        if (c) {
+            body.appendChild(_convHeading('What each session leaves behind'));
+            body.appendChild(_convTileGrid([
+                _convTile('Sessions finalized', String(c.sessions_finalized)),
+                _convTile('Summary written', _convPct(c.summary_coverage), c.summary_coverage.numerator + ' of ' + c.summary_coverage.denominator, c.summary_coverage.rate != null && c.summary_coverage.rate < 0.8 ? 'warn' : null),
+                _convTile('Memory committed', _convPct(c.memory_committed)),
+                _convTile('Facts learned', String(c.facts_extracted), c.facts_per_finalized_session == null ? null : c.facts_per_finalized_session + ' per finalized session'),
+                _convTile('Open threads', String(c.threads_written), c.threads_touched + ' re-touched'),
+                _convTile('Promises recorded', String(c.promises_written))
+            ]));
+        }
+        var n = d.profile_narrative;
+        if (n) {
+            body.appendChild(_convHeading('Profile narrative (nightly synthesis)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Users with a narrative', String(n.users_with_narrative)),
+                _convTile('Fresh (≤ 7 days)', String(n.fresh_7d), 'older ones are no longer injected', n.users_with_narrative > 0 && n.fresh_7d === 0 ? 'warn' : null),
+                _convTile('Newest', _convWhen(n.newest_generated_at) || '—'),
+                // VTID-04438 (WS-4.1): profile quality and how much of each user's picture the learning saw.
+                _convTile('Structured profiles', String(n.structured || 0),
+                    n.avg_sections_filled == null ? 'none yet' : n.avg_sections_filled + ' of 6 parts filled on average'),
+                _convTile('Inputs seen', (n.with_conversations || 0) + ' · ' + (n.with_diary || 0) + ' · ' + (n.with_outcomes || 0),
+                    'profiles built with conversations · diary · suggestion outcomes')
+            ]));
+        }
+        // VTID-04444 (WS-4.2): the diary theme rollup (consolidator loop 10 / AP-0915).
+        var dt = d.diary_themes;
+        if (dt) {
+            body.appendChild(_convHeading('Diary themes (nightly rollup)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Rollup', dt.enabled ? 'on' : 'off', dt.enabled ? 'runs nightly (AP-0915)' : 'off by default, flag not set'),
+                _convTile('Users with themes', String(dt.users_with_themes || 0),
+                    dt.avg_themes == null ? 'none yet' : dt.avg_themes + ' themes on average'),
+                _convTile('Fresh (≤ 14 days)', String(dt.fresh || 0), 'older ones are not read by the profile',
+                    dt.enabled && dt.users_with_themes > 0 && !dt.fresh ? 'warn' : null),
+                _convTile('Newest', _convWhen(dt.newest_generated_at) || '—')
+            ]));
+        }
+        if (d.jobs) {
+            body.appendChild(_convHeading('Nightly learning jobs'));
+            body.appendChild(_convTable(
+                [{ key: 'automation_id', label: 'Job' }, { key: 'last_started_at', label: 'Last run' }, { key: 'age_hours', label: 'Age (h)' }, { key: 'last_status', label: 'Status' }, { key: 'runs_in_window', label: 'Runs in window' }, { key: 'state', label: 'State' }, { key: 'last_error', label: 'Last error' }],
+                d.jobs.map(function (j) { return Object.assign({}, j, { last_started_at: _convWhen(j.last_started_at), state: j.stale ? 'STALE' : 'ok' }); })
+            ));
+        }
+    }).catch(function (err) { _convError(body, err); });
+}
+
+function renderAssistantLearningHealthView() {
+    var ui = _convPanel('Assistant · Metrics — Learning health', 'Is the assistant learning? Nightly job runs, profile freshness, facts per session and summary coverage (hourly rollup + automation_runs).');
+    ui.body.innerHTML = '';
+    var host = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(host);
+    _convRenderLearning(host, 168);
     return ui.panel;
 }
 
@@ -7585,6 +7876,233 @@ function renderConversationToolHealthView() {
         ));
     }).catch(function (err) { _convError(ui.body, err); });
     return ui.panel;
+}
+
+// ─── VTID-04419 (Plan v1 WS-1.7): brain inspector ───────────────────────────
+// Per voice session: what context was built and trimmed, what the opening
+// decision was and why, the tool catalog trim, errors and the outcome. Mounted
+// in Conversation → Simulator and Conversation → Journey Context. Read-only;
+// admin endpoints GET /admin/conversation/sessions[/:id/brain]. Class-based
+// styling only (CSP).
+function _convBrainChips(label, keys, tone) {
+    var row = _convEl('div', { cls: 'conv-brain__chips' });
+    row.appendChild(_convEl('span', { text: label, cls: 'conv-brain__chips-label' }));
+    if (!keys || !keys.length) {
+        row.appendChild(_convEl('span', { text: 'none', cls: 'conv-metric-muted' }));
+        return row;
+    }
+    keys.forEach(function (k) {
+        row.appendChild(_convEl('span', { text: k, cls: 'conv-brain__chip' + (tone ? ' conv-brain__chip--' + tone : '') }));
+    });
+    return row;
+}
+
+function _convBrainFail(host, err) {
+    host.innerHTML = '';
+    host.appendChild(_convEl('div', { text: 'Could not load: ' + (err && err.message ? err.message : err), cls: 'conv-brain__error' }));
+}
+
+function _convBrainRender(host, d) {
+    host.innerHTML = '';
+    var c = d.context || {}, o = d.outcome || {}, u = d.user || {};
+    host.appendChild(_convEl('div', {
+        text: d.session_id + ' · started ' + (_convWhen(d.started_at) || '?') + ' · ' + (u.lang || '?') + ' · ' + (u.transport || '?') +
+            (u.origin ? ' · ' + u.origin : '') + (u.user_id ? ' · user ' + u.user_id : ''),
+        cls: 'conv-brain__meta'
+    }));
+    var gate = c.gate;
+    host.appendChild(_convHeading('Context'));
+    host.appendChild(_convTileGrid([
+        _convTile('Builder', c.builder || (c.skipped_reason ? c.skipped_reason : 'not recorded'),
+            c.brain_error ? 'brain failed: ' + c.brain_error : (c.bootstrap_latency_ms != null ? 'built in ' + _convMs({ value: c.bootstrap_latency_ms }) : null),
+            c.brain_error ? 'warn' : null),
+        _convTile('Context at setup', c.setup_context_chars == null ? '—' : c.setup_context_chars + ' chars',
+            'source: ' + (c.setup_context_source || (gate && gate.context_source) || 'unknown'),
+            c.setup_context_chars === 0 ? 'warn' : null),
+        _convTile('Context wait', gate ? (gate.timed_out ? 'timed out' : 'in time') : '—',
+            gate && gate.waited_ms != null ? 'waited ' + gate.waited_ms + ' ms' : null, gate && gate.timed_out ? 'warn' : null),
+        _convTile('Stored snapshot', c.snapshot_used ? 'used' : 'not used',
+            c.snapshot_used && c.snapshot_used.chars != null ? c.snapshot_used.chars + ' chars' : null),
+        _convTile('Reconnect rebuilds', String((c.rebuilt_on_reconnect || []).length),
+            (c.rebuilt_on_reconnect || []).map(function (r) { return r.builder + (r.started_builder && r.started_builder !== r.builder ? ' (started ' + r.started_builder + ')' : ''); }).join(' · ') || null)
+    ]));
+    var p = c.packing;
+    if (p) {
+        host.appendChild(_convEl('div', {
+            text: 'Bootstrap packing: ' + (p.chars_before == null ? '?' : p.chars_before) + ' → ' + (p.chars_after == null ? '?' : p.chars_after) + ' chars' + (p.packed ? ' (trimmed to budget)' : ' (under budget, unchanged)'),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convBrainChips('Kept', p.kept));
+        host.appendChild(_convBrainChips('Shortened', p.shortened, 'warn'));
+        host.appendChild(_convBrainChips('Dropped', p.dropped, 'bad'));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No packing report for this session.', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Decision'));
+    if (d.decision && d.decision.length) {
+        host.appendChild(_convTable(
+            [{ key: 'at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' },
+             { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'Next step' }, { key: 'current_route', label: 'Screen' },
+             { key: 'candidate', label: 'Candidate' }],
+            d.decision.map(function (x) {
+                return { at: _convWhen(x.at) || '', wake_opener: x.wake_opener || '', register: x.register || '', bucket: x.bucket || '',
+                    nba: (x.nba || '') + (x.nba_domain ? ' (' + x.nba_domain + ')' : ''), current_route: x.current_route || '',
+                    // VTID-04420: which provider's candidate won the ranker, and whether this opener spoke it.
+                    candidate: x.candidate_provider ? x.candidate_provider + (x.candidate_spoken ? ' · spoken' : ' · outranked') : (x.candidate_spoken === false ? 'none' : '') };
+            })
+        ));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No opening decision recorded (for example, a silent reconnect).', cls: 'conv-metric-muted' }));
+    }
+
+    // VTID-04420 (WS-2.1): every continuation provider's result for the opening.
+    host.appendChild(_convHeading('Candidates'));
+    var cand = d.candidates;
+    if (cand && cand.providers && cand.providers.length) {
+        host.appendChild(_convEl('div', {
+            text: 'Ranker picked: ' + (cand.selected_kind === 'none_with_reason' ? 'nothing (' + (cand.none_with_reason || 'no reason') + ')' : (cand.selected_kind || 'unknown')) +
+                (cand.duration_ms != null ? ' · ranked in ' + cand.duration_ms + ' ms' : ''),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convTable(
+            [{ key: 'key', label: 'Provider' }, { key: 'status', label: 'Result' }, { key: 'latency', label: 'Latency' }, { key: 'reason', label: 'Reason' }],
+            cand.providers.map(function (x) {
+                return { key: x.key, status: x.status, latency: x.latency_ms == null ? '' : x.latency_ms + ' ms', reason: x.reason || '' };
+            })
+        ));
+        // VTID-04422 (WS-2.2): the shadow relevance ranking for this opening.
+        var sh = cand.shadow;
+        if (sh) {
+            host.appendChild(_convEl('div', {
+                text: 'Shadow score (weights v' + (sh.weights_version == null ? '?' : sh.weights_version) + '): ' +
+                    (sh.agree ? 'agrees with the live pick (' + (sh.live_winner || 'none') + ')' :
+                        'would pick ' + (sh.shadow_winner || 'none') + ' instead of ' + (sh.live_winner || 'none')),
+                cls: sh.agree ? 'conv-metric-muted' : 'conv-brain__shadow-diff'
+            }));
+            // VTID-04435 (WS-4.3): this user's weight adjustment.
+            if (sh.personal) {
+                var bodyPersonal = 'Personal weights from ' + (sh.personal.evidence == null ? '?' : sh.personal.evidence) + ' settled offers: outcome ×' +
+                    sh.personal.outcome_mult + ', freshness ×' + sh.personal.freshness_mult +
+                    (sh.personal.shared_weights_winner && sh.personal.shared_weights_winner !== sh.shadow_winner
+                        ? ' · shared weights would pick ' + sh.personal.shared_weights_winner : ' · same pick as the shared weights');
+                host.appendChild(_convEl('div', { text: bodyPersonal, cls: 'conv-metric-muted' }));
+            }
+            host.appendChild(_convTable(
+                [{ key: 'provider', label: 'Provider' }, { key: 'score', label: 'Shadow score' }, { key: 'priority', label: 'Fixed priority' }],
+                (sh.scores || []).map(function (x) {
+                    return { provider: x.provider, score: x.score == null ? '' : x.score.toFixed(3), priority: x.priority == null ? '' : String(x.priority) };
+                })
+            ));
+        }
+    } else {
+        host.appendChild(_convEl('div', { text: 'No provider results recorded for this session.', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Tools, errors and outcome'));
+    var t = d.tools;
+    host.appendChild(_convTileGrid([
+        _convTile('Tool catalog', t && t.bytes_after != null ? Math.round((t.bytes_after || 0) / 1024) + ' KB' : 'not trimmed',
+            t ? [
+                t.bytes_before != null ? 'from ' + Math.round((t.bytes_before || 0) / 1024) + ' KB · ' + (t.dropped_count || 0) + ' dropped' + (t.provider ? ' · ' + t.provider : '') : '',
+                // VTID-04426: context-aware selection and the tools reached through find_tool / use_tool.
+                t.route_groups ? 'screen: ' + (t.route_groups.length ? t.route_groups.join(', ') : 'none') + ' · ' + (t.contextual_kept || 0) + ' screen tools · ' + (t.deferred_reachable || 0) + ' reachable' : '',
+                (t.searches || (t.deferred_used || []).length) ? (t.searches || 0) + ' find_tool · used: ' + ((t.deferred_used || []).join(', ') || 'none') : ''
+            ].filter(Boolean).join(' · ') || null : null),
+        // VTID-04427 (WS-3.2): the live advisor — counts and cost only, the note text is never stored.
+        _convTile('Live advisor', d.advisor ? d.advisor.notes + ' note(s)' : 'not running',
+            d.advisor ? [
+                d.advisor.reads + ' get_guidance (' + d.advisor.fresh_reads + ' fresh)',
+                '$' + (d.advisor.cost_usd || 0).toFixed(4),
+                d.advisor.latency_ms_max == null ? '' : 'slowest ' + (d.advisor.latency_ms_max / 1000).toFixed(1) + ' s',
+                Object.keys(d.advisor.skipped || {}).map(function (k) { return k + ' ×' + d.advisor.skipped[k]; }).join(', '),
+                (d.advisor.suggested_tools || []).length ? 'suggested: ' + d.advisor.suggested_tools.join(', ') : ''
+            ].filter(Boolean).join(' · ') : 'off until the advisor routing stage is approved',
+            d.advisor && d.advisor.skipped && (d.advisor.skipped.timeout || d.advisor.skipped.error) ? 'warn' : null),
+        _convTile('Errors', String((d.errors || []).length),
+            (d.errors || []).map(function (e) { return e.stage + (e.failure_kind ? ':' + e.failure_kind : ''); }).join(' · ') || null,
+            (d.errors || []).length ? 'warn' : null),
+        _convTile('First speech', o.first_audio_ms == null ? '—' : (o.first_audio_ms / 1000).toFixed(1) + ' s', 'session open → first model audio'),
+        _convTile('Reply speed', (o.turn_first_audio_ms || []).length ? (o.turn_first_audio_ms || []).map(function (x) { return 't' + x.turn + ' ' + (x.ms / 1000).toFixed(1) + ' s'; }).join(' · ') : '—',
+            'first model audio after each user turn', (o.turn_first_audio_ms || []).some(function (x) { return x.ms > 3000; }) ? 'warn' : null),
+        _convTile('Ended', o.stopped ? (o.stop_reason || 'stopped') : 'no stop event',
+            (o.stopped && !o.stop_reason ? 'no reason recorded · ' : '') + (o.turns == null ? '' : o.turns + ' turn(s)') +
+            (o.duration_ms == null ? '' : ' · ' + Math.round(o.duration_ms / 1000) + ' s'), o.stopped ? null : 'warn'),
+        _convTile('Finalized', o.finalized ? 'yes' : 'no',
+            o.finalized ? ((o.finalized.memory_committed ? 'memory committed' : 'no memory commit') + ' · ' + (o.finalized.summary_written ? 'summary written' : 'no summary')) : null)
+    ]));
+
+    var tl = _convEl('details', { cls: 'conv-brain__timeline' });
+    tl.appendChild(_convEl('summary', { text: 'Timeline (' + (d.timeline || []).length + ' of ' + d.events_read + ' events' + (d.truncated ? ', truncated' : '') + ')' }));
+    (d.timeline || []).forEach(function (e) {
+        tl.appendChild(_convEl('div', { text: '+' + (e.t_ms / 1000).toFixed(1) + ' s  ' + e.topic + (e.stage ? ' · ' + e.stage : ''), cls: 'conv-brain__tl-row' }));
+    });
+    host.appendChild(tl);
+}
+
+function _convBrainInspector(getUserId) {
+    var box = _convEl('section', { cls: 'conv-brain' });
+    box.appendChild(_convHeading('Brain inspector'));
+    box.appendChild(_convEl('p', {
+        text: 'For one voice session: what context was built and trimmed, what the opening decision was and why, and how the session ended. Read-only.',
+        cls: 'conv-metric-muted'
+    }));
+    var bar = _convEl('div', { cls: 'conv-brain__bar' });
+    var sidInput = _convEl('input', { cls: 'conv-brain__input' });
+    sidInput.placeholder = 'live-… session id';
+    sidInput.setAttribute('aria-label', 'Voice session id');
+    var inspectBtn = _convEl('button', { text: 'Inspect', cls: 'conv-brain__btn' });
+    inspectBtn.type = 'button';
+    var listBtn = _convEl('button', { text: 'Recent sessions', cls: 'conv-brain__btn conv-brain__btn--ghost' });
+    listBtn.type = 'button';
+    bar.appendChild(sidInput);
+    bar.appendChild(inspectBtn);
+    bar.appendChild(listBtn);
+    box.appendChild(bar);
+    var list = _convEl('div', { cls: 'conv-brain__list' });
+    var detail = _convEl('div', { cls: 'conv-brain__detail' });
+    box.appendChild(list);
+    box.appendChild(detail);
+
+    function inspect(id) {
+        id = (id || '').trim();
+        if (!id) return;
+        sidInput.value = id;
+        detail.innerHTML = '';
+        detail.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions/' + encodeURIComponent(id) + '/brain')
+            .then(function (d) { _convBrainRender(detail, d); })
+            .catch(function (err) { _convBrainFail(detail, err); });
+    }
+
+    function loadList() {
+        var uid = typeof getUserId === 'function' ? String(getUserId() || '').trim() : '';
+        list.innerHTML = '';
+        list.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions?hours=72&limit=30' + (uid ? '&user_id=' + encodeURIComponent(uid) : ''))
+            .then(function (d) {
+                list.innerHTML = '';
+                if (!d.sessions.length) {
+                    list.appendChild(_convEl('div', { text: 'No voice sessions in the last 72 h' + (uid ? ' for this user' : '') + '.', cls: 'conv-metric-muted' }));
+                    return;
+                }
+                d.sessions.forEach(function (s) {
+                    var row = _convEl('button', {
+                        text: (_convWhen(s.started_at) || '') + ' · ' + (s.lang || '?') + ' · ' + (s.transport || '?') + ' · ' + s.session_id,
+                        cls: 'conv-brain__row'
+                    });
+                    row.type = 'button';
+                    row.addEventListener('click', function () { inspect(s.session_id); });
+                    list.appendChild(row);
+                });
+            })
+            .catch(function (err) { _convBrainFail(list, err); });
+    }
+
+    inspectBtn.addEventListener('click', function () { inspect(sidInput.value); });
+    sidInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') inspect(sidInput.value); });
+    listBtn.addEventListener('click', loadList);
+    return box;
 }
 
 function renderConversationSimulatorView() {
@@ -7645,6 +8163,8 @@ function renderConversationSimulatorView() {
         }).catch(function (err) { _convError(out, err); });
     }
     runBtn.addEventListener('click', run);
+    // VTID-04419: the brain inspector, filtered by the user id above when set.
+    ui.panel.appendChild(_convBrainInspector(function () { return userInput.value; }));
     return ui.panel;
 }
 
@@ -7696,7 +8216,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderVoiceLabExperimentsPanel());
     } else if (moduleKey === 'assistant' && tab === 'metrics') {
         state.voiceLab.activeSubTab = 'metrics';
-        container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+        // VTID-04371: was a placeholder (VTID-01218D); now the learning-health view.
+        container.appendChild(renderAssistantLearningHealthView());
 
     // ──── Conversation-flow roadmap Step 4: read-only cockpit ────
     } else if (moduleKey === 'conversation' && tab === 'config') {
@@ -16744,7 +17265,7 @@ function renderVoiceLabView() {
             content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
             break;
         case 'metrics':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+            content.appendChild(renderAssistantLearningHealthView()); // VTID-04371
             break;
         case 'personality':
             content.appendChild(renderVoiceLabPersonalityPanel());
@@ -44624,6 +45145,9 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextNextActionInspectorPanel(jc.nextActionInspector));
 
     c.appendChild(grid);
+    // VTID-04419 (Plan v1 WS-1.7): the brain inspector for this user's voice
+    // sessions (the userId above filters the session list).
+    c.appendChild(_convBrainInspector(function () { return jc.userId; }));
     return c;
 }
 

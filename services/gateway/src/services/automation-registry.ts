@@ -896,6 +896,18 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runDailyLearningEpisodes',
   },
+  {
+    // VTID-04444 (WS-4.2): the nightly consolidator's loop 10 — themes per
+    // user from the last 30 days of diary entries, stored as
+    // diary_themes_v1 and read by AP-0911's profile synthesis. Daily before
+    // the synthesis hours; a no-op unless CONSOLIDATOR_DIARY_ROLLUP_ENABLED
+    // is exactly 'true'.
+    id: 'AP-0915', name: 'Diary Theme Rollup', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '25 4 * * *' }, // daily 4:25am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDiaryThemeRollup',
+  },
 ];
 
 // =============================================================================

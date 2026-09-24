@@ -86,3 +86,25 @@ export async function fetchExistingProfileNarrativeState(
 export async function upsertProfileNarrativeState(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('user_assistant_state').upsert(row, { onConflict: 'tenant_id,user_id,signal_name' });
 }
+
+// ==================== VTID-04438 (WS-4.1): broader inputs ====================
+
+export async function fetchRecentSessionSummaries(sb: SupabaseClient, userId: string, sinceIso: string, limit: number) {
+  return sb
+    .from('user_session_summaries')
+    .select('summary, themes, ended_at')
+    .eq('user_id', userId)
+    .gte('ended_at', sinceIso)
+    .order('ended_at', { ascending: false })
+    .limit(limit);
+}
+
+export async function fetchRecentDiaryEntries(sb: SupabaseClient, userId: string, sinceIso: string, limit: number) {
+  return sb
+    .from('diary_entries')
+    .select('text, created_at')
+    .eq('user_id', userId)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}

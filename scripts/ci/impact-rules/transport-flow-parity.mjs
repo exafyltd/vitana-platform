@@ -45,10 +45,52 @@ export const meta = {
 
 // The transport integration files that MUST delegate the opening decision to the
 // shared brain rather than owning it inline.
-const TRANSPORT_FILES = [
+// VTID-04417 (Plan v1 WS-1.5): the session-start controller joins them — it is
+// where the voice context is assembled for both WS and SSE.
+export const TRANSPORT_FILES = [
   'services/gateway/src/routes/orb-live.ts',
   'services/gateway/src/routes/orb-livekit.ts',
+  'services/gateway/src/orb/live/session/live-session-controller.ts',
 ];
+
+// VTID-04417 (WS-1.5): a transport must decide the opening through the brain
+// entry point (`decideOpeningFlow` → `decideConversationFlow`, VTID-04416),
+// never by calling the ladder directly …
+const DIRECT_DECISION_RE = /\bcomputeGreetingDecision\(/;
+// … and must assemble the voice session context through the shared builder
+// (`orb/live/session/session-context-builder.ts`, VTID-04414), never by calling
+// a context builder directly. Passing the legacy builder as a dependency
+// (`{ legacy: buildBootstrapContextPack }`) is not a call and is fine.
+const DIRECT_CONTEXT_RE = /\b(buildBootstrapContextPack|buildBrainSystemInstruction|buildBrainSystemInstructionCached)\(/;
+// A deliberate exception carries this marker on the line or one of the two
+// lines above it, with a reason.
+const ALLOW_MARKER = 'brain-parity-allow:';
+
+/**
+ * Pure scan of one transport source. Comment lines and the builder's own
+ * definition are ignored. Exported for tests.
+ */
+export function scanTransportSource(src) {
+  const lines = String(src || '').split('\n');
+  const directDecisionLines = [];
+  const directContextLines = [];
+  lines.forEach((line, i) => {
+    const t = line.trim();
+    if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) return;
+    const allowed = [line, lines[i - 1] || '', lines[i - 2] || ''].some((l) => l.includes(ALLOW_MARKER));
+    if (DIRECT_DECISION_RE.test(line) && !/function\s+computeGreetingDecision\(/.test(line) && !allowed) {
+      directDecisionLines.push(i + 1);
+    }
+    if (DIRECT_CONTEXT_RE.test(line) && !/function\s+(buildBootstrapContextPack|buildBrainSystemInstruction\w*)\(/.test(line) && !allowed) {
+      directContextLines.push(i + 1);
+    }
+  });
+  const branchCount = (src.match(WAKE_OPENER_EMIT_RE) || []).length;
+  const inlineSignals = INLINE_DIRECTIVE_SIGNALS.filter((s) =>
+    new RegExp(`\\b${s.token}\\b`).test(src),
+  ).map((s) => s.label);
+  return { branchCount, inlineSignals, directDecisionLines, directContextLines };
+}
 
 // Each inline `wake_opener: '<kind>'` emit is a rung that decided + composed the
 // opener locally instead of delegating. Counting them measures fragmentation.
@@ -74,10 +116,43 @@ export async function check({ changedFiles, repoRoot }) {
     const src = readFileAtRepo(repoRoot, file);
     if (!src) continue;
 
-    const branchCount = (src.match(WAKE_OPENER_EMIT_RE) || []).length;
-    const inlineSignals = INLINE_DIRECTIVE_SIGNALS.filter((s) =>
-      new RegExp(`\\b${s.token}\\b`).test(src),
-    ).map((s) => s.label);
+    const { branchCount, inlineSignals, directDecisionLines, directContextLines } = scanTransportSource(src);
+
+    if (directDecisionLines.length > 0) {
+      findings.push({
+        rule: meta.rule,
+        severity: meta.severity,
+        file_path: file,
+        line_number: directDecisionLines[0],
+        message:
+          `Transport \`${file}\` calls \`computeGreetingDecision\` directly ` +
+          `(line ${directDecisionLines.join(', ')}). Every opening decision goes through the ` +
+          `brain entry point.`,
+        suggested_action:
+          `Call \`decideOpeningFlow(ctx, { transport, role })\` from ` +
+          `services/conversation/decide-conversation-flow.ts (VTID-04416). It returns the same ` +
+          `GreetingDecision, through decideConversationFlow.`,
+        raw: { direct_decision_lines: directDecisionLines },
+      });
+    }
+
+    if (directContextLines.length > 0) {
+      findings.push({
+        rule: meta.rule,
+        severity: meta.severity,
+        file_path: file,
+        line_number: directContextLines[0],
+        message:
+          `Transport \`${file}\` assembles the voice context by calling a context builder ` +
+          `directly (line ${directContextLines.join(', ')}) instead of the shared session-context builder.`,
+        suggested_action:
+          `Use \`buildBaseSessionContext\` / \`rebuildSessionContext\` / \`buildLessonContext\` from ` +
+          `orb/live/session/session-context-builder.ts (VTID-04414), passing the legacy builder as ` +
+          `\`{ legacy: buildBootstrapContextPack }\`. A deliberate exception (a debug route, a cache ` +
+          `warm) carries \`// ${ALLOW_MARKER} <reason>\` on or just above the line.`,
+        raw: { direct_context_lines: directContextLines },
+      });
+    }
 
     // Fully delegated → no inline opening decision left → clean.
     if (branchCount === 0 && inlineSignals.length === 0) continue;
@@ -98,10 +173,7 @@ export async function check({ changedFiles, repoRoot }) {
         `transport should gather context, call the brain, and render.`,
       suggested_action:
         `Route the opening decision through the shared brain ` +
-        `(\`computeGreetingDecision\` today; \`decideConversationFlow\` once it lands) and ` +
-        `delete the inline branch(es). This is the Step 1c strangler-fig work — move ONE ` +
-        `\`wake_opener\` branch per PR, each proven golden-equal, until the count reaches ` +
-        `zero. Warning only for now; this flips to blocker at the end of Step 1c.`,
+        `(\`decideOpeningFlow\` → \`decideConversationFlow\`) and delete the inline branch(es).`,
       raw: { wake_opener_branches: branchCount, inline_directive_signals: inlineSignals },
     });
   }

@@ -133,10 +133,15 @@ LANG_DEFAULTS: dict[str, dict[str, str]] = {
         "de": "de-DE-Chirp3-HD-Leda",
         "es": "es-ES-Chirp3-HD-Aoede",
         "fr": "fr-FR-Chirp3-HD-Aoede",
-        "ar": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['ar']
-        "zh": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['zh']
-        "ru": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['ru']
-        "sr": "Charon",  # Gemini TTS — Vertex's LIVE_API_VOICES['sr']
+        # VTID-04445 — owner rule: Vitana's voice is female in every
+        # language. These four were "Charon", a MALE Gemini voice. "Kore"
+        # is female and is the gateway's own Gemini TTS voice for these
+        # languages (voice.gemini_tts.*). Devon's male voices live on his
+        # own agent_voice_configs row (voices_per_lang), not here.
+        "ar": "Kore",  # Gemini TTS — female
+        "zh": "Kore",  # Gemini TTS — female
+        "ru": "Kore",  # Gemini TTS — female
+        "sr": "Kore",  # Gemini TTS — female
     },
     # Cartesia Sonic-3 is multilingual — same voice handle works across
     # languages, the model auto-detects from the input text. Documented at
