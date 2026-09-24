@@ -283,6 +283,16 @@
       "notes": "Read the user's Autopilot queue aloud — same list as the popup. Shared registry since VTID-04493; listed ids live in orb_session_state (autopilot_listed_ids)."
     },
     {
+      "name": "confirm_pending_action",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-04503",
+      "notes": "Run exactly the stored pending offer on a spoken yes; medium-risk actions need a read-back and confirm=true."
+    },
+    {
       "name": "activate_autopilot_recommendations",
       "implementations": [
         "vertex",

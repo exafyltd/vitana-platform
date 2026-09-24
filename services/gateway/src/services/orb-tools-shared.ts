@@ -2676,9 +2676,18 @@ export async function tool_activate_recommendation(
     // community activation checks owner + source_type + status and books the
     // calendar slot, emits the OASIS event and notifies — the same result the
     // popup's Go button produces. This tool used to only flip the status.
-    const outcome = await activateForVoice(id.user_id, recId, id.tenant_id);
+    const outcome = await activateForVoice(id.user_id, recId, id.tenant_id, { confirmed: args.confirm === true });
     if (!outcome.ok) {
       return { ok: false, error: outcome.error ?? 'activation_failed' };
+    }
+    // VTID-04503: a medium-risk action needs the member's confirmation after a
+    // read-back. Nothing has changed yet; the pending offer is kept.
+    if (outcome.needs_confirmation) {
+      return {
+        ok: true,
+        result: { awaiting_confirmation: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done yet. Read this back to the member in your own words and, if they agree, call activate_recommendation again with confirm=true: ${outcome.readback ?? ''}`,
+      };
     }
 
     // Fire-and-forget telemetry: funnel dashboards (`guide.initiative.executed`)
@@ -2710,6 +2719,7 @@ export async function tool_activate_recommendation(
         title: outcome.title,
         already_active: outcome.already_active,
         calendar_event_id: outcome.calendar_event_id,
+        action_result: outcome.action_result ?? null,
       },
       text: outcome.already_active
         ? `"${title}" was already active; nothing changed.`

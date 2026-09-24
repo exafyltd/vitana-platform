@@ -110,7 +110,7 @@ describe('get → activate', () => {
     const a = await tool_activate_autopilot_recommendations({}, IDENT, sb as never);
     expect(a.ok).toBe(true);
     expect(activate.mock.calls.map((c) => c[1])).toEqual(['r1', 'r2']);
-    expect(activate).toHaveBeenCalledWith(USER, 'r1', { tenantId: 'tenant-1', skipReplenish: true });
+    expect(activate).toHaveBeenCalledWith(USER, 'r1', { tenantId: 'tenant-1', skipReplenish: true, channel: 'voice', confirmed: false });
     if (a.ok === true) expect(a.result).toMatchObject({ activated: 2, failed: 0 });
     // The used list is cleared so a stray repeat call can't re-activate.
     expect(sb.rows.size).toBe(0);

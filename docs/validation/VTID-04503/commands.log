@@ -1,0 +1,9 @@
+# VTID-04503 commands (2026-09-24)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04503
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04503'
+read-only: agent_runs columns + constraints (status/tier/created_via checks, unique idempotency_key)
+apply_migration vtid_04503_autopilot_recommendation_action (ADD COLUMN action jsonb)
+cd services/gateway && npx tsc --noEmit -p .   # clean
+npx jest test/vtid-04503-community-autopilot-actions.test.ts   # 18 passed
+npx jest test/routes/autopilot-recommendations.test.ts test/voice-activate-recommendation-shared.test.ts test/vtid-04493-community-autopilot-voice-tools.test.ts test/orb/live/characterization   # all passed after -u (4 snapshots: new tool + confirm params)
+git stash push -- services/gateway/src/routes/autopilot-recommendations.ts && npx jest <route> -t CA-3   # mutation check

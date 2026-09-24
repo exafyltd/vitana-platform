@@ -38,6 +38,14 @@ import * as repo from './autopilot-recommendations-repository';
 import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
 import { completeCalendarEntriesForSource } from '../services/calendar-producers';
 import { resolveLineupRole } from '../services/community-autopilot/lineup-role';
+import {
+  parseAction,
+  checkActionPolicy,
+  defaultActionForTemplate,
+  executeRecommendationAction,
+  type ActionChannel,
+  type ActionOutcome,
+} from '../services/community-autopilot/action-registry';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -1166,6 +1174,11 @@ export interface ActivateCommunityResult {
   completion_message?: string;
   calendar_event_id?: string | null;
   replenished?: number;
+  /** VTID-04503: the typed action needs a voice read-back before it may run. */
+  needs_confirmation?: boolean;
+  readback?: string;
+  /** VTID-04503: what the suggestion's typed action did, when it has one. */
+  action_result?: ActionOutcome | null;
 }
 
 /**
@@ -1177,7 +1190,7 @@ export interface ActivateCommunityResult {
 export async function activateCommunityAutopilotRecommendation(
   userId: string | null,
   id: string,
-  opts: { tenantId?: string; skipReplenish?: boolean } = {},
+  opts: { tenantId?: string; skipReplenish?: boolean; channel?: ActionChannel; confirmed?: boolean } = {},
 ): Promise<ActivateCommunityResult> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -1187,7 +1200,7 @@ export async function activateCommunityAutopilotRecommendation(
 
   // Fetch the recommendation to get source_type, source_ref, user_id, status
   const recResp = await fetch(
-    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain&limit=1`,
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain,action&limit=1`,
     { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
   );
   if (!recResp.ok) {
@@ -1232,6 +1245,24 @@ export async function activateCommunityAutopilotRecommendation(
   // Must be in activatable state
   if (rec.status !== 'new' && rec.status !== 'snoozed') {
     return { ok: false, httpStatus: 400, error: `Cannot activate recommendation in status: ${rec.status}` };
+  }
+
+  // VTID-04503: a typed action is checked BEFORE anything changes, so a voice
+  // "yes" to a medium-risk action gets a read-back and the row stays as it was.
+  const templateAction = COMMUNITY_ACTIONS[rec.source_ref];
+  const typedAction = parseAction(rec.action) ?? defaultActionForTemplate(!!templateAction?.calendar_event);
+  const channel: ActionChannel = opts.channel ?? 'app';
+  if (typedAction) {
+    const blocked = checkActionPolicy(typedAction, {
+      userId, tenantId: opts.tenantId || null, recommendationId: id,
+      recommendationTitle: rec.title, channel, confirmed: opts.confirmed,
+    });
+    if (blocked && blocked.status === 'needs_confirmation') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_confirmation: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
   }
 
   // Look up the community action
@@ -1298,6 +1329,49 @@ export async function activateCommunityAutopilotRecommendation(
     } catch (calErr: any) {
       console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
     }
+  }
+
+  // VTID-04503: run the suggestion's typed action, once (agent_runs idempotency).
+  let actionResult: ActionOutcome | null = null;
+  if (typedAction) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+      let tenantId = opts.tenantId || null;
+      if (!tenantId) {
+        const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+        tenantId = tenantRow?.tenant_id ?? null;
+      }
+      actionResult = await executeRecommendationAction(supa, typedAction, {
+        userId,
+        tenantId,
+        recommendationId: id,
+        recommendationTitle: rec.title,
+        channel,
+        confirmed: opts.confirmed,
+        slotStartIso: (calendarEvent as any)?.start_time ?? null,
+        calendarEventId: (calendarEvent as any)?.id ?? null,
+      });
+    } catch (actErr: any) {
+      actionResult = { status: 'failed', kind: typedAction.kind, run_id: null, error: actErr?.message ?? String(actErr) };
+    }
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: (actionResult.status === 'executed' || actionResult.status === 'navigate' || actionResult.status === 'already_executed'
+        ? 'community_autopilot.action.executed'
+        : 'community_autopilot.action.failed') as any,
+      source: 'community-autopilot',
+      status: actionResult.status === 'failed' || actionResult.status === 'invalid' ? 'warning' : 'info',
+      message: `Autopilot action ${typedAction.kind}: ${actionResult.status}`,
+      payload: {
+        recommendation_id: id,
+        user_id: userId,
+        channel,
+        kind: typedAction.kind,
+        outcome: actionResult.status,
+        run_id: (actionResult as any).run_id ?? null,
+      },
+    }).catch(() => {});
   }
 
   // Emit OASIS event
@@ -1370,6 +1444,7 @@ export async function activateCommunityAutopilotRecommendation(
     completion_message: action.completion_message,
     calendar_event_id: calendarEvent?.id || null,
     replenished,
+    action_result: actionResult,
   };
 }
 
@@ -1428,6 +1503,8 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         completion_message: result.completion_message,
         calendar_event_id: result.calendar_event_id ?? null,
         replenished: result.replenished ?? 0,
+        // VTID-04503: a typed action's outcome (null when the row has none).
+        action_result: result.action_result ?? null,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });

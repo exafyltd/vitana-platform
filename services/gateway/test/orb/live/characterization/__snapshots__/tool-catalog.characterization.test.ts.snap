@@ -1835,6 +1835,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -1843,6 +1847,28 @@ open the Autopilot screen instead via navigate_to_screen.",
           "required": [
             "id",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
           "type": "object",
         },
       },
@@ -1887,6 +1913,10 @@ slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
@@ -14750,6 +14780,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -14758,6 +14792,28 @@ open the Autopilot screen instead via navigate_to_screen.",
           "required": [
             "id",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
           "type": "object",
         },
       },
@@ -14802,6 +14858,10 @@ slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
