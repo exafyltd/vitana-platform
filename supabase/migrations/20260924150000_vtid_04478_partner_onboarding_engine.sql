@@ -53,5 +53,7 @@ CREATE POLICY partner_terms_acceptances_select ON public.partner_terms_acceptanc
     FOR SELECT TO authenticated
     USING (public.is_partner_org_member(partner_organization_id));
 
-REVOKE INSERT, UPDATE, DELETE ON public.partner_onboarding_steps FROM anon, authenticated;
-REVOKE INSERT, UPDATE, DELETE ON public.partner_terms_acceptances FROM anon, authenticated;
+-- TRUNCATE included: Supabase's default grants give it to browser roles and
+-- RLS does not apply to it.
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.partner_onboarding_steps FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.partner_terms_acceptances FROM anon, authenticated;

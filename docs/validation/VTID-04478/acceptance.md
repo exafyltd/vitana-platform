@@ -80,7 +80,7 @@ OASIS_PROOF: the route suite asserts each event, including one `lifecycle_change
 
 ## Order of operations
 
-Apply the migration to the live project before merge. The Migration Drift Check refuses a table declared in a migration that does not exist live.
+The migration was applied to the live project on 2026-09-24, before merge, on the platform owner's go-ahead (`outputs/live-apply-postcheck.txt`). The Migration Drift Check refuses a table declared in a migration that does not exist live.
 
 ## Not in this VTID
 
