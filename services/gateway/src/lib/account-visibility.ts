@@ -85,6 +85,13 @@ export const FIELD_DEFAULTS: Record<string, FieldVisibility> = {
   // band only — corresponds to derivedAgeBand=public), 'exact' (exposes
   // band AND exact age — corresponds to dateOfBirth=public).
   derivedAgeBand: 'connections',
+
+  // VTID-04483 — sharing the profile Health tab (Vitana Index categories,
+  // 7-day change, achievements) with other members. Health data: private
+  // until the member opts in. Enforced in SQL by
+  // get_profile_health_summary(); the member's own activity logs are never
+  // shared, whatever this is set to.
+  vitanaHealth: 'private',
 };
 
 /**
