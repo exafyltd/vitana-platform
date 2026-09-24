@@ -212,6 +212,55 @@ router.post('/connections/:id/fhir/authorize', async (req: Request, res: Respons
   res.json({ ok: true, data: { authorize_url: authorizeUrl } });
 });
 
+/**
+ * Creates the integration manifest for a partner_tenant and, when an OpenAPI
+ * document is supplied, its first version and schema sources. Shared with the
+ * partner onboarding engine (VTID-04499), so an org-scoped connection enters
+ * exactly the same state machine as a merchant's own.
+ */
+export async function insertConnection(
+  supabase: any,
+  input: {
+    partnerTenantId: string;
+    connector_id: string;
+    provider_id: string;
+    connection_type?: string;
+    risk_level?: string;
+    openapi_document?: unknown;
+    now: string;
+  },
+): Promise<{ ok: true; manifestId: string; initialState: ConnectionState } | { ok: false; status: number; error: string }> {
+  const { partnerTenantId, connector_id, provider_id, connection_type, risk_level, openapi_document, now } = input;
+  const initialState: ConnectionState = openapi_document ? 'mapping' : 'authorization_required';
+  const manifestId = randomUUID();
+  const { error: mErr } = await repo.insertIntegrationManifest(supabase, {
+    id: manifestId, partner_tenant_id: partnerTenantId, connector_id, provider_id,
+    connection_type: connection_type ?? 'api', risk_level: risk_level ?? 'medium',
+    status: initialState, created_at: now, updated_at: now,
+  });
+  if (mErr) {
+    const dup = /duplicate|unique/i.test(mErr.message);
+    return { ok: false, status: dup ? 409 : 500, error: dup ? 'connection already exists for this business + connector' : mErr.message };
+  }
+
+  if (openapi_document) {
+    const versionId = randomUUID();
+    const docJson = JSON.stringify(openapi_document);
+    await repo.insertIntegrationVersion(supabase, {
+      id: versionId, manifest_id: manifestId, version: '0.1.0', document: openapi_document,
+      document_hash: createHash('sha256').update(docJson).digest('hex'), certification_status: 'draft', created_at: now,
+    });
+    const sources = extractSchemaSources(openapi_document as any);
+    for (const s of sources) {
+      await repo.insertSchemaSource(supabase, {
+        id: randomUUID(), version_id: versionId, name: s.name, fields: s.fields,
+        hash: createHash('sha256').update(JSON.stringify(s.fields)).digest('hex'), created_at: now,
+      });
+    }
+  }
+  return { ok: true, manifestId, initialState };
+}
+
 // ===== List / create =====
 router.get('/connections', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
@@ -253,33 +302,11 @@ router.post('/connections', async (req: Request, res: Response) => {
     if (error) return res.status(500).json({ ok: false, error: error.message });
   }
 
-  const initialState: ConnectionState = openapi_document ? 'mapping' : 'authorization_required';
-  const manifestId = randomUUID();
-  const { error: mErr } = await repo.insertIntegrationManifest(supabase, {
-    id: manifestId, partner_tenant_id: partnerId, connector_id, provider_id,
-    connection_type: connection_type ?? 'api', risk_level: risk_level ?? 'medium',
-    status: initialState, created_at: now, updated_at: now,
+  const created = await insertConnection(supabase, {
+    partnerTenantId: partnerId, connector_id, provider_id, connection_type, risk_level, openapi_document, now,
   });
-  if (mErr) {
-    const dup = /duplicate|unique/i.test(mErr.message);
-    return res.status(dup ? 409 : 500).json({ ok: false, error: dup ? 'connection already exists for this business + connector' : mErr.message });
-  }
-
-  if (openapi_document) {
-    const versionId = randomUUID();
-    const docJson = JSON.stringify(openapi_document);
-    await repo.insertIntegrationVersion(supabase, {
-      id: versionId, manifest_id: manifestId, version: '0.1.0', document: openapi_document,
-      document_hash: createHash('sha256').update(docJson).digest('hex'), certification_status: 'draft', created_at: now,
-    });
-    const sources = extractSchemaSources(openapi_document);
-    for (const s of sources) {
-      await repo.insertSchemaSource(supabase, {
-        id: randomUUID(), version_id: versionId, name: s.name, fields: s.fields,
-        hash: createHash('sha256').update(JSON.stringify(s.fields)).digest('hex'), created_at: now,
-      });
-    }
-  }
+  if (!created.ok) return res.status(created.status).json({ ok: false, error: created.error });
+  const { manifestId, initialState } = created;
 
   await emitOasisEvent(supabase, 'vcaop.portal.connection.started', 'success', `connection ${manifestId} started (${initialState})`, {
     connection_id: manifestId, connector_id, provider_id, state: initialState, actor: owner, surface: 'merchant_self_service',

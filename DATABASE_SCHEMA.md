@@ -2743,6 +2743,8 @@ Written only by the gateway (service role); members read their own org's rows vi
 
 `step_key = 'catalogue'` (VTID-04488, written by `/api/v1/partner-onboarding/:orgId/catalogue/*` after every merchant or product change): `status` is `in_progress` once the org has a merchant and `done` once that merchant has at least one product; `detail` = `{merchant_id, product_count, counted_at}`. The org's merchant is the `merchants` row with `partner_organization_id` = the org (created with `source_network = 'supplier_referral'`, `source_merchant_id = 'supplier_referral:org:<orgId>'`, `onboarding_status = 'draft'`, `is_active = false`, no `owner_user_id`), or the owner's unlinked supplier-portal merchant, adopted by setting its `partner_organization_id`. Products stay `is_active = false`. No schema change.
 
+`step_key = 'mapping'` (VTID-04499, reconciled by `GET`/`POST /api/v1/partner-onboarding/:orgId/connections`): `done` once any of the org's VCAOP connections is `certified`, `active` or `degraded`, `in_progress` while one exists, no row while there are none; written only when the status moves. `detail` = `{source: 'connections', connections: [{id, state}], reconciled_at}`. The org's connections hang off one `partner_tenant` with `partner_organization_id` = the org (`owner_user_id` = the org owner, so the VCAOP `/my` per-connection endpoints serve them). No schema change.
+
 ### partner_terms_acceptances (VTID-04478)
 
 | Column | Type | Notes |
