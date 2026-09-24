@@ -828,6 +828,34 @@ describe('Safety: an execution claimed by one environment is left alone by the o
     // The reclaim merged, never replaced, the row's metadata (VTID-04011).
     expect(platform.execution(stagingRun).metadata).toEqual(expect.objectContaining({ claimed_env: 'staging', executor: 'agent' }));
   });
+
+  // VTID-04497: a merge to main deploys staging only, so a production claim
+  // waits for a prod deploy that never comes and reverts the merge. Live:
+  // 593cb4d1 → #3585 and 5769e66a → #3594 (2026-09-22), b3d4f2b3 (2026-09-24).
+  it('the production gateway does not claim a queued execution; staging does', async () => {
+    const threadId = 'a0000000-0000-4000-8000-000000000051';
+    const { execId } = await queueRequest(threadId);
+
+    envState.env = 'production';
+    await executorTick();
+    expect(platform.execution(execId).status).toBe('cooling');
+    expect(platform.execution(execId).metadata.claimed_env).toBeUndefined();
+    expect(execEvents('dev_autopilot.execution.running', execId)).toHaveLength(0);
+
+    envState.env = 'staging';
+    model.workerRuns.push(goodAgentRun());
+    await executorTick();
+    expect(platform.execution(execId).metadata).toEqual(expect.objectContaining({ claimed_env: 'staging' }));
+    expect(platform.execution(execId).status).toBe('awaiting_approval');
+  });
+
+  it('production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact)', async () => {
+    const { executorClaimsHere } = await import('../src/services/dev-autopilot-env-ownership');
+    expect(executorClaimsHere('staging', {})).toBe(true);
+    expect(executorClaimsHere('production', {})).toBe(false);
+    expect(executorClaimsHere('production', { DEV_AUTOPILOT_PROD_CLAIM_ENABLED: 'TRUE' })).toBe(false);
+    expect(executorClaimsHere('production', { DEV_AUTOPILOT_PROD_CLAIM_ENABLED: 'true' })).toBe(true);
+  });
 });
 
 // ===========================================================================
