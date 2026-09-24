@@ -322,16 +322,26 @@ export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
 
 /**
  * Recommended models per stage (for UI warnings)
+ *
+ * VTID-04469: Bedrock inference profiles and DeepSeek Flash only. This list
+ * used to lead with gemini-3.1-pro-preview (Google, decommissioned — §1) and
+ * name bare claude-opus-4-7 / gpt-5, which are the direct Anthropic API (no
+ * credit balance, VTID-03563) and an unprovisioned OpenAI key. Every id here
+ * must be one the router can actually serve; the guard test
+ * vtid-04469-recommended-models-no-google enforces that.
  */
+const BEDROCK_SONNET = 'eu.anthropic.claude-sonnet-4-6';
+const BEDROCK_OPUS = 'eu.anthropic.claude-opus-4-5-20251101-v1:0';
+
 export const RECOMMENDED_MODELS: Record<LLMStage, string[]> = {
-  planner: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'gpt-5'],
-  worker: ['claude-opus-4-7', 'gemini-3.1-pro-preview', 'gpt-5'],
-  validator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
-  operator: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
-  memory: ['gemini-3.1-pro-preview', 'deepseek-flash', 'claude-opus-4-7'],
-  triage: ['gemini-3.1-pro-preview', 'claude-opus-4-7', 'deepseek-flash'],
-  vision: ['gemini-3.1-pro-preview', 'claude-opus-4-7'],
-  classifier: ['deepseek-flash', 'gemini-3.1-pro-preview', 'gpt-5'],
+  planner: [BEDROCK_OPUS, BEDROCK_SONNET],
+  worker: ['deepseek-flash', BEDROCK_OPUS, BEDROCK_SONNET],
+  validator: [BEDROCK_OPUS, BEDROCK_SONNET],
+  operator: ['deepseek-flash', BEDROCK_SONNET],
+  memory: [BEDROCK_SONNET, 'deepseek-flash'],
+  triage: [BEDROCK_SONNET, 'deepseek-flash'],
+  vision: [BEDROCK_SONNET],
+  classifier: [BEDROCK_SONNET, 'deepseek-flash'],
 };
 
 /**
