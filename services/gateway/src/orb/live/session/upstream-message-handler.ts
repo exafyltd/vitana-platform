@@ -77,6 +77,13 @@ import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
+import {
+  detectBackendDataLeak,
+  effectiveToolCallLimit,
+  loopGuardReplyMaxAudioMs,
+  outputPreview,
+  pcmChunkDurationMs,
+} from './opening-turn-guard';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -1771,6 +1778,23 @@ export function handleAudioOutput(
 
   ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
   session.audioOutChunks++;
+  // VTID-04480: the reply that follows the loop guard was asked for one
+  // short sentence. Past the cap, mute the rest of the turn.
+  const guardReply = (session as any).loopGuardReply as { audioMs: number } | undefined;
+  if (guardReply && (session as any).suppressCurrentTurnAudio !== true) {
+    guardReply.audioMs += pcmChunkDurationMs(event.dataB64, event.mimeType);
+    const capMs = loopGuardReplyMaxAudioMs();
+    if (guardReply.audioMs > capMs) {
+      (session as any).suppressCurrentTurnAudio = true;
+      console.warn(
+        `[VTID-04480] Reply after the loop guard passed ${capMs}ms of audio for session ${session.sessionId} — muting the rest of the turn.`,
+      );
+      ctx.deps.emitDiag(session, 'loop_guard_reply_capped', {
+        audio_ms: Math.round(guardReply.audioMs),
+        cap_ms: capMs,
+      });
+    }
+  }
   if ((session as any).suppressCurrentTurnAudio === true) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
@@ -1883,6 +1907,27 @@ export function handleTranscript(
   }
   session.outputTranscriptBuffer += outputTranscription;
 
+  // VTID-04480: the model is reading a tool payload aloud (JSON, ids,
+  // snake_case keys). Nova's speculative text runs ahead of its audio, so
+  // muting here stops it before most of it is heard.
+  if ((session as any).suppressCurrentTurnAudio !== true) {
+    // The new text plus a little before it, so a key or id split across two
+    // transcript chunks is still seen whole.
+    const leak = detectBackendDataLeak(
+      session.outputTranscriptBuffer.slice(-(outputTranscription.length + 80)),
+    );
+    if (leak) {
+      (session as any).suppressCurrentTurnAudio = true;
+      console.warn(
+        `[VTID-04480] Backend data (${leak}) in spoken output for session ${session.sessionId} — muting the rest of the turn.`,
+      );
+      ctx.deps.emitDiag(session, 'backend_data_speech_suppressed', {
+        kind: leak,
+        buffer_len: session.outputTranscriptBuffer.length,
+      });
+    }
+  }
+
   // VTID-03143 duplicate-turn detection (same normalization + prefix rule
   // as the raw handler).
   const SUPPRESS_PREFIX_CHARS = 30;
@@ -1932,15 +1977,28 @@ export function handleToolCall(
     try { ctx.deps.sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
   }
 
-  if (session.consecutiveToolCalls > getMaxConsecutiveToolCalls()) {
-    console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${getMaxConsecutiveToolCalls()}). Sending synthetic loop-break response.`);
-    ctx.deps.emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
+  // VTID-04480: before the first word of a session the budget is smaller —
+  // an opening that gathers data through a chain of tools ends in a
+  // monologue that reads the payloads aloud.
+  const toolLimit = effectiveToolCallLimit(session, getMaxConsecutiveToolCalls());
+  if (session.consecutiveToolCalls > toolLimit.limit) {
+    console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${toolLimit.limit}${toolLimit.opening ? ', opening turn' : ''}). Sending synthetic loop-break response.`);
+    ctx.deps.emitDiag(session, 'tool_loop_guard', {
+      consecutive: session.consecutiveToolCalls,
+      dropped_tools: toolNames,
+      limit: toolLimit.limit,
+      opening_turn: toolLimit.opening,
+    });
     ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
       session_id: session.sessionId,
       consecutive: session.consecutiveToolCalls,
       tools: toolNames,
       function_call_count: event.calls.length,
+      opening_turn: toolLimit.opening,
     }, 'warning').catch(() => { });
+    // VTID-04480: the reply this guidance asks for is one short sentence;
+    // handleAudioOutput caps it (the turn_complete resets it).
+    if (!(session as any).loopGuardReply) (session as any).loopGuardReply = { audioMs: 0 };
 
     // VTID-TOOLGUARD-FIX: the guard previously sent {success:false, error:
     // '...'} — a shape observed live (2026-07-28, session live-be473671...)
@@ -2176,7 +2234,19 @@ export function handleTurnComplete(
   session.modelRespondedThisTurn = false;
   session.turnCompleteAt = Date.now();
   console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
-  ctx.deps.emitDiag(session, 'turn_complete');
+  // VTID-04480: what the model said this turn, bounded — a session that
+  // ends before a user turn writes no transcript anywhere else.
+  const turnOutputPreview = outputPreview(session.outputTranscriptBuffer || '');
+  if (turnOutputPreview) {
+    ctx.deps.emitDiag(session, 'turn_complete', {
+      output_preview: turnOutputPreview,
+      output_chars: (session.outputTranscriptBuffer || '').length,
+      output_suppressed: (session as any).suppressCurrentTurnAudio === true,
+    });
+  } else {
+    ctx.deps.emitDiag(session, 'turn_complete');
+  }
+  (session as any).loopGuardReply = undefined;
 
   if (session.identity?.tenant_id && session.identity?.user_id) {
     const _cadenceSb = getSupabase();
