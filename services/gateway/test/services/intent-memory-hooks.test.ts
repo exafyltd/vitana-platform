@@ -27,6 +27,16 @@ process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key';
 const mockFetch = jest.fn();
 global.fetch = mockFetch as any;
 
+// VTID-04441: rememberFact() also reads the forgotten-fact markers over REST.
+// This suite pins the write_fact payload, so the marker store is stubbed out
+// and every fetch below is a write_fact call. The marker gate has its own
+// suite (test/vtid-04441-forgotten-facts.test.ts).
+jest.mock('../../src/services/memory/forgotten', () => ({
+  checkForgottenGate: async () => ({ allow: true }),
+  clientForgottenStore: () => null,
+  restForgottenStore: () => null,
+}));
+
 function fetchOk() {
   return Promise.resolve({ ok: true, status: 200, text: async () => '' } as any);
 }

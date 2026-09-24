@@ -1,0 +1,5 @@
+npx tsc --noEmit -p services/gateway                         # clean
+npx jest test/services/memory/recall test/memory-golden-eval # 26/26
+npx jest <31 suites reading AWS-STAGE-DEPLOY-GATEWAY.yml>    # 310/310
+npx jest vtid-04452                                          # 2/2
+mutation: gate `identity && isOrbRecallEnabled()` -> `identity` # wiring test fails, restored

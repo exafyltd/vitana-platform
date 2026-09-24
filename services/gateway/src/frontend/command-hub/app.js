@@ -880,6 +880,127 @@ async function syncOperatorVoiceTurns() {
     }
 }
 
+/**
+ * VTID-04437: the caller's own server-side threads (operator_threads, via
+ * GET /api/v1/operator/threads) merged into the local index, so a thread
+ * started on another device — or by voice — shows up in the sidebar. The
+ * local index stays the source for titles, archive state and order; a
+ * thread deleted here is remembered and never re-added from the server.
+ */
+var OPERATOR_THREADS_DISMISSED_KEY = 'operator_console_threads_dismissed';
+
+function loadDismissedOperatorThreadIds() {
+    try {
+        var parsed = JSON.parse(localStorage.getItem(OPERATOR_THREADS_DISMISSED_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+}
+
+function dismissOperatorThreadId(threadId) {
+    try {
+        var ids = loadDismissedOperatorThreadIds().filter(function (id) { return id !== threadId; });
+        ids.unshift(threadId);
+        localStorage.setItem(OPERATOR_THREADS_DISMISSED_KEY, JSON.stringify(ids.slice(0, 500)));
+    } catch (e) { /* no-op */ }
+}
+
+/**
+ * Pure merge: returns the new index and how
+ * many threads were added. Server threads are listed newest-first.
+ */
+function mergeServerOperatorThreads(localIndex, serverThreads, dismissedIds) {
+    var index = (localIndex || []).slice();
+    var byId = {};
+    index.forEach(function (t) { byId[t.id] = t; });
+    var dismissed = {};
+    (dismissedIds || []).forEach(function (id) { dismissed[id] = true; });
+    var added = 0;
+    (serverThreads || []).forEach(function (st) {
+        if (!st || !st.id || dismissed[st.id]) return;
+        var lastAt = Date.parse(st.last_message_at || st.created_at || '') || 0;
+        var local = byId[st.id];
+        if (local) {
+            if (lastAt > (local.updatedAt || 0)) local.updatedAt = lastAt;
+            if ((!local.title || local.title === 'New conversation') && st.title) local.title = st.title;
+            return;
+        }
+        var thread = {
+            id: st.id,
+            title: st.title || 'Conversation',
+            conversationId: st.id,
+            createdAt: Date.parse(st.created_at || '') || lastAt || Date.now(),
+            updatedAt: lastAt || Date.now(),
+            fromServer: true
+        };
+        index.push(thread);
+        byId[st.id] = thread;
+        added++;
+    });
+    return { index: index, added: added };
+}
+
+var _operatorServerThreadsSynced = false;
+async function syncOperatorThreadsFromServer(requestedThreadId) {
+    if (_operatorServerThreadsSynced || !state.authToken) return;
+    _operatorServerThreadsSynced = true;
+    try {
+        var res = await fetch('/api/v1/operator/threads?limit=50', { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        var merged = mergeServerOperatorThreads(state.operatorThreads, body.threads || [], loadDismissedOperatorThreadIds());
+        if (merged.added === 0 && !requestedThreadId) {
+            saveOperatorThreadsIndex(merged.index);
+            return;
+        }
+        state.operatorThreads = merged.index;
+        saveOperatorThreadsIndex(state.operatorThreads);
+        if (requestedThreadId && requestedThreadId !== state.operatorActiveThreadId
+            && state.operatorThreads.some(function (t) { return t.id === requestedThreadId; })) {
+            switchOperatorThread(requestedThreadId);
+            return;
+        }
+        renderApp();
+    } catch (e) {
+        console.warn('[VTID-04437] server thread list failed:', e);
+    }
+}
+
+/**
+ * VTID-04437: a thread with no local history (opened from another device,
+ * or voice-only) loads its whole server transcript — typed and voice turns.
+ */
+async function loadOperatorThreadFromServer(threadId) {
+    if (!threadId || !state.authToken) return;
+    try {
+        var res = await fetch('/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages', { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        if (threadId !== state.operatorActiveThreadId) return;
+        if ((state.operatorChatHistory || []).length > 0) return; // something was typed meanwhile
+        var history = [];
+        (body.messages || []).forEach(function (m) {
+            if (!m || (m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
+            var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
+            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+        });
+        if (history.length === 0) return;
+        state.operatorChatHistory = history;
+        saveOperatorThreadHistory(threadId, history);
+        state.chatMessages = history.map(function (msg) {
+            return {
+                type: msg.role === 'user' ? 'user' : 'system',
+                content: msg.content,
+                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: msg.ts,
+                channel: msg.channel
+            };
+        });
+        renderApp();
+    } catch (e) {
+        console.warn('[VTID-04437] thread transcript load failed:', e);
+    }
+}
+
 /** Switch the active thread and restore its history into the UI. */
 function switchOperatorThread(threadId) {
     if (threadId === state.operatorActiveThreadId) return;
@@ -908,7 +1029,9 @@ function switchOperatorThread(threadId) {
     reattachFollowedExecutions(state.chatMessages);
     notifyOrbOperatorThread();
     renderApp();
-    syncOperatorVoiceTurns();
+    // VTID-04437: an empty local history means the thread lives server-side.
+    if (history.length === 0) loadOperatorThreadFromServer(thread.id);
+    else syncOperatorVoiceTurns();
 }
 
 /**
@@ -1000,6 +1123,8 @@ function deleteOperatorThread(threadId) {
     state.operatorThreads = state.operatorThreads.filter(function (t) { return t.id !== threadId; });
     saveOperatorThreadsIndex(state.operatorThreads);
     try { localStorage.removeItem(operatorThreadHistoryKey(threadId)); } catch (e) { /* no-op */ }
+    // VTID-04437: the server keeps its copy; never re-add it from the list.
+    dismissOperatorThreadId(threadId);
 
     if (state.operatorActiveThreadId === threadId) {
         var next = state.operatorThreads
@@ -1325,6 +1450,9 @@ function initOperatorChatSession() {
     try {
         requestedThreadId = new URLSearchParams(window.location.search).get('operator_thread');
     } catch (e) { /* no-op */ }
+    // VTID-04437: merge the caller's server-side threads (async; a deep link
+    // to a thread only the server knows opens it once the list arrives).
+    syncOperatorThreadsFromServer(requestedThreadId);
 
     var active = (requestedThreadId && index.find(function (t) { return t.id === requestedThreadId; })) || index[0];
     if (!active) {

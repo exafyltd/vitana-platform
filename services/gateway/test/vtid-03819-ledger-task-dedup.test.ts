@@ -104,7 +104,7 @@ describe('checkForSimilarTask (VTID-03819)', () => {
 
     expect(mockedFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockedFetch.mock.calls[0];
-    expect(url).toContain('/rest/v1/rpc/find_similar_vtid_tasks');
+    expect(url).toContain('/rest/v1/rpc/find_similar_vtid_tasks_v2'); // VTID-04460
     const body = JSON.parse(init.body);
     expect(body.p_query_embedding).toBe(`[${FAKE_EMBEDDING.join(',')}]`);
     expect(body.p_min_similarity).toBe(RELATED_THRESHOLD);
@@ -124,7 +124,7 @@ describe('stampTaskEmbedding (VTID-03819)', () => {
     process.env = ORIGINAL_ENV;
   });
 
-  it('PATCHes the embedding column on the newly-created row', async () => {
+  it('PATCHes the embedding_v2 column on the newly-created row (VTID-04460)', async () => {
     mockedGenerateEmbedding.mockResolvedValue({ ok: true, embedding: FAKE_EMBEDDING });
     mockedFetch.mockResolvedValue(jsonRes(204, null));
 
@@ -135,7 +135,8 @@ describe('stampTaskEmbedding (VTID-03819)', () => {
     expect(url).toContain('/rest/v1/vtid_ledger?vtid=eq.VTID-04002');
     expect(init.method).toBe('PATCH');
     const body = JSON.parse(init.body);
-    expect(body.embedding).toBe(`[${FAKE_EMBEDDING.join(',')}]`);
+    expect(body.embedding_v2).toBe(`[${FAKE_EMBEDDING.join(',')}]`);
+    expect(body.embedding).toBeUndefined();
     expect(typeof body.embedding_updated_at).toBe('string');
   });
 

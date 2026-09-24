@@ -51,6 +51,18 @@ export function describeResolvedTicket(t: ResolvedTicket): string | null {
   return `${label}: ${reported ?? '—'} → ${resolution ?? '—'}`;
 }
 
+/** The member's primary tenant (the tenant their memory rows live in). */
+async function primaryTenantOf(sb: SupabaseClient, userId: string): Promise<string | null> {
+  const { data } = await sb
+    .from('user_tenants')
+    .select('tenant_id')
+    .eq('user_id', userId)
+    .order('is_primary', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as { tenant_id?: string } | null)?.tenant_id ?? null;
+}
+
 export type TicketMemoryOutcome =
   | { status: 'written'; written: number }
   | { status: 'not_resolved' | 'no_reporter' | 'no_tenant' | 'nothing_to_say' | 'not_found' }
@@ -71,14 +83,7 @@ export async function recordResolvedTicketMemory(sb: SupabaseClient, ticketId: s
     const content = describeResolvedTicket(t);
     if (!content) return { status: 'nothing_to_say' };
 
-    const { data: membership } = await sb
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', t.user_id)
-      .order('is_primary', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const tenantId = (membership as { tenant_id?: string } | null)?.tenant_id;
+    const tenantId = await primaryTenantOf(sb, t.user_id);
     if (!tenantId) return { status: 'no_tenant' };
 
     const base = {
@@ -109,4 +114,114 @@ export async function recordResolvedTicketMemory(sb: SupabaseClient, ticketId: s
   } catch (err) {
     return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04431 — the reader: similar resolved tickets for the drafters.
+//
+// The role:support copies are searched across members of ONE tenant by
+// `support_resolution_search` (service_role only), which returns ticket ids,
+// never episode text. The resolution shown to a drafter is loaded from
+// feedback_tickets: ticket number, kind and the published resolution only —
+// never another member's report, name or transcript. Drafts are reviewed by
+// a human before anything reaches a member.
+// ---------------------------------------------------------------------------
+
+export const PRIOR_RESOLUTIONS_LIMIT = 3;
+export const PRIOR_RESOLUTION_MAX_CHARS = 500;
+export const PRIOR_RESOLUTIONS_TIMEOUT_MS = 4_000;
+
+export interface PriorResolution {
+  ticket_number: string | null;
+  kind: string | null;
+  resolution: string;
+  similarity: number;
+}
+
+export function isPriorResolutionsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SUPPORT_PRIOR_RESOLUTIONS_ENABLED !== 'false';
+}
+
+export interface PriorResolutionDeps {
+  sb?: SupabaseClient | null;
+  embed?: (text: string) => Promise<{ ok: boolean; embedding?: number[] }>;
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * Up to three resolved tickets in the same tenant that look like this one.
+ * Never throws; any failure (flag off, no tenant, embedding down, timeout)
+ * returns []. The query text is the ticket's own report.
+ */
+export async function findSimilarResolvedTickets(
+  ticketId: string,
+  queryText: string,
+  deps: PriorResolutionDeps = {},
+): Promise<PriorResolution[]> {
+  if (!isPriorResolutionsEnabled(deps.env)) return [];
+  const text = (queryText || '').trim();
+  if (!ticketId || !text) return [];
+  const work = (async (): Promise<PriorResolution[]> => {
+    let sb = deps.sb;
+    if (sb === undefined) {
+      const { getSupabase } = await import('../../lib/supabase');
+      sb = getSupabase();
+    }
+    if (!sb) return [];
+    const { data: ticket } = await sb.from('feedback_tickets').select('user_id').eq('id', ticketId).maybeSingle();
+    const userId = (ticket as { user_id?: string } | null)?.user_id;
+    if (!userId) return [];
+    const tenantId = await primaryTenantOf(sb, userId);
+    if (!tenantId) return [];
+
+    const embed = deps.embed ?? (await import('../memory-embedding')).embedMemoryText;
+    const e = await embed(text.slice(0, 2000));
+    if (!e.ok || !e.embedding) return [];
+
+    const { data: hits, error } = await sb.rpc('support_resolution_search', {
+      p_query_embedding: e.embedding,
+      p_tenant_id: tenantId,
+      p_top_k: PRIOR_RESOLUTIONS_LIMIT,
+      p_exclude_ticket_id: ticketId,
+    });
+    if (error || !Array.isArray(hits) || hits.length === 0) return [];
+    const scores = new Map<string, number>();
+    for (const h of hits as Array<{ ticket_id: string | null; similarity: number }>) {
+      if (h.ticket_id && !scores.has(h.ticket_id)) scores.set(h.ticket_id, Number(h.similarity) || 0);
+    }
+    if (scores.size === 0) return [];
+
+    const { data: rows } = await sb
+      .from('feedback_tickets')
+      .select('id, ticket_number, kind, status, resolution_md, draft_answer_md')
+      .in('id', [...scores.keys()]);
+    const out: PriorResolution[] = [];
+    for (const r of (rows as any[]) || []) {
+      if (r.status !== 'resolved' && r.status !== 'user_confirmed') continue;
+      const resolution = clean(r.resolution_md, PRIOR_RESOLUTION_MAX_CHARS) ?? clean(r.draft_answer_md, PRIOR_RESOLUTION_MAX_CHARS);
+      if (!resolution) continue;
+      out.push({ ticket_number: r.ticket_number ?? null, kind: r.kind ?? null, resolution, similarity: scores.get(r.id) ?? 0 });
+    }
+    return out.sort((a, b) => b.similarity - a.similarity).slice(0, PRIOR_RESOLUTIONS_LIMIT);
+  })();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<PriorResolution[]>((resolve) => {
+    timer = setTimeout(() => resolve([]), PRIOR_RESOLUTIONS_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([work.catch(() => []), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** The prompt block a drafter appends; '' when there is nothing to show. */
+export function renderPriorResolutions(list: PriorResolution[]): string {
+  if (!list || list.length === 0) return '';
+  return [
+    'HOW SIMILAR TICKETS WERE RESOLVED BEFORE (same tenant, reference only)',
+    'Use these to inform your draft when they genuinely apply. Do not quote them, do not mention other tickets or other members, and never assume this ticket has the same cause without evidence in the report.',
+    ...list.map((p) => `- ${p.ticket_number ?? '(no number)'}${p.kind ? ` (${p.kind})` : ''}: ${p.resolution}`),
+  ].join('\n');
 }

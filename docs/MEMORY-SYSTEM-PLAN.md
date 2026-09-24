@@ -279,7 +279,7 @@ Memory failed here mostly **silently**. The plan makes every failure loud and me
 
    It runs in CI on every memory PR. This is the missing piece that made "we improved it" unverifiable.
 4. **Idempotent session-end commit.** Keyed by `session_id`, safe to retry, identical for every transport.
-5. **Single owner.** `services/memory/` has one README with the table list, the write callers and the read contract. It is short enough for a supervisor to read in 10 minutes.
+5. **Single owner.** `services/memory/` has one README with the table list, the write callers and the read contract. It is short enough for a supervisor to read in 10 minutes. Done: `services/gateway/src/services/memory/README.md` (VTID-04442).
 
 ---
 
@@ -303,7 +303,7 @@ Each phase ships independently to staging and is verified with the health check 
 
 **Found during Phase 0, owner action needed:** none of the memory-intelligence automations have run since July 2026: AP-0906..AP-0913, including graph projection, the AP-0910 embedding backfill and user-model synthesis. Their GCP Cloud Scheduler died with GCP. The AWS replacement (`scripts/aws/setup-eventbridge-cron-migration.sh`, VTID-04226) was prepared but never applied. Running it with `--apply` from an admin session restores them.
 
-Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs its own fix.
+Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by VTID-04349 (`requireInternalOrAdmin`).
 
 ### Phase 1 — Consolidate (≈2–3 weeks)
 - [x] `services/memory/remember.ts` — one fact write path; inline extractor, intent hooks, diary extractor and memory-intelligence all moved behind it (fixes D8). VTID-04364.
@@ -311,7 +311,7 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
 - [x] Broker reads the canonical tables; the gateway no longer writes the tier-2 mirrors. VTID-04366.
 - [ ] Drop the mirrors, the relationship-edge mirror trigger and the flag after prod runs this code and 2 weeks of clean health checks; replay or close the DLQ.
 - [x] Delete the unused bridge exports (scored/trust/enhanced instruction builders, ~875 lines; no caller in `src/` or `test/`). VTID-04364.
-- [ ] Both prompt builders call one `recall()` — the context pack already reads through the broker; the ORB live prompt still uses `fetchMemoryContextWithIdentity`. Moving it changes what a live voice session hears and needs latency measurement on staging first, so it is its own step.
+- [x] Both prompt builders call one `recall()` (VTID-04452, flagged). `services/memory/recall.ts` reads facts, episodes and diary through the broker (role-scoped, no `ai_memory`) and the ORB live prompt uses it when `MEMORY_ORB_RECALL_ENABLED=true`; any broker failure falls back to the legacy read. Pinned on staging only. **Still to do:** once staging is back, compare the `[VTID-04452] orb recall in Nms` lines with the legacy bootstrap latency lines, then pin it on prod and delete the legacy six-table read.
 - [x] Role scope on write (`memory_items.active_role`) and on read (broker, context pack) (fixes D9). VTID-04367.
 
 ### Phase 2 — Make users feel it (≈2–3 weeks)
@@ -320,7 +320,11 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
   - vitana-v1 Garden hooks rebuilt on it; exafyltd/vitana-v1#1132 (VTID-04389).
   - `ai_memory` and diary entries copied into `memory_items` (applied live).
   - Category counting fixed (D4, D5).
-  - The Garden no longer calls the Gemini edge functions. `ai-chat` (health coach) still uses them: part of D12 remains.
+  - The Garden no longer calls the Gemini edge functions.
+- [x] **D12 (VTID-04448):** the Health Coach chat calls the gateway conversation API (canonical memory, the user's language) and shows the reply. `ai-chat` and the six Gemini memory edge functions (`search-memories`, `reinforce-memory`, `generate-memory-embedding`, `extract-diary-insights`, `extract-user-interests`, `refresh-memory-metadata`) are removed from the repo. **Owner step:** delete them from the Supabase project (`supabase functions delete <name>`); removing the source does not undeploy them. Still touching `ai_memory`, reached only through other legacy edge functions: `fetch-user-context` and `get-proactive-context` read it; `analyze-visual-context` (no caller) writes it.
+- [x] **No code reads or writes `ai_memory` any more (VTID-04453, exafyltd/vitana-v1).** `fetch-user-context` (event recommendations) and `get-proactive-context` (the intelligent greeting) read personal memory from `memory_items` through `_shared/personal-memory.ts`: personal rows only, raw turns skipped, same output shape. `analyze-visual-context` (no caller, Gemini, wrote `ai_memory`) is removed. **Owner step:** `supabase functions delete analyze-visual-context`. Dropping the `ai_memory` table itself waits until the deployed functions are the new versions.
+- [x] **Conversation API bound to the verified caller (VTID-04447).** `/api/v1/conversation/turn` and `/stream` took `user_id`/`tenant_id` from the body with no authentication and read and wrote that user's memory; `/history` and `/threads/active` returned any user's messages. All four now require a JWT; a different `user_id` is refused, another tenant needs membership, history is filtered to the caller.
+- [x] **Forgetting sticks (VTID-04441).** Deleting a fact in the Garden first records one `memory_fact_forgotten` marker per value (sha256 of the normalised value; the value is not kept). `rememberFact()` refuses an inferred write of a forgotten value, still learns a different value for the key, and clears the marker when the user states it again. A marker store that fails lets the write through and logs.
 - [x] All 5 diary writers go through one endpoint, `POST /api/v1/memory/diary/entries`: diary row, memory episode and Index sync (VTID-04390).
 - [x] Nightly `daily_learning` episode per active user (AP-0914, the user's local 22:00), and the real "Daily summary" screen replacing the mock (VTID-04391). The scheduler is the owner-run EventBridge `--apply`.
 - [x] Raw transcripts go to `memory_transcript_turns` with a 90-day pg_cron purge; the last 90 days were backfilled (VTID-04387).
@@ -331,7 +335,7 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
 ### Phase 3 — Developer memory (≈1–2 weeks)
 - [x] `author_user_id` + `handoff` category on `dev_agent_memory` (VTID-04407, migration `20260923190000`, applied live). One hourly sweep (`POST /api/v1/dev-memory/handoffs/sweep`, EventBridge job `gateway-dev-memory-handoff-sweep`) writes a handoff for every owned Operator thread that has been quiet for 60 minutes. That covers both end-of-thread and end-of-day. A newer handoff supersedes the older one, and a thread whose handoff is already current is skipped. Handoffs are left out of semantic recall; only the morning pack reads them.
 - [x] `GET /api/v1/dev-memory/morning-pack` (VTID-04408). It returns the owner's handoffs from the last 7 days, the repo-wide decisions/incidents/gotchas/conventions from the last 7 days, and VTIDs in progress. `?format=text` returns plain text. Hook script: `.claude/hooks/session-start-dev-memory-pack.sh`, read-only through `X-Dev-Memory-Token`. **Owner step:** register the hook in `.claude/settings.json` (a session is not allowed to edit its own settings), then set `DEV_MEMORY_PACK_TOKEN` in the gateway task def and in the Claude Code environment.
-- [x] Server-side Operator thread list: `GET /api/v1/operator/threads` (VTID-04409). The Command Hub `app.js` wiring is separate and needs the Command Hub ownership allowlist.
+- [x] Server-side Operator thread list: `GET /api/v1/operator/threads` (VTID-04409). The Command Hub sidebar merges it into the local thread index and loads a server-only thread's transcript on open (VTID-04437).
 
 ### Phase 4 — Customer & support memory (≈2 weeks, after Phase 2)
 - [x] Customer-scoped episodes (VTID-04411, migration `20260923200000`, applied live). Every executed BackOffice CRM/sales command about a customer, lead, contact or opportunity leaves one `customer` episode.
@@ -345,6 +349,12 @@ Separately, `POST /api/v1/automations/cron/:id` has no authentication. It needs 
   - The text is the ticket's own report and resolution.
   - Episodes are unique per (ticket, role), with importance 45.
   - The member's recall sees their own copy only (golden eval scenario 12).
+- [x] The support copy is read (VTID-04431). `support_resolution_search` (service_role only) finds similar resolved tickets in the ticket's tenant and returns ticket ids only. The Sage, Devon and Mira drafters get the published resolution of up to three of them as reference: ticket number, kind and resolution, never another member's report. Drafts are reviewed by a human before a member sees anything. `SUPPORT_PRIOR_RESOLUTIONS_ENABLED=false` turns it off. Not wired: the member-facing support specialist, on purpose; it must only see the member's own tickets.
+
+### Embeddings outside user memory
+- [x] **`embedding-service` is Titan only (VTID-04457).** It embeds `user_intents`, VTID-ledger dedup and the navigation catalog. Measured over the 30 days before: OpenAI failed 219 times (and wrote vectors into the same columns as Titan when it worked), Gemini served twice on 2026-09-22 (a Google fallback), all providers failed twice. The OpenAI and Gemini rungs are removed; Titan V1 keeps the columns' 1536 dims, so there is no schema change.
+- [x] **Expand: those columns move to Titan V2 1024 (VTID-04460, decision 2).** `embedding_v2 vector(1024)` on `user_intents` and `vtid_ledger` plus `_v2` copies of `compute_intent_matches`, `search_intent_catalog` and `find_similar_vtid_tasks` (applied live, additive). `embedding-service` now embeds with Titan V2; every writer writes `embedding_v2` and every reader calls the `_v2` function; the intent worker backfills `embedding_v2`. Found on the way: the live `search_intent_catalog` cast its query to `vector(768)` while the service sent 1536 dims, so semantic fit in catalog search never ran; `_v2` casts to 1024. `calendar_events`, `products`, `feedback_tickets` have no vectors and no writer, so they are left out.
+- [ ] **Contract, after prod runs the new gateway:** switch `compute_intent_matches_daily` and `intent_matches_recompute_daily` to `compute_intent_matches_v2`, then drop the old `embedding` columns and the old three functions.
 
 ---
 

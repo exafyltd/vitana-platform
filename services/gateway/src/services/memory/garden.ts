@@ -21,7 +21,9 @@
  *   - a fact is forgotten by deleting every row of that key for the user,
  *     history included — readers disagree on `superseded_at` vs
  *     `superseded_by` as the "current" marker, and a forgotten value must
- *     not survive in either, nor in the supersession history;
+ *     not survive in either, nor in the supersession history. Before the
+ *     delete, a hashed "do not re-learn" marker is recorded per value
+ *     (VTID-04441, memory/forgotten.ts);
  *   - a note is a `memory_items` row (source 'upload', kind 'garden_note');
  *   - an episode is edited in place (embedding cleared for re-embedding) or
  *     deleted.
@@ -29,6 +31,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { rememberFact } from './remember';
+import { clientForgottenStore, hashFactValue } from './forgotten';
 import { memoryRoleForRead, memoryRoleForWrite } from './scope';
 
 export const GARDEN_CATEGORIES = [
@@ -379,6 +382,8 @@ export async function deleteGardenEntry(
     .maybeSingle();
   if (curErr) return { ok: false, status: 502, error: curErr.message };
   if (!cur) return { ok: false, status: 404, error: 'NOT_FOUND' };
+  const factKey = (cur as any).fact_key as string;
+  await recordForgottenValues(client, identity, factKey);
   // One statement, so the superseded_by self-references inside the chain
   // are checked only after every row of the key is gone.
   const { error } = await client
@@ -386,9 +391,36 @@ export async function deleteGardenEntry(
     .delete()
     .eq('tenant_id', identity.tenant_id)
     .eq('user_id', identity.user_id)
-    .eq('fact_key', (cur as any).fact_key);
+    .eq('fact_key', factKey);
   if (error) return { ok: false, status: 502, error: error.message };
   return { ok: true, id };
+}
+
+/**
+ * VTID-04441: before a fact is forgotten, record a "do not re-learn" marker
+ * for every value of its key (history included), hashed — so an extractor
+ * cannot infer the same value back. Best effort: the user asked for the fact
+ * to be gone, so a marker failure is logged and never blocks the delete.
+ */
+async function recordForgottenValues(client: SupabaseClient, identity: GardenIdentity, factKey: string): Promise<void> {
+  try {
+    const { data, error } = await client
+      .from('memory_facts')
+      .select('fact_value')
+      .eq('tenant_id', identity.tenant_id)
+      .eq('user_id', identity.user_id)
+      .eq('fact_key', factKey);
+    if (error) throw new Error(error.message);
+    const values = (Array.isArray(data) ? data : [])
+      .map((r: any) => r?.fact_value)
+      .filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0);
+    await clientForgottenStore(client).add(
+      { tenant_id: identity.tenant_id, user_id: identity.user_id, fact_key: factKey },
+      values.map(hashFactValue),
+    );
+  } catch (err: any) {
+    console.warn(`[VTID-04441] could not record forgotten marker for ${factKey}: ${err?.message || err}`);
+  }
 }
 
 /** Embed a memory_items row after a write (fire-and-forget, Titan V2). */

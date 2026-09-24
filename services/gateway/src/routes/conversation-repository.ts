@@ -41,11 +41,13 @@ export async function fetchVerifiedActiveRole(sb: SupabaseClient, userId: string
   return sb.from('user_tenants').select('active_role').eq('user_id', userId).eq('tenant_id', tenantId).limit(1).single();
 }
 
-export async function fetchConversationHistoryQuery(sb: SupabaseClient, threadId: string, limit: number, before: string | undefined) {
+export async function fetchConversationHistoryQuery(sb: SupabaseClient, threadId: string, limit: number, before: string | undefined, userId: string) {
+  // VTID-04447: a thread's history is readable by its owner only.
   let query = sb
     .from('conversation_messages')
     .select('id, thread_id, role, channel, content, metadata, created_at')
     .eq('thread_id', threadId)
+    .eq('user_id', userId)
     .order('created_at', { ascending: true })
     .limit(limit);
 

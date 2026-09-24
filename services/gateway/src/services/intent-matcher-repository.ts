@@ -20,7 +20,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export async function computeIntentMatchesRpc(sb: SupabaseClient, intentId: string, topN: number) {
-  return sb.rpc('compute_intent_matches', { p_intent_id: intentId, p_top_n: topN });
+  // VTID-04460: the _v2 function reads embedding_v2 (Titan V2).
+  return sb.rpc('compute_intent_matches_v2', { p_intent_id: intentId, p_top_n: topN });
 }
 
 export async function fetchIntentForCommercialFederation(sb: SupabaseClient, intentId: string) {
