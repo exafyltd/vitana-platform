@@ -7,19 +7,23 @@
  * iterations will replace this with an AST-extractor that parses
  * orb-live.ts + orb-tool.ts at build time.
  *
- * Endpoints (all developer-tier — gated by middleware on the mount path):
- *   GET  /api/v1/voice-tools/catalog
- *   GET  /api/v1/voice-tools/catalog/:name
- *   GET  /api/v1/voice-tools/catalog/stats
+ * Endpoints:
+ *   GET  /api/v1/voice-tools/catalog          requireAuth + requireExafyAdmin
+ *   GET  /api/v1/voice-tools/catalog/:name    requireAuth + requireExafyAdmin
+ *   GET  /api/v1/voice-tools/catalog/stats    requireAuth + requireExafyAdmin
+ *   GET  /api/v1/voice-tools/health           public liveness (counts only)
  *
- * Privacy / role-gating: the catalog itself is dev-only; community/mobile
- * sessions never reach this route. The mount in index.ts uses the same
- * pattern as voice-lab.
+ * VTID-04491: the header used to say these were "gated by middleware on the
+ * mount path". They were not — index.ts mounts this router with
+ * mountRouterSync, which is a duplicate-route guard, not an auth gate — so
+ * the full tool catalog (names, parameters, backing endpoints, roles) was
+ * readable by anyone. The gate now lives on the routes themselves.
  */
 
 import { Router, Request, Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'VTID-02766';
@@ -73,7 +77,7 @@ function loadManifest(): ToolManifest {
 // GET /catalog — paginated list with filters
 // ---------------------------------------------------------------------------
 
-router.get('/catalog', (req: Request, res: Response) => {
+router.get('/catalog', requireAuth, requireExafyAdmin, (req: Request, res: Response) => {
   const m = loadManifest();
   const surface = (req.query.surface as string | undefined)?.toLowerCase();
   const role = (req.query.role as string | undefined)?.toLowerCase();
@@ -111,7 +115,7 @@ router.get('/catalog', (req: Request, res: Response) => {
 // GET /catalog/stats — aggregate counts for header strip
 // ---------------------------------------------------------------------------
 
-router.get('/catalog/stats', (_req: Request, res: Response) => {
+router.get('/catalog/stats', requireAuth, requireExafyAdmin, (_req: Request, res: Response) => {
   const m = loadManifest();
   const bySurface: Record<string, number> = {};
   const byRole: Record<string, number> = {};
@@ -145,7 +149,7 @@ router.get('/catalog/stats', (_req: Request, res: Response) => {
 // GET /catalog/:name — single tool detail
 // ---------------------------------------------------------------------------
 
-router.get('/catalog/:name', (req: Request, res: Response) => {
+router.get('/catalog/:name', requireAuth, requireExafyAdmin, (req: Request, res: Response) => {
   const m = loadManifest();
   const tool = m.tools.find((t) => t.name === req.params.name);
   if (!tool) return res.status(404).json({ ok: false, error: 'tool_not_found', vtid: VTID });

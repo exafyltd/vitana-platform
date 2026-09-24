@@ -7872,9 +7872,16 @@ function _convRenderShadowRanking(host, days) {
     host.appendChild(body);
     _convFetch('/admin/conversation/shadow-ranking?days=' + days).then(function (d) {
         body.innerHTML = '';
+        // VTID-04491: since VTID-04454 the score can choose the opening
+        // (BRAIN_SCORED_OPENING). Say which mode the window actually ran in
+        // instead of always claiming the score "changes nothing".
+        var weightsText = (Object.keys(d.weights_versions || {}).map(function (v) { return 'v' + v + ' (' + d.weights_versions[v] + ')'; }).join(', ') || 'none yet');
+        var scoredN = d.scored_openings || 0;
         body.appendChild(_convEl('div', {
-            text: 'Shadow mode: the weighted score is recorded next to the live ranking and changes nothing Vitana says. Weights: ' +
-                (Object.keys(d.weights_versions || {}).map(function (v) { return 'v' + v + ' (' + d.weights_versions[v] + ')'; }).join(', ') || 'none yet') + '.',
+            text: (scoredN > 0
+                ? 'Scored ranking: the weighted score chose ' + scoredN + ' of ' + (d.sessions_ranked || 0) + ' openings in this window; the fixed-priority pick is recorded next to it for comparison. Weights: '
+                : 'Shadow mode in this window: the weighted score was recorded next to the fixed-priority ranking and did not choose any opening. Weights: ') +
+                weightsText + '.',
             cls: 'conv-metric-muted'
         }));
         body.appendChild(_convTileGrid([
@@ -7883,7 +7890,9 @@ function _convRenderShadowRanking(host, days) {
             _convTile('Would differ', String(d.sessions_ranked - d.agree), 'the shadow score picks another provider',
                 d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null),
             // VTID-04435 (WS-4.3): openings scored with the user's own weights (their outcomes, within fixed limits).
-            _convTile('Personal weights', String(d.personalized || 0), (d.personal_changed_winner || 0) + ' changed the shadow pick')
+            _convTile('Personal weights', String(d.personalized || 0), (d.personal_changed_winner || 0) + ' changed the shadow pick'),
+            // VTID-04491: openings the score actually chose, and how many it changed vs the fixed-priority pick.
+            _convTile('Scored openings', String(scoredN), (d.scored_changed_opening || 0) + ' differ from the fixed-priority pick')
         ]));
         if ((d.disagreements || []).length) {
             body.appendChild(_convTable([{ key: 'live', label: 'Live pick' }, { key: 'shadow', label: 'Shadow pick' }, { key: 'count', label: 'Openings' }], d.disagreements));
@@ -50915,7 +50924,7 @@ function renderVitanaAwarenessTestView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Vitana Awareness Test</h2>' +
-        '<p class="section-subtitle">What does the voice ORB actually know before responding? This calls the same bootstrap path a voice session uses and shows every context block that would be injected into the Gemini Live system_instruction.</p>';
+        '<p class="section-subtitle">What does the voice ORB actually know before responding? This calls the same bootstrap path a voice session uses and shows every context block that would be injected into the system instruction of the live voice model (Nova Sonic; Serbian runs on the Vertex bridge).</p>';
 
     // Info card
     var info = document.createElement('div');
@@ -50925,7 +50934,7 @@ function renderVitanaAwarenessTestView() {
         '<li><strong>Memory items</strong> — what personal memory loads for this user?</li>' +
         '<li><strong>Recent turns</strong> — what prior ORB user utterances are fetched?</li>' +
         '<li><strong>User Context Profile</strong> — the deterministic summary of recent activity, routines, preferences.</li>' +
-        '<li><strong>Context instruction</strong> — the final string injected into the Gemini Live prompt.</li>' +
+        '<li><strong>Context instruction</strong> — the final string injected into the live voice model\'s prompt.</li>' +
         '</ul><p style="margin:.5rem 0 0;font-size:.8rem;color:var(--color-text-secondary);">If all checks are green but voice ORB still seems unaware, the issue is downstream of this test (Gemini model attention, anonymous fallback at widget, etc).</p>';
     container.appendChild(info);
 
@@ -51056,7 +51065,7 @@ function renderVitanaAwarenessTestView() {
         results.appendChild(renderList('Recent ORB turns (preview)', (data.recent_turns && data.recent_turns.preview) || []));
 
         results.appendChild(renderSection(
-            'Context instruction — what Gemini Live would see',
+            'Context instruction — what the live voice model would see',
             data.context_instruction ? (data.context_instruction.preview + (data.context_instruction.truncated ? '\n\n[\u2026truncated for display\u2026]' : '')) : '',
             (data.context_instruction ? data.context_instruction.char_count : 0) + ' chars total'
         ));
@@ -51502,7 +51511,7 @@ function renderAdminAwarenessView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Awareness Registry</h2>' +
-        '<p class="section-subtitle">Global control of every context signal the voice ORB and brain inject into the Gemini Live system_instruction. Exafy admins only. Changes apply to all tenants.</p>';
+        '<p class="section-subtitle">Global control of every context signal the voice ORB and brain inject into the system instruction of the live voice model. Exafy admins only. Changes apply to all tenants.</p>';
 
     if (!state.awarenessRegistry.loaded && !state.awarenessRegistry.loading) {
         awarenessFetchConfig();
@@ -51673,7 +51682,7 @@ function renderVoiceToolsCatalogView() {
     wiredSel.className = 'filter-select';
     wiredSel.innerHTML = '<option value="">All pipelines</option>' +
         '<option value="both">Both (live)</option>' +
-        '<option value="vertex_only">Vertex only</option>' +
+        '<option value="vertex_only">Gateway only (Nova Sonic; manifest value "vertex")</option>' +
         '<option value="livekit_only">LiveKit only</option>' +
         '<option value="none">Planned (neither)</option>';
     filters.appendChild(search);
@@ -51718,7 +51727,7 @@ function renderVoiceToolsCatalogView() {
         var hasL = w.indexOf('livekit') >= 0;
         var label, color;
         if (hasV && hasL) { label = 'BOTH';        color = '#22c55e'; }
-        else if (hasV)    { label = 'VERTEX';      color = '#3b82f6'; }
+        else if (hasV)    { label = 'GATEWAY';     color = '#3b82f6'; }
         else if (hasL)    { label = 'LIVEKIT';     color = '#8b5cf6'; }
         else              { label = 'NONE';        color = 'var(--color-text-secondary)'; }
         return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid ' + color + ';color:' + color + ';">' + label + '</span>';
@@ -51793,8 +51802,9 @@ function renderVoiceToolsCatalogView() {
         var url = '/api/v1/voice-tools/catalog' + (qs.length ? '?' + qs.join('&') : '');
 
         Promise.all([
-            fetch(url, { credentials: 'include' }).then(function (r) { return r.json(); }),
-            fetch('/api/v1/voice-tools/catalog/stats', { credentials: 'include' }).then(function (r) { return r.json(); }),
+            // VTID-04491: the catalog now requires an exafy_admin bearer.
+            fetch(url, { headers: buildContextHeaders(), credentials: 'include' }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-tools/catalog/stats', { headers: buildContextHeaders(), credentials: 'include' }).then(function (r) { return r.json(); }),
         ]).then(function (results) {
             var catalog = results[0];
             var statsResp = results[1];
@@ -52073,7 +52083,7 @@ function renderAssistantOverviewView() {
     grid.appendChild(renderAssistantOverviewCard(
         'Profile size (you)',
         state.assistantOverview.loading ? '\u2026' : (profileChars + ' chars'),
-        profileChars > 0 ? 'Sections reaching Gemini Live.' : 'Run awareness test to populate.',
+        profileChars > 0 ? 'Sections reaching the live voice model.' : 'Run awareness test to populate.',
         profileChars > 0 ? 'ok' : 'default'
     ));
 

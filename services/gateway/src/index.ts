@@ -1006,7 +1006,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
   // surface that groups recent B0d-real OASIS events by decision_id.
   // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
-  // Auth: requireExafyAdmin (exposes operator-grade decision metadata).
+  // Auth: requireAuth + requireExafyAdmin (exposes operator-grade decision
+  // metadata; requireAuth was missing until VTID-04491, so it always 401'd).
   const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
   mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
 
