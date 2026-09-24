@@ -6,3 +6,4 @@ read-only check: embedding_v2 on user_intents + vtid_ledger, 3 _v2 functions, pe
 apply_migration vtid_04460_find_similar_v2_service_role_only           # success
 npx tsc --noEmit -p services/gateway                                   # clean
 npx jest <15 suites touching the embedder, intents, ledger dedup>      # 414/414
+rm providers/titan-embedding.ts + its test (no caller after VTID-04460); .env.example Titan V1 block replaced; tsc clean; 23 embedding suites 545/545; 2 env-example suites 65/65
