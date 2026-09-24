@@ -1,0 +1,133 @@
+{
+  "_comment": "VTID-04458 — every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
+  "sources": {
+    "src/types/calendar.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/services/calendar-role-context.test.ts",
+        "test/vtid-04331-calendar-data-model.test.ts"
+      ]
+    },
+    "src/routes/calendar.ts": {
+      "tests": [
+        "test/calendar/calendar-routes.contract.test.ts",
+        "test/vtid-04374-calendar-maintenance.test.ts",
+        "test/vtid-04358-calendar-ics-feed.test.ts",
+        "test/vtid-04372-calendar-google-sync.test.ts"
+      ]
+    },
+    "src/routes/calendar-repository.ts": {
+      "tests": [
+        "test/calendar/calendar-routes.contract.test.ts"
+      ]
+    },
+    "src/services/calendar-service.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/calendar/calendar-routes.contract.test.ts",
+        "test/vtid-04331-calendar-data-model.test.ts",
+        "test/vtid-04374-calendar-maintenance.test.ts"
+      ]
+    },
+    "src/services/calendar-recurrence.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04331-calendar-data-model.test.ts"
+      ]
+    },
+    "src/services/calendar-reminders.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04338-calendar-default-reminders.test.ts",
+        "test/vtid-04373-calendar-reminder-quiet-hours.test.ts"
+      ]
+    },
+    "src/services/calendar-producers.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04356-calendar-source-producers.test.ts"
+      ]
+    },
+    "src/services/calendar-work-lens.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04357-calendar-work-lenses.test.ts"
+      ]
+    },
+    "src/services/calendar-ics-feed.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04358-calendar-ics-feed.test.ts"
+      ]
+    },
+    "src/services/calendar-google-sync.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04372-calendar-google-sync.test.ts"
+      ]
+    },
+    "src/services/calendar-rescheduler.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04374-calendar-maintenance.test.ts"
+      ]
+    },
+    "src/services/calendar-prioritizer.ts": {
+      "tests": [
+        "test/calendar/calendar-routes.contract.test.ts",
+        "test/vtid-04374-calendar-maintenance.test.ts"
+      ]
+    },
+    "src/services/calendar-today.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04321-calendar-backend-repair.test.ts"
+      ]
+    },
+    "src/services/journey-calendar-mapper.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/calendar/calendar-routes.contract.test.ts"
+      ]
+    },
+    "src/services/connected-apps/calendar-push.ts": {
+      "tests": [
+        "test/calendar/calendar-logic.golden.test.ts",
+        "test/vtid-04436-calendar-push.test.ts"
+      ]
+    },
+    "src/services/orb-tools/calendar-management-tools.ts": {
+      "tests": [
+        "test/orb-tools/calendar-management-tools.test.ts"
+      ]
+    },
+    "src/services/orb-tools/calendar-management-tools-repository.ts": {
+      "via": "calendar-management-tools",
+      "tests": [
+        "test/orb-tools/calendar-management-tools.test.ts"
+      ]
+    },
+    "src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming.ts": {
+      "tests": [
+        "test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts"
+      ]
+    },
+    "src/services/assistant-continuation/providers/next-action/sources/calendar-upcoming-repository.ts": {
+      "via": "calendar-upcoming",
+      "tests": [
+        "test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts"
+      ]
+    },
+    "src/services/recommendation-engine/analyzers/calendar-prep-analyzer.ts": {
+      "tests": [
+        "test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts"
+      ]
+    },
+    "src/services/recommendation-engine/analyzers/calendar-prep-analyzer-repository.ts": {
+      "via": "calendar-prep-analyzer",
+      "tests": [
+        "test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts"
+      ]
+    }
+  }
+}
