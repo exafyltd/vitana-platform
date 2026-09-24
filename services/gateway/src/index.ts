@@ -1974,6 +1974,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
       }
 
+      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // frontend's /nav-registry.json and builds the screen index in the
+      // background; the bundled vectors make that near-instant unless the
+      // registry gained texts. Non-fatal: tools fall back to the legacy
+      // navigator until the index exists.
+      if (process.env.NAV_V2_ENABLED === 'true') {
+        const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
+        warmNavService()
+          .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))
+          .catch((err: any) => console.warn('⚠️ Registry navigation warm failed (non-fatal):', err.message));
+      }
+
       // Agents Registry: bootstrap Tier 2 (embedded) agents — they live in this
       // process so if the gateway is up, they are up. Marks each as healthy.
       try {

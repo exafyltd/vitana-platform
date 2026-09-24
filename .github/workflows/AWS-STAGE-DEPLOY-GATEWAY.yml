@@ -689,6 +689,11 @@ jobs:
 # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
 # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
 #
+# VTID-04517 -- NAV_V2_ENABLED=true + NAV_REGISTRY_URL, STAGING ONLY: voice
+# navigation answered by the screen registry the frontend publishes
+# (/nav-registry.json on the staging frontend). Falls back to the legacy
+# navigator when the registry resolver cannot run. Rollback: "false".
+#
 # VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
 # decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
 # spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
@@ -941,7 +946,7 @@ jobs:
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
                                                 "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
-                                                "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
+                                                "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID","NAV_V2_ENABLED","NAV_REGISTRY_URL") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -963,6 +968,7 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"NAV_V2_ENABLED", value:"true"}, {name:"NAV_REGISTRY_URL", value:"https://preview-aws.vitanaland.com/nav-registry.json"},
                           {name:"VITANA_ENV", value:"staging"},
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},

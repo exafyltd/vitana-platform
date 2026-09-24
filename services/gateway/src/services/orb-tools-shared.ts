@@ -3168,6 +3168,28 @@ export async function tool_navigate_to_screen(
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
 
+  // VTID-04517: with NAV_V2_ENABLED the screen registry decides. Screens that
+  // need an entity id (a member's profile, one meetup) and role surfaces the
+  // registry does not cover yet still use the legacy path below.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
+      const screen = nav.findRegistryScreen(screenIdArg);
+      if (screen && !nav.needsEntity(screen)) {
+        return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
+      }
+      if (!screen) {
+        // An id the registry does not know is usually invented. Resolve what
+        // the model said it wanted instead of fuzzy-matching the id string.
+        const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+        const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+        const r = await nav.navigateByRequest(query, 'open', navCtx);
+        if (r) return r;
+      }
+    }
+  }
+
   const { emitOasisEvent } = await import('./oasis-event-service');
 
   // Three-tier resolution: exact → alias → intent-recovery → fuzzy.
@@ -3603,6 +3625,21 @@ export async function tool_navigate(
   // either user_id or tenant_id is missing.
   const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
   const isAnonymous = !id.user_id || !id.tenant_id;
+
+  // VTID-04517: with NAV_V2_ENABLED the registry resolver answers. `intent`
+  // says whether the member asked to open something or where it is; only an
+  // explicit open moves the screen. Falls back to the legacy navigator below
+  // when the resolver cannot run, or on role surfaces it does not cover yet.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const intent = args.intent === 'open' ? 'open' : 'where';
+      const r = await nav.navigateByRequest(question, intent, {
+        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null,
+      });
+      if (r) return r;
+    }
+  }
 
   const { consultNavigator } = await import('./navigator-consult');
   const { emitOasisEvent } = await import('./oasis-event-service');

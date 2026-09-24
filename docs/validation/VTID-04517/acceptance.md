@@ -102,4 +102,63 @@ Live Titan check from this session (read-only Bedrock calls):
 - Leave-one-out takes ~35 s of arithmetic on a CI runner (5,400 × 7,600
   dot products of 512 dimensions).
 
-OASIS_PROOF: n/a — no runtime path calls the resolver yet; no event emitted.
+## Part 2 — the voice tools behind NAV_V2_ENABLED
+
+`src/navigation/nav-dispatch.ts`, hooked into the two existing shared voice
+tools. They keep their names, because dozens of prompts and tool descriptions
+refer to them:
+
+- **`navigate(question, intent)`** — the registry resolver.
+  - `intent:"open"` with a clear match opens the screen now.
+  - `intent:"where"` with a clear match returns the screen and an instruction
+    to answer and offer; nothing opens.
+  - A near-tie returns candidates for the model; no match returns "do not
+    navigate".
+  - A missing `intent` counts as "where", so the tool never opens a screen
+    without an explicit request.
+- **`navigate_to_screen(screen_id)`** — `openScreen()`, the one place a screen
+  opens:
+  - known screen (id, retired id or alias);
+  - not disabled, and needs no entity;
+  - member screens are refused to anonymous visitors;
+  - right viewport, and not the page the member is already on;
+  - mobile route on mobile, overlays via `?open=<marker>`.
+  - An invented id is resolved from the model's stated reason, not
+    fuzzy-matched.
+- **Fallbacks to the legacy navigator:** role surfaces the registry does not
+  cover yet (`/admin`, `/backoffice`, …), screens that need an entity id, and
+  a resolver that cannot run.
+- **Telemetry:** `orb.navigator.resolved` records the kind, intent, top
+  candidates and scores for every request.
+- **Staging only:** `AWS-STAGE-DEPLOY-GATEWAY.yml` pins `NAV_V2_ENABLED=true`
+  and `NAV_REGISTRY_URL=https://preview-aws.vitanaland.com/nav-registry.json`.
+  Production is untouched.
+
+AC-7: With the flag on, an explicit open request with a clear match opens the
+screen. A where-question is answered with an offer and opens nothing. A
+near-tie hands candidates to the model, small talk never navigates, and every
+decision emits `orb.navigator.resolved`.
+TEST: services/gateway/test/navigation/nav-dispatch.test.ts
+
+AC-8: `navigate_to_screen` with the flag on enforces every gate in one place:
+unknown, disabled and entity-only screens, anonymous visitors, viewport and
+already-there. Retired ids map to their replacement, and invented ids resolve
+from the model's reason.
+TEST: services/gateway/test/navigation/nav-dispatch.test.ts
+
+AC-9: The conversation "where is my diary?" → offer → member says yes → the
+model calls `navigate_to_screen` with the offered id ends in exactly one
+`orb_directive` on the session transport, and `current_route` is updated.
+TEST: services/gateway/test/navigation/nav-dispatch.test.ts
+
+AC-10: With the flag off nothing changes: the `navigate` declaration has no
+`intent`, and the legacy paths run as before. Role surfaces stay on the
+legacy navigator even with the flag on.
+TEST: services/gateway/test/navigation/nav-dispatch.test.ts
+
+AC-11: The flag and registry URL are pinned on staging only, exactly once,
+stripped first; production does not declare them.
+TEST: services/gateway/test/vtid-04517-staging-nav-v2-pinned.test.ts
+
+OASIS_PROOF: `orb.navigator.resolved` (new topic, `source: nav-dispatch`) will
+appear on staging once the pinned flag deploys. Not yet observed.

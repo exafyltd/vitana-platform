@@ -3389,6 +3389,8 @@ async function handleNavigate(
     'navigate',
     {
       question,
+      // VTID-04517: open vs. where — only read when NAV_V2_ENABLED.
+      intent: args.intent === 'open' ? 'open' : args.intent === 'where' ? 'where' : undefined,
       current_route: session.current_route ?? null,
       recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
       transcript_excerpt: session.inputTranscriptBuffer || '',
