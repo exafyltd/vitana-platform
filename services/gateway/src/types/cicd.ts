@@ -665,6 +665,9 @@ export type CicdEventType =
   | 'orb.navigator.requested'
   | 'orb.navigator.blocked'
   | 'orb.navigator.dispatched'
+  // VTID-04517: the registry resolver's decision for one request (kind, top
+  // candidates, scores) — the telemetry the navigation rebuild is judged on.
+  | 'orb.navigator.resolved'
   // VTID-02781: emitted whenever the Navigator returns `decision: 'ambiguous'`
   // and the ORB asks the user an either/or clarification. Pairs with a
   // subsequent orb.navigator.dispatched (or .blocked) on the user's reply —

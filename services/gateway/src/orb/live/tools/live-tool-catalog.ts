@@ -259,6 +259,51 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
   return out;
 }
 
+/** VTID-04517 — `navigate` as the registry resolver answers it (NAV_V2_ENABLED). */
+export const NAVIGATE_V2_DECLARATION = {
+  name: 'navigate',
+  description: [
+    'Find the screen in the Vitana app that has what the member is asking',
+    'about, and open it or offer it. Pass the member\'s words; the backend',
+    'knows every screen, in every language.',
+    '',
+    'Set intent:',
+    '- "open": they asked to see or go somewhere ("open my wallet", "show me',
+    '  the news", "zeig mir meine Termine", "take me to…"). A clear match opens',
+    '  right away — say one short sentence that you are taking them there.',
+    '- "where": they asked where something is or whether it exists ("where can',
+    '  I see my lab results?", "wo finde ich…", "is there a page for…"). Nothing',
+    '  opens: you get the screen, tell them what they will find there, and ask',
+    '  whether to open it. On a yes, call navigate_to_screen with that',
+    '  screen_id — never navigate again for the same request.',
+    '',
+    'Do NOT call it for small talk or general knowledge questions.',
+    '',
+    'What comes back:',
+    '- "Opening …": the screen is changing; stop after one short sentence.',
+    '- FOUND: one screen, for a "where" question — answer and offer.',
+    '- POSSIBLE SCREENS: pick the one that fits and call navigate_to_screen',
+    '  with its screen_id, or ask one either/or question and then call it.',
+    '- NO MATCHING SCREEN: do not navigate; answer in voice.',
+    'Never speak a route or a screen_id aloud — use the title.',
+  ].join('\n'),
+  parameters: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description: 'What the member is looking for, in their own words and language.',
+      },
+      intent: {
+        type: 'string',
+        enum: ['open', 'where'],
+        description: '"open" when they asked to open/show/go to it; "where" when they asked where it is.',
+      },
+    },
+    required: ['question', 'intent'],
+  },
+};
+
 function buildLiveApiToolsUngated(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
   currentRoute?: string,
@@ -372,6 +417,15 @@ function buildLiveApiToolsUngated(
       },
     },
   ];
+
+  // VTID-04517: with NAV_V2_ENABLED, `navigate` is answered by the screen
+  // registry and says whether the member wants the screen OPENED or only
+  // asked WHERE it is. Same name, so every other description that mentions
+  // navigate / navigate_to_screen stays true.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const i = navigatorTools.findIndex((t) => t.name === 'navigate');
+    navigatorTools[i] = NAVIGATE_V2_DECLARATION;
+  }
 
   if (mode === 'anonymous') {
     // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO

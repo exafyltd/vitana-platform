@@ -3,3 +3,4 @@ export * from './nav-registry';
 export * from './nav-embedder';
 export * from './nav-resolver';
 export * from './nav-service';
+export * from './nav-dispatch';
