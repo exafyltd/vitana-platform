@@ -1,0 +1,5 @@
+# VTID-04509 test summary
+tsc --noEmit: clean
+vtid-04509 + vtid-04480 + upstream-session-binding: 3 suites, 42/42
+test/orb + test/services/conversation + test/routes: 387 suites passed, 6453 passed, 1 skipped, 6 todo
+compute-greeting-decision golden: 6 conv_resume snapshots updated (directive lines only)

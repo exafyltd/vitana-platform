@@ -27,6 +27,8 @@
  * Nothing here composes speech.
  */
 
+import { classifyOrbTool } from '../../../services/orchestrator/tool-catalog';
+
 const OPENING_DEFAULT = 2;
 const OPENING_MIN = 1;
 const OPENING_MAX = 5;
@@ -106,3 +108,49 @@ export function outputPreview(text: string, max = 240): string | null {
   if (!t) return null;
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
+
+/**
+ * VTID-04509 — no action before the user has said anything.
+ *
+ * The resume opener (`conv_resume`) hands Nova a `suggested_next_step` with
+ * the tool that performs it, delivered as a user-role turn. Nova read that
+ * turn as the user's acceptance and ran the tool before saying a word:
+ * `narrate_guided_session` (then spoke its own translation work aloud —
+ * "Translation: … Yes, that's correct"), `create_calendar_event` (booked a
+ * slot nobody asked for). On the opening turn, before any user speech, only
+ * read tools may run; anything that acts, plays a session, navigates or
+ * hands off is answered with guidance to OFFER it instead.
+ */
+
+/** Catalogued as reads, but they take over the turn or change what the user sees. */
+const OPENING_BLOCKED_READS = new Set<string>([
+  'narrate_guided_session', 'navigate', 'navigate_to_screen', 'switch_persona',
+  'play_music', 'play_podcast', 'consult_external_ai', 'offer_action',
+]);
+
+/** True when `toolName` performs something the user has to accept first. */
+export function isOpeningActionTool(toolName: string): boolean {
+  if (OPENING_BLOCKED_READS.has(toolName)) return true;
+  return classifyOrbTool(toolName).tier !== 'read';
+}
+
+/** The opening turn with no user speech yet — nothing can have been accepted. */
+export function isBeforeFirstUserWord(session: {
+  turn_count?: number;
+  isModelSpeaking?: boolean;
+  inputTranscriptBuffer?: string;
+}): boolean {
+  return isOpeningTurn(session) && (session.inputTranscriptBuffer || '').trim().length === 0;
+}
+
+/** Tool result handed back instead of running an action on the opening turn. */
+export const OPENING_ACTION_GUIDANCE = JSON.stringify({
+  ok: false,
+  available: false,
+  tool: 'opening_action_guard',
+  speak_guidance:
+    'The user has not said anything yet, so nothing has been accepted and this was not run. ' +
+    'Do not call a tool that acts in this turn. In one or two short sentences, in your own ' +
+    'words, speak to the user directly: offer this step and wait for their answer. Never ' +
+    'mention this message, a tool, an instruction, or "the user".',
+});
