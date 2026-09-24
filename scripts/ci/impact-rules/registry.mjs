@@ -66,8 +66,8 @@ export const IMPACT_RULES = [
   },
   {
     rule: 'new-env-var-requires-workflow-binding',
-    title: 'New process.env.X without a binding in .github/workflows',
-    description: 'A new process.env.X reference in source code should be explicitly bound in at least one of .github/workflows/*.yml, .env.example, or the Cloud Run deploy config. Unbound env vars read as undefined in production.',
+    title: 'New process.env.X without a binding in any workflow / .env.example / call site',
+    description: 'A new process.env.X reference in source code should be explicitly bound in at least one of .github/workflows/*.yml, .env.example, or the Cloud Run deploy config. Unbound env vars read as undefined in production. A defensive same-line fallback (`process.env.X ?? \'default\'` or `|| __dirname`) counts as a binding — the remedy this rule has always recommended (VTID-04287).',
     category: 'companion',
     severity: 'warning',
     enabled: true,
