@@ -1,0 +1,2 @@
+guard block, live, BEGIN READ ONLY ... ROLLBACK: passed (0 rows in all four)
+vitest src/lib/dead-autopilot-tables.test.ts: 2/2 after the fix; 1 failed on the pre-fix sources (mutation evidence)
