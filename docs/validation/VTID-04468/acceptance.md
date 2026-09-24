@@ -6,7 +6,7 @@ This test ran after the VTID-04465/04466/04467/04472 merge (#3650, `042114a7`), 
 
 - The agent first edited at turn 18 and called finish at turn 50. The runner's tsc was clean and jest passed. The branch was pushed and the run was held at `awaiting_approval`.
 - The diff was reviewed and approved from the console (`autopilot_approve_execution`), which opened #3667.
-- The staging watcher saw `ci_passed` at 14:44:02, `llm_review_passed` at 14:44:08 and `pr_merged` at 14:44:11 (`a15dd0b1`). Staging deploy run 611 started at 14:44:13.
+- The staging watcher saw `ci_passed` at 14:44:02, `llm_review_passed` at 14:44:08 and `pr_merged` at 14:44:11 (`a15dd0b1`). Staging deploy run 611 started at 14:44:13. The run was marked `deployed` at 14:53:37 and `completed` at 14:58:37 after the verification window. The pipeline itself closed VTID-04287 as `success`.
 
 TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts (the same path, over the in-memory platform)
 
