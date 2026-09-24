@@ -1607,3 +1607,37 @@ describe('CA-4 drafts', () => {
     expect(none.status).toBe(400);
   });
 });
+
+// =============================================================================
+// VTID-04505 (Community Autopilot CA-5): the scheduled scan endpoint
+// =============================================================================
+
+const mockRunCommunityScan = jest.fn(async () => ({
+  enabled: false, dry_run: true, members_considered: 2, members_due: 1, members_scanned: 1, rows_inserted: 0, results: [],
+}));
+jest.mock('../../src/services/community-autopilot/scan-runner', () => ({
+  runCommunityScan: (...a: unknown[]) => (mockRunCommunityScan as any)(...a),
+}));
+
+describe('CA-5 community-scan endpoint', () => {
+  it('a member cannot trigger the scan', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .post('/api/v1/autopilot/recommendations/community-scan')
+      .set('X-Test-Exafy-Admin', '0')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(mockRunCommunityScan).not.toHaveBeenCalled();
+  });
+
+  it('an exafy admin (or the internal token) runs it and gets the summary', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .post('/api/v1/autopilot/recommendations/community-scan')
+      .send({ dry_run: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, dry_run: true, members_scanned: 1 });
+    expect(mockRunCommunityScan).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ dryRun: true }));
+    expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'community_autopilot.scan.completed' }));
+  });
+});

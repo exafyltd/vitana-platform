@@ -170,6 +170,10 @@ JOBS=(
   # VTID-04407 — Operator thread handoffs (developer memory). Staging: that is
   # where OPERATOR_THREADS_ENABLED records threads. Hourly; idempotent.
   "gateway-dev-memory-handoff-sweep|20 * * * *|UTC|/api/v1/dev-memory/handoffs/sweep|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-04505 — Community Autopilot twice-daily scan. Hourly tick; the route
+  # only scans members whose local hour is 07 or 17, and writes nothing unless
+  # COMMUNITY_AUTOPILOT_SCAN_ENABLED=true on the target gateway. Staging first.
+  "gateway-community-autopilot-scan|5 * * * *|UTC|/api/v1/autopilot/recommendations/community-scan|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.
