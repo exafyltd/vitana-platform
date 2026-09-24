@@ -736,7 +736,7 @@ describe('CI failure on an agent PR: the fix continues on the same PR', () => {
     expect(model.refused).toEqual([]);
   });
 
-  it.failing('KNOWN BUG — the VTID of a fix-mode lineage closes as success when the fix lands (today it is closed as failed at the first red CI)', async () => {
+  it('VTID-04472 — the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI)', async () => {
     // dev-autopilot-watcher.ts ciWatcherTick moves the parent ci → failed via
     // transitionStatus(), which calls applyExecTerminalSideEffects(…, 'failed')
     // → terminalizeVtidLedgerForExecution(…, 'failed') BEFORE the bridge

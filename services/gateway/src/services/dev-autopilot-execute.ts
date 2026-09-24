@@ -2159,6 +2159,7 @@ export function applyExecTerminalSideEffects(
   s: SupaConfig,
   executionId: string,
   status: string,
+  opts: { deferLedger?: boolean } = {},
 ): void {
   // VTID-03895: propagate to vtid_ledger regardless of which of the three
   // terminal outcomes this is — separate from the completed/failed-only
@@ -2166,7 +2167,11 @@ export function applyExecTerminalSideEffects(
   // reason for excluding 'cancelled' (see its own docstring).
   // VTID-04378: `failed_escalated` (the bridge's give-up state) closes the
   // ledger as failed; `reverted` does not — a self-heal child continues it.
-  const ledgerStatus = ledgerStatusForExecution(status);
+  // VTID-04472: a watcher failure that is handed to the self-heal bridge
+  // defers the ledger to the bridge — its child continues the VTID, or it
+  // escalates and closes it (closeLedgerForEscalation). Closing here made a
+  // fix-mode lineage's VTID `failed` at the first red CI, permanently.
+  const ledgerStatus = opts.deferLedger ? null : ledgerStatusForExecution(status);
   if (ledgerStatus) {
     void terminalizeVtidLedgerForExecution(s, executionId, ledgerStatus);
   }
@@ -2265,7 +2270,7 @@ export function ledgerStatusForExecution(status: string): 'completed' | 'failed'
   return null;
 }
 
-async function terminalizeVtidLedgerForExecution(
+export async function terminalizeVtidLedgerForExecution(
   s: SupaConfig,
   executionId: string,
   status: 'completed' | 'failed' | 'cancelled',

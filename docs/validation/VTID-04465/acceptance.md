@@ -72,7 +72,7 @@ approval hold, fix-mode parsing). Every mutant failed at least one test. The
 mutant files were generated in `test/operator-pipeline/__mutants__/`, run and
 deleted; no source file was edited.
 
-## Known bug pinned (not fixed here)
+## Bug found by this suite (fixed in the same PR as VTID-04472)
 
 A fix-mode lineage's VTID is terminalized `failed` at the parent's first red CI
 and stays failed when the fix-mode child merges and completes.
@@ -80,9 +80,9 @@ and stays failed when the fix-mode child merges and completes.
 `transitionStatus()`, which calls `applyExecTerminalSideEffects(…, 'failed')`
 → `terminalizeVtidLedgerForExecution(…, 'failed')` before the bridge relabels
 the row `reverted`; the child's `completed` cannot reopen it (the ledger PATCH
-is guarded by `is_terminal=eq.false`). Pinned as an `it.failing` test that
-asserts the correct outcome; `outputs/known-bug-ledger.txt` shows it fails only
-on its final ledger assertion.
+is guarded by `is_terminal=eq.false`). The suite first pinned it as an `it.failing` test asserting the correct outcome
+(`outputs/known-bug-ledger.txt` shows it failing only on its final ledger
+assertion). VTID-04472 fixes it and the test is now a normal `it`.
 
 ## Not covered
 
