@@ -527,6 +527,12 @@ export type CicdEventType =
   // VTID-01216: Unified Conversation Intelligence Layer Events
   | 'conversation.turn.received'
   | 'conversation.turn.completed'
+  // VTID-04353 (WS-0.4): one per finalized ORB live session.
+  | 'conversation.session.finalized'
+  // VTID-04355 (WS-0.5): every offered action ends in exactly one outcome.
+  | 'conversation.offer.accepted'
+  | 'conversation.offer.declined'
+  | 'conversation.offer.ignored'
   | 'conversation.retrieval.router_decision'
   | 'conversation.retrieval.memory.completed'
   | 'conversation.retrieval.knowledge.completed'

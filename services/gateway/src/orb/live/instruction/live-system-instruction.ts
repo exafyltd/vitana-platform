@@ -63,6 +63,7 @@ import {
   capBootstrapContext,
   BOOTSTRAP_CONTEXT_MAX_CHARS,
 } from './bootstrap-cap';
+import { packBootstrapContext, splitBootstrapSections, type BootstrapPackResult } from './bootstrap-packer';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: stable, model-ignored delimiter emitted at
 // the start of the bootstrap region so the send-site budget guard can make the
 // bootstrap individually trimmable. Shared from instruction-budget so producer
@@ -441,6 +442,10 @@ export function buildLiveSystemInstruction(
   // own transport under VTID-03014; this gives the shared WS path the same
   // structural fix.
   resolvedFirstName?: string | null,
+  // VTID-04393 (WS-1.1): receives the bootstrap pack report (sections kept,
+  // shortened, dropped; chars before/after) so the caller, which knows the
+  // session, can record it. Never called when there is no bootstrap.
+  onContextPacked?: (report: BootstrapPackResult) => void,
 ): string {
   // VTID-03681 — this map ends `|| 'English'` at its use site below, so a
   // language missing HERE does not fail: it emits "Respond ONLY in English"
@@ -807,7 +812,23 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
     // contribution so heavy users can never overflow the ~32 KB Vertex setup
     // budget and silently break TTS. Trims older trailing content; keeps the
     // identity/role/recent-activity head and the wake-brief override sentinel.
-    const { text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap);
+    // VTID-04393 (WS-1.1): the priority packer replaces the head-slice. The
+    // session-owning blocks (wake-brief override, Teacher Mode, guide modes,
+    // swap-back welcome) are appended at the END of the bootstrap, so the
+    // head-slice cut them first for heavy users. BRAIN_CONTEXT_PACKER=false
+    // restores the head-slice.
+    let cappedBootstrap: string;
+    let trimmedChars: number;
+    if (process.env.BRAIN_CONTEXT_PACKER !== 'false') {
+      const pack = packBootstrapContext(effectiveBootstrap, BOOTSTRAP_CONTEXT_MAX_CHARS);
+      cappedBootstrap = pack.text;
+      trimmedChars = pack.packed ? Math.max(0, pack.chars_before - pack.chars_after) : 0;
+      if (onContextPacked) {
+        try { onContextPacked(pack); } catch { /* telemetry must never break the prompt */ }
+      }
+    } else {
+      ({ text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap));
+    }
     if (trimmedChars > 0) {
       // Fire-and-forget structured telemetry — never block instruction assembly.
       // (Cloud Logging ingests stdout; Phase D adds the budget-watch route + cron
@@ -963,10 +984,17 @@ the policy above as normal.`;
   // event screen") when asked about activity history. Re-extract the profile
   // here and append at the end with strict anti-hallucination rules.
   if (bootstrapForSurface) {
-    const profileMatch = bootstrapForSurface.match(
-      /## USER CONTEXT PROFILE[\s\S]*?(?=\n\n(?:##|---)\s|\n\n\*\*|$)/
-    );
-    const profileSummary = profileMatch ? profileMatch[0].trim() : '';
+    // VTID-04393: take exactly the profile section. The old lazy regex ended at
+    // "\n\n##", "\n\n**" or END OF STRING — and orb-live appends the
+    // persona rule, the wake-brief override, Teacher Mode and the guide
+    // blocks after the profile with no such boundary, so it re-appended all of
+    // them here a second time, uncapped. The packer's splitter stops at the
+    // next real header.
+    const profileSummary = splitBootstrapSections(bootstrapForSurface)
+      .filter((sec) => sec.key === 'context_profile')
+      .map((sec) => sec.text)
+      .join('')
+      .trim();
 
     if (includeActivityAwareness && profileSummary && profileSummary.length > 100) {
       instruction += `\n\n## ACTIVITY AWARENESS OVERRIDE (HIGHEST PRIORITY — BOOTSTRAP-HISTORY-AWARE-TIMELINE)

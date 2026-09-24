@@ -274,7 +274,17 @@ export interface UpstreamErrorEvent {
    * and server logs. Never forward this to end-user UI.
    */
   diagnostic?: string;
+  /**
+   * VTID-04369 (WS-0.6): what a `nova_validation` close actually was. That
+   * code carries unrelated failures, so counting it as "content filter"
+   * inflated every earlier block-rate estimate. Set by the Nova client from
+   * the diagnostic; absent for every other code.
+   */
+  failure_kind?: NovaFailureKind;
 }
+
+/** VTID-04369: the distinct failures that share `nova_validation`. */
+export type NovaFailureKind = 'content_filter' | 'idle_timeout' | 'prompt_protocol' | 'other';
 
 /**
  * Native session-resumption handle update (VTID-03273 Pillar B).

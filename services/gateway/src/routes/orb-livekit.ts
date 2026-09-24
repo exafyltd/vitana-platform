@@ -71,6 +71,13 @@ import {
   buildSpecialistLanguageDirective,
   fetchSpecialistContextSection,
 } from './orb-live';
+// VTID-04414 (WS-1.3): the shared voice-session context builder.
+import {
+  buildBaseSessionContext,
+  resolveBrainRole,
+  type BaseContextResult,
+} from '../orb/live/session/session-context-builder';
+import { packBootstrapContext } from '../orb/live/instruction/bootstrap-packer';
 // L2.2b.6 (VTID-03010): render the full Vertex system instruction for LiveKit.
 // Until this slice, the LiveKit agent built its own ~7-section Python prompt
 // while Vertex sent a ~17-section TypeScript prompt — the LLM had radically
@@ -1152,7 +1159,7 @@ router.get(
     // VTID-03036: result of buildBootstrapContextPack (memory preamble +
     // last-3 user turns + USER CONTEXT PROFILE). Held outside the batch
     // closure so the post-batch ctxParts push can read it.
-    let historyContextPack: Awaited<ReturnType<typeof buildBootstrapContextPack>> | null = null;
+    let historyContextPack: BaseContextResult | null = null;
 
     if (sb && userId) {
       const [
@@ -1231,14 +1238,29 @@ router.get(
         // contextInstruction layer. Best-effort; any throw is swallowed
         // and the LiveKit bootstrap falls back to the prior (thinner)
         // identity-only context.
+        // VTID-04414 (WS-1.3): the shared voice context builder — the brain
+        // when `vitana_brain_orb_enabled` is on (the same text the Vertex/Nova
+        // session starts with), the legacy pack otherwise. The brain text is
+        // fitted to the same 12 KB bootstrap budget by section priority.
         (async () => {
           try {
             if (!req.identity) return null;
             const sessionId = `livekit-bootstrap-${agentId}-${userId.slice(0, 8)}`;
-            return await buildBootstrapContextPack(req.identity, sessionId);
+            const base = await buildBaseSessionContext(
+              {
+                identity: req.identity,
+                sessionId,
+                brainRole: resolveBrainRole({ identityRole: (req.identity as { active_role?: string | null }).active_role ?? null }),
+              },
+              { legacy: buildBootstrapContextPack },
+            );
+            if (base.builder === 'brain' && base.contextInstruction) {
+              base.contextInstruction = packBootstrapContext(base.contextInstruction).text;
+            }
+            return base;
           } catch (exc) {
             console.warn(
-              `[${VTID}] buildBootstrapContextPack failed: ${(exc as Error).message}`,
+              `[${VTID}] session context build failed: ${(exc as Error).message}`,
             );
             return null;
           }
@@ -1958,6 +1980,8 @@ normal conversation flow.`;
               && historyContextPack.contextInstruction.trim().length > 0,
             latency_ms: historyContextPack.latencyMs,
             skipped_reason: historyContextPack.skippedReason ?? null,
+            builder: historyContextPack.builder,
+            brain_error: historyContextPack.brainError ?? null,
             chars: typeof historyContextPack.contextInstruction === 'string'
               ? historyContextPack.contextInstruction.length
               : 0,

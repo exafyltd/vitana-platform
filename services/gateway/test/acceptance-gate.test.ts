@@ -5,6 +5,7 @@
  */
 import {
   detectAcceptance,
+  isAutoRunnableOffer,
   maybeBindAcceptance,
   type AcceptanceGateDeps,
   type PendingCtaValue,
@@ -62,10 +63,24 @@ describe('detectAcceptance', () => {
   });
 });
 
+describe('isAutoRunnableOffer (VTID-04355)', () => {
+  test.each<[string, unknown, boolean]>([
+    ['well-formed navigate', { tool: 'navigate_to_screen', payload: { screen_id: 'A.B', route: '/a' } }, true],
+    ['navigate without route', { tool: 'navigate_to_screen', payload: { screen_id: 'A.B' } }, false],
+    ['navigate without payload', { tool: 'navigate_to_screen' }, false],
+    ['navigate with non-string route', { tool: 'navigate_to_screen', payload: { screen_id: 'A.B', route: 7 } }, false],
+    ['another tool', { tool: 'activate_recommendation', payload: { screen_id: 'A.B', route: '/a' } }, false],
+    ['null', null, false],
+    ['undefined', undefined, false],
+  ])('%s → %p', (_label, cta, expected) => {
+    expect(isAutoRunnableOffer(cta as any)).toBe(expected);
+  });
+});
+
 describe('maybeBindAcceptance', () => {
   const pending: PendingCtaValue = {
     tool: 'navigate_to_screen',
-    payload: { screen_id: 'AUTOPILOT.MY_JOURNEY' },
+    payload: { screen_id: 'AUTOPILOT.MY_JOURNEY', route: '/autopilot/my-journey' },
     offered_at: new Date().toISOString(),
   };
 
@@ -88,7 +103,7 @@ describe('maybeBindAcceptance', () => {
     const r = await maybeBindAcceptance({ userText: 'ja, zeig mir', userId: 'u-1' }, deps);
     expect(r).toEqual({
       tool: 'navigate_to_screen',
-      payload: { screen_id: 'AUTOPILOT.MY_JOURNEY' },
+      payload: { screen_id: 'AUTOPILOT.MY_JOURNEY', route: '/autopilot/my-journey' },
       source: 'pending_cta',
     });
     expect(calls.read).toBe(1);
@@ -121,10 +136,23 @@ describe('maybeBindAcceptance', () => {
     expect(calls.read).toBe(0);
   });
 
-  test('payload defaults to {} when stored cta has none', async () => {
-    const { deps } = makeDeps({ tool: 'open_autopilot' });
-    const r = await maybeBindAcceptance({ userText: 'yes', userId: 'u-1' }, deps);
-    expect(r).toEqual({ tool: 'open_autopilot', payload: {}, source: 'pending_cta' });
+  // VTID-04355: the gate only consumes an offer it will actually run. Both
+  // turn-loop call sites dispatch navigate_to_screen with screen_id + route and
+  // nothing else, so any other offer must stay in orb_session_state for the
+  // model's own tool call (and for activate_recommendation's pending_cta
+  // fallback) instead of being cleared and dropped.
+  test.each<[string, PendingCtaValue]>([
+    ['a non-navigation tool', { tool: 'activate_recommendation', payload: { recommendation_id: 'r-1' } }],
+    ['a tool with no payload', { tool: 'open_autopilot' }],
+    ['navigate_to_screen without route', { tool: 'navigate_to_screen', payload: { screen_id: 'AUTOPILOT.MY_JOURNEY' } }],
+    ['navigate_to_screen without screen_id', { tool: 'navigate_to_screen', payload: { route: '/autopilot' } }],
+    ['navigate_to_screen with blank fields', { tool: 'navigate_to_screen', payload: { screen_id: ' ', route: '' } }],
+  ])('acceptance + %s → null and the offer is left in place', async (_label, cta) => {
+    const { deps, calls } = makeDeps(cta);
+    const r = await maybeBindAcceptance({ userText: 'ja', userId: 'u-1' }, deps);
+    expect(r).toBeNull();
+    expect(calls.read).toBe(1);
+    expect(calls.clear).toBe(0);
   });
 
   test('fails open: reader throws → null (never blocks the turn)', async () => {

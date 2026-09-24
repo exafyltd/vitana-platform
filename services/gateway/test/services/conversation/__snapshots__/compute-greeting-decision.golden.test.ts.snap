@@ -434,10 +434,10 @@ exports[`computeGreetingDecision — language axis safe_fast_newday name greetin
   "diag": {
     "bucket": "today",
     "lang": "de",
-    "prompt_len": 139,
+    "prompt_len": 354,
     "wake_opener": "safe_fast_newday",
   },
-  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -451,10 +451,10 @@ exports[`computeGreetingDecision — language axis safe_fast_newday name greetin
   "diag": {
     "bucket": "today",
     "lang": "en",
-    "prompt_len": 139,
+    "prompt_len": 354,
     "wake_opener": "safe_fast_newday",
   },
-  "directive": "Say exactly: "Good morning, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -675,10 +675,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 2: safe_fast_fir
   "diag": {
     "is_first_session": true,
     "lang": "de",
-    "prompt_len": 366,
+    "prompt_len": 559,
     "wake_opener": "safe_fast_first_time_welcome",
   },
-  "directive": "Say exactly: "Hallo Dragan, ich bin Vitana, deine persönliche Longevity-Assistentin. Herzlich willkommen bei Maxina! Ich begleite dich Schritt für Schritt durch deine geführte Reise und zeige dir, wie alles funktioniert. Sollen wir gemeinsam mit deiner ersten Session starten?" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.",
+  "directive": "Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey and show them how everything works, and invite them to start their first session together. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,
@@ -807,10 +807,10 @@ exports[`computeGreetingDecision — rung golden snapshots rung 5: safe_fast_new
   "diag": {
     "bucket": "yesterday",
     "lang": "de",
-    "prompt_len": 139,
+    "prompt_len": 354,
     "wake_opener": "safe_fast_newday",
   },
-  "directive": "Say exactly: "Guten Morgen, Dragan." — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.",
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
   "effects": {
     "armWatchdog": true,
     "markGreetingSent": true,

@@ -1,0 +1,714 @@
+{
+  "generated_at": [
+    "2026-09-23T17:26:06.111Z",
+    "2026-09-23T17:27:13.352Z"
+  ],
+  "model": "amazon.nova-2-sonic-v1:0",
+  "region": "eu-north-1",
+  "runs_per_scenario": 3,
+  "summary": [
+    {
+      "scenario": "inject_system_noninteractive",
+      "runs": 3,
+      "connected": 3,
+      "errored": 3,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 0,
+      "recall": 0,
+      "question_latency_ms_median": null,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": [
+        "nova_validation: RequestId=b10cb0d7-d410-4cad-b79c-659d318f6ea9 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt.",
+        "nova_validation: RequestId=bc20406a-725a-498c-9d38-1ea8fc602f45 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt.",
+        "nova_validation: RequestId=0091fcca-05bc-4039-a506-fd23c206a6df : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ]
+    },
+    {
+      "scenario": "baseline_fact_in_system_prompt",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 1004,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "inject_user_noninteractive",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 0,
+      "question_latency_ms_median": 1235,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "inject_system_interactive",
+      "runs": 3,
+      "connected": 3,
+      "errored": 3,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 0,
+      "recall": 0,
+      "question_latency_ms_median": null,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": [
+        "nova_validation: RequestId=feea3963-5f37-4716-8ac4-509b249a005d : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt.",
+        "nova_validation: RequestId=c89c7499-4863-4a43-b2ed-fdc43b1c9ad0 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt.",
+        "nova_validation: RequestId=23488b44-b79d-4bfe-a7e2-493eabce56d0 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ]
+    },
+    {
+      "scenario": "inject_user_interactive",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 3,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 1028,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "inject_assistant_noninteractive",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 0,
+      "question_latency_ms_median": 1101,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "inject_user_noninteractive_health_note",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 0,
+      "question_latency_ms_median": 1097,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "tool_prefetched_instant",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 1521,
+      "tool_calls": 3,
+      "tool_to_audio_ms_median": 657,
+      "first_errors": []
+    },
+    {
+      "scenario": "tool_fetched_1500ms",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 3024,
+      "tool_calls": 3,
+      "tool_to_audio_ms_median": 636,
+      "first_errors": []
+    },
+    {
+      "scenario": "get_guidance_tool",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 1589,
+      "tool_calls": 3,
+      "tool_to_audio_ms_median": 712,
+      "first_errors": []
+    },
+    {
+      "scenario": "tool_list_change_midsession",
+      "runs": 3,
+      "connected": 3,
+      "errored": 3,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 0,
+      "recall": 0,
+      "question_latency_ms_median": null,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": [
+        "nova_validation: RequestId=8382fe69-1078-4ac1-9c90-01a4ecd3ea89 : Error(s):\nError 1 : Duplicate prompt name: 8adedc69-dc07-4c55-8fec-9a2a6254fc03",
+        "nova_validation: RequestId=a98af37f-a58f-4666-bf9f-af711f785fbc : Error(s):\nError 1 : Duplicate prompt name: ea3cecdb-7fb3-4929-bbb4-b1495922125f",
+        "nova_validation: RequestId=0894238e-da95-42a3-bd6f-faefc97be484 : Error(s):\nError 1 : Duplicate prompt name: bfad3e2e-6afd-41f0-9661-2b155f1eb7e3"
+      ]
+    },
+    {
+      "scenario": "prompt_rollover_new_tools",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 0,
+      "recall": 0,
+      "question_latency_ms_median": null,
+      "tool_calls": 0,
+      "tool_to_audio_ms_median": null,
+      "first_errors": []
+    },
+    {
+      "scenario": "get_guidance_tool_health_note",
+      "runs": 3,
+      "connected": 3,
+      "errored": 0,
+      "content_filter_blocked": 0,
+      "unsolicited_responses": 0,
+      "answered": 3,
+      "recall": 3,
+      "question_latency_ms_median": 2451,
+      "tool_calls": 3,
+      "tool_to_audio_ms_median": 751,
+      "first_errors": []
+    }
+  ],
+  "answers": [
+    {
+      "scenario": "inject_system_noninteractive",
+      "run": 1,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=b10cb0d7-d410-4cad-b79c-659d318f6ea9 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 11139,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "baseline_fact_in_system_prompt",
+      "run": 3,
+      "answer": "Your diary streak is currently at 7 days. Keep up the excellent work!",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 26888,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "baseline_fact_in_system_prompt",
+      "run": 1,
+      "answer": "Your diary streak is currently at 7 days. Keep it going!",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 27391,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "baseline_fact_in_system_prompt",
+      "run": 2,
+      "answer": "Your diary streak is currently at 7 days. Keep up the excellent work!",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 27430,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_system_noninteractive",
+      "run": 2,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=bc20406a-725a-498c-9d38-1ea8fc602f45 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 9032,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "inject_system_noninteractive",
+      "run": 3,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=0091fcca-05bc-4039-a506-fd23c206a6df : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 8965,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive",
+      "run": 1,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30506,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive",
+      "run": 2,
+      "answer": "I do not know your current diary streak. You can check it in the app to see your progress.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30473,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_system_interactive",
+      "run": 1,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=feea3963-5f37-4716-8ac4-509b249a005d : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 9007,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive",
+      "run": 3,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30504,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_system_interactive",
+      "run": 2,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=c89c7499-4863-4a43-b2ed-fdc43b1c9ad0 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 8944,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "inject_system_interactive",
+      "run": 3,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=23488b44-b79d-4bfe-a7e2-493eabce56d0 : Error(s):\nError 1 : Duplicate SYSTEM content. SYSTEM content can only be provided once per prompt."
+      ],
+      "closed": {
+        "t": 10022,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "inject_user_interactive",
+      "run": 1,
+      "answer": "You currently have a 7-day diary streak. Keep up the great work!",
+      "tool_calls": [],
+      "unsolicited": 1,
+      "errors": [],
+      "closed": {
+        "t": 30257,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_interactive",
+      "run": 2,
+      "answer": "Your diary streak is currently 7 days. Keep up the great work!",
+      "tool_calls": [],
+      "unsolicited": 1,
+      "errors": [],
+      "closed": {
+        "t": 29361,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_interactive",
+      "run": 3,
+      "answer": "You currently have a 7-day diary streak. Keep up the great work!",
+      "tool_calls": [],
+      "unsolicited": 1,
+      "errors": [],
+      "closed": {
+        "t": 29268,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_assistant_noninteractive",
+      "run": 1,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30284,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_assistant_noninteractive",
+      "run": 2,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30866,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_assistant_noninteractive",
+      "run": 3,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30862,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive_health_note",
+      "run": 1,
+      "answer": "I do not know your current diary streak. You can check it in the app to see your progress.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30437,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive_health_note",
+      "run": 2,
+      "answer": "I do not know your current diary streak. You can check it in the app under your progress section.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30245,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_prefetched_instant",
+      "run": 1,
+      "answer": "Your current diary streak is 7 days. Keep up the great work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 24466,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "inject_user_noninteractive_health_note",
+      "run": 3,
+      "answer": "I do not know your current diary streak. You can check it in the app to see your progress.",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 30730,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_prefetched_instant",
+      "run": 2,
+      "answer": "Your current diary streak is 7 days. Keep up the great work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 23930,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_prefetched_instant",
+      "run": 3,
+      "answer": "Your current diary streak is 7 days. Keep up the great work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 22709,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_fetched_1500ms",
+      "run": 1,
+      "answer": "Your current diary streak is 7 days. Keep up the great work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 24307,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_fetched_1500ms",
+      "run": 2,
+      "answer": "Your current diary streak is 7 days. Keep up the great work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 25496,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_fetched_1500ms",
+      "run": 3,
+      "answer": "Your current diary streak is 7 days. Keep up the excellent work!",
+      "tool_calls": [
+        "get_diary_streak"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 25631,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "get_guidance_tool",
+      "run": 1,
+      "answer": "Your current diary streak is 7 days. Would you like to log an entry for today to keep your streak going?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 25193,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_list_change_midsession",
+      "run": 1,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=8382fe69-1078-4ac1-9c90-01a4ecd3ea89 : Error(s):\nError 1 : Duplicate prompt name: 8adedc69-dc07-4c55-8fec-9a2a6254fc03"
+      ],
+      "closed": {
+        "t": 9098,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "tool_list_change_midsession",
+      "run": 2,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=a98af37f-a58f-4666-bf9f-af711f785fbc : Error(s):\nError 1 : Duplicate prompt name: ea3cecdb-7fb3-4929-bbb4-b1495922125f"
+      ],
+      "closed": {
+        "t": 9271,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "get_guidance_tool",
+      "run": 2,
+      "answer": "Your current diary streak is 7 days. Would you like to log today's entry?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 23156,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "get_guidance_tool",
+      "run": 3,
+      "answer": "Your diary streak is currently at seven days. Would you like to log an entry for today?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 24021,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "tool_list_change_midsession",
+      "run": 3,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [
+        "RequestId=0894238e-da95-42a3-bd6f-faefc97be484 : Error(s):\nError 1 : Duplicate prompt name: bfad3e2e-6afd-41f0-9661-2b155f1eb7e3"
+      ],
+      "closed": {
+        "t": 8841,
+        "reason": "nova_validation"
+      }
+    },
+    {
+      "scenario": "prompt_rollover_new_tools",
+      "run": 1,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 10781
+      }
+    },
+    {
+      "scenario": "prompt_rollover_new_tools",
+      "run": 2,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 8972
+      }
+    },
+    {
+      "scenario": "get_guidance_tool_health_note",
+      "run": 1,
+      "answer": "Your diary streak is currently at seven days. Would you like to try a two-minute breathing exercise together?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 28992,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "get_guidance_tool_health_note",
+      "run": 3,
+      "answer": "Your diary streak is currently at seven days. That\u2019s great progress!  Would you like to try a two-minute breathing exercise now?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 29308,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "get_guidance_tool_health_note",
+      "run": 2,
+      "answer": "Your diary streak is currently at seven days. That\u2019s great progress!  Would you like to try a two-minute breathing exercise now?",
+      "tool_calls": [
+        "get_guidance"
+      ],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 29719,
+        "reason": "probe_done"
+      }
+    },
+    {
+      "scenario": "prompt_rollover_new_tools",
+      "run": 3,
+      "answer": "",
+      "tool_calls": [],
+      "unsolicited": 0,
+      "errors": [],
+      "closed": {
+        "t": 8842
+      }
+    }
+  ]
+}

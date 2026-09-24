@@ -1,10 +1,15 @@
 /**
  * VTID-02917 (B0d.3) — timeline event-name constants tests.
  *
- * The 16 event names are LOCKED. This test prevents accidental renames
+ * The event names are LOCKED. This test prevents accidental renames
  * or additions in future commits: if you change the list, this test
  * fails until you also update the assertion below, which forces a
  * conscious decision.
+ *
+ * VTID-04422 (WS-2.2): 'continuation_shadow_ranked' added, deliberately —
+ * the shadow relevance ranking is recorded after the live decision, off the
+ * session-start path, so it needs its own event rather than a field on
+ * continuation_decision_finished. No existing name changed.
  */
 
 import {
@@ -14,7 +19,7 @@ import {
 } from '../../../src/services/wake-timeline/timeline-events';
 
 describe('B0d.3 — wake timeline event constants are locked', () => {
-  it('contains exactly the 16 locked event names in the documented order', () => {
+  it('contains exactly the 17 locked event names in the documented order', () => {
     expect(WAKE_TIMELINE_EVENT_NAMES).toEqual([
       'wake_clicked',
       'client_context_received',
@@ -24,6 +29,7 @@ describe('B0d.3 — wake timeline event constants are locked', () => {
       'continuation_decision_started',
       'continuation_decision_finished',
       'wake_brief_selected',
+      'continuation_shadow_ranked',
       'upstream_live_connect_started',
       'upstream_live_connected',
       'first_model_output',
@@ -33,8 +39,8 @@ describe('B0d.3 — wake timeline event constants are locked', () => {
       'reconnect_success',
       'manual_restart_required',
     ]);
-    expect(WAKE_TIMELINE_EVENT_NAMES.length).toBe(16);
-    expect(WAKE_TIMELINE_EVENT_NAMES_SET.size).toBe(16);
+    expect(WAKE_TIMELINE_EVENT_NAMES.length).toBe(17);
+    expect(WAKE_TIMELINE_EVENT_NAMES_SET.size).toBe(17);
   });
 
   it('isWakeTimelineEventName accepts every locked name', () => {

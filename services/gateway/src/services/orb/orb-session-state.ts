@@ -24,7 +24,10 @@ export type OrbSessionStateKey =
   // VTID-03301 — rolling list of recently-served opener dedupe keys
   // (most-recent first), used to rotate the wake-brief opener across sessions
   // so users don't hear the same "complete your profile" line every time.
-  | 'recent_openers';
+  | 'recent_openers'
+  // VTID-04423 — the opening's provider candidates, re-ranked mid-conversation
+  // by get_next_best_action (services/conversation/turn-candidates.ts).
+  | 'brain_candidates';
 
 export interface OrbSessionStateRecord<T = unknown> {
   value: T;

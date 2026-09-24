@@ -1,0 +1,2 @@
+Full gateway suite: Test Suites: 1 skipped, 1093 passed, 1093 of 1094 total; Tests: 29 skipped, 6 todo, 17757 passed, 17792 total
+Packer suite: 12 passed

@@ -56,7 +56,27 @@
 # (no billing account, VTID-03656/03676's own finding).
 #
 # Usage:
-#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh [--delete] [--dry-run]
+#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh [--delete] [--dry-run] [--only <name-prefix>]...
+#
+# --only <name-prefix> (VTID-04352, repeatable) limits the run to the jobs whose
+# NAME starts with one of the prefixes. It exists so one group can be switched
+# on at a time: e.g. the nightly memory/learning jobs (AP-0906..AP-0913) without
+# also creating the member-facing notification schedules in the same pass.
+#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh --only autopilot-memory- --dry-run
+# With --delete, --only removes only the matching schedules and leaves the
+# shared Lambda and both IAM roles alone (other schedules still use them).
+# A prefix list that matches nothing is an error, never a silent no-op.
+# Note: of the eight memory jobs, AP-0907 (autopilot-memory-daily-learning-digest)
+# is member-facing — one "I learned something new about you" push per user at
+# their local 18:00, only on days new facts were learned. The other seven write
+# memory only. To start the silent seven first, pass each as its own --only:
+#   --only autopilot-memory-routine-pattern-extraction
+#   --only autopilot-memory-relationship-graph-projection
+#   --only autopilot-memory-behavior-preference-inference
+#   --only autopilot-memory-health-correlation-insights
+#   --only autopilot-memory-user-model-synthesis
+#   --only autopilot-memory-own-post-capture
+#   --only autopilot-memory-embedding-backfill
 #
 # Prerequisites (NOT covered by this session's AWS grant as of VTID-03766
 # — see docs/AURORA-B6-STORAGE-INVENTORY.md's sibling B7 finding for why
@@ -92,10 +112,16 @@ SCHEDULER_ROLE_NAME="vitana-scheduler-cron-dispatch"
 
 DELETE=false
 DRY_RUN=false
+ONLY_PREFIXES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --delete) DELETE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --only)
+      if [[ $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+        echo "ERROR: --only needs a job-name prefix, e.g. --only autopilot-memory-" >&2; exit 1
+      fi
+      ONLY_PREFIXES+=("$2"); shift 2 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -131,6 +157,7 @@ JOBS=(
   "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-diary-theme-rollup|25 4 * * *|UTC|/api/v1/automations/cron/AP-0915|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "gateway-reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick|{}"
   "gateway-reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper|{}"
   "gateway-daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute|{\"tenant_id\":\"$TENANT_ID\"}"
@@ -145,16 +172,41 @@ JOBS=(
   "gateway-dev-memory-handoff-sweep|20 * * * *|UTC|/api/v1/dev-memory/handoffs/sweep|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
 
+# VTID-04352: --only narrows JOBS to the requested name prefixes.
+if [[ ${#ONLY_PREFIXES[@]} -gt 0 ]]; then
+  SELECTED=()
+  for JOB in "${JOBS[@]}"; do
+    NAME="${JOB%%|*}"
+    for PREFIX in "${ONLY_PREFIXES[@]}"; do
+      if [[ "$NAME" == "$PREFIX"* ]]; then SELECTED+=("$JOB"); break; fi
+    done
+  done
+  if [[ ${#SELECTED[@]} -eq 0 ]]; then
+    echo "ERROR: --only ${ONLY_PREFIXES[*]} matches none of the ${#JOBS[@]} jobs." >&2
+    exit 1
+  fi
+  JOBS=("${SELECTED[@]}")
+fi
+
 echo "Region:   $REGION"
 echo "Account:  $ACCOUNT_ID"
 echo "Gateway:  $GATEWAY_URL"
 echo "Test-contract gateway: $TEST_CONTRACTS_GATEWAY_URL (internal token secret: $INTERNAL_TOKEN_SECRET_ID)"
-echo "Jobs:     ${#JOBS[@]}"
+echo "Jobs:     ${#JOBS[@]}${ONLY_PREFIXES[0]:+  (--only ${ONLY_PREFIXES[*]})}"
 echo "Delete:   $DELETE"
 echo "Dry run:  $DRY_RUN"
 echo ""
 
 if $DELETE; then
+  if [[ ${#ONLY_PREFIXES[@]} -gt 0 ]]; then
+    echo "Deleting ${#JOBS[@]} matching schedules (shared Lambda and IAM roles kept — other schedules use them)..."
+    for JOB in "${JOBS[@]}"; do
+      IFS='|' read -r NAME _ _ _ _ <<< "$JOB"
+      if $DRY_RUN; then echo "  would delete $NAME"; else aws scheduler delete-schedule --name "$NAME" --region "$REGION" 2>/dev/null || true; fi
+    done
+    echo "Done."
+    exit 0
+  fi
   echo "Deleting all ${#JOBS[@]} schedules, the shared Lambda, and both IAM roles..."
   for JOB in "${JOBS[@]}"; do
     IFS='|' read -r NAME _ _ _ _ <<< "$JOB"

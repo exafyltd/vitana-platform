@@ -170,6 +170,8 @@ export const FLAG_GATED_PRIORITY_TOOLS: readonly string[] = [
   'ask_commerce_specialist',
   'get_delegation_result',
   'cancel_delegation',
+  // VTID-04427: the live advisor's note (declared only while the advisor is active).
+  'get_guidance',
 ];
 
 export interface ToolCatalogBudgetResult {
