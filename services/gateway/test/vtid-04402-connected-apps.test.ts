@@ -36,12 +36,13 @@ function withEnv(env: Record<string, string | undefined>) {
 describe('catalogue', () => {
   const cat = jest.requireActual('../src/services/connected-apps/catalogue');
 
-  it('lists exactly the nine apps the Connected Apps screen shows', () => {
+  it('lists exactly the ten apps the Connected Apps screen shows', () => {
     expect(cat.CONNECTED_APP_IDS.sort()).toEqual([
       'android-contacts', 'apple-calendar', 'apple-mail', 'gmail', 'google-calendar',
-      'google-contacts', 'iphone-contacts', 'outlook-calendar', 'outlook-mail',
+      'google-contacts', 'iphone-contacts', 'outlook-calendar', 'outlook-contacts', 'outlook-mail',
     ]);
-    const mig = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260923200000_vtid_04402_connected_apps.sql'), 'utf8');
+    // The latest migration that rewrites the app_id CHECK must allow every id (VTID-04449).
+    const mig = fs.readFileSync(path.join(ROOT, 'supabase/migrations/20260924100000_vtid_04449_outlook_contacts_app.sql'), 'utf8');
     for (const id of cat.CONNECTED_APP_IDS) expect(mig).toContain(`'${id}'`);
   });
 
@@ -301,6 +302,8 @@ describe('toggle flows', () => {
   });
 
   it('Outlook calendar sync writes busy times only (no titles) and records the result', async () => {
+    // Pull only here; the push half (VTID-04436) has its own suite.
+    process.env.CONNECTED_APPS_CALENDAR_PUSH = 'false';
     const { calls, fetchMock } = scriptDb({ social_connections: [] });
     global.fetch = jest.fn(async (url: string, init: any = {}) => {
       if (String(url).startsWith('https://graph.microsoft.com')) {
@@ -318,11 +321,12 @@ describe('toggle flows', () => {
     jest.doMock('../src/connectors/runtime/dispatcher', () => ({ getConnectorAccessToken: jest.fn(async () => 'ms-token') }));
     const hub = require('../src/services/connected-apps/hub');
     const r = await hub.syncApp('u1', 'outlook-calendar');
-    expect(r).toEqual({ ok: true, result: { busy: 1 } });
+    expect(r).toEqual({ ok: true, result: { busy: 1, pushed: 'switched_off' } });
     const ins = calls.find((c) => c.method === 'POST' && c.url.endsWith('/calendar_external_busy'))!;
     expect(ins.body).toEqual([{ user_id: 'u1', source: 'microsoft', start_time: '2026-09-24T09:00:00.000Z', end_time: '2026-09-24T10:00:00.000Z' }]);
     expect(JSON.stringify(ins.body)).not.toContain('Secret');
     jest.dontMock('../src/connectors/runtime/dispatcher');
+    delete process.env.CONNECTED_APPS_CALENDAR_PUSH;
   });
 
   it('assistant gate: Gmail switched off hides Google from email.read', async () => {
