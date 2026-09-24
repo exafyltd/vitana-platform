@@ -293,6 +293,16 @@
       "notes": "Run exactly the stored pending offer on a spoken yes; medium-risk actions need a read-back and confirm=true."
     },
     {
+      "name": "start_autopilot_slot",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-04506",
+      "notes": "Start a due Autopilot calendar slot on a spoken yes: completes the slot and its suggestion, returns the screen to open."
+    },
+    {
       "name": "activate_autopilot_recommendations",
       "implementations": [
         "vertex",

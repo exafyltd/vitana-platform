@@ -67,7 +67,7 @@ const SELF_COMMIT_TOOLS = new Set<string>([
   'snooze_recommendation', 'dismiss_recommendation', 'dismiss_marketplace_recommendation',
   // VTID-04493: activating the member's OWN Autopilot item (books their own
   // calendar slot) — owner decision 2026-09-24: a spoken yes may commit it.
-  'activate_recommendation', 'activate_autopilot_recommendations', 'confirm_pending_action',
+  'activate_recommendation', 'activate_autopilot_recommendations', 'confirm_pending_action', 'start_autopilot_slot',
   'save_marketplace_preferences', 'add_supplement_to_regimen', 'remove_supplement_from_regimen',
   'follow_member', 'unfollow_member', 'shortlist_marketplace_options', 'remove_from_marketplace_shortlist',
   'react_to_message', 'set_display_currency', 'set_shopping_budget', 'apply_discount_code',

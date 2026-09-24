@@ -40,7 +40,7 @@ exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = 
         "find_reminders",
         "find_tool",
       ],
-      "deferred_tool_count": 247,
+      "deferred_tool_count": 248,
       "find_tool_results": [
         "get_wallet_balance",
         "get_wallet_summary",
@@ -90,7 +90,7 @@ exports[`replay first-time-member matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 48,
+      "declared_tool_count": 49,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -158,7 +158,7 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_tool",
         "get_current_screen",
       ],
-      "deferred_tool_count": 248,
+      "deferred_tool_count": 249,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -189,7 +189,7 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_tool",
         "get_current_screen",
       ],
-      "deferred_tool_count": 248,
+      "deferred_tool_count": 249,
       "find_tool_results": null,
       "index": 1,
       "leads": [
@@ -273,7 +273,7 @@ exports[`replay personal-weights-shadow matches its recorded transcript 1`] = `
         "find_perfect_product",
         "find_reminders",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -333,7 +333,7 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
         "find_tool",
         "get_current_screen",
       ],
-      "deferred_tool_count": 246,
+      "deferred_tool_count": 247,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -421,7 +421,7 @@ exports[`replay scored-opening-serves-relevant matches its recorded transcript 1
         "find_perfect_product",
         "find_reminders",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -466,7 +466,7 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 48,
+      "declared_tool_count": 49,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -516,7 +516,7 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
         "find_tool",
         "get_current_screen",
       ],
-      "deferred_tool_count": 248,
+      "deferred_tool_count": 249,
       "find_tool_results": null,
       "index": 1,
       "leads": [
@@ -604,7 +604,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
         "find_perfect_product",
         "find_reminders",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 0,
       "leads": [],
@@ -628,7 +628,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
         "find_perfect_product",
         "find_reminders",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 1,
       "leads": [],
@@ -652,7 +652,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
         "find_perfect_product",
         "find_reminders",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 2,
       "leads": [],

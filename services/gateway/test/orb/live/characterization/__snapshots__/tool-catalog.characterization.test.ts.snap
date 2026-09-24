@@ -1873,6 +1873,25 @@ If it says there is no open offer, ask what they would like to do.",
         },
       },
       {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Read out what is prepared in the user's Autopilot — the SAME
 list shown in the Autopilot popup. Call this when the user asks
 "what's in my Autopilot?", "what has Autopilot prepared?",
@@ -14814,6 +14833,25 @@ If it says there is no open offer, ask what they would like to do.",
             },
           },
           "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
+          ],
           "type": "object",
         },
       },
