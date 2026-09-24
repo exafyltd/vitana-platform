@@ -34,7 +34,15 @@ import {
   type ScorableCandidate,
 } from './conversation/candidate-scoring';
 // VTID-04435 (WS-4.3): per-user weights from the user's own outcomes.
-import { personalizeWeights } from './conversation/personal-weights';
+import { isPersonalWeightsLive, personalizeWeights } from './conversation/personal-weights';
+// VTID-04454: the relevance score chooses the opening (BRAIN_SCORED_OPENING=true).
+import {
+  applyScoredOpening,
+  isScoredOpeningEnabled,
+  scoredOpeningTimeoutMs,
+  withinBound,
+  type ScoredOpeningResult,
+} from './conversation/scored-opening';
 // VTID-04423 (WS-2.3): the opening's candidates, kept for the conversation.
 import {
   BRAIN_CANDIDATES_TTL_MIN,
@@ -704,7 +712,7 @@ export async function decideWakeBriefForSession(
   const recentlyServedDedupeKeys: string[] = isExplicitSelection ? [] : storedRecentOpeners;
 
   const t0 = now();
-  const decision = await decideContinuation({
+  const fixedDecision = await decideContinuation({
     surface: 'orb_wake',
     recentlyServedDedupeKeys,
     ...(isExplicitSelection ? { providerTimeoutMs: EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS } : {}),
@@ -716,6 +724,38 @@ export async function decideWakeBriefForSession(
       extra,
     },
   });
+
+  // VTID-04454: with BRAIN_SCORED_OPENING=true the weighted relevance score
+  // chooses the opening among the candidates the providers returned. The
+  // scoring is bounded (BRAIN_SCORED_OPENING_TIMEOUT_MS, 400 ms default); when
+  // it runs out or fails, the fixed-priority decision is served unchanged.
+  // Explicit selections never reach the score. With the flag off the score is
+  // only recorded, after the fact and off the session-start path (VTID-04422).
+  let decision = fixedDecision;
+  let scoredOpening: ScoredOpeningResult | null = null;
+  if (!isExplicitSelection && isScoredOpeningEnabled()) {
+    const ts = now();
+    const bounded = await withinBound(
+      computeOpeningRanking(args, fixedDecision, storedRecentOpeners, isPersonalWeightsLive()).then((r) => ({ r })),
+      scoredOpeningTimeoutMs(),
+    );
+    const computed = bounded?.r ?? null;
+    scoredOpening = applyScoredOpening(fixedDecision, computed?.ranking ?? null);
+    if (!bounded) scoredOpening.reason = 'scoring_timeout_or_error';
+    decision = scoredOpening.decision;
+    if (computed) {
+      recordRanking(recorder, args.sessionId, fixedDecision, computed, scoredOpening, Math.max(0, now() - ts));
+    } else {
+      safeRecord(recorder, args.sessionId, 'continuation_shadow_ranked', {
+        decisionId: fixedDecision.decisionId,
+        ranking_mode: scoredOpening.mode,
+        ranking_reason: scoredOpening.reason,
+        live_winner: scoredOpening.fixed_winner,
+        served_winner: scoredOpening.served_winner,
+        durationMs: Math.max(0, now() - ts),
+      });
+    }
+  }
 
   // wake_brief_selected — fires once per wake. Carries either the
   // selected kind OR none_with_reason. B0d.3's aggregator reads
@@ -840,7 +880,7 @@ export async function decideWakeBriefForSession(
   // returned above, and it runs after it, off the session-start path. An
   // explicit selection (tapped topic / focus step) is not a ranking question
   // and is skipped.
-  if (!isExplicitSelection) {
+  if (!isExplicitSelection && !scoredOpening) {
     void recordShadowRanking(recorder, args, decision, storedRecentOpeners).catch(() => {
       /* shadow scoring is best-effort */
     });
@@ -891,6 +931,74 @@ export function toScorableCandidates(decision: AssistantContinuationDecision): S
         ctaRoute: cta?.type === 'navigate' && typeof cta.route === 'string' ? cta.route : null,
       };
     });
+}
+
+interface OpeningRanking {
+  ranking: ReturnType<typeof rankInShadow>;
+  personal: ReturnType<typeof personalizeWeights>;
+  sharedWeightsWinner: string | null;
+  outcomeProviders: number;
+}
+
+/**
+ * VTID-04422 / VTID-04454: score the returned candidates. `livePersonal`
+ * decides which weights rank them — the user's own (BRAIN_PERSONAL_WEIGHTS)
+ * or the shared row; the shared-weights winner is kept beside it either way.
+ * Null when there is nothing to rank.
+ */
+async function computeOpeningRanking(
+  args: DecideWakeBriefArgs,
+  decision: AssistantContinuationDecision,
+  recentlyServed: string[],
+  livePersonal: boolean,
+): Promise<OpeningRanking | null> {
+  const candidates = toScorableCandidates(decision);
+  if (candidates.length === 0) return null;
+  const weights = await loadScoringWeights(args.supabase ?? null);
+  let outcomes: Record<string, { accepted: number; settled: number; declined?: number; ignored?: number }> = {};
+  if (args.supabase && args.userId) {
+    try {
+      outcomes = await loadUserOutcomes(args.supabase, args.userId);
+    } catch {
+      outcomes = {};
+    }
+  }
+  const scoringCtx = {
+    recentlyServed,
+    recentWindow: RECENT_OPENERS_WINDOW,
+    currentRoute: args.currentRoute ?? null,
+    partOfDay: partOfDayForHour(localHourIn(args.timezone ?? null)),
+    outcomes,
+  };
+  const personal = personalizeWeights(weights, outcomes);
+  const usePersonal = livePersonal && personal.adjustment.applied;
+  const ranking = rankInShadow(candidates, winningProviderKey(decision), scoringCtx, usePersonal ? personal.weights : weights);
+  const sharedWeightsWinner = usePersonal
+    ? rankInShadow(candidates, null, scoringCtx, weights).shadow_winner
+    : ranking.shadow_winner;
+  return { ranking, personal, sharedWeightsWinner, outcomeProviders: Object.keys(outcomes).length };
+}
+
+/** VTID-04454: the ranking that chose (or declined to change) the opening. */
+function recordRanking(
+  recorder: typeof defaultWakeTimelineRecorder,
+  sessionId: string,
+  fixedDecision: AssistantContinuationDecision,
+  computed: OpeningRanking,
+  scored: ScoredOpeningResult,
+  durationMs: number,
+): void {
+  safeRecord(recorder, sessionId, 'continuation_shadow_ranked', {
+    decisionId: fixedDecision.decisionId,
+    ...computed.ranking,
+    personal: computed.personal.adjustment,
+    shadow_winner_shared_weights: computed.sharedWeightsWinner,
+    outcome_providers: computed.outcomeProviders,
+    ranking_mode: scored.mode,
+    ...(scored.reason ? { ranking_reason: scored.reason } : {}),
+    served_winner: scored.served_winner,
+    durationMs,
+  });
 }
 
 async function recordShadowRanking(

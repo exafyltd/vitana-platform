@@ -23,6 +23,9 @@ export interface ShadowComparisonSummary {
   /** VTID-04435: sessions ranked with the user's own weights, and how often that changed the shadow winner. */
   personalized: number;
   personal_changed_winner: number;
+  /** VTID-04454: sessions whose opening the score chose (BRAIN_SCORED_OPENING), and how many of those it changed. */
+  scored_openings: number;
+  scored_changed_opening: number;
   /** "live → shadow" winner pairs where they differ, most frequent first. */
   disagreements: Array<{ live: string; shadow: string; count: number }>;
   /** Per provider: how often each ranking picked it. */
@@ -47,6 +50,8 @@ export function summarizeShadowComparisons(rows: TimelineRow[], days: number): S
   let agree = 0;
   let personalized = 0;
   let personalChanged = 0;
+  let scoredOpenings = 0;
+  let scoredChanged = 0;
   const versions: Record<string, number> = {};
   const pairs = new Map<string, number>();
   const wins = new Map<string, { live: number; shadow: number }>();
@@ -66,6 +71,10 @@ export function summarizeShadowComparisons(rows: TimelineRow[], days: number): S
     const live = typeof m.live_winner === 'string' ? m.live_winner : null;
     const shadow = typeof m.shadow_winner === 'string' ? m.shadow_winner : null;
     ranked += 1;
+    if (m.ranking_mode === 'scored') {
+      scoredOpenings += 1;
+      if (typeof m.served_winner === 'string' && m.served_winner !== live) scoredChanged += 1;
+    }
     const pa = (m.personal ?? null) as Record<string, unknown> | null;
     if (pa && pa.applied === true) {
       personalized += 1;
@@ -106,6 +115,8 @@ export function summarizeShadowComparisons(rows: TimelineRow[], days: number): S
     weights_versions: versions,
     personalized,
     personal_changed_winner: personalChanged,
+    scored_openings: scoredOpenings,
+    scored_changed_opening: scoredChanged,
     disagreements: [...pairs.entries()]
       .map(([k, count]) => {
         const [live, shadow] = k.split(' → ');

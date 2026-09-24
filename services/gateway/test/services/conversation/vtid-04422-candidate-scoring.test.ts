@@ -167,7 +167,10 @@ describe('wiring', () => {
   const root = join(__dirname, '../../../../..');
   const wiring = readFileSync(join(root, 'services/gateway/src/services/wake-brief-wiring.ts'), 'utf8');
   it('shadow scoring runs after the decision, off the path, and skips explicit selections', () => {
-    expect(wiring).toMatch(/if \(!isExplicitSelection\) \{\s*void recordShadowRanking\(recorder, args, decision, storedRecentOpeners\)/);
+    // VTID-04454: when BRAIN_SCORED_OPENING chose the opening, that ranking is
+    // already recorded; the after-the-fact shadow pass runs only otherwise.
+    expect(wiring).toMatch(/if \(!isExplicitSelection && !scoredOpening\) \{\s*void recordShadowRanking\(recorder, args, decision, storedRecentOpeners\)/);
+    expect(wiring).toMatch(/if \(!isExplicitSelection && isScoredOpeningEnabled\(\)\) \{/);
     const at = wiring.indexOf('void recordShadowRanking(');
     expect(wiring.indexOf('return decision;', at)).toBeGreaterThan(at);
   });

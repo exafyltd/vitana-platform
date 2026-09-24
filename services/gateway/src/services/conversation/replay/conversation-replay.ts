@@ -31,6 +31,7 @@ import {
   type ScorableCandidate,
 } from '../candidate-scoring';
 import { personalizeWeights, type UserOutcomeCounts } from '../personal-weights';
+import { applyScoredOpening } from '../scored-opening';
 import { decideTurnCandidates, toStoredTurnCandidates } from '../turn-candidates';
 import { applyContextUpdate, type ContextUpdateTarget } from '../../../orb/live/session/context-update';
 import { buildLiveApiTools } from '../../../orb/live/tools/live-tool-catalog';
@@ -92,6 +93,8 @@ export interface ReplayCase {
   outcomes?: Record<string, { accepted: number; declined: number; ignored: number }>;
   /** Mirrors BRAIN_PERSONAL_WEIGHTS=true (staging): the live leads use the user's own weights. */
   personal_weights_live?: boolean;
+  /** Mirrors BRAIN_SCORED_OPENING=true (staging, VTID-04454): the scored winner opens. */
+  scored_opening_live?: boolean;
   turns?: ReplayTurn[];
   expect: ReplayExpectations;
 }
@@ -103,6 +106,8 @@ export interface ReplayExpectations {
   candidate_provider?: string | null;
   candidate_spoken?: boolean;
   shadow_winner?: string | null;
+  /** VTID-04454: 'fixed' when the case does not run the scored opening. */
+  ranking_mode?: string;
   /** Per turn index. */
   turns?: Array<{
     route_groups?: string[];
@@ -140,6 +145,8 @@ export interface ReplayTranscript {
     candidate: CandidateOutcome;
     shadow_winner: string | null;
     personal_weights_applied: boolean;
+    /** VTID-04454: 'fixed' unless the case runs the scored opening. */
+    ranking_mode: string;
   };
   turns: ReplayTurnResult[];
 }
@@ -214,8 +221,8 @@ function scorable(providers: ReplayProviderResult[]): ScorableCandidate[] {
 export function replayConversation(c: ReplayCase): ReplayTranscript {
   const greeting = { ...defaultReplayGreeting(), ...(c.opening.greeting ?? {}) } as GreetingDecisionContext;
   const decision = decideConversationFlow({ transport: 'vertex', role: c.role ?? 'community', greeting });
-  const cd = continuationDecision(c);
-  const candidate = resolveCandidateOutcome(decision.opener_kind, cd as never);
+  const fixedCd = continuationDecision(c);
+  const fixedWinner = resolveCandidateOutcome(decision.opener_kind, fixedCd as never).candidate_provider;
 
   const outcomes: Record<string, UserOutcomeCounts> = {};
   for (const [p, o] of Object.entries(c.outcomes ?? {})) {
@@ -225,8 +232,23 @@ export function replayConversation(c: ReplayCase): ReplayTranscript {
   const partOfDay = partOfDayForHour(greeting.localHour);
   const cands = scorable(c.opening.providers ?? []);
   const shadow = cands.length
-    ? rankInShadow(cands, candidate.candidate_provider, { recentlyServed: [], recentWindow: 5, currentRoute: greeting.currentRoute, partOfDay, outcomes }, personal.weights)
+    ? rankInShadow(cands, fixedWinner, { recentlyServed: [], recentWindow: 5, currentRoute: greeting.currentRoute, partOfDay, outcomes }, personal.weights)
     : null;
+
+  // VTID-04454: with the scored opening live, the scored winner is served
+  // (the same pure selector the wake path uses, pins included).
+  let cd = fixedCd;
+  let rankingMode = 'fixed';
+  if (c.scored_opening_live) {
+    const liveRanking = cands.length
+      ? rankInShadow(cands, fixedWinner, { recentlyServed: [], recentWindow: 5, currentRoute: greeting.currentRoute, partOfDay, outcomes },
+        c.personal_weights_live && personal.adjustment.applied ? personal.weights : DEFAULT_SCORING_WEIGHTS)
+      : null;
+    const applied = applyScoredOpening(fixedCd as never, liveRanking);
+    cd = applied.decision as never;
+    rankingMode = applied.mode;
+  }
+  const candidate = resolveCandidateOutcome(decision.opener_kind, cd as never);
 
   const stored = toStoredTurnCandidates(cd as never);
   const session: ContextUpdateTarget = { current_route: greeting.currentRoute ?? '/', recent_routes: [] };
@@ -268,6 +290,7 @@ export function replayConversation(c: ReplayCase): ReplayTranscript {
       candidate,
       shadow_winner: shadow?.shadow_winner ?? null,
       personal_weights_applied: personal.adjustment.applied,
+      ranking_mode: rankingMode,
     },
     turns,
   };
@@ -291,6 +314,7 @@ export function checkReplayExpectations(c: ReplayCase, t: ReplayTranscript): str
   eq('candidate_provider', t.opening.candidate.candidate_provider, e.candidate_provider);
   eq('candidate_spoken', t.opening.candidate.candidate_spoken, e.candidate_spoken);
   eq('shadow_winner', t.opening.shadow_winner, e.shadow_winner);
+  eq('ranking_mode', t.opening.ranking_mode, e.ranking_mode);
   // Standing rule for every case: no opening may ask the model to recite (NEVER-rule 41).
   if (t.opening.recital_directive) f.push('opening directive asks the model to recite text (NEVER-rule 41)');
   (e.turns ?? []).forEach((te, i) => {

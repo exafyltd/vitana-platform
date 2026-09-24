@@ -16,6 +16,7 @@ exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = 
     "nba": null,
     "opener_kind": "legacy_default",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "unread_messages_announce",
@@ -80,6 +81,7 @@ exports[`replay first-time-member matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "safe_fast_first_time_welcome",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": "first_time",
     "shadow_winner": null,
@@ -132,6 +134,7 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "legacy_default",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "journey_guide",
@@ -220,6 +223,7 @@ exports[`replay outranked-candidate matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "legacy_default",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "login_briefing",
@@ -245,6 +249,7 @@ exports[`replay personal-weights-shadow matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "override_v2",
     "personal_weights_applied": true,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "journey_guide",
@@ -304,6 +309,7 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "override_v2",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "login_briefing",
@@ -349,6 +355,92 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
 }
 `;
 
+exports[`replay scored-opening-pinned-welcome matches its recorded transcript 1`] = `
+{
+  "case_id": "scored-opening-pinned-welcome",
+  "opening": {
+    "candidate": {
+      "candidate_key": "first_time_welcome:1",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": null,
+      "candidate_provider": "first_time_welcome",
+      "candidate_spoken": true,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 1345,
+    "nba": null,
+    "opener_kind": "override_v2",
+    "personal_weights_applied": true,
+    "ranking_mode": "fixed_pinned",
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "login_briefing",
+    "silent": false,
+  },
+  "turns": [],
+}
+`;
+
+exports[`replay scored-opening-serves-relevant matches its recorded transcript 1`] = `
+{
+  "case_id": "scored-opening-serves-relevant",
+  "opening": {
+    "candidate": {
+      "candidate_key": "journey_guide:step3",
+      "candidate_kind": "wake_brief",
+      "candidate_outranked_by": null,
+      "candidate_provider": "journey_guide",
+      "candidate_spoken": true,
+      "candidates_returned": 2,
+    },
+    "directive_chars": 1345,
+    "nba": null,
+    "opener_kind": "override_v2",
+    "personal_weights_applied": true,
+    "ranking_mode": "scored",
+    "recital_directive": false,
+    "register": null,
+    "shadow_winner": "journey_guide",
+    "silent": false,
+  },
+  "turns": [
+    {
+      "advisor_eligible": true,
+      "declared_tool_count": 45,
+      "declared_tools_sample": [
+        "add_to_calendar",
+        "append_to_ticket",
+        "create_calendar_event",
+        "delete_reminder",
+        "end_conversation",
+        "end_guided_topic_teaching",
+        "end_teaching_session",
+        "explain_feature",
+        "find_community_member",
+        "find_perfect_practitioner",
+        "find_perfect_product",
+        "find_reminders",
+      ],
+      "deferred_tool_count": 248,
+      "find_tool_results": null,
+      "index": 0,
+      "leads": [
+        {
+          "provider": "journey_guide",
+          "score": 0.773,
+        },
+        {
+          "provider": "login_briefing",
+          "score": 0.581,
+        },
+      ],
+      "route": "/",
+      "route_groups": [],
+    },
+  ],
+}
+`;
+
 exports[`replay screen-change-leads matches its recorded transcript 1`] = `
 {
   "case_id": "screen-change-leads",
@@ -365,6 +457,7 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "legacy_default",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "journey_guide",
@@ -461,6 +554,7 @@ exports[`replay silent-reconnect matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "silent_reconnect",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": "login_briefing",
@@ -486,6 +580,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
     "nba": null,
     "opener_kind": "legacy_default",
     "personal_weights_applied": false,
+    "ranking_mode": "fixed",
     "recital_directive": false,
     "register": null,
     "shadow_winner": null,
