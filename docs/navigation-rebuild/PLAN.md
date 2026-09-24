@@ -122,3 +122,31 @@ Root causes, each independently enough to break it:
 Production runs with embeddings on, so this is the lower bound of the
 legacy system; the production failures (news → cart) come from the DB
 scorer + embeddings path and are kept as permanent cases regardless.
+
+## Phase 2 — resolver (VTID-04517), measured 2026-09-24
+
+The resolver is Titan v2 embeddings (512 dimensions) over every registry
+title, description and phrasing, in all 11 languages. It is not a hybrid
+with a lexical score: a title-word boost was measured and made confident
+wrong answers worse (133 → 141 → 159 as the boost grew).
+
+It measures confidence against the best screen on **another page**, because
+a page and its own tabs always sit close together. Thresholds were chosen on
+the golden set and on leave-one-out over all 5,404 registry phrasings:
+
+| Setting | Value | Why |
+|---|---|---|
+| Open without asking | top ≥ 0.65 and lead over other pages ≥ 0.2 | 0 wrong screens on the golden set. Leave-one-out wrong-page count: 50 (versus 95 at 0.15 and 184 at 0.1). |
+| Offer candidates | score ≥ 0.45, up to 5 | Small talk ("wie spät ist es") stays below it. |
+
+Golden set, with golden sentences held out of the registry (70 of the 167
+were copied into it as phrasings): **147 of 160 requests reach the right
+screen directly or as the first candidate (legacy: 73)**. It has 0 wrong
+screens, 0 small-talk actions and 2 silent cases, both Serbian.
+Leave-one-out top-5 recall is 93%. Serbian (76%) and Arabic (83%) are the
+weak languages, so that is where the registry needs better phrasings.
+
+Leave-one-out becomes the per-screen contract: a screen must come back in
+the top five for at least 60% of its own held-out phrasings. A new screen
+that reads like an existing one fails CI until its phrasings say what makes
+it different.

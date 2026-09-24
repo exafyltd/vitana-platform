@@ -1,0 +1,77 @@
+{
+  "signature": "761f0f0e62df0d9e",
+  "phrasings": 5404,
+  "top1": 3858,
+  "top5": 5041,
+  "confident": 1787,
+  "confident_wrong_page": 50,
+  "by_lang": {
+    "en": {
+      "phrasings": 421,
+      "top1": 382,
+      "top5": 420,
+      "confident_wrong_page": 3
+    },
+    "de": {
+      "phrasings": 421,
+      "top1": 344,
+      "top5": 407,
+      "confident_wrong_page": 2
+    },
+    "es": {
+      "phrasings": 507,
+      "top1": 428,
+      "top5": 502,
+      "confident_wrong_page": 0
+    },
+    "fr": {
+      "phrasings": 507,
+      "top1": 389,
+      "top5": 496,
+      "confident_wrong_page": 2
+    },
+    "sr": {
+      "phrasings": 507,
+      "top1": 205,
+      "top5": 387,
+      "confident_wrong_page": 13
+    },
+    "pl": {
+      "phrasings": 507,
+      "top1": 387,
+      "top5": 487,
+      "confident_wrong_page": 4
+    },
+    "pt": {
+      "phrasings": 507,
+      "top1": 398,
+      "top5": 497,
+      "confident_wrong_page": 1
+    },
+    "ru": {
+      "phrasings": 507,
+      "top1": 357,
+      "top5": 473,
+      "confident_wrong_page": 4
+    },
+    "tr": {
+      "phrasings": 507,
+      "top1": 305,
+      "top5": 455,
+      "confident_wrong_page": 6
+    },
+    "ar": {
+      "phrasings": 507,
+      "top1": 290,
+      "top5": 422,
+      "confident_wrong_page": 7
+    },
+    "zh": {
+      "phrasings": 506,
+      "top1": 373,
+      "top5": 495,
+      "confident_wrong_page": 8
+    }
+  },
+  "weak_screens": []
+}
