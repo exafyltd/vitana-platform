@@ -41,7 +41,7 @@ interface CapturedUpdate {
 }
 
 function makeStubSupabase(opts: {
-  recs: Record<string, { id: string; title?: string | null; summary?: string | null; status: string; user_id: string | null }>;
+  recs: Record<string, { id: string; title?: string | null; summary?: string | null; status: string; user_id: string | null; source_type?: string | null }>;
   updateError?: { message: string } | null;
   fetchError?: { message: string } | null;
   updates: CapturedUpdate[];
@@ -80,7 +80,8 @@ function makeStubSupabase(opts: {
         select: () => ({
           eq: (_col: string, value: string) => ({
             maybeSingle: async () => ({
-              data: opts.recs[value] ?? null,
+              // VTID-04464: rows default to community items unless a test says otherwise.
+              data: opts.recs[value] ? { source_type: 'community', ...opts.recs[value] } : null,
               error: opts.fetchError ?? null,
             }),
           }),
@@ -209,21 +210,15 @@ describe('VTID-02975 — activate_recommendation lifted to shared dispatcher', (
     expect(updates).toHaveLength(0);
   });
 
-  test('5. system-owned rec (user_id=null) is activatable by any user', async () => {
-    // The original orb-live.ts logic: `rec.user_id && rec.user_id !== identity`
-    // — null user_id means "system-wide recommendation", anyone can activate.
+  test('5. VTID-04464: ownerless rec (user_id=null) is NOT activatable by another user', async () => {
+    // The old check `rec.user_id && rec.user_id !== identity` let any signed-in
+    // member activate a row with no owner. That was an ownership bypass.
     const updates: CapturedUpdate[] = [];
     const sysRecId = '99999999-9999-4999-8999-999999999999';
     const sb = makeStubSupabase({
       updates,
       recs: {
-        [sysRecId]: {
-          id: sysRecId,
-          title: 'System rec',
-          summary: null,
-          status: 'new',
-          user_id: null,
-        },
+        [sysRecId]: { id: sysRecId, title: 'System rec', summary: null, status: 'new', user_id: null },
       },
     });
 
@@ -233,6 +228,74 @@ describe('VTID-02975 — activate_recommendation lifted to shared dispatcher', (
       sb,
     );
 
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.error).toBe('recommendation_belongs_to_another_user');
+    expect(updates).toHaveLength(0);
+  });
+
+  test('5b. VTID-04464: anonymous caller cannot activate anything', async () => {
+    const updates: CapturedUpdate[] = [];
+    const sb = makeStubSupabase({
+      updates,
+      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'new', user_id: null } },
+    });
+    const result = await tool_activate_recommendation(
+      { id: REC_UUID_NEW },
+      { user_id: '', tenant_id: 'tenant-1', role: 'user', vitana_id: null } as any,
+      sb,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.error).toBe('not_signed_in');
+    expect(updates).toHaveLength(0);
+  });
+
+  test('5c. VTID-04464: a Dev Autopilot finding is not activated by a member voice "yes"', async () => {
+    const updates: CapturedUpdate[] = [];
+    const sb = makeStubSupabase({
+      updates,
+      recs: {
+        [REC_UUID_NEW]: {
+          id: REC_UUID_NEW, title: 'Fix gateway', status: 'new', user_id: SENDER_UUID, source_type: 'dev_autopilot',
+        },
+      },
+    });
+    const result = await tool_activate_recommendation(
+      { id: REC_UUID_NEW },
+      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
+      sb,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.error).toBe('not_a_community_recommendation');
+    expect(updates).toHaveLength(0);
+  });
+
+  test('5d. VTID-04464: a rejected rec is not re-opened by voice', async () => {
+    const updates: CapturedUpdate[] = [];
+    const sb = makeStubSupabase({
+      updates,
+      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'rejected', user_id: SENDER_UUID } },
+    });
+    const result = await tool_activate_recommendation(
+      { id: REC_UUID_NEW },
+      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
+      sb,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok === false) expect(result.error).toBe('recommendation_not_activatable:rejected');
+    expect(updates).toHaveLength(0);
+  });
+
+  test('5e. VTID-04464: a snoozed rec can be activated', async () => {
+    const updates: CapturedUpdate[] = [];
+    const sb = makeStubSupabase({
+      updates,
+      recs: { [REC_UUID_NEW]: { id: REC_UUID_NEW, title: 'x', status: 'snoozed', user_id: SENDER_UUID } },
+    });
+    const result = await tool_activate_recommendation(
+      { id: REC_UUID_NEW },
+      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
+      sb,
+    );
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
   });

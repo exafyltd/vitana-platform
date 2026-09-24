@@ -709,6 +709,25 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       expect(res.body.error).toBe('Recommendation belongs to another user');
     });
 
+    it('VTID-04464: 403 when the rec has no owner (user_id null) — no ownership bypass', async () => {
+      stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+        { id: REC_ID, title: 'Ownerless', source_type: 'community', source_ref: 'onboarding_profile', user_id: null, status: 'new' },
+      ]);
+
+      const app = mountApp();
+      const res = await request(app)
+        .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+        .set('X-User-ID', USER_ID)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Recommendation belongs to another user');
+      const patched = (global.fetch as jest.Mock).mock.calls.some(
+        ([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH',
+      );
+      expect(patched).toBe(false);
+    });
+
     it('400 when the rec is not in an activatable state', async () => {
       stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
         { id: REC_ID, title: 'Done already', source_type: 'community', source_ref: 'onboarding_profile', user_id: USER_ID, status: 'rejected' },

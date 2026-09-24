@@ -1168,7 +1168,14 @@ export async function activateCommunityAutopilotRecommendation(
   if (rec.source_type !== 'community') {
     return { ok: false, httpStatus: 403, error: 'Not a community recommendation' };
   }
-  if (rec.user_id && userId && rec.user_id !== userId) {
+  // VTID-04464 (CA-0): a community recommendation is only ever activated by
+  // its owner. The previous check (`rec.user_id && userId && …`) passed when
+  // either side was null, so an ownerless row — or an anonymous caller — got
+  // through. Both must be present and equal.
+  if (!userId) {
+    return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  }
+  if (!rec.user_id || rec.user_id !== userId) {
     return { ok: false, httpStatus: 403, error: 'Recommendation belongs to another user' };
   }
 
@@ -1200,7 +1207,9 @@ export async function activateCommunityAutopilotRecommendation(
 
   // Update recommendation status to 'activated' via PostgREST — NO VTID
   const patchResp = await fetch(
-    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}`,
+    // VTID-04464: scoped to the owner and the activatable states, so a row
+    // that changed between the read above and this write is never flipped.
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&user_id=eq.${userId}&status=in.(new,snoozed)`,
     {
       method: 'PATCH',
       headers: {

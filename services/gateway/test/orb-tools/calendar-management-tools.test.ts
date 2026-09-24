@@ -13,6 +13,9 @@ jest.mock('../../src/services/calendar-service', () => ({
   markEventCompleted: jest.fn(),
   checkConflicts: jest.fn(),
 }));
+jest.mock('../../src/services/calendar-producers', () => ({
+  completeSourceForCalendarEvent: jest.fn(),
+}));
 
 import {
   rescheduleEvent,
@@ -20,6 +23,7 @@ import {
   markEventCompleted,
   checkConflicts,
 } from '../../src/services/calendar-service';
+import { completeSourceForCalendarEvent } from '../../src/services/calendar-producers';
 import {
   CALENDAR_MGMT_TOOL_HANDLERS,
   CALENDAR_MGMT_TOOL_DECLARATIONS,
@@ -223,6 +227,43 @@ describe('tool_complete_event', () => {
     const res = await tool_complete_event({ event_id: 'ev-1' }, IDENT, sb);
     expect(res.ok).toBe(true);
     expect(markEventCompleted).toHaveBeenCalledWith('ev-1', 'user-1', 'completed', null);
+  });
+
+  it('VTID-04464: completing by voice completes the linked Autopilot recommendation', async () => {
+    const { sb } = fakeSupabase([event({ source_type: 'autopilot' })]);
+    const updated = event({
+      completion_status: 'completed',
+      source_type: 'autopilot',
+      source_ref_type: 'autopilot_recommendation',
+      source_ref_id: 'rec-1',
+    });
+    (markEventCompleted as jest.Mock).mockResolvedValue(updated);
+    (completeSourceForCalendarEvent as jest.Mock).mockResolvedValue({
+      completed: true,
+      source_ref_type: 'autopilot_recommendation',
+    });
+    const res = await tool_complete_event({ event_id: 'ev-1' }, IDENT, sb);
+    expect(res.ok).toBe(true);
+    expect(completeSourceForCalendarEvent).toHaveBeenCalledWith(updated, 'user-1');
+    expect((res as any).result.source_completed).toBe(true);
+  });
+
+  it('VTID-04464: a skipped entry does not complete its source', async () => {
+    const { sb } = fakeSupabase([event()]);
+    (markEventCompleted as jest.Mock).mockResolvedValue(event({ completion_status: 'skipped' }));
+    const res = await tool_complete_event({ event_id: 'ev-1', outcome: 'skipped' }, IDENT, sb);
+    expect(res.ok).toBe(true);
+    expect(completeSourceForCalendarEvent).not.toHaveBeenCalled();
+    expect((res as any).result.source_completed).toBe(false);
+  });
+
+  it('VTID-04464: a failing source completion never fails the call', async () => {
+    const { sb } = fakeSupabase([event()]);
+    (markEventCompleted as jest.Mock).mockResolvedValue(event({ completion_status: 'completed' }));
+    (completeSourceForCalendarEvent as jest.Mock).mockRejectedValue(new Error('boom'));
+    const res = await tool_complete_event({ event_id: 'ev-1' }, IDENT, sb);
+    expect(res.ok).toBe(true);
+    expect((res as any).result.source_completed).toBe(false);
   });
 
   it('rejects an unknown outcome', async () => {
