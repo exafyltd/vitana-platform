@@ -137,7 +137,7 @@ export const ATTRIBUTING_NETWORKS = ['awin', 'admitad'] as const;
  */
 export const SUPPLIER_SOURCE_NETWORK = 'supplier_referral';
 
-const MerchantSchema = z.object({
+export const MerchantSchema = z.object({
   name: z.string().min(1).max(256),
   vertical_key: z.string().min(1).max(50),
   merchant_country: z.string().length(2).transform((c) => c.toUpperCase()).optional(),
@@ -252,7 +252,7 @@ router.post('/merchants', async (req: Request, res: Response) => {
  * how this was caught: ts-jest transpiles without typechecking, so the test
  * suite was green and `npm run build` was not.)
  */
-const ProductFields = z.object({
+export const ProductFields = z.object({
   title: z.string().min(1).max(512),
   description: z.string().max(10000).optional(),
   brand: z.string().max(256).optional(),
@@ -278,7 +278,7 @@ const ProductFields = z.object({
  * be shown to anyone — it would sit in the supplier's portal looking listed
  * and reach no one.
  */
-const SHIPS_SOMEWHERE_MESSAGE =
+export const SHIPS_SOMEWHERE_MESSAGE =
   'ships_to_countries or ships_to_regions must name at least one destination';
 
 export function shipsSomewhere(p: {
@@ -288,7 +288,7 @@ export function shipsSomewhere(p: {
   return (p.ships_to_countries?.length ?? 0) > 0 || (p.ships_to_regions?.length ?? 0) > 0;
 }
 
-const ProductSchema = ProductFields.refine(shipsSomewhere, {
+export const ProductSchema = ProductFields.refine(shipsSomewhere, {
   message: SHIPS_SOMEWHERE_MESSAGE,
   path: ['ships_to_countries'],
 });
@@ -302,7 +302,7 @@ const ProductSchema = ProductFields.refine(shipsSomewhere, {
  * region. So the check runs in the handler, against the merge of the stored
  * row and the patch, where the real answer lives.
  */
-const ProductPatchSchema = ProductFields.partial();
+export const ProductPatchSchema = ProductFields.partial();
 
 router.get('/products', async (req: Request, res: Response) => {
   const s = supa(res);

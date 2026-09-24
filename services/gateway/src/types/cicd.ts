@@ -1015,7 +1015,9 @@ export type CicdEventType =
   // VTID-04481: website platform detection during onboarding
   | 'partner_org.platform_detected'
   // VTID-04486: automated verification checks (spec §7)
-  | 'partner_org.verification_checked';
+  | 'partner_org.verification_checked'
+  // VTID-04488: onboarding catalogue step status
+  | 'partner_org.catalogue_step_changed';
 
 export interface CicdOasisEvent {
   vtid: string;

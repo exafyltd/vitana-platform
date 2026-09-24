@@ -2735,6 +2735,8 @@ Written only by the gateway (service role); members read their own org's rows vi
 
 `step_key = 'verification'` (VTID-04486, written by `POST /api/v1/partner-onboarding/:orgId/verification/check`): `detail` = `{level_required, level_reached, checks: {email_verified, domain, vat, business_verification, licence}, missing, domain_method, domain_token, vat_registered_name, vat_error?, facts: {website, country, vat_id}, checked_at}`. The checklist treats the row as void (`todo`, `facts_changed`) once the org's website, country or VAT id no longer equals `detail.facts`. The same check writes `partner_organizations.trust_level` (level reached, 0 when none). No schema change.
 
+`step_key = 'catalogue'` (VTID-04488, written by `/api/v1/partner-onboarding/:orgId/catalogue/*` after every merchant or product change): `status` is `in_progress` once the org has a merchant and `done` once that merchant has at least one product; `detail` = `{merchant_id, product_count, counted_at}`. The org's merchant is the `merchants` row with `partner_organization_id` = the org (created with `source_network = 'supplier_referral'`, `source_merchant_id = 'supplier_referral:org:<orgId>'`, `onboarding_status = 'draft'`, `is_active = false`, no `owner_user_id`), or the owner's unlinked supplier-portal merchant, adopted by setting its `partner_organization_id`. Products stay `is_active = false`. No schema change.
+
 ### partner_terms_acceptances (VTID-04478)
 
 | Column | Type | Notes |
