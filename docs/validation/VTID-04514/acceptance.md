@@ -18,6 +18,7 @@ AC-2: The drop migration refuses a table that has rows, and drops `autopilot_fee
 TEST: vitana-v1 src/lib/dead-autopilot-tables.test.ts
 
 AC-3: The guard block passes against the live project (run inside `BEGIN READ ONLY … ROLLBACK`).
+TEST: docs/validation/VTID-04514/outputs/verification.txt (guard run inside a READ ONLY transaction, rolled back)
 
 ## Not done here, owner steps
 1. Deploy the four edge functions (manual dispatch of `supabase-functions-deploy.yml`).
