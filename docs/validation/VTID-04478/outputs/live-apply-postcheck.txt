@@ -1,0 +1,17 @@
+# VTID-04478 — live apply + read-only post-check, 2026-09-24 (Supabase project inmkhvwdcuyhnxkgfvsb)
+
+## pre-check (read-only)
+to_regclass(partner_onboarding_steps)=null  to_regclass(partner_terms_acceptances)=null  is_partner_org_member present=1
+
+## apply
+apply_migration vtid_04478_partner_onboarding_engine            -> success
+apply_migration vtid_04478_partner_onboarding_revoke_truncate   -> success
+  (post-check showed browser roles still held TRUNCATE from Supabase's default
+   grants; RLS does not cover TRUNCATE, so it was revoked and folded into the
+   migration file's REVOKE)
+
+## post-check (read-only)
+partner_onboarding_steps   rls=true  policies=partner_onboarding_steps_select:SELECT   constraints=4
+partner_terms_acceptances  rls=true  policies=partner_terms_acceptances_select:SELECT  constraints=3
+browser grants (both tables): anon/authenticated = REFERENCES, SELECT, TRIGGER only
+  (SELECT is gated by RLS: the policy is TO authenticated and member-only; anon has no policy and sees no rows)

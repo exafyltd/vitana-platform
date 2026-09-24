@@ -24,7 +24,7 @@ import githubService from './github-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
 import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing-probe';
-import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
+import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from './dev-autopilot-execute';
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
@@ -483,16 +483,32 @@ export async function transitionStatus(
   // flips the recommendation `new → completed`, and autoApproveTick re-
   // approves the same finding on the next 30s tick. See
   // applyExecTerminalSideEffects() docstring for incident detail.
-  if (moved) applyExecTerminalSideEffects(s, execId, toStatus);
+  // VTID-04472: every `→ failed` here is followed by bridgeFailure(), which
+  // owns the ledger outcome (see bridgeFailure below).
+  if (moved) applyExecTerminalSideEffects(s, execId, toStatus, { deferLedger: toStatus === 'failed' });
   return moved;
 }
 
+/**
+ * VTID-04472: bridge outcomes that own the VTID ledger after a failure —
+ * a self-heal child continues the VTID; every escalation path closes it
+ * (closeLedgerForEscalation). Anything else (already bridged, no row, a
+ * thrown call) leaves the execution `failed` with nobody to close the
+ * ledger, so the watcher closes it itself.
+ */
+export const BRIDGE_OWNS_LEDGER: ReadonlySet<string> = new Set(['self_heal_injected', 'escalated', 'env_blocker', 'triage_failed']);
+
 async function bridgeFailure(execId: string, stage: FailureStage, error?: string, extras: Record<string, unknown> = {}): Promise<void> {
+  let outcome: string | null = null;
   try {
-    await bridgeFailureToSelfHealing({ execution_id: execId, failure_stage: stage, error, ...extras });
+    const r = await bridgeFailureToSelfHealing({ execution_id: execId, failure_stage: stage, error, ...extras });
+    outcome = r?.outcome ?? null;
   } catch (err) {
     console.error(`${LOG_PREFIX} bridge call failed for ${execId} (${stage}):`, err);
   }
+  if (outcome && BRIDGE_OWNS_LEDGER.has(outcome)) return;
+  const s = getSupabase();
+  if (s) await terminalizeVtidLedgerForExecution(s, execId, 'failed');
 }
 
 // =============================================================================

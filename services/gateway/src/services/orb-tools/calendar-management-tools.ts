@@ -17,6 +17,7 @@ import {
   markEventCompleted,
   checkConflicts,
 } from '../calendar-service';
+import { completeSourceForCalendarEvent } from '../calendar-producers';
 import * as repo from './calendar-management-tools-repository';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
@@ -368,6 +369,19 @@ export async function tool_complete_event(
       return { ok: false, error: 'Failed to update the event. Please try again.' };
     }
 
+    // VTID-04464 (CA-0): ticking an entry off by voice completes what it came
+    // from (an Autopilot recommendation, a goal-plan step), exactly as the
+    // HTTP route does (VTID-04331). Best-effort; never fails the call.
+    let sourceCompleted = false;
+    if (outcome === 'completed') {
+      try {
+        const src = await completeSourceForCalendarEvent(updated, id.user_id);
+        sourceCompleted = !!src?.completed;
+      } catch {
+        sourceCompleted = false;
+      }
+    }
+
     const spokenOutcome =
       outcome === 'completed'
         ? 'marked as completed'
@@ -376,7 +390,12 @@ export async function tool_complete_event(
           : 'marked as partially done';
     return {
       ok: true,
-      result: { event_id: event.id, title: event.title, completion_status: outcome },
+      result: {
+        event_id: event.id,
+        title: event.title,
+        completion_status: outcome,
+        source_completed: sourceCompleted,
+      },
       text: `Nice — "${event.title}" (${fmtWhen(event.start_time, tz)}) is ${spokenOutcome}.`,
     };
   } catch (err) {

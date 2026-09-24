@@ -1,0 +1,25 @@
+# VTID-04287 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-24T12:50:24.213Z
+# execution_id=cdce6e55-340e-4a73-9d4e-26007e01344a finding_id=b560c306-0e05-4698-b909-0a25df8abff2 plan_version=1
+# branch=dev-autopilot/cdce6e55 base=main
+# llm provider=deepseek model=deepseek-flash
+
+# agent turns=50 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/cdce6e55
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add scripts/ci/impact-rules/new-env-var-requires-workflow-binding.mjs   # modify
+$ git add scripts/ci/impact-rules/registry.mjs   # modify
+$ git add services/gateway/test/scripts/vtid-04287-env-var-binding-satisfiable.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04287/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/cdce6e55
+$ gh pr create --base main --head dev-autopilot/cdce6e55
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).

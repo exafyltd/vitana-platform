@@ -1,0 +1,31 @@
+# VTID-04471 — live apply + read-only post-check, 2026-09-24 (Supabase project inmkhvwdcuyhnxkgfvsb)
+
+## pre-check (read-only)
+orgs=0 owned_merchants=0 partner_tenant=0 lifecycle_state column present=0
+
+## apply
+apply_migration vtid_04471_partner_account_model        -> success
+apply_migration vtid_04471_vcaop_partner_org_link_0007  -> success
+
+## post-check (read-only)
+col  merchants.partner_organization_id uuid null=YES
+col  partner_organizations.country text null=YES
+col  partner_organizations.legal_name text null=YES
+col  partner_organizations.lifecycle_state text null=NO
+col  partner_organizations.partner_type text null=YES
+col  partner_organizations.trust_level smallint null=NO
+col  partner_organizations.vat_id text null=YES
+col  partner_organizations.website text null=YES
+col  partner_tenant.partner_organization_id uuid null=YES
+con  merchants_partner_organization_id_fkey
+con  partner_organizations_country_check
+con  partner_organizations_lifecycle_state_check
+con  partner_organizations_partner_type_check
+con  partner_organizations_trust_level_check
+con  partner_tenant_partner_organization_id_fkey
+fn   partner_org_status_for_lifecycle
+fn   partner_org_vertical_for_type
+fn   partner_organizations_sync
+trg  trg_partner_organizations_sync enabled=O
+map  live->active / paused->suspended / lab->health / supplier_shop->general
+rows 0 orgs, 0 members, 0 linked merchants   (the backfill changed nothing)

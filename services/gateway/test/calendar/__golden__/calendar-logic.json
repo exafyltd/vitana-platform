@@ -1,0 +1,3081 @@
+{
+  "contract.complete": [
+    {
+      "ok": true,
+      "data": {
+        "completion_status": "completed"
+      }
+    },
+    {
+      "ok": true,
+      "data": {
+        "completion_status": "skipped",
+        "completion_notes": "rain"
+      }
+    },
+    {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "completion_status"
+          ],
+          "code": "invalid_enum_value"
+        }
+      ]
+    }
+  ],
+  "contract.create": {
+    "minimal": {
+      "ok": true,
+      "data": {
+        "title": "Walk",
+        "start_time": "2026-10-05T07:30:00Z",
+        "event_type": "personal",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "community",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false
+      }
+    },
+    "full_recurring": {
+      "ok": true,
+      "data": {
+        "title": "Stretch",
+        "start_time": "2026-10-05T07:30:00Z",
+        "end_time": "2026-10-05T07:45:00Z",
+        "event_type": "workout",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "personal",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false,
+        "pillar": "exercise",
+        "rrule": "FREQ=WEEKLY;BYDAY=MO,WE",
+        "timezone": "Europe/Berlin",
+        "reminder_offsets": [
+          0,
+          10
+        ],
+        "emoji": "🧘"
+      }
+    },
+    "bad_rrule": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "rrule"
+          ],
+          "code": "invalid_string"
+        }
+      ]
+    },
+    "too_many_offsets": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "reminder_offsets"
+          ],
+          "code": "too_big"
+        }
+      ]
+    },
+    "offset_too_far": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "reminder_offsets",
+            0
+          ],
+          "code": "too_big"
+        }
+      ]
+    },
+    "bad_event_type": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "event_type"
+          ],
+          "code": "invalid_enum_value"
+        }
+      ]
+    },
+    "bad_source": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "source_type"
+          ],
+          "code": "invalid_enum_value"
+        }
+      ]
+    },
+    "no_title": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "title"
+          ],
+          "code": "too_small"
+        }
+      ]
+    },
+    "local_time_without_zone": {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "start_time"
+          ],
+          "code": "invalid_string"
+        }
+      ]
+    }
+  },
+  "contract.enums": {
+    "source": [
+      "manual",
+      "invite",
+      "imported",
+      "autopilot",
+      "community_rsvp",
+      "assistant",
+      "journey",
+      "vtid",
+      "ci_cd",
+      "nudge_engine",
+      "health_plan",
+      "lab_order",
+      "appointment",
+      "live_room",
+      "goal_plan",
+      "guided_journey"
+    ],
+    "event": [
+      "personal",
+      "community",
+      "professional",
+      "health",
+      "workout",
+      "nutrition",
+      "autopilot",
+      "journey_milestone",
+      "dev_task",
+      "deployment",
+      "sprint_milestone",
+      "admin_task",
+      "wellness_nudge"
+    ],
+    "domain": {
+      "personal": "lifestyle",
+      "community": "social",
+      "professional": "business",
+      "health": "health",
+      "workout": "health",
+      "nutrition": "health",
+      "autopilot": "lifestyle",
+      "journey_milestone": "lifestyle",
+      "dev_task": "business",
+      "deployment": "business",
+      "sprint_milestone": "business",
+      "admin_task": "business",
+      "wellness_nudge": "health"
+    }
+  },
+  "contract.list": [
+    {
+      "ok": true,
+      "data": {
+        "limit": 50,
+        "offset": 0
+      }
+    },
+    {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "limit"
+          ],
+          "code": "too_big"
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "data": {
+        "from": "2026-10-01T00:00:00Z",
+        "limit": 20,
+        "offset": 40
+      }
+    }
+  ],
+  "contract.update": [
+    {
+      "ok": true,
+      "data": {
+        "title": "New"
+      }
+    },
+    {
+      "ok": true,
+      "data": {
+        "rrule": null,
+        "reminder_offsets": null
+      }
+    },
+    {
+      "ok": false,
+      "issues": [
+        {
+          "path": [
+            "status"
+          ],
+          "code": "invalid_enum_value"
+        }
+      ]
+    }
+  ],
+  "external.busy": [
+    {
+      "start_time": "2026-10-05T08:00:00.000Z",
+      "end_time": "2026-10-05T09:00:00.000Z"
+    },
+    {
+      "start_time": "2026-10-05T10:00:00.000Z",
+      "end_time": "2026-10-05T12:30:00.000Z"
+    }
+  ],
+  "external.feed": [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Vitanaland//Calendar//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Vitanaland",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H",
+    "BEGIN:VEVENT",
+    "UID:a@vitanaland",
+    "DTSTAMP:20261001T120000Z",
+    "LAST-MODIFIED:20261001T100000Z",
+    "DTSTART:20261005T073000Z",
+    "DTEND:20261005T080000Z",
+    "SUMMARY:Walk\\, then\\; coffee\\nwith Ana",
+    "LOCATION:Park",
+    "STATUS:CONFIRMED",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:b@vitanaland",
+    "DTSTAMP:20261001T120000Z",
+    "DTSTART:20261006T073000Z",
+    "DTEND:20261006T080000Z",
+    "SUMMARY:Pending",
+    "STATUS:TENTATIVE",
+    "END:VEVENT",
+    "BEGIN:VEVENT",
+    "UID:d@vitanaland",
+    "DTSTAMP:20261001T120000Z",
+    "DTSTART:20261007T073000Z",
+    "DTEND:20261007T080000Z",
+    "SUMMARY:Ünïcödé Ünïcödé Ünïcödé Ünïcödé Ünïcödé Ünïc",
+    " ödé Ünïcödé Ünïcödé Ünïcödé Ünïcödé Ünïcödé Ünïcö",
+    " dé ",
+    "STATUS:CONFIRMED",
+    "END:VEVENT",
+    "END:VCALENDAR",
+    ""
+  ],
+  "external.google": [
+    {
+      "summary": "🦷 Dentist",
+      "start": {
+        "dateTime": "2026-10-05T08:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T09:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-single"
+        }
+      },
+      "description": "Bring card"
+    },
+    {
+      "summary": "Call",
+      "start": {
+        "dateTime": "2026-10-05T10:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T10:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-noend"
+        }
+      }
+    },
+    {
+      "summary": "Stretch",
+      "start": {
+        "dateTime": "2026-10-01T05:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-01T05:45:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-habit"
+        }
+      },
+      "recurrence": [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=6"
+      ]
+    },
+    {
+      "summary": "Budget",
+      "start": {
+        "dateTime": "2026-10-31T17:00:00.000Z",
+        "timeZone": "America/New_York"
+      },
+      "end": {
+        "dateTime": "2026-10-31T17:30:00.000Z",
+        "timeZone": "America/New_York"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-monthly"
+        }
+      },
+      "recurrence": [
+        "RRULE:FREQ=MONTHLY;UNTIL=20270301T000000Z"
+      ]
+    },
+    {
+      "summary": "Deploy",
+      "start": {
+        "dateTime": "2026-10-05T12:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T12:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-dev"
+        }
+      }
+    },
+    {
+      "summary": "Gone",
+      "start": {
+        "dateTime": "2026-10-05T12:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T12:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-cancel"
+        }
+      }
+    },
+    {
+      "summary": "Odd",
+      "start": {
+        "dateTime": "2026-10-05T12:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T12:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-badrule"
+        }
+      },
+      "recurrence": [
+        "RRULE:FREQ=YEARLY"
+      ]
+    },
+    {
+      "summary": "Ein sehr langer Titel mit Umlauten ÄÖÜ, Kommas; Semikolons und \\ Backslashes, der gefaltet werden muss",
+      "start": {
+        "dateTime": "2026-10-05T14:00:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-05T14:30:00.000Z",
+        "timeZone": "Europe/Berlin"
+      },
+      "reminders": {
+        "useDefault": false,
+        "overrides": []
+      },
+      "extendedProperties": {
+        "private": {
+          "vitanaland_event_id": "e-long"
+        }
+      }
+    }
+  ],
+  "external.googleAvailability": [
+    "not_configured",
+    "not_configured",
+    "ready"
+  ],
+  "external.googlePlan": [
+    {
+      "op": "delete",
+      "linkId": "l4",
+      "googleId": "g4",
+      "body": null
+    },
+    {
+      "op": "update",
+      "entryId": "e-noend",
+      "linkId": "l2",
+      "googleId": "g2",
+      "body": null,
+      "hash": "b586450cf302fe4101699a96fe2cdd43541e4b8381f73ada3e7049ddac539f2a"
+    },
+    {
+      "op": "create",
+      "entryId": "e-habit",
+      "body": null,
+      "hash": "e604ed318f17ba8835227e70a7571b6a06d36541f023a51484e26855af3a9927"
+    },
+    {
+      "op": "create",
+      "entryId": "e-monthly",
+      "body": null,
+      "hash": "2d0f3a6793dc9b49d26fe36755c0690178edac8fc59ad3bd0c5aaf91dbf6a68d"
+    },
+    {
+      "op": "delete",
+      "linkId": "l5",
+      "googleId": "g5",
+      "body": null
+    },
+    {
+      "op": "delete",
+      "linkId": "l3",
+      "googleId": "g3",
+      "body": null
+    },
+    {
+      "op": "create",
+      "entryId": "e-badrule",
+      "body": null,
+      "hash": "11fe47cfc260f694ff476656c94a60a8777d7c4eaaa99a3cb944b931534d7e72"
+    },
+    {
+      "op": "create",
+      "entryId": "e-long",
+      "body": null,
+      "hash": "d760606df3fafd0d59cc82164fdae8668f4a575af139c3958db7047796d9c095"
+    }
+  ],
+  "external.graph": [
+    {
+      "subject": "🦷 Dentist",
+      "start": {
+        "dateTime": "2026-10-05T08:00:00",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-05T09:00:00",
+        "timeZone": "UTC"
+      },
+      "isReminderOn": false,
+      "showAs": "busy",
+      "body": {
+        "contentType": "text",
+        "content": "Bring card"
+      }
+    },
+    {
+      "subject": "Call",
+      "start": {
+        "dateTime": "2026-10-05T10:00:00",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-05T10:30:00",
+        "timeZone": "UTC"
+      },
+      "isReminderOn": false,
+      "showAs": "busy"
+    },
+    {
+      "subject": "Stretch",
+      "start": {
+        "dateTime": "2026-10-01T07:30:00",
+        "timeZone": "Europe/Berlin"
+      },
+      "end": {
+        "dateTime": "2026-10-01T07:45:00",
+        "timeZone": "Europe/Berlin"
+      },
+      "isReminderOn": false,
+      "showAs": "busy",
+      "recurrence": {
+        "pattern": {
+          "type": "weekly",
+          "interval": 1,
+          "daysOfWeek": [
+            "monday",
+            "wednesday"
+          ],
+          "firstDayOfWeek": "monday"
+        },
+        "range": {
+          "type": "numbered",
+          "startDate": "2026-10-01",
+          "numberOfOccurrences": 6,
+          "recurrenceTimeZone": "Europe/Berlin"
+        }
+      }
+    },
+    {
+      "subject": "Budget",
+      "start": {
+        "dateTime": "2026-10-31T13:00:00",
+        "timeZone": "America/New_York"
+      },
+      "end": {
+        "dateTime": "2026-10-31T13:30:00",
+        "timeZone": "America/New_York"
+      },
+      "isReminderOn": false,
+      "showAs": "busy",
+      "recurrence": {
+        "pattern": {
+          "type": "absoluteMonthly",
+          "interval": 1,
+          "dayOfMonth": 31
+        },
+        "range": {
+          "type": "endDate",
+          "startDate": "2026-10-31",
+          "endDate": "2027-02-28",
+          "recurrenceTimeZone": "America/New_York"
+        }
+      }
+    },
+    {
+      "subject": "Deploy",
+      "start": {
+        "dateTime": "2026-10-05T12:00:00",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-05T12:30:00",
+        "timeZone": "UTC"
+      },
+      "isReminderOn": false,
+      "showAs": "busy"
+    },
+    {
+      "subject": "Gone",
+      "start": {
+        "dateTime": "2026-10-05T12:00:00",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-05T12:30:00",
+        "timeZone": "UTC"
+      },
+      "isReminderOn": false,
+      "showAs": "busy"
+    },
+    null,
+    {
+      "subject": "Ein sehr langer Titel mit Umlauten ÄÖÜ, Kommas; Semikolons und \\ Backslashes, der gefaltet werden muss",
+      "start": {
+        "dateTime": "2026-10-05T14:00:00",
+        "timeZone": "UTC"
+      },
+      "end": {
+        "dateTime": "2026-10-05T14:30:00",
+        "timeZone": "UTC"
+      },
+      "isReminderOn": false,
+      "showAs": "busy"
+    }
+  ],
+  "external.graphRecurrence": {
+    "FREQ=DAILY": {
+      "pattern": {
+        "type": "daily",
+        "interval": 1
+      },
+      "range": {
+        "type": "noEnd",
+        "startDate": "2026-10-05",
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "FREQ=DAILY;INTERVAL=3;COUNT=10": {
+      "pattern": {
+        "type": "daily",
+        "interval": 3
+      },
+      "range": {
+        "type": "numbered",
+        "startDate": "2026-10-05",
+        "numberOfOccurrences": 10,
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "FREQ=WEEKLY": {
+      "pattern": {
+        "type": "weekly",
+        "interval": 1,
+        "daysOfWeek": [
+          "monday"
+        ],
+        "firstDayOfWeek": "monday"
+      },
+      "range": {
+        "type": "noEnd",
+        "startDate": "2026-10-05",
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,SA": {
+      "pattern": {
+        "type": "weekly",
+        "interval": 2,
+        "daysOfWeek": [
+          "tuesday",
+          "saturday"
+        ],
+        "firstDayOfWeek": "monday"
+      },
+      "range": {
+        "type": "noEnd",
+        "startDate": "2026-10-05",
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "FREQ=MONTHLY;UNTIL=20270105T000000Z": {
+      "pattern": {
+        "type": "absoluteMonthly",
+        "interval": 1,
+        "dayOfMonth": 5
+      },
+      "range": {
+        "type": "endDate",
+        "startDate": "2026-10-05",
+        "endDate": "2027-01-05",
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "RRULE:FREQ=MONTHLY": {
+      "pattern": {
+        "type": "absoluteMonthly",
+        "interval": 1,
+        "dayOfMonth": 5
+      },
+      "range": {
+        "type": "noEnd",
+        "startDate": "2026-10-05",
+        "recurrenceTimeZone": "Europe/Berlin"
+      }
+    },
+    "FREQ=YEARLY": null
+  },
+  "external.icloud": [
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-single@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261005T080000Z\r\nDTEND:20261005T090000Z\r\nSUMMARY:🦷 Dentist\r\nDESCRIPTION:Bring card\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-noend@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261005T100000Z\r\nDTEND:20261005T103000Z\r\nSUMMARY:Call\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-habit@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART;TZID=Europe/Berlin:20261001T073000\r\nDTEND;TZID=Europe/Berlin:20261001T074500\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=6\r\nSUMMARY:Stretch\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-monthly@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART;TZID=America/New_York:20261031T130000\r\nDTEND;TZID=America/New_York:20261031T133000\r\nRRULE:FREQ=MONTHLY;UNTIL=20270301T000000Z\r\nSUMMARY:Budget\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-dev@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261005T120000Z\r\nDTEND:20261005T123000Z\r\nSUMMARY:Deploy\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-cancel@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261005T120000Z\r\nDTEND:20261005T123000Z\r\nSUMMARY:Gone\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+    null,
+    "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vitanaland//Calendar//EN\r\nCALSCALE:GREGORIAN\r\nBEGIN:VEVENT\r\nUID:vitanaland-e-long@vitanaland.com\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:20261005T140000Z\r\nDTEND:20261005T143000Z\r\nSUMMARY:Ein sehr langer Titel mit Umlauten ÄÖÜ\\, Kommas\\; Semikolons und\r\n  \\\\ Backslashes\\, der gefaltet werden muss\r\nTRANSP:OPAQUE\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+  ],
+  "external.icsHelpers": {
+    "utc": "20261005T073015Z",
+    "escape": "a\\\\b\\;c\\,d\\ne",
+    "fold": [
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      " XXXXXääääääääääääääääääääääääääääääääää",
+      " ääääää"
+    ],
+    "tokenOk": [
+      true,
+      false,
+      false
+    ],
+    "hash": "648f312cf893d191028cba09f60f8ffe95624c9ef2d40a0c2f0db0e356e37e0f"
+  },
+  "external.pushPlan": [
+    {
+      "op": "delete",
+      "linkId": "l4",
+      "remoteId": "r4",
+      "body": null
+    },
+    {
+      "op": "create",
+      "entryId": "e-noend",
+      "body": null,
+      "hash": "b944b119bccb734c6afe06a2b101e03bc4bda34af7f8da50cda2155f5d9f7729"
+    },
+    {
+      "op": "update",
+      "entryId": "e-habit",
+      "linkId": "l2",
+      "remoteId": "r2",
+      "body": null,
+      "hash": "f62a061cd94b7046f31bd3528afeb3c0f250b4d3ae181c137b9c7fbf41e0eebc"
+    },
+    {
+      "op": "create",
+      "entryId": "e-monthly",
+      "body": null,
+      "hash": "c3ae7076df2eadb76648a7acddd51b431f7ea212134d5b95b3c51acd5832c56e"
+    },
+    {
+      "op": "delete",
+      "linkId": "l3",
+      "remoteId": "r3",
+      "body": null
+    },
+    {
+      "op": "create",
+      "entryId": "e-long",
+      "body": null,
+      "hash": "43f06c247032eb20487f8b38b988b354c61354e87d247564735aff1e3a380011"
+    }
+  ],
+  "external.pushSwitch": [
+    true,
+    true,
+    false
+  ],
+  "external.pushable": {
+    "e-single": true,
+    "e-noend": true,
+    "e-habit": true,
+    "e-monthly": true,
+    "e-dev": false,
+    "e-cancel": false,
+    "e-badrule": true,
+    "e-long": true
+  },
+  "journey.stage": {
+    "0": {
+      "day_number": 0,
+      "wave_name": "Getting Started",
+      "wave_id": "wave-1",
+      "total_days": 90
+    },
+    "1": {
+      "day_number": 1,
+      "wave_name": "Getting Started",
+      "wave_id": "wave-1",
+      "total_days": 90
+    },
+    "7": {
+      "day_number": 7,
+      "wave_name": "Getting Started",
+      "wave_id": "wave-1",
+      "total_days": 90
+    },
+    "14": {
+      "day_number": 14,
+      "wave_name": "Daily Anchors",
+      "wave_id": "wave-2",
+      "total_days": 90
+    },
+    "21": {
+      "day_number": 21,
+      "wave_name": "Deepening Connections",
+      "wave_id": "wave-3",
+      "total_days": 90
+    },
+    "30": {
+      "day_number": 30,
+      "wave_name": "Deepening Connections",
+      "wave_id": "wave-3",
+      "total_days": 90
+    },
+    "45": {
+      "day_number": 45,
+      "wave_name": "Health Intelligence",
+      "wave_id": "wave-4",
+      "total_days": 90
+    },
+    "60": {
+      "day_number": 60,
+      "wave_name": "Health Intelligence",
+      "wave_id": "wave-4",
+      "total_days": 90
+    },
+    "75": {
+      "day_number": 75,
+      "wave_name": "Recommendations & Discovery",
+      "wave_id": "wave-6",
+      "total_days": 90
+    },
+    "89": {
+      "day_number": 89,
+      "wave_name": "Recommendations & Discovery",
+      "wave_id": "wave-6",
+      "total_days": 90
+    },
+    "90": {
+      "day_number": 90,
+      "wave_name": "Recommendations & Discovery",
+      "wave_id": "wave-6",
+      "total_days": 90
+    },
+    "91": null,
+    "-1": null
+  },
+  "maintenance.enabled": [
+    false,
+    true,
+    false
+  ],
+  "maintenance.reschedule": [
+    {
+      "c": {
+        "start_time": "2026-10-24T05:30:00Z",
+        "end_time": "2026-10-24T06:00:00Z"
+      },
+      "over": true,
+      "next": {
+        "start": "2026-10-27T06:30:00.000Z",
+        "end": "2026-10-27T07:00:00.000Z"
+      },
+      "nextNY": {
+        "start": "2026-10-27T05:30:00.000Z",
+        "end": "2026-10-27T06:00:00.000Z"
+      }
+    },
+    {
+      "c": {
+        "start_time": "2026-10-25T21:30:00Z",
+        "end_time": "2026-10-25T22:30:00Z"
+      },
+      "over": true,
+      "next": {
+        "start": "2026-10-27T21:30:00.000Z",
+        "end": "2026-10-27T22:30:00.000Z"
+      },
+      "nextNY": {
+        "start": "2026-10-27T21:30:00.000Z",
+        "end": "2026-10-27T22:30:00.000Z"
+      }
+    },
+    {
+      "c": {
+        "start_time": "2026-10-25T23:30:00Z",
+        "end_time": null
+      },
+      "over": false,
+      "next": {
+        "start": "2026-10-26T23:30:00.000Z",
+        "end": null
+      },
+      "nextNY": {
+        "start": "2026-10-27T23:30:00.000Z",
+        "end": null
+      }
+    },
+    {
+      "c": {
+        "start_time": "2026-10-26T09:00:00Z",
+        "end_time": "2026-10-26T09:30:00Z"
+      },
+      "over": false,
+      "next": {
+        "start": "2026-10-27T09:00:00.000Z",
+        "end": "2026-10-27T09:30:00.000Z"
+      },
+      "nextNY": {
+        "start": "2026-10-27T09:00:00.000Z",
+        "end": "2026-10-27T09:30:00.000Z"
+      }
+    },
+    {
+      "c": {
+        "start_time": "2026-10-27T09:00:00Z",
+        "end_time": null
+      },
+      "over": false,
+      "next": {
+        "start": "2026-10-27T09:00:00.000Z",
+        "end": null
+      },
+      "nextNY": {
+        "start": "2026-10-27T09:00:00.000Z",
+        "end": null
+      }
+    }
+  ],
+  "move": {
+    "manual": null,
+    "no_source": null,
+    "assistant": null,
+    "autopilot_rec": null,
+    "autopilot_no_ref": null,
+    "autopilot_other": "owned_by_source",
+    "journey_task": null,
+    "journey_other": "owned_by_source",
+    "appointment": "owned_by_source",
+    "lab_order": "owned_by_source",
+    "invite": "owned_by_source",
+    "live_room": "owned_by_source",
+    "recurring": "recurring",
+    "completed": "completed",
+    "cancelled": "cancelled"
+  },
+  "producers.diff": {
+    "same_instant_other_format": {},
+    "title_changed": {
+      "title": "Lab (fasting)"
+    },
+    "moved": {
+      "start_time": "2026-10-05T08:00:00Z"
+    },
+    "metadata_changed": {
+      "metadata": {
+        "a": 2
+      }
+    },
+    "offsets_same": {},
+    "not_compared_field": {},
+    "null_vs_missing": {}
+  },
+  "producers.seriesRef": "plan-1:2026-10-05",
+  "recurrence.expand.bad-rule-or-window-gives-nothing": [],
+  "recurrence.expand.count-stops-series": [
+    {
+      "start": "2026-10-01T07:00:00.000Z",
+      "end": "2026-10-01T07:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-03T07:00:00.000Z",
+      "end": "2026-10-03T07:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-10-07T07:00:00.000Z",
+      "end": "2026-10-07T07:00:00.000Z",
+      "index": 3
+    }
+  ],
+  "recurrence.expand.count-with-window-starting-mid-series": [
+    {
+      "start": "2026-10-04T07:00:00.000Z",
+      "end": "2026-10-04T07:00:00.000Z",
+      "index": 3
+    },
+    {
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:00:00.000Z",
+      "index": 4
+    },
+    {
+      "start": "2026-10-06T07:00:00.000Z",
+      "end": "2026-10-06T07:00:00.000Z",
+      "index": 5
+    }
+  ],
+  "recurrence.expand.daily-across-dst-berlin": [
+    {
+      "start": "2026-10-22T05:30:00.000Z",
+      "end": "2026-10-22T06:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-23T05:30:00.000Z",
+      "end": "2026-10-23T06:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-24T05:30:00.000Z",
+      "end": "2026-10-24T06:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-10-25T06:30:00.000Z",
+      "end": "2026-10-25T07:00:00.000Z",
+      "index": 3
+    },
+    {
+      "start": "2026-10-26T06:30:00.000Z",
+      "end": "2026-10-26T07:00:00.000Z",
+      "index": 4
+    },
+    {
+      "start": "2026-10-27T06:30:00.000Z",
+      "end": "2026-10-27T07:00:00.000Z",
+      "index": 5
+    },
+    {
+      "start": "2026-10-28T06:30:00.000Z",
+      "end": "2026-10-28T07:00:00.000Z",
+      "index": 6
+    }
+  ],
+  "recurrence.expand.daily-spring-forward-new-york": [
+    {
+      "start": "2026-03-06T13:00:00.000Z",
+      "end": "2026-03-06T14:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-03-07T13:00:00.000Z",
+      "end": "2026-03-07T14:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-03-08T12:00:00.000Z",
+      "end": "2026-03-08T13:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-03-09T12:00:00.000Z",
+      "end": "2026-03-09T13:00:00.000Z",
+      "index": 3
+    },
+    {
+      "start": "2026-03-10T12:00:00.000Z",
+      "end": "2026-03-10T13:00:00.000Z",
+      "index": 4
+    }
+  ],
+  "recurrence.expand.invalid-timezone-uses-fallback": [
+    {
+      "start": "2026-10-05T12:00:00.000Z",
+      "end": "2026-10-05T12:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-06T12:00:00.000Z",
+      "end": "2026-10-06T12:00:00.000Z",
+      "index": 1
+    }
+  ],
+  "recurrence.expand.limit-caps-results": [
+    {
+      "start": "2026-10-01T07:00:00.000Z",
+      "end": "2026-10-01T07:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-02T07:00:00.000Z",
+      "end": "2026-10-02T07:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-03T07:00:00.000Z",
+      "end": "2026-10-03T07:00:00.000Z",
+      "index": 2
+    }
+  ],
+  "recurrence.expand.monthly-on-the-31st": [
+    {
+      "start": "2026-01-31T09:00:00.000Z",
+      "end": "2026-01-31T09:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-03-31T09:00:00.000Z",
+      "end": "2026-03-31T09:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-05-31T09:00:00.000Z",
+      "end": "2026-05-31T09:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-07-31T09:00:00.000Z",
+      "end": "2026-07-31T09:00:00.000Z",
+      "index": 3
+    },
+    {
+      "start": "2026-08-31T09:00:00.000Z",
+      "end": "2026-08-31T09:00:00.000Z",
+      "index": 4
+    }
+  ],
+  "recurrence.expand.no-timezone-uses-fallback": [
+    {
+      "start": "2026-10-05T12:00:00.000Z",
+      "end": "2026-10-05T12:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-06T12:00:00.000Z",
+      "end": "2026-10-06T12:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T12:00:00.000Z",
+      "index": 2
+    }
+  ],
+  "recurrence.expand.occurrence-overlapping-window-start-is-kept": [
+    {
+      "start": "2026-10-05T22:00:00.000Z",
+      "end": "2026-10-06T02:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-06T22:00:00.000Z",
+      "end": "2026-10-07T02:00:00.000Z",
+      "index": 1
+    }
+  ],
+  "recurrence.expand.until-stops-series": [
+    {
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-06T07:00:00.000Z",
+      "end": "2026-10-06T07:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-07T07:00:00.000Z",
+      "end": "2026-10-07T07:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-10-08T07:00:00.000Z",
+      "end": "2026-10-08T07:00:00.000Z",
+      "index": 3
+    }
+  ],
+  "recurrence.expand.weekly-byday-interval-2": [
+    {
+      "start": "2026-10-06T16:00:00.000Z",
+      "end": "2026-10-06T17:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-08T16:00:00.000Z",
+      "end": "2026-10-08T17:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-20T16:00:00.000Z",
+      "end": "2026-10-20T17:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-10-22T16:00:00.000Z",
+      "end": "2026-10-22T17:00:00.000Z",
+      "index": 3
+    },
+    {
+      "start": "2026-11-03T17:00:00.000Z",
+      "end": "2026-11-03T18:00:00.000Z",
+      "index": 4
+    },
+    {
+      "start": "2026-11-05T17:00:00.000Z",
+      "end": "2026-11-05T18:00:00.000Z",
+      "index": 5
+    }
+  ],
+  "recurrence.expand.weekly-no-byday-uses-start-weekday": [
+    {
+      "start": "2026-10-07T18:00:00.000Z",
+      "end": "2026-10-07T19:00:00.000Z",
+      "index": 0
+    },
+    {
+      "start": "2026-10-14T18:00:00.000Z",
+      "end": "2026-10-14T19:00:00.000Z",
+      "index": 1
+    },
+    {
+      "start": "2026-10-21T18:00:00.000Z",
+      "end": "2026-10-21T19:00:00.000Z",
+      "index": 2
+    },
+    {
+      "start": "2026-10-28T19:00:00.000Z",
+      "end": "2026-10-28T20:00:00.000Z",
+      "index": 3
+    }
+  ],
+  "recurrence.parse": {
+    "FREQ=DAILY": {
+      "freq": "DAILY",
+      "interval": 1,
+      "count": null,
+      "until": null,
+      "byday": null
+    },
+    "FREQ=DAILY;INTERVAL=2;COUNT=5": {
+      "freq": "DAILY",
+      "interval": 2,
+      "count": 5,
+      "until": null,
+      "byday": null
+    },
+    "FREQ=WEEKLY;BYDAY=MO,WE,FR": {
+      "freq": "WEEKLY",
+      "interval": 1,
+      "count": null,
+      "until": null,
+      "byday": [
+        1,
+        3,
+        5
+      ]
+    },
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH": {
+      "freq": "WEEKLY",
+      "interval": 2,
+      "count": null,
+      "until": null,
+      "byday": [
+        2,
+        4
+      ]
+    },
+    "FREQ=MONTHLY;COUNT=3": {
+      "freq": "MONTHLY",
+      "interval": 1,
+      "count": 3,
+      "until": null,
+      "byday": null
+    },
+    "FREQ=DAILY;UNTIL=20261010T000000Z": {
+      "freq": "DAILY",
+      "interval": 1,
+      "count": null,
+      "until": 1791590400000,
+      "byday": null
+    },
+    "FREQ=WEEKLY;BYDAY=SU,SA,MO,MO": {
+      "freq": "WEEKLY",
+      "interval": 1,
+      "count": null,
+      "until": null,
+      "byday": [
+        1,
+        6,
+        0
+      ]
+    },
+    "FREQ=YEARLY": null,
+    "FREQ=DAILY;INTERVAL=0": null,
+    "FREQ=WEEKLY;BYDAY=XX": null,
+    "FREQ=DAILY;UNTIL=2026-10-10": null,
+    "garbage": null
+  },
+  "recurrence.pattern": {
+    "FREQ=DAILY": true,
+    "FREQ=DAILY;INTERVAL=2;COUNT=5": true,
+    "FREQ=WEEKLY;BYDAY=MO,WE,FR": true,
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH": true,
+    "FREQ=MONTHLY;COUNT=3": true,
+    "FREQ=DAILY;UNTIL=20261010T000000Z": true,
+    "FREQ=WEEKLY;BYDAY=SU,SA,MO,MO": true,
+    "FREQ=YEARLY": false,
+    "FREQ=DAILY;INTERVAL=0": false,
+    "FREQ=WEEKLY;BYDAY=XX": false,
+    "FREQ=DAILY;UNTIL=2026-10-10": false,
+    "garbage": false
+  },
+  "recurrence.zoned": [
+    {
+      "in": [
+        2026,
+        10,
+        25,
+        2,
+        30,
+        0,
+        "Europe/Berlin"
+      ],
+      "iso": "2026-10-25T01:30:00.000Z",
+      "back": {
+        "y": 2026,
+        "mo": 10,
+        "d": 25,
+        "h": 2,
+        "mi": 30,
+        "s": 0
+      }
+    },
+    {
+      "in": [
+        2026,
+        3,
+        29,
+        2,
+        30,
+        0,
+        "Europe/Berlin"
+      ],
+      "iso": "2026-03-29T01:30:00.000Z",
+      "back": {
+        "y": 2026,
+        "mo": 3,
+        "d": 29,
+        "h": 3,
+        "mi": 30,
+        "s": 0
+      }
+    },
+    {
+      "in": [
+        2026,
+        7,
+        1,
+        9,
+        0,
+        0,
+        "Europe/Berlin"
+      ],
+      "iso": "2026-07-01T07:00:00.000Z",
+      "back": {
+        "y": 2026,
+        "mo": 7,
+        "d": 1,
+        "h": 9,
+        "mi": 0,
+        "s": 0
+      }
+    },
+    {
+      "in": [
+        2026,
+        12,
+        31,
+        23,
+        59,
+        59,
+        "America/New_York"
+      ],
+      "iso": "2027-01-01T04:59:59.000Z",
+      "back": {
+        "y": 2026,
+        "mo": 12,
+        "d": 31,
+        "h": 23,
+        "mi": 59,
+        "s": 59
+      }
+    },
+    {
+      "in": [
+        2026,
+        6,
+        15,
+        12,
+        0,
+        0,
+        "Asia/Kolkata"
+      ],
+      "iso": "2026-06-15T06:30:00.000Z",
+      "back": {
+        "y": 2026,
+        "mo": 6,
+        "d": 15,
+        "h": 12,
+        "mi": 0,
+        "s": 0
+      }
+    }
+  ],
+  "reminders.desired.plain": [
+    {
+      "key": "personal|2026-10-05T16:00:00.000Z|10",
+      "user_id": "u1",
+      "calendar_event_id": "personal",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T15:50:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "workout|2026-10-05T16:00:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "workout",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-05T15:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "nudge|2026-10-05T16:00:00.000Z|0",
+      "user_id": "u1",
+      "calendar_event_id": "nudge",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 0,
+      "fire_at": "2026-10-05T16:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|810",
+      "user_id": "u1",
+      "calendar_event_id": "lab",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 810,
+      "fire_at": "2026-10-05T17:00:00.000Z",
+      "rule": "evening_before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "lab",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T05:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|810",
+      "user_id": "u1",
+      "calendar_event_id": "lab-ref",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 810,
+      "fire_at": "2026-10-05T17:00:00.000Z",
+      "rule": "evening_before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "lab-ref",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T05:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|0",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 0,
+      "fire_at": "2026-10-06T08:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T07:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|1440",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 1440,
+      "fire_at": "2026-10-05T08:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "emoji|2026-10-05T16:00:00.000Z|10",
+      "user_id": "u1",
+      "calendar_event_id": "emoji",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T15:50:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "daily|2026-10-05T05:30:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "daily",
+      "occurrence_start": "2026-10-05T05:30:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-05T05:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "daily|2026-10-06T05:30:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "daily",
+      "occurrence_start": "2026-10-06T05:30:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-06T05:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "early|2026-10-06T05:00:00.000Z|10",
+      "user_id": "u1",
+      "calendar_event_id": "early",
+      "occurrence_start": "2026-10-06T05:00:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-06T04:50:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "other-user|2026-10-05T23:30:00.000Z|10",
+      "user_id": "u2",
+      "calendar_event_id": "other-user",
+      "occurrence_start": "2026-10-05T23:30:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T23:20:00.000Z",
+      "rule": "before",
+      "timezone": "America/New_York"
+    }
+  ],
+  "reminders.desired.quiet": [
+    {
+      "key": "personal|2026-10-05T16:00:00.000Z|10",
+      "user_id": "u1",
+      "calendar_event_id": "personal",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T15:50:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "workout|2026-10-05T16:00:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "workout",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-05T15:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "nudge|2026-10-05T16:00:00.000Z|0",
+      "user_id": "u1",
+      "calendar_event_id": "nudge",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 0,
+      "fire_at": "2026-10-05T16:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|810",
+      "user_id": "u1",
+      "calendar_event_id": "lab",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 810,
+      "fire_at": "2026-10-05T17:00:00.000Z",
+      "rule": "evening_before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "lab",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T05:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|810",
+      "user_id": "u1",
+      "calendar_event_id": "lab-ref",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 810,
+      "fire_at": "2026-10-05T17:00:00.000Z",
+      "rule": "evening_before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "lab-ref",
+      "occurrence_start": "2026-10-06T06:30:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T05:30:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|0",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 0,
+      "fire_at": "2026-10-06T08:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|60",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 60,
+      "fire_at": "2026-10-06T07:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|1440",
+      "user_id": "u1",
+      "calendar_event_id": "explicit",
+      "occurrence_start": "2026-10-06T08:00:00.000Z",
+      "offset_minutes": 1440,
+      "fire_at": "2026-10-05T08:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "emoji|2026-10-05T16:00:00.000Z|10",
+      "user_id": "u1",
+      "calendar_event_id": "emoji",
+      "occurrence_start": "2026-10-05T16:00:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T15:50:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "daily|2026-10-05T05:30:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "daily",
+      "occurrence_start": "2026-10-05T05:30:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-05T05:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "daily|2026-10-06T05:30:00.000Z|30",
+      "user_id": "u1",
+      "calendar_event_id": "daily",
+      "occurrence_start": "2026-10-06T05:30:00.000Z",
+      "offset_minutes": 30,
+      "fire_at": "2026-10-06T05:00:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin"
+    },
+    {
+      "key": "early|2026-10-06T05:00:00.000Z|541",
+      "user_id": "u1",
+      "calendar_event_id": "early",
+      "occurrence_start": "2026-10-06T05:00:00.000Z",
+      "offset_minutes": 541,
+      "fire_at": "2026-10-05T19:59:00.000Z",
+      "rule": "before",
+      "timezone": "Europe/Berlin",
+      "quiet_shifted": true
+    },
+    {
+      "key": "other-user|2026-10-05T23:30:00.000Z|10",
+      "user_id": "u2",
+      "calendar_event_id": "other-user",
+      "occurrence_start": "2026-10-05T23:30:00.000Z",
+      "offset_minutes": 10,
+      "fire_at": "2026-10-05T23:20:00.000Z",
+      "rule": "before",
+      "timezone": "America/New_York"
+    }
+  ],
+  "reminders.emoji": {
+    "personal": "📌",
+    "workout": "🏃",
+    "nudge": "🌱",
+    "lab": "🧪",
+    "lab-ref": "🧪",
+    "explicit": "📌",
+    "none": "📌",
+    "emoji": "🎸",
+    "daily": "🏃",
+    "early": "📌",
+    "done": "📌",
+    "cancelled": "📌",
+    "other-user": "📌"
+  },
+  "reminders.enabled": [
+    [
+      "undefined",
+      false
+    ],
+    [
+      "",
+      false
+    ],
+    [
+      "true",
+      true
+    ],
+    [
+      "false",
+      false
+    ],
+    [
+      "FALSE",
+      false
+    ],
+    [
+      "0",
+      false
+    ]
+  ],
+  "reminders.key": [
+    "e1|2026-10-05T16:00:00.000Z|10",
+    "e1|2026-10-05T16:00:00.000Z|0"
+  ],
+  "reminders.quietMath": [
+    {
+      "p": "2026-10-05T19:59:00Z",
+      "inside": false,
+      "movedTo": null
+    },
+    {
+      "p": "2026-10-05T20:00:00Z",
+      "inside": true,
+      "movedTo": "2026-10-05T19:59:00.000Z"
+    },
+    {
+      "p": "2026-10-06T02:00:00Z",
+      "inside": true,
+      "movedTo": "2026-10-05T19:59:00.000Z"
+    },
+    {
+      "p": "2026-10-06T04:59:00Z",
+      "inside": true,
+      "movedTo": "2026-10-05T19:59:00.000Z"
+    },
+    {
+      "p": "2026-10-06T05:00:00Z",
+      "inside": false,
+      "movedTo": null
+    },
+    {
+      "p": "2026-10-25T03:00:00Z",
+      "inside": true,
+      "movedTo": "2026-10-24T19:59:00.000Z"
+    }
+  ],
+  "reminders.quietPrefs": [
+    null,
+    null,
+    {
+      "startMin": 1320,
+      "endMin": 420
+    },
+    {
+      "startMin": 780,
+      "endMin": 930
+    },
+    null,
+    null,
+    null
+  ],
+  "reminders.rules": {
+    "personal": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ],
+    "workout": [
+      {
+        "kind": "before",
+        "minutes": 30
+      }
+    ],
+    "nudge": [
+      {
+        "kind": "before",
+        "minutes": 0
+      }
+    ],
+    "lab": [
+      {
+        "kind": "evening_before",
+        "hour": 19
+      },
+      {
+        "kind": "before",
+        "minutes": 60
+      }
+    ],
+    "lab-ref": [
+      {
+        "kind": "evening_before",
+        "hour": 19
+      },
+      {
+        "kind": "before",
+        "minutes": 60
+      }
+    ],
+    "explicit": [
+      {
+        "kind": "before",
+        "minutes": 0
+      },
+      {
+        "kind": "before",
+        "minutes": 60
+      },
+      {
+        "kind": "before",
+        "minutes": 1440
+      }
+    ],
+    "none": [],
+    "emoji": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ],
+    "daily": [
+      {
+        "kind": "before",
+        "minutes": 30
+      }
+    ],
+    "early": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ],
+    "done": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ],
+    "cancelled": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ],
+    "other-user": [
+      {
+        "kind": "before",
+        "minutes": 10
+      }
+    ]
+  },
+  "reminders.text": [
+    {
+      "key": "personal|2026-10-05T16:00:00.000Z|10",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"📌 Walk\",\"minutes\":10}"
+    },
+    {
+      "key": "workout|2026-10-05T16:00:00.000Z|30",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🏃 Run\",\"minutes\":30}"
+    },
+    {
+      "key": "nudge|2026-10-05T16:00:00.000Z|0",
+      "text": "notif.calendar_reminder.now {\"title\":\"🌱 Drink water\"}"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|810",
+      "text": "notif.calendar_reminder.tomorrow {\"title\":\"🧪 Blood test\",\"time\":\"08:30\"}"
+    },
+    {
+      "key": "lab|2026-10-06T06:30:00.000Z|60",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🧪 Blood test\",\"minutes\":60}"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|810",
+      "text": "notif.calendar_reminder.tomorrow {\"title\":\"🧪 Draw\",\"time\":\"08:30\"}"
+    },
+    {
+      "key": "lab-ref|2026-10-06T06:30:00.000Z|60",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🧪 Draw\",\"minutes\":60}"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|0",
+      "text": "notif.calendar_reminder.now {\"title\":\"📌 Walk\"}"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|60",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"📌 Walk\",\"minutes\":60}"
+    },
+    {
+      "key": "explicit|2026-10-06T08:00:00.000Z|1440",
+      "text": "notif.calendar_reminder.tomorrow {\"title\":\"📌 Walk\",\"time\":\"10:00\"}"
+    },
+    {
+      "key": "emoji|2026-10-05T16:00:00.000Z|10",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🎸 Walk\",\"minutes\":10}"
+    },
+    {
+      "key": "daily|2026-10-05T05:30:00.000Z|30",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🏃 Walk\",\"minutes\":30}"
+    },
+    {
+      "key": "daily|2026-10-06T05:30:00.000Z|30",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"🏃 Walk\",\"minutes\":30}"
+    },
+    {
+      "key": "early|2026-10-06T05:00:00.000Z|541",
+      "text": "notif.calendar_reminder.tomorrow {\"title\":\"📌 Early flight\",\"time\":\"07:00\"}"
+    },
+    {
+      "key": "other-user|2026-10-05T23:30:00.000Z|10",
+      "text": "notif.calendar_reminder.in_minutes {\"title\":\"📌 Walk\",\"minutes\":10}"
+    }
+  ],
+  "roles.visible": {
+    "community": [
+      "community",
+      "personal"
+    ],
+    "patient": [
+      "community",
+      "personal"
+    ],
+    "professional": [
+      "professional",
+      "personal"
+    ],
+    "staff": [
+      "admin",
+      "personal"
+    ],
+    "admin": [
+      "admin",
+      "personal"
+    ],
+    "developer": [
+      "developer",
+      "personal"
+    ],
+    "infra": [
+      "developer",
+      "personal"
+    ],
+    "DEV": [
+      "developer",
+      "personal"
+    ],
+    "backoffice": [
+      "admin",
+      "personal"
+    ],
+    "super_admin": null,
+    "unknown": [
+      "community",
+      "personal"
+    ],
+    "null": [
+      "community",
+      "personal"
+    ]
+  },
+  "roles.writable": {
+    "community": "community",
+    "patient": "community",
+    "professional": "professional",
+    "staff": "admin",
+    "admin": "admin",
+    "developer": "developer",
+    "infra": "developer",
+    "DEV": "developer",
+    "backoffice": "admin",
+    "super_admin": "admin",
+    "unknown": "community",
+    "null": "community",
+    "undefined": "community"
+  },
+  "summary": [
+    {
+      "id": "community-walk",
+      "title": "Walk",
+      "start_time": "2026-10-05T07:30:00.000Z",
+      "end_time": "2026-10-05T08:00:00.000Z",
+      "event_type": "personal",
+      "status": "confirmed",
+      "role_context": "community",
+      "completion_status": null,
+      "priority_score": 50,
+      "wellness_tags": [],
+      "pillar": null,
+      "contribution_vector": null
+    },
+    {
+      "id": "personal-doctor",
+      "title": "Doctor",
+      "start_time": "2026-10-06T09:00:00.000Z",
+      "end_time": "2026-10-06T10:00:00.000Z",
+      "event_type": "personal",
+      "status": "confirmed",
+      "role_context": "personal",
+      "completion_status": null,
+      "priority_score": 50,
+      "wellness_tags": [],
+      "pillar": null,
+      "contribution_vector": null
+    },
+    {
+      "id": "dev-standup",
+      "title": "Standup",
+      "start_time": "2026-10-05T07:00:00.000Z",
+      "end_time": "2026-10-05T07:15:00.000Z",
+      "event_type": "personal",
+      "status": "confirmed",
+      "role_context": "developer",
+      "completion_status": null,
+      "priority_score": 50,
+      "wellness_tags": [],
+      "pillar": null,
+      "contribution_vector": null
+    }
+  ],
+  "today.pick": [
+    {
+      "id": "e",
+      "time": "19:00",
+      "tz": "America/New_York"
+    },
+    {
+      "id": "c",
+      "time": "07:00",
+      "tz": "Europe/Berlin"
+    }
+  ],
+  "today.window": {
+    "from": "2026-10-05T08:30:00.000Z",
+    "to": "2026-10-07T12:30:00.000Z"
+  },
+  "window.admin.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": true,
+      "idx": 2,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": true,
+      "idx": 3,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": true,
+      "idx": 4,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Review",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": true,
+      "idx": 5,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": true,
+      "idx": 6,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": true,
+      "idx": 7,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": true,
+      "idx": 8,
+      "title": null,
+      "location": null
+    }
+  ],
+  "window.community.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": false,
+      "idx": 2,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Walk",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": false,
+      "idx": 3,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": false,
+      "idx": 4,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": false,
+      "idx": 5,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": false,
+      "idx": 6,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": false,
+      "idx": 7,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": false,
+      "idx": 8,
+      "title": "Stretch",
+      "location": null
+    }
+  ],
+  "window.community.nobusy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": false,
+      "idx": 2,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Walk",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": false,
+      "idx": 3,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": false,
+      "idx": 4,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": false,
+      "idx": 5,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": false,
+      "idx": 6,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": false,
+      "idx": 7,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": false,
+      "idx": 8,
+      "title": "Stretch",
+      "location": null
+    }
+  ],
+  "window.developer.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": true,
+      "idx": 2,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Standup",
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": true,
+      "idx": 3,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": true,
+      "idx": 4,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": true,
+      "idx": 5,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": true,
+      "idx": 6,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": true,
+      "idx": 7,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": true,
+      "idx": 8,
+      "title": null,
+      "location": null
+    }
+  ],
+  "window.null.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": false,
+      "idx": 2,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Walk",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": false,
+      "idx": 3,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": false,
+      "idx": 4,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": false,
+      "idx": 5,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": false,
+      "idx": 6,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": false,
+      "idx": 7,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": false,
+      "idx": 8,
+      "title": "Stretch",
+      "location": null
+    }
+  ],
+  "window.professional.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": true,
+      "idx": 2,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": true,
+      "idx": 3,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": true,
+      "idx": 4,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": true,
+      "idx": null,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": true,
+      "idx": 5,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": false,
+      "idx": null,
+      "title": "Client",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": true,
+      "idx": 6,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": true,
+      "idx": 7,
+      "title": null,
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": true,
+      "idx": 8,
+      "title": null,
+      "location": null
+    }
+  ],
+  "window.super_admin.busy": [
+    {
+      "id": "habit::2026-10-05T05:30:00.000Z",
+      "start": "2026-10-05T05:30:00.000Z",
+      "end": "2026-10-05T05:45:00.000Z",
+      "busy": false,
+      "idx": 2,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "dev-standup",
+      "start": "2026-10-05T07:00:00.000Z",
+      "end": "2026-10-05T07:15:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Standup",
+      "location": null
+    },
+    {
+      "id": "community-walk",
+      "start": "2026-10-05T07:30:00.000Z",
+      "end": "2026-10-05T08:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Walk",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-06T05:30:00.000Z",
+      "start": "2026-10-06T05:30:00.000Z",
+      "end": "2026-10-06T05:45:00.000Z",
+      "busy": false,
+      "idx": 3,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "personal-doctor",
+      "start": "2026-10-06T09:00:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Doctor",
+      "location": "Praxis"
+    },
+    {
+      "id": "habit::2026-10-07T05:30:00.000Z",
+      "start": "2026-10-07T05:30:00.000Z",
+      "end": "2026-10-07T05:45:00.000Z",
+      "busy": false,
+      "idx": 4,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "admin-review",
+      "start": "2026-10-07T12:00:00.000Z",
+      "end": "2026-10-07T13:00:00.000Z",
+      "busy": false,
+      "idx": null,
+      "title": "Review",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-08T05:30:00.000Z",
+      "start": "2026-10-08T05:30:00.000Z",
+      "end": "2026-10-08T05:45:00.000Z",
+      "busy": false,
+      "idx": 5,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "pro-client",
+      "start": "2026-10-08T15:00:00.000Z",
+      "end": null,
+      "busy": false,
+      "idx": null,
+      "title": "Client",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-09T05:30:00.000Z",
+      "start": "2026-10-09T05:30:00.000Z",
+      "end": "2026-10-09T05:45:00.000Z",
+      "busy": false,
+      "idx": 6,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-10T05:30:00.000Z",
+      "start": "2026-10-10T05:30:00.000Z",
+      "end": "2026-10-10T05:45:00.000Z",
+      "busy": false,
+      "idx": 7,
+      "title": "Stretch",
+      "location": null
+    },
+    {
+      "id": "habit::2026-10-11T05:30:00.000Z",
+      "start": "2026-10-11T05:30:00.000Z",
+      "end": "2026-10-11T05:45:00.000Z",
+      "busy": false,
+      "idx": 8,
+      "title": "Stretch",
+      "location": null
+    }
+  ],
+  "work.items": [
+    {
+      "id": "work:deploy_prod:d1",
+      "start": "2026-10-05T10:00:00Z",
+      "end": "2026-10-05T10:10:00.000Z",
+      "work": {
+        "kind": "deploy_prod",
+        "source_id": "d1",
+        "params": {
+          "commit": "abcdef1",
+          "service": "gateway"
+        }
+      },
+      "title": "abcdef1",
+      "type": "deployment",
+      "role": "developer",
+      "priority": "high",
+      "source": "ci_cd",
+      "emoji": "🚀"
+    },
+    {
+      "id": "work:deploy_staging:d2",
+      "start": "2026-10-05T11:00:00Z",
+      "end": "2026-10-05T11:10:00.000Z",
+      "work": {
+        "kind": "deploy_staging",
+        "source_id": "d2",
+        "params": {
+          "commit": "",
+          "service": "community-app"
+        }
+      },
+      "title": "community-app",
+      "type": "deployment",
+      "role": "developer",
+      "priority": "medium",
+      "source": "ci_cd",
+      "emoji": "🧪"
+    },
+    {
+      "id": "work:autopilot_review:12345678-aaaa",
+      "start": "2026-10-05T11:30:00Z",
+      "end": "2026-10-05T12:00:00.000Z",
+      "work": {
+        "kind": "autopilot_review",
+        "source_id": "12345678-aaaa",
+        "params": {
+          "execution": "12345678",
+          "branch": "b1"
+        }
+      },
+      "title": "Fix it",
+      "type": "dev_task",
+      "role": "developer",
+      "priority": "medium",
+      "source": "vtid",
+      "emoji": "🔍"
+    },
+    {
+      "id": "work:autopilot_review:87654321-bbbb",
+      "start": "2026-10-05T12:00:00Z",
+      "end": "2026-10-05T12:30:00.000Z",
+      "work": {
+        "kind": "autopilot_review",
+        "source_id": "87654321-bbbb",
+        "params": {
+          "execution": "87654321",
+          "branch": ""
+        }
+      },
+      "title": "87654321",
+      "type": "dev_task",
+      "role": "developer",
+      "priority": "medium",
+      "source": "vtid",
+      "emoji": "🔍"
+    },
+    {
+      "id": "work:ticket_due:t1",
+      "start": "2026-10-06T08:30:00.000Z",
+      "end": "2026-10-06T09:00:00.000Z",
+      "work": {
+        "kind": "ticket_due",
+        "source_id": "t1",
+        "params": {
+          "ticket": "FB-1",
+          "priority": "high",
+          "ticket_kind": "bug"
+        }
+      },
+      "title": "FB-1",
+      "type": "admin_task",
+      "role": "admin",
+      "priority": "high",
+      "source": "vtid",
+      "emoji": "⏰"
+    },
+    {
+      "id": "work:ticket_due:t4-long-id",
+      "start": "2026-10-06T09:30:00.000Z",
+      "end": "2026-10-06T10:00:00.000Z",
+      "work": {
+        "kind": "ticket_due",
+        "source_id": "t4-long-id",
+        "params": {
+          "ticket": "",
+          "priority": "",
+          "ticket_kind": ""
+        }
+      },
+      "title": "t4-long-",
+      "type": "admin_task",
+      "role": "admin",
+      "priority": "high",
+      "source": "vtid",
+      "emoji": "⏰"
+    },
+    {
+      "id": "work:erp_approval:x1-long-id",
+      "start": "2026-10-05T13:00:00Z",
+      "end": "2026-10-05T13:30:00.000Z",
+      "work": {
+        "kind": "erp_approval",
+        "source_id": "x1-long-id",
+        "params": {
+          "capability": "finance.payment"
+        }
+      },
+      "title": "finance.payment",
+      "type": "admin_task",
+      "role": "admin",
+      "priority": "medium",
+      "source": "vtid",
+      "emoji": "✅"
+    },
+    {
+      "id": "work:erp_approval:x2-long-id",
+      "start": "2026-10-05T14:00:00Z",
+      "end": "2026-10-05T14:30:00.000Z",
+      "work": {
+        "kind": "erp_approval",
+        "source_id": "x2-long-id",
+        "params": {
+          "capability": ""
+        }
+      },
+      "title": "x2-long-",
+      "type": "admin_task",
+      "role": "admin",
+      "priority": "medium",
+      "source": "vtid",
+      "emoji": "✅"
+    }
+  ],
+  "work.lenses": {
+    "developer/staff": [
+      "developer"
+    ],
+    "developer/member": [],
+    "infra/staff": [
+      "developer"
+    ],
+    "infra/member": [],
+    "dev/staff": [
+      "developer"
+    ],
+    "dev/member": [],
+    "DEV/staff": [
+      "developer"
+    ],
+    "DEV/member": [],
+    "admin/staff": [
+      "admin"
+    ],
+    "admin/member": [],
+    "staff/staff": [
+      "admin"
+    ],
+    "staff/member": [],
+    "backoffice/staff": [
+      "admin"
+    ],
+    "backoffice/member": [],
+    "super_admin/staff": [
+      "developer",
+      "admin"
+    ],
+    "super_admin/member": [],
+    "community/staff": [],
+    "community/member": [],
+    "null/staff": [],
+    "null/member": []
+  },
+  "work.merge": [
+    {
+      "start_time": "2026-10-05T09:00:00Z",
+      "id": "w"
+    },
+    {
+      "start_time": "2026-10-05T12:00:00Z",
+      "id": "a"
+    }
+  ],
+  "work.window": [
+    "work:deploy_staging:d2",
+    "work:autopilot_review:12345678-aaaa",
+    "work:autopilot_review:87654321-bbbb",
+    "work:erp_approval:x1-long-id"
+  ]
+}

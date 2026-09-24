@@ -38,6 +38,16 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => emitOasisEventMock(...args),
 }));
 
+// VTID-04463 — the invite route sends an email. The locale lookup and the
+// sender are mocked here; the email builder and the Resend client have their
+// own suite (vtid-04463-partner-invite-email.test.ts).
+jest.mock('../src/i18n/server-locale', () => ({ getUserLocale: jest.fn().mockResolvedValue('de') }));
+const sendPartnerInviteEmailMock = jest.fn();
+jest.mock('../src/services/email/partner-invite-email', () => {
+  const actual = jest.requireActual('../src/services/email/partner-invite-email');
+  return { ...actual, sendPartnerInviteEmail: (...args: any[]) => sendPartnerInviteEmailMock(...args) };
+});
+
 let tableHandlers: Record<string, (ctx: { op: string; args: any[] }) => any>;
 // Records every .in(column, values) filter so tests can assert that a write
 // was conditional (VTID-04337 activate guard).
@@ -83,6 +93,7 @@ function makeApp() {
 beforeEach(() => {
   jest.clearAllMocks();
   emitOasisEventMock.mockResolvedValue({ ok: true });
+  sendPartnerInviteEmailMock.mockResolvedValue({ sent: false, status: 'disabled' });
   tableHandlers = {};
   inFilters = [];
 });
@@ -159,6 +170,71 @@ describe('POST /register', () => {
 
     expect(r.status).toBe(201);
     expect(r.body.organization).toMatchObject({ id: 'org-2', status: 'pending_review' });
+  });
+
+  // VTID-04471 — partner account model fields.
+  it('201 with partner_type — derives commerce_vertical and stores the company facts', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return {
+        data: { id: 'org-3', org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', commerce_vertical: 'health', status: 'pending_review', lifecycle_state: 'draft' },
+        error: null,
+      };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', legal_name: 'Praxis Nord GmbH', country: 'de', website: 'https://praxis.example' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).toMatchObject({
+      partner_type: 'practitioner_clinic',
+      commerce_vertical: 'health',
+      legal_name: 'Praxis Nord GmbH',
+      country: 'DE',
+      website: 'https://praxis.example/',
+      status: 'pending_review',
+    });
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(r.body.organization).toMatchObject({ partner_type: 'practitioner_clinic', lifecycle_state: 'draft' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'partner_org.registered', payload: expect.objectContaining({ partner_type: 'practitioner_clinic' }) }),
+    );
+  });
+
+  it('400 on an unknown partner_type, a conflicting commerce_vertical or an invalid company fact', async () => {
+    tableHandlers.partner_organizations = () => { throw new Error('must not insert'); };
+    const base = { org_key: 'x', display_name: 'X', org_type: 'shop' };
+    const send = (body: object) =>
+      request(makeApp()).post('/api/v1/partner-orgs/register').set('Authorization', 'Bearer owner-1').send({ ...base, ...body });
+
+    expect((await send({ partner_type: 'bank' })).status).toBe(400);
+    expect((await send({ partner_type: 'lab', commerce_vertical: 'general' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', country: 'Germany' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', website: 'ftp://shop.example' })).status).toBe(400);
+  });
+
+  it('never lets a client set lifecycle_state or trust_level at registration', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return { data: { id: 'org-4', org_key: 'y', display_name: 'Y', org_type: 'shop', commerce_vertical: 'general', status: 'pending_review' }, error: null };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'y', display_name: 'Y', org_type: 'shop', partner_type: 'supplier_shop', lifecycle_state: 'live', trust_level: 2, status: 'active' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(inserted.status).toBe('pending_review');
   });
 });
 
@@ -249,6 +325,80 @@ describe('POST /:orgId/members/invite', () => {
     expect(r.status).toBe(201);
     expect(r.body.invite.role).toBe('professional');
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_invited' }));
+  });
+
+  // VTID-04463 — invite email
+  function inviteTables() {
+    tableHandlers.partner_organization_members = () => ({ data: { role: 'org_admin' }, error: null });
+    tableHandlers.partner_organizations = () => ({ data: { display_name: 'DoctorBox' }, error: null });
+    tableHandlers.partner_organization_invites = () => ({
+      data: { id: 'invite-1', email: 'doc@example.com', role: 'professional', expires_at: '2026-12-01T00:00:00Z', token: 'tok123' },
+      error: null,
+    });
+  }
+
+  it('sends the invite email to the invited address with the org name, role and accept link', async () => {
+    inviteTables();
+    sendPartnerInviteEmailMock.mockResolvedValue({ sent: true, status: 'sent', provider_id: 'em_1' });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'Doc@Example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(sendPartnerInviteEmailMock).toHaveBeenCalledTimes(1);
+    const input = sendPartnerInviteEmailMock.mock.calls[0][0];
+    expect(input).toEqual(expect.objectContaining({
+      to: 'doc@example.com',
+      orgName: 'DoctorBox',
+      role: 'professional',
+      validDays: 7,
+      locale: 'de',
+    }));
+    // The token in the link is the one stored on the invite row.
+    const insertedToken = input.acceptUrl.split('/commerce/invites/')[1].split('/accept')[0];
+    expect(insertedToken).toMatch(/^[0-9a-f]{48}$/);
+    expect(r.body.accept_url).toBe(input.acceptUrl);
+    expect(r.body.email).toEqual({ sent: true, status: 'sent' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.member_invited',
+      payload: expect.objectContaining({ email_status: 'sent' }),
+    }));
+  });
+
+  it('still creates the invite and returns the accept link when email is disabled', async () => {
+    inviteTables();
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(r.body.accept_url).toMatch(/\/commerce\/invites\/[0-9a-f]{48}\/accept$/);
+    expect(r.body.email).toEqual({ sent: false, status: 'disabled' });
+  });
+
+  it('a refused or thrown email never fails the invite', async () => {
+    inviteTables();
+    sendPartnerInviteEmailMock.mockRejectedValue(new Error('network down'));
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.email).toEqual({ sent: false, status: 'failed' });
+    // The provider error is logged, never returned to the browser.
+    expect(JSON.stringify(r.body)).not.toContain('network down');
+  });
+
+  it('no email is sent when the invite insert fails', async () => {
+    tableHandlers.partner_organization_members = () => ({ data: { role: 'org_admin' }, error: null });
+    tableHandlers.partner_organization_invites = () => ({ data: null, error: { message: 'insert failed' } });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(500);
+    expect(sendPartnerInviteEmailMock).not.toHaveBeenCalled();
   });
 });
 

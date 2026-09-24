@@ -1,0 +1,9 @@
+      ✕ VTID-04464: 403 when the rec has no owner (user_id null) — no ownership bypass (59 ms)
+    ✕ 5. VTID-04464: ownerless rec (user_id=null) is NOT activatable by another user (1 ms)
+    ✕ 5b. VTID-04464: anonymous caller cannot activate anything (1 ms)
+    ✕ 5c. VTID-04464: a Dev Autopilot finding is not activated by a member voice "yes" (1 ms)
+    ✕ 5d. VTID-04464: a rejected rec is not re-opened by voice (1 ms)
+    ✕ VTID-04464: completing by voice completes the linked Autopilot recommendation (2 ms)
+    ✕ VTID-04464: a skipped entry does not complete its source (1 ms)
+    ✕ VTID-04464: a failing source completion never fails the call
+Tests:       8 failed, 106 passed, 114 total

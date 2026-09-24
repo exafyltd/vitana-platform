@@ -240,7 +240,7 @@ describe('AC-5 through the dispatcher', () => {
     jest.useFakeTimers();
     try {
       const pending = runAskSupportSpecialist(session, { question: 'Where is my report?' });
-      await jest.advanceTimersByTimeAsync(1_600);
+      await jest.advanceTimersByTimeAsync(4_600); // VTID-04485: specialist voice ack window
       const r = await pending;
       const body = JSON.parse(r.result);
       expect(body.status).toBe('working');

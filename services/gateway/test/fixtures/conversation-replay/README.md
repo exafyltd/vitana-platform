@@ -33,5 +33,6 @@ reviewed in the PR.
 | `opening.providers` / `winner` | The continuation providers' results and the ranker's winner. |
 | `outcomes` | Per-provider accepted / declined / ignored history (personal weights, WS-4.3). |
 | `personal_weights_live` | Mirrors `BRAIN_PERSONAL_WEIGHTS=true` (staging) for the live leads. |
+| `scored_opening_live` | Mirrors `BRAIN_SCORED_OPENING=true` (staging, VTID-04454): the scored winner opens; `expect.ranking_mode` checks `scored` / `fixed_pinned` / `fixed_fallback`. |
 | `turns[]` | `route` / `screen_title` (a `context_update`), `user` (synthetic text) and optional `find_tool` query. |
 | `expect` | `opener_kind`, `register`, `silent_opening`, `candidate_provider`, `candidate_spoken`, `shadow_winner`; per turn `route_groups`, `declared_tools_include`, `reachable_tools_include`, `find_tool_top`, `top_lead_provider`, `advisor_eligible`. |

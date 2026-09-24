@@ -41,6 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
+import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
@@ -3207,8 +3208,15 @@ async function executeLiveApiTool(
   // Posten klappt gerade nicht") even though the row was already inserted in
   // the background. Give them the same extended budget as the Autopilot tools.
   const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
+  // VTID-04485: the read-only orchestrator specialists wait up to their own
+  // voice ack window (specialistAckWindowMs, 4.5 s default) so the answer lands
+  // in the same turn. The flat 3 s budget cut them off first — measured live on
+  // staging: a 3.2 s support lookup returned "timed out after 3000ms" and the
+  // member heard "I can't check that right now". Budget = ack window + 1 s, never below 3 s.
+  const SPECIALIST_VOICE_TOOLS = new Set(['ask_support_specialist', 'ask_commerce_specialist']);
   const TOOL_TIMEOUT_MS =
     toolName === 'consult_external_ai' ? 16_000 :
+    SPECIALIST_VOICE_TOOLS.has(toolName) ? Math.max(3_000, (specialistAckWindowMs('voice') ?? SPECIALIST_VOICE_ACK_DEFAULT_MS) + 1_000) :
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
     INTENT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;

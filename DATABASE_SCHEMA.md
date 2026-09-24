@@ -565,13 +565,16 @@ previously unregistered agents inserted.
 ### connected_app_settings / apple_account_credentials — Connected Apps hub — APPLIED 2026-09-23 (VTID-04402..04405)
 **Purpose:** one on/off switch per Mail / Calendar / Contacts app on the
 Connected Apps screen (Gmail, Google Calendar, Google Contacts, Outlook Mail,
-Outlook Calendar, Apple Mail, Apple Calendar, iPhone Contacts, Android Contacts).
-Migration: `supabase/migrations/20260923200000_vtid_04402_connected_apps.sql`.
+Outlook Calendar, Outlook Contacts, Apple Mail, Apple Calendar, iPhone Contacts,
+Android Contacts). Migrations:
+`supabase/migrations/20260923200000_vtid_04402_connected_apps.sql`, and
+`20260924100000_vtid_04449_outlook_contacts_app.sql`, which adds `outlook-contacts`
+to the app id CHECK (imported rows use `contacts.source = 'microsoft'`).
 
 ```sql
 CREATE TABLE connected_app_settings (
   user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  app_id       TEXT NOT NULL,          -- one of the nine app ids (CHECK)
+  app_id       TEXT NOT NULL,          -- one of the ten app ids (CHECK)
   enabled      BOOLEAN NOT NULL DEFAULT false,
   last_sync_at TIMESTAMPTZ,
   last_result  JSONB,                  -- e.g. {"imported":120} or {"busy":14}
@@ -605,6 +608,40 @@ CREATE TABLE apple_account_credentials (
 - `calendar_external_busy.source` CHECK allows `'google','microsoft','apple'` — Outlook and iCloud busy times show as grey blocks too. Times only, never titles.
 
 **Rules:** tokens stay in `social_connections` (Google, Microsoft) or here encrypted (Apple). Turning an app off deletes what it left in Vitanaland (busy rows; imported contacts only when the member ticks it); turning the provider's last app off releases the grant (Google refresh token revoked, Microsoft tokens dropped, Apple credentials deleted).
+
+### calendar_push_targets / calendar_push_links — Outlook + iCloud calendar push — APPLIED 2026-09-24 (VTID-04436)
+**Purpose:** the Outlook Calendar and Apple Calendar (iCloud) apps write the
+member's own community / personal entries into one calendar named
+"Vitanaland" in the member's account, the way VTID-04372 does for Google.
+Migration: `supabase/migrations/20260924090000_vtid_04436_calendar_push.sql`.
+
+```sql
+CREATE TABLE calendar_push_targets (
+  user_id            UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider           TEXT NOT NULL CHECK (provider IN ('microsoft','apple')),
+  remote_calendar_id TEXT,             -- Graph calendar id / CalDAV collection URL; NULL = recreate
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider)
+);
+
+CREATE TABLE calendar_push_links (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL CHECK (provider IN ('microsoft','apple')),
+  calendar_event_id UUID REFERENCES calendar_events(id) ON DELETE SET NULL,
+  remote_id         TEXT NOT NULL,     -- Graph event id / .ics resource URL
+  pushed_hash       TEXT NOT NULL,     -- SHA-256 of what was sent; unchanged → no write
+  pushed_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, calendar_event_id)
+);
+-- Both: RLS enabled, zero policies, REVOKE ALL from PUBLIC/anon/authenticated → service role only.
+```
+
+**Rules:** only the Vitanaland calendar is ever written. Turning the app off
+deletes these rows; the Vitanaland calendar stays in the member's account.
+The busy pull skips that calendar, so pushed entries never come back as grey
+blocks. Kill switch: `CONNECTED_APPS_CALENDAR_PUSH=false`.
 
 ---
 
@@ -1080,12 +1117,16 @@ CREATE TABLE my_new_table (
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
 | 2026-09-24 | VTID-04494, **applied live**: `write_fact()` takes a per-key `pg_advisory_xact_lock` (tenant, user, entity, fact_key), compares against the newest current row and supersedes EVERY other current row (was `FOR UPDATE SKIP LOCKED` + one-row supersede, which let concurrent writers create duplicate current facts that never cleared). One-time repair: 80 duplicate current rows in 70 key groups marked superseded by the newest row; nothing deleted. Invariant: one `superseded_by IS NULL` row per (tenant_id, user_id, entity, fact_key). | Claude Code | VTID-04494 |
+| 2026-09-24 | VTID-04489, **applied live** (read-only, additive): functions `get_index_boost(p_user_id uuid) RETURNS jsonb` (SECURITY DEFINER, `authenticated` only, NULL without a JWT) and helper `_index_boost_activity_key(text)` (IMMUTABLE; normalises free-text workout `activity_type` — e.g. `laufen`, `Fahrrad gefahren`, `Padel-Tennis` — to running / cycling / strength / racket / yoga_pilates / swimming / walking / workout). Returns the member's top 3 activity drivers over the last 7 days (when at least 2 things were logged in them) or else 30: workouts by type, meals, water, sleep, meditation (`health_features_daily`) and guided journey sessions (`journey_session_index_awards`), with counts; drivers whose Index pillar rose rank first, then by count. `kind` = `boost` when the Index rose over the window, else `active`. Visible to every signed-in member with numbers (owner decision 2026-09-24); hidden when `profiles.account_visibility.indexBoost` = `private` (or `connections` for non-connections). New visibility key `indexBoost`, default `public`. Migration `20260924170000_vtid_04489_index_boost.sql`; ranking corrected and re-applied the same day before any consumer shipped. | Claude Code | VTID-04489 |
+| 2026-09-24 | VTID-04483, **applied live** (read-only, additive): function `get_profile_health_summary(p_user_id uuid) RETURNS jsonb`, SECURITY DEFINER, `authenticated` only (anon and PUBLIC revoked; no JWT returns NULL). Returns the latest Vitana Index score, 7-day change and community standing (`top_percent`, `community_average`, `cohort_size`: latest score per member in the subject's tenant over the last 30 days, excluding `service_bot_accounts` and `notification_test_actors`, and only when the cohort has at least 20 members, otherwise `available:false` with the current size). Pillars with 7-day change and achievements (`personal_best` after 7 scored days, `rising_week` at +20, `logging_streak` at 3+ days) only for the owner or when the subject shares via new `profiles.account_visibility` key `vitanaHealth` (default `private`; `connections` resolved by `get_viewer_relationship`). Owner-only activity from `health_features_daily` (7-day sleep, water, workouts, steps, meditation, logging streak), read here because that table's SELECT policy gates on `current_tenant_id()`, which is NULL for browser JWTs. Migration `20260924150000_vtid_04483_profile_health_summary.sql`. Verified live in a rolled-back transaction: owner gets pillars + activity, a visitor of a non-sharing member gets score + standing only. Consumed by `exafyltd/vitana-v1` behind `VITE_HEALTH_REAL_DATA` (default off). | Claude Code | VTID-04483 |
 | 2026-09-24 | VTID-04460, **applied live** (additive, expand step): `user_intents.embedding_v2 vector(1024)` and `vtid_ledger.embedding_v2 vector(1024)` (Titan V2), partial index `user_intents_embedding_v2_pending_idx` (created_at WHERE embedding_v2 IS NULL); functions `compute_intent_matches_v2`, `search_intent_catalog_v2` (authenticated + service_role) and `find_similar_vtid_tasks_v2` (service_role) — copies of the live functions reading `embedding_v2`, catalog query cast `vector(1024)` (the old one cast to `vector(768)` and silently dropped every 1536-dim query). Old `embedding` columns and functions stay for the previous gateway; contract (drop them, switch `compute_intent_matches_daily` / `intent_matches_recompute_daily` to `_v2`) after prod runs the new code. | Claude Code | VTID-04460 |
 | 2026-09-23 | VTID-04446, **committed, NOT applied** (owner applies): migration `20260923210000_vtid_04446_run_leases.sql` — partial index `idx_agent_runs_running_lease` + `agent_runs_unified` re-created excluding lease mirrors (`metadata.mirror_of`). Additive; required before `ORCHESTRATOR_RUN_LEASE_ENABLED=true`. | Claude | VTID-04446 |
 | 2026-09-23 | VTID-04411/04412, **applied live**: `memory_categories` `customer` (→ business_projects) and `support_ticket` (→ uncategorized); indexes `idx_memory_items_customer_key` (tenant, content_json->>customer_key, occurred_at desc) WHERE category_key='customer', unique `uq_memory_items_customer_command` (content_json->>command_id) and unique `uq_memory_items_support_ticket` (content_json->>ticket_id, coalesce(active_role,'')). | Claude Code | VTID-04411 |
 | 2026-09-23 | VTID-04431, **applied live**: function `support_resolution_search(p_query_embedding vector, p_tenant_id uuid, p_top_k int default 3, p_exclude_ticket_id text, p_min_similarity float8 default 0.35)` — read-only, `service_role` only; searches `memory_items` `support_ticket` rows with `active_role='support'` in ONE tenant and returns `(ticket_id, similarity, occurred_at)` only, never episode text. Used by the Sage/Devon/Mira drafters. | Claude Code | VTID-04431 |
 | 2026-09-23 | VTID-04441, **applied live**: table `memory_fact_forgotten (id, tenant_id, user_id, fact_key, value_hash, forgotten_at)`, unique on (tenant_id, user_id, fact_key, value_hash), RLS on, `service_role` only. One row per value a user forgot in the Memory Garden; `value_hash` is sha256 of the normalised value, the value is not kept. `rememberFact()` refuses an inferred write of a forgotten value; an explicit user statement clears the marker. | Claude Code | VTID-04441 |
 | 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
+| 2026-09-24 | Onboarding engine storage (VTID-04478, spec §6.1/§6.2): `partner_onboarding_steps` (per-org status of the steps a dedicated endpoint decides) and `partner_terms_acceptances` (audit of a terms acceptance: version, user, time, IP, user agent). RLS on, member SELECT via `is_partner_org_member()`, writes revoked from anon/authenticated. Migration `20260924150000_vtid_04478_partner_onboarding_engine.sql`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before merge (Migration Drift Check). Post-checked: both tables with RLS and the member SELECT policy. Browser roles keep only SELECT/REFERENCES/TRIGGER; INSERT/UPDATE/DELETE/TRUNCATE are revoked. TRUNCATE was added to the revoke during the apply, because Supabase's default grants include it and RLS does not cover it. | Claude | VTID-04478 |
+| 2026-09-24 | Partner account model (VTID-04471, spec §5.1/§5.2): `partner_organizations` gains `partner_type`, `lifecycle_state`, `legal_name`, `country`, `vat_id`, `website`, `trust_level`, the helpers `partner_org_status_for_lifecycle()` / `partner_org_vertical_for_type()` and `trg_partner_organizations_sync`; `merchants.partner_organization_id` and `partner_tenant.partner_organization_id` FKs with an idempotent backfill. Migrations `20260924130000_vtid_04471_partner_account_model.sql` + Prisma `20260924_vcaop_partner_org_link_0007`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before the gateway change merged (`/register` and `/mine` select the new columns). Post-checked read-only: all 9 columns, 4 CHECKs, both FKs, the 3 functions and the trigger present, and the mappings correct. The backfill changed no rows (0 orgs, 0 owned merchants, 0 `partner_tenant` rows before and after). | Claude | VTID-04471 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
 | 2026-09-23 | Memory Phase 2, **applied to the live project 2026-09-23**: new table `memory_transcript_turns` (raw conversation turns, RLS own-rows SELECT, service-role writes) with `purge_memory_transcript_turns(p_days >= 30)` scheduled daily by pg_cron `purge-memory-transcript-turns` (90 days); the last 90 days of raw turns in `memory_items` copied into it. `memory_categories` gains the 13 Garden category keys, and `memory_category_mapping` gains `personal → personal_identity`. `ai_memory` (112 active) and `diary_entries` (273) copied into `memory_items` as episodes (`content_json.kind = legacy_ai_memory / diary`, linked by id, importance ≤ 50 so `trg_notify_memory_garden` did not fire — 0 notifications). Legacy tables untouched. | Claude Code | VTID-04387 / VTID-04388 / VTID-04389 / VTID-04390 |
 | 2026-09-23 | Memory Phase 1 (docs/MEMORY-SYSTEM-PLAN.md), **applied to the live project 2026-09-23**: `memory_categories` row `session_summary` (mapped to Garden `uncategorized`) and partial unique index `uq_memory_items_session_summary` on `memory_items (user_id, (content_json->>'session_id')) WHERE category_key = 'session_summary'` — at most one session-summary episode per session. No DDL for role scope: `memory_items.active_role` (existing column, 3,183 rows all NULL) is now written — NULL for personal roles, the role otherwise — and read through the existing `p_active_role` parameter of `memory_semantic_search`. The gateway no longer writes or reads the tier-2 mirrors `mem_facts` / `mem_episodes`. | Claude Code | VTID-04364 / VTID-04365 / VTID-04366 / VTID-04367 |
@@ -1119,6 +1160,8 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | Producer triggers on `goal_plan_steps`, `goal_plans`, `user_health_plans`, `provider_appointments`, `lab_test_orders`, `live_room_sessions`, `live_room_access_grants` → `calendar_events` through one SQL upsert (`calendar_upsert_from_source`); future-only backfill (555 goal-plan entries, 3 health-plan series). No table/column change. | Claude | VTID-04356 |
 | 2026-09-23 | New table `calendar_feed_tokens` (one private iCalendar subscription token per user, SHA-256 hash only; RLS on, no policies, no browser grants). | Claude | VTID-04358 |
 | 2026-09-23 | New tables `calendar_google_sync`, `calendar_google_links`, `calendar_external_busy` for Google Calendar two-way sync (switched off). No tokens stored — they stay in `social_connections`. RLS on, no policies, no browser grants. | Claude | VTID-04372 |
+| 2026-09-24 | New tables `calendar_push_targets`, `calendar_push_links`: Outlook and iCloud calendar push into a member-owned "Vitanaland" calendar. RLS on, no policies, no browser grants. | Claude | VTID-04436 |
+| 2026-09-24 | `connected_app_settings.app_id` CHECK gains `outlook-contacts` (Outlook contacts import; rows land in `contacts` with `source='microsoft'`). | Claude | VTID-04449 |
 | 2026-05-12 | Added `cover_url`, `cover_generated_at`, `cover_source` to `user_intents` for the Find-a-Match cover-photo flow (user upload OR server-side OpenAI Images generation OR curated fallback). Idx on `(requester_user_id, cover_generated_at)` for per-user rate-limit. | Claude | BOOTSTRAP-INTENT-COVER-GEN |
 | 2026-05-20 | Added `decision_policy` + `policy_render_block` (Phase B.1 of decision-contract refactor). Versioned, tenant-aware, time-bounded externalized policy values + localized render fragments. Schema only — no consumer reads yet (lands in Phase B.4). | Claude | VTID-03113 |
 | 2026-05-20 | Seeded Phase B vertical-proof rows: 5 `decision_policy` rows (session-recency bucket thresholds) + 64 `policy_render_block` rows (8 greeting buckets × 8 languages). English content authoritative; non-`en` rows carry `notes='seeded from en; awaiting translation'`. Still no consumer reads yet — that's Phase B.4. | Claude | VTID-03114 |
@@ -2664,8 +2707,48 @@ values.
 | `display_name`, `org_type` | TEXT NOT NULL | `org_type` free-text by convention, mirrors `partner_registry.integration_mode`'s own pattern — no migration needed for a new vertical |
 | `status` | TEXT | `pending_review` (default) `\| active \| suspended \| rejected` |
 | `owner_user_id` | UUID NOT NULL | the registering caller |
-| `business_details` | JSONB | |
+| `business_details` | JSONB | VTID-04481: key `platform_detection` = `{url, connector_id, provider_id, platform_name, confidence, detected_at}`, written by `POST /api/v1/partner-onboarding/:orgId/detect` (last detection wins). |
+| `partner_type` | TEXT CHECK (`lab` \| `supplier_shop` \| `practitioner_clinic` \| `service_provider` \| `affiliate_brand`), nullable | VTID-04471: enforced partner vocabulary (spec §5.1). When set, `trg_partner_organizations_sync` derives `commerce_vertical` from it (`lab`, `practitioner_clinic` → `health`; the rest → `general`). NULL for rows registered without it. |
+| `lifecycle_state` | TEXT NOT NULL CHECK (`draft` \| `submitted` \| `verifying` \| `needs_action` \| `exception` \| `live` \| `paused` \| `suspended` \| `rejected`) | VTID-04471: onboarding lifecycle (spec §5.2). Allowed transitions live in the gateway (`services/partner-lifecycle.ts`). Kept in sync with `status` by `trg_partner_organizations_sync` in both directions: lifecycle → status via `partner_org_status_for_lifecycle()` (`live` → `active`; `paused`, `suspended` → `suspended`; `rejected` → `rejected`; all others → `pending_review`); a status-only write (legacy `/register`, `/activate`) derives the lifecycle. |
+| `legal_name`, `vat_id`, `website` | TEXT, nullable | VTID-04471: company facts collected during onboarding. |
+| `country` | TEXT CHECK `^[A-Z]{2}$`, nullable | VTID-04471: ISO 3166-1 alpha-2. |
+| `trust_level` | SMALLINT NOT NULL DEFAULT 0 CHECK 0..2 | VTID-04471: computed by the onboarding engine (spec §7), never set from a request. |
 | `commerce_vertical` | TEXT CHECK (`health` \| `general`), nullable | VTID-03974: machine-readable routing signal set explicitly at registration (`POST /api/v1/partner-orgs/register` requires it, never inferred from `org_type`). `health` orgs get a `partner_registry` row bridged on activation (`POST /:orgId/activate`, FK `partner_registry.partner_organization_id`); `general` orgs never touch `partner_registry`. NULL for rows registered before the column existed. |
+
+**Links to the org (VTID-04471):** `merchants.partner_organization_id` (UUID FK,
+`ON DELETE SET NULL`, nullable: network-sourced merchants have no owner) and
+VCAOP `partner_tenant.partner_organization_id` (UUID FK, same; Prisma migration
+`20260924_vcaop_partner_org_link_0007`). Both migrations backfill: every owned
+merchant / connection without an org is linked to its owner's first org, or to a
+new one-member `draft` org (owner = `org_admin`). Zero such rows existed on
+2026-09-24.
+
+### partner_onboarding_steps (VTID-04478)
+
+| Column | Type | Notes |
+|---|---|---|
+| `partner_organization_id` | UUID FK → partner_organizations, ON DELETE CASCADE | PK part 1 |
+| `step_key` | TEXT CHECK (`verification` \| `catalogue` \| `mapping` \| `tracking_test` \| `results_channel` \| `dpa` \| `billing_mandate`) | PK part 2. `account`, `company`, `terms` and `team` are derived by the gateway and never stored. |
+| `status` | TEXT CHECK (`todo` \| `in_progress` \| `done` \| `failed` \| `not_required`) DEFAULT `todo` | |
+| `detail` | JSONB | step-specific evidence (e.g. a failure reason) |
+| `updated_by`, `created_at`, `updated_at` | | |
+
+Written only by the gateway (service role); members read their own org's rows via `is_partner_org_member()` (RLS). Read by `services/partner-onboarding-checklist.ts`.
+
+`step_key = 'verification'` (VTID-04486, written by `POST /api/v1/partner-onboarding/:orgId/verification/check`): `detail` = `{level_required, level_reached, checks: {email_verified, domain, vat, business_verification, licence}, missing, domain_method, domain_token, vat_registered_name, vat_error?, facts: {website, country, vat_id}, checked_at}`. The checklist treats the row as void (`todo`, `facts_changed`) once the org's website, country or VAT id no longer equals `detail.facts`. The same check writes `partner_organizations.trust_level` (level reached, 0 when none). No schema change.
+
+### partner_terms_acceptances (VTID-04478)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `partner_organization_id` | UUID FK → partner_organizations, ON DELETE CASCADE | |
+| `terms_version` | TEXT NOT NULL | `UNIQUE (partner_organization_id, terms_version)` |
+| `accepted_by` | UUID NOT NULL | |
+| `accepted_at` | TIMESTAMPTZ | |
+| `ip_address`, `user_agent` | TEXT | audit (spec §6.2) |
+
+Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS).
 
 ### partner_organization_members
 

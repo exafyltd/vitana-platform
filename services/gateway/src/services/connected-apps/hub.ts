@@ -13,7 +13,7 @@
  *   disconnectApp()   turn it off; when the provider's last app goes off,
  *                     the provider access is released too.
  *   syncApp()         run the app's sync now (contacts import, busy times,
- *                     Google two-way calendar).
+ *                     two-way calendar for Google, Outlook and iCloud).
  *
  * Tokens stay where they already live (social_connections for Google and
  * Microsoft, apple_account_credentials for Apple). connected_app_settings
@@ -320,11 +320,19 @@ export async function disconnectApp(
     const { disableGoogleSync } = await import('../calendar-google-sync');
     await disableGoogleSync(userId).catch(() => undefined);
   }
-  if (app.id === 'outlook-calendar') await clearBusy(userId, 'microsoft');
-  if (app.id === 'apple-calendar') await clearBusy(userId, 'apple');
+  if (app.id === 'outlook-calendar' || app.id === 'apple-calendar') {
+    const provider = app.id === 'outlook-calendar' ? 'microsoft' : 'apple';
+    await clearBusy(userId, provider);
+    // The Vitanaland calendar stays in their account; we just stop writing to it.
+    const { forgetPush } = await import('./calendar-push');
+    await forgetPush(userId, provider);
+  }
   if (opts.removeData && app.kind === 'contacts') {
     const { removeImportedContacts } = await import('./contacts-import');
-    const source = app.provider === 'google' ? 'google' : app.provider === 'apple' ? 'icloud' : 'android';
+    const source = app.provider === 'google' ? 'google'
+      : app.provider === 'apple' ? 'icloud'
+      : app.provider === 'microsoft' ? 'microsoft'
+      : 'android';
     await removeImportedContacts(userId, source);
   }
 
@@ -430,6 +438,12 @@ async function providerToken(userId: string, connectorId: 'google' | 'microsoft'
   );
 }
 
+/** What a calendar push did, for last_result (the screen shows it). */
+function pushSummary(p: { created: number; updated: number; deleted: number; skipped: number } | null): Record<string, unknown> {
+  if (!p) return { pushed: 'switched_off' };
+  return { created: p.created, updated: p.updated, deleted: p.deleted, ...(p.skipped ? { skipped: p.skipped } : {}) };
+}
+
 async function runSync(userId: string, app: ConnectedAppDef): Promise<Record<string, unknown>> {
   const now = Date.now();
   switch (app.id) {
@@ -438,6 +452,13 @@ async function runSync(userId: string, app: ConnectedAppDef): Promise<Record<str
       if (!token) throw new Error('not_connected');
       const { fetchGoogleContacts, importContacts } = await import('./contacts-import');
       const r = await importContacts(userId, 'google', await fetchGoogleContacts(token));
+      return { ...r };
+    }
+    case 'outlook-contacts': {
+      const token = await providerToken(userId, 'microsoft');
+      if (!token) throw new Error('not_connected');
+      const { fetchOutlookContacts, importContacts } = await import('./contacts-import');
+      const r = await importContacts(userId, 'microsoft', await fetchOutlookContacts(token));
       return { ...r };
     }
     case 'google-calendar': {
@@ -452,11 +473,16 @@ async function runSync(userId: string, app: ConnectedAppDef): Promise<Record<str
     case 'outlook-calendar': {
       const token = await providerToken(userId, 'microsoft');
       if (!token) throw new Error('not_connected');
+      // VTID-04436: push Vitanaland entries into a "Vitanaland" Outlook
+      // calendar first, then pull busy times from every other one.
+      const push = await import('./calendar-push');
+      let pushed: Awaited<ReturnType<typeof push.pushOutlook>> | null = null;
+      if (push.calendarPushEnabled()) pushed = await push.pushOutlook(userId, token, now);
       const { listOutlookBusy } = await import('../../connectors/productivity/microsoft');
-      const r = await listOutlookBusy(token, new Date(now).toISOString(), new Date(now + BUSY_HORIZON_MS).toISOString());
+      const r = await listOutlookBusy(token, new Date(now).toISOString(), new Date(now + BUSY_HORIZON_MS).toISOString(), pushed?.pushed_ids);
       if (!r.ok) throw new Error(r.status === 403 ? 'permission_not_granted' : r.error);
       await replaceBusy(userId, 'microsoft', r.busy);
-      return { busy: r.busy.length };
+      return { busy: r.busy.length, ...pushSummary(pushed) };
     }
     case 'apple-calendar':
     case 'iphone-contacts': {
@@ -467,10 +493,21 @@ async function runSync(userId: string, app: ConnectedAppDef): Promise<Record<str
       try {
         if (app.id === 'apple-calendar') {
           if (!creds.caldavHome) throw new Error('no_calendar_home');
-          const events = await dav.listAppleEvents(creds.credentials, creds.caldavHome, new Date(now).toISOString(), new Date(now + BUSY_HORIZON_MS).toISOString());
+          // VTID-04436: entries go into a "Vitanaland" iCloud calendar (the
+          // iPhone Calendar app shows it); the busy pull skips that one.
+          const push = await import('./calendar-push');
+          let pushed: Awaited<ReturnType<typeof push.pushApple>> | null = null;
+          if (push.calendarPushEnabled()) pushed = await push.pushApple(userId, creds.credentials, creds.caldavHome, now);
+          const events = await dav.listAppleEvents(
+            creds.credentials,
+            creds.caldavHome,
+            new Date(now).toISOString(),
+            new Date(now + BUSY_HORIZON_MS).toISOString(),
+            pushed ? [pushed.calendar] : [],
+          );
           const busy = dav.busyFromEvents(events);
           await replaceBusy(userId, 'apple', busy);
-          return { busy: busy.length };
+          return { busy: busy.length, ...pushSummary(pushed) };
         }
         if (!creds.carddavHome) throw new Error('no_contacts_home');
         const { importContacts } = await import('./contacts-import');
@@ -579,7 +616,7 @@ export async function runConnectedAppsTick(now: number = Date.now()): Promise<{ 
   if (!dbConfigured()) return { synced: 0, failed: 0 };
   const rows = (await db(
     `connected_app_settings?select=user_id,app_id,last_sync_at&enabled=eq.true` +
-      `&app_id=in.(outlook-calendar,apple-calendar,google-contacts,iphone-contacts)&order=last_sync_at.asc.nullsfirst&limit=500`,
+      `&app_id=in.(outlook-calendar,apple-calendar,google-contacts,iphone-contacts,outlook-contacts)&order=last_sync_at.asc.nullsfirst&limit=500`,
   )) as Array<{ user_id: string; app_id: string; last_sync_at: string | null }>;
   let synced = 0;
   let failed = 0;

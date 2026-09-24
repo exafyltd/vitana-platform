@@ -2617,8 +2617,9 @@ export async function tool_send_chat_message(
  * registry; LiveKit's tool runner uses it via the same registry. Single
  * source — no per-pipeline divergence.
  *
- * Verifies ownership (rec.user_id must match the actor or be null),
- * flips status new→activated only if not already activated, and emits
+ * Verifies ownership (rec.user_id must be set and match the actor — VTID-04464),
+ * that it is a community item in an activatable state, flips status
+ * new/snoozed→activated only if not already activated, and emits
  * guide.initiative.executed telemetry fire-and-forget so the funnel
  * dashboards stay accurate regardless of which surface drove activation.
  */
@@ -2664,10 +2665,15 @@ export async function tool_activate_recommendation(
   if (!recId) {
     return { ok: false, error: 'id is required' };
   }
+  // VTID-04464 (CA-0): activation acts on the caller's own queue, so an
+  // anonymous session can never activate anything.
+  if (!id.user_id) {
+    return { ok: false, error: 'not_signed_in' };
+  }
   try {
     const { data: rec, error: fetchErr } = await sb
       .from('autopilot_recommendations')
-      .select('id, title, summary, status, user_id')
+      .select('id, title, summary, status, user_id, source_type')
       .eq('id', recId)
       .maybeSingle();
 
@@ -2677,12 +2683,31 @@ export async function tool_activate_recommendation(
     if (!rec) {
       return { ok: false, error: 'recommendation_not_found' };
     }
-    const recRow = rec as { id: string; title: string | null; summary: string | null; status: string | null; user_id: string | null };
-    if (recRow.user_id && recRow.user_id !== id.user_id) {
+    const recRow = rec as {
+      id: string;
+      title: string | null;
+      summary: string | null;
+      status: string | null;
+      user_id: string | null;
+      source_type: string | null;
+    };
+    // VTID-04464: owner must be present and equal. The old check let an
+    // ownerless row (user_id null) be activated by any signed-in member.
+    if (!recRow.user_id || recRow.user_id !== id.user_id) {
       return { ok: false, error: 'recommendation_belongs_to_another_user' };
+    }
+    // VTID-04464: a member's voice "yes" only activates community Autopilot
+    // items. Dev Autopilot findings have their own governed activation path
+    // (autopilot_activate_recommendation in the Operator Console).
+    if (recRow.source_type !== 'community') {
+      return { ok: false, error: 'not_a_community_recommendation' };
     }
 
     const alreadyActive = recRow.status === 'activated';
+    // VTID-04464: rejected / expired / completed items are not re-opened by voice.
+    if (!alreadyActive && recRow.status !== 'new' && recRow.status !== 'snoozed') {
+      return { ok: false, error: `recommendation_not_activatable:${recRow.status ?? 'unknown'}` };
+    }
     if (!alreadyActive) {
       const { error: updErr } = await sb
         .from('autopilot_recommendations')

@@ -60,6 +60,17 @@ export type GatewayI18nKey =
   | 'notif.calendar_reminder.now'
   | 'notif.calendar_reminder.tomorrow'
   | 'notif.fallback_app_name'
+  // VTID-04463: partner organization invite email
+  | 'email.partner_invite.subject'
+  | 'email.partner_invite.greeting'
+  | 'email.partner_invite.body'
+  | 'email.partner_invite.instructions'
+  | 'email.partner_invite.cta'
+  | 'email.partner_invite.expiry'
+  | 'email.partner_invite.ignore'
+  | 'email.partner_invite.role.org_admin'
+  | 'email.partner_invite.role.staff'
+  | 'email.partner_invite.role.professional'
   // VTID-03885: Partner Health Test Integration
   | 'notif.partner_test_status_changed.title'
   | 'notif.partner_test_status_changed.body'

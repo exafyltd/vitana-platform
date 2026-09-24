@@ -1,6 +1,6 @@
 /**
- * VTID-04405: import a member's contacts from Google, iCloud or their
- * Android phone into Vitanaland's `contacts` table.
+ * VTID-04405: import a member's contacts from Google, iCloud, Outlook
+ * (VTID-04449) or their Android phone into Vitanaland's `contacts` table.
  *
  * - De-duplicated per source (user_id, source, external_id): a second sync
  *   updates names/emails/phones instead of adding copies.
@@ -9,11 +9,16 @@
  *   (CLAUDE.md rule 45 — the same allowlists as every member-facing list).
  * - Imported contacts stay the member's even if they later turn the app off;
  *   removing them is an explicit choice (removeImportedContacts).
+ * - VTID-04439: `contacts` also has two older unique indexes, one phone and
+ *   one member per user (unique_user_phone, unique_user_contact). A contact
+ *   whose phone or member is already held by another row — a hand-added
+ *   contact, another source, or an earlier contact in the same import — is
+ *   the same person, so it is skipped rather than failing the whole batch.
  */
 
 import { db, enc } from './db';
 
-export type ContactSource = 'google' | 'icloud' | 'android';
+export type ContactSource = 'google' | 'icloud' | 'microsoft' | 'android';
 
 export interface ImportContact {
   external_id: string;
@@ -26,6 +31,8 @@ export interface ImportResult {
   received: number;
   imported: number;
   on_platform: number;
+  /** Already in the member's contacts under another row (same phone or member). */
+  already_present: number;
 }
 
 export const MAX_CONTACTS_PER_IMPORT = 5000;
@@ -92,10 +99,8 @@ export async function importContacts(
   }
   const matches = await platformMatches(Array.from(new Set(clean.flatMap((c) => c.emails))));
   const now = new Date().toISOString();
-  let onPlatform = 0;
   const rows = clean.map((c) => {
     const member = c.emails.map((e) => matches.get(e)).find((id) => id && id !== userId) ?? null;
-    if (member) onPlatform += 1;
     return {
       user_id: userId,
       source,
@@ -109,14 +114,81 @@ export async function importContacts(
       updated_at: now,
     };
   });
-  for (let i = 0; i < rows.length; i += BATCH) {
+  const { keep, skipped } = resolveCollisions(rows, await existingContactKeys(userId));
+  for (let i = 0; i < keep.length; i += BATCH) {
     await db('contacts?on_conflict=user_id,source,external_id', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(rows.slice(i, i + BATCH)),
+      body: JSON.stringify(keep.slice(i, i + BATCH)),
     });
   }
-  return { received: raw.length, imported: rows.length, on_platform: onPlatform };
+  return {
+    received: raw.length,
+    imported: keep.length,
+    on_platform: keep.filter((r) => r.is_on_platform).length,
+    already_present: skipped,
+  };
+}
+
+export interface ExistingContactKey {
+  source: string | null;
+  external_id: string | null;
+  contact_phone: string | null;
+  contact_user_id: string | null;
+}
+
+const rowKey = (r: { source: string | null; external_id: string | null }, i: number) =>
+  r.source && r.external_id ? `${r.source}\u0000${r.external_id}` : `row\u0000${i}`;
+
+/**
+ * Drop rows whose phone or member is already held by a different row, so
+ * the upsert cannot trip unique_user_phone / unique_user_contact. A row that
+ * updates itself (same source + external id) keeps what it already holds.
+ * Pure; exported for tests.
+ */
+export function resolveCollisions<R extends { source: string; external_id: string; contact_phone: string | null; contact_user_id: string | null }>(
+  rows: R[],
+  existing: ExistingContactKey[],
+): { keep: R[]; skipped: number } {
+  const phoneOwner = new Map<string, string>();
+  const memberOwner = new Map<string, string>();
+  existing.forEach((e, i) => {
+    const k = rowKey(e, i);
+    if (e.contact_phone) phoneOwner.set(e.contact_phone, k);
+    if (e.contact_user_id) memberOwner.set(e.contact_user_id, k);
+  });
+  // Conservative on purpose: an existing row keeps its phone and member even
+  // if this import changes them, so no statement order can trip an index.
+  const keep: R[] = [];
+  let skipped = 0;
+  for (const r of rows) {
+    const k = rowKey(r, -1);
+    const clash = (held: string | undefined) => held !== undefined && held !== k;
+    if (clash(r.contact_phone ? phoneOwner.get(r.contact_phone) : undefined) ||
+        clash(r.contact_user_id ? memberOwner.get(r.contact_user_id) : undefined)) {
+      skipped += 1;
+      continue;
+    }
+    keep.push(r);
+    if (r.contact_phone) phoneOwner.set(r.contact_phone, k);
+    if (r.contact_user_id) memberOwner.set(r.contact_user_id, k);
+  }
+  return { keep, skipped };
+}
+
+/** The member's contacts that hold a phone or a member, paged past PostgREST's row cap. */
+async function existingContactKeys(userId: string): Promise<ExistingContactKey[]> {
+  const out: ExistingContactKey[] = [];
+  const PAGE = 1000;
+  for (let offset = 0; offset < 20_000; offset += PAGE) {
+    const rows = ((await db(
+      `contacts?select=source,external_id,contact_phone,contact_user_id&user_id=eq.${enc(userId)}` +
+        `&or=(contact_phone.not.is.null,contact_user_id.not.is.null)&order=id.asc&limit=${PAGE}&offset=${offset}`,
+    )) ?? []) as ExistingContactKey[];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
 }
 
 export async function removeImportedContacts(userId: string, source: ContactSource): Promise<void> {
@@ -146,6 +218,37 @@ export async function fetchGoogleContacts(token: string): Promise<ImportContact[
     }
     pageToken = json?.nextPageToken ?? '';
     if (!pageToken || out.length >= MAX_CONTACTS_PER_IMPORT) break;
+  }
+  return out;
+}
+
+/**
+ * VTID-04449: every contact in the member's Outlook / Microsoft 365
+ * address book (Graph /me/contacts, all pages). Only names, e-mail
+ * addresses and phone numbers are read.
+ */
+export async function fetchOutlookContacts(token: string): Promise<ImportContact[]> {
+  const out: ImportContact[] = [];
+  let url: string | null =
+    'https://graph.microsoft.com/v1.0/me/contacts' +
+    '?$select=id,displayName,givenName,surname,emailAddresses,mobilePhone,homePhones,businessPhones&$top=500';
+  for (let page = 0; url && page < 20; page++) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const json: any = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (r.status === 403) throw new Error('permission_not_granted');
+      throw new Error(`outlook_contacts ${r.status}: ${json?.error?.message ?? r.statusText}`);
+    }
+    for (const c of json?.value ?? []) {
+      out.push({
+        external_id: String(c.id ?? ''),
+        name: c.displayName || [c.givenName, c.surname].filter(Boolean).join(' '),
+        emails: (c.emailAddresses ?? []).map((e: any) => e?.address).filter(Boolean),
+        phones: [c.mobilePhone, ...(c.homePhones ?? []), ...(c.businessPhones ?? [])].filter(Boolean),
+      });
+    }
+    url = json?.['@odata.nextLink'] ?? null;
+    if (out.length >= MAX_CONTACTS_PER_IMPORT) break;
   }
   return out;
 }
