@@ -92,6 +92,11 @@ export const FIELD_DEFAULTS: Record<string, FieldVisibility> = {
   // get_profile_health_summary(); the member's own activity logs are never
   // shared, whatever this is set to.
   vitanaHealth: 'private',
+
+  // VTID-04489 — the Vitana Index card's "Biggest boost" line (top
+  // activities with counts). Public by the platform owner's decision: it
+  // exists to be shared and compared. Enforced in SQL by get_index_boost().
+  indexBoost: 'public',
 };
 
 /**

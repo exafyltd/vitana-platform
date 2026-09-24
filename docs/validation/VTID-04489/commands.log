@@ -1,0 +1,6 @@
+# Discovery (read-only): health_features_daily activity_type values, journey_session_index_awards, calendar completions, weight columns
+# Apply: apply_migration vtid_04489_index_boost, then vtid_04489_index_boost_ranking_fix (same file, corrected ORDER BY)
+# Verify in rolled-back transactions with the test account's JWT claims:
+begin; select set_config('request.jwt.claims','{"sub":"<test user>","role":"authenticated"}',true);
+select public.get_index_boost(<members with logs or journey sessions in 30 days>); rollback;
+select public._index_boost_activity_key(<the 13 real activity_type strings>);
