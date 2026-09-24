@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "ishranu",
   "autopilot.pillar.exercise": "kretanje",
   "autopilot.pillar.hydration": "hidrataciju",
-  "autopilot.pillar.mental": "mentalni balans"
+  "autopilot.pillar.mental": "mentalni balans",
+  "autopilot.auto.group_interest.title": "Osnuj grupu: {interest}",
+  "autopilot.auto.group_interest.summary": "Više članova deli tvoje interesovanje: {interest}. Osnuj grupu i pozovi ih.",
+  "autopilot.auto.group_interest_join.title": "Pridruži se grupi: {interest}",
+  "autopilot.auto.group_interest_join.summary": "Postoji grupa: {interest}. Pridruži se ljudima sa istim interesovanjem.",
+  "autopilot.auto.group_circle.title": "Osnuj krug sa svojim kontaktima",
+  "autopilot.auto.group_circle.summary": "Ti i dva tvoja kontakta se svi poznajete. Osnuj malu grupu za vas troje.",
+  "autopilot.auto.connect_referrer.title": "Pozdravi osobu koja te je pozvala",
+  "autopilot.auto.connect_referrer.summary": "Neko te je pozvao u Vitanaland. Poseti profil i poveži se.",
+  "autopilot.auto.event_rsvp_referral.title": "Prijavi se na događaj na koji si pozvan",
+  "autopilot.auto.event_rsvp_referral.summary": "Došao si preko pozivnice za događaj. Prijavi se da sačuvaš mesto.",
+  "autopilot.auto.share_milestone.title": "Podeli svoj uspeh: {milestone}",
+  "autopilot.auto.share_milestone.summary": "Dostigao si prekretnicu. Podeli je sa zajednicom — videćeš objavu pre nego što izađe."
 }

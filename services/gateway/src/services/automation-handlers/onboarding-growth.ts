@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './onboarding-growth-repository';
+import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
@@ -501,84 +502,38 @@ async function runSocialAccountConnect(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
-// ── AP-1306: Auto-Share to Social Accounts ────────────────────
+// ── AP-1306: Share-a-Milestone Suggestion ───────────────────
 // Triggered by: user.milestone.reached
-// Posts achievement to user's connected social accounts.
-// If auto-share is disabled, sends a notification with a share link instead.
+// VTID-04510 (CA-8): this used to post the achievement to the member's
+// connected social accounts automatically (auto-share on by default) and then
+// tell them it had been posted. Nothing is posted for a member any more: the
+// milestone becomes a "share it" suggestion that opens the post composer with
+// a draft (CA-4). A public post only ever starts from the app preview (owner
+// decision 1). No notification is sent either.
 async function runAutoShareToSocial(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
-  const { user_id, milestone, tenant_id } = payload || {};
+  const { user_id, milestone } = payload || {};
   if (!user_id || !milestone) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { supabase } = ctx;
-  const effectiveTenantId = tenant_id || ctx.tenantId;
-  let actionsTaken = 0;
-
-  // Get milestone definition
-  let milestoneDef: { id: string; name: string; celebration: string; icon: string } | null = null;
+  let milestoneName = String(milestone);
   try {
     const { MILESTONES } = await import('../milestone-service');
     const def = MILESTONES[milestone];
-    if (def) {
-      milestoneDef = { id: milestone, name: def.name, celebration: def.celebration, icon: def.icon };
-    }
+    if (def?.name) milestoneName = def.name;
   } catch {}
 
-  if (!milestoneDef) {
-    milestoneDef = { id: milestone, name: milestone, celebration: `Achievement unlocked: ${milestone}`, icon: '🏆' };
-  }
-
-  // Attempt auto-share
-  try {
-    const { shareMilestoneToSocial } = await import('../social-connect-service');
-    const shareResult = await shareMilestoneToSocial(supabase, user_id, effectiveTenantId, milestoneDef);
-
-    if (shareResult.shared.length > 0) {
-      ctx.log(`Shared "${milestone}" to: ${shareResult.shared.join(', ')}`);
-      actionsTaken += shareResult.shared.length;
-
-      // Notify user that their achievement was shared
-      ctx.notify(user_id, 'orb_proactive_message', {
-        title: `${milestoneDef.icon} Shared to ${shareResult.shared.join(', ')}!`,
-        body: `Your achievement "${milestoneDef.name}" was posted. If you'd like to disable auto-sharing, visit your Autopilot settings.`,
-        data: {
-          url: '/settings/autopilot',
-          milestone,
-          shared_to: shareResult.shared.join(','),
-        },
-      });
-      actionsTaken++;
-    }
-
-    if (shareResult.notify_instead) {
-      // Auto-share is off or no connected accounts — send share prompt instead
-      const shareUrl = `${process.env.APP_URL || 'https://vitana.app'}/profile?milestone=${milestone}`;
-
-      ctx.notify(user_id, 'orb_suggestion', {
-        title: `${milestoneDef.icon} Share Your Achievement!`,
-        body: `You earned "${milestoneDef.name}"! Share it with your network.`,
-        data: {
-          url: shareUrl,
-          milestone,
-          action: 'share_prompt',
-          settings_url: '/settings/autopilot',
-        },
-      });
-      actionsTaken++;
-    }
-  } catch (err: any) {
-    ctx.log(`Auto-share error: ${err.message}`);
-
-    // Fallback: always send a share prompt notification
-    ctx.notify(user_id, 'orb_suggestion', {
-      title: `${milestoneDef.icon} Share Your Achievement!`,
-      body: `You earned "${milestoneDef.name}"! Share it with friends.`,
-      data: { url: '/profile', milestone },
-    });
-    actionsTaken++;
-  }
-
-  return { usersAffected: 1, actionsTaken };
+  const outcome = await proposeToMember(
+    { supabase: ctx.supabase, automationId: ctx.run.automation_id, runId: ctx.run.id },
+    {
+      userId: user_id, template: 'share_milestone', params: { milestone: milestoneName },
+      domain: 'community',
+      action: { kind: 'post_to_feed', params: {} },
+      fingerprint: `share_milestone:${milestone}`,
+    },
+  );
+  ctx.log(`Milestone "${milestone}" share suggestion: ${outcome}`);
+  const tally = tallyOutcomes([outcome]);
+  return { usersAffected: tally.proposed, actionsTaken: tally.proposed };
 }
 
 // ── Register all handlers ───────────────────────────────────

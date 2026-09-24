@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "Ernährung",
   "autopilot.pillar.exercise": "Bewegung",
   "autopilot.pillar.hydration": "Hydration",
-  "autopilot.pillar.mental": "mentale Balance"
+  "autopilot.pillar.mental": "mentale Balance",
+  "autopilot.auto.group_interest.title": "Gründe eine Gruppe für {interest}",
+  "autopilot.auto.group_interest.summary": "Mehrere Mitglieder teilen dein Interesse an {interest}. Gründe eine Gruppe und lade sie ein.",
+  "autopilot.auto.group_interest_join.title": "Tritt der Gruppe {interest} bei",
+  "autopilot.auto.group_interest_join.summary": "Es gibt eine Gruppe für {interest}. Schließ dich den Menschen mit deinem Interesse an.",
+  "autopilot.auto.group_circle.title": "Gründe einen Kreis mit deinen Kontakten",
+  "autopilot.auto.group_circle.summary": "Du und zwei deiner Kontakte kennt euch alle. Gründe eine kleine Gruppe für euch drei.",
+  "autopilot.auto.connect_referrer.title": "Sag Hallo zu der Person, die dich eingeladen hat",
+  "autopilot.auto.connect_referrer.summary": "Jemand hat dich zu Vitanaland eingeladen. Besuche das Profil und vernetze dich.",
+  "autopilot.auto.event_rsvp_referral.title": "Melde dich für das Event an, zu dem du eingeladen wurdest",
+  "autopilot.auto.event_rsvp_referral.summary": "Du bist über eine Event-Einladung gekommen. Melde dich an, damit dein Platz sicher ist.",
+  "autopilot.auto.share_milestone.title": "Teile deinen Meilenstein: {milestone}",
+  "autopilot.auto.share_milestone.summary": "Du hast einen Meilenstein erreicht. Teile ihn mit der Community – du siehst den Beitrag, bevor er erscheint."
 }
