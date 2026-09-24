@@ -1017,7 +1017,10 @@ export type CicdEventType =
   // VTID-04486: automated verification checks (spec §7)
   | 'partner_org.verification_checked'
   // VTID-04488: onboarding catalogue step status
-  | 'partner_org.catalogue_step_changed';
+  | 'partner_org.catalogue_step_changed'
+  // VTID-04499: onboarding connections and mapping step
+  | 'partner_org.connection_started'
+  | 'partner_org.mapping_step_changed';
 
 export interface CicdOasisEvent {
   vtid: string;

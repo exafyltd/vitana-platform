@@ -5,9 +5,10 @@
  * This slice: POST /start, GET /:orgId, PATCH /:orgId/company,
  * POST /:orgId/terms/accept, POST /:orgId/submit, and (VTID-04481)
  * POST /:orgId/detect, and (VTID-04486) POST /:orgId/verification/check.
- * The catalogue step lives in partner-onboarding-catalogue.ts (VTID-04488).
- * The remaining §6.2 endpoints (connections, tracking test, DPA, billing
- * mandate, Stripe Connect verification) each
+ * The catalogue step lives in partner-onboarding-catalogue.ts (VTID-04488),
+ * connections in partner-onboarding-connections.ts (VTID-04499).
+ * The remaining §6.2 endpoints (tracking test, DPA, billing mandate, Stripe
+ * Connect verification) each
  * write their own step row into
  * partner_onboarding_steps when they land; the checklist here already reads
  * those rows.
