@@ -100,6 +100,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRouter = require('./routes/autopilot').default;
   // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
+  // VTID-04508: Community Autopilot CA-7 personal invite links
+  const communityInvitesRouter = require('./routes/community-invites').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
@@ -827,6 +829,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
+
+  // VTID-04508: Community Autopilot CA-7 — personal invite links + attribution
+  mountRouterSync(app, '/api/v1/invites', communityInvitesRouter, { owner: 'community-invites' });
 
   // VTID-02402: VAEA Phase 1.5 — read + CRUD for Business Hub panel
   mountRouterSync(app, '/api/v1/vaea', vaeaRouter, { owner: 'vaea' });
