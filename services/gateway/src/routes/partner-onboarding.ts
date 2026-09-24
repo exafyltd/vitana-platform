@@ -5,8 +5,9 @@
  * This slice: POST /start, GET /:orgId, PATCH /:orgId/company,
  * POST /:orgId/terms/accept, POST /:orgId/submit, and (VTID-04481)
  * POST /:orgId/detect, and (VTID-04486) POST /:orgId/verification/check.
- * The remaining §6.2 endpoints (catalogue, connections, tracking test, DPA,
- * billing mandate, Stripe Connect verification) each
+ * The catalogue step lives in partner-onboarding-catalogue.ts (VTID-04488).
+ * The remaining §6.2 endpoints (connections, tracking test, DPA, billing
+ * mandate, Stripe Connect verification) each
  * write their own step row into
  * partner_onboarding_steps when they land; the checklist here already reads
  * those rows.
@@ -61,7 +62,7 @@ import {
 
 const router = Router();
 
-type Supa = NonNullable<ReturnType<typeof getSupabase>>;
+export type Supa = NonNullable<ReturnType<typeof getSupabase>>;
 
 const ORG_FIELDS =
   'id, org_key, display_name, partner_type, commerce_vertical, lifecycle_state, status, trust_level, legal_name, country, vat_id, website, owner_user_id, created_at';
@@ -69,7 +70,7 @@ const ORG_FIELDS =
 /** States in which the partner may still edit the company facts. */
 const COMPANY_EDITABLE_STATES: readonly LifecycleState[] = ['draft', 'needs_action'];
 
-interface OrgRow {
+export interface OrgRow {
   id: string;
   org_key: string;
   display_name: string;
@@ -104,7 +105,7 @@ export function makeOrgKey(displayName: string, suffix: string = randomBytes(3).
   return `${slug || 'partner'}-${suffix}`;
 }
 
-async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: OrgRow | null; error: string | null }> {
+export async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: OrgRow | null; error: string | null }> {
   const { data, error } = await supabase.from('partner_organizations').select(ORG_FIELDS).eq('id', orgId).maybeSingle();
   if (error) return { org: null, error: error.message };
   return { org: (data as OrgRow | null) ?? null, error: null };
@@ -145,7 +146,7 @@ function publicOrg(org: OrgRow) {
   return rest;
 }
 
-async function respondWithState(res: Response, supabase: Supa, orgId: string, status = 200, extra: Record<string, unknown> = {}) {
+export async function respondWithState(res: Response, supabase: Supa, orgId: string, status = 200, extra: Record<string, unknown> = {}) {
   const { org, error } = await loadOrg(supabase, orgId);
   if (error) return res.status(500).json({ ok: false, error });
   if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
