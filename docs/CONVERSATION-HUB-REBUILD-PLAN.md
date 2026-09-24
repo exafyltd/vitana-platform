@@ -109,7 +109,7 @@ member speaks / opens ORB
 Each box becomes a place in the section; every box that is operated
 elsewhere gets a deep link to where it is operated.
 
-## 4. Target section: 10 tabs
+## 4. Target section: 9 tabs
 
 The current 7 tabs are replaced. Every old URL keeps working through the
 existing `/command-hub/...` route map, redirecting to its new home.
@@ -119,13 +119,12 @@ existing `/command-hub/...` route map, redirecting to its new home.
 | 1 | **Overview** | Health strip, 24 h / 7 d: sessions, first-audio p50/p90, opening mix, scored-changed-opening rate, loop-guard fires (opening vs later), backend-speech mutes, context-omitted rate, content-filter blocks, hand-offs, tool failure rate. Alerts. "What changed since the last build" (new/removed tools, providers, flags). Wiring map (§3) with links out. | `oasis_events` aggregates (B3), `/system` (B1) |
 | 2 | **Sessions** | Recent sessions list, filterable by guard fired / omitted context / hand-off / language / provider. Session inspector: opening decision (candidates, scores, winner, `ranking_mode`, `served_winner`), instruction budget per section and what was dropped, tool calls with timings and results, per-turn `output_preview`, guard events, link to Voice › Orb LIVE for the transcript. | session diag events (B2 adds the budget event) |
 | 3 | **Opening** | Every provider from the live registry: priority, enabled, 7-day candidate/win counts, median latency, timeouts. Greeting rungs and their hit rates. Recent decisions. **Simulator** runs the real provider ranking + scored opening for a chosen user/context (read-only), replacing today's register-only simulator. | registry introspection (B1), events |
-| 4 | **Scoring** | Active weights version and every feature weight, weights history, scored-vs-fixed agreement, `scored_changed_opening` over time, personal-weights coverage, top disagreements with both candidates side by side. Read-only unless the owner decides otherwise (§10). | B4 |
+| 4 | **Scoring & Learning** | Active weights version and every feature weight, weights history, scored-vs-fixed agreement, `scored_changed_opening` over time, personal-weights coverage, top disagreements with both candidates side by side. Below it, the learning loop: nightly jobs (last run, result), offer outcomes, replay set, awareness test runs. **Read-only** (owner decision, §10). | B4, existing events + B3 |
 | 5 | **Tools** | One catalog generated from the code registry. For each tool: domain/tier (`classifyOrbTool`), surfaces and roles it is declared on, priority / route group / deferred status, and whether it survives each provider's byte budget. Also calls, failure rate and p50 over a chosen window, plus a self-check button. **Coverage view:** feature (awareness registry) → tool → navigator entry, with gaps highlighted. Warnings: unclassified, unreachable on every surface, trimmed by budget, declared but never called in 30 d. Replaces Tool Health, Tool Catalog and Integrations › Tools. | B1, B3 |
 | 6 | **Context & Memory** | Context pack builder inputs, instruction budget by section with 7-day omitted rate, awareness registry, journey context, memory recall health, profile freshness. Links to Intelligence › Recall / Inspector. | B2, existing routes |
-| 7 | **Navigation** | Navigator summary: requests, resolved / near-miss / failed, top failed phrases, coverage gaps, blocked navigations. Deep links into vitana-v1 admin Navigator (Catalog, Simulator, Telemetry) instead of rebuilding it. | B5 (proxy of `/admin/navigator/telemetry` + `/coverage`) |
+| 7 | **Navigation** | Navigator summary: requests, resolved / near-miss / failed, top failed phrases, coverage gaps, blocked navigations. **Links to the existing vitana-v1 admin Navigator screens** (Catalog, Simulator, Telemetry); nothing is rebuilt in the Command Hub (owner decision, §10). | B5 (proxy of `/admin/navigator/telemetry` + `/coverage`) |
 | 8 | **Hand-offs** | Vitana→Devon: `report_to_specialist` outcomes by STATUS, hand-offs refused for lack of a male voice (VTID-04445), `append_to_ticket` use, tickets filed from voice. Delegation specialists: which are registered on this stack, calls, results, persisted jobs. | B6 |
-| 9 | **Learning** | Nightly jobs (last run, result), offer outcomes, replay set, awareness test runs, weights history pointer. | existing events + B3 |
-| 10 | **Configuration** | Every conversation flag: effective value on this stack, code default, staging pin, prod pin, and whether a value is invalid (e.g. `production` for a feature flag, VTID-04098). Registers / NBA config (read-only; editing stays where it is today). | B7 |
+| 9 | **Configuration** | Every conversation flag: effective value on this stack, code default, staging pin, prod pin, and whether a value is invalid (e.g. `production` for a feature flag, VTID-04098). Registers / NBA config (read-only; editing stays where it is today). | B7 |
 
 Layout rules: classes only (CSP gate), no inline style/script, the
 `_convEl` inline-style helper is moved to classes, WCAG 2.2 AA, desktop
@@ -184,10 +183,13 @@ member hears; the only runtime change is one extra diag event per session
 
 ## 7. Cleanup
 
-- **Assistant section:** remove the empty Sessions tab and the
-  localStorage-only Experiments tab, or move them into Conversation if
-  they are kept (owner decision). Personality and Metrics stay.
-- **Integrations › Tools:** remove it and link to Conversation › Tools.
+- **Assistant section:** delete the empty Sessions tab and the
+  localStorage-only Experiments tab (owner decision). Their legacy routes
+  (`/command-hub/diagnostics/voice-lab/sessions/`, `.../experiments/`)
+  redirect to Conversation › Sessions and Conversation › Overview.
+  Personality and Metrics stay in Assistant.
+- **Integrations › Tools:** delete it (owner decision); its route redirects
+  to Conversation › Tools.
 - **Old routes:** redirect them to their new tabs so bookmarks keep
   working.
 - **Screen inventory:** add the Conversation screens to the screen
@@ -207,8 +209,8 @@ VTID is allocated when its phase starts.
 |---|---|---|
 | 0 | B8 security and stale-text fixes | small; can ship today |
 | A | Backend foundation: B1, B7, B2, B3 | medium |
-| B | Overview, Tools (incl. coverage), Opening (incl. real simulator), Scoring (B4), Configuration, Sessions | large; split into two PRs |
-| C | Navigation (B5), Hand-offs (B6), Context & Memory, Learning, wiring map, B10 charts | medium |
+| B | Overview, Tools (incl. coverage), Opening (incl. real simulator), Scoring & Learning (B4), Configuration, Sessions | large; split into two PRs |
+| C | Navigation (B5), Hand-offs (B6), Context & Memory, learning panels in Scoring & Learning, wiring map, B10 charts | medium |
 | D | B9 CI drift guard + generated manifest, dedupe/cleanup (§7), redirects | medium |
 
 ## 9. Verification
@@ -226,17 +228,14 @@ verified in three ways:
 The backend routes get jest suites, and B9 is mutation-checked: removing
 the classification of one tool must fail the build.
 
-## 10. Owner decisions
+## 10. Owner decisions (resolved 2026-09-24)
 
-1. **Tab list** (§4): accept the 10 tabs, or merge some (e.g. Learning into
-   Overview).
-2. **Assistant › Sessions / Experiments:** delete, or move into
-   Conversation.
-3. **Assistant › Metrics:** stay in Assistant, or move to Conversation ›
-   Overview.
-4. **Scoring weights:** read-only in the Command Hub (recommended for now),
-   or editable through a governed, versioned write with an OASIS event.
-5. **Navigator:** link to the vitana-v1 admin screens (recommended), or
-   rebuild them inside the Command Hub.
-6. **Duplicates:** removing Integrations › Tools and the old tab URLs
-   (redirects kept).
+1. **Tab list:** 9 tabs, with Learning merged into Scoring (§4).
+2. **Assistant › Sessions / Experiments:** deleted. Sessions is empty and
+   Experiments only saves in the browser.
+3. **Assistant › Metrics:** stays in Assistant.
+4. **Scoring weights:** read-only in the Command Hub for now. Editing, if
+   it ever comes, needs its own VTID with a governed, versioned write and
+   an OASIS event.
+5. **Navigator:** link to the existing vitana-v1 admin screens; no rebuild.
+6. **Integrations › Tools:** removed as a duplicate of Conversation › Tools.
