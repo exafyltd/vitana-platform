@@ -191,8 +191,15 @@ const LOG_PREFIX = '[VTID-01180]';
 // on every route except /health.
 router.use(optionalAuth);
 const OPEN_PATHS = new Set(['/health']);
+// VTID-04505: the scheduled community scan is called by the EventBridge
+// dispatcher with the internal service token, not a member JWT.
+function hasGatewayInternalToken(req: Request): boolean {
+  const token = process.env.GATEWAY_INTERNAL_TOKEN;
+  return !!token && req.get('X-Gateway-Internal') === token;
+}
 router.use((req: Request, res: Response, next) => {
   if (OPEN_PATHS.has(req.path)) return next();
+  if (req.path === '/community-scan' && hasGatewayInternalToken(req)) return next();
   if (!(req as AuthenticatedRequest).identity?.user_id) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
@@ -2028,6 +2035,52 @@ router.post('/:id/snooze', async (req: Request, res: Response) => {
  *   duration_ms: 45000
  * }
  */
+// =============================================================================
+// POST /recommendations/community-scan - VTID-04505 (CA-5)
+// =============================================================================
+/**
+ * The twice-daily member scan (hourly tick; members at local 07:00 / 17:00).
+ * Caller: the EventBridge dispatcher (X-Gateway-Internal) or an exafy admin.
+ * Writes nothing unless COMMUNITY_AUTOPILOT_SCAN_ENABLED=true and not
+ * `dry_run`. Never notifies anyone: rows only appear in the member's own
+ * Autopilot. Body: `{ dry_run?, user_id?, max_members? }`.
+ */
+router.post('/community-scan', async (req: Request, res: Response) => {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!hasGatewayInternalToken(req) && identity?.exafy_admin !== true) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+    const { runCommunityScan } = await import('../services/community-autopilot/scan-runner');
+    const body = req.body ?? {};
+    const summary = await runCommunityScan(sb, {
+      dryRun: body.dry_run === true,
+      onlyUserId: typeof body.user_id === 'string' ? body.user_id : undefined,
+      maxMembers: typeof body.max_members === 'number' ? body.max_members : undefined,
+    });
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'community_autopilot.scan.completed' as any,
+      source: 'community-autopilot',
+      status: 'info',
+      message: `Community scan: ${summary.members_scanned} members, ${summary.rows_inserted} suggestions${summary.dry_run ? ' (dry run)' : ''}`,
+      payload: {
+        enabled: summary.enabled, dry_run: summary.dry_run, members_considered: summary.members_considered,
+        members_due: summary.members_due, members_scanned: summary.members_scanned, rows_inserted: summary.rows_inserted,
+      },
+    }).catch(() => {});
+    return res.json({ ok: true, ...summary });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} community-scan failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'scan failed' });
+  }
+});
+
 router.post('/generate', async (req: Request, res: Response) => {
   const LOG = '[VTID-01185]';
 
