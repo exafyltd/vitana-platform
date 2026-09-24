@@ -734,7 +734,8 @@ export function createUpstreamLiveMessageHandler(
                   user_id: session.identity.user_id,
                   tenant_id: session.identity.tenant_id,
                   // VTID-04367: the role the user is speaking in scopes the row.
-                  active_role: session.active_role || session.identity.role || null,
+                  // VTID-04495: never the JWT role claim ('authenticated').
+                  active_role: session.active_role || null,
                 };
               } else if (ctx.deps.isDevSandbox()) {
                 userMemoryIdentity = {
@@ -2527,7 +2528,8 @@ export function handleTurnComplete(
         user_id: session.identity.user_id,
         tenant_id: session.identity.tenant_id,
         // VTID-04367: the role the user is speaking in scopes the row.
-        active_role: session.active_role || session.identity.role || null,
+        // VTID-04495: never the JWT role claim ('authenticated').
+        active_role: session.active_role || null,
       };
     } else if (ctx.deps.isDevSandbox()) {
       userMemoryIdentity = {
