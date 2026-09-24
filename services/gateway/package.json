@@ -12,6 +12,7 @@
     "start": "node dist/index.js",
     "test": "jest",
     "test:flow": "jest test/orb/conversation-flow.contract.test.ts --silent=false",
+    "test:support": "jest test/vtid-04456-customer-support-pipeline-regression.test.ts test/feedback-pipeline.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
