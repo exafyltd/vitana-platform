@@ -1,0 +1,10 @@
+# VTID-04496 — commands run
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate   # → VTID-04496
+# read-only production evidence (Supabase MCP, SELECT only):
+#   oasis_events topic like 'orb.navigator.%' / tool calls / session counts, Sep 2026
+#   nav_catalog / nav_catalog_i18n row counts per platform/role/lang
+cd services/gateway
+npx jest test/nav-golden/golden-set.integrity.test.ts            # 6/6 pass
+NAV_GOLDEN_WRITE_BASELINE=1 npx jest test/nav-golden/nav-golden-baseline.test.ts   # writes baseline.legacy.json
+npx jest test/nav-golden                                          # 2 suites, 8/8 pass
+npx tsc --noEmit -p .                                             # clean
