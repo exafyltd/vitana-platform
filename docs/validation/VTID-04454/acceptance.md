@@ -46,17 +46,36 @@ The owner asked to switch to the scored ranking (2026-09-24).
 
 ## Acceptance
 
-| AC | Check | Evidence |
-|---|---|---|
-| AC-1 | Only an exact `true` enables; the time bound is clamped | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (flag and bound) |
-| AC-2 | The scored winner is served without mutating the fixed decision; agreement returns the same decision | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (applyScoredOpening) |
-| AC-3 | A pinned provider, a missing ranking or candidate, or an unreturned scored winner keeps the fixed decision | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (applyScoredOpening) |
-| AC-4 | Wake path: flag off → fixed; flag on → scored winner served and recorded; explicit selection → not scored; pinned → fixed; scoring past its bound → fixed | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (decideWakeBriefForSession) |
-| AC-5 | The comparison counts the openings the score chose and changed | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (comparison summary) |
-| AC-6 | Replay: the new cases meet their expectations; existing snapshots only gain `ranking_mode: "fixed"` | TEST: services/gateway/test/services/conversation/vtid-04443-conversation-replay.test.ts |
-| AC-7 | Pinned on staging, absent from production | TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts (deploy pins) |
-| AC-8 | The flag-off shadow pass is unchanged | TEST: services/gateway/test/services/conversation/vtid-04422-candidate-scoring.test.ts |
-| AC-9 | Live: a staging session records `ranking_mode: "scored"` in `continuation_shadow_ranked` | **Not run.** Staging ECS cannot place tasks (AWS account block). |
+AC-1: Only an exact `true` turns the scored opening on; the time bound is clamped to 100–1500 ms.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-2: The scored winner is served without mutating the fixed decision; when both rankings agree, the same decision object is returned.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-3: A pinned provider, a missing ranking or candidate, or a scored winner that was not returned keeps the fixed decision.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-4: On the wake path, with the flag off the fixed winner is served. With the flag on:
+- the scored winner is served and recorded;
+- an explicit selection is not scored;
+- a pinned provider keeps the fixed winner;
+- scoring past its time bound serves the fixed winner.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-5: The comparison summary counts the openings the score chose and the ones it changed.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-6: In the replay tests, the two new cases meet their expectations, and the existing snapshots only gain `ranking_mode: "fixed"`.
+TEST: services/gateway/test/services/conversation/vtid-04443-conversation-replay.test.ts
+
+AC-7: The flag is pinned on the staging workflow and absent from the production workflow.
+TEST: services/gateway/test/services/conversation/vtid-04454-scored-opening.test.ts
+
+AC-8: With the flag off, the after-the-fact shadow pass is unchanged.
+TEST: services/gateway/test/services/conversation/vtid-04422-candidate-scoring.test.ts
+
+AC-9 (live, **not run**): a staging session records `ranking_mode: "scored"` in `continuation_shadow_ranked`. Staging ECS cannot place tasks because of the AWS account block.
+UI: Command Hub → Assistant → Monitor, shadow-ranking comparison (`scored_openings`), once staging runs.
 
 ## Not changed
 
