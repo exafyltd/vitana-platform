@@ -16,6 +16,7 @@
 import type { LLMRouterMessage, LLMRouterResult, LLMRouterTool, LLMRouterToolCall } from '../llm-router';
 import type { FinishArgs, ToolOutcome } from './agent-tools';
 import { DEFAULT_STALL, ProgressLedger, REPLAN_PROMPT, type StallOptions, type TurnCall } from './agent-progress';
+import { ExplorationBudget, buildCommitPrompt, buildHandoffPrompt, explorationStopError, type ExplorationThresholds } from './agent-exploration';
 
 export interface AgentStep {
   turn: number;
@@ -58,6 +59,12 @@ export interface AgentLoopOptions {
    * default `DEFAULT_STALL` (re-plan after 6 idle turns, stop after 10).
    */
   stall?: StallOptions | false;
+  /**
+   * VTID-04466: exploration budget for a run that has not edited anything —
+   * a commit nudge, a hand-off instruction, then a stop. Off unless given
+   * (the runner passes it for the first round of a non-fix run only).
+   */
+  exploration?: ExplorationThresholds | null;
 }
 
 export interface AgentLoopResult {
@@ -75,6 +82,8 @@ export interface AgentLoopResult {
   usage: { inputTokens: number; outputTokens: number };
   /** VTID-04394: the run went in circles and was stopped by the progress ledger. */
   stalled?: boolean;
+  /** VTID-04466: stopped by the exploration budget (no edit by its stop point). */
+  explorationExhausted?: boolean;
 }
 
 export const CONTINUE_PROMPT = 'Tool results above. Continue — read, edit, run checks as needed; when done and checks pass, call finish.';
@@ -210,6 +219,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   let fallbackUsed = false;
   const step = (s: AgentStep) => { try { o.onStep?.(s); } catch { /* never let telemetry break the loop */ } };
   const ledger = o.stall === false ? null : new ProgressLedger(o.stall ?? DEFAULT_STALL);
+  const exploration = o.exploration ? new ExplorationBudget(o.exploration) : null;
 
   const cancelledResult = (): AgentLoopResult => {
     step({ turn: turns, kind: 'error', detail: 'cancelled by operator' });
@@ -293,9 +303,22 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
       return { ok: false, stalled: true, error: `agent stalled: ${ledger!.idleTurns} turns without progress (repeated tool calls)`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
     }
     const turnsRemaining = maxTurns - turns;
+    const explore = exploration ? exploration.record(turns, hasEdited) : 'continue';
+    if (explore === 'stop') {
+      step({ turn: turns, kind: 'error', detail: `exploration budget: ${turns} turns without an edit`, isError: true, data: { turns } });
+      return { ok: false, explorationExhausted: true, error: explorationStopError(turns), history, turns, toolCalls, provider, model, fallbackUsed, usage };
+    }
     if (verdict === 'replan') {
       step({ turn: turns, kind: 'nudge', detail: `re-plan: ${ledger!.idleTurns} turns without progress`, data: { idle_turns: ledger!.idleTurns } });
       prompt = REPLAN_PROMPT;
+    } else if (explore === 'handoff') {
+      step({ turn: turns, kind: 'nudge', detail: `exploration hand-off: ${turns} turns without an edit`, data: { turns } });
+      prompt = buildHandoffPrompt(turns, maxTurns);
+      exploration!.delivered('handoff');
+    } else if (explore === 'commit') {
+      step({ turn: turns, kind: 'nudge', detail: `exploration commit nudge: ${turns} turns without an edit`, data: { turns } });
+      prompt = buildCommitPrompt(turns, maxTurns);
+      exploration!.delivered('commit');
     } else if (hasEdited && turnsRemaining <= wrapUpMarginTurns) {
       step({ turn: turns, kind: 'nudge', detail: `wrap-up: ${turnsRemaining} turn(s) remain after an edit — forcing finish` });
       prompt = buildWrapUpPrompt(turnsRemaining);
