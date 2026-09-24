@@ -3671,3 +3671,59 @@ unrestricted git client — none of which this session has. The CloudShell
 remediation script for blocker 2 was already handed to a human in this same
 conversation; it has evidently not been run yet, since the IAM/VPC denials
 above are byte-for-byte identical to before it was written.
+
+## Addendum, 2026-09-24 (VTID-04451) — this session's own AWS credentials went from restricted to fully invalid
+
+Scheduled routine fired to continue the migration. Re-verification attempt
+hit a new, qualitatively different failure from every prior row in this
+document: the read-only AWS checks that have worked (with permission
+denials, not credential failures) on every check-in since 2026-09-22 now
+fail before reaching any authorization decision at all.
+
+```
+$ aws sts get-caller-identity
+An error occurred (InvalidClientTokenId) when calling the
+GetCallerIdentity operation: The security token included in the
+request is invalid.
+
+$ aws dms describe-replication-tasks --region eu-central-1
+An error occurred (UnrecognizedClientException): The security token
+included in the request is invalid.
+
+$ aws ec2 describe-vpc-endpoints --region eu-central-1
+An error occurred (AuthFailure): AWS was not able to validate the
+provided access credentials
+
+$ aws iam get-role --role-name vitana-ecs-task-role
+An error occurred (InvalidClientTokenId): The security token included
+in the request is invalid.
+```
+
+**This is a different failure class than every prior AWS blocker in this
+document.** Every earlier row (2026-09-21 through 2026-09-22) got a real
+`AccessDenied`/`UnauthorizedOperation` naming the identity
+(`arn:aws:iam::472838866351:user/claude-code-aws-agent`) and citing either
+a missing identity-based policy or an explicit permissions-boundary deny —
+i.e. AWS accepted the credentials and then evaluated (and refused) the
+specific action. `InvalidClientTokenId`/`UnrecognizedClientException` mean
+AWS rejected the credentials themselves before any authorization check ran
+— `GetCallerIdentity`, the one call with no permissions of its own to
+check, fails the same way. Retried once after a few seconds; identical
+result, so this is not a transient blip.
+
+**Not investigated further, and deliberately not worked around:** whether
+this is a rotated/expired key, a revoked session, or an environment
+issue is unknown from inside this session — there is no way to
+distinguish those from here, and guessing at a fix (e.g. re-reading env
+vars, assuming a refresh mechanism exists) risks exactly the kind of
+unverified-context action this repo's own governance rules forbid. This
+is a **new, fourth item** for whoever has real access to check, on top of
+the three still-standing blockers above (DMS dispatch classifier, VPC/IAM
+permissions boundary, git branch-reset classifier) — all of which remain
+unverifiable from this session until AWS access is restored one way or
+the other.
+
+**No code, AWS, or git state changed by this addendum.** The scheduled PR
+check-in on #3563 (separate from this routine) is unaffected — it only
+needs GitHub access, which is unrelated to AWS credentials and still
+working.
