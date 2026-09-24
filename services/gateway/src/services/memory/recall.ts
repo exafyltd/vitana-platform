@@ -24,6 +24,7 @@
  */
 
 import { getMemoryContext, type MemoryPack } from '../memory-broker';
+import { memoryRoleForWrite } from './scope';
 
 export interface RecallIdentity {
   user_id: string;
@@ -129,13 +130,16 @@ export async function recallOrbMemoryItems(
   const read = opts.read ?? getMemoryContext;
   const empty = { facts: 0, episodes: 0, diary: 0 };
   try {
+    // VTID-04495: a personal or database role ('authenticated') reads as
+    // personal memory; only a real work role adds its own scope.
+    const workRole = memoryRoleForWrite(identity.active_role);
     const pack = await read({
       tenant_id: identity.tenant_id,
       user_id: identity.user_id,
       intent: 'recall_history',
       channel: 'orb-live',
-      role: identity.active_role ?? undefined,
-      lens: identity.active_role ? { active_role: identity.active_role } : undefined,
+      role: workRole ?? undefined,
+      lens: workRole ? { active_role: workRole } : undefined,
       required_blocks: ['SEMANTIC', 'EPISODIC', 'DIARY'],
       latency_budget_ms: opts.budgetMs ?? ORB_RECALL_BUDGET_MS,
       query: opts.query,
