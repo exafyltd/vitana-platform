@@ -19,6 +19,11 @@ on:
         required: false
         type: string
         default: 'https://vitanaland.com'
+      read_only:
+        description: 'Read-only run (VTID-04482): no test-user reset, no /me/active-role write'
+        required: false
+        type: boolean
+        default: true
 
 concurrency:
   group: e2e-run-${{ github.run_id }}
@@ -76,7 +81,10 @@ jobs:
           COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://vitanaland.com' }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # VTID-04482: a read-only run gets no service-role key at all, so
+          # global-setup cannot write to the test user even if the guard fails.
+          E2E_READONLY: ${{ inputs.read_only && '1' || '' }}
+          SUPABASE_SERVICE_ROLE: ${{ !inputs.read_only && secrets.SUPABASE_SERVICE_ROLE || '' }}
 
       - name: Report failure to self-healing
         if: failure()

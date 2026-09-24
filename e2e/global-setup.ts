@@ -13,6 +13,14 @@ const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!';
  * - Skips gracefully if SUPABASE_SERVICE_ROLE is not set (local dev fallback)
  */
 export default async function globalSetup() {
+  // VTID-04482: read-only runs never touch the test user. The staging
+  // frontend writes to the same Supabase project as production, so a
+  // password/app_metadata reset here is a write to a live account.
+  if (process.env.E2E_READONLY === '1') {
+    console.log('[global-setup] E2E_READONLY=1 — skipping test user provisioning');
+    return;
+  }
+
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!serviceRoleKey) {
     console.log('[global-setup] SUPABASE_SERVICE_ROLE not set — skipping test user provisioning');
