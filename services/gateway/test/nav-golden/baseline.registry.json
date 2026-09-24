@@ -1,0 +1,173 @@
+{
+  "resolver": "registry resolver (Titan v2, 512d, golden sentences held out)",
+  "overall": {
+    "total": 167,
+    "correct": 95,
+    "reaches_right_screen": 88,
+    "wrong_screen": 0,
+    "forbidden_hits": 0,
+    "false_action": 0,
+    "silent": 2,
+    "clarified_with_right_option": 70,
+    "right_screen_wrong_behaviour": 0
+  },
+  "by_lang": {
+    "sr": {
+      "total": 15,
+      "correct": 6,
+      "reaches_right_screen": 5,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 7,
+      "right_screen_wrong_behaviour": 0
+    },
+    "en": {
+      "total": 68,
+      "correct": 48,
+      "reaches_right_screen": 45,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 20,
+      "right_screen_wrong_behaviour": 0
+    },
+    "de": {
+      "total": 49,
+      "correct": 31,
+      "reaches_right_screen": 29,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 18,
+      "right_screen_wrong_behaviour": 0
+    },
+    "es": {
+      "total": 13,
+      "correct": 3,
+      "reaches_right_screen": 2,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 10,
+      "right_screen_wrong_behaviour": 0
+    },
+    "fr": {
+      "total": 8,
+      "correct": 3,
+      "reaches_right_screen": 3,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 5,
+      "right_screen_wrong_behaviour": 0
+    },
+    "pl": {
+      "total": 3,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 3,
+      "right_screen_wrong_behaviour": 0
+    },
+    "pt": {
+      "total": 2,
+      "correct": 1,
+      "reaches_right_screen": 1,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 1,
+      "right_screen_wrong_behaviour": 0
+    },
+    "ru": {
+      "total": 3,
+      "correct": 1,
+      "reaches_right_screen": 1,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 2,
+      "right_screen_wrong_behaviour": 0
+    },
+    "tr": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 2,
+      "right_screen_wrong_behaviour": 0
+    },
+    "ar": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 2,
+      "right_screen_wrong_behaviour": 0
+    },
+    "zh": {
+      "total": 2,
+      "correct": 2,
+      "reaches_right_screen": 2,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    }
+  },
+  "by_intent": {
+    "open": {
+      "total": 107,
+      "correct": 44,
+      "reaches_right_screen": 44,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 61,
+      "right_screen_wrong_behaviour": 0
+    },
+    "where": {
+      "total": 53,
+      "correct": 44,
+      "reaches_right_screen": 44,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 9,
+      "right_screen_wrong_behaviour": 0
+    },
+    "none": {
+      "total": 7,
+      "correct": 7,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 0,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    }
+  },
+  "clarified_right_first": 59
+}

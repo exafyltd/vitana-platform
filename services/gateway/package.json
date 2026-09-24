@@ -8,7 +8,7 @@
     "prebuild": "rm -rf dist",
     "build": "tsc && npm run copy-frontend && npm run copy-data",
     "copy-frontend": "mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/",
-    "copy-data": "mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/",
+    "copy-data": "mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/ && mkdir -p dist/navigation/data && cp src/navigation/data/* dist/navigation/data/",
     "start": "node dist/index.js",
     "test": "jest",
     "test:calendar": "jest test/calendar test/orb-tools/calendar-management-tools.test.ts test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts test/services/calendar-role-context.test.ts test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts test/vtid-04321-calendar-backend-repair.test.ts test/vtid-04331-calendar-data-model.test.ts test/vtid-04338-calendar-default-reminders.test.ts test/vtid-04356-calendar-source-producers.test.ts test/vtid-04357-calendar-work-lenses.test.ts test/vtid-04358-calendar-ics-feed.test.ts test/vtid-04372-calendar-google-sync.test.ts test/vtid-04373-calendar-reminder-quiet-hours.test.ts test/vtid-04374-calendar-maintenance.test.ts test/vtid-04436-calendar-push.test.ts",

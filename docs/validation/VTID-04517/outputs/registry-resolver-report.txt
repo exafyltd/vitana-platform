@@ -1,0 +1,107 @@
+    === NAV GOLDEN REPORT — registry resolver (Titan v2, 512d, golden sentences held out) ===
+    ALL      n=167  correct  56.9%  reaches  52.7%  wrong   0  forbidden  0  silent   2  false-action  0
+    
+    intent:open n=107  correct  41.1%  reaches  41.1%  wrong   0  forbidden  0  silent   2  false-action  0
+    intent:where n= 53  correct  83.0%  reaches  83.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    intent:none n=  7  correct 100.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    
+    ar       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    de       n= 49  correct  63.3%  reaches  59.2%  wrong   0  forbidden  0  silent   0  false-action  0
+    en       n= 68  correct  70.6%  reaches  66.2%  wrong   0  forbidden  0  silent   0  false-action  0
+    es       n= 13  correct  23.1%  reaches  15.4%  wrong   0  forbidden  0  silent   0  false-action  0
+    fr       n=  8  correct  37.5%  reaches  37.5%  wrong   0  forbidden  0  silent   0  false-action  0
+    pl       n=  3  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    pt       n=  2  correct  50.0%  reaches  50.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    ru       n=  3  correct  33.3%  reaches  33.3%  wrong   0  forbidden  0  silent   0  false-action  0
+    sr       n= 15  correct  40.0%  reaches  33.3%  wrong   0  forbidden  0  silent   2  false-action  0
+    tr       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    zh       n=  2  correct 100.0%  reaches 100.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    
+    Failures:
+         clarified_with_right_option  prod.news-screen.en.1        "news screen news feed" → clarify[HOME.OVERVIEW|COMM.FEED]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  prod.community-news.en.1     "open community news" → clarify[COMM.OVERVIEW|COMM.GROUPS|HOME.NEWS_COMMUNITY|INTENTS.BOARD]  expect∈[HOME.NEWS_COMMUNITY]
+         clarified_with_right_option  prod.my-journeys.en.1        "take me to my journeys screen" → clarify[AUTOPILOT.MY_JOURNEY]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  prod.vitana-index.sr.1       "Vitana indeks" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|HEALTH.EDUCATION|MEMORY.PERMISSIONS]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  news.en.1                    "Show me the latest news" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY|INBOX.OVERVIEW]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.en.2                    "Where can I read the longevity news?" → clarify[HOME.OVERVIEW|HEALTH.EDUCATION|HOME.NEWS_ALL|HEALTH.EDUCATION_VIDEOS|HEALTH.EDUCATION_PODCASTS]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.de.2                    "Wo finde ich die Neuigkeiten?" → clarify[INBOX.OVERVIEW|HOME.NEWS_COMMUNITY|HOME.NEWS_ALL]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.es.1                    "Muéstrame las últimas noticias" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY|COMM.EVENTS_TODAY|COMM.EVENTS_UPCOMING]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.pl.1                    "Pokaż mi najnowsze wiadomości o długowieczności" → clarify[HOME.OVERVIEW|HEALTH.EDUCATION|INBOX.OVERVIEW]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.pt.1                    "Mostra-me as últimas notícias" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY|INBOX.OVERVIEW|COMM.EVENTS_TODAY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.tr.1                    "Bana son haberleri göster" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.ar.1                    "اعرض لي آخر الأخبار" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  messages.en.1                "Open my messages" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|CONNECTORS.PRODUCTIVITY|MEMORY.DIARY|HEALTH.SERVICES_MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.de.1                "Öffne meine Nachrichten" → clarify[INBOX.OVERVIEW|HOME.NEWS_ALL|HOME.OVERVIEW|INBOX.ARCHIVED|MEMORY.DIARY]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.es.1                "Abre mis mensajes" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|PROFILE.ME|BUSINESS.SERVICES|ASSISTANT.PROACTIVE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.fr.1                "Ouvre mes messages" → clarify[INBOX.INSPIRATION|INBOX.OVERVIEW]  expect∈[INBOX.OVERVIEW]
+         silent                       messages.sr.1                "Otvori moje poruke" → clarify[AI.RECOMMENDATIONS|WALLET.ACTIVITY|INBOX.ARCHIVED|BUSINESS.SERVICES|DISCOVER.CART]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.pl.1                "Otwórz moje wiadomości" → clarify[HOME.NEWS_COMMUNITY|INBOX.ARCHIVED|INBOX.OVERVIEW|SETTINGS.NOTIFICATIONS|INTENTS.MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.ru.1                "Открой мои сообщения" → clarify[INBOX.OVERVIEW|INTENTS.MINE|SETTINGS.PREFERENCES|DISCOVER.MARKETPLACE_MINE|PROFILE.ME]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.tr.1                "Mesajlarımı aç" → clarify[INBOX.OVERVIEW|CONNECTORS.PRODUCTIVITY|INBOX.ARCHIVED|SETTINGS.SUPPORT_FAQ|COMM.FEED]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.ar.1                "افتح رسائلي" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|INTENTS.MINE|PROFILE.ME|DISCOVER.MARKETPLACE_MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  journey.de.2                 "Wo finde ich meine Reise?" → clarify[HEALTH.PLANS|AUTOPILOT.MY_JOURNEY]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  journey.es.1                 "Abre mi viaje" → clarify[AUTOPILOT.MY_JOURNEY|MEMORY.DIARY|CALENDAR.OVERVIEW|WALLET.OVERVIEW|SETTINGS.PREFERENCES]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  index.en.1                   "Open my Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|SETTINGS.PRIVACY|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.en.2                   "Where can I see my Vitana Index score?" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|SETTINGS.PRIVACY|COMM.TALK_TO_VITANA|INBOX.INSPIRATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.de.1                   "Öffne meinen Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW|HEALTH.EDUCATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.de.2                   "Wo sehe ich meinen Vitana-Index?" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|SETTINGS.PRIVACY|MEMORY.OVERVIEW|HEALTH.EDUCATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.es.1                   "Muéstrame mi Índice Vitana" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|MEMORY.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.fr.1                   "Montre-moi mon indice Vitana" → clarify[OVERLAY.VITANA_INDEX|HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|HEALTH.EDUCATION|SETTINGS.PRIVACY]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.sr.1                   "Pokaži mi moj Vitana indeks" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|PUBLIC.LANDING|SETTINGS.PRIVACY]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.pl.1                   "Pokaż mój Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|HEALTH.EDUCATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.ru.1                   "Покажи мой индекс Витана" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  compass.es.1                 "Abre mi brújula de vida" → clarify[LIFE_COMPASS.OVERLAY|MEMORY.DIARY|MEMORY.TIMELINE|PROFILE.ME]  expect∈[LIFE_COMPASS.OVERLAY]
+         clarified_with_right_option  supplements-mine.en.1        "Show my supplements" → clarify[HEALTH.SUPPLEMENTS|DISCOVER.SUPPLEMENTS|HEALTH.BIOLOGY_SUPPLEMENTS|WALLET.SUBSCRIPTIONS|HEALTH.PLANS_NUTRITION]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  supplements-mine.en.2        "Where do I see which supplements I take?" → clarify[HEALTH.SUPPLEMENTS|HEALTH.BIOLOGY_SUPPLEMENTS|DISCOVER.SUPPLEMENTS|WALLET.SUBSCRIPTIONS|HEALTH.PLANS_NUTRITION]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  supplements-mine.de.1        "Zeig mir meine Nahrungsergänzungsmittel" → clarify[DISCOVER.SUPPLEMENTS|HEALTH.SUPPLEMENTS|HEALTH.PLANS_NUTRITION|HEALTH.BIOLOGY_SUPPLEMENTS|BUSINESS.INSIGHTS_EARNINGS]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  pillars.de.1                 "Zeig mir die Gesundheitssäulen" → clarify[HEALTH.PILLARS|HEALTH.CONDITIONS|HEALTH.EDUCATION|HEALTH.OVERVIEW|HEALTH.SERVICES_MINE]  expect∈[HEALTH.PILLARS]
+         clarified_with_right_option  diary.en.1                   "Open my diary" → clarify[MEMORY.DIARY|CALENDAR.OVERVIEW|MEMORY.DAILY_DIARY|INBOX.INSPIRATION|AUTOPILOT.MY_JOURNEY]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.de.1                   "Öffne mein Tagebuch" → clarify[CALENDAR.OVERVIEW|MEMORY.DIARY|INBOX.OVERVIEW]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.es.1                   "Abre mi diario" → clarify[MEMORY.DIARY|CALENDAR.OVERVIEW|INBOX.INSPIRATION|MEMORY.DAILY_DIARY|MEMORY.TIMELINE]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.fr.1                   "Ouvre mon journal intime" → clarify[MEMORY.DIARY]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.sr.1                   "Otvori moj dnevnik" → clarify[MEMORY.DIARY|CALENDAR.OVERVIEW|MEMORY.DAILY_DIARY|BUSINESS.SERVICES|MEMORY.DIARY_BUGS]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  memory.de.1                  "Öffne meinen Erinnerungsgarten" → clarify[MEMORY.OVERVIEW|REMINDERS.OVERVIEW|MEMORY.RECALL|MEMORY.TIMELINE]  expect∈[MEMORY.OVERVIEW|MEMORY.TIMELINE|MEMORY.RECALL]
+         clarified_with_right_option  calendar.es.1                "Abre mi calendario" → clarify[CALENDAR.OVERVIEW|MEMORY.DIARY|MEMORY.TIMELINE|MEMORY.DAILY_DIARY|DISCOVER.CART]  expect∈[CALENDAR.OVERVIEW]
+         clarified_with_right_option  calendar.sr.1                "Otvori moj kalendar" → clarify[CONNECTORS.PRODUCTIVITY|CALENDAR.OVERVIEW|MEMORY.DIARY|BUSINESS.SERVICES|PROFILE.ME]  expect∈[CALENDAR.OVERVIEW]
+         clarified_with_right_option  reminders.de.1               "Zeig mir meine Erinnerungen" → clarify[MEMORY.OVERVIEW|REMINDERS.OVERVIEW|MEMORY.RECALL|INBOX.INSPIRATION|SETTINGS.BILLING_INVOICES]  expect∈[REMINDERS.OVERVIEW]
+         clarified_with_right_option  events.en.1                  "Show me community events" → clarify[COMM.EVENTS|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.de.1                  "Zeig mir Community-Events" → clarify[COMM.EVENTS|COMM.EVENTS_UPCOMING|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.es.1                  "Muéstrame los eventos" → clarify[BUSINESS.SERVICES_EVENTS|COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.fr.1                  "Montre-moi les événements" → clarify[COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|BUSINESS.SERVICES_EVENTS|COMM.EVENTS|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.sr.1                  "Pokaži mi događaje" → clarify[COMM.EVENTS|COMM.EVENTS_UPCOMING|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  groups.de.1                  "Zeig mir die Gruppen" → clarify[COMM.GROUPS|COMM.MEMBERS|COMM.GROUPS_DISCOVER|SHARING.DISTRIBUTION|COMM.LIVE_ROOMS]  expect∈[COMM.GROUPS]
+         clarified_with_right_option  members.en.2                 "Where can I see who else is in the community?" → clarify[COMM.MEMBERS|SETTINGS.TENANT_ROLE|AUTH.MAXINA_PORTAL|INTENTS.MINE|HOME.NEWS_COMMUNITY]  expect∈[COMM.MEMBERS]
+         clarified_with_right_option  members.de.1                 "Zeig mir die Mitglieder" → clarify[COMM.MATCHES|WALLET.BALANCE_MEMBERSHIP|COMM.GROUPS|COMM.MEMBERS|BUSINESS.CLIENTS]  expect∈[COMM.MEMBERS]
+         clarified_with_right_option  matches.en.1                 "Show me my matches" → clarify[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES|COMM.FIND_PARTNER_POSTS|DISCOVER.ORDERS|DISCOVER.CART]  expect∈[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES]
+         clarified_with_right_option  matches.de.1                 "Zeig mir meine Matches" → clarify[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES|DISCOVER.MY_TICKETS|COMM.FIND_PARTNER_POSTS|COMM.LIVE_ROOMS_PAST]  expect∈[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES]
+         clarified_with_right_option  cart.de.1                    "Öffne meinen Warenkorb" → clarify[DISCOVER.CART|WALLET.OVERVIEW|DISCOVER.MARKETPLACE_MINE|MEMORY.DIARY]  expect∈[DISCOVER.CART]
+         silent                       cart.sr.1                    "Otvori moju korpu" → clarify[INBOX.OVERVIEW|PROFILE.ME|BUSINESS.SALES_PROMOTIONS|WALLET.ACTIVITY|SETTINGS.PREFERENCES]  expect∈[DISCOVER.CART]
+         clarified_with_right_option  discover.en.1                "Open discover" → clarify[DISCOVER.OVERVIEW|SEARCH.OVERVIEW]  expect∈[DISCOVER.OVERVIEW|DISCOVER.MARKETPLACE]
+         clarified_with_right_option  discover.de.1                "Öffne Entdecken" → clarify[DISCOVER.OVERVIEW|COMM.MEDIA_PODCASTS|COMM.EVENTS|SETTINGS.SUPPORT|AUTOPILOT.MY_JOURNEY]  expect∈[DISCOVER.OVERVIEW|DISCOVER.MARKETPLACE]
+         clarified_with_right_option  wallet.es.1                  "Abre mi billetera" → clarify[WALLET.OVERVIEW|SETTINGS.BILLING_INVOICES|MEMORY.DIARY|CALENDAR.OVERVIEW]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+         clarified_with_right_option  wallet.sr.1                  "Otvori moj novčanik" → clarify[WALLET.OVERVIEW|WALLET.ACTIONS|WALLET.BALANCE_OPTIMIZATION|WALLET.BALANCE_MEMBERSHIP|MEMORY.DIARY]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+         clarified_with_right_option  subscriptions.en.1           "Where can I see my subscription?" → clarify[SETTINGS.BILLING_PLAN|WALLET.SUBSCRIPTIONS|SETTINGS.BILLING|DISCOVER.ORDERS|WALLET.BALANCE_MEMBERSHIP]  expect∈[WALLET.SUBSCRIPTIONS|SETTINGS.BILLING_PLAN]
+         clarified_with_right_option  profile.en.1                 "Open my profile" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|SETTINGS.PREFERENCES|AUTOPILOT.MY_JOURNEY]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.es.1                 "Abre mi perfil" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PREFERENCES|INBOX.OVERVIEW|AI.COMPANION]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.fr.1                 "Ouvre mon profil" → clarify[PROFILE.ME|PROFILE.PRIVACY]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.sr.1                 "Otvori moj profil" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PREFERENCES|BUSINESS.SERVICES|SETTINGS.PRIVACY_VISIBILITY]  expect∈[PROFILE.ME]
+         clarified_with_right_option  settings.en.1                "Open settings" → clarify[SETTINGS.OVERVIEW|SETTINGS.PREFERENCES|SETTINGS.PRIVACY|ASSISTANT.VOICE|ASSISTANT.PROACTIVE]  expect∈[SETTINGS.OVERVIEW]
+         clarified_with_right_option  settings.de.1                "Öffne die Einstellungen" → clarify[SETTINGS.OVERVIEW|ASSISTANT.VOICE|ASSISTANT.PROACTIVE|SETTINGS.PRIVACY|ASSISTANT.AUTOPILOT]  expect∈[SETTINGS.OVERVIEW]
+         clarified_with_right_option  privacy.en.1                 "Open my privacy settings" → clarify[SETTINGS.PRIVACY|SETTINGS.OVERVIEW|SETTINGS.PREFERENCES|PUBLIC.PRIVACY|PROFILE.PRIVACY]  expect∈[SETTINGS.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|PROFILE.PRIVACY]
+         clarified_with_right_option  privacy.de.1                 "Öffne die Datenschutzeinstellungen" → clarify[SETTINGS.PRIVACY|SETTINGS.OVERVIEW|PROFILE.PRIVACY|ASSISTANT.VOICE|SHARING.DATA_CONSENT]  expect∈[SETTINGS.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|PROFILE.PRIVACY]
+         clarified_with_right_option  earnings.en.1                "Where can I see how much I earned?" → clarify[BUSINESS.INSIGHTS_EARNINGS|WALLET.REWARDS|BUSINESS.SELL_EARN|WALLET.BALANCE|WALLET.OVERVIEW]  expect∈[BUSINESS.INSIGHTS_EARNINGS|BUSINESS.ANALYTICS|WALLET.REWARDS]
+    
+    clarified with the right screen first: 59
+    phrasings 5404  top1 71.4%  top5 93.3%  confident 33.1%  confident-wrong-page 50
+      en  top1 90.7%  top5 99.8%  wrong-page 3
+      de  top1 81.7%  top5 96.7%  wrong-page 2
+      es  top1 84.4%  top5 99.0%  wrong-page 0
+      fr  top1 76.7%  top5 97.8%  wrong-page 2
+      sr  top1 40.4%  top5 76.3%  wrong-page 13
+      pl  top1 76.3%  top5 96.1%  wrong-page 4
+      pt  top1 78.5%  top5 98.0%  wrong-page 1
+      ru  top1 70.4%  top5 93.3%  wrong-page 4
+      tr  top1 60.2%  top5 89.7%  wrong-page 6
+      ar  top1 57.2%  top5 83.2%  wrong-page 7
+      zh  top1 73.7%  top5 97.8%  wrong-page 8
+    weakest screens (top5 share):
