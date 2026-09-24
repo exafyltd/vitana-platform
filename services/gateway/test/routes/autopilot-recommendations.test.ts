@@ -1497,3 +1497,44 @@ describe('CA-2 role-scoped lineups', () => {
     expect(devRpc).toBe(false);
   });
 });
+
+
+// =============================================================================
+// VTID-04503 (Community Autopilot CA-3): typed actions on activation
+// =============================================================================
+
+describe('CA-3 typed actions', () => {
+  it('a voice activation of a medium-risk action returns a read-back and changes nothing', async () => {
+    const { activateCommunityAutopilotRecommendation } = require('../../src/routes/autopilot-recommendations');
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Join the runners', source_type: 'community', source_ref: 'engage_meetup', user_id: USER_ID,
+        status: 'new', action: { kind: 'join_group', params: { group_id: 'g1', group_name: 'Morning Runners' } } },
+    ]);
+    const r = await activateCommunityAutopilotRecommendation(USER_ID, REC_ID, { channel: 'voice' });
+    expect(r).toMatchObject({ ok: true, needs_confirmation: true });
+    expect(r.readback).toContain('Morning Runners');
+    const patched = (global.fetch as jest.Mock).mock.calls.some(
+      ([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH',
+    );
+    expect(patched).toBe(false);
+  });
+
+  it('an app activation runs the typed action and returns its result', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Explore Discover', source_type: 'community', source_ref: 'onboarding_explore', user_id: USER_ID,
+        status: 'new', action: { kind: 'open_screen', params: { route: '/discover' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), [{ id: 'other' }]);
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.action_result).toEqual({ status: 'navigate', kind: 'open_screen', route: '/discover' });
+    expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'community_autopilot.action.executed',
+      payload: expect.objectContaining({ recommendation_id: REC_ID, kind: 'open_screen', outcome: 'navigate', channel: 'app' }),
+    }));
+  });
+});

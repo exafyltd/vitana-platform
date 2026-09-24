@@ -59,7 +59,7 @@ describe('activate_recommendation → canonical community activation (VTID-04493
     activate.mockResolvedValue({ ok: true, httpStatus: 200, title: 'Evening walk', calendar_event_id: 'ev-9' });
     const r = await dispatchOrbTool('activate_recommendation', { id: REC }, IDENT, stubSb());
     expect(r.ok).toBe(true);
-    expect(activate).toHaveBeenCalledWith(USER, REC, { tenantId: 'tenant-1', skipReplenish: true });
+    expect(activate).toHaveBeenCalledWith(USER, REC, { tenantId: 'tenant-1', skipReplenish: true, channel: 'voice', confirmed: false });
     if (r.ok === true) {
       expect(r.result).toMatchObject({ title: 'Evening walk', already_active: false, calendar_event_id: 'ev-9' });
       expect(r.text).toMatch(/Activated "Evening walk"; a calendar slot was booked/);

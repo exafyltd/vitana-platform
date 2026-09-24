@@ -1980,8 +1980,38 @@ function buildLiveApiToolsUngated(
                 description:
                   'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
               },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.',
+              },
             },
             required: ['id'],
+          },
+        },
+        {
+          // VTID-04503 (Community Autopilot CA-3)
+          name: 'confirm_pending_action',
+          description: [
+            'The user just agreed ("yes", "okay, do it", "ja, mach das") to the',
+            'offer you made. Runs exactly that stored offer — no id needed.',
+            'If the result says awaiting_confirmation, read the details back in',
+            'your own words and, if the user agrees, call again with confirm=true.',
+            'If it says there is no open offer, ask what they would like to do.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              confirm: {
+                type: 'boolean',
+                description: 'True only after a read-back the user agreed to.',
+              },
+              offer_id: {
+                type: 'string',
+                description: 'OPTIONAL — the offer_id of the offer, when you have it.',
+              },
+            },
+            required: [],
           },
         },
         {
@@ -2041,6 +2071,11 @@ function buildLiveApiToolsUngated(
                 items: { type: 'integer' },
                 description:
                   'OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").',
+              },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.',
               },
             },
             required: [],

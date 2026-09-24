@@ -1559,7 +1559,7 @@ async def send_chat_message(
 
 
 @function_tool
-async def activate_recommendation(context: RunContext, recommendation_id: str | None = None) -> str:
+async def activate_recommendation(context: RunContext, recommendation_id: str | None = None, confirm: bool | None = None) -> str:
     """Activate the Autopilot recommendation the user just agreed to (VTID-01180).
 
     VTID-04493: dispatched through the shared ORB tool registry, which runs the
@@ -1567,7 +1567,17 @@ async def activate_recommendation(context: RunContext, recommendation_id: str | 
     notification). The REST route this used to call needed ?role=community and
     otherwise took the Dev Autopilot activation path. With no id, the server
     resolves the offer Vitana just made."""
-    body = await _dispatch(context, "activate_recommendation", {"id": recommendation_id or ""})
+    body = await _dispatch(context, "activate_recommendation", {"id": recommendation_id or "", "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def confirm_pending_action(context: RunContext, confirm: bool | None = None, offer_id: str | None = None) -> str:
+    """The user agreed to the offer you just made: run exactly that stored offer.
+
+    If the result says awaiting_confirmation, read the details back and call
+    again with confirm=True if they agree (VTID-04503)."""
+    body = await _dispatch(context, "confirm_pending_action", {"confirm": confirm, "offer_id": offer_id})
     return summarize(body)
 
 
@@ -1586,6 +1596,7 @@ async def activate_autopilot_recommendations(
     context: RunContext,
     ids: list[str] | None = None,
     positions: list[int] | None = None,
+    confirm: bool | None = None,
 ) -> str:
     """Activate Autopilot items on the user's behalf, only after they agreed.
 
@@ -1595,6 +1606,7 @@ async def activate_autopilot_recommendations(
     body = await _dispatch(context, "activate_autopilot_recommendations", {
             "ids": ids,
             "positions": positions,
+            "confirm": confirm,
         })
     return summarize(body)
 
@@ -6382,7 +6394,7 @@ def all_tool_names() -> list[str]:
         "resolve_recipient", "send_chat_message",
         # Autopilot activation (3) — VTID-04493 adds list + batch activate
         "activate_recommendation", "get_autopilot_recommendations",
-        "activate_autopilot_recommendations",
+        "activate_autopilot_recommendations", "confirm_pending_action",
         # Sharing (1)
         "share_link",
         # Vitana Intent Engine (8)

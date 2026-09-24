@@ -39,6 +39,11 @@ export interface VoiceActivationOutcome {
   already_active: boolean;
   calendar_event_id: string | null;
   error?: string;
+  /** VTID-04503: a medium-risk typed action waits for a read-back confirmation. */
+  needs_confirmation?: boolean;
+  readback?: string;
+  /** VTID-04503: what the typed action did, when the suggestion has one. */
+  action_result?: unknown;
 }
 
 /**
@@ -65,11 +70,14 @@ export async function activateForVoice(
   userId: string,
   recId: string,
   tenantId: string | null,
+  opts: { confirmed?: boolean } = {},
 ): Promise<VoiceActivationOutcome> {
   const { activateCommunityAutopilotRecommendation } = await import('../../routes/autopilot-recommendations');
   const r = await activateCommunityAutopilotRecommendation(userId, recId, {
     tenantId: tenantId || undefined,
     skipReplenish: true,
+    channel: 'voice',
+    confirmed: opts.confirmed === true,
   });
   if (!r.ok) {
     return {
@@ -87,6 +95,9 @@ export async function activateForVoice(
     title: r.title ?? null,
     already_active: !!r.already_activated,
     calendar_event_id: r.calendar_event_id ?? null,
+    needs_confirmation: r.needs_confirmation === true,
+    readback: r.readback,
+    action_result: r.action_result ?? null,
   };
 }
 
@@ -179,7 +190,7 @@ export async function tool_activate_autopilot_recommendations(
     const outcomes: VoiceActivationOutcome[] = [];
     for (const recId of targets) {
       try {
-        outcomes.push(await activateForVoice(id.user_id, recId, id.tenant_id));
+        outcomes.push(await activateForVoice(id.user_id, recId, id.tenant_id, { confirmed: args.confirm === true }));
       } catch (err) {
         outcomes.push({
           ok: false,
@@ -192,37 +203,109 @@ export async function tool_activate_autopilot_recommendations(
       }
     }
 
-    // A used list can't be replayed by a stray repeat call.
-    if (listed.length > 0) await clearOrbSessionState(sb, id.user_id, 'autopilot_listed_ids');
+    // A used list can't be replayed by a stray repeat call — unless something is
+    // still waiting for the member's read-back confirmation.
+    if (listed.length > 0 && !outcomes.some((o) => o.needs_confirmation)) {
+      await clearOrbSessionState(sb, id.user_id, 'autopilot_listed_ids');
+    }
 
-    const done = outcomes.filter((o) => o.ok);
+    const waiting = outcomes.filter((o) => o.ok && o.needs_confirmation);
+    const done = outcomes.filter((o) => o.ok && !o.needs_confirmation);
     const failed = outcomes.filter((o) => !o.ok);
     return {
       ok: true,
       result: {
         activated: done.length,
         failed: failed.length,
+        awaiting_confirmation: waiting.length,
         items: outcomes.map((o) => ({
           id: o.id,
           ok: o.ok,
           title: o.title,
           already_active: o.already_active,
           calendar_event_id: o.calendar_event_id,
+          needs_confirmation: o.needs_confirmation === true,
+          readback: o.readback ?? null,
+          action_result: o.action_result ?? null,
           error: o.error ?? null,
         })),
       },
-      text:
-        done.length === 0
-          ? `None could be activated (${failed.map((f) => f.error).join(', ')}).`
-          : `Activated: ${done.map((d) => `"${d.title ?? d.id}"`).join('; ')}.` +
-            (failed.length > 0 ? ` ${failed.length} could not be activated.` : ''),
+      text: [
+        done.length > 0 ? `Activated: ${done.map((d) => `"${d.title ?? d.id}"`).join('; ')}.` : '',
+        waiting.length > 0
+          ? `Needs the member's confirmation first — read this back and call again with confirm=true if they agree: ${waiting.map((w) => w.readback).join(' ')}`
+          : '',
+        failed.length > 0 ? `${failed.length} could not be activated (${failed.map((f) => f.error).join(', ')}).` : '',
+      ].filter(Boolean).join(' ') || 'Nothing was activated.',
     };
   } catch (err) {
     return { ok: false, error: `activate_autopilot_recommendations failed: ${(err as Error).message}` };
   }
 }
 
+// ---------------------------------------------------------------------------
+// confirm_pending_action (VTID-04503)
+// ---------------------------------------------------------------------------
+
+/**
+ * "Okay, do it." Runs exactly the offer Vitana just made — the one stored in
+ * orb_session_state `pending_cta` with its expiry — so the model never has to
+ * carry an id across turns. Only offers a spoken yes may commit are run here:
+ * `activate_recommendation`, or a tool the orchestrator catalog classifies as a
+ * user-own self commit. Anything else is refused with a reason.
+ *
+ * `confirm: true` is passed through for a medium-risk action the member agreed
+ * to after the read-back.
+ */
+export async function tool_confirm_pending_action(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.user_id) return { ok: false, error: 'not_signed_in' };
+  const { readOrbSessionState, clearOrbSessionState } = await import('../orb/orb-session-state');
+  const pending = await readOrbSessionState<{ tool?: string; payload?: Record<string, unknown>; offer_id?: string }>(
+    sb, id.user_id, 'pending_cta',
+  );
+  const offer = pending?.value ?? null;
+  const tool = typeof offer?.tool === 'string' ? offer.tool : '';
+  if (!offer || !tool) {
+    return {
+      ok: true,
+      result: { executed: false, reason: 'no_pending_offer' },
+      text: 'There is no open offer to confirm (it may have expired). Ask the member what they would like to do.',
+    };
+  }
+  const wantedOfferId = typeof args.offer_id === 'string' ? args.offer_id.trim() : '';
+  if (wantedOfferId && offer.offer_id && wantedOfferId !== offer.offer_id) {
+    return { ok: true, result: { executed: false, reason: 'offer_changed' }, text: 'That offer is no longer the open one; nothing was run.' };
+  }
+
+  let allowed = tool === 'activate_recommendation';
+  if (!allowed) {
+    const { classifyOrbTool } = await import('../orchestrator/tool-catalog');
+    const cap = classifyOrbTool(tool);
+    allowed = cap.tier === 'read' || (cap.tier === 'commit' && cap.self === true);
+  }
+  if (!allowed) {
+    return {
+      ok: true,
+      result: { executed: false, reason: 'not_voice_confirmable', tool },
+      text: `The open offer (${tool}) cannot be run on a spoken yes; point the member to the app to confirm it.`,
+    };
+  }
+
+  const { dispatchOrbTool } = await import('../orb-tools-shared');
+  const payload = { ...(offer.payload ?? {}), ...(args.confirm === true ? { confirm: true } : {}) };
+  const r = await dispatchOrbTool(tool, payload, id, sb);
+  const waiting = r.ok === true && (r.result as { awaiting_confirmation?: boolean } | undefined)?.awaiting_confirmation === true;
+  // Consume the offer only once it actually ran; a read-back keeps it open.
+  if (r.ok === true && !waiting) await clearOrbSessionState(sb, id.user_id, 'pending_cta');
+  return r;
+}
+
 export const COMMUNITY_AUTOPILOT_TOOL_HANDLERS: Record<string, Handler> = {
+  confirm_pending_action: tool_confirm_pending_action,
   get_autopilot_recommendations: tool_get_autopilot_recommendations,
   activate_autopilot_recommendations: tool_activate_autopilot_recommendations,
 };

@@ -1458,6 +1458,13 @@ Returns { ok, title, completion_message }. If ok=false, briefly
 acknowledge ("Hmm, couldn't schedule that one") and offer to
 open the Autopilot screen instead via navigate_to_screen.
 
+### confirm_pending_action
+The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.
+
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME
 list shown in the Autopilot popup. Call this when the user asks
@@ -4422,6 +4429,13 @@ initiative's \`build_voice_on_complete\` template.
 Returns { ok, title, completion_message }. If ok=false, briefly
 acknowledge ("Hmm, couldn't schedule that one") and offer to
 open the Autopilot screen instead via navigate_to_screen.
+
+### confirm_pending_action
+The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.
 
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME
