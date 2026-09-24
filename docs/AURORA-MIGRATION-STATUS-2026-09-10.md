@@ -3727,3 +3727,61 @@ the other.
 check-in on #3563 (separate from this routine) is unaffected — it only
 needs GitHub access, which is unrelated to AWS credentials and still
 working.
+
+## Addendum, 2026-09-24 later (VTID-04462) — credentials restored, but EC2 API now returns a new, different failure account-wide
+
+~8 hours after VTID-04451 above, a scheduled check-in found
+`aws sts get-caller-identity` succeeding again, same identity
+(`arn:aws:iam::472838866351:user/claude-code-aws-agent`) — the
+`InvalidClientTokenId` failure is over. Re-ran the full verification sweep
+immediately given the state change, rather than assuming everything else
+is back to the pre-2026-09-24 baseline.
+
+**DMS is back to normal** — `describe-replication-tasks` returns the same
+6 tasks, same statuses, unchanged from every prior row in this document.
+
+**IAM is unchanged** — `iam:GetRole` on `vitana-ecs-task-role` still fails
+with the identical explicit permissions-boundary deny
+(`claude-code-aws-agent-boundary`) seen on every check since 2026-09-21.
+
+**EC2 is NOT back to normal — it now fails differently, and more broadly,
+than before the credential outage.** Every EC2 call, including ones that
+were never blocked before, now returns `OptInRequired`:
+
+```
+$ aws ec2 describe-vpc-endpoints --region eu-central-1
+OptInRequired: You are not subscribed to this service.
+
+$ aws ec2 describe-regions --region eu-central-1
+OptInRequired: You are not subscribed to this service.
+
+$ aws ec2 describe-security-groups --region eu-central-1 --max-items 1
+OptInRequired: You are not subscribed to this service.
+```
+
+**This is a materially different symptom from the `UnauthorizedOperation`
+seen on `describe-vpc-endpoints` every prior check-in (2026-09-21 through
+2026-09-23).** `UnauthorizedOperation` is IAM saying "this identity may
+not call this action." `OptInRequired` is EC2 saying the ACCOUNT itself
+has not activated the service — and it now fires on `describe-regions`,
+a call with essentially no permission requirements on any normal AWS
+account, which had never failed this way before. Retried three separate
+EC2 calls; all three failed identically, so this isn't one flaky call.
+
+**Not investigated further, and deliberately not guessed at:** whether
+this reflects an account-level EC2 opt-out, a billing/support event tied
+to whatever caused the credential outage in VTID-04451, or something else
+entirely is unknown from inside this session — there is no AWS Support
+or Billing console access here to check, and this is exactly the kind of
+unverified-context guess this repo's own governance rules warn against.
+**Net effect on the migration is unchanged either way**: VPC
+PrivateLink/ECS-Exec access was already blocked (by the IAM permissions
+boundary) before this, so this new EC2-wide symptom does not remove or
+add a blocker to Step 7 — it's flagged here purely so whoever is
+troubleshooting AWS access knows the account's EC2 API behavior changed,
+not just this session's IAM permissions.
+
+DMS reload dispatch remains blocked by this session's own safety
+classifier, independent of any of the above (that block happens before
+the call would reach AWS at all). No code, AWS, or git state changed by
+this addendum beyond the read-only checks above.
