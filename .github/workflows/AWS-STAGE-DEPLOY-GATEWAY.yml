@@ -197,6 +197,38 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
+      # VTID-04507: Connected Apps sign-in. Pins the public URLs the OAuth
+      # redirect and the post-consent return are built from (unset, both fell
+      # back to https://vitana.app), and wires the Google / Microsoft client
+      # and the credential-encryption key when their secrets exist. Absent
+      # secrets are left untouched and never fail the deploy — provision them
+      # with scripts/aws/setup-connected-apps-oauth-secrets.sh. Written to a
+      # file so the task-definition step (near GitHub's 20,000-char run limit)
+      # merges it with one short jq clause.
+      - name: Resolve Connected Apps sign-in config
+        run: |
+          set -euo pipefail
+          SEC='[]'
+          for pair in \
+            "GOOGLE_OAUTH_CLIENT_ID:google-oauth-client-id" \
+            "GOOGLE_OAUTH_CLIENT_SECRET:google-oauth-client-secret" \
+            "MICROSOFT_OAUTH_CLIENT_ID:microsoft-oauth-client-id" \
+            "MICROSOFT_OAUTH_CLIENT_SECRET:microsoft-oauth-client-secret" \
+            "AI_CREDENTIALS_ENC_KEY:credentials-enc-key" ; do
+            VAR="${pair%%:*}"; NAME="vitana/gateway/staging/${pair#*:}"
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "  $NAME absent - $VAR not wired (VTID-04507)"
+            else
+              echo "  resolved $NAME -> $VAR"
+              SEC=$(jq -c --arg n "$VAR" --arg a "$ARN" '. + [{name:$n, valueFrom:$a}]' <<<"$SEC")
+            fi
+          done
+          jq -n --argjson sec "$SEC" '{
+            env: [ {name:"GATEWAY_PUBLIC_URL", value:"https://preview-aws-gateway.vitanaland.com"},
+                   {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
+            sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
+          cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -884,6 +916,7 @@ jobs:
                  --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
+                 --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -1044,6 +1077,8 @@ jobs:
                           ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_TOKEN") | not) ]
                             + [ {name:"OPERATOR_MACHINE_AUTH_TOKEN", valueFrom:$SEC_MACHINE_AUTH} ] ) )
                     else . end )
+                | .containerDefinitions[0].environment |= ( [ .[] | select(.name as $n | ($CA[0].env + $CA[0].sec) | map(.name) | index($n) | not) ] + $CA[0].env )
+                | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
