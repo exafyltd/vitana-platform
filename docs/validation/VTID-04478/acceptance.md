@@ -38,13 +38,13 @@ AC-3 The engine verdict is `live` when every required step is done, and otherwis
 TEST: services/gateway/test/vtid-04478-partner-onboarding-checklist.test.ts
 
 AC-4 `POST /start` refuses a caller without an email. It creates a `draft` org with the caller as `org_admin`, emits `partner_org.onboarding_started`, never returns `owner_user_id`, and returns the existing draft instead of creating a second one.
-TEST: services/gateway/test/vtid-04478-partner-onboarding-routes.test.ts
+TEST: services/gateway/test/partner-onboarding.test.ts
 
-AC-5 `PATCH /company` stores normalised facts while the org is `draft` or `needs_action`, returns `COMPANY_LOCKED` otherwise, and returns 400 on an invalid fact. `GET /:orgId` is org_admin only.
-TEST: services/gateway/test/vtid-04478-partner-onboarding-routes.test.ts
+AC-5 `PATCH /company` stores normalised facts while the org is `draft` or `needs_action` and emits `partner_org.company_updated` with the field names only (never the values), returns `COMPANY_LOCKED` otherwise, and returns 400 on an invalid fact. `GET /:orgId` is org_admin only.
+TEST: services/gateway/test/partner-onboarding.test.ts
 
 AC-6 Terms acceptance returns 503 when no terms are published and 409 for any version but the current one. It records organization, version, user, IP and user agent, emits `partner_org.terms_accepted`, and treats a repeat acceptance as already done without a second event.
-TEST: services/gateway/test/vtid-04478-partner-onboarding-routes.test.ts
+TEST: services/gateway/test/partner-onboarding.test.ts
 
 AC-7 `submit`:
 - returns 409 with the missing prerequisites and makes no transition;
@@ -53,7 +53,7 @@ AC-7 `submit`:
 - refuses from any other state;
 - guards every update on the state it leaves, stopping with `CONCURRENT_UPDATE` and no event if another request moved the org first;
 - emits one `partner_org.lifecycle_changed` per move.
-TEST: services/gateway/test/vtid-04478-partner-onboarding-routes.test.ts
+TEST: services/gateway/test/partner-onboarding.test.ts
 
 AC-8 The stored step keys in the migration are exactly the non-derived steps. The migration is idempotent and rejects derived step keys, unknown statuses and a second acceptance of the same version (`outputs/local-postgres16-migration.txt`, run against a local scratch cluster, never the live project).
 TEST: services/gateway/test/vtid-04478-partner-onboarding-checklist.test.ts
@@ -63,14 +63,15 @@ TEST: services/gateway/test/vtid-04478-partner-onboarding-checklist.test.ts
 ROUTE_MOUNT: `services/gateway/src/index.ts`, `mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingRouter, { owner: 'partner-onboarding' })`.
 FINAL_URL: `https://preview-aws-gateway.vitanaland.com/api/v1/partner-onboarding/start` (staging, after merge).
 CURL_PROOF: **not yet run.** The route is new and deployed nowhere, so a response written down now would be invented.
-- **Before merge:** `test/vtid-04478-partner-onboarding-routes.test.ts` mounts the real router with supertest. Without a token it returns `401 application/json`, and it covers every handler.
+- **Before merge:** `test/partner-onboarding.test.ts` mounts the real router with supertest. Without a token it returns `401 application/json`, and it covers every handler.
 - **After the staging deploy:** `curl -s -o /dev/null -w "%{http_code} %{content_type}" -X POST https://preview-aws-gateway.vitanaland.com/api/v1/partner-onboarding/start` should return `401 application/json`. A `404 text/html` would mean it did not deploy.
 CURL: see CURL_PROOF above.
 
 ## OASIS
 
-OASIS_IMPACT: yes. Three new topics:
+OASIS_IMPACT: yes. Four new topics:
 - `partner_org.onboarding_started`
+- `partner_org.company_updated` (payload: the field names changed, never the values)
 - `partner_org.terms_accepted`
 - `partner_org.lifecycle_changed` (payload `from`, `to`, `reason`, and on `needs_action` also `open_steps` and `failed_steps`)
 

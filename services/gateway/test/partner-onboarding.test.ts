@@ -201,6 +201,10 @@ describe('PATCH /:orgId/company', () => {
       .send({ legal_name: 'Acme GmbH', country: 'de' });
     expect(r.status).toBe(200);
     expect(state).toMatchObject({ legal_name: 'Acme GmbH', country: 'DE' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.company_updated',
+      payload: { partner_organization_id: 'org-1', fields: ['legal_name', 'country'] },
+    }));
   });
 
   it('is locked once the org is submitted or live', async () => {
@@ -209,6 +213,7 @@ describe('PATCH /:orgId/company', () => {
       .send({ legal_name: 'Other' });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe('COMPANY_LOCKED');
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid fact', async () => {

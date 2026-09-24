@@ -16,5 +16,5 @@ tsc --ignoreConfig --noEmit --strict ... src/services/partner-onboarding-checkli
 # constraint and RLS checks -> outputs/local-postgres16-migration.txt
 
 # Jest and full tsc: NOT runnable here. The npm registry returns 403 and there is no node_modules.
-# CI is the first real run of test/vtid-04478-partner-onboarding-routes.test.ts
+# CI is the first real run of test/partner-onboarding.test.ts
 # (supertest + jest.mock) and of the full gateway typecheck.

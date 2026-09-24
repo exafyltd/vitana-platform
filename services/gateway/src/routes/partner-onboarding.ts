@@ -243,6 +243,17 @@ router.patch('/:orgId/company', requireAuth, requireOrgAdmin(), async (req: Requ
     .eq('id', orgId);
   if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
 
+  await emitOasisEvent({
+    vtid: 'VTID-04478',
+    type: 'partner_org.company_updated',
+    source: 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${orgId} updated its company facts.`,
+    // Field names only: the values (VAT id, legal name) stay in the org row.
+    payload: { partner_organization_id: orgId, fields: Object.keys(parsed.facts) },
+    actor_id: getCallerId(req) ?? undefined,
+  });
+
   return respondWithState(res, supabase, orgId);
 });
 
