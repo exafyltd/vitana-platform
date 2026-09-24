@@ -3,9 +3,10 @@
  * /api/v1/partner-onboarding (docs/COMMERCE-SELF-SERVICE-PARTNER-ONBOARDING-SPEC.md §6.2).
  *
  * This slice: POST /start, GET /:orgId, PATCH /:orgId/company,
- * POST /:orgId/terms/accept, POST /:orgId/submit. The remaining §6.2
- * endpoints (detect, catalogue, connections, tracking test, DPA, billing
- * mandate, verification) each write their own step row into
+ * POST /:orgId/terms/accept, POST /:orgId/submit, and (VTID-04481)
+ * POST /:orgId/detect. The remaining §6.2 endpoints (catalogue,
+ * connections, tracking test, DPA, billing mandate, verification) each
+ * write their own step row into
  * partner_onboarding_steps when they land; the checklist here already reads
  * those rows.
  *
@@ -35,6 +36,7 @@ import {
   type Checklist,
 } from '../services/partner-onboarding-checklist';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
+import { detectPlatform } from '../services/platform-detect';
 
 const router = Router();
 
@@ -255,6 +257,82 @@ router.patch('/:orgId/company', requireAuth, requireOrgAdmin(), async (req: Requ
   });
 
   return respondWithState(res, supabase, orgId);
+});
+
+// ==================== Detect (VTID-04481) ====================
+
+/**
+ * Website → storefront platform detection and company pre-fill (spec §6.2).
+ * Reuses the SSRF-guarded detector the VCAOP portal already uses. The result
+ * is kept on the org (business_details.platform_detection) so the
+ * connections step can pick the right connector later; the pre-fill is
+ * returned as suggestions only — nothing about the company is written until
+ * the partner confirms it through PATCH /company.
+ */
+router.post('/:orgId/detect', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const orgId = req.params.orgId;
+
+  const { data: row, error } = await supabase
+    .from('partner_organizations')
+    .select('id, website, business_details')
+    .eq('id', orgId)
+    .maybeSingle();
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  if (!row) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
+  const current = row as { id: string; website: string | null; business_details: Record<string, unknown> | null };
+
+  const requested = req.body?.website;
+  let website: string | null = current.website;
+  if (requested !== undefined && requested !== null && requested !== '') {
+    const parsed = parseCompanyFacts({ website: requested });
+    if (!parsed.ok) return res.status(400).json({ ok: false, error: parsed.error });
+    website = parsed.facts.website ?? null;
+  }
+  if (!website) return res.status(400).json({ ok: false, error: 'WEBSITE_REQUIRED' });
+
+  const detection = await detectPlatform(website);
+  if (!detection.ok) {
+    return res.status(422).json({ ok: false, error: 'DETECTION_FAILED', reason: detection.error ?? 'unknown' });
+  }
+
+  const record = {
+    url: website,
+    connector_id: detection.connector_id ?? null,
+    provider_id: detection.provider_id ?? null,
+    platform_name: detection.name_hint ?? null,
+    confidence: detection.confidence ?? 'none',
+    detected_at: new Date().toISOString(),
+  };
+  const { error: updErr } = await supabase
+    .from('partner_organizations')
+    .update({
+      business_details: { ...(current.business_details ?? {}), platform_detection: record },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orgId);
+  if (updErr) return res.status(500).json({ ok: false, error: updErr.message });
+
+  await emitOasisEvent({
+    vtid: 'VTID-04481',
+    type: 'partner_org.platform_detected',
+    source: 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${orgId}: storefront platform ${record.connector_id ?? 'not recognised'} (${record.confidence}).`,
+    payload: {
+      partner_organization_id: orgId,
+      connector_id: record.connector_id,
+      provider_id: record.provider_id,
+      confidence: record.confidence,
+    },
+    actor_id: getCallerId(req) ?? undefined,
+  });
+
+  return respondWithState(res, supabase, orgId, 200, {
+    detection: record,
+    suggested: { website, display_name: detection.site_name ?? null },
+  });
 });
 
 // ==================== Terms ====================

@@ -1,0 +1,12 @@
+# VTID-04481 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint); ledger row set in_progress/approved with a real title
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04481"}
+
+# Branch reset onto main after #3656 (VTID-04478) merged as da035d3
+
+# extractSiteName smoke run (ts-node, 5 cases) -> outputs/extract-site-name-smoke.txt
+
+# Jest and full tsc: NOT runnable here (npm registry 403, no node_modules). CI is the first real
+# run of test/partner-onboarding.test.ts (detect block) and test/services/platform-detect.test.ts.

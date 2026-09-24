@@ -2704,7 +2704,7 @@ values.
 | `display_name`, `org_type` | TEXT NOT NULL | `org_type` free-text by convention, mirrors `partner_registry.integration_mode`'s own pattern — no migration needed for a new vertical |
 | `status` | TEXT | `pending_review` (default) `\| active \| suspended \| rejected` |
 | `owner_user_id` | UUID NOT NULL | the registering caller |
-| `business_details` | JSONB | |
+| `business_details` | JSONB | VTID-04481: key `platform_detection` = `{url, connector_id, provider_id, platform_name, confidence, detected_at}`, written by `POST /api/v1/partner-onboarding/:orgId/detect` (last detection wins). |
 | `partner_type` | TEXT CHECK (`lab` \| `supplier_shop` \| `practitioner_clinic` \| `service_provider` \| `affiliate_brand`), nullable | VTID-04471: enforced partner vocabulary (spec §5.1). When set, `trg_partner_organizations_sync` derives `commerce_vertical` from it (`lab`, `practitioner_clinic` → `health`; the rest → `general`). NULL for rows registered without it. |
 | `lifecycle_state` | TEXT NOT NULL CHECK (`draft` \| `submitted` \| `verifying` \| `needs_action` \| `exception` \| `live` \| `paused` \| `suspended` \| `rejected`) | VTID-04471: onboarding lifecycle (spec §5.2). Allowed transitions live in the gateway (`services/partner-lifecycle.ts`). Kept in sync with `status` by `trg_partner_organizations_sync` in both directions: lifecycle → status via `partner_org_status_for_lifecycle()` (`live` → `active`; `paused`, `suspended` → `suspended`; `rejected` → `rejected`; all others → `pending_review`); a status-only write (legacy `/register`, `/activate`) derives the lifecycle. |
 | `legal_name`, `vat_id`, `website` | TEXT, nullable | VTID-04471: company facts collected during onboarding. |
