@@ -1589,6 +1589,12 @@ TTS_FISH_FALLBACK_ENABLED=true
 FISH_API_KEY=xxx
 IMAGE_PROVIDER=bedrock
 BEDROCK_ROLE_ARN=xxx
+# Partner-org invite emails over Resend (VTID-04463). Off by default; all three
+# must be set. EMAIL_FROM must be on a domain verified in Resend. Unset = the
+# invite is created and the route returns accept_url for manual sharing.
+PARTNER_INVITE_EMAIL_ENABLED=true
+RESEND_API_KEY=xxx
+EMAIL_FROM="Vitanaland <noreply@vitanaland.com>"
 VERTEX_LIVE_UNAVAILABLE=true
 OPENAI_API_KEY=xxx
 # Serbian-only Vertex Live bridge on a NEW GCP project — see

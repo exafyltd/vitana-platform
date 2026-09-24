@@ -122,5 +122,15 @@
   "notif.partner_test_result_ready.title": "Tvoji rezultati su stigli",
   "notif.partner_test_result_ready.body": "Tvoji rezultati {test_name} od {partner_name} su spremni. Zamoli Vitanu da ti ih objasni.",
   "notif.feedback_resolved.title": "Tvoja prijava je rešena",
-  "notif.feedback_resolved.body": "Rešili smo problem koji si prijavio/la ({ticket}). Hvala što nam pomažeš da budemo bolji!"
+  "notif.feedback_resolved.body": "Rešili smo problem koji si prijavio/la ({ticket}). Hvala što nam pomažeš da budemo bolji!",
+  "email.partner_invite.subject": "Pozivnica za {org} na Vitanalandu",
+  "email.partner_invite.greeting": "Zdravo,",
+  "email.partner_invite.body": "pozvan si da se pridružiš timu {org} na Vitanalandu kao {role}.",
+  "email.partner_invite.instructions": "Prijavi se ovom imejl adresom i otvori link da prihvatiš pozivnicu:",
+  "email.partner_invite.cta": "Prihvati pozivnicu",
+  "email.partner_invite.expiry": "Link važi {days} dana.",
+  "email.partner_invite.ignore": "Ako nisi očekivao ovu pozivnicu, slobodno ignoriši ovaj imejl.",
+  "email.partner_invite.role.org_admin": "Administrator organizacije",
+  "email.partner_invite.role.staff": "Član tima",
+  "email.partner_invite.role.professional": "Stručnjak"
 }

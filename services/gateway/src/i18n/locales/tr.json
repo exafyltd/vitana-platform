@@ -122,5 +122,15 @@
   "notif.partner_test_result_ready.title": "Sonuçların hazır",
   "notif.partner_test_result_ready.body": "{partner_name} tarafından yapılan {test_name} sonuçların hazır. Vitana'dan sana açıklamasını isteyebilirsin.",
   "notif.feedback_resolved.title": "Bildirimin çözüldü",
-  "notif.feedback_resolved.body": "Bildirdiğin sorunu ({ticket}) düzelttik. Gelişmemize yardım ettiğin için teşekkürler!"
+  "notif.feedback_resolved.body": "Bildirdiğin sorunu ({ticket}) düzelttik. Gelişmemize yardım ettiğin için teşekkürler!",
+  "email.partner_invite.subject": "Vitanaland'de {org} davetiyesi",
+  "email.partner_invite.greeting": "Merhaba,",
+  "email.partner_invite.body": "Vitanaland'de {org} ekibine {role} olarak katılmaya davet edildin.",
+  "email.partner_invite.instructions": "Daveti kabul etmek için bu e-posta adresiyle giriş yap ve bağlantıyı aç:",
+  "email.partner_invite.cta": "Daveti kabul et",
+  "email.partner_invite.expiry": "Bağlantı {days} gün geçerlidir.",
+  "email.partner_invite.ignore": "Bu daveti beklemiyorsan bu e-postayı yok sayabilirsin.",
+  "email.partner_invite.role.org_admin": "Yönetici",
+  "email.partner_invite.role.staff": "Ekip üyesi",
+  "email.partner_invite.role.professional": "Uzman"
 }

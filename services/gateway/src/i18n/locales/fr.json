@@ -122,5 +122,15 @@
   "notif.partner_test_result_ready.title": "Tes résultats sont arrivés",
   "notif.partner_test_result_ready.body": "Tes résultats {test_name} de {partner_name} sont prêts. Demande à Vitana de te les expliquer.",
   "notif.feedback_resolved.title": "Ton signalement est résolu",
-  "notif.feedback_resolved.body": "Nous avons corrigé le problème que tu as signalé ({ticket}). Merci de nous aider à nous améliorer !"
+  "notif.feedback_resolved.body": "Nous avons corrigé le problème que tu as signalé ({ticket}). Merci de nous aider à nous améliorer !",
+  "email.partner_invite.subject": "Invitation à rejoindre {org} sur Vitanaland",
+  "email.partner_invite.greeting": "Bonjour,",
+  "email.partner_invite.body": "tu as été invité à rejoindre l'équipe de {org} sur Vitanaland en tant que {role}.",
+  "email.partner_invite.instructions": "Connecte-toi avec cette adresse e-mail et ouvre le lien pour accepter l'invitation :",
+  "email.partner_invite.cta": "Accepter l'invitation",
+  "email.partner_invite.expiry": "Le lien est valable {days} jours.",
+  "email.partner_invite.ignore": "Si tu n'attendais pas cette invitation, tu peux simplement ignorer cet e-mail.",
+  "email.partner_invite.role.org_admin": "Administrateur",
+  "email.partner_invite.role.staff": "Membre de l'équipe",
+  "email.partner_invite.role.professional": "Professionnel"
 }

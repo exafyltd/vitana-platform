@@ -122,5 +122,15 @@
   "notif.partner_test_result_ready.title": "你的结果已就绪",
   "notif.partner_test_result_ready.body": "你的 {test_name} 结果（来自 {partner_name}）已经准备好了。让 Vitana 为你解读。",
   "notif.feedback_resolved.title": "你的反馈已解决",
-  "notif.feedback_resolved.body": "我们已修复你报告的问题（{ticket}）。感谢你帮助我们改进！"
+  "notif.feedback_resolved.body": "我们已修复你报告的问题（{ticket}）。感谢你帮助我们改进！",
+  "email.partner_invite.subject": "邀请你加入 Vitanaland 上的 {org}",
+  "email.partner_invite.greeting": "你好，",
+  "email.partner_invite.body": "你已受邀以{role}身份加入 Vitanaland 上的 {org} 团队。",
+  "email.partner_invite.instructions": "请使用此电子邮件地址登录，并打开链接接受邀请：",
+  "email.partner_invite.cta": "接受邀请",
+  "email.partner_invite.expiry": "该链接有效期为 {days} 天。",
+  "email.partner_invite.ignore": "如果你没有预料到此邀请，可以直接忽略这封邮件。",
+  "email.partner_invite.role.org_admin": "管理员",
+  "email.partner_invite.role.staff": "团队成员",
+  "email.partner_invite.role.professional": "专业人员"
 }
