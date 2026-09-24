@@ -1,6 +1,6 @@
 # Command Hub › Conversation — rebuild plan (supervisor view)
 
-VTID: VTID-04484 · 2026-09-24 · status: plan, awaiting owner decisions (§10)
+VTID: VTID-04484 · 2026-09-24 · status: plan, owner decisions resolved (§10)
 
 ## 1. What the supervisor must be able to do
 
