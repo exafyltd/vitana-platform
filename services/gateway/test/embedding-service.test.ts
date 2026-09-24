@@ -1,5 +1,6 @@
 /**
  * VTID-04457: embedding-service embeds with Titan only.
+ * VTID-04460: Titan V2, 1024 dims (the embedding_v2 columns).
  * No OpenAI call, no Gemini call, and failures are reported once.
  */
 process.env.NODE_ENV = 'test';
@@ -18,12 +19,12 @@ jest.mock('../src/services/embedding-cache', () => ({
 
 let titanOk = true;
 const mockTitan = jest.fn(async () => titanOk
-  ? { ok: true, embedding: new Array(1536).fill(0.1), model: 'amazon.titan-embed-text-v1', dimensions: 1536, latency_ms: 7 }
-  : { ok: false, error: 'invoke_failed', message: 'AccessDenied' });
-jest.mock('../src/providers/titan-embedding', () => ({
-  generateTitanEmbedding: (...a: any[]) => (mockTitan as any)(...a),
-  getTitanEmbeddingModelId: () => 'amazon.titan-embed-text-v1',
-  TITAN_EMBEDDING_DIMENSIONS: 1536,
+  ? { ok: true, embedding: new Array(1024).fill(0.1), model: 'amazon.titan-embed-text-v2:0' }
+  : { ok: false, error: 'invoke_failed: AccessDenied' });
+jest.mock('../src/services/memory-embedding', () => ({
+  embedMemoryText: (...a: any[]) => (mockTitan as any)(...a),
+  MEMORY_EMBEDDING_MODEL: 'amazon.titan-embed-text-v2:0',
+  MEMORY_EMBEDDING_DIMENSIONS: 1024,
 }));
 
 import {
@@ -42,10 +43,10 @@ beforeEach(() => {
 describe('generateEmbedding', () => {
   it('embeds with Titan and never calls OpenAI or Gemini, even with their keys set', async () => {
     const r = await generateEmbedding('hello');
-    expect(r).toMatchObject({ ok: true, model: 'amazon.titan-embed-text-v1', dimensions: 1536 });
+    expect(r).toMatchObject({ ok: true, model: 'amazon.titan-embed-text-v2:0', dimensions: 1024 });
     expect(mockTitan).toHaveBeenCalledTimes(1);
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(EMBEDDING_DIMENSIONS).toBe(1536);
+    expect(EMBEDDING_DIMENSIONS).toBe(1024);
   });
 
   it('serves a repeat from the cache', async () => {

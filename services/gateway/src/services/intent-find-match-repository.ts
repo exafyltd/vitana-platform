@@ -28,7 +28,7 @@ export async function searchIntentCatalogRpc(
     p_top_n: number;
   },
 ) {
-  return sb.rpc('search_intent_catalog', args);
+  return sb.rpc('search_intent_catalog_v2', args) // VTID-04460: reads embedding_v2;
 }
 
 export async function insertUserIntent(sb: SupabaseClient, row: Record<string, unknown>) {
@@ -36,5 +36,5 @@ export async function insertUserIntent(sb: SupabaseClient, row: Record<string, u
 }
 
 export async function updateUserIntentEmbedding(sb: SupabaseClient, intentId: string, embedding: string) {
-  return sb.from('user_intents').update({ embedding }).eq('intent_id', intentId);
+  return sb.from('user_intents').update({ embedding_v2: embedding }).eq('intent_id', intentId);
 }

@@ -353,7 +353,8 @@ Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by 
 
 ### Embeddings outside user memory
 - [x] **`embedding-service` is Titan only (VTID-04457).** It embeds `user_intents`, VTID-ledger dedup and the navigation catalog. Measured over the 30 days before: OpenAI failed 219 times (and wrote vectors into the same columns as Titan when it worked), Gemini served twice on 2026-09-22 (a Google fallback), all providers failed twice. The OpenAI and Gemini rungs are removed; Titan V1 keeps the columns' 1536 dims, so there is no schema change.
-- [ ] Move those columns to Titan V2 1024 (decision 2, "everywhere"). Staging and prod share one database, so this is expand/contract: add `embedding_v2 vector(1024)`, write and read it from new code, re-embed, then drop the old column after prod runs the new code. Tables: `user_intents`, `vtid_ledger`, `calendar_events`, `feedback_tickets`, `products` (the last three have no vectors today).
+- [x] **Expand: those columns move to Titan V2 1024 (VTID-04460, decision 2).** `embedding_v2 vector(1024)` on `user_intents` and `vtid_ledger` plus `_v2` copies of `compute_intent_matches`, `search_intent_catalog` and `find_similar_vtid_tasks` (applied live, additive). `embedding-service` now embeds with Titan V2; every writer writes `embedding_v2` and every reader calls the `_v2` function; the intent worker backfills `embedding_v2`. Found on the way: the live `search_intent_catalog` cast its query to `vector(768)` while the service sent 1536 dims, so semantic fit in catalog search never ran; `_v2` casts to 1024. `calendar_events`, `products`, `feedback_tickets` have no vectors and no writer, so they are left out.
+- [ ] **Contract, after prod runs the new gateway:** switch `compute_intent_matches_daily` and `intent_matches_recompute_daily` to `compute_intent_matches_v2`, then drop the old `embedding` columns and the old three functions.
 
 ---
 

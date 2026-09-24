@@ -5,9 +5,8 @@
  * dedup, the navigation catalog). User memory uses `memory-embedding.ts`
  * (Titan V2, 1024 dims) instead.
  *
- * VTID-04457: one provider, Amazon Titan Text Embeddings V1 via Bedrock
- * (1536 dims, the size of these columns; see providers/titan-embedding.ts).
- * The OpenAI rung and the Gemini rung are gone:
+ * VTID-04457: one provider, Amazon Titan via Bedrock. The OpenAI rung and
+ * the Gemini rung are gone:
  *   - OpenAI failed 219 times in the 30 days before this change, and when it
  *     did succeed it wrote vectors into the same columns as Titan. Vectors
  *     from two providers are not comparable even at the same length, so
@@ -17,6 +16,11 @@
  * A failure is returned as `ok:false` and reported once; the callers already
  * treat a missing embedding as non-fatal (the intent worker retries NULLs).
  *
+ * VTID-04460: Titan V2 (1024 dims), the same embedder as user memory, written
+ * to the `embedding_v2` columns and read by the `_v2` SQL functions. The old
+ * 1536-dim `embedding` columns stay for the previous gateway until prod runs
+ * this code, then they are dropped.
+ *
  * This service is STATELESS - it only generates embeddings,
  * it does not store them. Storage is handled by Supabase.
  */
@@ -24,11 +28,7 @@
 import { emitOasisEvent } from './oasis-event-service';
 // VTID-01970 Tier 1: in-process LRU cache for embeddings (sha256(text)→vector)
 import { getCachedEmbedding, setCachedEmbedding } from './embedding-cache';
-import {
-  generateTitanEmbedding,
-  getTitanEmbeddingModelId,
-  TITAN_EMBEDDING_DIMENSIONS,
-} from '../providers/titan-embedding';
+import { embedMemoryText, MEMORY_EMBEDDING_MODEL, MEMORY_EMBEDDING_DIMENSIONS } from './memory-embedding';
 
 // =============================================================================
 // Configuration
@@ -37,8 +37,9 @@ import {
 const VTID = 'VTID-01184';
 const SERVICE_NAME = 'embedding-service';
 
-/** Size of the vector columns this service writes (Titan V1 native output). */
-export const EMBEDDING_DIMENSIONS = TITAN_EMBEDDING_DIMENSIONS;
+/** Size of the `embedding_v2` columns this service fills (Titan V2). */
+export const EMBEDDING_DIMENSIONS = MEMORY_EMBEDDING_DIMENSIONS;
+const MODEL = MEMORY_EMBEDDING_MODEL;
 
 // =============================================================================
 // Types
@@ -79,7 +80,7 @@ export interface BatchEmbeddingResponse {
 /**
  * Generate an embedding for one text with Titan (Bedrock).
  *
- * @returns Embedding vector (1536 dimensions), or ok:false
+ * @returns Embedding vector (1024 dimensions), or ok:false
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResponse> {
   // VTID-01970 Tier 1 hot cache — return cached vector when available.
@@ -94,19 +95,20 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
     };
   }
 
-  const titan = await generateTitanEmbedding(text);
-  if (titan.ok) {
-    setCachedEmbedding(text, titan.embedding, titan.model, titan.dimensions);
+  const start = Date.now();
+  const titan = await embedMemoryText(text);
+  if (titan.ok && titan.embedding) {
+    setCachedEmbedding(text, titan.embedding, MODEL, titan.embedding.length);
     return {
       ok: true,
       embedding: titan.embedding,
-      model: titan.model,
-      dimensions: titan.dimensions,
-      latency_ms: titan.latency_ms,
+      model: MODEL,
+      dimensions: titan.embedding.length,
+      latency_ms: Date.now() - start,
     };
   }
 
-  const error = `${titan.error}: ${titan.message}`;
+  const error = titan.error ?? 'unknown';
   console.error(`[${VTID}] Titan embedding failed: ${error}`);
   await emitOasisEvent({
     vtid: VTID,
@@ -114,7 +116,7 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
     source: SERVICE_NAME,
     status: 'error',
     message: `Titan embedding failed: ${error}`,
-    payload: { provider: 'titan_bedrock', model: getTitanEmbeddingModelId(), titan_error: error },
+    payload: { provider: 'titan_bedrock', model: MODEL, titan_error: error },
   }).catch(() => {});
 
   return { ok: false, error };
@@ -126,7 +128,7 @@ export async function generateEmbedding(text: string): Promise<EmbeddingResponse
  * gets a partial list whose indexes no longer line up with its input.
  */
 export async function generateBatchEmbeddings(texts: string[]): Promise<BatchEmbeddingResponse> {
-  const model = getTitanEmbeddingModelId();
+  const model = MODEL;
   if (texts.length === 0) {
     return { ok: true, embeddings: [], model, dimensions: EMBEDDING_DIMENSIONS, latency_ms: 0 };
   }
