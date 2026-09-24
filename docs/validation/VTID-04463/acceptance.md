@@ -49,6 +49,13 @@ OASIS_IMPACT: yes. `partner_org.member_invited` gains an `email_status`
 field. The value is one of `sent`, `disabled`, `not_configured`, `rejected` or
 `failed`. There is no new topic.
 
+OASIS_PROOF: the existing `partner_org.member_invited` event carries one added
+payload field, `email_status`. The route test asserts it
+(`services/gateway/test/partner-orgs.test.ts`, `payload: objectContaining({ email_status: 'sent' })`).
+No topic is added, renamed or removed, and nothing is emitted on the failed-insert path.
+Once this is deployed, check it with:
+`SELECT topic, metadata->>'email_status' FROM oasis_events WHERE topic = 'partner_org.member_invited' ORDER BY created_at DESC LIMIT 5;`
+
 ## Not verified here
 
 - No real email was sent. There is no Resend key in this session, and staging
