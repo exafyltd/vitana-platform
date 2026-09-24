@@ -1,0 +1,4 @@
+cd services/gateway
+node node_modules/.bin/tsc --noEmit -p .                                   # exit 0 (outputs/tsc.txt)
+node node_modules/.bin/jest test/vtid-04466-exploration-budget.test.ts     # 19/19 (outputs/jest.txt)
+node node_modules/.bin/jest test/vtid-04394-progress-ledger.test.ts test/autopilot-agent-loop.test.ts test/vtid-04381-truncation.test.ts test/vtid-04032-cancel-running-execution.test.ts test/vtid-04368-retry-storm-outage-gate.test.ts   # all green, no regression

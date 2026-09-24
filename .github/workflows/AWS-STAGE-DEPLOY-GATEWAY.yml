@@ -654,6 +654,9 @@ jobs:
 #     gets default reminders (reconciled into `reminders` every minute).
 #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
 #     Autopilot/journey suggestions + 6-hourly priority refresh, in-process.
+#   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
+#     memory through the broker; falls back to the legacy read on failure.
+#     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
 # Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
 # if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
 # gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
@@ -895,7 +898,7 @@ jobs:
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
                                                 "ORB_FULL_DUPLEX_ENABLED",
-                                                "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS",
+                                                "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
@@ -912,7 +915,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
@@ -944,7 +947,7 @@ jobs:
                           {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
                           {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
-                          {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"},
+                          {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
@@ -980,6 +983,7 @@ jobs:
                           {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
                           {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
+                          {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},

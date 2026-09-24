@@ -6130,7 +6130,7 @@ async function executeLiveApiToolInner(
           try {
             const embedding = await embedIntent({ intent_kind: intentKind, category: extract.category, title: extract.title!, scope: extract.scope!, kind_payload: extract.kind_payload });
             if (embedding) {
-              const { error: embedUpdErr } = await supabase.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+              const { error: embedUpdErr } = await supabase.from('user_intents').update({ embedding_v2: embedding as any }).eq('intent_id', intentId);
               if (embedUpdErr) {
                 console.warn(`[VTID-02716] post_intent embedding update non-fatal: ${embedUpdErr.message}`);
               }

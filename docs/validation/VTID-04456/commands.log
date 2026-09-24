@@ -1,0 +1,7 @@
+cd services/gateway
+npx jest test/vtid-04456-customer-support-pipeline-regression.test.ts   # 22 passed
+npm run -s test:support                                                 # 4 suites, 82 passed
+# mutation run: see outputs/mutation-run.txt
+npx tsc -p <tmp config including the two new test files>                # no errors in the new files
+npx tsc --noEmit                                                        # clean
+npx jest --silent                                                       # full gateway suite

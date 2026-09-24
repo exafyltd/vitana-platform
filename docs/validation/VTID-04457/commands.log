@@ -1,0 +1,4 @@
+read-only: oasis_events embedding.* counts (30 d); information_schema vector column sizes
+npx tsc --noEmit -p services/gateway                     # clean
+npx jest test/embedding-service test/embedding-cache test/titan-embedding  # 16/16
+npx jest <13 suites referencing the embedding callers>   # 402/402

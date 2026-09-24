@@ -7,12 +7,15 @@
  * That is how the two fact tables drifted apart and how most facts ended up
  * with no embedding (docs/MEMORY-SYSTEM-PLAN.md, defect D8).
  *
- * `rememberFact()` does the same three steps for every caller:
+ * `rememberFact()` does the same steps for every caller:
  *   1. the Identity Lock check (VTID-01952). The DB trigger enforces it
  *      too; this check runs first so a blocked write is logged with its actor;
- *   2. the `write_fact` RPC. The database decides whether to insert,
+ *   2. the forgotten-marker check (VTID-04441): an inferred value the user
+ *      deleted in the Memory Garden is not written again, and an explicit
+ *      user statement clears the marker;
+ *   3. the `write_fact` RPC. The database decides whether to insert,
  *      supersede, or keep the existing row (VTID-04341);
- *   3. a Titan embedding for the written row, fire-and-forget.
+ *   4. a Titan embedding for the written row, fire-and-forget.
  *      AP-0910 re-embeds any row this step misses.
  *
  * The transport is the caller's choice: pass `client` to use a supplied
@@ -22,6 +25,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { assertWriteFact } from '../memory-audit';
+import { checkForgottenGate, clientForgottenStore, restForgottenStore, type ForgottenStore } from './forgotten';
 
 export type FactProvenance =
   | 'user_stated'
@@ -52,14 +56,19 @@ export interface RememberFactOptions {
   client?: SupabaseClient | null;
   /** Embed the written row. Defaults to true. */
   embed?: boolean;
+  /** Override the forgotten-marker store (tests). Defaults to `client`, else REST. */
+  forgottenStore?: ForgottenStore | null;
 }
 
 export interface RememberFactResult {
   ok: boolean;
   fact_id?: string;
   error?: string;
-  /** Set when the Identity Lock refused the write; no RPC was sent. */
-  blocked?: 'identity_lock';
+  /**
+   * Set when the write was refused and no RPC was sent: the Identity Lock, or
+   * a value the user forgot in the Memory Garden (VTID-04441).
+   */
+  blocked?: 'identity_lock' | 'forgotten';
 }
 
 const DEFAULT_CONFIDENCE = 0.9;
@@ -144,6 +153,23 @@ export async function rememberFact(
       blocked: 'identity_lock',
       error: `identity_locked: ${input.fact_key} cannot be written from this source`,
     };
+  }
+
+  // VTID-04441: a value the user forgot is not re-learned from inference.
+  const store =
+    options.forgottenStore !== undefined
+      ? options.forgottenStore
+      : options.client
+        ? clientForgottenStore(options.client)
+        : restForgottenStore();
+  const gate = await checkForgottenGate(
+    store,
+    { tenant_id: input.tenant_id, user_id: input.user_id, fact_key: input.fact_key },
+    input.fact_value,
+    input.provenance_source,
+  );
+  if (!gate.allow) {
+    return { ok: false, blocked: 'forgotten', error: `forgotten: ${input.fact_key} was forgotten by the user` };
   }
 
   const payload = buildWriteFactPayload(input);

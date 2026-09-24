@@ -792,6 +792,9 @@ export type CicdEventType =
   | 'dev_autopilot.execution.bridged'
   | 'dev_autopilot.execution.reaped'
   | 'dev_autopilot.execution.cancelled'
+  // VTID-04467: executor task could not be started — requeued or failed.
+  | 'dev_autopilot.execution.dispatch_deferred'
+  | 'dev_autopilot.execution.dispatch_failed'
   | 'dev_autopilot.execution.running'
   | 'dev_autopilot.execution.pr_opened'
   | 'dev_autopilot.execution.ci_running'

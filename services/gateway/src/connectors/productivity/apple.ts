@@ -1,18 +1,22 @@
 /**
- * VTID-04404: Apple iCloud connector — Apple Mail (IMAP, read), Apple
- * Calendar (CalDAV, read) and iPhone Contacts (CardDAV, read).
+ * VTID-04404: Apple iCloud connector — Apple Mail (IMAP read, and SMTP send
+ * since VTID-04450), Apple Calendar (CalDAV, read) and iPhone Contacts
+ * (CardDAV, read).
  *
  * Apple offers no OAuth for these, so the member signs in once with an
  * Apple ID and an app-specific password. It is stored encrypted in
  * apple_account_credentials and loaded here per call (auth_type
  * 'app_password' tells the dispatcher not to look in social_connections).
- * Sending mail and writing events are not offered: an app-specific password
- * grants full account access, and the member only agreed to reading.
+ * Sending mail (VTID-04450) goes through the same email.send capability as
+ * Gmail and Outlook, from the member's own iCloud address; the Apple sign-in
+ * screen says so. Writing events is limited to the one "Vitanaland" calendar
+ * the calendar push manages (VTID-04436).
  */
 
 import type { ActionRequest, ActionResult, Connector, ConnectorContext, TokenPair } from '../types';
 import { loadAppleCredentials } from '../../services/connected-apps/apple-store';
 import { AppleAuthError, listAppleContacts, listAppleEvents, listAppleMail } from '../../services/connected-apps/apple-dav';
+import { SmtpError, sendAppleMail } from '../../services/connected-apps/apple-smtp';
 
 function notConnected(capability: string, appId: string): ActionResult {
   return { ok: false, error: 'not_connected', raw: { capability, reconnect_app: appId, hint: `Turn ${appId} on in Connected Apps.` } };
@@ -23,12 +27,13 @@ const appleConnector: Connector = {
   category: 'productivity',
   display_name: 'Apple iCloud',
   auth_type: 'app_password',
-  capabilities: ['email.read', 'calendar.list', 'contacts.read'],
+  capabilities: ['email.read', 'email.send', 'calendar.list', 'contacts.read'],
 
   async performAction(ctx: ConnectorContext, _tokens: TokenPair, action: ActionRequest): Promise<ActionResult> {
     const creds = await loadAppleCredentials(ctx.user_id);
     const appFor: Record<string, string> = {
       'email.read': 'apple-mail',
+      'email.send': 'apple-mail',
       'calendar.list': 'apple-calendar',
       'contacts.read': 'iphone-contacts',
     };
@@ -51,6 +56,15 @@ const appleConnector: Connector = {
                 : `${messages.length} ${unreadOnly ? 'unread ' : ''}email${messages.length === 1 ? '' : 's'}.`,
             },
           };
+        }
+        case 'email.send': {
+          const to = action.args?.to as string | string[] | undefined;
+          const subject = String(action.args?.subject ?? '');
+          const body = String(action.args?.body ?? '');
+          if (!to || !subject.trim()) return { ok: false, error: 'email.send: "to" and "subject" are required' };
+          const r = await sendAppleMail(creds.credentials, { to, subject, body });
+          const list = r.accepted.join(', ');
+          return { ok: true, raw: { action: 'ack', to: list, subject, summary: `Email sent to ${list}.` } };
         }
         case 'calendar.list': {
           if (!creds.caldavHome) return notConnected('calendar.list', 'apple-calendar');
@@ -96,6 +110,12 @@ const appleConnector: Connector = {
           return { ok: false, error: `Unknown capability ${action.capability}` };
       }
     } catch (err: unknown) {
+      if (err instanceof SmtpError) {
+        const hint = err.code === 'icloud_sender_rejected'
+          ? 'iCloud only sends from an iCloud address. Sign in to Apple Mail in Connected Apps with your @icloud.com address.'
+          : undefined;
+        return { ok: false, error: err.code, ...(hint ? { raw: { hint, reconnect_app: 'apple-mail' } } : {}) };
+      }
       if (err instanceof AppleAuthError) {
         return { ok: false, error: 'apple_auth_failed', raw: { hint: 'The app-specific password was revoked. Turn the Apple app off and on again in Connected Apps.' } };
       }

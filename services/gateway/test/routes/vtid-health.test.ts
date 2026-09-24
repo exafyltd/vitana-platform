@@ -61,17 +61,21 @@ describe('GET /health', () => {
   });
 
   it('runs the two checks concurrently, not sequentially', async () => {
-    const DELAY_MS = 40;
-    (global.fetch as jest.Mock).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve(jsonRes(200, [])), DELAY_MS))
-    );
+    // Asserted structurally (both fetches in flight at once), not by wall
+    // clock: a 40 ms delay with a 1.8x threshold left 32 ms of margin for
+    // supertest + CI load, and failed at 76 ms on a loaded runner.
+    let inFlight = 0;
+    let maxInFlight = 0;
+    (global.fetch as jest.Mock).mockImplementation(() => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      return new Promise((resolve) => setTimeout(() => { inFlight--; resolve(jsonRes(200, [])); }, 20));
+    });
 
-    const start = Date.now();
     await supertestBase(app).get('/api/v1/vtid/health');
-    const elapsedMs = Date.now() - start;
 
-    // Sequential would take ~2*DELAY_MS; concurrent takes ~1*DELAY_MS.
-    expect(elapsedMs).toBeLessThan(DELAY_MS * 1.8);
+    // Sequential would never have more than one fetch outstanding.
+    expect(maxInFlight).toBe(2);
   });
 
   it('bounds a hanging fetch instead of hanging the route past its timeout budget', async () => {

@@ -21,6 +21,8 @@ import { randomBytes } from 'crypto';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { getUserLocale } from '../i18n/server-locale';
+import { buildInviteAcceptUrl, sendPartnerInviteEmail } from '../services/email/partner-invite-email';
 
 const router = Router();
 
@@ -233,17 +235,54 @@ router.post('/:orgId/members/invite', requireAuth, requireOrgAdmin(), async (req
     .single();
   if (inviteErr || !invite) return res.status(500).json({ ok: false, error: inviteErr?.message ?? 'partner_organization_invites insert failed' });
 
+  // VTID-04463 — send the accept link to the invitee. Best effort: the invite
+  // already exists, and the response always carries the link so the admin can
+  // share it by hand when email is off, unconfigured or refused.
+  const acceptUrl = buildInviteAcceptUrl(token);
+  let emailOutcome: Awaited<ReturnType<typeof sendPartnerInviteEmail>>;
+  try {
+    const { data: org } = await supabase
+      .from('partner_organizations')
+      .select('display_name')
+      .eq('id', orgId)
+      .maybeSingle();
+    const locale = await getUserLocale(supabase, callerId ?? '');
+    emailOutcome = await sendPartnerInviteEmail({
+      to: email,
+      orgName: (org as { display_name?: string } | null)?.display_name ?? 'Vitanaland',
+      role,
+      acceptUrl,
+      validDays: Math.round(INVITE_TTL_MS / (24 * 60 * 60 * 1000)),
+      locale,
+    });
+  } catch (err) {
+    emailOutcome = { sent: false, status: 'failed', error: (err as Error)?.message ?? String(err) };
+  }
+  if (!emailOutcome.sent && emailOutcome.status !== 'disabled') {
+    console.warn(`[partner-orgs] invite ${(invite as { id: string }).id} email not sent: ${emailOutcome.status}${emailOutcome.error ? ` (${emailOutcome.error})` : ''}`);
+  }
+
   await emitOasisEvent({
     vtid: 'VTID-03932',
     type: 'partner_org.member_invited',
     source: 'partner-orgs',
     status: 'success',
     message: `Partner organization ${orgId} invited ${email} as "${role}".`,
-    payload: { partner_organization_id: orgId, role, invite_id: (invite as { id: string }).id },
+    payload: {
+      partner_organization_id: orgId,
+      role,
+      invite_id: (invite as { id: string }).id,
+      email_status: emailOutcome.status,
+    },
     actor_id: callerId ?? undefined,
   });
 
-  return res.status(201).json({ ok: true, invite });
+  return res.status(201).json({
+    ok: true,
+    invite,
+    accept_url: acceptUrl,
+    email: { sent: emailOutcome.sent, status: emailOutcome.status },
+  });
 });
 
 /**

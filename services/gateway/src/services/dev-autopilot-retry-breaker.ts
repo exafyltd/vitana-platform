@@ -22,7 +22,9 @@
 // VTID-04394: a run stopped by the progress ledger (`agent stalled: …`) is
 // the same class — the agent could not finish this finding — so it trips
 // the breaker too.
-export const TURN_CAP_FAILURE_RE = /\bturn cap\b|\bmax turns reached\b|\bagent stalled\b/i;
+// VTID-04466: a run stopped by the exploration budget (no edit by the
+// hand-off point) is the same class too.
+export const TURN_CAP_FAILURE_RE = /\bturn cap\b|\bmax turns reached\b|\bagent stalled\b|\bexploration budget\b/i;
 
 export function isTurnCapFailure(metadata: Record<string, unknown> | null | undefined): boolean {
   const err = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).error : null;
@@ -47,9 +49,11 @@ export function hasTurnCapFailure(rows: Array<{ metadata?: Record<string, unknow
  *   1. an outage failure never counts toward a finding's retry cap;
  *   2. while the newest terminal failures are all outages, the loop stops
  *      approving and claiming, then probes with one execution at a time.
+ * VTID-04467: an executor task that could not be started (ECS refused
+ * RunTask) is the same class — infrastructure, not the finding.
  */
 export const PROVIDER_OUTAGE_RE =
-  /both providers failed|Insufficient Balance|Operation not allowed|account is currently blocked/i;
+  /both providers failed|Insufficient Balance|Operation not allowed|account is currently blocked|executor task could not be started/i;
 
 export const AUTO_RETRY_CAP = 5;
 export const OUTAGE_WINDOW_MS = 30 * 60 * 1000;

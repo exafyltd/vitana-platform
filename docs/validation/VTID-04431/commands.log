@@ -1,0 +1,8 @@
+# VTID-04431 — commands run (2026-09-23)
+supabase apply_migration vtid_04431_support_resolution_search (project inmkhvwdcuyhnxkgfvsb)
+select has_function_privilege(anon|authenticated|service_role, 'public.support_resolution_search(...)', 'execute')
+select status, count(*), count(resolution_md) from feedback_tickets where status in ('resolved','user_confirmed') group by status
+npx tsc --noEmit -p services/gateway            -> exit 0
+npx jest test/vtid-04431-prior-resolutions.test.ts -> 9/9
+npx jest (memory + feedback suites)             -> 31 suites / 353 tests passed
+npx jest --silent (full gateway)                 -> 1151 passed, 1 skipped; 18426 tests passed, 0 failed

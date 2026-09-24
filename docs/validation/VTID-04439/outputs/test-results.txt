@@ -1,0 +1,4 @@
+VTID-04439 local verification
+- tsc --noEmit (services/gateway): clean
+- jest test/vtid-04439-contacts-import-collisions.test.ts: pass
+- unique indexes unique_user_phone / unique_user_contact confirmed via read-only pg_indexes query
