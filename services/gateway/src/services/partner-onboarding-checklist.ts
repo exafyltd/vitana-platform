@@ -63,8 +63,8 @@ export const VERIFICATION_LEVEL_REQUIRED: Readonly<Record<PartnerType, 0 | 1 | 2
 /** The steps a partner must finish before `submit` is accepted. */
 export const SUBMIT_PREREQUISITES: readonly StepKey[] = ['account', 'company', 'terms'];
 
-/** EU member states: the company step needs a VAT id for these. */
-const EU_COUNTRIES = new Set([
+/** EU member states: the company step needs a VAT id for these, and VIES checks it. */
+export const EU_COUNTRIES: ReadonlySet<string> = new Set([
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE',
   'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
 ]);
@@ -131,6 +131,21 @@ function companyStatus(org: ChecklistOrg): { status: StepStatus; missing: string
   return { status: anySet ? 'in_progress' : 'todo', missing };
 }
 
+/**
+ * VTID-04486: the verification step row records the company facts it checked
+ * (`detail.facts`). A row without them predates that rule and is not judged.
+ */
+export function verificationIsStale(detail: Record<string, unknown> | null | undefined, org: ChecklistOrg): boolean {
+  const facts = detail && typeof detail === 'object' ? (detail as Record<string, unknown>).facts : undefined;
+  if (!facts || typeof facts !== 'object') return false;
+  const f = facts as Record<string, unknown>;
+  return (
+    (f.website ?? null) !== (org.website ?? null) ||
+    (f.country ?? null) !== (org.country ?? null) ||
+    (f.vat_id ?? null) !== (org.vat_id ?? null)
+  );
+}
+
 export function buildChecklist(input: ChecklistInput): Checklist {
   const required = new Set(requiredSteps(input.org.partner_type));
   const stored = new Map<string, StoredStep>();
@@ -173,6 +188,12 @@ export function buildChecklist(input: ChecklistInput): Checklist {
         if (row && isStepStatus(row.status)) {
           status = row.status;
           if (row.detail && typeof row.detail === 'object') detail = row.detail;
+          // VTID-04486: a verification result only holds for the facts it
+          // checked. Once the website, country or VAT id changes it is void.
+          if (key === 'verification' && verificationIsStale(row.detail, input.org)) {
+            status = 'todo';
+            missing = ['facts_changed'];
+          }
         }
       }
     }
