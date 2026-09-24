@@ -1,0 +1,48 @@
+{
+ "schema_version": 1,
+ "id": "outranked-candidate",
+ "description": "Providers returned a winner but the opening has no line for it; the outcome records that it was not spoken.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "providers": [
+   {
+    "providerKey": "login_briefing",
+    "status": "returned",
+    "candidate": {
+     "id": "c-lb",
+     "kind": "wake_brief",
+     "dedupeKey": "login_briefing:today",
+     "priority": 70,
+     "userFacingLine": "You have two things on today: a walk at noon and your diary.",
+     "privacyMode": "safe_to_speak"
+    }
+   },
+   {
+    "providerKey": "unread_messages_announce",
+    "status": "returned",
+    "candidate": {
+     "id": "c-um",
+     "kind": "wake_brief",
+     "dedupeKey": "unread:2",
+     "priority": 55,
+     "userFacingLine": "You have two unread messages from your group.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/messages"
+     }
+    }
+   }
+  ],
+  "winner": "login_briefing"
+ },
+ "turns": [],
+ "expect": {
+  "opener_kind": "legacy_default",
+  "silent_opening": false,
+  "candidate_provider": "login_briefing",
+  "candidate_spoken": false
+ }
+}

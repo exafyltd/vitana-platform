@@ -75,6 +75,8 @@ import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
+// VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
+import { triggerLiveAdvisor } from './live-advisor-hook';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -706,6 +708,7 @@ export function createUpstreamLiveMessageHandler(
                 text: userText,
                 timestamp: new Date().toISOString()
               });
+              triggerLiveAdvisor(session as any, userText, ctx.deps.emitDiag);
               // VTID-01230: Mirror to session buffer (Tier 0 short-term memory)
               if (session.identity && session.identity.tenant_id && session.identity.user_id) {
                 addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
@@ -1663,7 +1666,24 @@ export interface UpstreamSessionHandlerContext {
     ignoreModelSpeaking?: boolean;
     silenceIntervalMs?: number;
     idleThresholdMs?: number;
+    /**
+     * VTID-04418 (WS-1.6): bind `onError` / `onClose` (default true). The
+     * Vertex route keeps its own raw-socket error and close handlers (the
+     * connection-issue frame, reconnect, finalize); binding these too would
+     * send a second error frame to the user.
+     */
+    bindConnectionEvents?: boolean;
   };
+}
+
+/**
+ * VTID-04418 (WS-1.6): the Vertex path uses this shared handler set instead
+ * of the raw frame handler (`createUpstreamLiveMessageHandler`) when
+ * `ORB_VERTEX_SHARED_HANDLERS` is the exact string 'true'. Staging-only until
+ * a Serbian bridge session is observed on it; then the raw handler is deleted.
+ */
+export function isVertexSharedHandlersEnabled(raw: string | undefined = process.env.ORB_VERTEX_SHARED_HANDLERS): boolean {
+  return raw === 'true';
 }
 
 /** Interruption — mirror of the raw handler's `interrupted` branch. */
@@ -2123,6 +2143,8 @@ export function handleUpstreamError(
   ctx.deps.emitDiag(ctx.session, 'upstream_error', {
     code: event.code,
     diagnostic: (event as { diagnostic?: string }).diagnostic ?? null,
+    // VTID-04369: null for every code except nova_validation.
+    failure_kind: (event as { failure_kind?: string }).failure_kind ?? null,
   });
   ctx.callbacks.onError(new Error(`${event.code}: ${event.message}`));
 }
@@ -2204,6 +2226,17 @@ export function handleTurnComplete(
   session.consecutiveModelTurns++;
   const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
   console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
+
+  // VTID-04418 (WS-1.6): a completed turn means the model consumed whatever
+  // tool results were outstanding (BOOTSTRAP-ORB-TOOL-CARRYOVER). The raw
+  // Vertex handler always cleared them here; this shared handler recorded them
+  // but never cleared them, so a rebuilt setup (persona swap, reconnect,
+  // GoAway) re-injected up to three already-consumed results as "unfinished
+  // work" on Nova and cascade sessions.
+  const clearedPending = clearPendingToolResults(session);
+  if (clearedPending > 0) {
+    console.log(`[VTID-04418] Turn complete for ${session.sessionId} — cleared ${clearedPending} consumed tool result(s).`);
+  }
 
   const completedTranscript = (session.outputTranscriptBuffer || '').trim();
   const wasSuppressed = (session as any).suppressCurrentTurnAudio === true;
@@ -2396,6 +2429,7 @@ export function handleTurnComplete(
       text: userText,
       timestamp: new Date().toISOString()
     });
+    triggerLiveAdvisor(session as any, userText, ctx.deps.emitDiag);
     if (session.identity && session.identity.tenant_id && session.identity.user_id) {
       addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
       addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText)
@@ -2706,6 +2740,8 @@ export function bindUpstreamSessionHandlers(
   ctx.client.onTurnComplete((event) => handleTurnComplete(ctx, event));
   ctx.client.onInterrupted((event) => handleInterrupted(ctx, event));
   ctx.client.onUsage?.((event) => handleUsage(ctx, event));
-  ctx.client.onError((event) => handleUpstreamError(ctx, event));
-  ctx.client.onClose((event) => handleUpstreamClose(ctx, event));
+  if (ctx.options?.bindConnectionEvents !== false) {
+    ctx.client.onError((event) => handleUpstreamError(ctx, event));
+    ctx.client.onClose((event) => handleUpstreamClose(ctx, event));
+  }
 }

@@ -1,0 +1,8 @@
+# VTID-04423 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04423; vtid_ledger in_progress / approved.
+Read-only: pg_constraint on orb_session_state -> PRIMARY KEY (user_id, key), FK user_id; no key CHECK (new key needs no migration).
+npx tsc --noEmit -p .  -> clean
+npx jest test/services/orb-tools test/orb test/services/conversation
+  -> 4 snapshots failed (tool catalog x2, system instruction x2): each diff is exactly the added
+     get_next_best_action description line; re-recorded with -u (3926 passed)
+npx jest test/services/conversation/vtid-04423 -> 10 passed

@@ -90,9 +90,41 @@ const FISH_VOICES: Record<string, FishVoiceConfig> = {
   sr: { referenceId: '2ad62aaf885e4a14add09fe4a38ffd23', label: 'Milica (Fish Official)' },
 };
 
-export function resolveFishVoice(lang: string): FishVoiceConfig | null {
+/**
+ * VTID-04445 — Devon's (the specialist's) Fish voice per language: the male
+ * voice of the same Fish Official series as Milica, for the languages where
+ * Polly has no male voice at all (`tr`, `zh` — Polly's documented and live
+ * `DescribeVoices` list) or no voice at all (`sr`). Owner rule: every Devon
+ * voice is a man's voice, so these are the ONLY way Devon can speak in those
+ * languages on the cascade — never Vitana's female voice.
+ *
+ * Each read via `GET /model/{id}` 2026-09-23: author `Fish Official`, tags
+ * `male, young, conversational, professional, clear`, description "A natural,
+ * professional <language> voice … suited to voice assistants, customer
+ * support and everyday narration", `dmca_taken_down: false`. `zh` is the
+ * Mainland Mandarin voice, matching Polly's cmn-CN receptionist voice.
+ */
+const FISH_SPECIALIST_VOICES: Record<string, FishVoiceConfig> = {
+  sr: { referenceId: '076ad255234448a5b2adb3f8bd292acd', label: 'Nikola (Fish Official)' },
+  tr: { referenceId: '778d117554c9470bb7c664a781fe13a5', label: 'Kerem (Fish Official)' },
+  zh: { referenceId: '5d29a99739c14d4ca3e4fe42193105b2', label: 'Zixuan (Fish Official)' },
+};
+
+/** VTID-04445 — whose voice a Fish request speaks with. Omitted = Vitana. */
+export type FishVoiceRole = 'receptionist' | 'specialist';
+
+export function resolveFishVoice(lang: string, role: FishVoiceRole = 'receptionist'): FishVoiceConfig | null {
   const normalized = (lang || '').toLowerCase().split(/[-_]/)[0].slice(0, 2);
-  return FISH_VOICES[normalized] ?? null;
+  const table = role === 'specialist' ? FISH_SPECIALIST_VOICES : FISH_VOICES;
+  return table[normalized] ?? null;
+}
+
+/** Test/verification seam: both tables, read-only. */
+export function listFishVoices(): {
+  receptionist: Readonly<Record<string, FishVoiceConfig>>;
+  specialist: Readonly<Record<string, FishVoiceConfig>>;
+} {
+  return { receptionist: FISH_VOICES, specialist: FISH_SPECIALIST_VOICES };
 }
 
 /**
@@ -160,6 +192,8 @@ export async function synthesizeFish(opts: {
   text: string;
   lang: string;
   format: 'mp3' | 'pcm';
+  /** VTID-04445 — omitted (every pre-existing caller) = Vitana's voice. */
+  voiceRole?: FishVoiceRole;
 }): Promise<FishSynthesisResult | null> {
   const { text, lang, format } = opts;
   if (!text || text.trim().length === 0) return null;
@@ -174,7 +208,7 @@ export async function synthesizeFish(opts: {
     return null;
   }
 
-  const voice = resolveFishVoice(lang);
+  const voice = resolveFishVoice(lang, opts.voiceRole ?? 'receptionist');
   if (!voice) {
     // Not every unsupported-by-Polly language has a curated Fish voice yet —
     // that is an explicit, growable gap (see FISH_VOICES), not a bug.

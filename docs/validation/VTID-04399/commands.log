@@ -1,0 +1,36 @@
+# VTID-04399 — commands run (2026-09-23)
+
+## VTID
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate {source:claude-code,layer:DEV,module:orb-brain} -> VTID-04399
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04399'
+
+## Read-only measurement (Supabase MCP execute_sql)
+orb.live.diag stages, 7 d: greeting_context_pending 210, greeting_recovery 29, nova_premature_close_retry 28, reconnect_triggered 3 (all stall_recovery)
+voice.latency.measured turn-0 x vtid.live.session.start, 7 d: signed-in sessions whose final setup_sent context_chars = 0 -> 53 of 158; context_awaited timed_out on nearly all
+information_schema.columns user_assistant_state -> tenant_id, user_id, signal_name, value jsonb, count, confidence, source, expires_at, last_seen_at, created_at, updated_at
+
+## Migration (Supabase MCP apply_migration)
+apply_migration vtid_04399_metrics_context_setup (CREATE OR REPLACE conversation_metrics_rollup_hour + backfill 168 h) -> success
+conversation_metrics_hourly 7 d: context_setup_empty 52 / 157, context_setup_source source:unknown 157, context_wait_timeouts 161 / 176
+
+## Gateway
+npx tsc --noEmit -p .                                                    -> clean
+jest vtid-04399-brain-core-snapshot + vtid-04353-finalize-live-session   -> 2 suites passed
+jest test/services/conversation test/command-hub test/scripts \
+     test/routes/vtid-04371-conversation-metrics-routes.test.ts test/orb/live/session -> 69 suites, 1095 passed
+jest (full gateway suite)                                                 -> 1117 passed, 1 skipped, 1 failed: test/operator-deployments.test.ts
+   -> re-run alone, with and without this change: 8/8 passed both times (load-sensitive timing test, not this change)
+
+## Command Hub
+node --check app.js                                                       -> ok
+node scripts/generate-command-hub-symbol-index.mjs                        -> regenerated
+node scripts/ci/validator-path-guard.cjs --csp-added-lines csp.diff       -> No CSP pattern hits in added lines.
+node docs/validation/VTID-04399/outputs/harness-server.js &              -> local harness (working-tree statics, real summarizer, live rollup rows)
+node docs/validation/VTID-04399/outputs/harness-shoot.js                 -> first desktop capture: metric tiles unstyled (raw text); mobile styled
+   -> cause: after the ffb656eca merge the .conv-metric-* rules sat inside main's
+      .orch-* @media (max-width: 600px) block; fixed with one closing brace
+   -> nesting test mutation-checked: fails on the pre-fix styles.css ("nested inside @media (max-width: 600px)"), passes after
+node docs/validation/VTID-04399/outputs/harness-shoot.js                 -> desktop + mobile: no page errors, no horizontal overflow, tiles styled
+
+## Staging, pre-merge (anonymous)
+curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/metrics/summary -> 404 text/html (PR not deployed; route added by VTID-04371 in this PR)

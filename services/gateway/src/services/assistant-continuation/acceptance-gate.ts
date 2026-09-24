@@ -26,14 +26,23 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   readOrbSessionState,
   clearOrbSessionState,
+  writeOrbSessionState,
 } from '../orb/orb-session-state';
+import {
+  detectDecline,
+  defaultEmitOfferEvent,
+  emitOfferEventSafely,
+  markAwaitingModelRun,
+  forgetAwaitingOffer,
+  type EmitOfferEventFn,
+  type PendingOffer,
+} from './offer-outcomes';
 
-/** The shape stored under orb_session_state.key='pending_cta' (see wake-brief-wiring.ts). */
-export interface PendingCtaValue {
-  tool: string;
-  payload?: Record<string, unknown>;
-  offered_at?: string;
-}
+/**
+ * The shape stored under orb_session_state.key='pending_cta'. Written only
+ * through recordPendingOffer() (VTID-04355), which adds offer_id/source/key.
+ */
+export type PendingCtaValue = PendingOffer;
 
 /** What an accepted continuation resolves to — the exact action to execute. */
 export interface BoundAcceptance {
@@ -95,6 +104,27 @@ export function detectAcceptance(text: string | null | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Which offers the gate runs itself (VTID-04355).
+// ---------------------------------------------------------------------------
+
+/**
+ * True when the gate itself can execute this offer on a bare "yes".
+ *
+ * Only a well-formed navigate_to_screen qualifies: both turn-loop call sites
+ * dispatch nothing else. Every other offer (activate_recommendation, a tool
+ * recorded via offer_action, …) is left in orb_session_state for the model's
+ * own tool call and for the tools that read pending_cta as their fallback —
+ * consuming it here and then doing nothing is exactly how an accepted
+ * non-navigation offer used to vanish.
+ */
+export function isAutoRunnableOffer(cta: { tool?: unknown; payload?: unknown } | null | undefined): boolean {
+  if (!cta || cta.tool !== 'navigate_to_screen') return false;
+  const p = (cta.payload ?? {}) as { screen_id?: unknown; route?: unknown };
+  return typeof p.screen_id === 'string' && p.screen_id.trim() !== '' &&
+    typeof p.route === 'string' && p.route.trim() !== '';
+}
+
+// ---------------------------------------------------------------------------
 // Pending-CTA resolution (one-shot).
 // ---------------------------------------------------------------------------
 
@@ -102,6 +132,13 @@ export function detectAcceptance(text: string | null | undefined): boolean {
 export interface AcceptanceGateDeps {
   readPendingCta: (userId: string, now: number) => Promise<PendingCtaValue | null>;
   clearPendingCta: (userId: string) => Promise<void>;
+  /**
+   * VTID-04355: record that an offer the model runs itself was accepted, so a
+   * second "ja" neither re-counts it nor re-fires. Optional for older callers.
+   */
+  markAccepted?: (userId: string, cta: PendingCtaValue, now: number) => Promise<void>;
+  /** VTID-04355: outcome events. Optional; absent means no events. */
+  emitOutcome?: EmitOfferEventFn;
 }
 
 /** Real deps backed by orb_session_state. The reader already drops expired rows. */
@@ -116,6 +153,12 @@ export function makeSupabaseAcceptanceDeps(supabase: SupabaseClient): Acceptance
     clearPendingCta: async (userId) => {
       await clearOrbSessionState(supabase, userId, 'pending_cta');
     },
+    markAccepted: async (userId, cta, now) => {
+      markAwaitingModelRun(userId, cta, now);
+      // Short TTL: long enough for the model's tool call in the same turn.
+      await writeOrbSessionState(supabase, userId, 'pending_cta', { ...cta, accepted_at: new Date(now).toISOString() }, 5, now);
+    },
+    emitOutcome: defaultEmitOfferEvent,
   };
 }
 
@@ -127,9 +170,11 @@ export interface MaybeBindInput {
 }
 
 /**
- * The keystone: if `userText` is an acceptance AND a live pending_cta exists,
- * return the exact stored action to execute (and consume it, so a second "ja"
- * can't re-fire). Otherwise null — the caller proceeds normally (LLM turn).
+ * The keystone: if `userText` is an acceptance AND a live pending_cta exists
+ * that the gate can run itself (isAutoRunnableOffer), return the exact stored
+ * action to execute (and consume it, so a second "ja" can't re-fire).
+ * Otherwise null and the offer is left untouched — the caller proceeds
+ * normally (LLM turn), and the model runs a non-navigation offer itself.
  *
  * Fails open: any error → null (never blocks the conversation).
  */
@@ -139,10 +184,39 @@ export async function maybeBindAcceptance(
 ): Promise<BoundAcceptance | null> {
   const { userText, userId } = input;
   if (!userId) return null;
-  if (!detectAcceptance(userText)) return null;
+  const accepted = detectAcceptance(userText);
+  // detectAcceptance() already refuses anything with a refusal word, so the
+  // two never both fire on one utterance.
+  const declined = !accepted && detectDecline(userText);
+  if (!accepted && !declined) return null;
+  const now = input.now ?? Date.now();
   try {
-    const cta = await deps.readPendingCta(userId, input.now ?? Date.now());
+    const cta = await deps.readPendingCta(userId, now);
     if (!cta) return null;
+
+    if (declined) {
+      // VTID-04355: a "no" ends the offer now instead of leaving it live for
+      // its whole TTL, where a later unrelated "ja" could still fire it.
+      await deps.clearPendingCta(userId);
+      forgetAwaitingOffer(userId);
+      if (deps.emitOutcome) emitOfferEventSafely(deps.emitOutcome, 'declined', userId, cta);
+      return null;
+    }
+
+    // Already accepted (the model is running it): a second "ja" is not a new
+    // acceptance and must not re-count or re-fire.
+    if (cta.accepted_at) return null;
+
+    const autoRuns = isAutoRunnableOffer(cta);
+    if (deps.emitOutcome) emitOfferEventSafely(deps.emitOutcome, 'accepted', userId, cta, { auto_runs: autoRuns });
+
+    // VTID-04355: never consume an offer the gate will not run. The model runs
+    // it; the offer is cleared after that tool succeeds
+    // (settleOfferOnToolSuccess), or expires.
+    if (!autoRuns) {
+      if (deps.markAccepted) await deps.markAccepted(userId, cta, now);
+      return null;
+    }
     // One-shot: consume before returning so the acceptance can't double-execute
     // (e.g. user says "ja" twice while the action is already running).
     await deps.clearPendingCta(userId);

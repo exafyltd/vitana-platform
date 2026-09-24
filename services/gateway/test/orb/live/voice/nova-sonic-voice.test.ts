@@ -17,25 +17,21 @@ describe('resolveNovaSonicVoice', () => {
     expect(resolveNovaSonicVoice({ language: 'es', persona: 'vitana' })).toBe('lupe');
   });
 
-  // VTID-03704 — persona NO LONGER selects the voice. This test used to assert
-  // devon/atlas → lennart/florian/carlos; that split is what made the voice
-  // change across the sign-in boundary (an anonymous session has no persona and
-  // resolved feminine; a signed-in user carrying `devon` resolved masculine), so
-  // it is now asserted as an EQUALITY across personas rather than deleted. A
-  // deleted test would let the split come back unnoticed.
-  it('ignores persona — every persona gets the same female voice', () => {
-    for (const persona of ['vitana', 'devon', 'atlas', 'sage', 'mira', 'zzz']) {
-      expect(resolveNovaSonicVoice({ language: 'en', persona })).toBe('amy');
-      expect(resolveNovaSonicVoice({ language: 'de', persona })).toBe('tina');
-      expect(resolveNovaSonicVoice({ language: 'fr', persona })).toBe('ambre');
-      expect(resolveNovaSonicVoice({ language: 'es', persona })).toBe('lupe');
-    }
+  // VTID-04445 — owner rule: every Vitana voice is a woman's voice, every
+  // Devon voice a man's voice. This test used to assert the opposite (VTID-
+  // 03704: persona ignored, Devon spoke with Vitana's female voice).
+  it('maps Devon to the male voice of the same locale', () => {
+    expect(resolveNovaSonicVoice({ language: 'en', persona: 'devon' })).toBe('matthew');
+    expect(resolveNovaSonicVoice({ language: 'de', persona: 'devon' })).toBe('lennart');
+    expect(resolveNovaSonicVoice({ language: 'fr', persona: 'devon' })).toBe('florian');
+    expect(resolveNovaSonicVoice({ language: 'es', persona: 'devon' })).toBe('carlos');
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('leo');
   });
 
-  it('never returns one of the retired masculine voices', () => {
-    for (const lang of ['en', 'de', 'fr', 'es']) {
-      for (const persona of ['devon', 'atlas', 'vitana']) {
-        expect(['lennart', 'florian', 'carlos', 'leo'])
+  it('never hands Vitana (or the anonymous, persona-less case) a male voice', () => {
+    for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+      for (const persona of ['vitana', null, undefined, '']) {
+        expect(['matthew', 'lennart', 'florian', 'carlos', 'leo'])
           .not.toContain(resolveNovaSonicVoice({ language: lang, persona }));
       }
     }
@@ -52,7 +48,8 @@ describe('resolveNovaSonicVoice', () => {
   });
 
   it('handles regional tags and casing', () => {
-    expect(resolveNovaSonicVoice({ language: 'de-DE', persona: 'devon' })).toBe('tina');
+    expect(resolveNovaSonicVoice({ language: 'de-DE', persona: 'devon' })).toBe('lennart');
+    expect(resolveNovaSonicVoice({ language: 'DE_at', persona: 'Devon' })).toBe('lennart');
     expect(resolveNovaSonicVoice({ language: 'EN_us', persona: 'vitana' })).toBe('amy');
   });
 
@@ -80,8 +77,8 @@ describe('resolveNovaSonicVoice', () => {
   it('keeps carolina for pt — the cascade gate is inert until IAM lands', () => {
     expect(resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' })).toBe('carolina');
     expect(resolveNovaSonicVoice({ language: 'pt-BR', persona: 'vitana' })).toBe('carolina');
-    // Persona-independent, like every other language.
-    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('carolina');
+    // VTID-04445 — Devon gets pt-BR's male voice, never Vitana's.
+    expect(resolveNovaSonicVoice({ language: 'pt', persona: 'devon' })).toBe('leo');
   });
 
   it('never substitutes a German voice for Portuguese', () => {

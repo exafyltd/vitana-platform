@@ -6251,7 +6251,8 @@ CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
         "description": "Get today's single highest-priority recommended health action.
 CALL WHEN the user asks: "what should I do today?", "what's my next
 step?", "was soll ich heute für meine Gesundheit tun?".
-If the result has an autopilot id, offer to call activate_recommendation.",
+If the result has an autopilot id, offer to call activate_recommendation.
+It may also list other next steps for this person (leads, not lines): propose at most one, in your own words.",
         "name": "get_next_best_action",
         "parameters": {
           "properties": {},
@@ -19156,7 +19157,8 @@ CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
         "description": "Get today's single highest-priority recommended health action.
 CALL WHEN the user asks: "what should I do today?", "what's my next
 step?", "was soll ich heute für meine Gesundheit tun?".
-If the result has an autopilot id, offer to call activate_recommendation.",
+If the result has an autopilot id, offer to call activate_recommendation.
+It may also list other next steps for this person (leads, not lines): propose at most one, in your own words.",
         "name": "get_next_best_action",
         "parameters": {
           "properties": {},

@@ -1,0 +1,9 @@
+# VTID-04446 — commands run
+curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04446
+# read-only, live project: agent_runs exists (0 rows, 0 leased); agent_runs_unified 17 cols, 3 UNION ALL, no mirror filter
+cd services/gateway && npx tsc --noEmit -p .                                  -> clean
+node node_modules/.bin/jest test/services/orchestrator/vtid-04446-run-leases.test.ts   -> 24/24 passed
+node node_modules/.bin/jest test/services/orchestrator test/services/autopilot-agent + every suite importing
+  llm-stage-tool-loop / agent-heartbeat / dev-autopilot-execute / runStageToolLoop / backgroundExecutorTick / applyExecutionResult
+                                                                              -> 67 suites, 946 tests passed
+node node_modules/.bin/jest (full gateway suite)                               -> 1154 passed / 1 skipped suites; 18496 passed, 29 skipped, 6 todo, 0 failed

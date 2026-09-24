@@ -109,37 +109,27 @@ describe('VTID-03704: voice routing policy', () => {
     });
   });
 
-  describe('rule 2 — one female voice per language, persona-independent', () => {
-    const PERSONAS = ['vitana', 'devon', 'atlas', 'sage', 'mira', 'unknown-persona', ''];
+  // VTID-04445 — rule 2 changed at the owner's instruction: Vitana speaks
+  // with a woman's voice and Devon with a man's voice, in every language.
+  // The pre/post-login parity VTID-03704 protected still holds: a new session
+  // is always Vitana (anonymous or signed-in) — only a hand-off inside a
+  // session makes Devon the speaker.
+  describe('rule 2 — Vitana female, Devon male, every language', () => {
+    const FEMALE = ['amy', 'tina', 'ambre', 'lupe', 'carolina'];
+    const MALE = ['matthew', 'lennart', 'florian', 'carlos', 'leo'];
 
-    it('resolves the same voice for every persona, in every Nova language', () => {
-      for (const lang of NOVA_SONIC_SUPPORTED_LANGUAGES) {
-        const voices = new Set(
-          PERSONAS.map((persona) => resolveNovaSonicVoice({ language: lang, persona })),
-        );
-        // One distinct voice across all personas — this is the pre/post-login
-        // parity guarantee stated as code.
-        expect(voices.size).toBe(1);
-      }
-    });
-
-    it('resolves the same voice with no persona at all — the anonymous case', () => {
-      // An anonymous (pre-login) session passes no persona. If this ever
-      // diverges from the signed-in result, the reported bug is back.
-      for (const lang of NOVA_SONIC_SUPPORTED_LANGUAGES) {
-        const anonymous = resolveNovaSonicVoice({ language: lang });
-        const signedIn = resolveNovaSonicVoice({ language: lang, persona: 'devon' });
-        expect(anonymous).toBe(signedIn);
-      }
-    });
-
-    it('never resolves one of the retired masculine voice ids', () => {
-      const RETIRED = ['lennart', 'florian', 'carlos', 'leo', 'matthew'];
+    it('Vitana and the anonymous (persona-less) case resolve the same female voice', () => {
       for (const lang of ALL_LANGUAGES) {
-        for (const persona of PERSONAS) {
-          const voice = resolveNovaSonicVoiceOrFallback({ language: lang, persona }).voice;
-          expect(RETIRED).not.toContain(voice);
-        }
+        const anonymous = resolveNovaSonicVoiceOrFallback({ language: lang }).voice;
+        const vitana = resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'vitana' }).voice;
+        expect(anonymous).toBe(vitana);
+        expect(FEMALE).toContain(vitana);
+      }
+    });
+
+    it('Devon resolves a male voice in every language, fallback included', () => {
+      for (const lang of ALL_LANGUAGES) {
+        expect(MALE).toContain(resolveNovaSonicVoiceOrFallback({ language: lang, persona: 'devon' }).voice);
       }
     });
   });
