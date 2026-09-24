@@ -54,6 +54,9 @@ TEST: docs/validation/VTID-04500/outputs/role-scope-live-counts.txt
 AC-6: The new route tests fail against the unchanged source (5 of 80) and pass with it.
 TEST: docs/validation/VTID-04500/outputs/mutation-src-reverted.txt
 
+AC-7: The ORB opener asks for the scopes of the active role: community and patient read community rows, developer and admin read system findings only.
+TEST: services/gateway/test/vtid-04500-opening-role-scopes.test.ts
+
 ## Not verified
 
 No request was made against any live gateway. Frontend verified by vitest and lint.
