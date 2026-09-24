@@ -131,7 +131,11 @@ describe('kill switch applies to the feedback lane (exemption removed)', () => {
   it('the executor tick no longer filters cooling rows to the feedback lane', () => {
     const src = fs.readFileSync(path.join(__dirname, '../src/services/dev-autopilot-execute.ts'), 'utf8');
     expect(src).not.toMatch(/claiming \$\{filteredRows\.length\} feedback-lane/);
-    expect(src).toMatch(/if \(cfg\.kill_switch\) return;\n\n  \/\/ 2\. Concurrency cap/);
+    // VTID-04497 put the env claim gate between the kill switch and the cap;
+    // it filters by environment, never by lane.
+    const m = src.match(/if \(cfg\.kill_switch\) return;\n\n  \/\/ 1b\. VTID-04497([\s\S]*?)\n  \/\/ 2\. Concurrency cap/);
+    expect(m).not.toBeNull();
+    expect(m![1]).not.toMatch(/feedback|source_type|lane/);
   });
 });
 

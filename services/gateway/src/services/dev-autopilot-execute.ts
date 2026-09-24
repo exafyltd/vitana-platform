@@ -62,7 +62,7 @@ import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
 import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from './dev-autopilot-deploy-topics';
 import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
-import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
+import { claimStamp, filterOwnedExecutions, currentEnv, executorClaimsHere } from './dev-autopilot-env-ownership';
 import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-owner';
 // VTID-04006: single-shot vs agent executor selection.
 import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
@@ -2801,6 +2801,8 @@ export function buildWatchdogReclaimPatch(
   };
 }
 
+let claimGateLogged = false;
+
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -2985,6 +2987,16 @@ export async function backgroundExecutorTick(): Promise<void> {
   const cfg = await loadConfig(s);
   if (!cfg) return;
   if (cfg.kill_switch) return;
+
+  // 1b. VTID-04497: only the staging gateway claims new executions — a merge
+  //     to main deploys staging, so only staging can see the lifecycle end.
+  if (!executorClaimsHere()) {
+    if (!claimGateLogged) {
+      claimGateLogged = true;
+      console.log(`${LOG_PREFIX} env=${currentEnv()}: not claiming new executions (DEV_AUTOPILOT_PROD_CLAIM_ENABLED != 'true'); owned rows are still watched`);
+    }
+    return;
+  }
 
   // 2. Concurrency cap — and VTID-04368: claim nothing during an LLM
   //    provider outage (cooling rows wait), one at a time while probing.

@@ -43,6 +43,30 @@ export function ownsExecution(
   return stamped === myEnv;
 }
 
+/**
+ * VTID-04497: may THIS gateway claim new executions?
+ *
+ * An execution ends by merging a PR to `main`, and a push to `main` deploys
+ * STAGING only (production moves by PUBLISH). The claiming gateway then waits
+ * for a deploy event of its own environment — so a production claim waits for
+ * `prod.deploy.completed`, which a merge never produces, times out and REVERTS
+ * the merged PR from `main` (593cb4d1 → #3585, 5769e66a → #3594, 2026-09-22).
+ * The production gateway claimed ~2/3 of all executions from the shared table.
+ *
+ *   - staging → yes
+ *   - production → only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact)
+ *
+ * Rows the production gateway already owns are still watched and reconciled
+ * by it; only NEW claims stop.
+ */
+export function executorClaimsHere(
+  myEnv: string = currentEnv(),
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  if (myEnv === 'staging') return true;
+  return env.DEV_AUTOPILOT_PROD_CLAIM_ENABLED === 'true';
+}
+
 /** Filter helper for watcher/reconciler batches. Logs the skips once per tick. */
 export function filterOwnedExecutions<T extends { id: string; metadata?: Record<string, unknown> | null }>(
   rows: T[],
