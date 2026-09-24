@@ -182,7 +182,21 @@ export async function runOperatorDelegateAsync(session: DelegationSession, args:
   }
 }
 
-/** ask_support_specialist, through the dispatcher (voice ack window 1.5 s). */
+/**
+ * Voice ack window for the read-only specialists (VTID-04485). The dispatcher's
+ * 1.5 s voice default suits a hand-off; a specialist answer measured 3.0 s live
+ * on staging, so at 1.5 s the member only ever heard "I'm checking". Waiting a
+ * little longer lets the answer land in the same turn. Env-tunable, clamped.
+ */
+export const SPECIALIST_VOICE_ACK_DEFAULT_MS = 4_500;
+export function specialistAckWindowMs(channel: string): number | undefined {
+  if (channel !== 'voice') return undefined;
+  const raw = Number(process.env.ORCHESTRATOR_SPECIALIST_VOICE_ACK_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return SPECIALIST_VOICE_ACK_DEFAULT_MS;
+  return Math.min(8_000, Math.max(1_500, Math.round(raw)));
+}
+
+/** ask_support_specialist, through the dispatcher (voice ack window: specialistAckWindowMs). */
 export async function runAskSupportSpecialist(session: DelegationSession, args: Record<string, unknown>): Promise<ToolResult> {
   if (!isSupportSpecialistEnabled()) {
     return { success: false, result: '', error: 'the support specialist is not enabled' };
@@ -190,7 +204,7 @@ export async function runAskSupportSpecialist(session: DelegationSession, args: 
   registerDefaultDelegationTargets();
   const caller = callerFromSession(session);
   const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
-  const r = await delegateToAgent(SUPPORT_SPECIALIST_AGENT_ID, question, caller);
+  const r = await delegateToAgent(SUPPORT_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel) });
   switch (r.status) {
     case 'done':
       return { success: true, result: JSON.stringify(r.result) };
@@ -235,7 +249,7 @@ export async function runAskCommerceSpecialist(
     }
   }
   const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
-  const r = await delegateToAgent(COMMERCE_SPECIALIST_AGENT_ID, question, caller);
+  const r = await delegateToAgent(COMMERCE_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel) });
   switch (r.status) {
     case 'done':
       return { success: true, result: JSON.stringify(r.result) };
