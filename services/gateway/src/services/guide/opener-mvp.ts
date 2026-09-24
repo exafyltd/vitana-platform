@@ -19,6 +19,7 @@
  * MUST check isPaused() before returning a candidate.
  */
 
+import { roleScopesVisibleFrom } from '../community-autopilot/lineup-role';
 import { getSupabase } from '../../lib/supabase';
 import { isPaused } from './pause-check';
 import {
@@ -164,7 +165,7 @@ export async function pickOpenerCandidate(input: PickOpenerInput): Promise<Opene
   }
 
   // 3. Top "new" autopilot recommendation matching role
-  const { data: recRows } = await repo.fetchTopNewRecommendation(supabase, input.user_id, ['any', input.active_role], 1);
+  const { data: recRows } = await repo.fetchTopNewRecommendation(supabase, input.user_id, roleScopesVisibleFrom(input.active_role), 1);
 
   if (recRows && recRows.length) {
     const rec = recRows[0] as AutopilotRecRow;

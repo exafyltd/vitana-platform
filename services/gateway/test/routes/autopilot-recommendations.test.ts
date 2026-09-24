@@ -102,7 +102,16 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   optionalAuth: jest.fn((req: any, _res: any, next: any) => {
     const userId = req.get('X-User-ID');
     if (userId) {
-      req.identity = { user_id: userId, email: null, tenant_id: null, exafy_admin: false, role: 'authenticated', aud: null, exp: null, iat: null };
+      // VTID-04500: the route now authorizes system roles server-side. Legacy
+      // tests in this suite exercise developer/no-role paths as an operator,
+      // so the default identity is an exafy admin; `X-Test-Exafy-Admin: 0`
+      // gives a plain member (see the CA-2 lineup tests).
+      req.identity = {
+        user_id: userId, email: null,
+        tenant_id: req.get('X-Test-Tenant') || null,
+        exafy_admin: req.get('X-Test-Exafy-Admin') !== '0',
+        role: 'authenticated', aud: null, exp: null, iat: null,
+      };
     }
     next();
   }),
@@ -133,7 +142,10 @@ jest.mock('@supabase/supabase-js', () => {
     return chain;
   }
 
-  const client = { from: jest.fn(() => makeChain()) };
+  const client = {
+    from: jest.fn(() => makeChain()),
+    rpc: jest.fn(() => Promise.resolve(nextResult())),
+  };
 
   return {
     createClient: jest.fn(() => client),
@@ -1393,5 +1405,95 @@ describe('GET /api/v1/autopilot/recommendations/health', () => {
       expect.arrayContaining(['GET /recommendations', 'POST /recommendations/:id/complete']),
     );
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+
+// =============================================================================
+// VTID-04500 (Community Autopilot CA-2): the server decides the lineup
+// =============================================================================
+
+describe('CA-2 role-scoped lineups', () => {
+  beforeEach(() => {
+    stubFetch(and(methodIs('GET'), urlHas('/rest/v1/autopilot_recommendations?')), []);
+  });
+  const recsUrls = () =>
+    (global.fetch as jest.Mock).mock.calls
+      .map(([u]: [string]) => decodeURIComponent(String(u)))
+      .filter((u) => u.includes('/rest/v1/autopilot_recommendations?'));
+  // Every query the request made, joined — a leak would show up in any of them.
+  const lastRecsUrl = () => recsUrls().join('\n');
+
+  it('a plain member sending ?role=admin gets their own community lineup, never everyone\'s', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=admin')
+      .set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain(`user_id=eq.${USER_ID}`);
+    expect(url).toContain('source_type=eq.community');
+  });
+
+  it('a plain member sending ?role=developer without the role granted is narrowed to community', async () => {
+    queueSupabaseResult(false);
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=developer')
+      .set('X-Test-Exafy-Admin', '0')
+      .set('X-Test-Tenant', TENANT_ID);
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain('source_type=eq.community');
+    expect(url).not.toContain('user_id=is.null');
+  });
+
+  it('a member granted developer (check_role_permitted) gets the system lineup', async () => {
+    queueSupabaseResult(true);
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=developer')
+      .set('X-Test-Exafy-Admin', '0')
+      .set('X-Test-Tenant', TENANT_ID);
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain('user_id=is.null');
+    expect(url).toContain('source_type=neq.community');
+  });
+
+  it('a plain member with no hint does not get the legacy all-system RPC view', async () => {
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations').set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    const rpcCalled = (global.fetch as jest.Mock).mock.calls.some(([u]: [string]) =>
+      String(u).includes('/rpc/get_autopilot_recommendations'),
+    );
+    expect(rpcCalled).toBe(false);
+    expect(decodeURIComponent(lastRecsUrl())).toContain('source_type=eq.community');
+  });
+
+  it('a role without a lineup yet (professional) gets an empty list, not someone else\'s', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=professional')
+      .set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    expect(res.body.count ?? res.body.recommendations?.length ?? 0).toBe(0);
+    expect(lastRecsUrl()).toBe('');
+  });
+
+  it('a plain member cannot take the Dev Autopilot activation path with ?role=developer', async () => {
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Mine', source_type: 'community', source_ref: 'onboarding_profile', user_id: USER_ID, status: 'new' },
+    ]);
+    const app = mountApp();
+    await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=developer`)
+      .set('X-Test-Exafy-Admin', '0')
+      .send({});
+    const devRpc = (global.fetch as jest.Mock).mock.calls.some(([u]: [string]) =>
+      String(u).includes('/rpc/activate_autopilot_recommendation'),
+    );
+    expect(devRpc).toBe(false);
   });
 });

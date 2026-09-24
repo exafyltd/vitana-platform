@@ -37,6 +37,7 @@ import * as repo from './autopilot-recommendations-repository';
 // - kept in sync with what bridgeActivationToExecution() itself accepts.
 import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
 import { completeCalendarEntriesForSource } from '../services/calendar-producers';
+import { resolveLineupRole } from '../services/community-autopilot/lineup-role';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -369,6 +370,36 @@ function getActiveRole(req: Request): string | null {
 }
 
 // =============================================================================
+// VTID-04500 (Community Autopilot CA-2): the server decides the lineup.
+// The requested role (?role= / X-Vitana-Active-Role) is only a hint: a system
+// role needs exafy_admin or check_role_permitted, anything unrecognised narrows
+// to the member's own community lineup, and with no hint the member's effective
+// role is used. Returns null ONLY for an exafy admin with no hint (the Command
+// Hub's legacy RPC view).
+// =============================================================================
+async function resolveRequestRole(req: Request): Promise<string | null> {
+  const identity = (req as AuthenticatedRequest).identity;
+  const requested = getActiveRole(req);
+  if (!identity?.user_id) return requested ? 'none' : null;
+  if (!requested && identity.exafy_admin) return null;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return 'community';
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+  const decision = await resolveLineupRole(sb, {
+    userId: identity.user_id,
+    tenantId: identity.tenant_id ?? (req.get('X-Vitana-Tenant') || null),
+    exafyAdmin: identity.exafy_admin === true,
+    requested,
+  });
+  if (decision.narrowed) {
+    console.warn(`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} — community lineup`);
+  }
+  return decision.lineup;
+}
+
+// =============================================================================
 // Helper: Direct PostgREST query for role-filtered recommendations
 //
 // VTID-02969: Exported so other voice / proactive surfaces (e.g.
@@ -403,17 +434,21 @@ export async function queryRecommendationsByRole(
   // popup/count. Repeated `or` params are ANDed by PostgREST.
   params.append('or', '(expires_at.is.null,expires_at.gt.now())');
 
-  if (role === 'community') {
+  if (role === 'community' || role === 'patient') {
     // Community role: only personal recs from community analyzer
     if (!userId) return { ok: true, data: [], count: 0 };
     params.set('user_id', `eq.${userId}`);
     params.set('source_type', 'eq.community');
-  } else if (role === 'developer') {
-    // Developer role: system-wide recs (user_id IS NULL), non-community source types
+  } else if (role === 'developer' || role === 'admin' || role === 'infra') {
+    // System roles: system-wide recs (user_id IS NULL), non-community source types.
+    // Callers must have authorized the role first (resolveLineupRole).
     params.set('user_id', 'is.null');
     params.set('source_type', 'neq.community');
+  } else {
+    // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
+    // NO filter, returning every user's personal suggestions.
+    return { ok: true, data: [], count: 0 };
   }
-  // admin role or unknown: no extra filters (returns everything)
 
   const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
   try {
@@ -520,7 +555,7 @@ async function queryRecommendationsFallback(
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     // Parse query params
     const statusParam = req.query.status as string || 'new';
@@ -797,7 +832,7 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/count', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     console.log(`${LOG_PREFIX} Recommendations count requested`, { role: role || 'none', userId: userId || 'null' });
 
@@ -1362,7 +1397,7 @@ export async function activateCommunityAutopilotRecommendation(
 router.post('/:id/activate', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
     const { id } = req.params;
 
     if (!id) {
@@ -1673,7 +1708,7 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { reason } = req.body;
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
@@ -1793,7 +1828,7 @@ router.post('/generate', async (req: Request, res: Response) => {
 
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     // =========================================================================
     // VTID-03301: Community on-demand regeneration.
@@ -2109,7 +2144,7 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const recId = req.params.id;
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
     console.log(`${LOG_PREFIX} Completing recommendation ${recId.slice(0, 8)}... (role: ${role || 'none'})`);
 
     // VTID-03180: route delegates to the canonical RPC so the state transition
