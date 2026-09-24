@@ -1011,7 +1011,9 @@ export type CicdEventType =
   | 'partner_org.onboarding_started'
   | 'partner_org.company_updated'
   | 'partner_org.terms_accepted'
-  | 'partner_org.lifecycle_changed';
+  | 'partner_org.lifecycle_changed'
+  // VTID-04481: website platform detection during onboarding
+  | 'partner_org.platform_detected';
 
 export interface CicdOasisEvent {
   vtid: string;

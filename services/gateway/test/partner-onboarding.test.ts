@@ -32,6 +32,8 @@ const emitOasisEventMock = jest.fn().mockResolvedValue({ ok: true });
 jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => emitOasisEventMock(...args),
 }));
+const detectPlatformMock = jest.fn();
+jest.mock('../src/services/platform-detect', () => ({ detectPlatform: (...a: any[]) => detectPlatformMock(...a) }));
 jest.mock('../src/i18n/server-locale', () => ({ getUserLocale: jest.fn().mockResolvedValue('de') }));
 jest.mock('../src/services/email/partner-invite-email', () => {
   const actual = jest.requireActual('../src/services/email/partner-invite-email');
@@ -333,6 +335,76 @@ describe('POST /:orgId/submit', () => {
     const r = await request(app()).post('/api/v1/partner-onboarding/org-1/submit').set('Authorization', 'Bearer owner-1');
     expect(r.status).toBe(409);
     expect(r.body.error).toBe('CONCURRENT_UPDATE');
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /:orgId/detect (VTID-04481)', () => {
+  function wireDetect(row: Record<string, any>) {
+    const state = org(row);
+    wireOrg(state);
+    const base = handlers.partner_organizations;
+    let written: any = null;
+    handlers.partner_organizations = (c) => {
+      if (c.op === 'update') { written = c.args[0]; return { data: null, error: null }; }
+      if (c.op === 'select' && typeof c.args[0] === 'string' && c.args[0].includes('business_details')) {
+        return { data: { id: 'org-1', website: state.website, business_details: { existing: 1 } }, error: null };
+      }
+      return base(c);
+    };
+    return { get written() { return written; } };
+  }
+
+  it('400 when neither the body nor the org has a website', async () => {
+    wireDetect({});
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/detect').set('Authorization', 'Bearer owner-1').send({});
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('WEBSITE_REQUIRED');
+    expect(detectPlatformMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-http(s) website before any fetch', async () => {
+    wireDetect({});
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/detect').set('Authorization', 'Bearer owner-1')
+      .send({ website: 'file:///etc/passwd' });
+    expect(r.status).toBe(400);
+    expect(detectPlatformMock).not.toHaveBeenCalled();
+  });
+
+  it('is org_admin only', async () => {
+    wireOrg(org(), { admin: false });
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/detect').set('Authorization', 'Bearer other-1')
+      .send({ website: 'https://shop.example' });
+    expect(r.status).toBe(403);
+    expect(detectPlatformMock).not.toHaveBeenCalled();
+  });
+
+  it('detects, keeps the result on the org, suggests a name and writes no company facts', async () => {
+    const w = wireDetect({ website: 'https://shop.example/' });
+    detectPlatformMock.mockResolvedValue({
+      ok: true, connector_id: 'shopify', provider_id: 'shopify', name_hint: 'Shopify', confidence: 'high', signals: ['shopify'], site_name: 'Acme Shop',
+    });
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/detect').set('Authorization', 'Bearer owner-1').send({});
+    expect(r.status).toBe(200);
+    expect(detectPlatformMock).toHaveBeenCalledWith('https://shop.example/');
+    expect(r.body.detection).toMatchObject({ connector_id: 'shopify', confidence: 'high', url: 'https://shop.example/' });
+    expect(r.body.suggested).toEqual({ website: 'https://shop.example/', display_name: 'Acme Shop' });
+    expect(w.written.business_details).toMatchObject({ existing: 1, platform_detection: { connector_id: 'shopify', platform_name: 'Shopify' } });
+    for (const k of ['legal_name', 'country', 'vat_id', 'website', 'display_name']) expect(w.written).not.toHaveProperty(k);
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.platform_detected',
+      payload: expect.objectContaining({ connector_id: 'shopify', confidence: 'high' }),
+    }));
+  });
+
+  it('422 with the reason when the detector refuses the URL, and records nothing', async () => {
+    const w = wireDetect({});
+    detectPlatformMock.mockResolvedValue({ ok: false, error: 'blocked_private_address' });
+    const r = await request(app()).post('/api/v1/partner-onboarding/org-1/detect').set('Authorization', 'Bearer owner-1')
+      .send({ website: 'https://internal.example' });
+    expect(r.status).toBe(422);
+    expect(r.body).toMatchObject({ error: 'DETECTION_FAILED', reason: 'blocked_private_address' });
+    expect(w.written).toBeNull();
     expect(emitOasisEventMock).not.toHaveBeenCalled();
   });
 });
