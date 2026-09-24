@@ -541,31 +541,6 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
-    screen_id: 'HOME.AI_FEED',
-    route: '/home/aifeed',
-    category: 'home',
-    access: 'authenticated',
-    anonymous_safe: false,
-    i18n: {
-      en: {
-        title: 'AI Feed',
-        description: 'A personalized stream of AI-curated content, recommendations, and insights.',
-        when_to_visit: 'When the user asks what is new, what is happening, or wants to see their personalized AI-curated feed.',
-      },
-      de: {
-        title: 'KI-Feed',
-        description: 'Ein personalisierter Stream KI-kuratierter Inhalte, Empfehlungen und Einblicke.',
-        when_to_visit: 'Wenn der Nutzer fragt, was neu ist, was passiert, oder seinen personalisierten KI-Feed sehen möchte.',
-      },
-    },
-  },
-
-  // ── AUTOPILOT (authenticated) ───────────────────────────────────────────
-  // The Autopilot Dashboard is the user-facing "My Journey" screen: the
-  // 90-day journey (waves, milestones, recommendations) prepared by
-  // Autopilot and aligned to the Calendar. Keywords steer "open my journey"
-  // here instead of /me/profile.
-  {
     screen_id: 'AUTOPILOT.MY_JOURNEY',
     route: '/autopilot',
     category: 'autopilot',
@@ -576,12 +551,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'My Journey',
         description: 'Your Autopilot Dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions aligned to your calendar. It has two views the user can switch between: the GUIDED journey (the "Einführung", step-by-step) and the FULL app (the "Vollversion", everything at once).',
-        when_to_visit: 'When the user asks to open my journey, see my journey, show my journey, the autopilot journey, my 90-day journey, the 90-day plan, the autopilot dashboard, my plan, or what is on their journey today. ALSO when the user refers to either VIEW of their journey by name — the GUIDED journey / the guided version / the "Einführung", OR the FULL app / the full version / the "Vollversion" / the full view — or asks to switch between the guided and full views of their journey. All of these mean THIS Autopilot Dashboard screen (the view it opens in is the durable guided/full mode). This is NOT the user profile — "my journey" means the Autopilot Dashboard.',
+        when_to_visit: 'When the user asks to open my journey, see my journey, show my journey, the autopilot journey, my 90-day journey, the 90-day plan, the autopilot dashboard, my plan, or what is on their journey today — including what they should do today, their pending actions, or their tasks for today. ALSO when the user refers to either VIEW of their journey by name — the GUIDED journey / the guided version / the "Einführung", OR the FULL app / the full version / the "Vollversion" / the full view — or asks to switch between the guided and full views of their journey. All of these mean THIS Autopilot Dashboard screen (the view it opens in is the durable guided/full mode). This is NOT the user profile — "my journey" means the Autopilot Dashboard.',
       },
       de: {
         title: 'Meine Reise',
         description: 'Dein Autopilot-Dashboard — die 90-Tage-Reise, die für dich vorbereitet wurde: Wellen, Meilensteine und empfohlene Aktionen, abgestimmt auf deinen Kalender. Es gibt zwei Ansichten, zwischen denen der Nutzer wechseln kann: die GEFÜHRTE Reise (die "Einführung", Schritt für Schritt) und die VOLLVERSION (die volle App, alles auf einmal).',
-        when_to_visit: 'Wenn der Nutzer meine Reise öffnen, meine Reise sehen, die Autopilot-Reise, meine 90-Tage-Reise, den 90-Tage-Plan, das Autopilot-Dashboard, meinen Plan, oder was heute auf seiner Reise ansteht, anfragt. AUCH wenn der Nutzer eine der beiden ANSICHTEN seiner Reise beim Namen nennt — die GEFÜHRTE Reise / die geführte Journey / die "Einführung", ODER die VOLLVERSION / die volle App / die volle Version — oder zwischen geführter und voller Ansicht seiner Reise wechseln möchte. All das meint DIESES Autopilot-Dashboard (die Ansicht, in der es öffnet, ist der dauerhafte geführt/voll-Modus). Das ist NICHT das Nutzerprofil — "meine Reise" bedeutet das Autopilot-Dashboard.',
+        when_to_visit: 'Wenn der Nutzer meine Reise öffnen, meine Reise sehen, die Autopilot-Reise, meine 90-Tage-Reise, den 90-Tage-Plan, das Autopilot-Dashboard, meinen Plan, oder was heute auf seiner Reise ansteht, anfragt — auch was er heute tun sollte, welche Aktionen anstehen oder welche Aufgaben er heute hat. AUCH wenn der Nutzer eine der beiden ANSICHTEN seiner Reise beim Namen nennt — die GEFÜHRTE Reise / die geführte Journey / die "Einführung", ODER die VOLLVERSION / die volle App / die volle Version — oder zwischen geführter und voller Ansicht seiner Reise wechseln möchte. All das meint DIESES Autopilot-Dashboard (die Ansicht, in der es öffnet, ist der dauerhafte geführt/voll-Modus). Das ist NICHT das Nutzerprofil — "meine Reise" bedeutet das Autopilot-Dashboard.',
       },
     },
   },
@@ -1812,23 +1787,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   // ── FULL COVERAGE EXPANSION (Phase 2) ───────────────────────────────────
   // Every remaining community-user tab from vitana-v1/src/config/navigation.ts.
 
-  // ── HOME (missing tabs) ─────────────────────────────────────────────────
-  {
-    screen_id: 'HOME.CONTEXT', route: '/home/context', category: 'home',
-    access: 'authenticated', anonymous_safe: false,
-    i18n: {
-      en: { title: 'Context', description: 'Your personal context — what Vitana knows about your current situation.', when_to_visit: 'When the user asks about their context, current situation, or what Vitana knows about them right now.' },
-      de: { title: 'Kontext', description: 'Dein persönlicher Kontext — was Vitana über deine aktuelle Situation weiß.', when_to_visit: 'Wenn der Nutzer nach seinem Kontext, seiner aktuellen Situation oder dem fragt, was Vitana gerade über ihn weiß.' },
-    },
-  },
-  {
-    screen_id: 'HOME.ACTIONS', route: '/home/actions', category: 'home',
-    access: 'authenticated', anonymous_safe: false,
-    i18n: {
-      en: { title: 'Actions', description: 'Recommended actions and tasks for you today.', when_to_visit: 'When the user asks what they should do today, what actions are pending, or what tasks they have.' },
-      de: { title: 'Aktionen', description: 'Empfohlene Aktionen und Aufgaben für dich heute.', when_to_visit: 'Wenn der Nutzer fragt, was er heute tun sollte, welche Aktionen anstehen oder welche Aufgaben er hat.' },
-    },
-  },
+  // VTID-04519: HOME.CONTEXT / HOME.ACTIONS / HOME.AI_FEED removed. Those
+  // Home sub-pages were deleted by VTID-01900 and their routes redirect to
+  // /home (the Longevity News feed), so the navigator sent "show me my
+  // context / actions / AI feed" to the news feed.
 
   // ── AI (missing tabs) ──────────────────────────────────────────────────
   {
