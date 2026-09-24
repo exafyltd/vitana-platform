@@ -69,7 +69,7 @@ Once this is deployed, check it with:
 
 ## Order of operations
 
-`/register` and `/mine` select the new columns. **Apply both migrations to the live project before this PR merges.** Merging deploys staging, and staging reads the production database, so it would fail on columns that do not exist yet. Apply the Supabase migration first, then the Prisma one (its FK references `partner_organizations`).
+`/register` and `/mine` select the new columns. **Both migrations were applied to the live project on 2026-09-24, before merge, on the platform owner's go-ahead** (`outputs/live-apply-postcheck.txt`). Merging deploys staging, and staging reads the production database, so it would fail on columns that do not exist yet. Apply the Supabase migration first, then the Prisma one (its FK references `partner_organizations`).
 
 ## Not in this VTID
 
