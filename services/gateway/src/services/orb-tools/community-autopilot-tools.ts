@@ -44,6 +44,8 @@ export interface VoiceActivationOutcome {
   readback?: string;
   /** VTID-04503: what the typed action did, when the suggestion has one. */
   action_result?: unknown;
+  /** VTID-04504: finished in the app, never by voice (a public post). */
+  needs_app?: boolean;
 }
 
 /**
@@ -96,6 +98,7 @@ export async function activateForVoice(
     already_active: !!r.already_activated,
     calendar_event_id: r.calendar_event_id ?? null,
     needs_confirmation: r.needs_confirmation === true,
+    needs_app: r.needs_app === true,
     readback: r.readback,
     action_result: r.action_result ?? null,
   };
@@ -210,7 +213,8 @@ export async function tool_activate_autopilot_recommendations(
     }
 
     const waiting = outcomes.filter((o) => o.ok && o.needs_confirmation);
-    const done = outcomes.filter((o) => o.ok && !o.needs_confirmation);
+    const inApp = outcomes.filter((o) => o.ok && o.needs_app);
+    const done = outcomes.filter((o) => o.ok && !o.needs_confirmation && !o.needs_app);
     const failed = outcomes.filter((o) => !o.ok);
     return {
       ok: true,
@@ -218,6 +222,7 @@ export async function tool_activate_autopilot_recommendations(
         activated: done.length,
         failed: failed.length,
         awaiting_confirmation: waiting.length,
+        finish_in_app: inApp.length,
         items: outcomes.map((o) => ({
           id: o.id,
           ok: o.ok,
@@ -225,6 +230,7 @@ export async function tool_activate_autopilot_recommendations(
           already_active: o.already_active,
           calendar_event_id: o.calendar_event_id,
           needs_confirmation: o.needs_confirmation === true,
+          needs_app: o.needs_app === true,
           readback: o.readback ?? null,
           action_result: o.action_result ?? null,
           error: o.error ?? null,
@@ -234,6 +240,9 @@ export async function tool_activate_autopilot_recommendations(
         done.length > 0 ? `Activated: ${done.map((d) => `"${d.title ?? d.id}"`).join('; ')}.` : '',
         waiting.length > 0
           ? `Needs the member's confirmation first — read this back and call again with confirm=true if they agree: ${waiting.map((w) => w.readback).join(' ')}`
+          : '',
+        inApp.length > 0
+          ? `Waiting in the app for the member to review and publish (never publish these by voice; tell them in your own words where to find the draft): ${inApp.map((w) => `"${w.title ?? w.id}"`).join('; ')}.`
           : '',
         failed.length > 0 ? `${failed.length} could not be activated (${failed.map((f) => f.error).join(', ')}).` : '',
       ].filter(Boolean).join(' ') || 'Nothing was activated.',

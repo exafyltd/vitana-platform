@@ -2682,6 +2682,13 @@ export async function tool_activate_recommendation(
     }
     // VTID-04503: a medium-risk action needs the member's confirmation after a
     // read-back. Nothing has changed yet; the pending offer is kept.
+    if (outcome.needs_app) {
+      return {
+        ok: true,
+        result: { finish_in_app: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done by voice: this one is published only from the app preview. Tell the member in your own words that the draft is waiting in their Autopilot to review and post. ${outcome.readback ?? ''}`,
+      };
+    }
     if (outcome.needs_confirmation) {
       return {
         ok: true,
