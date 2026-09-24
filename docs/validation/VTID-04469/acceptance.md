@@ -8,14 +8,14 @@ OpenAI key that is not provisioned.
 
 ## Acceptance criteria
 
-- AC-1: every routed stage has at least one recommended model.
-  TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
-- AC-2: every recommended model is a Bedrock inference profile or a DeepSeek model.
-  TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
-- AC-3: no recommended model is Google, direct Anthropic or OpenAI.
-  TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
-- AC-4: each stage's safe-default primary is itself recommended.
-  TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
+AC-1: every routed stage has at least one recommended model.
+TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
+AC-2: every recommended model is a Bedrock inference profile or a DeepSeek model.
+TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
+AC-3: no recommended model is Google, direct Anthropic or OpenAI.
+TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
+AC-4: each stage's safe-default primary is itself recommended.
+TEST: services/gateway/test/vtid-04469-recommended-models-no-google.test.ts
 
 No routing change: `RECOMMENDED_MODELS` / `isRecommendedModel` have no caller that
 selects a model; the live policy (`llm_routing_policy` v17) is untouched.
