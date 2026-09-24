@@ -51,6 +51,7 @@ import {
   ContextMetrics,
   formatSelectionDebug
 } from './context-window-manager';
+import { isOrbRecallEnabled, recallOrbMemoryItems } from './memory/recall';
 
 // =============================================================================
 // VTID-01106: Constants & Configuration
@@ -775,6 +776,46 @@ export async function writeMemoryItemWithIdentity(
 }
 
 /**
+ * VTID-04452: selection + formatting shared by the broker read and the
+ * legacy read, so both produce the same prompt shape.
+ */
+function buildOrbMemoryContextFromItems(
+  sourceItems: MemoryItem[],
+  identity: MemoryIdentity,
+  fetchedAt: string,
+  categories?: string[],
+): OrbMemoryContext {
+  const wanted = categories && categories.length > 0 ? new Set(categories) : null;
+  // Facts and diary always pass; episodes respect an explicit category filter.
+  const filtered = wanted
+    ? sourceItems.filter(i => i.source === 'memory_facts' || i.source === 'diary' || wanted.has(i.category_key))
+    : sourceItems;
+  const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const selectionResult = selectContextWindow(filtered, 50, turnId, identity.user_id, identity.tenant_id);
+  const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+    id: item.id,
+    category_key: item.category_key,
+    source: item.source,
+    content: item.content,
+    content_json: item.content_json,
+    importance: item.importance,
+    occurred_at: item.occurred_at,
+    created_at: item.created_at,
+  }));
+  return {
+    ok: true,
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    items,
+    summary: generateMemorySummary(items),
+    formatted_context: formatMemoryForPrompt(items),
+    fetched_at: fetchedAt,
+    contextMetrics: selectionResult.metrics,
+    excludedCount: selectionResult.excludedItems.length,
+  };
+}
+
+/**
  * VTID-01186: Fetch memory context with authenticated identity
  * Uses the provided identity instead of DEV_IDENTITY.
  * Falls back to DEV_IDENTITY if no identity provided (dev-sandbox only).
@@ -810,6 +851,17 @@ export async function fetchMemoryContextWithIdentity(
       fetched_at: fetchedAt,
       error: 'Memory bridge not enabled (requires dev-sandbox mode or valid identity)'
     };
+  }
+
+  // VTID-04452: read through the broker (one recall()) when enabled. Falls
+  // back to the legacy six-table read below if the broker gives nothing.
+  if (identity && isOrbRecallEnabled()) {
+    const recalled = await recallOrbMemoryItems(effectiveIdentity);
+    if (recalled.ok) {
+      return buildOrbMemoryContextFromItems(
+        recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
+      );
+    }
   }
 
   const fetchedAt = new Date().toISOString();

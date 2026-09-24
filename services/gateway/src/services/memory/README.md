@@ -51,9 +51,13 @@ Rules every writer follows:
   `backoffice_customer_memory` (customer episodes, needs `crm.view` or
   `sales.view`) and `support_resolution_search` (the support drafters; returns
   ticket ids only).
-- Still outside the broker: the ORB live prompt uses
-  `fetchMemoryContextWithIdentity`. Moving it to one `recall()` needs latency
-  measured on staging first (plan Phase 1).
+- **ORB live prompt:** `fetchMemoryContextWithIdentity` reads through
+  `recall.ts` (`recallOrbMemoryItems` → broker facts + episodes + diary, role
+  scoped, no `ai_memory`) when `MEMORY_ORB_RECALL_ENABLED=true` (VTID-04452).
+  Same selection and formatter, so the prompt keeps its shape. If the broker
+  returns nothing usable it falls back to the legacy six-table read. Pinned on
+  staging only; compare `[VTID-04452] orb recall in Nms` with
+  `[VTID-01224-FIX] Bootstrap parallel fetch completed in Nms` before prod.
 
 ## Forgetting
 
@@ -71,6 +75,7 @@ normalised value; the value itself is not kept). After that:
 |---|---|---|
 | `MEMORY_RAW_TURNS_TO_ITEMS` | on | `false` stops raw turns going to `memory_items`. Flip it once session summaries are seen on staging. |
 | `SUPPORT_PRIOR_RESOLUTIONS_ENABLED` | on | `false` stops the support drafters reading past resolutions. |
+| `MEMORY_ORB_RECALL_ENABLED` | off | `true` makes the ORB live prompt read through the broker (staging only for now). |
 | `BEDROCK_ROLE_ARN` | — | Required for Titan embeddings. Unset means no vectors, and recall falls back to recent. |
 
 ## Failure posture

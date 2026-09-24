@@ -311,7 +311,7 @@ Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by 
 - [x] Broker reads the canonical tables; the gateway no longer writes the tier-2 mirrors. VTID-04366.
 - [ ] Drop the mirrors, the relationship-edge mirror trigger and the flag after prod runs this code and 2 weeks of clean health checks; replay or close the DLQ.
 - [x] Delete the unused bridge exports (scored/trust/enhanced instruction builders, ~875 lines; no caller in `src/` or `test/`). VTID-04364.
-- [ ] Both prompt builders call one `recall()` — the context pack already reads through the broker; the ORB live prompt still uses `fetchMemoryContextWithIdentity`. Moving it changes what a live voice session hears and needs latency measurement on staging first, so it is its own step.
+- [x] Both prompt builders call one `recall()` (VTID-04452, flagged). `services/memory/recall.ts` reads facts, episodes and diary through the broker (role-scoped, no `ai_memory`) and the ORB live prompt uses it when `MEMORY_ORB_RECALL_ENABLED=true`; any broker failure falls back to the legacy read. Pinned on staging only. **Still to do:** once staging is back, compare the `[VTID-04452] orb recall in Nms` lines with the legacy bootstrap latency lines, then pin it on prod and delete the legacy six-table read.
 - [x] Role scope on write (`memory_items.active_role`) and on read (broker, context pack) (fixes D9). VTID-04367.
 
 ### Phase 2 — Make users feel it (≈2–3 weeks)
