@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "beslenme",
   "autopilot.pillar.exercise": "hareket",
   "autopilot.pillar.hydration": "su tüketimi",
-  "autopilot.pillar.mental": "zihinsel denge"
+  "autopilot.pillar.mental": "zihinsel denge",
+  "autopilot.auto.group_interest.title": "{interest} grubu kur",
+  "autopilot.auto.group_interest.summary": "Birçok üye {interest} ilgini paylaşıyor. Bir grup kur ve onları davet et.",
+  "autopilot.auto.group_interest_join.title": "{interest} grubuna katıl",
+  "autopilot.auto.group_interest_join.summary": "{interest} için bir grup var. İlgini paylaşan kişilere katıl.",
+  "autopilot.auto.group_circle.title": "Bağlantılarınla bir çevre kur",
+  "autopilot.auto.group_circle.summary": "Sen ve iki bağlantın birbirinizi tanıyorsunuz. Üçünüz için küçük bir grup kur.",
+  "autopilot.auto.connect_referrer.title": "Seni davet eden kişiye merhaba de",
+  "autopilot.auto.connect_referrer.summary": "Biri seni Vitanaland'e davet etti. Profilini ziyaret et ve bağlan.",
+  "autopilot.auto.event_rsvp_referral.title": "Davet edildiğin etkinliğe kaydol",
+  "autopilot.auto.event_rsvp_referral.summary": "Bir etkinlik davetiyle geldin. Yerini ayırmak için kaydol.",
+  "autopilot.auto.share_milestone.title": "Başarını paylaş: {milestone}",
+  "autopilot.auto.share_milestone.summary": "Bir dönüm noktasına ulaştın. Toplulukla paylaş — gönderiyi yayınlanmadan önce göreceksin."
 }

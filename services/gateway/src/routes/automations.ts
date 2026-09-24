@@ -163,7 +163,8 @@ router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Respo
 // Run history
 // =============================================================================
 
-router.get('/runs', async (req: Request, res: Response) => {
+// VTID-04510: run history carries member ids and counts — admin or scheduler only.
+router.get('/runs', requireInternalOrAdmin, async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -174,7 +175,7 @@ router.get('/runs', async (req: Request, res: Response) => {
   return res.json({ ok: true, total: runs.length, runs });
 });
 
-router.get('/runs/active', async (req: Request, res: Response) => {
+router.get('/runs/active', requireInternalOrAdmin, async (req: Request, res: Response) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -300,6 +301,26 @@ router.get('/referrals', async (req: Request, res: Response) => {
   const { data } = await repo.fetchReferralsForUser(supa, tenantId, userId);
 
   return res.json({ ok: true, referrals: data || [] });
+});
+
+// =============================================================================
+// Supervisor (VTID-04510, Community Autopilot CA-8)
+// =============================================================================
+
+// Read-only: delivery mode, runs and member suggestions per automation in the
+// window, and which automations still act without a suggestion.
+router.get('/supervisor', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const { loadSupervisor, clampWindowDays } = await import('../services/community-autopilot/automation-supervisor');
+    const tenantId = typeof req.query.tenant_id === 'string' && req.query.tenant_id ? req.query.tenant_id : null;
+    const data = await loadSupervisor(supa as any, { windowDays: clampWindowDays(req.query.days), tenantId });
+    return res.json({ ok: true, ...data });
+  } catch (err: any) {
+    console.error('[automations] /supervisor failed:', err?.message);
+    return res.status(500).json({ ok: false, error: 'supervisor_failed' });
+  }
 });
 
 // =============================================================================

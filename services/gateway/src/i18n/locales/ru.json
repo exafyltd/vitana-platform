@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "питание",
   "autopilot.pillar.exercise": "движение",
   "autopilot.pillar.hydration": "водный баланс",
-  "autopilot.pillar.mental": "ментальный баланс"
+  "autopilot.pillar.mental": "ментальный баланс",
+  "autopilot.auto.group_interest.title": "Создай группу: {interest}",
+  "autopilot.auto.group_interest.summary": "Несколько участников разделяют твой интерес: {interest}. Создай группу и пригласи их.",
+  "autopilot.auto.group_interest_join.title": "Вступи в группу: {interest}",
+  "autopilot.auto.group_interest_join.summary": "Есть группа: {interest}. Присоединяйся к людям с общим интересом.",
+  "autopilot.auto.group_circle.title": "Создай круг со своими контактами",
+  "autopilot.auto.group_circle.summary": "Ты и двое твоих контактов знаете друг друга. Создай небольшую группу для вас троих.",
+  "autopilot.auto.connect_referrer.title": "Поздоровайся с тем, кто тебя пригласил",
+  "autopilot.auto.connect_referrer.summary": "Кто-то пригласил тебя в Vitanaland. Зайди в профиль и установи контакт.",
+  "autopilot.auto.event_rsvp_referral.title": "Запишись на событие, куда тебя пригласили",
+  "autopilot.auto.event_rsvp_referral.summary": "Ты пришёл по приглашению на событие. Запишись, чтобы сохранить место.",
+  "autopilot.auto.share_milestone.title": "Поделись достижением: {milestone}",
+  "autopilot.auto.share_milestone.summary": "Ты достиг важного этапа. Поделись с сообществом — ты увидишь пост до публикации."
 }

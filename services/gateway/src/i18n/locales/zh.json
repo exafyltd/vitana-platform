@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "营养",
   "autopilot.pillar.exercise": "运动",
   "autopilot.pillar.hydration": "饮水",
-  "autopilot.pillar.mental": "心理平衡"
+  "autopilot.pillar.mental": "心理平衡",
+  "autopilot.auto.group_interest.title": "创建{interest}小组",
+  "autopilot.auto.group_interest.summary": "多位成员和你一样对{interest}感兴趣。创建一个小组并邀请他们。",
+  "autopilot.auto.group_interest_join.title": "加入{interest}小组",
+  "autopilot.auto.group_interest_join.summary": "已有一个{interest}小组。加入和你兴趣相同的人。",
+  "autopilot.auto.group_circle.title": "和你的联系人建立一个圈子",
+  "autopilot.auto.group_circle.summary": "你和两位联系人彼此都认识。为你们三人建一个小组。",
+  "autopilot.auto.connect_referrer.title": "向邀请你的人打个招呼",
+  "autopilot.auto.connect_referrer.summary": "有人邀请你加入 Vitanaland。访问对方主页并建立联系。",
+  "autopilot.auto.event_rsvp_referral.title": "报名参加你受邀的活动",
+  "autopilot.auto.event_rsvp_referral.summary": "你是通过活动邀请加入的。报名以保留你的名额。",
+  "autopilot.auto.share_milestone.title": "分享你的里程碑：{milestone}",
+  "autopilot.auto.share_milestone.summary": "你达成了一个里程碑。与社区分享——发布前你会先看到帖子。"
 }

@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "nutrition",
   "autopilot.pillar.exercise": "mouvement",
   "autopilot.pillar.hydration": "hydratation",
-  "autopilot.pillar.mental": "équilibre mental"
+  "autopilot.pillar.mental": "équilibre mental",
+  "autopilot.auto.group_interest.title": "Crée un groupe {interest}",
+  "autopilot.auto.group_interest.summary": "Plusieurs membres partagent ton intérêt pour {interest}. Crée un groupe et invite-les.",
+  "autopilot.auto.group_interest_join.title": "Rejoins le groupe {interest}",
+  "autopilot.auto.group_interest_join.summary": "Il existe un groupe pour {interest}. Rejoins les personnes qui partagent ton intérêt.",
+  "autopilot.auto.group_circle.title": "Crée un cercle avec tes contacts",
+  "autopilot.auto.group_circle.summary": "Toi et deux de tes contacts vous connaissez tous. Crée un petit groupe pour vous trois.",
+  "autopilot.auto.connect_referrer.title": "Dis bonjour à la personne qui t'a invité",
+  "autopilot.auto.connect_referrer.summary": "Quelqu'un t'a invité sur Vitanaland. Visite son profil et connecte-toi.",
+  "autopilot.auto.event_rsvp_referral.title": "Inscris-toi à l'événement auquel tu es invité",
+  "autopilot.auto.event_rsvp_referral.summary": "Tu es arrivé par une invitation à un événement. Inscris-toi pour garder ta place.",
+  "autopilot.auto.share_milestone.title": "Partage ton étape : {milestone}",
+  "autopilot.auto.share_milestone.summary": "Tu as franchi une étape. Partage-la avec la communauté — tu verras la publication avant qu'elle parte."
 }

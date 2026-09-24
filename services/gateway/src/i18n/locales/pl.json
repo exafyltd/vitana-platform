@@ -155,5 +155,17 @@
   "autopilot.pillar.nutrition": "odżywianie",
   "autopilot.pillar.exercise": "ruch",
   "autopilot.pillar.hydration": "nawodnienie",
-  "autopilot.pillar.mental": "równowaga psychiczna"
+  "autopilot.pillar.mental": "równowaga psychiczna",
+  "autopilot.auto.group_interest.title": "Załóż grupę: {interest}",
+  "autopilot.auto.group_interest.summary": "Kilku członków dzieli twoje zainteresowanie: {interest}. Załóż grupę i zaproś ich.",
+  "autopilot.auto.group_interest_join.title": "Dołącz do grupy: {interest}",
+  "autopilot.auto.group_interest_join.summary": "Istnieje grupa: {interest}. Dołącz do osób o podobnych zainteresowaniach.",
+  "autopilot.auto.group_circle.title": "Załóż krąg ze swoimi kontaktami",
+  "autopilot.auto.group_circle.summary": "Ty i dwa twoje kontakty znacie się nawzajem. Załóż małą grupę dla waszej trójki.",
+  "autopilot.auto.connect_referrer.title": "Przywitaj się z osobą, która cię zaprosiła",
+  "autopilot.auto.connect_referrer.summary": "Ktoś zaprosił cię do Vitanaland. Odwiedź jego profil i nawiąż kontakt.",
+  "autopilot.auto.event_rsvp_referral.title": "Zapisz się na wydarzenie, na które cię zaproszono",
+  "autopilot.auto.event_rsvp_referral.summary": "Trafiłeś tu przez zaproszenie na wydarzenie. Zapisz się, aby zachować miejsce.",
+  "autopilot.auto.share_milestone.title": "Podziel się osiągnięciem: {milestone}",
+  "autopilot.auto.share_milestone.summary": "Osiągnąłeś kamień milowy. Podziel się nim ze społecznością — zobaczysz post przed publikacją."
 }

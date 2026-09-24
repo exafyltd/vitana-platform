@@ -7,6 +7,7 @@
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './community-groups-repository';
+import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 // ── AP-0202: Group Invite Follow-Up ─────────────────────────
 // Real schema: community_groups/community_memberships (VTID-01084) were
@@ -351,22 +352,23 @@ async function runReviveYourGroup(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
-const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
-
-// ── AP-0201: Auto-Create Group from Interest Cluster ────────
+// ── AP-0201: Group Suggestion from Interest Cluster ─────────
 // Clusters on user_interests.interest (the live interest-signal table —
 // user_topic_profile, used by AP-0102, does not exist in the live DB).
-// Bounded: at most INTEREST_CLUSTER_MAX_NEW_GROUPS new groups per run, skips
-// any interest that already has a public group.
+// VTID-04510 (CA-8): this used to create a public group and put up to 20
+// members in it without asking them. It now PROPOSES instead: when a group for
+// the interest already exists, each member of the cluster gets a "join it"
+// suggestion; otherwise each gets a "start one" suggestion. Nothing is created
+// and nobody is added until the member says yes.
 const INTEREST_CLUSTER_MIN_USERS = 5;
 const INTEREST_CLUSTER_MIN_CONFIDENCE = 0.6;
-const INTEREST_CLUSTER_MAX_NEW_GROUPS = 2;
+const INTEREST_CLUSTER_MAX_CLUSTERS = 2;
 const INTEREST_CLUSTER_MAX_MEMBERS_PER_GROUP = 20;
 
 async function runAutoCreateGroupFromInterestCluster(ctx: AutomationContext) {
   const { supabase } = ctx;
-  let usersAffected = 0;
-  let actionsTaken = 0;
+  const outcomes: ProposalOutcome[] = [];
+  const run = { supabase, automationId: ctx.run.automation_id, runId: ctx.run.id };
 
   const { data: interestRows } = await repo.fetchInterestRows(supabase, INTEREST_CLUSTER_MIN_CONFIDENCE);
 
@@ -379,48 +381,41 @@ async function runAutoCreateGroupFromInterestCluster(ctx: AutomationContext) {
     usersByInterest.set(key, users);
   }
 
-  let groupsCreated = 0;
+  let clusters = 0;
   for (const [interest, userIds] of usersByInterest) {
-    if (groupsCreated >= INTEREST_CLUSTER_MAX_NEW_GROUPS) break;
+    if (clusters >= INTEREST_CLUSTER_MAX_CLUSTERS) break;
     if (userIds.length < INTEREST_CLUSTER_MIN_USERS) continue;
 
     const { data: existingGroup, error: existingGroupErr } = await repo.fetchExistingGroupByCategory(supabase, interest);
     if (existingGroupErr) {
-      console.error(`[community-groups] fetchExistingGroupByCategory failed for interest=${interest}, skipping to avoid a duplicate group: ${existingGroupErr.message}`);
+      console.error(`[community-groups] fetchExistingGroupByCategory failed for interest=${interest}, skipping: ${existingGroupErr.message}`);
       continue;
     }
-    if (existingGroup) continue;
 
     const displayName = interest.replace(/(^|\s)\S/g, (c: string) => c.toUpperCase());
-    const { data: newGroup, error: createErr } = await repo.insertGroup(supabase, {
-      name: `${displayName} Circle`,
-      description: `Auto-created for members who share an interest in ${displayName}.`,
-      category: interest,
-      is_public: true,
-      created_by: VITANA_BOT_USER_ID,
-    });
-    if (createErr || !newGroup) continue;
-
-    const memberIds = userIds.slice(0, INTEREST_CLUSTER_MAX_MEMBERS_PER_GROUP);
-    await repo.insertGroupMembers(supabase, memberIds.map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' })));
-
-    for (const user_id of memberIds) {
-      ctx.notify(user_id, 'group_recommended', {
-        title: `New group: ${newGroup.name}`,
-        body: `We created a group for people who share your interest in ${displayName}.`,
-        data: { url: `/community/groups/${newGroup.id}`, group_id: newGroup.id },
-      });
-      usersAffected++;
-      actionsTaken++;
+    for (const user_id of userIds.slice(0, INTEREST_CLUSTER_MAX_MEMBERS_PER_GROUP)) {
+      outcomes.push(await proposeToMember(run, existingGroup
+        ? {
+          userId: user_id, template: 'group_interest_join', params: { interest: displayName },
+          domain: 'community',
+          action: { kind: 'join_group', params: { group_id: existingGroup.id, group_name: existingGroup.name || displayName } },
+          fingerprint: `group_join:${existingGroup.id}`,
+        }
+        : {
+          userId: user_id, template: 'group_interest', params: { interest: displayName },
+          domain: 'community',
+          action: { kind: 'open_screen', params: { route: '/community/groups' } },
+          fingerprint: `group_interest:${interest}`,
+        }));
     }
-
-    groupsCreated++;
-    actionsTaken++;
+    clusters++;
   }
 
-  await ctx.emitEvent('autopilot.community.groups_auto_created', { groups_created: groupsCreated });
+  const tally = tallyOutcomes(outcomes);
+  ctx.log(`Proposals: ${JSON.stringify(tally)}`);
+  await ctx.emitEvent('autopilot.community.group_suggestions_proposed', { clusters, ...tally });
 
-  return { usersAffected, actionsTaken };
+  return { usersAffected: tally.proposed, actionsTaken: tally.proposed };
 }
 
 // ── AP-0204: Auto-Suggest Meetup from Group Activity ────────
@@ -600,7 +595,10 @@ async function runCrossGroupIntroduction(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
-// ── AP-0209: Group Creation from Match Cluster ──────────────
+// ── AP-0209: Group Suggestion from Match Cluster ────────────
+// VTID-04510 (CA-8): this used to create a private group for three mutually
+// connected members and put them in it unasked. It now proposes starting one
+// to each of the three; nothing is created until someone does.
 // Finds fully-connected triangles in relationship_edges (three mutually
 // "connected" users with no group in common) and auto-creates a group for
 // them. Bounded to MATCH_CLUSTER_MAX_NEW_GROUPS per run.
@@ -609,8 +607,8 @@ const MATCH_CLUSTER_MAX_EDGES_SCANNED = 3000;
 
 async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
-  let usersAffected = 0;
-  let actionsTaken = 0;
+  const outcomes: ProposalOutcome[] = [];
+  const run = { supabase, automationId: ctx.run.automation_id, runId: ctx.run.id };
 
   const { data: edges } = await repo.fetchConnectedEdges(supabase, tenantId, MATCH_CLUSTER_MAX_EDGES_SCANNED);
 
@@ -638,14 +636,14 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
     }
   }
 
-  let groupsCreated = 0;
+  let circles = 0;
   for (const [userA, userB, userC] of foundTriangles) {
-    if (groupsCreated >= MATCH_CLUSTER_MAX_NEW_GROUPS) break;
+    if (circles >= MATCH_CLUSTER_MAX_NEW_GROUPS) break;
 
     // Skip if these three already share a group.
     const { data: sharedMemberships, error: sharedMembershipsErr } = await repo.fetchSharedMemberships(supabase, [userA, userB, userC]);
     if (sharedMembershipsErr) {
-      console.error(`[community-groups] fetchSharedMemberships failed for triangle=${userA},${userB},${userC}, skipping to avoid a duplicate group: ${sharedMembershipsErr.message}`);
+      console.error(`[community-groups] fetchSharedMemberships failed for triangle=${userA},${userB},${userC}, skipping: ${sharedMembershipsErr.message}`);
       continue;
     }
 
@@ -655,33 +653,22 @@ async function runGroupCreationFromMatchCluster(ctx: AutomationContext) {
     }
     if ([...groupCounts.values()].some((count) => count === 3)) continue;
 
-    const { data: newGroup, error: createErr } = await repo.insertGroup(supabase, {
-      name: 'Your Match Circle',
-      description: 'Auto-created for a group of mutually connected matches.',
-      is_public: false,
-      created_by: VITANA_BOT_USER_ID,
-    });
-    if (createErr || !newGroup) continue;
-
-    await repo.insertGroupMembers(supabase, [userA, userB, userC].map((user_id) => ({ group_id: newGroup.id, user_id, role: 'member' })));
-
+    const circleKey = [userA, userB, userC].join('|');
     for (const user_id of [userA, userB, userC]) {
-      ctx.notify(user_id, 'group_recommended', {
-        title: 'A group just for your circle',
-        body: 'We created a private group for you and two mutual connections.',
-        data: { url: `/community/groups/${newGroup.id}`, group_id: newGroup.id },
-      });
-      usersAffected++;
-      actionsTaken++;
+      outcomes.push(await proposeToMember(run, {
+        userId: user_id, template: 'group_circle', domain: 'community',
+        action: { kind: 'open_screen', params: { route: '/community/groups' } },
+        fingerprint: `group_circle:${circleKey}`,
+      }));
     }
-
-    groupsCreated++;
-    actionsTaken++;
+    circles++;
   }
 
-  await ctx.emitEvent('autopilot.community.match_cluster_groups_created', { groups_created: groupsCreated });
+  const tally = tallyOutcomes(outcomes);
+  ctx.log(`Proposals: ${JSON.stringify(tally)}`);
+  await ctx.emitEvent('autopilot.community.match_cluster_groups_proposed', { circles, ...tally });
 
-  return { usersAffected, actionsTaken };
+  return { usersAffected: tally.proposed, actionsTaken: tally.proposed };
 }
 
 export function registerCommunityGroupsHandlers(): void {
