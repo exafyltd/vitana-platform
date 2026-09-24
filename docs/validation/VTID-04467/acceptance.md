@@ -22,3 +22,7 @@ TEST: services/gateway/test/vtid-04467-dispatch-fallback.test.ts
 ## Not verified live
 
 This path only fires when ECS refuses RunTask. The signal is a `dispatch_deferred` event on staging during such a refusal, instead of an in-process run that dies on `tsc ENOENT`.
+
+## OASIS
+
+OASIS_PROOF: two new topics, `dev_autopilot.execution.dispatch_deferred` (warning; payload `execution_id`, `attempt`, `execute_after`, `error`) and `dev_autopilot.execution.dispatch_failed` (error; payload `execution_id`, `attempts`, `error`). Both are declared in `src/types/cicd.ts` and pinned by `test/vtid-04467-dispatch-fallback.test.ts` (AC-4). They replace, on this path only, the silent in-process run whose `tsc ENOENT` failure had been the only trace.
