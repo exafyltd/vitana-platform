@@ -210,7 +210,12 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
   });
 
   it('a FAILED tool still always returns a model-facing result (Nova stalls otherwise)', async () => {
+    // Past the opening turn: before the first user word an action tool is
+    // refused outright (VTID-04509), which is not what this test is about.
+    const session = makeSession();
+    session.turn_count = 1;
     const { client } = makeContext({
+      session,
       deps: {
         executeLiveApiTool: jest.fn().mockRejectedValue(new Error('boom')),
       },

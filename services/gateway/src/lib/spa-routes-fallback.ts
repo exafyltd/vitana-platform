@@ -56,6 +56,7 @@ export const SPA_ROUTES_FALLBACK: ReadonlyArray<SpaRoute> = [
   { path: '/home/actions', requires_auth: true },
   { path: '/home/matches', requires_auth: true },
   { path: '/home/aifeed', requires_auth: true },
+  { path: '/me/matches', requires_auth: true },
 
   // ── Discover / commerce ────────────────────────────────────────────────
   { path: '/discover', requires_auth: true },

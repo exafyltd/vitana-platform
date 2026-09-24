@@ -520,7 +520,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'HOME.MATCHES',
-    route: '/home/matches',
+    // VTID-04513: was '/home/matches', which the frontend redirects to /home
+    // (the Longevity News feed, VTID-01900) — "open my matches" landed on the
+    // news feed. /me/matches is the real "People who match you" page.
+    route: '/me/matches',
     category: 'home',
     access: 'authenticated',
     anonymous_safe: false,

@@ -80,6 +80,9 @@ import { triggerLiveAdvisor } from './live-advisor-hook';
 import {
   detectBackendDataLeak,
   effectiveToolCallLimit,
+  isBeforeFirstUserWord,
+  isOpeningActionTool,
+  OPENING_ACTION_GUIDANCE,
   loopGuardReplyMaxAudioMs,
   outputPreview,
   pcmChunkDurationMs,
@@ -2054,10 +2057,23 @@ export function handleToolCall(
     return;
   }
 
+  // VTID-04509: before the user has said a word nothing has been accepted,
+  // so an action tool (the opener's suggested step, a booking, a session
+  // narration, a navigation) is answered with guidance to OFFER it instead.
+  const beforeFirstUserWord = isBeforeFirstUserWord(session);
+
   for (const fc of event.calls) {
     const toolName = fc.name;
     const toolArgs = fc.args || {};
     const callId = fc.id || randomUUID();
+
+    if (beforeFirstUserWord && isOpeningActionTool(toolName)) {
+      console.warn(`[VTID-04509] Opening-turn action refused for session ${session.sessionId}: ${toolName} (no user speech yet)`);
+      ctx.deps.emitDiag(session, 'opening_action_refused', { tool: toolName });
+      ctx.client.sendToolResult({ callId, name: toolName, success: true, output: OPENING_ACTION_GUIDANCE });
+      session.modelRespondedThisTurn = false;
+      continue;
+    }
 
     console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
 

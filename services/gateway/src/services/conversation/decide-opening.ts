@@ -172,7 +172,8 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
     register === 'continue'
       ? `REGISTER: CONTINUE (the user reopened seconds ago — they never really left).\n` +
         `- Do NOT greet. No "hello", no time-of-day, no name salutation. Just pick the thread back up.\n` +
-        `- One short sentence: carry on from where you were, then the suggested next step.`
+        `- One short sentence: carry on from where you were, then the suggested next step.\n` +
+        `- If you cannot see what you were talking about, do not invent it and do not describe the situation — just offer the suggested next step.`
       : register === 'quick_resume'
         ? `REGISTER: QUICK RESUME (the user reopened a few minutes ago).\n` +
           `- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "${input.firstName ? input.firstName + ', ' : ''}" warm reconnect at most.\n` +
@@ -222,6 +223,10 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
 
 ## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
 
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
 The user just reopened Vitana. This is NOT the first session of the day — the
 full morning briefing already happened. Compose a SHORT, natural first line in
 the user's language that fits the register below. Vitana ALWAYS guides: the line
@@ -248,9 +253,11 @@ ${nameLine}
   that have NOT changed. NEVER restate their counts or announce them as news.
   At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
-- EXECUTION — do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
-  names the real tool that performs this action. When the user accepts, CALL that
-  tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
   respond_to_match, create_index_improvement_plan). Only promise what that tool
   does. If ${'`execute_with_tool`'} is null, you have NO one-shot tool — then GUIDE
   the user through it step by step on the screen; do NOT claim you'll do it
