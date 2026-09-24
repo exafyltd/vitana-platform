@@ -37,7 +37,8 @@ describe('wiring', () => {
   });
   it('the terminal side effects use the mapping, and a failed ledger write is an error, not a warning', () => {
     const src = read('src/services/dev-autopilot-execute.ts');
-    expect(src).toContain('const ledgerStatus = ledgerStatusForExecution(status);');
+    // VTID-04472: a watcher failure handed to the bridge defers the ledger.
+    expect(src).toContain('const ledgerStatus = opts.deferLedger ? null : ledgerStatusForExecution(status);');
     expect(src).toContain('vtid_ledger terminalize FAILED');
   });
 });

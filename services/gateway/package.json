@@ -13,6 +13,7 @@
     "test": "jest",
     "test:calendar": "jest test/calendar test/orb-tools/calendar-management-tools.test.ts test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts test/services/calendar-role-context.test.ts test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts test/vtid-04321-calendar-backend-repair.test.ts test/vtid-04331-calendar-data-model.test.ts test/vtid-04338-calendar-default-reminders.test.ts test/vtid-04356-calendar-source-producers.test.ts test/vtid-04357-calendar-work-lenses.test.ts test/vtid-04358-calendar-ics-feed.test.ts test/vtid-04372-calendar-google-sync.test.ts test/vtid-04373-calendar-reminder-quiet-hours.test.ts test/vtid-04374-calendar-maintenance.test.ts test/vtid-04436-calendar-push.test.ts",
     "test:flow": "jest test/orb/conversation-flow.contract.test.ts --silent=false",
+    "test:operator": "jest test/vtid-04465-operator-pipeline-regression.test.ts",
     "test:support": "jest test/vtid-04456-customer-support-pipeline-regression.test.ts test/feedback-pipeline.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
