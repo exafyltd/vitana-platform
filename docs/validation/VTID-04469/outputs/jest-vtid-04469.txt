@@ -1,0 +1,5 @@
+    ✓ covers every routed stage (4 ms)
+    ✓ names only Bedrock inference profiles or DeepSeek models (4 ms)
+    ✓ never names a Google, direct-Anthropic or OpenAI model (2 ms)
+    ✓ recommends each stage's own safe-default primary (1 ms)
+Tests:       4 passed, 4 total
