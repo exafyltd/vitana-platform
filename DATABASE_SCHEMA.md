@@ -1122,6 +1122,7 @@ CREATE TABLE my_new_table (
 | 2026-09-23 | VTID-04431, **applied live**: function `support_resolution_search(p_query_embedding vector, p_tenant_id uuid, p_top_k int default 3, p_exclude_ticket_id text, p_min_similarity float8 default 0.35)` — read-only, `service_role` only; searches `memory_items` `support_ticket` rows with `active_role='support'` in ONE tenant and returns `(ticket_id, similarity, occurred_at)` only, never episode text. Used by the Sage/Devon/Mira drafters. | Claude Code | VTID-04431 |
 | 2026-09-23 | VTID-04441, **applied live**: table `memory_fact_forgotten (id, tenant_id, user_id, fact_key, value_hash, forgotten_at)`, unique on (tenant_id, user_id, fact_key, value_hash), RLS on, `service_role` only. One row per value a user forgot in the Memory Garden; `value_hash` is sha256 of the normalised value, the value is not kept. `rememberFact()` refuses an inferred write of a forgotten value; an explicit user statement clears the marker. | Claude Code | VTID-04441 |
 | 2026-09-23 | VTID-04407, **applied live**: `dev_agent_memory.author_user_id` + category `handoff` + `write_dev_memory(..., p_author_user_id)` (single overload, service_role only) + `recall_dev_memory()` excludes handoffs. | Claude Code | VTID-04407 |
+| 2026-09-24 | Onboarding engine storage (VTID-04478, spec §6.1/§6.2): `partner_onboarding_steps` (per-org status of the steps a dedicated endpoint decides) and `partner_terms_acceptances` (audit of a terms acceptance: version, user, time, IP, user agent). RLS on, member SELECT via `is_partner_org_member()`, writes revoked from anon/authenticated. Migration `20260924150000_vtid_04478_partner_onboarding_engine.sql`. **Not yet applied live**: it must be applied before merge (Migration Drift Check). | Claude | VTID-04478 |
 | 2026-09-24 | Partner account model (VTID-04471, spec §5.1/§5.2): `partner_organizations` gains `partner_type`, `lifecycle_state`, `legal_name`, `country`, `vat_id`, `website`, `trust_level`, the helpers `partner_org_status_for_lifecycle()` / `partner_org_vertical_for_type()` and `trg_partner_organizations_sync`; `merchants.partner_organization_id` and `partner_tenant.partner_organization_id` FKs with an idempotent backfill. Migrations `20260924130000_vtid_04471_partner_account_model.sql` + Prisma `20260924_vcaop_partner_org_link_0007`. **Applied to the live project 2026-09-24** on the platform owner's go-ahead, before the gateway change merged (`/register` and `/mine` select the new columns). Post-checked read-only: all 9 columns, 4 CHECKs, both FKs, the 3 functions and the trigger present, and the mappings correct. The backfill changed no rows (0 orgs, 0 owned merchants, 0 `partner_tenant` rows before and after). | Claude | VTID-04471 |
 | 2026-09-23 | VTID-04391, **applied live**: `memory_categories` row `daily_learning` (mapped to `uncategorized`) and partial unique index `uq_memory_items_daily_learning` on `memory_items (user_id, (content_json->>'date')) WHERE category_key = 'daily_learning'` — one daily learning per user per local date, written by AP-0914. | Claude Code | VTID-04391 |
 | 2026-09-23 | Memory Phase 2, **applied to the live project 2026-09-23**: new table `memory_transcript_turns` (raw conversation turns, RLS own-rows SELECT, service-role writes) with `purge_memory_transcript_turns(p_days >= 30)` scheduled daily by pg_cron `purge-memory-transcript-turns` (90 days); the last 90 days of raw turns in `memory_items` copied into it. `memory_categories` gains the 13 Garden category keys, and `memory_category_mapping` gains `personal → personal_identity`. `ai_memory` (112 active) and `diary_entries` (273) copied into `memory_items` as episodes (`content_json.kind = legacy_ai_memory / diary`, linked by id, importance ≤ 50 so `trg_notify_memory_garden` did not fire — 0 notifications). Legacy tables untouched. | Claude Code | VTID-04387 / VTID-04388 / VTID-04389 / VTID-04390 |
@@ -2718,6 +2719,31 @@ VCAOP `partner_tenant.partner_organization_id` (UUID FK, same; Prisma migration
 merchant / connection without an org is linked to its owner's first org, or to a
 new one-member `draft` org (owner = `org_admin`). Zero such rows existed on
 2026-09-24.
+
+### partner_onboarding_steps (VTID-04478)
+
+| Column | Type | Notes |
+|---|---|---|
+| `partner_organization_id` | UUID FK → partner_organizations, ON DELETE CASCADE | PK part 1 |
+| `step_key` | TEXT CHECK (`verification` \| `catalogue` \| `mapping` \| `tracking_test` \| `results_channel` \| `dpa` \| `billing_mandate`) | PK part 2. `account`, `company`, `terms` and `team` are derived by the gateway and never stored. |
+| `status` | TEXT CHECK (`todo` \| `in_progress` \| `done` \| `failed` \| `not_required`) DEFAULT `todo` | |
+| `detail` | JSONB | step-specific evidence (e.g. a failure reason) |
+| `updated_by`, `created_at`, `updated_at` | | |
+
+Written only by the gateway (service role); members read their own org's rows via `is_partner_org_member()` (RLS). Read by `services/partner-onboarding-checklist.ts`.
+
+### partner_terms_acceptances (VTID-04478)
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | UUID PK | |
+| `partner_organization_id` | UUID FK → partner_organizations, ON DELETE CASCADE | |
+| `terms_version` | TEXT NOT NULL | `UNIQUE (partner_organization_id, terms_version)` |
+| `accepted_by` | UUID NOT NULL | |
+| `accepted_at` | TIMESTAMPTZ | |
+| `ip_address`, `user_agent` | TEXT | audit (spec §6.2) |
+
+Written only by `POST /api/v1/partner-onboarding/:orgId/terms/accept`; members read their own org's rows (RLS).
 
 ### partner_organization_members
 

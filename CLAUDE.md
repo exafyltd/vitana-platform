@@ -1612,6 +1612,10 @@ BEDROCK_ROLE_ARN=xxx
 PARTNER_INVITE_EMAIL_ENABLED=true
 RESEND_API_KEY=xxx
 EMAIL_FROM="Vitanaland <noreply@vitanaland.com>"
+# Partner terms version in force for the onboarding engine (VTID-04478). Unset =
+# no terms published: POST /partner-onboarding/:orgId/terms/accept answers 503
+# and no org can submit. Set it only once the terms text is published.
+PARTNER_TERMS_VERSION=2026-09
 VERTEX_LIVE_UNAVAILABLE=true
 OPENAI_API_KEY=xxx
 # Serbian-only Vertex Live bridge on a NEW GCP project — see

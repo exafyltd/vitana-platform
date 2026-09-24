@@ -50,7 +50,7 @@ function isCommerceVertical(value: unknown): value is CommerceVertical {
   return typeof value === 'string' && (COMMERCE_VERTICALS as readonly string[]).includes(value);
 }
 
-function getCallerId(req: Request): string | null {
+export function getCallerId(req: Request): string | null {
   return (req as AuthenticatedRequest).identity?.user_id ?? null;
 }
 
@@ -60,7 +60,7 @@ function normalizeEmail(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isExafyAdmin(req: Request): boolean {
+export function isExafyAdmin(req: Request): boolean {
   return (req as AuthenticatedRequest).identity?.exafy_admin === true;
 }
 
@@ -90,7 +90,7 @@ async function callerIsOrgAdmin(
  * Middleware factory: requires the caller to be exafy_admin OR org_admin
  * for :orgId. Mirrors backoffice-access.ts's requireManager() shape.
  */
-function requireOrgAdmin() {
+export function requireOrgAdmin() {
   return async (req: Request, res: Response, next: NextFunction) => {
     const supabase = getSupabase();
     if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });

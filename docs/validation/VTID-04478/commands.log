@@ -1,0 +1,20 @@
+# VTID-04478 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint); ledger row set in_progress/approved with a real title
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04478"}
+
+# Branch reset onto main after #3653 (VTID-04471) merged as 28ce840
+
+# Isolated strict typecheck of the pure modules (stub Node types, lib es2022+dom) -> exit 0
+tsc --ignoreConfig --noEmit --strict ... src/services/partner-onboarding-checklist.ts src/services/partner-lifecycle.ts
+
+# Checklist suite through a minimal jest-compatible shim (ts-node) -> outputs/checklist-suite-shim-run.txt (11/11)
+# VTID-04471 suite re-run the same way -> 15/15
+
+# Local PostgreSQL 16 scratch cluster (never the live project): migration applied twice,
+# constraint and RLS checks -> outputs/local-postgres16-migration.txt
+
+# Jest and full tsc: NOT runnable here. The npm registry returns 403 and there is no node_modules.
+# CI is the first real run of test/vtid-04478-partner-onboarding-routes.test.ts
+# (supertest + jest.mock) and of the full gateway typecheck.
