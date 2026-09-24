@@ -924,7 +924,7 @@ jobs:
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
                                                 "GCP_SERVICE_ACCOUNT_JSON",
-                                                "OPERATOR_CODEINTEL_ENABLED",
+                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
@@ -991,7 +991,7 @@ jobs:
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
-                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"}, {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
                           {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
                           {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )

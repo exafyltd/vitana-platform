@@ -1006,7 +1006,16 @@ export type CicdEventType =
   | 'partner_org.member_invited'
   | 'partner_org.member_joined'
   | 'partner_org.activated'
-  | 'partner_org.registry_linked';
+  | 'partner_org.registry_linked'
+  // VTID-04478: Commerce partner onboarding engine
+  | 'partner_org.onboarding_started'
+  | 'partner_org.company_updated'
+  | 'partner_org.terms_accepted'
+  | 'partner_org.lifecycle_changed'
+  // VTID-04481: website platform detection during onboarding
+  | 'partner_org.platform_detected'
+  // VTID-04486: automated verification checks (spec §7)
+  | 'partner_org.verification_checked';
 
 export interface CicdOasisEvent {
   vtid: string;
