@@ -1538,3 +1538,72 @@ describe('CA-3 typed actions', () => {
     }));
   });
 });
+
+// =============================================================================
+// VTID-04504 (Community Autopilot CA-4): drafts
+// =============================================================================
+
+describe('CA-4 drafts', () => {
+  const patches = () => (global.fetch as jest.Mock).mock.calls
+    .filter(([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH')
+    .map(([, init]: [string, RequestInit]) => JSON.parse(String(init.body)));
+
+  it('a voice "yes" to a public post never publishes it and never activates the row', async () => {
+    const { activateCommunityAutopilotRecommendation } = require('../../src/routes/autopilot-recommendations');
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Share your streak', source_type: 'community', source_ref: 'share_streak', user_id: USER_ID,
+        status: 'new', action: { kind: 'post_to_feed', params: { draft: 'Sieben Tage!' } } },
+    ]);
+    const r = await activateCommunityAutopilotRecommendation(USER_ID, REC_ID, { channel: 'voice', confirmed: true });
+    expect(r).toMatchObject({ ok: true, needs_app: true });
+    expect(patches().some((p) => p.status === 'activated')).toBe(false);
+  });
+
+  it('the app preview edit is stored and carried into the composer route', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Share your streak', source_type: 'community', source_ref: 'share_streak', user_id: USER_ID,
+        status: 'new', action: { kind: 'post_to_feed', params: { draft: 'Sieben Tage!' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), [{ id: 'other' }]);
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+      .send({ draft_text: 'Eine Woche geschafft!' });
+    expect(res.status).toBe(200);
+    expect(res.body.action_result.route).toBe(`/home?compose=1&draft=${encodeURIComponent('Eine Woche geschafft!')}`);
+    expect(patches().some((p) => p.action?.params?.draft === 'Eine Woche geschafft!')).toBe(true);
+  });
+
+  it('POST /:id/draft saves the member\'s text for their own drafted suggestion', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Say hi', source_type: 'community', user_id: USER_ID, status: 'new',
+        action: { kind: 'send_chat_message', params: { recipient_user_id: '11111111-1111-4111-8111-111111111111', body: 'Hi' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`)
+      .send({ text: 'Hallo Ana!' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, kind: 'send_chat_message', draft: 'Hallo Ana!' });
+  });
+
+  it('POST /:id/draft refuses someone else\'s suggestion and suggestions with nothing to draft', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'x', source_type: 'community', user_id: 'someone-else', status: 'new',
+        action: { kind: 'post_to_feed', params: {} } },
+    ]);
+    const other = await request(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`).send({});
+    expect(other.status).toBe(403);
+
+    fetchStubs.splice(0);
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'x', source_type: 'community', user_id: USER_ID, status: 'new',
+        action: { kind: 'log_water', params: { amount_ml: 250 } } },
+    ]);
+    const none = await request(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`).send({});
+    expect(none.status).toBe(400);
+  });
+});

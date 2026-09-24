@@ -54,6 +54,8 @@ export type ActionOutcome =
   | { status: 'executed'; kind: string; run_id: string | null; result?: unknown; text?: string }
   | { status: 'navigate'; kind: string; route: string; guided_topic_id?: string | null }
   | { status: 'needs_confirmation'; kind: string; readback: string }
+  /** VTID-04504: this kind is only ever carried out in the app (public posts). */
+  | { status: 'needs_app'; kind: string; readback: string; route: string }
   | { status: 'already_executed'; kind: string; run_id: string | null }
   | { status: 'invalid'; kind: string; error: string }
   | { status: 'failed'; kind: string; run_id: string | null; error: string };
@@ -66,10 +68,13 @@ interface ActionSpec {
   validate: (p: Record<string, unknown>) => string | null;
   /** 'client' kinds are carried out by the app (navigation); 'server' kinds run here. */
   where: 'server' | 'client';
+  /** VTID-04504: never carried out from voice; the member finishes it in the app. */
+  appOnly?: boolean;
 }
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const ACTION_REGISTRY: Record<string, ActionSpec> = {
   log_water: {
@@ -122,6 +127,29 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     validate: (p) => (str(p.route).startsWith('/') ? null : 'route must start with /'),
     describe: (p) => `open ${str(p.route)}`,
   },
+  // VTID-04504 (CA-4): drafted kinds. The text lives in params (see drafts.ts).
+  post_to_feed: {
+    // Public: owner decision 1 — only ever from the app preview, never by voice.
+    risk: 'medium', where: 'client', appOnly: true,
+    validate: (p) => (str(p.draft).length <= 5000 ? null : 'draft is too long'),
+    describe: () => 'open your post draft in the app',
+  },
+  media_upload: {
+    risk: 'low', where: 'client', appOnly: true,
+    validate: (p) => (str(p.caption).length <= 2000 ? null : 'caption is too long'),
+    describe: () => 'open the Media Hub upload with your caption',
+  },
+  send_chat_message: {
+    // Reaches another person: voice only after the draft was read back.
+    risk: 'medium', where: 'server',
+    validate: (p) => {
+      if (!UUID_RE.test(str(p.recipient_user_id))) return 'recipient_user_id is required';
+      if (!str(p.body)) return 'body is required';
+      if (str(p.body).length > 2000) return 'body is too long';
+      return null;
+    },
+    describe: (p) => `send ${str(p.recipient_label) || 'your contact'} this message: "${str(p.body)}"`,
+  },
   start_guided_session: {
     risk: 'low', where: 'client',
     validate: (p) => (str(p.topic_id) ? null : 'topic_id is required'),
@@ -156,6 +184,14 @@ export function checkActionPolicy(action: RecommendationAction, ctx: ActionConte
   if (!spec) return { status: 'invalid', kind: action.kind, error: 'unknown action kind' };
   const invalid = spec.validate(action.params ?? {});
   if (invalid) return { status: 'invalid', kind: action.kind, error: invalid };
+  if (spec.appOnly && ctx.channel === 'voice') {
+    return {
+      status: 'needs_app',
+      kind: action.kind,
+      route: clientRouteFor(action),
+      readback: `This one is finished in the app: ${spec.describe(action.params ?? {}, ctx)}. It is waiting in the Autopilot.`,
+    };
+  }
   if (spec.risk === 'medium' && ctx.channel === 'voice' && ctx.confirmed !== true) {
     return {
       status: 'needs_confirmation',
@@ -164,6 +200,21 @@ export function checkActionPolicy(action: RecommendationAction, ctx: ActionConte
     };
   }
   return null;
+}
+
+/** Where the app carries out a client kind. Drafts travel as a query param. */
+export function clientRouteFor(action: RecommendationAction): string {
+  const p = action.params ?? {};
+  if (action.kind === 'post_to_feed') {
+    const d = str(p.draft);
+    return d ? `/home?compose=1&draft=${encodeURIComponent(d)}` : '/home?compose=1';
+  }
+  if (action.kind === 'media_upload') {
+    const c = str(p.caption);
+    return c ? `/comm/media-hub?upload=1&caption=${encodeURIComponent(c)}` : '/comm/media-hub?upload=1';
+  }
+  if (action.kind === 'start_guided_session') return str(p.route) || '/journey';
+  return str(p.route);
 }
 
 export function idempotencyKeyFor(recommendationId: string, kind: string): string {
@@ -176,6 +227,16 @@ type Runner = (action: RecommendationAction, ctx: ActionContext, sb: SupabaseCli
 
 /** Server-side executors: each delegates to an existing handler. */
 const RUNNERS: Record<string, Runner> = {
+  // VTID-04504: a message to another member. Test/service accounts are never a
+  // target (CLAUDE.md rules 43-45), whatever produced the suggestion.
+  send_chat_message: async (action, ctx, sb) => {
+    const recipient = str(action.params?.recipient_user_id);
+    if (recipient === ctx.userId) return { ok: false, error: 'cannot message yourself' };
+    const { fetchExcludedTestServiceAccountIds } = await import('../../lib/excluded-test-service-accounts');
+    const excluded = await fetchExcludedTestServiceAccountIds(sb);
+    if (excluded.has(recipient)) return { ok: false, error: 'recipient is not a community member' };
+    return runViaOrbTool(action, ctx, sb);
+  },
   set_reminder: async (action, ctx, sb) => {
     const p = action.params ?? {};
     const at = str(p.at_iso) || ctx.slotStartIso || null;
@@ -280,7 +341,7 @@ export async function executeRecommendationAction(
     if (action.kind === 'start_guided_session') {
       return { status: 'navigate', kind: action.kind, route: str(p.route) || '/journey', guided_topic_id: str(p.topic_id) };
     }
-    return { status: 'navigate', kind: action.kind, route: str(p.route) };
+    return { status: 'navigate', kind: action.kind, route: clientRouteFor(action) };
   }
 
   const claim = await claimRun(sb, action, ctx);

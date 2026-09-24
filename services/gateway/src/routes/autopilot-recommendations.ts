@@ -45,7 +45,15 @@ import {
   executeRecommendationAction,
   type ActionChannel,
   type ActionOutcome,
+  type RecommendationAction,
 } from '../services/community-autopilot/action-registry';
+import {
+  DRAFTABLE_KINDS,
+  currentDraft,
+  generateDraft,
+  sanitizeDraft,
+  withDraft,
+} from '../services/community-autopilot/drafts';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -428,7 +436,7 @@ export async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector,action';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -684,7 +692,8 @@ router.get('/', async (req: Request, res: Response) => {
       // This hides old DB rows like organize_meetup / mentor_new without needing a DB migration.
       if (role === 'community') {
         const beforeFilter = recommendations.length;
-        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+        // VTID-04504: a row carrying a typed action is never retired by its source_ref.
+        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
         if (recommendations.length < beforeFilter) {
           console.log(`${LOG_PREFIX} Retired-action filter: ${beforeFilter} → ${recommendations.length} (${beforeFilter - recommendations.length} retired recs hidden)`);
         }
@@ -1179,6 +1188,48 @@ export interface ActivateCommunityResult {
   readback?: string;
   /** VTID-04503: what the suggestion's typed action did, when it has one. */
   action_result?: ActionOutcome | null;
+  /** VTID-04504: this suggestion is finished in the app (e.g. a public post). */
+  needs_app?: boolean;
+}
+
+/**
+ * VTID-04504: make sure a drafted action has its text. An override (the
+ * member's edit) is sanitized and stored; a missing draft is generated once and
+ * stored. A failed generation leaves the action as it was — the app preview
+ * then shows an empty editor rather than blocking the member.
+ */
+export async function ensureRecommendationDraft(a: {
+  supabaseUrl: string;
+  svcKey: string;
+  userId: string;
+  recId: string;
+  title: string;
+  summary: string | null;
+  action: RecommendationAction;
+  override?: string;
+  regenerate?: boolean;
+}): Promise<{ action: RecommendationAction; generated: boolean; error?: string }> {
+  let text = typeof a.override === 'string' ? sanitizeDraft(a.action.kind, a.override) : '';
+  let generated = false;
+  let error: string | undefined;
+  if (!text && (a.regenerate || !currentDraft(a.action))) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(a.supabaseUrl, a.svcKey, { auth: { persistSession: false } });
+    const g = await generateDraft(sb, a.userId, { title: a.title, summary: a.summary, action: a.action });
+    if (g.ok && g.text) { text = g.text; generated = true; } else { error = g.error; }
+  }
+  if (!text) return { action: a.action, generated: false, error };
+  const next = withDraft(a.action, text);
+  const patch = await fetch(
+    `${a.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${a.recId}&user_id=eq.${a.userId}&status=in.(new,snoozed)`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', apikey: a.svcKey, Authorization: `Bearer ${a.svcKey}` },
+      body: JSON.stringify({ action: next, updated_at: new Date().toISOString() }),
+    },
+  ).catch(() => null);
+  if (!patch || !patch.ok) console.warn(`${LOG_PREFIX} draft store failed for ${a.recId.slice(0, 8)} (non-fatal)`);
+  return { action: next, generated };
 }
 
 /**
@@ -1190,7 +1241,14 @@ export interface ActivateCommunityResult {
 export async function activateCommunityAutopilotRecommendation(
   userId: string | null,
   id: string,
-  opts: { tenantId?: string; skipReplenish?: boolean; channel?: ActionChannel; confirmed?: boolean } = {},
+  opts: {
+    tenantId?: string;
+    skipReplenish?: boolean;
+    channel?: ActionChannel;
+    confirmed?: boolean;
+    /** VTID-04504: the member's edited draft from the app preview. */
+    draftText?: string;
+  } = {},
 ): Promise<ActivateCommunityResult> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -1250,8 +1308,18 @@ export async function activateCommunityAutopilotRecommendation(
   // VTID-04503: a typed action is checked BEFORE anything changes, so a voice
   // "yes" to a medium-risk action gets a read-back and the row stays as it was.
   const templateAction = COMMUNITY_ACTIONS[rec.source_ref];
-  const typedAction = parseAction(rec.action) ?? defaultActionForTemplate(!!templateAction?.calendar_event);
+  let typedAction = parseAction(rec.action) ?? defaultActionForTemplate(!!templateAction?.calendar_event);
   const channel: ActionChannel = opts.channel ?? 'app';
+  // VTID-04504: a drafted kind carries the member's words. An edit from the app
+  // preview wins; otherwise a missing draft is written now, so the voice
+  // read-back and the execution use the same text. Stored on the row.
+  if (typedAction && DRAFTABLE_KINDS.has(typedAction.kind)) {
+    const drafted = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action: typedAction, override: opts.draftText,
+    });
+    typedAction = drafted.action;
+  }
   if (typedAction) {
     const blocked = checkActionPolicy(typedAction, {
       userId, tenantId: opts.tenantId || null, recommendationId: id,
@@ -1261,6 +1329,12 @@ export async function activateCommunityAutopilotRecommendation(
       return {
         ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
         needs_confirmation: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
+    if (blocked && blocked.status === 'needs_app') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_app: true, readback: blocked.readback, action_result: blocked,
       };
     }
   }
@@ -1449,6 +1523,58 @@ export async function activateCommunityAutopilotRecommendation(
 }
 
 // =============================================================================
+// POST /recommendations/:id/draft - VTID-04504 (CA-4)
+// =============================================================================
+/**
+ * The app preview sheet asks for the suggestion's draft before the member
+ * agrees. Body: `{ regenerate?: boolean, text?: string }` — `text` saves the
+ * member's own edit, `regenerate` asks for a fresh draft. Community only, owner
+ * only, drafted kinds only. Nothing is published or sent here.
+ */
+router.post('/:id/draft', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+    const { id } = req.params;
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,title,summary,source_type,user_id,status,action&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const rec = r.ok ? ((await r.json()) as any[])[0] : null;
+    if (!rec) return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    if (rec.source_type !== 'community') return res.status(403).json({ ok: false, error: 'Not a community recommendation' });
+    if (!rec.user_id || rec.user_id !== userId) return res.status(403).json({ ok: false, error: 'Recommendation belongs to another user' });
+    if (rec.status !== 'new' && rec.status !== 'snoozed') {
+      return res.status(400).json({ ok: false, error: `Cannot draft recommendation in status: ${rec.status}` });
+    }
+    const action = parseAction(rec.action);
+    if (!action || !DRAFTABLE_KINDS.has(action.kind)) {
+      return res.status(400).json({ ok: false, error: 'This suggestion has nothing to draft' });
+    }
+    const text = typeof req.body?.text === 'string' ? req.body.text : undefined;
+    const out = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action, override: text, regenerate: req.body?.regenerate === true,
+    });
+    return res.json({
+      ok: true,
+      recommendation_id: id,
+      kind: out.action.kind,
+      draft: currentDraft(out.action),
+      generated: out.generated,
+      action: out.action,
+      error: out.error ?? null,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} draft failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'draft failed' });
+  }
+});
+
+// =============================================================================
 // POST /recommendations/:id/activate - Activate recommendation (creates VTID)
 // =============================================================================
 /**
@@ -1487,7 +1613,8 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     if (role === 'community') {
       // Single source: REST and ORB voice share this activation flow.
       const tenantId = req.get('X-Vitana-Tenant') || '';
-      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId });
+      const draftText = typeof req.body?.draft_text === 'string' ? req.body.draft_text : undefined;
+      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId, draftText });
       if (!result.ok) {
         return res.status(result.httpStatus).json({ ok: false, error: result.error });
       }
@@ -1505,6 +1632,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         replenished: result.replenished ?? 0,
         // VTID-04503: a typed action's outcome (null when the row has none).
         action_result: result.action_result ?? null,
+        needs_app: result.needs_app === true,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });
