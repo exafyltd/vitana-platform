@@ -1649,16 +1649,11 @@ import {
   isNovaSonicLanguageSupported,
   NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
-// BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
-// greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
-// take 5-8+s to first greeting audio; this fills the silence).
-import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
-import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
-// VTID-04100: the bridge phrase is deterministic per (lang, rendered text).
-import {
-  getCachedGreetingBridgeAudio,
-  putCachedGreetingBridgeAudio,
-} from '../services/tts/greeting-bridge-cache';
+// VTID-04511: the pre-connect greeting AUDIO bridge (a Polly filler phrase
+// played before Nova's own greeting) is REMOVED. It is a second voice from a
+// different engine, heard over or cut off by the real one; the owner's rule
+// is that it must never play. Do not reintroduce it behind a flag — a
+// staging deploy pin kept re-enabling it (VTID-04128 removed only the prod pin).
 
 /**
  * VTID-03502: should a closed Nova stream fall back to Vertex?
@@ -2283,11 +2278,6 @@ const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_
 // read when the fresh build missed CONTEXT_READY_GATE_TIMEOUT_MS. The read
 // starts at session/start, so by the gate it has usually settled already.
 const CORE_SNAPSHOT_GATE_WAIT_MS = Number(process.env.BRAIN_CORE_SNAPSHOT_GATE_WAIT_MS || 150);
-
-// VTID-04100 — hard ceiling on how long the pre-connect greeting bridge may
-// hold the session before the real upstream connect starts. Sized above a
-// normal Polly synthesis (~0.3-0.8s) and far below the connect it precedes.
-const GREETING_BRIDGE_MAX_WAIT_MS = Number(process.env.ORB_GREETING_BRIDGE_MAX_WAIT_MS || 1500);
 
 // BOOTSTRAP-ORB-CONNECT-HANG: the native WebSocket session-start path
 // (handleWsClientMessage) builds its bootstrap context (language pref,
@@ -11442,64 +11432,6 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 }
 
 /**
- * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge (SSE transport only —
- * the SSE session/start path is what both the Nova bench and the majority
- * of real Connect & Talk traffic use today).
- *
- * Synthesizes a short "Good morning! Today is <date>. <motivational line>.
- * Let me pull up your latest data…" phrase via Cloud TTS (LINEAR16 @ 24kHz —
- * same wire format as the real greeting audio) and writes it to the SSE
- * stream BEFORE the real upstream connect is even initiated, so ordering is
- * trivially correct: this function is awaited to completion, and the caller
- * only opens the real (slow) upstream connection afterward. Feature-flagged
- * (default off) and fully best-effort — any failure here (TTS unavailable,
- * synthesis error, closed connection) is swallowed; it never blocks or
- * breaks the real greeting path that follows.
- *
- * Skipped for anonymous sessions (their intro flow is untouched/different)
- * and for reconnects (a mid-conversation reconnect doesn't need a fresh
- * "today is..." — the real reconnect-recovery prompt handles that case).
- */
-async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void> {
-  if (!isFeatureLive('ORB_GREETING_TTS_BRIDGE')) return;
-  if (session.isAnonymous) return;
-  if (session.transcriptTurns.length > 0) return; // reconnect, not a fresh session
-  if (!session.sseResponse) return;
-
-  try {
-    const lang = session.lang || 'en';
-    const timezone = session.clientContext?.timezone || 'UTC';
-    const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
-    // VTID-04100: the phrase is deterministic for (lang, text) and the text
-    // embeds the date, so the key rotates daily on its own. Without this every
-    // session re-synthesized the identical phrase through Polly — a per-session
-    // bill and a per-session delay on the one path whose entire job is to be
-    // instant.
-    const cached = getCachedGreetingBridgeAudio(lang, text);
-    const bridgeAudio = cached ?? (await synthesizeGreetingBridgeAudioPcm(text, lang));
-    if (bridgeAudio && !cached) putCachedGreetingBridgeAudio(lang, text, bridgeAudio);
-    if (!bridgeAudio) {
-      emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
-      return;
-    }
-    if (!session.sseResponse) return; // client disconnected while we were synthesizing
-    session.sseResponse.write(`data: ${JSON.stringify({
-      type: 'audio',
-      data_b64: bridgeAudio.audioB64,
-      // VTID-03495: rate comes from the synthesis result, not a constant —
-      // Polly PCM is 16kHz, Cloud TTS 24kHz. Hardcoding either plays the
-      // other at the wrong speed.
-      mime: `audio/pcm;rate=${bridgeAudio.sampleRateHz}`,
-      chunk_number: session.audioOutChunks++,
-      source: 'greeting_bridge',
-    })}\n\n`);
-    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length, cache: cached ? 'hit' : 'miss' });
-  } catch (err) {
-    console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
-  }
-}
-
-/**
  * VTID-03650: play the pre-synthesized Polly guided-topic lesson audio to the
  * client, BEFORE the live model's first turn. The audio itself was already
  * synthesized during wake-brief decision (see
@@ -11507,7 +11439,7 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
  * guided-topic-narration provider) and is bundled on
  * `session.guidedTopicNarrationContent.narrationAudio` — this function only
  * dispatches it, transport-aware (SSE write / WS message), mirroring
- * `sendGreetingAudioBridge`'s message shape so the client's existing PCM
+ * the (removed, VTID-04511) greeting bridge's message shape so the client's PCM
  * playback queue (orb-widget.js `_processQueue`) handles it identically.
  *
  * One-shot: `guidedTopicAudioDelivered` is set (true on send, false when
@@ -16197,36 +16129,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     },
   });
 
-  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — synthesize + write a
-  // short filler phrase BEFORE opening the real (slow) upstream connection.
-  // Awaited deliberately: this guarantees the bridge audio is written to the
-  // SSE stream strictly before any real-greeting audio chunk could possibly
-  // arrive, with no extra buffering/sequencing machinery needed. Adds at
-  // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
-  // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
-  // can be disabled instantly if that tradeoff is ever wrong.
-  //
-  // VTID-04100 — the await is now BOUNDED. Awaiting it unbounded is what made
-  // VTID-03802 a production outage: `synthesizeGreetingBridgeAudioPcm` used to
-  // fall through to a decommissioned Google TTS host and hang here, before
-  // `connectToLiveAPI` was ever called and before a single diagnostic was
-  // emitted, so the session never connected ("just connecting all the time")
-  // until an unrelated 90-145s idle watchdog closed it. Removing the Google
-  // branch fixed that particular hang; it did not make an unbounded await of a
-  // third-party API on the pre-connect critical path safe. The ordering
-  // guarantee this await exists for is preserved in the normal case (a cache
-  // hit is ~0ms, a Polly miss ~0.3-0.8s, against a connect that takes seconds),
-  // and on timeout we proceed to connect rather than strand the session — a
-  // lost bridge phrase beats a session that never starts.
-  await withBootstrapTimeout(
-    sendGreetingAudioBridge(session),
-    undefined,
-    'greeting-audio-bridge',
-    GREETING_BRIDGE_MAX_WAIT_MS,
-  );
+  // VTID-04511: no greeting audio bridge — Nova's own voice is the only voice.
   // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
   // could serve it) — also before the real upstream connect, same ordering
-  // rationale as the greeting bridge above.
+  // rationale as the (removed, VTID-04511) greeting bridge had.
   sendGuidedTopicNarrationAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
@@ -17304,6 +17210,21 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   }
 
   incrementConnection(clientIP);
+  // VTID-04512: release the per-IP slot the moment the socket goes away —
+  // registered BEFORE the token/tenant awaits below. The close handler used
+  // to be attached only after those awaits, so a socket closed during them
+  // (the widget's 8 s start timeout, the user closing the ORB, a dropped
+  // prewarm socket) never gave its slot back; after MAX_CONNECTIONS_PER_IP
+  // such leaks every new WebSocket from that IP was refused with 4029 and the
+  // ORB sat on "connecting". Idempotent: close and error both fire it.
+  let connectionReleased = false;
+  const releaseConnection = (): void => {
+    if (connectionReleased) return;
+    connectionReleased = true;
+    decrementConnection(clientIP);
+  };
+  ws.once('close', releaseConnection);
+  ws.once('error', releaseConnection);
 
   // VTID-01224: Extract auth token from query params or Authorization header
   // Priority: 1. ?token= query param  2. Authorization: Bearer header  3. Sec-WebSocket-Protocol
@@ -17451,14 +17372,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
     clearInterval(clientPingInterval);
     cleanupWsSession(sessionId, 'client_disconnect'); // VTID-03561
-    decrementConnection(clientIP);
+    releaseConnection();
   });
 
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
     cleanupWsSession(sessionId, 'client_error'); // VTID-03561
-    decrementConnection(clientIP);
+    releaseConnection();
   });
 }
 

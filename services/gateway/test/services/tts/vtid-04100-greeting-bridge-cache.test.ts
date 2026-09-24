@@ -76,28 +76,14 @@ describe('greeting bridge cache', () => {
   });
 });
 
-describe('orb-live.ts wiring', () => {
+describe('orb-live.ts wiring (VTID-04511: the bridge is removed)', () => {
   const src = readFileSync(join(__dirname, '../../../src/routes/orb-live.ts'), 'utf8');
 
-  it('consults the cache before synthesizing, and stores only on a miss', () => {
-    expect(src).toContain('const cached = getCachedGreetingBridgeAudio(lang, text);');
-    expect(src).toContain('cached ?? (await synthesizeGreetingBridgeAudioPcm(text, lang))');
-    expect(src).toContain('if (bridgeAudio && !cached) putCachedGreetingBridgeAudio(lang, text, bridgeAudio);');
-  });
-
-  it('reports hit/miss on the diag, so the hit rate is queryable rather than assumed', () => {
-    expect(src).toMatch(/greeting_bridge_sent'[^)]*cache: cached \? 'hit' : 'miss'/);
-  });
-
-  it('bounds the pre-connect await — an unbounded one is what stalled sessions in VTID-03802', () => {
-    expect(src).toContain('withBootstrapTimeout(\n    sendGreetingAudioBridge(session),');
-    expect(src).toContain('GREETING_BRIDGE_MAX_WAIT_MS');
-    expect(src).not.toMatch(/^\s*await sendGreetingAudioBridge\(session\);\s*$/m);
-  });
-
-  it('keeps the bound well under the connect it precedes', () => {
-    const m = src.match(/ORB_GREETING_BRIDGE_MAX_WAIT_MS \|\| (\d+)\)/);
-    expect(m).not.toBeNull();
-    expect(Number(m![1])).toBeLessThanOrEqual(2000);
+  it('never synthesizes or sends the greeting bridge — Nova is the only voice', () => {
+    expect(src).not.toContain('sendGreetingAudioBridge');
+    expect(src).not.toContain('synthesizeGreetingBridgeAudioPcm');
+    expect(src).not.toContain('getCachedGreetingBridgeAudio');
+    expect(src).not.toContain("'greeting_bridge_sent'");
+    expect(src).not.toContain("source: 'greeting_bridge'");
   });
 });

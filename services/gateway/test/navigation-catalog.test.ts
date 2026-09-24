@@ -591,7 +591,7 @@ describe('navigation-catalog — 89 canonical paths snapshot (VTID-02770)', () =
     { path: '/home', expectedScreenId: 'HOME.OVERVIEW' },
     { path: '/home/context', expectedScreenId: 'HOME.CONTEXT' },
     { path: '/home/actions', expectedScreenId: 'HOME.ACTIONS' },
-    { path: '/home/matches', expectedScreenId: 'HOME.MATCHES' },
+    { path: '/me/matches', expectedScreenId: 'HOME.MATCHES' },
     { path: '/home/aifeed', expectedScreenId: 'HOME.AI_FEED' },
     // /community → /comm (canonical alias)
     { path: '/community/events', expectedScreenId: 'COMM.EVENTS' },
