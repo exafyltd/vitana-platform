@@ -171,6 +171,71 @@ describe('POST /register', () => {
     expect(r.status).toBe(201);
     expect(r.body.organization).toMatchObject({ id: 'org-2', status: 'pending_review' });
   });
+
+  // VTID-04471 — partner account model fields.
+  it('201 with partner_type — derives commerce_vertical and stores the company facts', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return {
+        data: { id: 'org-3', org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', commerce_vertical: 'health', status: 'pending_review', lifecycle_state: 'draft' },
+        error: null,
+      };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', legal_name: 'Praxis Nord GmbH', country: 'de', website: 'https://praxis.example' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).toMatchObject({
+      partner_type: 'practitioner_clinic',
+      commerce_vertical: 'health',
+      legal_name: 'Praxis Nord GmbH',
+      country: 'DE',
+      website: 'https://praxis.example/',
+      status: 'pending_review',
+    });
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(r.body.organization).toMatchObject({ partner_type: 'practitioner_clinic', lifecycle_state: 'draft' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'partner_org.registered', payload: expect.objectContaining({ partner_type: 'practitioner_clinic' }) }),
+    );
+  });
+
+  it('400 on an unknown partner_type, a conflicting commerce_vertical or an invalid company fact', async () => {
+    tableHandlers.partner_organizations = () => { throw new Error('must not insert'); };
+    const base = { org_key: 'x', display_name: 'X', org_type: 'shop' };
+    const send = (body: object) =>
+      request(makeApp()).post('/api/v1/partner-orgs/register').set('Authorization', 'Bearer owner-1').send({ ...base, ...body });
+
+    expect((await send({ partner_type: 'bank' })).status).toBe(400);
+    expect((await send({ partner_type: 'lab', commerce_vertical: 'general' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', country: 'Germany' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', website: 'ftp://shop.example' })).status).toBe(400);
+  });
+
+  it('never lets a client set lifecycle_state or trust_level at registration', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return { data: { id: 'org-4', org_key: 'y', display_name: 'Y', org_type: 'shop', commerce_vertical: 'general', status: 'pending_review' }, error: null };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'y', display_name: 'Y', org_type: 'shop', partner_type: 'supplier_shop', lifecycle_state: 'live', trust_level: 2, status: 'active' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(inserted.status).toBe('pending_review');
+  });
 });
 
 describe('GET /mine', () => {

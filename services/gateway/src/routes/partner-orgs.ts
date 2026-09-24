@@ -23,6 +23,7 @@ import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getUserLocale } from '../i18n/server-locale';
 import { buildInviteAcceptUrl, sendPartnerInviteEmail } from '../services/email/partner-invite-email';
+import { PARTNER_TYPES, isPartnerType, parseCompanyFacts, verticalForPartnerType } from '../services/partner-lifecycle';
 
 const router = Router();
 
@@ -120,15 +121,32 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
   const orgKey = typeof req.body?.org_key === 'string' ? req.body.org_key.trim().toLowerCase() : '';
   const displayName = typeof req.body?.display_name === 'string' ? req.body.display_name.trim() : '';
   const orgType = typeof req.body?.org_type === 'string' ? req.body.org_type.trim() : '';
-  const commerceVertical = req.body?.commerce_vertical;
+  const rawPartnerType = req.body?.partner_type;
+  let commerceVertical = req.body?.commerce_vertical;
   const businessDetails = req.body?.business_details && typeof req.body.business_details === 'object' ? req.body.business_details : {};
 
   if (!orgKey) return res.status(400).json({ ok: false, error: 'org_key is required' });
   if (!displayName) return res.status(400).json({ ok: false, error: 'display_name is required' });
   if (!orgType) return res.status(400).json({ ok: false, error: 'org_type is required' });
+  // VTID-04471 — partner_type is the enforced vocabulary; when given it
+  // decides commerce_vertical (the DB trigger derives it the same way).
+  // Without it, commerce_vertical stays required as before.
+  const partnerType = rawPartnerType === undefined || rawPartnerType === null || rawPartnerType === '' ? null : rawPartnerType;
+  if (partnerType !== null && !isPartnerType(partnerType)) {
+    return res.status(400).json({ ok: false, error: `partner_type must be one of: ${PARTNER_TYPES.join(', ')}` });
+  }
+  if (partnerType !== null) {
+    const derived = verticalForPartnerType(partnerType);
+    if (commerceVertical !== undefined && commerceVertical !== null && commerceVertical !== derived) {
+      return res.status(400).json({ ok: false, error: `commerce_vertical must be '${derived}' for partner_type '${partnerType}'` });
+    }
+    commerceVertical = derived;
+  }
   if (!isCommerceVertical(commerceVertical)) {
     return res.status(400).json({ ok: false, error: `commerce_vertical must be one of: ${COMMERCE_VERTICALS.join(', ')}` });
   }
+  const companyFacts = parseCompanyFacts(req.body);
+  if (!companyFacts.ok) return res.status(400).json({ ok: false, error: companyFacts.error });
 
   const { data: org, error: orgErr } = await supabase
     .from('partner_organizations')
@@ -140,14 +158,25 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
       status: 'pending_review',
       owner_user_id: callerId,
       business_details: businessDetails,
+      ...(partnerType !== null ? { partner_type: partnerType } : {}),
+      ...companyFacts.facts,
     })
-    .select('id, org_key, display_name, org_type, commerce_vertical, status')
+    .select('id, org_key, display_name, org_type, partner_type, commerce_vertical, status, lifecycle_state, legal_name, country, vat_id, website')
     .single();
   if (orgErr || !org) {
     if (orgErr?.code === '23505') return res.status(409).json({ ok: false, error: 'org_key already taken' });
     return res.status(500).json({ ok: false, error: orgErr?.message ?? 'partner_organizations insert failed' });
   }
-  const orgRow = org as { id: string; org_key: string; display_name: string; org_type: string; commerce_vertical: CommerceVertical; status: string };
+  const orgRow = org as {
+    id: string;
+    org_key: string;
+    display_name: string;
+    org_type: string;
+    partner_type: string | null;
+    commerce_vertical: CommerceVertical;
+    status: string;
+    lifecycle_state: string;
+  };
 
   const { error: memberErr } = await supabase
     .from('partner_organization_members')
@@ -160,7 +189,7 @@ router.post('/register', requireAuth, async (req: Request, res: Response) => {
     source: 'partner-orgs',
     status: 'success',
     message: `Partner organization "${orgRow.display_name}" (${orgRow.org_key}) self-registered by ${callerId}.`,
-    payload: { partner_organization_id: orgRow.id, org_key: orgRow.org_key, org_type: orgRow.org_type },
+    payload: { partner_organization_id: orgRow.id, org_key: orgRow.org_key, org_type: orgRow.org_type, partner_type: orgRow.partner_type ?? null },
     actor_id: callerId,
   });
 
@@ -184,11 +213,19 @@ router.get('/mine', requireAuth, async (req: Request, res: Response) => {
 
   const { data, error } = await supabase
     .from('partner_organization_members')
-    .select('role, partner_organizations(id, org_key, display_name, org_type, status)')
+    .select('role, partner_organizations(id, org_key, display_name, org_type, partner_type, status, lifecycle_state)')
     .eq('user_id', callerId);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
-  type OrgEmbed = { id: string; org_key: string; display_name: string; org_type: string; status: string };
+  type OrgEmbed = {
+    id: string;
+    org_key: string;
+    display_name: string;
+    org_type: string;
+    partner_type: string | null;
+    status: string;
+    lifecycle_state: string;
+  };
   const organizations = ((data ?? []) as Array<{ role: string; partner_organizations: OrgEmbed | OrgEmbed[] | null }>)
     .map((row) => {
       const org = Array.isArray(row.partner_organizations) ? row.partner_organizations[0] : row.partner_organizations;
