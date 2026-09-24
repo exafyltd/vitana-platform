@@ -1,4 +1,45 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * VTID-04515: the app is a client-rendered SPA. At `domcontentloaded` the
+ * body is still an empty shell, so reading `innerText()` right after
+ * `page.goto` measured nothing and ~730 smoke tests failed with "received 0"
+ * on every run (staging 2026-09-24, and production back to 2026-07-03).
+ * These waits poll the real condition with a bounded timeout instead of
+ * reading once or sleeping a fixed 2-3 s.
+ */
+const RENDER_TIMEOUT_MS = 20_000;
+const NAVIGATION_TIMEOUT_MS = 15_000;
+
+/** Waits until the page has rendered visible text, then returns it. */
+async function renderedBodyText(page: Page, minLength = 10): Promise<string> {
+  let text = '';
+  await expect
+    .poll(async () => {
+      text = await page.locator('body').innerText().catch(() => '');
+      return text.length;
+    }, { timeout: RENDER_TIMEOUT_MS, message: 'page rendered no visible text' })
+    .toBeGreaterThan(minLength);
+  return text;
+}
+
+/**
+ * Console noise that is not the app's own failure. `cloudflareinsights`:
+ * Cloudflare injects its analytics beacon at the edge, outside the app's
+ * code, and the app's own CSP (script-src 'self') blocks it.
+ */
+function isFatalError(e: string): boolean {
+  return !e.includes('favicon') &&
+    !e.includes('analytics') &&
+    !e.includes('cloudflareinsights') &&
+    !e.includes('GTM') &&
+    !e.includes('hotjar') &&
+    !e.includes('ResizeObserver') &&
+    !e.includes('hydration') &&
+    !e.includes('Warning:') &&
+    !e.includes('ERR_BLOCKED_BY_CLIENT') &&
+    !e.includes('net::ERR_');
+}
 
 /**
  * Creates smoke tests for a set of routes.
@@ -19,25 +60,14 @@ export function createSmokeTests(suiteName: string, routes: string[]) {
         // HTTP status < 500
         expect(response?.status()).toBeLessThan(500);
 
-        // Not blank
-        const bodyText = await page.locator('body').innerText();
-        expect(bodyText.length).toBeGreaterThan(10);
+        // Not blank (waits for the SPA to render)
+        const bodyText = await renderedBodyText(page);
 
         // No 404 text
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
         // No fatal JS errors (ignore common noise)
-        const fatalErrors = errors.filter(e =>
-          !e.includes('favicon') &&
-          !e.includes('analytics') &&
-          !e.includes('GTM') &&
-          !e.includes('hotjar') &&
-          !e.includes('ResizeObserver') &&
-          !e.includes('hydration') &&
-          !e.includes('Warning:') &&
-          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
-          !e.includes('net::ERR_')
-        );
+        const fatalErrors = errors.filter(isFatalError);
         expect(fatalErrors).toHaveLength(0);
       });
     }
@@ -58,8 +88,7 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
         const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
         expect(response?.status()).toBeLessThan(500);
 
-        const bodyText = await page.locator('body').innerText();
-        expect(bodyText.length).toBeGreaterThan(10);
+        const bodyText = await renderedBodyText(page);
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
         // Check for horizontal overflow (common mobile bug)
@@ -68,17 +97,7 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
         });
         expect(hasOverflow).toBe(false);
 
-        const fatalErrors = errors.filter(e =>
-          !e.includes('favicon') &&
-          !e.includes('analytics') &&
-          !e.includes('GTM') &&
-          !e.includes('hotjar') &&
-          !e.includes('ResizeObserver') &&
-          !e.includes('hydration') &&
-          !e.includes('Warning:') &&
-          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
-          !e.includes('net::ERR_')
-        );
+        const fatalErrors = errors.filter(isFatalError);
         expect(fatalErrors).toHaveLength(0);
       });
     }
@@ -160,13 +179,10 @@ export function createRedirectTests(suiteName: string, redirectMap: Record<strin
       test(`redirects ${oldPath} → ${newPath}`, async ({ page }) => {
         await page.goto(oldPath, { waitUntil: 'domcontentloaded' });
 
-        // Wait for redirect to settle
-        await page.waitForTimeout(2000);
-
-        const currentUrl = page.url();
-        // Strip query params from expected path for matching
+        // Strip query params from expected path for matching, then wait for
+        // the client-side redirect instead of sleeping a fixed 2 s.
         const expectedBase = newPath.split('?')[0];
-        expect(currentUrl).toContain(expectedBase);
+        await expect.poll(() => page.url(), { timeout: NAVIGATION_TIMEOUT_MS }).toContain(expectedBase);
       });
     }
   });
@@ -184,18 +200,15 @@ export function createAuthGuardTests(suiteName: string, protectedRoutes: string[
       test(`${route} redirects to auth when not logged in`, async ({ page }) => {
         await page.goto(route, { waitUntil: 'domcontentloaded' });
 
-        // Wait for auth guard redirect
-        await page.waitForTimeout(3000);
-
-        const currentUrl = page.url();
-        // Should redirect to /auth or a tenant portal login
-        const isAuthPage = currentUrl.includes('/auth') ||
-          currentUrl.includes('/maxina') ||
-          currentUrl.includes('/alkalma') ||
-          currentUrl.includes('/earthlinks') ||
-          currentUrl.includes('/dev/login');
-
-        expect(isAuthPage).toBe(true);
+        // Wait for the auth guard redirect instead of sleeping a fixed 3 s.
+        // Should land on /auth or a tenant portal login.
+        const isAuthPage = (url: string) =>
+          url.includes('/auth') ||
+          url.includes('/maxina') ||
+          url.includes('/alkalma') ||
+          url.includes('/earthlinks') ||
+          url.includes('/dev/login');
+        await expect.poll(() => isAuthPage(page.url()), { timeout: NAVIGATION_TIMEOUT_MS }).toBe(true);
       });
     }
   });
@@ -217,20 +230,17 @@ export function createRoleGuardTests(
           const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
           expect(response?.status()).toBeLessThan(500);
 
-          // Wait for role check to complete
-          await page.waitForTimeout(2000);
-
-          const bodyText = await page.locator('body').innerText();
-          const currentUrl = page.url();
-
-          // Either shows "Not Authorized" text or redirects away from the route
-          const isBlocked =
-            bodyText.toLowerCase().includes('not authorized') ||
-            bodyText.toLowerCase().includes('unauthorized') ||
-            bodyText.toLowerCase().includes('access denied') ||
-            !currentUrl.includes(route);
-
-          expect(isBlocked).toBe(true);
+          // Wait for the role check: either "Not Authorized" text or a redirect
+          // away from the route, polled instead of a fixed 2 s sleep.
+          await expect
+            .poll(async () => {
+              const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+              return bodyText.includes('not authorized') ||
+                bodyText.includes('unauthorized') ||
+                bodyText.includes('access denied') ||
+                !page.url().includes(route);
+            }, { timeout: NAVIGATION_TIMEOUT_MS })
+            .toBe(true);
         });
       }
     }
