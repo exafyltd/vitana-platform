@@ -1,0 +1,21 @@
+## prereq stub (shapes from 20260915120000/20260916130000 + minimal merchants/partner_tenant)
+## apply supabase/migrations/20260924130000_vtid_04471_partner_account_model.sql (twice)
+exit=0
+exit=0
+## apply prisma/migrations/20260924_vcaop_partner_org_link_0007/migration.sql (twice)
+exit=0
+exit=0
+## result
+org_key|status|lifecycle_state|partner_type|members|merchants|tenants
+connection-0000000000000000000000000000000c|pending_review|draft||1||t1
+legacy-active|active|live||0|Shop A|
+merchant-0000000000000000000000000000000b|pending_review|draft|supplier_shop|1|Shop B1,Shop B2|t3
+(3 rows)
+id|unlinked
+t4|t
+(1 row)
+name|unlinked
+Awin brand|t
+(1 row)
+## down.sql
+exit=0
