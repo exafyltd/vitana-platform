@@ -671,7 +671,7 @@ export function buildVertexWakeBriefBlock(
   // Escape backticks + close-quotes so a renderer-produced line with
   // quotes in it can't break the surrounding instruction block.
   const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
-  const dedupeLine = dedupeKey ? `\nDedupe key: ${dedupeKey} (do NOT repeat after this turn).` : '';
+  const dedupeLine = dedupeKey ? `\nDedupe key: ${dedupeKey} (spoken once, this turn only).` : '';
 
   // VTID-03797 — guided-topic sessions get a COMPOSITIONAL block, never the
   // verbatim one below.
@@ -728,30 +728,33 @@ Rules:
 This is your first spoken turn this session. Subsequent turns follow the
 GUIDE MODE section.`;
   }
-  // VTID-03097: hard-instruction format. Earlier soft-instruction
-  // ("Speak this VERBATIM") was being lost to the SHORT-GAP GREETING
-  // PHRASES pool injection in live-system-instruction.ts:253. The
-  // sentinel marker below is also detected by buildLiveSystemInstruction
-  // to skip the pool injection entirely when an override is active.
+  // VTID-03097: the sentinel marker below is detected by
+  // buildLiveSystemInstruction, which then skips the SHORT-GAP GREETING
+  // PHRASES pool entirely. That is what keeps this line from being lost to
+  // the pool, so the protection does not depend on the wording below.
+  //
+  // VTID-04589 — stated positively, not as a prohibition stack. The previous
+  // wording ("MUST be EXACTLY this text. Copy these characters
+  // letter-for-letter; do not paraphrase, do not translate, do not shorten
+  // ...", plus four "Do NOT" rules) is the shape VTID-03797 and VTID-04124
+  // found Nova's content filter scores as injection-like. Controlled replay on
+  // 2026-09-25 of a real blocked staging setup (login briefing, test account,
+  // real Nova 2 Sonic, 5 runs each): exact prompt 5/5 blocked; without the
+  // member's social context 5/5 blocked; without this block 5/5 spoke; the
+  // same quoted line with this positive wording 5/5 spoke. Every rule is kept
+  // as a positive statement; the line is still spoken as written.
   return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 
-## SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM (VTID-03079 / VTID-03097)
+## FIRST SPOKEN TURN THIS SESSION (VTID-03079 / VTID-03097 / VTID-04589)
 
-The user just opened the orb. Your FIRST spoken turn this session MUST
-be EXACTLY this text. Copy these characters letter-for-letter; do not
-paraphrase, do not translate, do not shorten, do not split into two
-turns, do not append clarifying questions:
+Open with this line, spoken as written, in one turn, then wait for the
+user's reply:
 
   "${safe}"
 
-Rules:
-  - Do NOT use a standalone generic offer-to-help greeting instead of the
-    line above.
-  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
-    that section is SUPPRESSED for this turn.
-  - Do NOT introduce yourself or list features.
-  - The line above already contains both the greeting AND the proactive
-    invitation. After speaking it, stop and wait for the user's reply.${dedupeLine}
+This line is the greeting and the proactive invitation together. The
+short-gap greeting phrases are not used for this turn, and you go straight
+to the line without introducing yourself.${dedupeLine}
 
 This is your first spoken turn this session. Subsequent turns follow the
 normal conversation flow.`;
