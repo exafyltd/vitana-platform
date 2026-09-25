@@ -413,12 +413,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26236,
-  "instruction_sha256": "dca61e3b8ecab1095047fd0eab1e27b4d77e1fa7099b4de5babc97a67eadc026",
+  "instruction_bytes": 26593,
+  "instruction_sha256": "ffa04e7dc4cea442a058def1a713cbb651e06d2c334a243b6be2a0c064431ae7",
   "provider": "nova_sonic",
-  "tool_count": 44,
-  "tools_bytes": 65548,
-  "tools_sha256": "3d1ec62b6c901c59ac81663b96d2aa97c49fecc5881b5ef2116aa61290a4cb25",
+  "tool_count": 45,
+  "tools_bytes": 65551,
+  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
   "voice": "tina",
 }
 `;
@@ -546,6 +546,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -745,6 +746,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -762,7 +764,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "append_to_ticket",
   "get_day_summary",
   "view_messages",
-  "list_following",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -785,6 +786,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
+  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -792,12 +794,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 27676,
-  "instruction_sha256": "2b02609bd90f40b813275cfddcd2e792ab53032beb2cd3f8a43999d00642bf7d",
+  "instruction_bytes": 28033,
+  "instruction_sha256": "cb135a4cbe76b640764f40ce3fe5fc36944ed5bbc1cecebf57a085a9bc50dd08",
   "provider": "nova_sonic",
-  "tool_count": 44,
-  "tools_bytes": 65548,
-  "tools_sha256": "3d1ec62b6c901c59ac81663b96d2aa97c49fecc5881b5ef2116aa61290a4cb25",
+  "tool_count": 45,
+  "tools_bytes": 65551,
+  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
   "voice": "amy",
 }
 `;
@@ -925,6 +927,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -1151,6 +1154,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -1168,7 +1172,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "append_to_ticket",
   "get_day_summary",
   "view_messages",
-  "list_following",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -1191,6 +1194,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
+  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -1198,12 +1202,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26380,
-  "instruction_sha256": "e0ea57ad513a342b628c52dad65a7875cd4dca1df23dd235ad552c2693616dbf",
+  "instruction_bytes": 26737,
+  "instruction_sha256": "754ca014c272544dc1bd020e33b060282053e0f454d4cc7e1a77a35ecca75920",
   "provider": "cascaded",
-  "tool_count": 294,
-  "tools_bytes": 228482,
-  "tools_sha256": "2b4e752c8caf882e199fed32c48827fe9fe76292852dcacf4361b0c7b59661f3",
+  "tool_count": 295,
+  "tools_bytes": 228600,
+  "tools_sha256": "6ac3743a6cb06eb3a6b298e78379073c4877ef15d79492cf964ae1ae8010a3c1",
   "voice": "polly:ru",
 }
 `;
@@ -1338,6 +1342,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -1532,6 +1537,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -1833,8 +1839,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "13f35c6fe978b783d30eaf4c9d1e5c666e1a148d2fee346b48598a4d3113ddcd",
   "provider": "nova_sonic",
   "tool_count": 157,
-  "tools_bytes": 54941,
-  "tools_sha256": "11951a97b1abef4630d09063094fb323cc3cdc060ddcc65f43aa522047dc9c2f",
+  "tools_bytes": 54750,
+  "tools_sha256": "85290a3c45d88b9f7fa3c5483dbdc3605eccf943c127c9054acec5cec38cab88",
   "voice": "amy",
 }
 `;
@@ -2147,9 +2153,9 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_bytes": 1973,
   "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
   "provider": "nova_sonic",
-  "tool_count": 44,
-  "tools_bytes": 65548,
-  "tools_sha256": "3d1ec62b6c901c59ac81663b96d2aa97c49fecc5881b5ef2116aa61290a4cb25",
+  "tool_count": 45,
+  "tools_bytes": 65551,
+  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
   "voice": "matthew",
 }
 `;
@@ -2198,6 +2204,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -2215,7 +2222,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "append_to_ticket",
   "get_day_summary",
   "view_messages",
-  "list_following",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -2238,6 +2244,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
+  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -2245,12 +2252,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 27647,
-  "instruction_sha256": "60256eae3dcfffe713ee784f021bbeb128cc40e067b5ccbd7c5afe5c9fce1c65",
+  "instruction_bytes": 28004,
+  "instruction_sha256": "5254d25fcc6f3963e055d2fd0c14e5544f9aae619b91986d69001be7f803a360",
   "provider": "nova_sonic",
-  "tool_count": 44,
-  "tools_bytes": 65548,
-  "tools_sha256": "3d1ec62b6c901c59ac81663b96d2aa97c49fecc5881b5ef2116aa61290a4cb25",
+  "tool_count": 45,
+  "tools_bytes": 65551,
+  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
   "voice": "tina",
 }
 `;
@@ -2370,6 +2377,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -2616,6 +2624,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -2633,7 +2642,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "append_to_ticket",
   "get_day_summary",
   "view_messages",
-  "list_following",
   "narrate_guided_session",
   "get_vitana_index",
   "save_diary_entry",
@@ -2656,6 +2664,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
+  "get_my_subscription",
   "__google_search__",
 ]
 `;
@@ -2663,12 +2672,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26396,
-  "instruction_sha256": "54b72e08556b92d82dac5603e09d7581ffe2ca892daeaa6f3e1930df8d958ec8",
+  "instruction_bytes": 26753,
+  "instruction_sha256": "83d0e0d30c514ca0c261021f33522459bf6d056802f8c150492df24f9da5715b",
   "provider": "vertex",
-  "tool_count": 33,
-  "tools_bytes": 49179,
-  "tools_sha256": "c1ffceae0eabd7335201de328e60177a2d3c29cc510e9cb72d98abfcc7eb3d2e",
+  "tool_count": 34,
+  "tools_bytes": 49200,
+  "tools_sha256": "61829612b5a980b38e288c2631dbb76a985c02a799d5312004d3be56e0d1e8cf",
   "voice": "Aoede",
 }
 `;
@@ -2803,6 +2812,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -2997,6 +3007,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "get_current_screen",
   "navigate",
   "search_memory",
+  "remember_fact",
   "search_knowledge",
   "search_calendar",
   "create_calendar_event",
@@ -3017,7 +3028,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "set_reminder",
   "find_reminders",
   "delete_reminder",
-  "mark_intent_fulfilled",
   "navigate_to_screen",
   "log_water",
   "teacher_event",
@@ -3026,6 +3036,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "end_conversation",
   "submit_bug_report",
   "submit_support_ticket",
+  "get_goal_progress",
   "__google_search__",
 ]
 `;

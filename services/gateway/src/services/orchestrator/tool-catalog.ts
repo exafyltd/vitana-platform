@@ -63,7 +63,7 @@ const SELF_COMMIT_TOOLS = new Set<string>([
   'set_language', 'set_theme', 'set_voice_preferences', 'set_capability_preference',
   'mark_notifications_read', 'mark_conversation_read', 'mute_conversation', 'archive_conversation',
   'like_post', 'rsvp_event', 'cancel_rsvp', 'complete_event', 'add_to_calendar',
-  'set_goal', 'update_goal', 'reinforce_memory',
+  'set_goal', 'update_goal', 'reinforce_memory', 'remember_fact',
   'snooze_recommendation', 'dismiss_recommendation', 'dismiss_marketplace_recommendation',
   // VTID-04493: activating the member's OWN Autopilot item (books their own
   // calendar slot) — owner decision 2026-09-24: a spoken yes may commit it.
