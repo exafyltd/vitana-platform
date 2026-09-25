@@ -88,7 +88,7 @@ Example output:
 // Types
 // =============================================================================
 
-interface ExtractedFact {
+export interface ExtractedFact {
   fact_key: string;
   fact_value: string;
   entity: string;
@@ -111,7 +111,7 @@ const CONFIDENCE_CAP = 0.98;
 // Core: Extract facts using Gemini
 // =============================================================================
 
-async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+export async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
   // VTID-03579: this was a hardcoded DeepSeek -> Vertex AI -> Gemini-API
   // cascade. Three providers chosen here, none of them visible to
   // `llm_routing_policy` — so the routing table could say one thing while this
