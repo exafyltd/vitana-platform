@@ -1,0 +1,6 @@
+tsc --noEmit: clean
+social-read-tools suites: 2 passed, 51 tests passed (2 new for VTID-04585)
+full gateway suite (npx jest --silent, local, head febfdefe):
+  Test Suites: 1 skipped, 1290 passed, 1290 of 1291 total
+  Tests:       29 skipped, 6 todo, 20702 passed, 20737 total
+  Snapshots:   109 passed, 109 total
