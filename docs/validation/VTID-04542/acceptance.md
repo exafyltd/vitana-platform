@@ -107,3 +107,7 @@ TEST: services/gateway/test/frontend/orb-widget-latency-beacon.test.ts
 ROUTE_MOUNT: `router.post('/live/client-latency', optionalAuth, handleClientLatencyBeacon)` in services/gateway/src/routes/orb-live.ts; the router is mounted at `/api/v1/orb` (services/gateway/src/index.ts, `mountRouterSync(app, '/api/v1/orb', orbLiveRouter)`).
 FINAL_URL: POST https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/client-latency (staging).
 CURL_PROOF: before merge the route exists only on this branch, so the proof is the supertest suite against the real router (services/gateway/test/orb/live/vtid-04542-client-latency-route.test.ts): 204 on a valid body, 400 on an invalid one, 413 over 4 KB, JSON bodies, never 5xx. After the staging deploy the real curl against FINAL_URL is recorded in outputs/staging-curl.txt.
+
+## OASIS evidence
+
+OASIS_PROOF: new event types `voice.latency.handoff` and `voice.latency.client` are declared in services/gateway/src/types/cicd.ts. Emission is proven by services/gateway/test/orb/live/vtid-04542-client-latency-route.test.ts (one `voice.latency.client` per valid beacon, none on a 400/413) and services/gateway/test/orb/live/vtid-04542-latency-p0.test.ts (`voice.latency.handoff` payload). The `llm.call.*` events keep identical payloads and are now emitted without blocking (services/gateway/test/vtid-04546-llm-router-telemetry-nonblocking.test.ts). Live rows on staging are recorded in outputs/ after merge.
