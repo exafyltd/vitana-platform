@@ -36,12 +36,12 @@ export async function fetchProfileIdentityRow(
   sb: SupabaseClient,
   userId: string,
 ): Promise<{ data: any; error: any }> {
-  return sb.from('profiles').select(PROFILE_IDENTITY_COLUMNS).eq('user_id', userId).limit(1).maybeSingle();
+  return sb.from('profiles').select(PROFILE_IDENTITY_COLUMNS).eq('user_id', userId).maybeSingle();
 }
 
 export async function fetchAppUserIdentityRow(
   sb: SupabaseClient,
   userId: string,
 ): Promise<{ data: any; error: any }> {
-  return sb.from('app_users').select(APP_USER_IDENTITY_COLUMNS).eq('user_id', userId).limit(1).maybeSingle();
+  return sb.from('app_users').select(APP_USER_IDENTITY_COLUMNS).eq('user_id', userId).maybeSingle();
 }

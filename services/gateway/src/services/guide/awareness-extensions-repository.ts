@@ -52,7 +52,6 @@ export async function fetchProfileCompletionFields(supabase: SupabaseClient, use
     .from('profiles')
     .select('first_name, last_name, date_of_birth, gender, city, country, avatar_url')
     .eq('user_id', userId)
-    .limit(1)
     .maybeSingle();
 }
 

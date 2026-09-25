@@ -60,7 +60,7 @@ describe('identity-guardrail-block-repository queries the right tables', () => {
     const calls: any[] = [];
     const q: any = {
       select: (c: string) => { calls.push(['select', c]); return q; },
-      eq: () => q, limit: () => q, maybeSingle: async () => ({ data: null, error: null }),
+      eq: () => q, maybeSingle: async () => ({ data: null, error: null }),
     };
     return { calls, sb: { from: (t: string) => { calls.push(['from', t]); return q; } } };
   }
