@@ -53,3 +53,4 @@ AC-6: The voice payload guard changes only by the new rule (+262 bytes per scena
 TEST: services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.test.ts
 
 AC-7 (staging, after merge): test-account Nova sessions report `brain_context_built` with `social_context` kept; `instruction_budget` shows no trims; the spoken question above is answered with Mariia Maksina.
+UI: https://preview-aws.vitanaland.com as the test account (Nova, de); ask Vitana "Wem folge ich eigentlich in der Community?" — scripts/orb/verify-vertex-serbian-bridge.mjs --utterance-pcm drives the same turn over SSE
