@@ -2097,6 +2097,45 @@
       });
     }
 
+    // VTID-04547: open the WebSocket (or claim the prewarmed one) NOW, in
+    // parallel with the continuity fetch below, instead of after it. The
+    // continuity round trip used to sit serially in front of the socket
+    // handshake on every authenticated tap. The `start` frame itself is still
+    // sent only once BOTH the socket is connected AND the start payload has
+    // been built from the resolved (or aborted) continuity — _sessionStartWs
+    // holds it until _wsEarly.release(startPayload) below — so the payload is
+    // byte-identical to before. SSE is deliberately NOT started early: its
+    // POST /live/session/start body IS the payload, which needs continuity.
+    var _wsEarly = null;
+    if (_useWsTransport()) {
+      _wsEarly = { released: false, release: null, promise: null };
+      var _wsPayloadGate = new Promise(function (resolveGate) {
+        _wsEarly.release = function (payload) {
+          if (_wsEarly.released) return;
+          _wsEarly.released = true;
+          resolveGate(payload || null);
+        };
+      });
+      _wsEarly.promise = _sessionStartWs(_wsPayloadGate);
+      // Observed later (await below); swallow here so a socket that dies
+      // while continuity is still loading is not reported as unhandled.
+      _wsEarly.promise.catch(function () { /* handled at the await site */ });
+    }
+
+    // VTID-04547: the activation chime is LOCAL audio into the already-unlocked
+    // context — it never needed to wait for the continuity round trip. It
+    // plays at the same point relative to the tap as before, minus that wait.
+    // (BOOTSTRAP-ORB-IOS-UNLOCK: the ctx create + silent-buffer unlock +
+    // resume() above ran before any await, so the gesture window is intact.)
+    _playChime(_s.playbackCtx);
+
+    // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
+    // The chime ends ~400 ms after this call; without an active source after
+    // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
+    // greeting and the first chunks drop silently. Stopped in the audio_out
+    // handler on first real chunk, and in _sessionStop on teardown.
+    _startCtxKeepAlive();
+
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
     // in-memory fields, so without this the reconnect-context builder below
@@ -2173,16 +2212,9 @@
     // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
     // silent-buffer unlock + resume() was MOVED UP to before the continuity
     // fetch above (DEV-COMHU-ORB-AUDIO-FIRST-GREETING) — it MUST run before any
-    // await so the mobile gesture window is not lost. The ctx is already unlocked
-    // by here; just play the activation chime into it.
-    _playChime(_s.playbackCtx);
-
-    // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
-    // The chime ends ~400 ms after this call; without an active source after
-    // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
-    // greeting and the first chunks drop silently. Stopped in the audio_out
-    // handler on first real chunk, and in _sessionStop on teardown.
-    _startCtxKeepAlive();
+    // await so the mobile gesture window is not lost. VTID-04547 moved the
+    // activation chime + ctx keep-alive up there too (before the continuity
+    // await), so nothing audio-related is left to do here.
 
     try {
       var headers = { 'Content-Type': 'application/json' };
@@ -2356,9 +2388,22 @@
       // A server-side REJECTION (401 AUTH_TOKEN_INVALID and friends) is NOT a
       // transport failure — SSE would be rejected identically — so those are
       // rethrown for the caller's error handling instead of retried.
-      if (_useWsTransport()) {
+      //
+      // VTID-04547: normally the socket was already opened (or the prewarmed
+      // one claimed) above, before the continuity fetch — releasing the built
+      // payload here is what lets it send `start`. The cold `_sessionStartWs(
+      // startPayload)` call below only runs if the transport preference
+      // flipped to WS while continuity was loading (the server transport
+      // answer arrived in that window), i.e. exactly what this line did
+      // before VTID-04547.
+      if (_wsEarly || _useWsTransport()) {
         try {
-          await _sessionStartWs(startPayload);
+          if (_wsEarly) {
+            _wsEarly.release(startPayload);
+            await _wsEarly.promise;
+          } else {
+            await _sessionStartWs(startPayload);
+          }
           return;
         } catch (wsErr) {
           if (wsErr && wsErr.__vtOrbServerRejected) throw wsErr;
@@ -2494,6 +2539,9 @@
       _updateUI();
     } catch (err) {
       console.error('[VTOrb] Failed to start session:', err);
+      // VTID-04547: if we failed BEFORE the early-opened socket was given its
+      // payload, release it empty so it closes instead of idling open.
+      if (_wsEarly && !_wsEarly.released) _wsEarly.release(null);
       _s.active = false;
       _s.sessionId = null;
       _s.liveError = err.message;
@@ -2534,8 +2582,22 @@
   // audio-ready signal, watchdogs) — only the wire changes. The gateway's
   // WS path sends the same message shapes the SSE stream does, so all
   // post-handshake traffic funnels into the shared _handleMessage.
+  //
+  // VTID-04547: `startPayload` may be the payload object (sent as soon as the
+  // socket is ready, exactly as before) OR a promise of it. _sessionStart
+  // passes a promise so the socket opens / the prewarmed socket is claimed
+  // WHILE the continuity fetch is still in flight; the `start` frame is sent
+  // only once BOTH the socket is connected AND the promise has resolved, so
+  // it carries the same payload it always did. A promise that resolves to
+  // null (the start aborted before a payload existed) closes the socket
+  // without ever sending `start`. The 8s start budget is armed when the
+  // payload arrives — the point at which this function used to be called —
+  // so its semantics are unchanged.
   function _sessionStartWs(startPayload) {
     return new Promise(function (resolve, reject) {
+      var payloadPending = !!(startPayload && typeof startPayload.then === 'function');
+      var payloadPromise = payloadPending ? startPayload : null;
+      if (payloadPending) startPayload = null;
       // VTID-03779: claim an already-open, already-prewarmed socket if one
       // is available instead of opening a fresh connection — this is the
       // "cold start becomes a warm start" reuse point. Any prewarm
@@ -2553,13 +2615,22 @@
       }
       if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
       var settled = false;
+      // VTID-04547: a reused socket already completed its 'connected'
+      // handshake during prewarm; a fresh one has not yet.
+      var connected = reused;
+      var startSent = false;
+      var startTimer = null;
       // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
-      var startTimer = setTimeout(function () {
-        if (settled) return;
-        settled = true;
-        try { w.close(); } catch (e) { /* noop */ }
-        reject(new Error('WS session start timed out after 8s'));
-      }, 8000);
+      function armStartTimer() {
+        if (startTimer || settled) return;
+        startTimer = setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          try { w.close(); } catch (e) { /* noop */ }
+          reject(new Error('WS session start timed out after 8s'));
+        }, 8000);
+      }
+      if (!payloadPending) armStartTimer();
       function bail(reason) {
         // User pressed X / overlay hidden mid-handshake — mirror the SSE
         // path's stranded-session cleanup (stop + close releases upstream).
@@ -2575,7 +2646,8 @@
         try { msg = JSON.parse(event.data); } catch (e) { return; }
         if (msg.type === 'connected') {
           if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
-          try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          connected = true;
+          sendStart(); // no-op until the payload has resolved (VTID-04547)
           return;
         }
         // VTID-03471: the gateway rejected the start (bad/expired JWT, origin
@@ -2640,14 +2712,46 @@
       };
       w.onerror = function () { /* onclose carries the recovery decision */ };
 
-      // VTID-03779: a reused socket already completed the 'connected'
-      // handshake during prewarm — that message will never arrive again on
-      // THIS socket, so send 'start' immediately instead of waiting for it.
-      // A fresh socket is unaffected: it waits for 'connected' exactly as
-      // before (see the onmessage handler above).
-      if (reused) {
+      // VTID-04547: the one place `start` is sent — only once the socket is
+      // connected (fresh: its 'connected' message; reused: already true) AND
+      // the payload exists. Re-checks the overlay-closed guard at the moment
+      // of sending, since with an early-opened socket the user may have
+      // closed the overlay while continuity was still loading.
+      function sendStart() {
+        if (startSent || settled || !connected || payloadPending) return;
+        if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
+        startSent = true;
         try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); }
         catch (e) { /* onclose covers */ }
+      }
+
+      // VTID-03779: a reused socket already completed the 'connected'
+      // handshake during prewarm — that message will never arrive again on
+      // THIS socket, so send 'start' immediately (once the payload exists)
+      // instead of waiting for it. A fresh socket is unaffected: it waits
+      // for 'connected' exactly as before (see the onmessage handler above).
+      if (reused) {
+        sendStart();
+      }
+
+      // VTID-04547: payload delivered asynchronously by _sessionStart.
+      if (payloadPromise) {
+        payloadPromise.then(function (payload) {
+          if (settled) return;
+          if (!payload) {
+            // Start aborted before a payload existed — close without `start`.
+            settled = true;
+            clearTimeout(startTimer);
+            try { w.onopen = null; w.onmessage = null; w.onerror = null; w.onclose = null; } catch (e) { /* noop */ }
+            try { w.close(); } catch (e) { /* noop */ }
+            resolve();
+            return;
+          }
+          startPayload = payload;
+          payloadPending = false;
+          armStartTimer();
+          sendStart();
+        });
       }
     });
   }
