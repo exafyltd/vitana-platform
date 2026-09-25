@@ -364,6 +364,72 @@ async function _runRetrievalSearch(
   };
 }
 
+/**
+ * VTID-04581: save a fact the member just stated, and report what is already
+ * stored (profile field, same value, or a conflicting value) so the model
+ * can answer truthfully in the same turn. See services/memory/remember-fact-tool.ts.
+ */
+export async function tool_remember_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'remember_fact requires a tenant_id on the session.' };
+  const { runRememberFact, formatRememberFactResult, profileColumnFor } = await import('./memory/remember-fact-tool');
+  const { rememberFact } = await import('./memory/remember');
+  const result = await runRememberFact(
+    {
+      tenant_id: id.tenant_id,
+      user_id: id.user_id,
+      fact_key: String(args.fact_key ?? ''),
+      fact_value: String(args.fact_value ?? ''),
+      about: typeof args.about === 'string' ? args.about : undefined,
+      confirm_replace: args.confirm_replace === true || args.confirm_replace === 'true',
+      thread_id: id.thread_id ?? id.session_id ?? null,
+    },
+    {
+      async readCurrentFact(tenantId, userId, factKey) {
+        const { data } = await sb
+          .from('memory_facts')
+          .select('fact_value, extracted_at')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
+          .eq('fact_key', factKey)
+          .is('superseded_at', null)
+          .order('extracted_at', { ascending: false })
+          .limit(1);
+        const row = Array.isArray(data) ? data[0] : null;
+        return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
+      },
+      async listCurrentFacts(tenantId, userId) {
+        const { data } = await sb
+          .from('memory_facts')
+          .select('fact_key, fact_value, extracted_at')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
+          .is('superseded_at', null)
+          .order('extracted_at', { ascending: false })
+          .limit(500);
+        return (Array.isArray(data) ? data : []).map((r: any) => ({
+          fact_key: String(r.fact_key),
+          fact_value: String(r.fact_value),
+          extracted_at: r.extracted_at ?? null,
+        }));
+      },
+      async readProfileValue(userId, key) {
+        const column = profileColumnFor(key);
+        if (!column) return null;
+        const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
+        const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+      },
+      write: rememberFact,
+    },
+  );
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
+  return { ok: true, result, text: formatRememberFactResult(result) };
+}
+
 export async function tool_search_memory(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -5734,6 +5800,7 @@ type OrbToolHandler = (
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
+  remember_fact: tool_remember_fact,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),

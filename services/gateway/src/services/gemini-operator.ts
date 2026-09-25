@@ -48,6 +48,8 @@ import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
+import { toDevRecommendations, type DevRecommendationSnapshot } from './operator-dev-recommendations';
+import { findFabricatedToolClaims, fabricatedToolNotice } from './operator-fabricated-tool-guard';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
@@ -502,16 +504,15 @@ Return results as a string or JSON that can be displayed to the user.`,
     // VTID-01221: Autopilot Recommendation Sync - Primary tool
     {
       name: 'autopilot_get_recommendations',
-      description: `Fetch recommended next actions from Autopilot for the current context.
+      description: `Fetch the Dev Autopilot backlog: the open developer findings (scanner and impact-rule), the gate holding each one (needs a human / system blocker / waiting / moving), the executions in flight and awaiting approval, the 7-day success rate and the supervisor alerts. Same data as the Command Hub Autopilot screens.
 
-ALWAYS call this tool BEFORE giving "next steps" advice when:
-- User asks "what next", "what should I do", "what do we do now", "recommend"
-- A VTID is selected or being discussed
-- A pipeline/deploy is in progress or just completed
+It NEVER returns community member recommendations (profile, photo, streak nudges) — those belong to members, not to this console.
 
-Returns prioritized recommendations with rationale, commands, and verification steps.
-Autopilot is the SINGLE SOURCE OF TRUTH for "what to do next".
-Do NOT invent recommendations if this tool returns results.`,
+Call it BEFORE giving "next steps" advice when:
+- The user asks "what next", "what should we work on", "what is the priority", "recommend", or for the Dev Autopilot recommendations/backlog/findings
+- A VTID is selected or being discussed (pass vtid to narrow to that finding)
+
+Findings blocked by a human come first — those are what the operator can unblock. Do NOT invent findings if this tool returns results.`,
       parameters: {
         type: 'object',
         properties: {
@@ -2374,70 +2375,18 @@ async function executeGetRecommendations(
   }).catch(() => {});
 
   try {
-    // Call the existing recommendations API
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase not configured');
+    // VTID-04582: the developer backlog, never the community recommender. The
+    // get_autopilot_recommendations RPC with p_user_id=null returned every
+    // member's nudges; the supervisor snapshot is what the Command Hub
+    // Autopilot screens render (open findings + the gate holding each one).
+    const { buildSupervisorSnapshot } = await import('./dev-autopilot-supervisor');
+    const snap = await buildSupervisorSnapshot();
+    if (!snap.ok) {
+      throw new Error(`Dev Autopilot supervisor snapshot unavailable: ${snap.error}`);
     }
-
-    // Build query params for the recommendations API
-    const queryParams = new URLSearchParams({
-      status: 'new,active',
-      limit: '10',
-    });
-
-    const response = await fetch(
-      `${supabaseUrl}/rest/v1/rpc/get_autopilot_recommendations`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({
-          p_status: ['new', 'active'],
-          p_limit: 10,
-          p_offset: 0,
-          p_user_id: null,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Recommendations API error: ${response.status} - ${errorText}`);
-    }
-
-    const rawRecommendations = await response.json() as any[];
+    const backlog = toDevRecommendations(snap as unknown as DevRecommendationSnapshot, { vtid });
+    const filteredRecs = backlog.recommendations;
     const durationMs = Date.now() - startTime;
-
-    // Transform to Recommendation format
-    const recommendations: Recommendation[] = rawRecommendations.map(r => ({
-      id: r.id,
-      title: r.title,
-      priority: r.priority || 'medium',
-      rationale: r.rationale || r.description || '',
-      suggested_commands: r.suggested_commands || [],
-      verification: r.verification_steps || [],
-      related_vtids: r.related_vtids || (r.vtid ? [r.vtid] : []),
-      requires_approval: r.requires_approval || false,
-      source: r.source_type,
-    }));
-
-    // Filter by VTID if specified
-    let filteredRecs = recommendations;
-    if (vtid) {
-      filteredRecs = recommendations.filter(r =>
-        r.related_vtids?.includes(vtid) || r.rationale?.includes(vtid)
-      );
-      // If no VTID-specific recs, return all but note the filter
-      if (filteredRecs.length === 0) {
-        filteredRecs = recommendations;
-      }
-    }
 
     // Emit received event
     await recommendationSyncEvents.recommendationsReceived(
@@ -2463,7 +2412,7 @@ async function executeGetRecommendations(
     return {
       ok: true,
       data: {
-        recommendations: filteredRecs,
+        ...backlog,
         count: filteredRecs.length,
         formatted: syncBrief.formatted,
         message: syncBrief.formatted,
@@ -4285,6 +4234,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_reject_execution: Reject a held execution — deletes the pushed branch and cancels it with the recorded reason. Takes execution_id and an optional reason.
 - autopilot_activate_recommendation: Activate a specific Dev Autopilot recommendation by id — allocates its VTID (idempotent) and, for a manually-bridgeable source_type, starts a real execution with the cooldown skipped. Takes recommendation_id.
 - autopilot_cancel_execution: Cancel a queued (cooling) or RUNNING execution — the agent is stopped, nothing is pushed or opened. With no execution_id it only lists what can be cancelled. Takes an optional execution_id and an optional reason.
+- autopilot_get_recommendations: The Dev Autopilot backlog — open developer findings with the gate holding each one, executions in flight or awaiting approval, and supervisor alerts. Never community member recommendations. Takes an optional vtid.
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
@@ -4296,6 +4246,8 @@ function getOperatorSystemPrompt(): string {
 - An explicit decision on a held execution the user names (e.g., "approve 4f7d5ea4", "reject 4f7d5ea4, wrong approach") → call autopilot_approve_execution or autopilot_reject_execution
 - An explicit request to activate a specific Dev Autopilot recommendation by id (e.g., "activate recommendation a1b2c3d4-...") → call autopilot_activate_recommendation
 - A request to stop/cancel/abort a queued or running execution (e.g., "cancel 9a4d2c7e", "stop that run, wrong file", "what is running that I can cancel?") → call autopilot_cancel_execution (with no id to list, with the id they name to cancel)
+- Questions about what to work on next, the priority, or the Dev Autopilot recommendations/backlog/findings → call autopilot_get_recommendations
+- The CURRENT state of one execution (is it held, has its PR opened) → call autopilot_review_execution; OASIS events are history, not current state
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
 
@@ -4316,7 +4268,8 @@ function getOperatorSystemPrompt(): string {
   - If NO (e.g., "create a task", "make a new ticket", "log this"): ask the user for a title and description BEFORE calling the tool. Example: "Sure! What should this task be about? Please give me a title and a brief description."
 - NEVER generate fake VTID numbers. VTIDs are only created by the autopilot_create_task tool.
 - NEVER claim a task was created unless the tool returned a successful result.
-- If a tool call fails, tell the user honestly.`;
+- If a tool call fails, tell the user honestly.
+- When the user says an earlier answer was wrong, check what the tools actually returned in this conversation before replying. If the user is right, say so plainly and correct it; never claim a tool returned something it did not.`;
 
   if (opConfig.calculation_directive) {
     prompt += `\n\n${opConfig.calculation_directive}`;
@@ -4641,6 +4594,26 @@ function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: 
  *
  * VTID-01106: Added optional systemInstruction override for ORB memory context
  */
+/**
+ * VTID-04582: a reply that presents a tool call which did not run this turn
+ * gets a visible notice and an OASIS event (see operator-fabricated-tool-guard).
+ */
+function guardReplyAgainstFabricatedToolCalls(reply: string, calledTools: string[], threadId: string): string {
+  const declared = GEMINI_TOOL_DEFINITIONS.functionDeclarations.map((d: { name: string }) => d.name);
+  const fabricated = findFabricatedToolClaims(reply, calledTools, declared);
+  if (fabricated.length === 0) return reply;
+  console.warn(`[VTID-04582] reply presents tool call(s) that did not run: ${fabricated.join(', ')} (thread ${threadId})`);
+  emitOasisEvent({
+    vtid: 'VTID-04582',
+    type: 'operator.reply.fabricated_tool_call',
+    source: 'operator-console',
+    status: 'warning',
+    message: `Operator reply presented tool call(s) that did not run: ${fabricated.join(', ')}`,
+    payload: { threadId, fabricated, called: calledTools },
+  }).catch(() => {});
+  return reply + fabricatedToolNotice(fabricated);
+}
+
 export async function processWithGemini(input: {
   text: string;
   threadId: string;
@@ -4773,7 +4746,7 @@ export async function processWithGemini(input: {
           { model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage },
         ]);
         return {
-          reply: finalResponse.reply,
+          reply: guardReplyAgainstFabricatedToolCalls(finalResponse.reply, toolResults.map((r) => r.name), threadId),
           toolResults,
           meta: {
             provider: vertexResponse.provider ?? 'router',
@@ -4793,7 +4766,7 @@ export async function processWithGemini(input: {
 
       // No tool calls, return Vertex's direct response
       return {
-        reply: vertexResponse.reply,
+        reply: guardReplyAgainstFabricatedToolCalls(vertexResponse.reply, [], threadId),
         meta: {
           provider: vertexResponse.provider ?? 'router',
           model: vertexResponse.model ?? 'router',

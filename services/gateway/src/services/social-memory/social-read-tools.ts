@@ -178,18 +178,41 @@ export async function runListFollows(
   }
   const edges = await fetchFollowEdges(identity.user_id, blocked, 50);
   const list = direction === 'followers' ? edges.followers : edges.following;
+  const otherDirection = direction === 'followers' ? 'following' : 'followers';
   const otherList = direction === 'followers' ? edges.following : edges.followers;
   const otherIds = new Set(otherList.map((e) => e.person.user_id));
   const mutuals = list.filter((e) => otherIds.has(e.person.user_id)).length;
+
+  // VTID-04585: both directions come from the same query, so the result names
+  // both, labelled. Measured on staging 2026-09-25: Nova answered "Wem folge
+  // ich?" by calling list_followers (not even in its declared catalog) and
+  // reported "you have no followers" to a user who follows one member. With
+  // both directions in the result, a wrong pick still answers correctly.
+  const otherNames = otherList.slice(0, 12).map((e) => personName(e.person));
+  const otherMore = otherList.length > otherNames.length ? ` and ${otherList.length - otherNames.length} more` : '';
+  const otherLine =
+    otherDirection === 'following'
+      ? otherList.length === 0
+        ? 'The user follows nobody.'
+        : `The user follows ${otherList.length} member(s): ${otherNames.join(', ')}${otherMore}.`
+      : otherList.length === 0
+        ? 'Nobody follows the user.'
+        : `${otherList.length} member(s) follow the user: ${otherNames.join(', ')}${otherMore}.`;
+  const bothDirections =
+    ` OTHER DIRECTION (${otherDirection}): ${otherLine}` +
+    ' Answer the direction the user actually asked about: "Wem folge ich?" / "who do I follow" means the members the user follows;' +
+    ' "Wer folgt mir?" / "who follows me" means the user\'s followers. Never answer one with the other.';
+  const other = { direction: otherDirection, count: otherList.length, names: otherNames };
 
   if (list.length === 0) {
     return {
       ok: true,
       text:
-        direction === 'followers'
+        (direction === 'followers'
           ? 'Nobody follows the user yet. Answer plainly and, if it fits, suggest posting or joining an activity to get discovered — never deflect to "search the member list".'
-          : 'The user does not follow anyone yet. Answer plainly and, if it fits, offer to find interesting members to follow.',
-      result: { direction, count: 0, names: [] },
+          : 'The user does not follow anyone yet. Answer plainly and, if it fits, offer to find interesting members to follow.') +
+        bothDirections,
+      result: { direction, count: 0, names: [], other },
     };
   }
 
@@ -200,13 +223,15 @@ export async function runListFollows(
     ok: true,
     text:
       `${who}: ${names.join(', ')}${more}. ${mutuals > 0 ? `${mutuals} of them are mutual. ` : ''}` +
-      'Answer the question directly with the count and a few names — NEVER say you cannot tell, and NEVER deflect to a manual member search.',
+      'Answer the question directly with the count and a few names — NEVER say you cannot tell, and NEVER deflect to a manual member search.' +
+      bothDirections,
     result: {
       direction,
       count: list.length,
       mutual_count: mutuals,
       names,
       people: list.slice(0, 12).map((e) => ({ user_id: e.person.user_id, name: personName(e.person) })),
+      other,
     },
   };
 }
