@@ -1,0 +1,26 @@
+# VTID-04542 — commands run on the integrated branch (head 61058f3f, merged with origin/main 458a1dc)
+
+cd services/gateway && npx tsc --noEmit -p .
+  -> exit 0, no errors
+
+cd services/gateway && npx jest --maxWorkers=4 --silent
+  -> Test Suites: 1 skipped, 1285 passed, 1285 of 1286 total
+  -> Tests: 29 skipped, 6 todo, 20556 passed, 20591 total
+  -> Snapshots: 109 passed, 109 total   (outputs/gateway-full-jest-summary.txt)
+
+npm run test:support         -> 4 suites, 82 passed          (outputs/test-support.txt)
+npm run test:operator        -> 1 suite, 21 passed           (outputs/test-operator.txt)
+npm run test:voice-identity  -> 28 passed, 56 snapshots      (outputs/test-voice-identity.txt)
+  Snapshots recorded on origin/main 458a1dc ALONE (throwaway worktree, jest -u),
+  then the merged branch run against them unchanged: 28/28, 56/56.
+
+node scripts/conversation/generate-flag-pins.mjs --check   -> pins file is current
+node scripts/ci/validator-path-guard.cjs <changed> gateway_backend -> APPROVED (4 files NOT JUDGED: workflow, guard, package.json, symbol index)
+GITHUB_HEAD_REF=... PR_TITLE="... (VTID-04542)" node scripts/ci/command-hub-ownership-guard.js -> PASSED (allowlisted-marker)
+node --check services/gateway/src/frontend/command-hub/orb-widget.js -> ok
+
+# exafyltd/vitana-v1 (branch claude/orb-interruption-voice-comms-x3wh7s, rebased on origin/main f6a4de32)
+npx vitest run               -> 181 files, 1073 tests passed
+npx vitest run src/hooks/useOrbVoiceWidget (after rebase) -> 3 files, 21 passed
+npm run build                -> built
+npx eslint src/hooks/useOrbVoiceWidget*.ts -> 7 problems, identical to the pre-change baseline (none new)
