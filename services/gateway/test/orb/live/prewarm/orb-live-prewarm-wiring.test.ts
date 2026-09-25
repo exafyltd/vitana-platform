@@ -70,10 +70,13 @@ describe('VTID-03779 orb-live.ts prewarm wiring', () => {
       // be reused on /admin, /backoffice or /command-hub.
       // VTID-04445: and on the speaking persona — the login prewarm carries
       // Vitana's female voice, so a Devon hand-off reconnect never claims it.
-      /const prewarmedNova = session\.identity\?\.user_id && !isWorkSurface\(sessionSurface\) && _prewarmPersonaIsVitana\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/,
+      // VTID-04554: and on the full-context flag being off (with it on, the
+      // claim moves behind a fingerprint check in the cold branch).
+      /const prewarmedNova = session\.identity\?\.user_id && !isWorkSurface\(sessionSurface\) && _prewarmPersonaIsVitana && !_prewarmFullContext\s*\n\s*\? consumePrewarmedNovaSession\(session\.identity\.user_id\)/,
     );
     expect(code).toMatch(/const _prewarmPersonaIsVitana =\s*\n\s*\(\(\(session as any\)\.activePersona as string \| undefined\) \|\| 'vitana'\) === 'vitana';/);
-    expect(code).toMatch(/const reusedWarmNova = !!prewarmedNova;/);
+    // VTID-04554: `let` — a fingerprint-matched full-context claim also sets it.
+    expect(code).toMatch(/let reusedWarmNova = !!prewarmedNova;/);
     // Both branches must exist: reuse (if) and cold connect (else).
     expect(code).toMatch(/if \(prewarmedNova\) \{/);
   });
