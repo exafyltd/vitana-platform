@@ -48,6 +48,18 @@ beforeEach(() => {
 });
 
 describe('VTID-04542 client latency beacon', () => {
+  it('a cycle closed before any session (empty session_id, as the widget sends it) is recorded with session_id null, not rejected', async () => {
+    // Found on staging: the widget flushes a tap cycle closed before its
+    // session existed with session_id '' and the old schema answered 400.
+    const res = await request(makeApp({ user_id: 'user-1' }))
+      .post('/api/v1/orb/live/client-latency')
+      .send({ session_id: '', entry: 'desktop', transport: 'ws', marks: { tap: 0, continuity_done: 407 }, prewarm_socket_ready: false });
+    expect(res.status).toBe(204);
+    await flush();
+    expect(mockEmit).toHaveBeenCalledTimes(1);
+    expect(mockEmit.mock.calls[0][0].payload).toEqual(expect.objectContaining({ session_id: null, entry: 'desktop', transport: 'ws' }));
+  });
+
   it('valid body → 204 and one voice.latency.client event with body + user_id + env', async () => {
     const res = await request(makeApp({ user_id: 'user-1' }))
       .post('/api/v1/orb/live/client-latency')
