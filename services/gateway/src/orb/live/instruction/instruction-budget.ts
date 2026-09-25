@@ -34,6 +34,8 @@
  * logging the structured overflow warning when trimming occurs.
  */
 
+import { packBootstrapContext } from './bootstrap-packer';
+
 /**
  * Default aggregate byte budget for the assembled `system_instruction` text.
  * 30 KB leaves headroom under the ~32 KB Vertex Live `setup` envelope budget
@@ -118,6 +120,11 @@ export interface InstructionBudgetResult {
   totalBytesAfter: number;
   /** Section kinds that were dropped (in the order they were dropped). */
   trimmedSections: InstructionSectionKind[];
+  /**
+   * VTID-04534: section kinds that were SHORTENED but kept (member context
+   * repacked smaller, history cut to its most recent turns).
+   */
+  shortenedSections: InstructionSectionKind[];
   /** Per-section UTF-8 byte sizes of the ORIGINAL (pre-trim) input. */
   sectionBytes: Record<string, number>;
 }
@@ -177,14 +184,47 @@ export function enforceInstructionBudget(
       totalBytesBefore,
       totalBytesAfter: totalBytesBefore,
       trimmedSections: [],
+      shortenedSections: [],
       sectionBytes,
     };
   }
 
   const trimmedSections: InstructionSectionKind[] = [];
+  const shortenedSections: InstructionSectionKind[] = [];
+  const over = () => byteLength(assemble(working)) - budget;
+
+  // VTID-04534 — shrink before dropping. The old guard dropped whole sections,
+  // so once the static scaffold alone neared the budget the member's context
+  // and the conversation history vanished on nearly every session (measured
+  // on staging 2026-09-25: bootstrap omitted in 106/133 sessions over 7 days,
+  // history omitted in 8/9 sessions that day — "Vitana does not know what I
+  // just said"). Now, in order:
+  //   1. bootstrap → repacked down to BOOTSTRAP floor (priority-aware)
+  //   2. history   → cut to its most recent turns, down to HISTORY floor
+  //   3. bootstrap → dropped
+  //   4. history   → dropped
+  //   5. specialist → dropped (unchanged: last, as before)
+  for (const kind of ['bootstrap', 'history'] as const) {
+    if (over() <= 0) break;
+    const floor = SECTION_TRIM_FLOORS[kind];
+    // Shrink the largest section of this kind first.
+    const parts = working.filter((p) => p.kind === kind).sort((a, b) => byteLength(b.text) - byteLength(a.text));
+    for (const part of parts) {
+      const excess = over();
+      if (excess <= 0) break;
+      const size = byteLength(part.text);
+      const target = Math.max(floor, size - excess);
+      if (target >= size) continue;
+      const shrunk = kind === 'history' ? shrinkHistoryToBytes(part.text, target) : shrinkBootstrapToBytes(part.text, target);
+      if (shrunk !== null && byteLength(shrunk) < size) {
+        part.text = shrunk;
+        if (!shortenedSections.includes(kind)) shortenedSections.push(kind);
+      }
+    }
+  }
 
   for (const dropKind of DROP_ORDER) {
-    if (byteLength(assemble(working)) <= budget) break;
+    if (over() <= 0) break;
     if (PRESERVED.has(dropKind)) continue; // defensive; DROP_ORDER excludes these
 
     let droppedAny = false;
@@ -194,7 +234,11 @@ export function enforceInstructionBudget(
         droppedAny = true;
       }
     }
-    if (droppedAny) trimmedSections.push(dropKind);
+    if (droppedAny) {
+      trimmedSections.push(dropKind);
+      const i = shortenedSections.indexOf(dropKind);
+      if (i >= 0) shortenedSections.splice(i, 1);
+    }
   }
 
   const text = assemble(working);
@@ -203,8 +247,67 @@ export function enforceInstructionBudget(
     totalBytesBefore,
     totalBytesAfter: byteLength(text),
     trimmedSections,
+    shortenedSections,
     sectionBytes,
   };
+}
+
+/**
+ * VTID-04534: the smallest a section may be shrunk to before it is dropped
+ * whole. Below these the remainder is not worth its bytes.
+ */
+export const SECTION_TRIM_FLOORS = { bootstrap: 3_000, history: 1_200 } as const;
+
+/** Sentinel line left where older history turns were cut. */
+export const HISTORY_EARLIER_TURNS_OMITTED = '[earlier turns omitted to fit the setup budget]';
+
+/**
+ * Keep the history block's opening tag and preamble, then as many of the MOST
+ * RECENT turn lines as fit in `maxBytes`, then the closing tag. Returns null
+ * when not even one turn fits (the caller then drops the block whole).
+ * Pure.
+ */
+export function shrinkHistoryToBytes(block: string, maxBytes: number): string | null {
+  const open = block.indexOf(INSTRUCTION_MARKERS.HISTORY_OPEN);
+  const close = block.lastIndexOf(INSTRUCTION_MARKERS.HISTORY_CLOSE);
+  if (open < 0 || close < 0 || close < open) return null;
+  const inner = block.slice(open + INSTRUCTION_MARKERS.HISTORY_OPEN.length, close);
+  const lines = inner.split('\n');
+  // lines[0] is the remainder of the tag line (normally ''), lines[1] the preamble.
+  const headCount = Math.min(2, lines.length);
+  const head = block.slice(0, open) + INSTRUCTION_MARKERS.HISTORY_OPEN + lines.slice(0, headCount).join('\n');
+  const tail = '\n' + INSTRUCTION_MARKERS.HISTORY_CLOSE + block.slice(close + INSTRUCTION_MARKERS.HISTORY_CLOSE.length);
+  const turns = lines.slice(headCount).filter((l) => l.length > 0);
+  const kept: string[] = [];
+  let used = byteLength(head) + byteLength(tail) + byteLength('\n' + HISTORY_EARLIER_TURNS_OMITTED);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const cost = byteLength('\n' + turns[i]);
+    if (used + cost > maxBytes) break;
+    kept.unshift(turns[i]);
+    used += cost;
+  }
+  if (kept.length === 0) return null;
+  const omitted = kept.length < turns.length ? '\n' + HISTORY_EARLIER_TURNS_OMITTED : '';
+  return head + omitted + '\n' + kept.join('\n') + tail;
+}
+
+/**
+ * Repack a bootstrap section with the priority packer (VTID-04393) until it
+ * fits `maxBytes`, so pinned blocks (identity, the session-owning modes, the
+ * memory self-check) are the last to go. Returns null when even the pinned
+ * minimum does not fit. Pure.
+ */
+export function shrinkBootstrapToBytes(text: string, maxBytes: number): string | null {
+  const bytes = byteLength(text);
+  if (bytes <= maxBytes) return text;
+  const ratio = text.length / Math.max(1, bytes);
+  let maxChars = Math.floor(maxBytes * ratio);
+  for (let i = 0; i < 12 && maxChars > 200; i++) {
+    const packed = packBootstrapContext(text, maxChars).text;
+    if (byteLength(packed) <= maxBytes) return packed;
+    maxChars = Math.floor(maxChars * 0.85);
+  }
+  return null;
 }
 
 /**
@@ -372,6 +475,8 @@ export type InstructionBudgetDiag = {
   total_bytes_after: number;
   trimmed: boolean;
   trimmed_sections: InstructionSectionKind[];
+  /** VTID-04534: kinds shortened but kept. */
+  shortened_sections: InstructionSectionKind[];
   still_over_budget: boolean;
   section_bytes: Record<string, number>;
 };
@@ -386,6 +491,7 @@ export function instructionBudgetDiagPayload(
     total_bytes_after: result.totalBytesAfter,
     trimmed: result.trimmedSections.length > 0,
     trimmed_sections: [...result.trimmedSections],
+    shortened_sections: [...(result.shortenedSections ?? [])],
     still_over_budget: result.totalBytesAfter > budget,
     section_bytes: { ...result.sectionBytes },
   };

@@ -8338,8 +8338,11 @@ async function connectToLiveAPI(
 
           const budgetResult = enforceInstructionBudget(sections);
 
+          // VTID-04534: a SHORTENED section (member context repacked, history
+          // cut to its latest turns) changes the text too — apply it.
           if (
             budgetResult.trimmedSections.length > 0 ||
+            budgetResult.shortenedSections.length > 0 ||
             budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
           ) {
             // Apply the trimmed text back onto the envelope.
@@ -8359,6 +8362,7 @@ async function connectToLiveAPI(
                 // (nothing left to trim → best-effort send / fail-open).
                 stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
                 trimmedSections: budgetResult.trimmedSections,
+                shortenedSections: budgetResult.shortenedSections,
                 sectionBytes: budgetResult.sectionBytes,
               }),
             );

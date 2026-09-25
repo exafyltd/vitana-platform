@@ -108,6 +108,8 @@ export interface GuardAggregate {
     trimmed_rate: number | null;
     still_over_budget: number;
     trimmed_sections: Record<string, number>;
+    /** VTID-04534: sections shortened but kept (context repacked, history cut to recent turns). */
+    shortened_sections: Record<string, number>;
     bytes_before_p50: number | null;
     bytes_before_p90: number | null;
   };
@@ -120,6 +122,7 @@ export function summarizeGuards(rows: AggregateRow[]): GuardAggregate {
   const loopTools = new Map<string, number>();
   const backendKinds: Record<string, number> = {};
   const trimmedSections: Record<string, number> = {};
+  const shortenedSections: Record<string, number> = {};
   const budgetBytes: number[] = [];
   let budgetTrimmed = 0;
   let stillOver = 0;
@@ -152,6 +155,9 @@ export function summarizeGuards(rows: AggregateRow[]): GuardAggregate {
         if (Array.isArray(m.trimmed_sections)) {
           for (const s of m.trimmed_sections as unknown[]) trimmedSections[String(s)] = (trimmedSections[String(s)] ?? 0) + 1;
         }
+        if (Array.isArray(m.shortened_sections)) {
+          for (const s of m.shortened_sections as unknown[]) shortenedSections[String(s)] = (shortenedSections[String(s)] ?? 0) + 1;
+        }
         break;
       }
       case 'tool_catalog_trimmed': {
@@ -180,6 +186,7 @@ export function summarizeGuards(rows: AggregateRow[]): GuardAggregate {
       trimmed_rate: setups ? Math.round((budgetTrimmed / setups) * 1000) / 1000 : null,
       still_over_budget: stillOver,
       trimmed_sections: trimmedSections,
+      shortened_sections: shortenedSections,
       bytes_before_p50: percentile(sortedBytes, 50),
       bytes_before_p90: percentile(sortedBytes, 90),
     },
