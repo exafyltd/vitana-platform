@@ -1718,6 +1718,8 @@ export function handleInterrupted(
   console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
   session.isModelSpeaking = false;
   session.outputTranscriptBuffer = '';
+  // VTID-04571: a FINAL block still in flight belongs to the cut-off turn.
+  (session as any).outputTurnClosed = true;
   session.pendingEventLinks = [];
   if (session.sseResponse) {
     writeSseEvent(session.sseResponse, { type: 'interrupted' });
@@ -1913,10 +1915,23 @@ export function handleTranscript(
   // Nova staged generation: FINAL replaces the accumulated speculative
   // buffer (the committed transcript — persist exactly once, never both
   // copies). SPECULATIVE and Vertex-style deltas accumulate + forward.
+  //
+  // VTID-04571: Nova closes the turn on the SPECULATIVE block's END_TURN, so
+  // the FINAL block of that same turn usually arrives AFTER turnComplete.
+  // Written into the buffer then, it became the opening text of the NEXT
+  // turn: the next reply's prefix equalled the previous reply, the
+  // VTID-03143 duplicate check fired, and the real answer was muted (member
+  // session live-03af48b7, 2026-09-25: the spouse's birthday answer, 158
+  // chunks dropped, widget went back to listening). A FINAL for a turn that
+  // is already closed has nothing left to replace — drop it.
   if (event.generationStage === 'FINAL') {
+    if ((session as any).outputTurnClosed === true) {
+      return;
+    }
     session.outputTranscriptBuffer = outputTranscription;
     return;
   }
+  (session as any).outputTurnClosed = false;
 
   if (session.sseResponse) {
     writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
@@ -2716,6 +2731,9 @@ export function handleTurnComplete(
 
     session.outputTranscriptBuffer = '';
   }
+  // VTID-04571: this turn's output is committed. A late FINAL block for it
+  // must not seed the next turn's buffer (see handleTranscript).
+  (session as any).outputTurnClosed = true;
 
   // VTID-CHAT-BRIDGE: voice transcripts → chat_messages (fire-and-forget).
   // VTID-04309: Command Hub voice → Operator Console thread instead.

@@ -1,0 +1,10 @@
+## Staging evidence (read-only)
+oasis_events orb.live.diag, session live-03af48b7: tool_call search_memory 18:31:28.704Z
+  duplicate_turn_detected 18:31:29.843Z matched_prefix_chars=30 buffer_len=233
+  turn_complete output_preview "Ich sehe, dass du gerade zurückgekommen bist. … Ich erinnere mich an den Geburtstag deiner Frau, Maria Maksina. Ihr Ge…"
+  duplicate_turn_suppressed_at_complete dropped_chunks=158
+## Local
+npx jest test/orb/live/session/upstream-session-binding.test.ts -> 24 passed (4 new)
+mutation: guard disabled -> 2 of the new tests fail
+npx jest test/orb test/services/vitana-brain.test.ts test/routes -> 384 suites, 6376 passed
+npx tsc --noEmit -> clean
