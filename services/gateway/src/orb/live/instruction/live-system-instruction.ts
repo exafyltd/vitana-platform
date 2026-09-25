@@ -244,13 +244,36 @@ export function stripBrainOpenerSections(bootstrap: string): string {
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * VTID-04539: the one line that tells the model what time it is for the user.
+ * Null when the session has no resolved timezone — the model is then told
+ * nothing rather than a UTC clock passed off as local.
+ */
+export function formatLocalClockLine(
+  clock?: { localTime?: string; timeOfDay?: string; timezone?: string },
+): string | null {
+  const localTime = (clock?.localTime || '').trim();
+  const timeOfDay = (clock?.timeOfDay || '').trim();
+  const tz = (clock?.timezone || '').trim();
+  // buildClientContext computes localTime in UTC when no zone resolved; a UTC
+  // clock presented as local would be its own wrong-greeting bug.
+  if (!tz || (!localTime && !timeOfDay)) return null;
+  const when = localTime || timeOfDay;
+  const part = timeOfDay ? ` — it is ${timeOfDay} for the user` : '';
+  return `- User's local time right now: ${when} (${tz})${part}. Any time-of-day greeting or reference ("morning", "tonight", "today", "yesterday") must match this clock.`;
+}
+
 function buildTemporalJourneyContextSection(
   lang: string,
   lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
   currentRoute: string | null | undefined,
   recentRoutes: string[] | null | undefined,
   isReconnect: boolean,
-  timeOfDay?: string,
+  // VTID-04539: the user's local clock. Rendered here, in the preserved
+  // scaffold, because the only other copy (ENVIRONMENT CONTEXT) lives in the
+  // bootstrap, which the instruction budget can drop whole — that left the
+  // model with no clock at all and it greeted "Guten Morgen" at 18:30.
+  clock?: { localTime?: string; timeOfDay?: string; timezone?: string },
   // VTID-03046 step 2 — when true, omit the GREETING POLICY / RECONNECT
   // FINAL OVERRIDE / HARD ANTI-PATTERNS blocks. These ~37 KB of rules only
   // govern the LLM's FIRST utterance after room-join. The LiveKit cascade
@@ -292,6 +315,10 @@ function buildTemporalJourneyContextSection(
   lines.push('## TEMPORAL AND JOURNEY CONTEXT');
   lines.push('This is real, per-session data. Treat it as ground truth about what the user is doing RIGHT NOW.');
   lines.push('');
+
+  // VTID-04539: local clock first — it decides any time-of-day greeting.
+  const localClock = formatLocalClockLine(clock);
+  if (localClock) lines.push(localClock);
 
   // Time since last session.
   // VTID-NAV-TIMEJOURNEY: 'first' here means "no session event in oasis_events
@@ -907,7 +934,11 @@ ${trimmedHistory}
     currentRoute,
     recentRoutes,
     !!isReconnect,
-    clientContext?.timeOfDay,
+    {
+      localTime: clientContext?.localTime,
+      timeOfDay: clientContext?.timeOfDay,
+      timezone: clientContext?.timezone,
+    },
     !!omitGreetingPolicy,
     false,
   );

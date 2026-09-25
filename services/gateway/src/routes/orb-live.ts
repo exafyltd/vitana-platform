@@ -1774,6 +1774,24 @@ export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
  * takes the same `hasProducedAudio` (backed by `transportHasShownLife`, not
  * the chime-inclusive `audioOutChunks`) for the identical reason.
  */
+/**
+ * VTID-04539: the response watchdog (audio_stall / forwarding_no_ack) ends a
+ * stalled upstream by terminating it with `_stallRecoveryPending=true`,
+ * expecting the close handler to reconnect in place. The Vertex close handler
+ * honoured that flag; the Nova close handler never read it. A locally
+ * initiated close with audio already produced matched none of Nova's other
+ * branches, so the session died without a reconnect and without telling the
+ * client: the widget sat in listening mode with the mic feeding a dead stream
+ * (`audio_no_ws`). Production, 2026-09-25 16:25 UTC, session live-ce128077.
+ */
+export function shouldRecoverNovaStall(args: {
+  stallRecoveryPending: boolean;
+  sessionActive: boolean;
+  rotationInFlight: boolean;
+}): boolean {
+  return args.stallRecoveryPending && args.sessionActive && !args.rotationInFlight;
+}
+
 export function shouldRetryNovaOnPrematureClose(args: {
   sessionActive: boolean;
   initiatedLocally: boolean;
@@ -9217,6 +9235,45 @@ async function connectToLiveAPI(
             }).catch((e) => {
               (session as any)._personaSwapInFlight = false;
               console.warn(`[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed: ${(e as Error).message}`);
+            });
+            return;
+          }
+          // VTID-04539: watchdog stall recovery — reconnect in place, as the
+          // Vertex close handler does. See shouldRecoverNovaStall's doc.
+          if (shouldRecoverNovaStall({
+            stallRecoveryPending: (session as any)._stallRecoveryPending === true,
+            sessionActive: session.active,
+            rotationInFlight,
+          })) {
+            (session as any)._stallRecoveryPending = false;
+            console.warn(`[VTID-04539] Nova stream for session ${session.sessionId} stalled — reconnecting in place.`);
+            emitDiag(session, 'reconnect_triggered', { reason: 'stall_recovery', provider: 'nova_sonic' });
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(`[VTID-04539] Stall recovery reconnect failed for session ${session.sessionId}.`);
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              session.consecutiveModelTurns = 0;
+              if (session.turn_count === 0) {
+                resendGreetingIfStuckAtZeroTurns(session, 'VTID-04539-stall-recovery');
+              } else {
+                // Mid-conversation: history is in the rebuilt setup; do not re-greet.
+                emitDiag(session, 'stall_recovery_resumed', {
+                  provider: 'nova_sonic',
+                  reconnect_count: (session as any)._reconnectCount || 0,
+                });
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-04539] Stall recovery reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;
           }
