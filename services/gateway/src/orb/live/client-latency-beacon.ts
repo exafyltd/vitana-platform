@@ -37,7 +37,10 @@ const shortString = z.string().min(1).max(64);
 
 export const clientLatencyBeaconSchema = z
   .object({
-    session_id: shortString,
+    // Empty when the member closed the overlay before a session existed
+    // (found on staging: that cycle was rejected with a 400 and lost). The key
+    // stays required; an empty value is recorded as session_id null.
+    session_id: z.string().max(64),
     entry: z.enum(['mobile', 'desktop', 'command_hub']),
     transport: z.enum(['ws', 'sse']),
     marks: z
@@ -105,7 +108,7 @@ export function handleClientLatencyBeacon(req: BeaconRequest, res: Response): Re
       message: `client latency ${beacon.entry}/${beacon.transport} (${Object.keys(beacon.marks).length} marks)`,
       actor_id: userId ?? undefined,
       payload: {
-        session_id: beacon.session_id,
+        session_id: beacon.session_id || null,
         entry: beacon.entry,
         transport: beacon.transport,
         marks: beacon.marks,
