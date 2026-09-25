@@ -78,7 +78,8 @@ describe('BOOTSTRAP-ORB-INSTRUCTION-BUDGET: raw-WS transports always omit the pr
     // after omitToolsProse (session.greetingFirstName), so the closing
     // `))) as string` no longer sits immediately after the captured value —
     // allow anything (comments + the new argument) in between.
-    const tail = /omitGreetingPolicy[^]*?surface — unchanged[^]*?\n\s*(true|GEMINI_LIVE_USE_API_KEY|undefined|false),\n[^]*?\)\)\) as string/;
+    // VTID-04560: the surface argument is now the resolved profile's surface.
+    const tail = /omitGreetingPolicy[^]*?sessionServedSurface\(session\),[^]*?\n\s*(true|GEMINI_LIVE_USE_API_KEY|undefined|false),\n[^]*?\)\)\) as string/;
     const m = src.match(tail);
     expect(m).not.toBeNull();
     expect(m![1]).toBe('true');

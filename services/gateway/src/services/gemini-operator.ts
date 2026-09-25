@@ -708,6 +708,23 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
         required: ['target']
       }
     },
+    // VTID-04564: one brain, two channels — the developer knowledge and the
+    // deep dive the Command Hub voice assistant has (VTID-04562/04563).
+    {
+      name: 'dev_system_status',
+      description: 'Live system snapshot: which build staging and production serve, the Dev Autopilot state (kill switch, provider outage, executions in flight and waiting for approval, 7-day success rate, alerts) and the last hour of error events and voice sessions. Pass fresh:true to bypass the 90-second cache. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { fresh: { type: 'boolean', description: 'Bypass the 90-second cache.' } }, required: [] }
+    },
+    {
+      name: 'dev_domain_atlas',
+      description: 'The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { domain: { type: 'string', description: 'A domain key or a topic.' } }, required: [] }
+    },
+    {
+      name: 'dev_deep_dive',
+      description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
+      parameters: { type: 'object', properties: { question: { type: 'string', description: 'The full question, with every name, id, time window and environment mentioned.' } }, required: ['question'] }
+    },
     // VTID-04116: Operator Console codebase intelligence — RepoWise. Closes
     // the gap the VTID-04002 gap analysis flagged: CLAUDE.md's mandatory
     // codebase-intelligence workflow had nothing installed anywhere to
@@ -3612,6 +3629,54 @@ async function executeInvestigateFailure(
 /**
  * Execute a tool call from Gemini
  */
+/**
+ * VTID-04564: the Operator Console runs the same developer knowledge and deep
+ * dive as the Command Hub voice assistant — one implementation, two channels.
+ * The deep dive needs a verified caller on this thread (the VTID-03851 marker)
+ * who is exafy_admin or holds a developer/admin role.
+ */
+async function executeDeveloperKnowledgeTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  threadId: string,
+): Promise<ToolExecutionResult> {
+  try {
+    if (toolName === 'dev_system_status') {
+      const { getSystemSnapshot, buildSystemSnapshot, defaultSystemSnapshotDeps } = await import('../orb/developer/system-snapshot');
+      const snap = args.fresh === true ? await buildSystemSnapshot(defaultSystemSnapshotDeps()) : await getSystemSnapshot();
+      return { ok: true, data: { as_of: snap.asOf, highlights: snap.highlights, snapshot: snap.text } };
+    }
+    if (toolName === 'dev_domain_atlas') {
+      const { DOMAIN_ATLAS, findDomain, renderAtlasDomain, renderAtlasIndex } = await import('../orb/developer/domain-atlas');
+      const q = typeof args.domain === 'string' ? args.domain.trim() : '';
+      if (!q) return { ok: true, data: { atlas: renderAtlasIndex() } };
+      const d = findDomain(q);
+      return d
+        ? { ok: true, data: { domain: d.key, detail: renderAtlasDomain(d) } }
+        : { ok: true, data: { found: false, domains: DOMAIN_ATLAS.map((x) => x.key) } };
+    }
+    // dev_deep_dive
+    const auth = getThreadAuth(threadId);
+    const identity = threadIdentityMap.get(threadId);
+    if (!auth || !auth.user_id) return { ok: false, error: 'dev_deep_dive needs a signed-in developer session' };
+    const { runDeepDive } = await import('../orb/developer/deep-dive');
+    const question = typeof args.question === 'string' ? args.question : '';
+    const out = await runDeepDive(question, {
+      user_id: auth.user_id,
+      tenant_id: identity?.tenant_id ?? null,
+      platform_role: auth.exafy_admin ? 'developer' : (identity?.role ?? null),
+      exafy_admin: auth.exafy_admin === true,
+      surface: 'command-hub',
+      channel: 'chat',
+      session_id: threadId,
+    }, new AbortController().signal);
+    if (!out.ok) return { ok: false, error: out.error ?? 'deep dive failed' };
+    return { ok: true, data: out.result as Record<string, unknown> };
+  } catch (e) {
+    return { ok: false, error: `${toolName} failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -3816,6 +3881,13 @@ export async function executeTool(
           args as { command: string; argument?: string; repo?: string },
           threadId
         );
+        break;
+
+      // VTID-04564: the developer knowledge + deep dive, shared with voice.
+      case 'dev_system_status':
+      case 'dev_domain_atlas':
+      case 'dev_deep_dive':
+        result = await executeDeveloperKnowledgeTool(toolName, args as Record<string, unknown>, threadId);
         break;
 
       // VTID-04229: Operator Console codebase index (S3 bundle)
@@ -4132,6 +4204,34 @@ export async function executeTool(
  * Fail-open elsewhere (a failed/empty recall means no block, never an error
  * surfaced to the user) — this only formats hits that already came back.
  */
+/**
+ * VTID-04560 — may this turn carry the platform's engineering context
+ * (dev_agent_memory recall, codebase orientation, operator bootstrap pack)?
+ * Yes for the Operator Console itself (no custom system instruction) and for
+ * developer/admin callers; no for any member-facing caller that brings its
+ * own system instruction (ORB text fallbacks, conversation client).
+ */
+/**
+ * VTID-04564: the domain atlas for engineering callers of the Operator Console.
+ * The live snapshot is NOT preloaded on console turns (they are frequent and
+ * the snapshot reads the supervisor tables); the model fetches it on demand
+ * with dev_system_status — the same tool the voice assistant has.
+ */
+export async function operatorDeveloperKnowledge(): Promise<string> {
+  try {
+    const { renderAtlasIndex } = await import('../orb/developer/domain-atlas');
+    return `${renderAtlasIndex()}\nFor current state (builds, Dev Autopilot, errors in the last hour) call dev_system_status; for a question that needs evidence from code, history, data and runtime, call dev_deep_dive.`;
+  } catch {
+    return '';
+  }
+}
+
+export function engineeringContextAllowed(customSystemInstruction: string | undefined, userRole: string | undefined): boolean {
+  if (!customSystemInstruction) return true;
+  const role = (userRole || '').toLowerCase();
+  return role === 'developer' || role === 'admin' || role === 'infra' || role === 'exafy_admin';
+}
+
 function buildDevMemoryContextBlock(hits: DevMemoryHit[]): string {
   // VTID-04027: category-diverse top-10 selection over the wider candidate
   // set, rendered with a per-row clip and a total budget.
@@ -4309,8 +4409,18 @@ async function callVertexWithTools(
   // catalog rendered from the declarations below). '' unless
   // OPERATOR_BOOTSTRAP_PACK_ENABLED=true; fail-open by construction.
   const routerTools = getRouterToolDefinitions(userRole);
-  const bootstrapPack = await getOperatorBootstrapPack({ toolDefs: routerTools });
-  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}`;
+  // VTID-04560: the engineering context (codebase orientation, bootstrap pack)
+  // is for the Operator Console and developer/admin callers only. Before this,
+  // a community ORB text fallback that passed its own member system
+  // instruction still received the platform's internal engineering context.
+  const engineering = engineeringContextAllowed(customSystemInstruction, userRole);
+  const bootstrapPack = engineering ? await getOperatorBootstrapPack({ toolDefs: routerTools }) : '';
+  // VTID-04564: the same domain atlas the Command Hub voice assistant starts
+  // with; the live snapshot is one tool call away (dev_system_status).
+  const developerKnowledge = engineering ? await operatorDeveloperKnowledge() : '';
+  const systemPrompt = engineering
+    ? `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}${developerKnowledge ? `\n\n${developerKnowledge}` : ''}`
+    : withMemory;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
@@ -4382,7 +4492,10 @@ async function callVertexWithTools(
 async function sendToolResultsToVertex(
   originalText: string,
   toolResults: GeminiToolResult[],
-  threadId: string
+  threadId: string,
+  // VTID-04560: false for a member caller — the tool-result turn then carries
+  // no engineering context either (same gate as the main turn).
+  engineering = true,
   // VTID-04031: who served the final call and what it cost, for the turn's meta.
 ): Promise<{ reply: string; usage?: LLMUsage; provider?: string; model?: string }> {
   const baseToolResultPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
@@ -4397,7 +4510,7 @@ CRITICAL — Sharing links:
   https://vitanaland.com/e/city-by-bike`;
   // VTID-04018 (§4.1 "same prompt for tool-result turns"): the tool-result
   // turn carries the same bootstrap pack as the main turn — '' when disabled.
-  const toolResultPack = await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) });
+  const toolResultPack = engineering ? await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) }) : '';
   const systemPrompt = toolResultPack ? `${baseToolResultPrompt}\n\n${toolResultPack}` : baseToolResultPrompt;
 
   // VTID-03579: results are presented as a TEXT turn, not as tool_result blocks,
@@ -4583,7 +4696,8 @@ export async function processWithGemini(input: {
       // empty result never blocks or degrades the operator turn, it just
       // means no memory block gets appended.
       let memoryContextBlock: string | undefined;
-      try {
+      // VTID-04560: developer memory only for the console and developer/admin callers.
+      if (engineeringContextAllowed(systemInstruction, userRole)) try {
         // VTID-04027: fetch a wider candidate set; buildDevMemoryContextBlock diversifies and bounds it.
         const memRes = await recallDevMemory(buildRecallQuery(threadSummary, text), 'vitana-platform', { limit: RECALL_CANDIDATES });
         if (memRes.ok && memRes.hits.length > 0) {
@@ -4642,7 +4756,7 @@ export async function processWithGemini(input: {
 
         // Send tool results back to Vertex for final response
         const finalStartedAt = Date.now();
-        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId);
+        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole));
         emitTurnEvent(onEvent, {
           type: 'model.turn',
           stage: 'final',

@@ -182,7 +182,9 @@ describe('VTID-04018 wiring', () => {
   it('the main operator turn appends the pack after the VTID-03930 orientation block and passes the same tool defs it renders', () => {
     const i = operator.indexOf('async function callVertexWithTools(');
     const body = operator.slice(i, operator.indexOf('async function sendToolResultsToVertex(', i));
-    expect(body).toMatch(/const routerTools = getRouterToolDefinitions\(userRole\);\s*\n\s*const bootstrapPack = await getOperatorBootstrapPack\(\{ toolDefs: routerTools \}\);/);
+    // VTID-04560: the pack is gated on engineeringContextAllowed (console / developer / admin callers only).
+    expect(body).toMatch(/const routerTools = getRouterToolDefinitions\(userRole\);/);
+    expect(body).toMatch(/const bootstrapPack = engineering \? await getOperatorBootstrapPack\(\{ toolDefs: routerTools \}\) : '';/);
     expect(body).toMatch(/\$\{CODEBASE_OVERVIEW_BLOCK\}\$\{bootstrapPack \? `\\n\\n\$\{bootstrapPack\}` : ''\}/);
     expect(body).toMatch(/tools: routerTools,/);
   });
@@ -190,7 +192,7 @@ describe('VTID-04018 wiring', () => {
   it('the tool-result turn carries the same pack (§4.1)', () => {
     const i = operator.indexOf('async function sendToolResultsToVertex(');
     const body = operator.slice(i, i + 3_000);
-    expect(body).toMatch(/const toolResultPack = await getOperatorBootstrapPack\(/);
+    expect(body).toMatch(/const toolResultPack = engineering \? await getOperatorBootstrapPack\(/);
     expect(body).toMatch(/const systemPrompt = toolResultPack \? `\$\{baseToolResultPrompt\}\\n\\n\$\{toolResultPack\}` : baseToolResultPrompt;/);
   });
 

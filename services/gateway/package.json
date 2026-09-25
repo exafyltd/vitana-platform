@@ -26,6 +26,7 @@
     "i18n:db:verify": "tsx src/scripts/seed-db-i18n.ts --verify",
     "reconcile:aurora-supabase": "tsx scripts/reconciliation/aurora-supabase-reconcile.ts",
     "test:replay": "jest test/services/conversation/vtid-04443-conversation-replay.test.ts",
+    "test:roles": "jest test/vtid-04560-role-separation-regression.test.ts",
     "test:voice-identity": "jest test/orb/latency"
   },
   "dependencies": {

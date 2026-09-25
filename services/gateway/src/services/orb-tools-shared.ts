@@ -107,6 +107,8 @@ import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLA
 import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
 import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
 import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
+// VTID-04562: developer knowledge tools (live snapshot + domain atlas).
+import { DEVELOPER_KNOWLEDGE_TOOL_HANDLERS, DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS } from './orb-tools/developer-knowledge-tools';
 // WAVE-MVA-1 — Marketplace Voice Assistant (expansion v3, plan sections
 // A17–A30): guided-shopping orchestrators + intent/preferences, and the
 // discovery/recommendation/explanation/compare/suitability/cart-confirm
@@ -5871,6 +5873,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
   ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
+  ...DEVELOPER_KNOWLEDGE_TOOL_HANDLERS,
   // WAVE-MVA-1 (Marketplace Voice Assistant)
   ...MARKETPLACE_GUIDE_TOOL_HANDLERS,
   ...MARKETPLACE_JOURNEY_TOOL_HANDLERS,
@@ -5934,6 +5937,8 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   // WAVE-6-VOICE-CATALOG-V2
   ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
+  // VTID-04562
+  ...DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by
