@@ -1946,6 +1946,10 @@ import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+// VTID-04531: the per-turn voice latency provider label (nova_sonic/<model>,
+// cascade, or the configured Vertex Live model) lives in one exported pure
+// function so it is testable and cannot silently revert to a stale default.
+import { resolveLatencyProviderLabel } from '../orb/live/upstream/latency-provider-label';
 // BOOTSTRAP-CASCADE-WIRING: these two had NO caller on any live path. The
 // selector's cascade branch and the factory's `case 'cascaded'` both existed
 // and were unreachable because nothing in this file ever asked whether the
@@ -12141,9 +12145,14 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   // upstream selection has always resolved by the time a per-turn tracker
   // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
   // here at construction time — no setProvider() correction needed later.
-  const provider = session.upstreamProvider === 'nova_sonic'
-    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
-    : `vertex/${GEMINI_MODEL}`;
+  //
+  // VTID-04531: the label is chosen by `resolveLatencyProviderLabel()` instead
+  // of a Nova-vs-everything-else ternary. Cascade sessions (Transcribe ->
+  // Bedrock -> Polly/Fish) and Vertex Serbian-bridge sessions were both
+  // labelled `vertex/gemini-2.0-flash-exp` — a stale GEMINI_MODEL from the
+  // deleted API-key path — so voice.latency.measured attributed their turns
+  // to a model that never served them.
+  const provider = resolveLatencyProviderLabel(session.upstreamProvider);
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',

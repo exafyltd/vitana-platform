@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04531",
+  "execution_id": "ee04be49-1736-4122-a539-752a3ac39246",
+  "finding_id": "30f4096a-bd05-4d7f-a4e4-6420fc4c36c0",
+  "plan_version": 1,
+  "branch": "dev-autopilot/ee04be49",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/routes/orb-live.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/orb/live/upstream/latency-provider-label.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/orb/live/upstream/latency-provider-label.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-25T09:34:47.256Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
