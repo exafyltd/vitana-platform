@@ -49,7 +49,7 @@ import {
   resolveGreetingDirectiveByteBudget,
   greetingDirectiveExceedsBudget,
 } from '../../orb/live/instruction/greeting-directive-budget';
-import { buildOpeningIntentDirective } from './phrasing-rule';
+import { buildOpeningIntentDirective, PHRASING_RULE } from './phrasing-rule';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
@@ -142,6 +142,9 @@ export type WakeOpener =
   | 'override_v2'
   /** VTID-04395 — the member opened the ORB from Support to report a problem. */
   | 'support_report'
+  /** VTID-04575 — the member reopened a conversation that carries its earlier
+   *  turns: turn 1 continues that thread instead of starting a new one. */
+  | 'resume_thread'
   | 'silenced_on_cadence'
   | 'legacy_default';
 
@@ -163,8 +166,9 @@ const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
   newday_overview: 8,
   override_v2: 9,
   support_report: 10,
-  silenced_on_cadence: 11,
-  legacy_default: 12,
+  resume_thread: 11,
+  silenced_on_cadence: 12,
+  legacy_default: 13,
 };
 export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
   .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
@@ -331,6 +335,12 @@ export interface GreetingDecisionContext {
    * support-report rung then opens as an intake instead of any briefing.
    */
   supportReportOpen?: boolean;
+  /**
+   * VTID-04575: true when this session was started by the client with the
+   * earlier turns of the same conversation (`transcript_history`) and nothing
+   * has been said on it yet. The resume_thread rung then continues that thread.
+   */
+  reopenedWithHistory?: boolean;
   /** One-shot: true only on the resend that follows a `day_close` open getting
    *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
    *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
@@ -868,6 +878,42 @@ export function buildSupportReportOpenTrigger(): string {
   );
 }
 
+/**
+ * VTID-04575 — the member closed and reopened the voice conversation, and the
+ * client sent its earlier turns. Turn 1 continues that conversation.
+ *
+ * This replaced the reconnect recovery prompt for reopens: a long user-role
+ * block ("You are recovering from a brief connection blip…" plus a stack of
+ * prohibitions) that Nova's content filter rejected on 44 of 61 reopens in
+ * 14 days. Written as a positive English intent (NEVER-rule 41, VTID-04124):
+ * no quoted dialogue, no prohibition stack, the model composes the words.
+ */
+export function buildResumeThreadOpenTrigger(): string {
+  return (
+    `Open with one to three short spoken sentences, as audio. ` +
+    `INTENT: The member closed this voice conversation and has just reopened it; its earlier turns are in the conversation history in your instructions. ` +
+    `Continue that conversation from where it stopped: name the topic you were on in a few words and carry it forward. ` +
+    `When their last question is still unanswered, answer it now; otherwise offer the next step on that same topic and ask whether to go ahead. ` +
+    `${PHRASING_RULE} Then stop and listen.`
+  );
+}
+
+function tryResumeThreadRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.reopenedWithHistory || ctx.isAnonymous) return null;
+  const trigger = buildResumeThreadOpenTrigger();
+  return {
+    wakeOpener: 'resume_thread',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'resume_thread',
+      decision_id: ctx.wakeBriefDecisionId || null,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.supportReportOpen || ctx.isAnonymous) return null;
   const trigger = buildSupportReportOpenTrigger();
@@ -948,6 +994,11 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
+
+  // VTID-04575 — a reopened conversation continues its own thread; it
+  // outranks every briefing, resume-NBA and proactive rung below.
+  const resumeFast = tryResumeThreadRung(ctx);
+  if (resumeFast) return resumeFast;
 
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
   // At 00:15 the calendar date has rolled and the morning briefing believes it
@@ -1169,6 +1220,10 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;
+
+  // VTID-04575 — same position on the normal ladder (see computeSafeFastLadder).
+  const resumeNormal = tryResumeThreadRung(ctx);
+  if (resumeNormal) return resumeNormal;
 
   // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
   // and a goodnight is loud) and above every morning rung.
