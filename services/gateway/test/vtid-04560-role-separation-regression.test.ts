@@ -374,3 +374,74 @@ describe('source contracts — the wiring cannot silently disappear', () => {
     expect(app).toMatch(/surface: 'command-hub',\s*view_role: 'developer',/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. Phase 1 (VTID-04561) — one role truth, the registry, env-aware switching
+// ---------------------------------------------------------------------------
+
+import { ROLE_REGISTRY, roleEntry, roleGetsPrivilegedVoiceTools, registryCoversAllRoles } from '../src/orb/profile/role-registry';
+
+describe('VTID-04561 role registry — one declarative answer per role', () => {
+  test('every Vitana role has an entry', () => {
+    expect(registryCoversAllRoles()).toEqual([]);
+  });
+
+  test('member-plane roles are served on the member surface by the member ladder; work roles on their surface', () => {
+    for (const r of ['community', 'patient', 'professional', 'staff']) {
+      expect(ROLE_REGISTRY[r]).toMatchObject({ surface: 'vitanaland', opener: 'member_ladder', memoryScope: 'member' });
+    }
+    expect(roleEntry('developer')).toMatchObject({ surface: 'command-hub', personaKey: 'dev_orb', opener: 'work_surface', memoryScope: 'developer' });
+    expect(roleEntry('admin')).toMatchObject({ surface: 'admin', personaKey: 'admin_orb', opener: 'work_surface' });
+    expect(roleEntry('backoffice')).toMatchObject({ surface: 'backoffice', personaKey: 'backoffice_orb' });
+    expect(roleEntry('exafy_admin').role).toBe('developer');
+    expect(roleEntry('nonsense').role).toBe('community');
+  });
+
+  test('privileged voice tools follow the registry, never a member role', () => {
+    for (const r of ['developer', 'admin', 'exafy_admin', 'infra']) expect(roleGetsPrivilegedVoiceTools(r)).toBe(true);
+    for (const r of ['community', 'patient', 'professional', 'staff', 'backoffice', null, undefined, 'authenticated']) {
+      expect(roleGetsPrivilegedVoiceTools(r as any)).toBe(false);
+    }
+  });
+
+  test('the profile persona comes from the registry', () => {
+    const hub = resolveAssistantProfile({ isAnonymous: false, isExafyAdmin: true, currentRoute: '/command-hub/' });
+    expect(hub.personaKey).toBe(roleEntry('developer').personaKey);
+  });
+
+  test('the tool catalog has no hard-coded privileged-role list left', () => {
+    const catalog = read('src/orb/live/tools/live-tool-catalog.ts');
+    expect(catalog).not.toContain("['admin', 'exafy_admin', 'developer'].includes(activeRole)");
+    expect((catalog.match(/roleGetsPrivilegedVoiceTools\(activeRole\)/g) || []).length).toBe(3);
+  });
+});
+
+describe('VTID-04561 one role truth — both switchers write both tables', () => {
+  const migration = fs.readFileSync(
+    path.join(ROOT, '..', '..', 'supabase', 'migrations', '20260925120000_vtid_04561_one_role_truth.sql'),
+    'utf8',
+  );
+
+  test('set_role_preference (community app) also writes user_active_roles', () => {
+    const fn = migration.slice(migration.indexOf('FUNCTION public.set_role_preference'), migration.indexOf('FUNCTION public.me_set_active_role'));
+    expect(fn).toContain('INSERT INTO public.role_preferences');
+    expect(fn).toContain('INSERT INTO public.user_active_roles');
+  });
+
+  test('me_set_active_role (Command Hub) also writes role_preferences', () => {
+    const fn = migration.slice(migration.indexOf('FUNCTION public.me_set_active_role'));
+    expect(fn).toContain('INSERT INTO public.user_active_roles');
+    expect(fn).toContain('INSERT INTO public.role_preferences');
+  });
+
+  test('the Command Hub switches into the community app of its own environment', () => {
+    const app = read('src/frontend/command-hub/app.js');
+    expect(app).not.toContain("'community': 'https://vitanaland.com/comm/events-meetups?tab=hot'");
+    const fnSrc = app.slice(app.indexOf('function communityAppOriginForHost'), app.indexOf('var COMMUNITY_APP_ORIGIN'));
+    // eslint-disable-next-line no-new-func
+    const fn = new Function(`${fnSrc}; return communityAppOriginForHost;`)();
+    expect(fn('preview-aws-gateway.vitanaland.com')).toBe('https://preview-aws.vitanaland.com');
+    expect(fn('gateway.vitanaland.com')).toBe('https://vitanaland.com');
+    expect(app).toContain("'backoffice': COMMUNITY_APP_ORIGIN + '/backoffice/dashboard'");
+  });
+});

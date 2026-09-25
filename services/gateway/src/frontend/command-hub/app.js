@@ -360,12 +360,23 @@ const ROLE_DEFAULT_SCREENS = {
  * VTID-01230: Community and Admin redirect to vitanaland.com (external app).
  */
 // External redirect targets per role (roles not listed stay in Command Hub)
+// VTID-04561: environment-aware — the staging Command Hub switches into the
+// staging community app, never into production (it used to hardcode
+// vitanaland.com on every host).
+function communityAppOriginForHost(hostname) {
+    var h = String(hostname || '').toLowerCase();
+    if (h.indexOf('preview-aws-gateway') === 0 || h.indexOf('preview-gateway') === 0) return 'https://preview-aws.vitanaland.com';
+    return 'https://vitanaland.com';
+}
+var COMMUNITY_APP_ORIGIN = communityAppOriginForHost(typeof window !== 'undefined' && window.location ? window.location.hostname : '');
 var ROLE_EXTERNAL_REDIRECTS = {
-    'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
-    'admin': 'https://vitanaland.com/admin/dashboard',
-    'professional': 'https://vitanaland.com/professional/dashboard',
-    'staff': 'https://vitanaland.com/staff/dashboard',
-    'patient': 'https://vitanaland.com/patient/dashboard'
+    'community': COMMUNITY_APP_ORIGIN + '/comm/events-meetups?tab=hot',
+    'admin': COMMUNITY_APP_ORIGIN + '/admin/dashboard',
+    'professional': COMMUNITY_APP_ORIGIN + '/professional/dashboard',
+    'staff': COMMUNITY_APP_ORIGIN + '/staff/dashboard',
+    'patient': COMMUNITY_APP_ORIGIN + '/patient/dashboard',
+    // VTID-04561: BackOffice lives in the community app too.
+    'backoffice': COMMUNITY_APP_ORIGIN + '/backoffice/dashboard'
 };
 
 function navigateToRoleDefaultScreen(role) {

@@ -19,6 +19,8 @@
  * the handlers (A6).
  */
 
+// VTID-04561: one registry answers which roles get the privileged voice tools.
+import { roleGetsPrivilegedVoiceTools } from '../../profile/role-registry';
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools + per-surface catalog gating.
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
@@ -2991,19 +2993,19 @@ function buildLiveApiToolsUngated(
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_TOOL_SCHEMAS
           : []),
         // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Developer voice tools (VTID-02782).
         // Same role gate as ADMIN_TOOL_SCHEMAS; handlers re-check role
         // server-side regardless (developer-tools.ts developerGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
           : []),
         // WAVE-3-VOICE-CATALOG-V2 — Admin voice tools (users/RBAC, moderation,
         // marketplace, notifications, governance, feedback). Handlers re-check
         // role server-side regardless (admin-users-rbac-tools.ts adminGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],

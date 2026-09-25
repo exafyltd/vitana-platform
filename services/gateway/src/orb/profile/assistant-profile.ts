@@ -22,7 +22,8 @@
  * before the upstream setup is built. Every consumer (instruction, tools,
  * greeting, context, pre-warm) reads it. It is pure: no I/O, no env reads.
  */
-import { isOrbSurface, resolveOrbSurface, SURFACE_PERSONA_KEY, type OrbSurface } from '../live/surface';
+import { isOrbSurface, resolveOrbSurface, type OrbSurface } from '../live/surface';
+import { roleEntry } from './role-registry';
 import type { PersonalitySurfaceKey } from '../../services/ai-personality-service';
 
 /** Roles whose screens live on the member app (the `vitanaland` surface). */
@@ -121,7 +122,7 @@ export function resolveAssistantProfile(input: ResolveAssistantProfileInput): As
       surface,
       role,
       isWorkSurface: true,
-      personaKey: SURFACE_PERSONA_KEY[surface],
+      personaKey: roleEntry(role).personaKey,
       resolution,
       declared,
     };
