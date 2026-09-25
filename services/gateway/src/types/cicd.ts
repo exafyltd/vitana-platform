@@ -982,6 +982,11 @@ export type CicdEventType =
   // All emitted with env=staging|production via env-tagging in emitOasisEvent().
   // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
   | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  // VTID-04542 (ORB latency P0): persona hand-off timing (request → drain →
+  // reconnect → first audio of the new persona) and the client-side beacon
+  // (ms since tap, posted by the widget to /orb/live/client-latency).
+  | 'voice.latency.handoff'
+  | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
