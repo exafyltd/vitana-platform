@@ -910,6 +910,25 @@ function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | nu
   };
 }
 
+/**
+ * VTID-04544 — true when a rung that never reads the overview payloads or the
+ * spoken-facts ledger is certain to win this opening, so the caller can skip
+ * gathering them (the payloads would be discarded).
+ *
+ * Single-sourced with the ladders: it asks the SAME rung functions both
+ * ladders consult, and both ladders consult them ABOVE day-close, the new-day
+ * overview and the resume rung (`computeSafeFastLadder`, `computeNormalLadder`).
+ * The normal ladder's `silent_reconnect` sits above these too; it skips the
+ * payloads as well, and the caller's pre-guard already excludes it.
+ *
+ * Reads only facts that are fixed synchronously at greeting time
+ * (`supportReportOpen`, `guidedTopicNarrationContent`, `isAnonymous`,
+ * `openDecision`) — never a greeting-facts pre-fetch field. Pure.
+ */
+export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boolean {
+  return trySupportReportRung(ctx) !== null || tryGuidedTopicRung(ctx) !== null;
+}
+
 /** VTID-04420: the name clause of the first-time welcome intent. */
 function firstTimeNamePart(firstName: string | null | undefined): string {
   const n = typeof firstName === 'string' ? firstName.trim().replace(/"/g, '') : '';
