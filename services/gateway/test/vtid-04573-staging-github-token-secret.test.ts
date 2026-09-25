@@ -22,3 +22,21 @@ describe('VTID-04573: staging GitHub token secret', () => {
     expect(wf).toMatch(/\{name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:\$SEC_GITHUB_TOKEN\}/);
   });
 });
+
+describe('VTID-04573: production GitHub token secret', () => {
+  const prod = fs.readFileSync(path.join(__dirname, '../../../.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'), 'utf8');
+  it('pins the full ARN of vitana/github/pat (the prod deploy role cannot describe secrets)', () => {
+    expect(prod).toContain('GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI');
+  });
+  it('replaces only the GITHUB_SAFE_MERGE_TOKEN secret, keeping every other secret', () => {
+    expect(prod).toMatch(/\.containerDefinitions\[0\]\.secrets \|=\s*\( \[ \(\. \/\/ \[\]\)\[\] \| select\(\.name != "GITHUB_SAFE_MERGE_TOKEN"\) \]\s*\+ \[ \{name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:\$GH\} \] \)/);
+  });
+  it('runs unconditionally just before register, so an env-only dispatch applies it', () => {
+    const step2 = prod.slice(prod.indexOf('Build task-definition (2/2'), prod.indexOf('NEW_ARN=$(aws ecs register-task-definition'));
+    expect(step2).toContain('GITHUB_TOKEN_SECRET_ARN: arn:');
+    expect(step2).toContain('valueFrom:$GH');
+    // not inside any optional-input block: it sits before the env_overrides if, at the top level of the step
+    expect(step2.indexOf('valueFrom:$GH')).toBeLessThan(step2.indexOf('if [ -n "$ENV_OVERRIDES_INPUT" ]'));
+  });
+});
+

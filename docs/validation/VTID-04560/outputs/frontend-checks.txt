@@ -1,0 +1,6 @@
+vitana-v1 (branch claude/confident-babbage-bfz60f)
+vitest: Test Files 184 passed (184); Tests 1111 passed (1111)
+after merging origin/main: src/hooks + orb-view-profile: 50 files / 234 tests passed
+npm run build: built in 41.30s
+tsc -p tsconfig.app.json: 166 errors before and after (all in *.test.ts type definitions), none in changed files
+eslint changed files: 4 pre-existing no-explicit-any errors in useOrbVoiceWidget.ts, none added

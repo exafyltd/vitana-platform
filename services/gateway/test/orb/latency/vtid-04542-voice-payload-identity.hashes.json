@@ -2,8 +2,8 @@
   "connect:admin-surface-en": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "6c74047897c00216578355c188ac8a1c4e25938625277cf06f6d2dfc46859152",
-    "instruction_bytes": 23015,
+    "instruction_sha256": "4b91adaa222a34faa90ad768f5c9b7e95183a14c524efbee27e1de7cc6f49182",
+    "instruction_bytes": 10558,
     "tools_sha256": "ed74c4150734f6999c93c5d9573ab47b2ef6bec1ffb3efb64cfe97aca0bc4495",
     "tools_bytes": 45542,
     "tool_count": 135,
@@ -52,11 +52,11 @@
   "connect:command-hub-developer-en": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "7852f77320df0a8efaa8119bdad4e9e32ddd0c7d8dfb52e3c5a0a35bbcdc7710",
-    "instruction_bytes": 24020,
-    "tools_sha256": "f5e3ea9b1db64c98a200304eab34a7d6a0159065b98193976a0f5e3ebe32e45d",
-    "tools_bytes": 53328,
-    "tool_count": 154,
+    "instruction_sha256": "13f35c6fe978b783d30eaf4c9d1e5c666e1a148d2fee346b48598a4d3113ddcd",
+    "instruction_bytes": 12171,
+    "tools_sha256": "11951a97b1abef4630d09063094fb323cc3cdc060ddcc65f43aa522047dc9c2f",
+    "tools_bytes": 54941,
+    "tool_count": 157,
     "deferred_tools": 0
   },
   "connect:devon-specialist-en": {

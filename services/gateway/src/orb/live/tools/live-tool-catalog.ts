@@ -19,12 +19,14 @@
  * the handlers (A6).
  */
 
+// VTID-04561: one registry answers which roles get the privileged voice tools.
+import { roleGetsPrivilegedVoiceTools } from '../../profile/role-registry';
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools + per-surface catalog gating.
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
 import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
-import { commerceDelegationTools, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
+import { commerceDelegationTools, DEEP_DIVE_TOOL, DEEP_DIVE_TOOL_NAME, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -162,7 +164,7 @@ export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
   'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
   'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
 ]);
-const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
+const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
 function commandHubAllowlist(): Set<string> {
   return new Set<string>([
     ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
@@ -186,6 +188,8 @@ function applyCommandHubGate(tools: object[]): object[] {
         for (const t of DELEGATION_COMPANION_TOOLS) {
           if (!kept.some((d) => d.name === t.name)) kept.push(t as { name?: unknown });
         }
+        // VTID-04563: the developer's deep dive.
+        if (!kept.some((d) => d.name === DEEP_DIVE_TOOL_NAME)) kept.push(DEEP_DIVE_TOOL as { name?: unknown });
       }
       delegateAdded = true;
       if (kept.length > 0) out.push({ ...group, function_declarations: kept });
@@ -2991,19 +2995,19 @@ function buildLiveApiToolsUngated(
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_TOOL_SCHEMAS
           : []),
         // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Developer voice tools (VTID-02782).
         // Same role gate as ADMIN_TOOL_SCHEMAS; handlers re-check role
         // server-side regardless (developer-tools.ts developerGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
           : []),
         // WAVE-3-VOICE-CATALOG-V2 — Admin voice tools (users/RBAC, moderation,
         // marketplace, notifications, governance, feedback). Handlers re-check
         // role server-side regardless (admin-users-rbac-tools.ts adminGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],

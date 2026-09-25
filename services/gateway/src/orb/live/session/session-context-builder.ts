@@ -32,7 +32,9 @@ import type { SupabaseIdentity } from '../../../middleware/auth-supabase-jwt';
 import type { ContextPack } from '../../../types/conversation';
 import { splitBootstrapSections } from '../instruction/bootstrap-packer';
 
-export type ContextBuilderKind = 'brain' | 'legacy' | 'lesson';
+// VTID-04560: 'work_surface' — Command Hub / admin / BackOffice / commerce
+// sessions carry only the work-surface context, never the member brain.
+export type ContextBuilderKind = 'brain' | 'legacy' | 'lesson' | 'work_surface';
 
 export interface BaseContextResult {
   contextInstruction?: string;

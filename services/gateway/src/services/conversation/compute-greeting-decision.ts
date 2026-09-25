@@ -146,7 +146,10 @@ export type WakeOpener =
    *  turns: turn 1 continues that thread instead of starting a new one. */
   | 'resume_thread'
   | 'silenced_on_cadence'
-  | 'legacy_default';
+  | 'legacy_default'
+  /** VTID-04560 — a work surface (Command Hub / admin / BackOffice /
+   *  commerce) opens with its own role's opener; no member rung can win. */
+  | 'work_surface_open';
 
 /**
  * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
@@ -169,6 +172,7 @@ const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
   resume_thread: 11,
   silenced_on_cadence: 12,
   legacy_default: 13,
+  work_surface_open: 14,
 };
 export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
   .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
@@ -383,6 +387,16 @@ export interface GreetingDecisionContext {
   /** A prepared autopilot checkpoint that can genuinely be activated tonight —
    *  offered by name, never invented. */
   pendingCheckpointTitle?: string | null;
+
+  // --- VTID-04560 work surface ---------------------------------------------
+  /** The session's served surface (session.assistantProfile.surface). Any
+   *  surface other than `vitanaland` takes the work_surface_open rung first. */
+  surface?: string | null;
+  /** The role the work surface serves (developer / admin / backoffice / commerce). */
+  workSurfaceRole?: string | null;
+  /** Short factual lines the opener may lead with (system pulse / admin
+   *  briefing). Facts, never finished sentences. */
+  workSurfaceHighlights?: string[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -650,7 +664,79 @@ export function shouldAttemptResumeOverview(ctx: GreetingDecisionContext): {
  * adapter must perform. The ladder order + guards mirror orb-live.ts exactly.
  */
 export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-04560: a work surface never reaches a member rung, on either ladder
+  // and whether or not context resolved in time.
+  const workSurface = tryWorkSurfaceRung(ctx);
+  if (workSurface) return workSurface;
   return safeFastApplies(ctx) ? computeSafeFastLadder(ctx) : computeNormalLadder(ctx);
+}
+
+/** Per-role opener intent for the work surfaces (English INTENT, NEVER rule 41). */
+const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
+  developer:
+    'You are the developer\'s system supervisor for Vitanaland. Lead with the single most important thing ' +
+    'in the system right now, taken from the facts below: a failure, something waiting for their approval, ' +
+    'or a difference between staging and production. When nothing needs attention, say in fresh words that ' +
+    'the system looks steady. Then offer ONE concrete next step you can take for them: dig into it, show it, ' +
+    'or start a task. Stay on the system and the engineering work.',
+  admin:
+    'You are the tenant administrator\'s assistant. Lead with the single most important item from the facts ' +
+    'below (an approval, a flagged item, a KPI that moved). When nothing needs attention, say so in fresh words. ' +
+    'Then offer ONE concrete next step you can take for them. Stay on administration of the community.',
+  backoffice:
+    'You are the BackOffice operations assistant. Lead with the most important pending item from the facts ' +
+    'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
+    'ONE concrete next step. Stay on business operations.',
+  commerce:
+    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
+    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
+    'Stay on the organisation\'s business work.',
+};
+
+/**
+ * VTID-04560 — the work-surface opener. Returns null on the member surface
+ * (and for anonymous sessions), so every existing ladder is unchanged there.
+ * Keeps a genuine transport reconnect silent, exactly like silent_reconnect.
+ */
+export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  const surface = typeof ctx.surface === 'string' ? ctx.surface : null;
+  if (!surface || surface === 'vitanaland') return null;
+  if (ctx.isAnonymous) return null;
+  const od = ctx.openDecision;
+  if (od && od.mode === 'silent' && (od.source === 'native_resume' || od.source === 'reconnect_no_handle')) {
+    return {
+      wakeOpener: 'silent_reconnect',
+      directive: null,
+      diag: { lang: ctx.lang, prompt_len: 0, wake_opener: 'silent_reconnect', opening_source: od.source, surface },
+      effects: { markGreetingSent: true, armWatchdog: false },
+    };
+  }
+  const role = ctx.workSurfaceRole || 'developer';
+  const intent = WORK_SURFACE_OPENER_INTENT[role] || WORK_SURFACE_OPENER_INTENT.developer;
+  const highlights = (ctx.workSurfaceHighlights || [])
+    .map((h) => (typeof h === 'string' ? h.replace(/\s+/g, ' ').trim() : ''))
+    .filter((h) => h.length > 0)
+    .slice(0, 6)
+    .map((h) => (h.length > 240 ? `${h.slice(0, 237)}...` : h));
+  const facts = highlights.length > 0
+    ? `\nFacts (as of this session start):\n${highlights.map((h) => `- ${h}`).join('\n')}`
+    : '\nFacts: none loaded yet — offer to check the system status for them.';
+  const directive =
+    `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${intent} ` +
+    `Compose the wording yourself, fresh each time.${facts}`;
+  return {
+    wakeOpener: 'work_surface_open',
+    directive,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: directive.length,
+      wake_opener: 'work_surface_open',
+      surface,
+      role,
+      highlight_count: highlights.length,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
 }
 
 /**
