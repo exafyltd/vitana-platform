@@ -1942,6 +1942,13 @@ import {
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
 import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+// VTID-04549 (ORB latency G): Devon pre-connect, behind ORB_DEVON_PRECONNECT_ENABLED.
+import {
+  claimPersonaPreconnect,
+  maybeStartPersonaPreconnect,
+  takeOverPersonaSwapWithPreconnect,
+  type PreconnectedUpstream,
+} from '../orb/live/session/persona-preconnect';
 import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
@@ -7926,7 +7933,16 @@ async function connectToLiveAPI(
     // VertexLiveClient awaits this builder and sends the envelope inside
     // its own ws.on('open'), then resolves connect() when setup_complete
     // arrives.
-    const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
+    // VTID-04549 (ORB latency G): `opts` lets the Devon pre-connect build the
+    // SAME envelope for a target persona while the current persona is still
+    // live. `personaOverride` replaces session.activePersona for the voice
+    // lookup; `preconnect` makes the build side-effect free (no context wait,
+    // no diag, no session.deferredTools write, no pending-tool carry-over —
+    // those are consumed at turn complete, before the swap's own build runs).
+    // Called with no argument everywhere else: unchanged.
+    const buildOrbVertexSetupEnvelope = async (
+      opts?: { personaOverride?: string; preconnect?: boolean },
+    ): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
       // ORB-CONVERSATION-LATENCY: upstream WS open + handshake done. The gap
       // before context_awaited is how much the context build over-ran the
@@ -7940,7 +7956,7 @@ async function connectToLiveAPI(
       // has typically overlapped with context build, so this await is near
       // zero for authenticated sessions and a no-op for anonymous sessions.
       const ctxPromise = (session as any).contextReadyPromise as Promise<void> | undefined;
-      if (ctxPromise) {
+      if (ctxPromise && !opts?.preconnect) {
         const awaitStart = Date.now();
         // DEV-COMHU-0513: bound this await. Previously an unbounded `await
         // ctxPromise` — fine when the promise resolved fast (legacy inline path),
@@ -7998,7 +8014,7 @@ async function connectToLiveAPI(
       // VTID-02651: registry is data-driven so any new specialist works
       // without code change. Falls back to LIVE_API_VOICES per language for
       // the receptionist (whose voice_id is empty by convention).
-      const _persona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
+      const _persona = opts?.personaOverride || (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
       let _personaVoice = (session as any).personaVoiceOverride;
       if (!_personaVoice) {
         // BOOTSTRAP-VOICE-LATENCY-SPECULATION: when the flag is ON, the persona
@@ -8010,7 +8026,11 @@ async function connectToLiveAPI(
         // INLINE_VOICE_LOOKUP_BASELINE_MS: a conservative typical cost for the
         // inline registry round-trip on a warm cache; used only as the baseline
         // for the savings telemetry, never to gate behaviour.
-        const _speculated = await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
+        // VTID-04549: the speculation was started for this connect's own
+        // persona — a pre-connect for another persona must not consume it.
+        const _speculated = opts?.preconnect
+          ? undefined
+          : await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
         if (_speculated) {
           _personaVoice = _speculated;
         } else {
@@ -8372,7 +8392,7 @@ async function connectToLiveAPI(
           // VTID-04525 (Conversation hub B2): the same accounting as a
           // queryable diag, trimmed or not, so the hub can show how often each
           // section is dropped. Sizes and section kinds only, never text.
-          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
+          if (!opts?.preconnect) emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
         }
       } catch (e) {
         // Never let the guard break the handshake — fail open with a log.
@@ -8429,8 +8449,10 @@ async function connectToLiveAPI(
             // on) and keep the dropped tools reachable via find_tool/use_tool.
             // Same budget; only the order and the reach change.
             let _selection: { groups: string[]; contextual_kept: number; deferred: number } | null = null;
-            session.deferredTools = undefined;
-            session.declaredToolNames = undefined;
+            if (!opts?.preconnect) {
+              session.deferredTools = undefined;
+              session.declaredToolNames = undefined;
+            }
             if (toolResult.trimmed && isToolSelectionEnabled()) {
               const sel = buildSessionToolPriority(
                 toolsIn,
@@ -8444,12 +8466,15 @@ async function connectToLiveAPI(
               }
               if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
                 toolResult = selected;
-                session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
-                session.declaredToolNames = declared;
+                const _deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
+                if (!opts?.preconnect) {
+                  session.deferredTools = _deferredTools;
+                  session.declaredToolNames = declared;
+                }
                 _selection = {
                   groups: sel.groups,
                   contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
-                  deferred: session.deferredTools.size,
+                  deferred: _deferredTools.size,
                 };
               }
             }
@@ -8484,12 +8509,12 @@ async function connectToLiveAPI(
                 bytes_after: toolResult.bytesAfter,
                 dropped_count: toolResult.dropped.length,
               };
-              emitDiag(session, 'tool_catalog_trimmed', {
+              if (!opts?.preconnect) emitDiag(session, 'tool_catalog_trimmed', {
                 provider: session.upstreamProvider,
                 ..._budgetDiag,
                 ...(_selection ? { selection: 'context', route_groups: _selection.groups, contextual_kept: _selection.contextual_kept, deferred_reachable: _selection.deferred } : {}),
               });
-              if (session.upstreamProvider === 'vertex') {
+              if (session.upstreamProvider === 'vertex' && !opts?.preconnect) {
                 emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
               }
             } else {
@@ -8529,7 +8554,7 @@ async function connectToLiveAPI(
       // never happened. A handle cannot restore something newer than itself.
       try {
         const pendingTools = getPendingToolResults(session);
-        if (pendingTools.length > 0) {
+        if (pendingTools.length > 0 && !opts?.preconnect) {
           const resumeBlock = buildPendingToolResumeBlock(pendingTools);
           const parts = (setupMessage.setup as any)?.system_instruction?.parts;
           if (resumeBlock && Array.isArray(parts) && parts[0]) {
@@ -8819,6 +8844,9 @@ async function connectToLiveAPI(
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
         const reusedWarmNova = !!prewarmedNova;
+        // VTID-04549: true when a Devon hand-off claimed the stream that was
+        // pre-connected while Vitana spoke the bridge (connect() already ran).
+        let reusedPersonaPreconnect = false;
 
         let novaSystemInstruction: string;
         let novaTools: Array<Record<string, unknown>>;
@@ -8898,16 +8926,48 @@ async function connectToLiveAPI(
             }
           }
 
-          novaClient = createUpstreamClient('nova_sonic', {
-            nova: {
-              config: novaCfg,
-              voiceId: novaVoice,
+          // VTID-04549: a persona hand-off armed at turn complete (see
+          // takeOverPersonaSwap below) claims the stream opened while the
+          // bridge was spoken — only when the instruction, tool catalog and
+          // voice it was opened with are byte-identical to what was just
+          // built above for this connect. Otherwise (and always with the flag
+          // off, where nothing is ever armed) the client is created exactly
+          // as before.
+          const claimedPersonaClient = (session as any)._personaPreconnectClaimArmed === true
+            ? await claimPersonaPreconnect<NovaSonicLiveClient>(
+                session,
+                {
+                  persona: novaPersona,
+                  systemInstruction: novaSystemInstruction,
+                  tools: novaTools,
+                  voiceId: novaVoice,
+                },
+                { emitDiag },
+              )
+            : null;
+          if (claimedPersonaClient) {
+            novaClient = claimedPersonaClient;
+            reusedPersonaPreconnect = true;
+            // Constructed before this connect existed — repoint its four
+            // constructor-time callbacks, exactly as the prewarm claim does.
+            claimedPersonaClient.rebindSessionDeps({
               onRotationDue: handleNovaRotationDue,
               onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
               onFirstRawChunk: handleNovaFirstRawChunk,
               onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
-            },
-          });
+            });
+          } else {
+            novaClient = createUpstreamClient('nova_sonic', {
+              nova: {
+                config: novaCfg,
+                voiceId: novaVoice,
+                onRotationDue: handleNovaRotationDue,
+                onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
+                onFirstRawChunk: handleNovaFirstRawChunk,
+                onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
+              },
+            });
+          }
         }
 
         // Stashed for the connect_failed OASIS payload — makes a rejected
@@ -9110,6 +9170,75 @@ async function connectToLiveAPI(
           }
         };
 
+        // VTID-04549 (ORB latency G) — Devon pre-connect. Both handlers below
+        // are no-ops unless ORB_DEVON_PRECONNECT_ENABLED=true.
+        //
+        // preconnectPersonaUpstream: opens the specialist's Nova stream in the
+        // background, with the envelope the swap's own connect will build
+        // (same builder, target persona, side-effect-free mode) and the voice
+        // the swap's own connect will choose (same resolver — VTID-04445:
+        // Devon male). No handlers are bound and no greeting is sent; the
+        // stream only waits to be claimed.
+        const preconnectPersonaUpstream = async (
+          persona: string,
+        ): Promise<PreconnectedUpstream<NovaSonicLiveClient>> => {
+          const pcEnvelope = (await buildOrbVertexSetupEnvelope({ personaOverride: persona, preconnect: true })) as {
+            setup?: Record<string, any>;
+          };
+          const pcSetup = pcEnvelope.setup ?? {};
+          const { text: pcInstruction } = sanitizeInstructionForNova(pcSetup.system_instruction?.parts?.[0]?.text ?? '');
+          const pcTools = Array.isArray(pcSetup.tools) ? (pcSetup.tools as Array<Record<string, unknown>>) : [];
+          const pcVoice = resolveNovaSonicVoiceOrFallback({ language: session.lang || 'en', persona }).voice;
+          const pcClient = createUpstreamClient('nova_sonic', {
+            nova: { config: novaCfg, voiceId: pcVoice },
+          }) as NovaSonicLiveClient;
+          try {
+            // Field for field the options of the cold connect below
+            // (pinned by vtid-04549-persona-preconnect-wiring.test.ts).
+            await pcClient.connect({
+              model: novaCfg.modelId,
+              voiceName: pcVoice,
+              responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+              vadSilenceMs: session.vadSilenceMs,
+              systemInstruction: pcInstruction,
+              systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
+              tools: pcTools,
+              connectTimeoutMs: novaCfg.connectTimeoutMs,
+            });
+          } catch (err) {
+            void pcClient.close('persona_preconnect_connect_failed').catch(() => { /* best-effort */ });
+            throw err;
+          }
+          return { client: pcClient, systemInstruction: pcInstruction, tools: pcTools, voiceId: pcVoice };
+        };
+
+        // A hand-off tool result was just delivered: if it queued a specialist
+        // swap, start opening that specialist's stream now.
+        const onPersonaSwapMaybeQueued = (): void => {
+          maybeStartPersonaPreconnect(session, preconnectPersonaUpstream, { emitDiag });
+        };
+
+        // Turn complete with the swap queued: switch onto the pre-connected
+        // stream (see takeOverPersonaSwapWithPreconnect). Returns false when
+        // there is none usable; the caller then closes this stream exactly as
+        // before and the onClose below runs today's reconnect.
+        const takeOverPersonaSwap = (_s: GeminiLiveSession, persona: string): boolean =>
+          takeOverPersonaSwapWithPreconnect({
+            session,
+            persona,
+            oldClient: novaClient,
+            emitDiag,
+            clearKeepalive: clearUpstreamKeepalive,
+            reconnect: () => attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ),
+          });
+
         bindUpstreamSessionHandlers({
           session,
           client: novaClient,
@@ -9129,6 +9258,9 @@ async function connectToLiveAPI(
             startResponseWatchdog,
             markVoiceLatency,
             finalizeVoiceTurnLatency,
+            // VTID-04549: Devon pre-connect (no-ops with the flag off).
+            onPersonaSwapMaybeQueued,
+            takeOverPersonaSwap,
           },
           // Nova NEEDS the synthetic PCM keepalive just like Vertex: Bedrock
           // expects continuous audio-frame cadence and terminates an idle
@@ -9519,7 +9651,11 @@ async function connectToLiveAPI(
         session.upstreamClient = novaClient;
         session.upstreamProvider = 'nova_sonic';
         const novaConnectStart = Date.now();
-        if (!reusedWarmNova) {
+        if (reusedPersonaPreconnect) {
+          // VTID-04549: opened (with this exact instruction/tools/voice) while
+          // the bridge sentence was spoken — nothing left to connect.
+          console.log(`[VTID-04549] Nova connect skipped for session ${session.sessionId} — pre-connected ${(session as any).activePersona} stream claimed`);
+        } else if (!reusedWarmNova) {
           await novaClient.connect({
             model: novaCfg.modelId,
             voiceName: novaVoice,
