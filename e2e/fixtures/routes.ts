@@ -305,9 +305,9 @@ export const SIGNED_OUT_REDIRECT_MAP: Record<string, string> = {
 
 // ─── Routes that require auth guard redirect testing ────────────────────────
 // A subset of critical protected routes to test unauthenticated access
+// Not /discover: it is a public browse surface (AuthGuard allowGuest, App.tsx).
 export const AUTH_GUARD_TEST_ROUTES: string[] = [
   '/home',
-  '/discover',
   '/health',
   '/comm',
   '/inbox',
