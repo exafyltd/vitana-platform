@@ -1,7 +1,10 @@
 # Jev (TypeSafe "System One") Integration Plan — VTID-04473
 
-**Status:** plan only. Nothing here is built, deployed or configured. Every
-flag named below is proposed, defaults OFF, and lands staging-first.
+**Status (2026-09-25):** slice 1 is built, and the rest is still plan. Slice 1 is the
+decision adapter, the role gate, the API and the staging wiring (see §9). It stays
+inert until a TypeSafe key is provisioned. The owner's instruction for
+activation is: internal roles only (professional, staff, backoffice, admin,
+developer, infra), and **community stays off** until cost control exists.
 **Date:** 2026-09-24. **Scope:** `exafyltd/vitana-platform` (gateway + VCAOP);
 no `exafyltd/vitana-v1` change is needed until Phase 3.
 
@@ -548,6 +551,52 @@ One heavy member making 1,000 Class B decisions a day costs ≈ $1.26/month in J
 | Staff / support | Ticket triage, duplicates, priority, safety flags | Unlimited, metered |
 | Professional / partner | Lead fit (VAEA), listing quality, catalog categorisation | Metered, generous quota; revenue-linked |
 | Community | Faster, cheaper voice and routing (A); better recommendations and safety (B); "book it for me" only when it earns (C) | A always on; B quota as runaway guard; C off unless revenue-linked or entitled |
+
+## 9. Slice 1 — what is built (2026-09-25)
+
+The owner's instruction: *"activate only the usage for admin, developer,
+Backoffice, Staff, Professional but not for Community until we figure out cost
+control."*
+
+| Piece | Where |
+|---|---|
+| HTTP client (never throws, retries 429/529 once, validates answers) | `services/gateway/src/services/jev/jev-client.ts`, `jev-types.ts` |
+| Role gate: `internal` vs `community` plane | `jev-access.ts` — community/patient refused unless `JEV_COMMUNITY_ENABLED` is exactly `true`, and that value is pinned nowhere |
+| PII policy per decision (`redact` / `forbid`) | `jev-pii.ts` — emails, phones, IBANs. Names are not detected, which is why member content waits on the DPA |
+| Decision registry (10 decisions, fixed questions, threshold, roles) | `jev-decisions.ts` |
+| `decide()` / `decideMany()` | `jev-decision-service.ts` — abstains below the threshold, returns a named fallback when a decision can't be made, never a silent default |
+| Telemetry | `jev.decision.completed / .fallback / .failed` OASIS events (no state in the payload) + in-process counters split by plane, decision and role |
+| Cost | `MODEL_COSTS['jev-1.13.0'] = $0.042/M input`, priced unrounded |
+| API | `GET /api/v1/jev/decisions`, `POST /api/v1/jev/decisions/:name`, `POST /api/v1/jev/documents/classify` (≤500 docs per call, ranked), `GET /api/v1/jev/admin/stats` (exafy_admin) |
+| Staging wiring | `AWS-STAGE-DEPLOY-GATEWAY.yml` step "Resolve Jev decision config". The key is wired only if `vitana/gateway/staging/typesafe-api-key` exists; `JEV_DECISIONS_ENABLED` is always written. Production is not wired. |
+| Secret | `scripts/aws/setup-typesafe-secret.sh` (owner-run) |
+
+Wave-1 decisions and who may call them:
+
+| Decision | Roles |
+|---|---|
+| `support_ticket_triage` | staff, admin, developer, backoffice |
+| `ops_error_triage`, `ci_failure_bucket`, `finding_duplicate` | developer, admin, infra |
+| `document_relevance` (bulk: `/jev/documents/classify`) | backoffice, admin, staff |
+| `account_classification`, `contract_clause_flag` | backoffice, admin |
+| `lead_score` | backoffice, admin, staff, professional |
+| `moderation_severity` | admin, staff |
+| `professional_lead_fit` | professional, staff, admin |
+
+exafy_admin may use every decision.
+
+**To switch it on for staging:** `TYPESAFE_API_KEY_VALUE=… scripts/aws/setup-typesafe-secret.sh provision --env staging --apply`. The next staging deploy then enables it.
+
+**Next slices, not built:**
+- Wire decisions into their callers in shadow mode first:
+  - ticket triage in the support pipeline (keep VTID-04456 green)
+  - ops and CI triage in the self-healing bridge (keep VTID-04465 green)
+  - finding dedupe in the Dev Autopilot scanner
+- Operator Console tool and BackOffice command.
+- A Drive connector feeding `/jev/documents/classify`. The owner has not yet named which drive.
+- A Command Hub spend panel over `/jev/admin/stats` and the OASIS events.
+- The Jev Ultrafast browser worker (Phase 4).
+- Community cost control: quotas and a second key, per §8. After that, `JEV_COMMUNITY_ENABLED`.
 
 ## Sources
 
