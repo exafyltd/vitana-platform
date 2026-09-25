@@ -79,6 +79,14 @@
   var _RESUME_RETRY_TICK_MS = 250;
   var _AUDIO_QUEUE_HOLD_CHUNKS = 400;
 
+  // VTID-04552: mobile playback lead. _PLAYBACK_LEAD_FIRST_SEC is the
+  // original 300 ms lead a phone gets before the first chunk of a burst (it
+  // absorbs output-device start-up so the opening syllable is not clipped).
+  // When the server sends playback_lead_first_only:true, only the session's
+  // FIRST burst keeps it; later bursts use _PLAYBACK_LEAD_LATER_SEC.
+  var _PLAYBACK_LEAD_FIRST_SEC = 0.3;
+  var _PLAYBACK_LEAD_LATER_SEC = 0.05;
+
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
 
@@ -253,6 +261,10 @@
     // handler). Default false ⇒ legacy barge-in, so an older gateway or a
     // flag-off environment behaves exactly as before.
     fullDuplex: false,
+    // VTID-04552: server-declared per session. false ⇒ every first chunk of a
+    // mobile burst gets the 300 ms lead (the original behaviour).
+    playbackLeadFirstOnly: false,
+    _firstBurstLeadUsed: false,
     // VTID-03706: start of the current playback burst, for the AEC warm-up
     // window in the capture handler. 0 ⇒ not currently playing.
     audioPlayStartedAt: 0,
@@ -1983,7 +1995,15 @@
         var now = ctx.currentTime;
         if (_s.lastScheduledEnd < now) {
           var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-          _s.lastScheduledEnd = (isFirstChunk && isMobile) ? now + 0.3 : now;
+          // VTID-04552: the 300 ms mobile lead used to be paid by EVERY reply
+          // burst. When the server declares playback_lead_first_only, only
+          // the session's first burst (the greeting) keeps the full lead;
+          // later bursts get a small 50 ms safety margin. Flag absent ⇒ the
+          // original 300 ms on every first chunk. Desktop never had a lead.
+          var leadSec = _PLAYBACK_LEAD_FIRST_SEC;
+          if (_s.playbackLeadFirstOnly && _s._firstBurstLeadUsed) leadSec = _PLAYBACK_LEAD_LATER_SEC;
+          if (isFirstChunk && isMobile) _s._firstBurstLeadUsed = true;
+          _s.lastScheduledEnd = (isFirstChunk && isMobile) ? now + leadSec : now;
         }
 
         src.start(_s.lastScheduledEnd);
@@ -2069,6 +2089,12 @@
     // session keeps the prior session's _audioReadySignaled=true and never
     // acks its new session_id, forcing the greeting gate to the 3s timeout.
     _s._audioReadySignaled = false;
+    // VTID-04552: the mobile first-burst-only lead is server-declared per
+    // session (session_started / live_api_ready / the SSE start response).
+    // Reset for every start so a reconnect never inherits the previous
+    // session's answer and the new session's first burst gets the full lead.
+    _s.playbackLeadFirstOnly = false;
+    _s._firstBurstLeadUsed = false;
 
     // DEV-COMHU-ORB-AUDIO-FIRST-GREETING: unlock the playback AudioContext
     // SYNCHRONOUSLY, before ANY await in this function. On mobile (iOS/Android)
@@ -2476,6 +2502,8 @@
       // VTID-03763: this is a fresh (or reconnected) session's connection —
       // any poll loop still ticking from a prior connection is now stale.
       _s._sessionGeneration++;
+      // VTID-04552: server opt-in for the mobile first-burst-only lead.
+      _s.playbackLeadFirstOnly = data.playback_lead_first_only === true;
       // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
       // signal audio-pipeline readiness so the backend can release the greeting
       // the moment the client can actually play it (ack-or-3s gate server-side).
@@ -2681,6 +2709,8 @@
           // frames captured during playback are gated or forwarded. Absent
           // (older gateway, flag off) ⇒ falsy ⇒ legacy barge-in, unchanged.
           _s.fullDuplex = msg.full_duplex === true;
+          // VTID-04552: server opt-in for the mobile first-burst-only lead.
+          _s.playbackLeadFirstOnly = msg.playback_lead_first_only === true;
           _signalAudioReady();
           if (msg.conversation_id) _s.conversationId = msg.conversation_id;
           _s._preDisconnectStage = null;
@@ -2926,6 +2956,10 @@
         // exactly (msg.full_duplex === true; absent/false ⇒ legacy
         // half-duplex, unchanged).
         _s.fullDuplex = msg.full_duplex === true;
+        // VTID-04552: same opt-in as the WS session_started handshake. Only
+        // ever turns it ON here — an absent field must not undo a true
+        // already declared by session_started / the SSE start response.
+        if (msg.playback_lead_first_only === true) _s.playbackLeadFirstOnly = true;
         _updateUI();
         break;
 
