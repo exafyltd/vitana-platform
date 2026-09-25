@@ -79,6 +79,19 @@
   var _RESUME_RETRY_TICK_MS = 250;
   var _AUDIO_QUEUE_HOLD_CHUNKS = 400;
 
+  // VTID-04552: mobile playback lead. _PLAYBACK_LEAD_FIRST_SEC is the
+  // original 300 ms lead a phone gets before the first chunk of a burst (it
+  // absorbs output-device start-up so the opening syllable is not clipped).
+  // When the server sends playback_lead_first_only:true, only the session's
+  // FIRST burst keeps it; later bursts use _PLAYBACK_LEAD_LATER_SEC.
+  var _PLAYBACK_LEAD_FIRST_SEC = 0.3;
+  var _PLAYBACK_LEAD_LATER_SEC = 0.05;
+
+  // VTID-04554: upper bound on how long _signalAudioReady waits for a
+  // not-yet-running playback context before sending audio_ready anyway. Well
+  // under the server's 1s fallback, so the ack always arrives first.
+  var _AUDIO_READY_RESUME_BOUND_MS = 300;
+
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
 
@@ -259,6 +272,13 @@
     // handler). Default false ⇒ legacy barge-in, so an older gateway or a
     // flag-off environment behaves exactly as before.
     fullDuplex: false,
+    // VTID-04552: server-declared per session. false ⇒ every first chunk of a
+    // mobile burst gets the 300 ms lead (the original behaviour).
+    playbackLeadFirstOnly: false,
+    _firstBurstLeadUsed: false,
+    // VTID-04542: current tap cycle of the tap-to-audio latency beacon
+    // (see _latBegin). null ⇒ no cycle; marks are then silently dropped.
+    _lat: null,
     // VTID-03706: start of the current playback burst, for the AEC warm-up
     // window in the capture handler. 0 ⇒ not currently playing.
     audioPlayStartedAt: 0,
@@ -1424,10 +1444,28 @@
   // /live/session/start hits the gateway's 5-min bootstrap cache instead of
   // paying 400-800ms of Supabase fetches on the click-to-first-audio path.
   // Safe to call repeatedly (server cache absorbs it); anonymous = no-op.
-  function _prewarmBootstrap() {
+  // VTID-04548: the route + browser timezone the NEXT session start will send,
+  // so the gateway warms the brain-cache key that start will actually look up
+  // (role follows the route; the timezone is part of the key).
+  function _prewarmContext(route) {
+    var ctx = {};
+    var r = typeof route === 'string' && route ? route : _s.currentRoute;
+    if (r) ctx.current_route = r;
+    // VTID-04560: the screen's declared surface + view role, so the prewarm
+    // resolves the same Assistant Profile the session start will.
+    if (_s.surface) ctx.surface = _s.surface;
+    if (_s.viewRole) ctx.view_role = _s.viewRole;
+    try {
+      var _tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (_tz) ctx.client_timezone = _tz;
+    } catch (e) { /* Intl unavailable — gateway falls back as at session start */ }
+    return ctx;
+  }
+
+  function _prewarmBootstrap(route) {
     if (!_cfg.token) return; // anonymous — server would no-op anyway
     var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
-    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: '{}' })
+    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: JSON.stringify(_prewarmContext(route)) })
       .then(function (r) { if (r.ok) console.log('[VTOrb] Bootstrap prewarm requested'); })
       .catch(function () { /* best-effort — never surfaces */ });
   }
@@ -1481,7 +1519,10 @@
         // reuse a socket with nothing behind it server-side yet, silently
         // falling to a cold connect while orphaning the in-flight prewarm.
         // Wait for the server's own 'prewarm_ready' ack below instead.
-        try { w.send(JSON.stringify({ type: 'prewarm' })); }
+        // VTID-04548: route + timezone so the brain-cache warm uses the next start's key.
+        var _pwMsg = _prewarmContext();
+        _pwMsg.type = 'prewarm';
+        try { w.send(JSON.stringify(_pwMsg)); }
         catch (e) { drop(); }
         return;
       }
@@ -1807,6 +1848,125 @@
   }
 
   // ============================================================
+  // 4b. TAP-TO-AUDIO LATENCY BEACON (VTID-04542)
+  // ============================================================
+  // One POST per tap cycle to the gateway's client-latency route, carrying
+  // client-side marks in ms relative to the tap (performance.now()):
+  //   tap, continuity_done, socket_open, start_sent, session_started,
+  //   first_audio_scheduled (first model-audio AudioBufferSourceNode.start),
+  //   first_audio_played (that source's scheduled start, converted to wall
+  //   clock), plus reconnect<N>_* for each reconnect attempt in the cycle.
+  // Sent once, after first audio — or with whatever exists when the overlay
+  // is closed before any audio. Fire-and-forget (keepalive), never throws,
+  // never on the audio path (deferred with setTimeout 0). Purely observational:
+  // it reads the timeline, it changes nothing about the session.
+  var _LAT_BEACON_PATH = '/api/v1/orb/live/client-latency';
+
+  function _latNow() {
+    try {
+      if (window.performance && typeof performance.now === 'function') return performance.now();
+    } catch (e) { /* fall through */ }
+    return Date.now();
+  }
+
+  // Start a tap cycle. Called from _show() — the tap.
+  function _latBegin() {
+    try {
+      if (_s._lat && !_s._lat.posted) _latFlush(); // an older cycle never flushed
+      _s._lat = {
+        t0: _latNow(),
+        marks: { tap: 0 },
+        prefix: '',
+        attempts: 0,
+        posted: false,
+        transport: null,
+        prewarm: false,
+        sessionId: null
+      };
+    } catch (e) { _s._lat = null; }
+  }
+
+  // Each _sessionStart in the cycle: the first is the tap's own start; every
+  // later one is a reconnect, and its marks get a reconnect<N>_ prefix so the
+  // original attempt's marks are never overwritten.
+  function _latSessionAttempt() {
+    var l = _s._lat;
+    if (!l || l.posted) return; // no cycle (or already reported) — do nothing
+    l.attempts++;
+    if (l.attempts > 1) {
+      l.prefix = 'reconnect' + (l.attempts - 1) + '_';
+      _latMark('start');
+    }
+  }
+
+  // First value wins. `unprefixed` is for the first-audio marks, which are
+  // the cycle's outcome regardless of which attempt produced the audio.
+  function _latMark(name, unprefixed, atMs) {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    var key = unprefixed ? name : (l.prefix + name);
+    if (l.marks[key] !== undefined) return;
+    var t = typeof atMs === 'number' ? atMs : _latNow();
+    l.marks[key] = Math.max(0, Math.round(t - l.t0));
+  }
+
+  function _latNote(transport, prewarmReady, sessionId) {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    if (transport === 'ws' || transport === 'sse') l.transport = transport;
+    if (typeof prewarmReady === 'boolean') l.prewarm = prewarmReady;
+    if (sessionId) l.sessionId = String(sessionId);
+  }
+
+  // Called by _processQueue right after the first model-audio source.start().
+  function _latFirstAudio(ctx, startAt) {
+    var l = _s._lat;
+    if (!l || l.posted || l.marks.first_audio_scheduled !== undefined) return;
+    try {
+      var now = _latNow();
+      _latMark('first_audio_scheduled', true, now);
+      var aheadSec = (ctx && typeof ctx.currentTime === 'number') ? (startAt - ctx.currentTime) : 0;
+      _latMark('first_audio_played', true, now + Math.max(0, aheadSec) * 1000);
+    } catch (e) { /* observational only */ }
+    setTimeout(_latFlush, 0); // off the audio scheduling path
+  }
+
+  function _latEntry() {
+    try {
+      if (String(window.location && window.location.pathname || '').indexOf('/command-hub') === 0) return 'command_hub';
+    } catch (e) { /* fall through */ }
+    try {
+      if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return 'mobile';
+    } catch (e) { /* fall through */ }
+    return 'desktop';
+  }
+
+  function _latFlush() {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    l.posted = true;
+    try {
+      if (!_cfg.gw) return;
+      var transport = l.transport;
+      if (transport !== 'ws' && transport !== 'sse') {
+        try { transport = _useWsTransport() ? 'ws' : 'sse'; } catch (e) { transport = 'sse'; }
+      }
+      var body = JSON.stringify({
+        session_id: String(l.sessionId || _s.sessionId || ''),
+        entry: _latEntry(),
+        transport: transport,
+        marks: l.marks,
+        prewarm_socket_ready: !!l.prewarm
+      });
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + _LAT_BEACON_PATH, {
+        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: body
+      }).catch(function () { /* beacon is best-effort; a 404 is fine */ });
+    } catch (e) { /* never throw from the beacon */ }
+  }
+
+  // ============================================================
   // 5. AUDIO PLAYBACK PIPELINE
   // ============================================================
 
@@ -1814,41 +1974,86 @@
   // POST once per session when the playback pipeline is genuinely ready
   // (AudioContext exists + running). The backend records the ack so it can
   // release the greeting on ack-or-3s. Idempotent + best-effort.
+  //
+  // VTID-04554: audio_ready is now ALWAYS sent. It used to be sent only if the
+  // context was already 'running' at the moment session_started arrived;
+  // otherwise it waited for a resume() that only _processQueue kicks — and
+  // _processQueue only runs once greeting audio arrives, which the server was
+  // holding for this very ack. So the server's 1s fallback released the
+  // greeting (measured on ~50% of WS sessions). Now, when the context is not
+  // yet running, we wait for it — its resume() was already requested in the
+  // tap gesture — bounded by _AUDIO_READY_RESUME_BOUND_MS, and send then; a
+  // statechange → 'running' inside that window sends immediately. Either way
+  // at most once per session, and never before the session id is known. The
+  // "tap to hear" suspended-context recovery is untouched: audio that arrives
+  // while the context is still suspended is held by _processQueue exactly as
+  // it was after the server's own fallback released it.
   function _signalAudioReady() {
     if (_s._audioReadySignaled) return;
     if (!_s.sessionId) return;
+    var sid = _s.sessionId;
+    function send() {
+      if (_s._audioReadySignaled) return;
+      // A later session (reconnect) owns its own ack.
+      if (!_s.sessionId || _s.sessionId !== sid) return;
+      _s._audioReadySignaled = true;
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
+      // audio_ready message (the WS path defers the greeting on it).
+      if (_s.ws && _s.ws.readyState === 1) {
+        try {
+          _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
+          console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
+        } catch (e) { /* greeting falls back to the server timeout */ }
+        return;
+      }
+      try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+        fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
+          method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
+        }).catch(function () { /* greeting falls back to the 3s server timeout */ });
+        console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
+      } catch (e) { /* best-effort */ }
+    }
     // Ensure a playback context exists; if it's suspended, kick a resume so the
     // pipeline reaches 'running' (the canonical "ready" state).
+    var ctx;
+    var resumeP = null;
     try {
       if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
         _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      var ctx = _s.playbackCtx;
+      ctx = _s.playbackCtx;
       if (ctx.state === 'suspended' && ctx.resume) {
-        ctx.resume().catch(function () {});
+        resumeP = ctx.resume();
+        if (resumeP && resumeP.catch) resumeP.catch(function () {});
       }
-      if (ctx.state !== 'running') return; // not ready yet; will retry on resume
+      if (ctx.state !== 'running') {
+        // VTID-04554: not ready yet — wait (bounded) instead of giving up.
+        // Armed at most once per session id.
+        if (_s._audioReadyWaitSid === sid) return;
+        _s._audioReadyWaitSid = sid;
+        var fired = false;
+        var boundTimer = null;
+        var onState = function () {
+          if (ctx.state === 'running') fire();
+        };
+        var fire = function () {
+          if (fired) return;
+          fired = true;
+          clearTimeout(boundTimer);
+          try { ctx.removeEventListener('statechange', onState); } catch (e) { /* noop */ }
+          send();
+        };
+        try { ctx.addEventListener('statechange', onState); } catch (e) { /* older WebKit — bound covers it */ }
+        if (resumeP && resumeP.then) resumeP.then(function () { if (ctx.state === 'running') fire(); }, function () {});
+        boundTimer = setTimeout(fire, _AUDIO_READY_RESUME_BOUND_MS);
+        return;
+      }
     } catch (e) {
       return; // no audio context available — let the server 3s timeout cover it
     }
-    _s._audioReadySignaled = true;
-    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
-    // audio_ready message (the WS path defers the greeting on it).
-    if (_s.ws && _s.ws.readyState === 1) {
-      try {
-        _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
-        console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
-      } catch (e) { /* greeting falls back to the server timeout */ }
-      return;
-    }
-    try {
-      var headers = { 'Content-Type': 'application/json' };
-      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-      fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
-        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
-      }).catch(function () { /* greeting falls back to the 3s server timeout */ });
-      console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
-    } catch (e) { /* best-effort */ }
+    send();
   }
 
   function _playAudio(base64Data, mimeType) {
@@ -1989,10 +2194,20 @@
         var now = ctx.currentTime;
         if (_s.lastScheduledEnd < now) {
           var isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-          _s.lastScheduledEnd = (isFirstChunk && isMobile) ? now + 0.3 : now;
+          // VTID-04552: the 300 ms mobile lead used to be paid by EVERY reply
+          // burst. When the server declares playback_lead_first_only, only
+          // the session's first burst (the greeting) keeps the full lead;
+          // later bursts get a small 50 ms safety margin. Flag absent ⇒ the
+          // original 300 ms on every first chunk. Desktop never had a lead.
+          var leadSec = _PLAYBACK_LEAD_FIRST_SEC;
+          if (_s.playbackLeadFirstOnly && _s._firstBurstLeadUsed) leadSec = _PLAYBACK_LEAD_LATER_SEC;
+          if (isFirstChunk && isMobile) _s._firstBurstLeadUsed = true;
+          _s.lastScheduledEnd = (isFirstChunk && isMobile) ? now + leadSec : now;
         }
 
         src.start(_s.lastScheduledEnd);
+        // VTID-04542: first model-audio source of the tap cycle (no-op after).
+        _latFirstAudio(ctx, _s.lastScheduledEnd);
 
         _s.scheduledSources.push(src);
         // VTID-03185 — Phase 0 of ORB Recovery: wrap onended in an IIFE that
@@ -2075,6 +2290,14 @@
     // session keeps the prior session's _audioReadySignaled=true and never
     // acks its new session_id, forcing the greeting gate to the 3s timeout.
     _s._audioReadySignaled = false;
+    // VTID-04552: the mobile first-burst-only lead is server-declared per
+    // session (session_started / live_api_ready / the SSE start response).
+    // Reset for every start so a reconnect never inherits the previous
+    // session's answer and the new session's first burst gets the full lead.
+    _s.playbackLeadFirstOnly = false;
+    _s._firstBurstLeadUsed = false;
+    // VTID-04542: beacon — first start of the tap cycle, or reconnect<N>.
+    _latSessionAttempt();
 
     // DEV-COMHU-ORB-AUDIO-FIRST-GREETING: unlock the playback AudioContext
     // SYNCHRONOUSLY, before ANY await in this function. On mobile (iOS/Android)
@@ -2102,6 +2325,46 @@
         console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
       });
     }
+
+    // VTID-04547: open the WebSocket (or claim the prewarmed one) NOW, in
+    // parallel with the continuity fetch below, instead of after it. The
+    // continuity round trip used to sit serially in front of the socket
+    // handshake on every authenticated tap. The `start` frame itself is still
+    // sent only once BOTH the socket is connected AND the start payload has
+    // been built from the resolved (or aborted) continuity — _sessionStartWs
+    // holds it until _wsEarly.release(startPayload) below — so the payload is
+    // byte-identical to before. SSE is deliberately NOT started early: its
+    // POST /live/session/start body IS the payload, which needs continuity.
+    var _wsEarly = null;
+    if (_useWsTransport()) {
+      _latNote('ws'); // VTID-04542
+      _wsEarly = { released: false, release: null, promise: null };
+      var _wsPayloadGate = new Promise(function (resolveGate) {
+        _wsEarly.release = function (payload) {
+          if (_wsEarly.released) return;
+          _wsEarly.released = true;
+          resolveGate(payload || null);
+        };
+      });
+      _wsEarly.promise = _sessionStartWs(_wsPayloadGate);
+      // Observed later (await below); swallow here so a socket that dies
+      // while continuity is still loading is not reported as unhandled.
+      _wsEarly.promise.catch(function () { /* handled at the await site */ });
+    }
+
+    // VTID-04547: the activation chime is LOCAL audio into the already-unlocked
+    // context — it never needed to wait for the continuity round trip. It
+    // plays at the same point relative to the tap as before, minus that wait.
+    // (BOOTSTRAP-ORB-IOS-UNLOCK: the ctx create + silent-buffer unlock +
+    // resume() above ran before any await, so the gesture window is intact.)
+    _playChime(_s.playbackCtx);
+
+    // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
+    // The chime ends ~400 ms after this call; without an active source after
+    // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
+    // greeting and the first chunks drop silently. Stopped in the audio_out
+    // handler on first real chunk, and in _sessionStop on teardown.
+    _startCtxKeepAlive();
 
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
@@ -2150,6 +2413,7 @@
         }
       } catch (e) { /* continuity is an optimization — never block session start */ }
     }
+    _latMark('continuity_done'); // VTID-04542 (also when skipped: anonymous / in-memory)
 
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
@@ -2179,16 +2443,9 @@
     // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
     // silent-buffer unlock + resume() was MOVED UP to before the continuity
     // fetch above (DEV-COMHU-ORB-AUDIO-FIRST-GREETING) — it MUST run before any
-    // await so the mobile gesture window is not lost. The ctx is already unlocked
-    // by here; just play the activation chime into it.
-    _playChime(_s.playbackCtx);
-
-    // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
-    // The chime ends ~400 ms after this call; without an active source after
-    // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
-    // greeting and the first chunks drop silently. Stopped in the audio_out
-    // handler on first real chunk, and in _sessionStop on teardown.
-    _startCtxKeepAlive();
+    // await so the mobile gesture window is not lost. VTID-04547 moved the
+    // activation chime + ctx keep-alive up there too (before the continuity
+    // await), so nothing audio-related is left to do here.
 
     try {
       var headers = { 'Content-Type': 'application/json' };
@@ -2365,9 +2622,22 @@
       // A server-side REJECTION (401 AUTH_TOKEN_INVALID and friends) is NOT a
       // transport failure — SSE would be rejected identically — so those are
       // rethrown for the caller's error handling instead of retried.
-      if (_useWsTransport()) {
+      //
+      // VTID-04547: normally the socket was already opened (or the prewarmed
+      // one claimed) above, before the continuity fetch — releasing the built
+      // payload here is what lets it send `start`. The cold `_sessionStartWs(
+      // startPayload)` call below only runs if the transport preference
+      // flipped to WS while continuity was loading (the server transport
+      // answer arrived in that window), i.e. exactly what this line did
+      // before VTID-04547.
+      if (_wsEarly || _useWsTransport()) {
         try {
-          await _sessionStartWs(startPayload);
+          if (_wsEarly) {
+            _wsEarly.release(startPayload);
+            await _wsEarly.promise;
+          } else {
+            await _sessionStartWs(startPayload);
+          }
           return;
         } catch (wsErr) {
           if (wsErr && wsErr.__vtOrbServerRejected) throw wsErr;
@@ -2393,6 +2663,8 @@
           startSignal = ctrl.signal;
         } catch (e) { startSignal = undefined; }
       }
+      _latNote('sse', false); // VTID-04542
+      _latMark('start_sent');
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
         headers: headers,
@@ -2440,6 +2712,10 @@
       // VTID-03763: this is a fresh (or reconnected) session's connection —
       // any poll loop still ticking from a prior connection is now stale.
       _s._sessionGeneration++;
+      // VTID-04552: server opt-in for the mobile first-burst-only lead.
+      _s.playbackLeadFirstOnly = data.playback_lead_first_only === true;
+      _latMark('session_started'); // VTID-04542
+      _latNote(null, null, data.session_id);
       // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
       // signal audio-pipeline readiness so the backend can release the greeting
       // the moment the client can actually play it (ack-or-3s gate server-side).
@@ -2461,6 +2737,7 @@
 
       var es = new EventSource(sseUrl);
       es.onopen = function () {
+        _latMark('socket_open'); // VTID-04542
         console.log('[VTOrb] SSE connected');
         _startWatchdog();
         // DEV-COMHU-0501: arm the cross-provider speaking-state watchdog + emit
@@ -2503,6 +2780,9 @@
       _updateUI();
     } catch (err) {
       console.error('[VTOrb] Failed to start session:', err);
+      // VTID-04547: if we failed BEFORE the early-opened socket was given its
+      // payload, release it empty so it closes instead of idling open.
+      if (_wsEarly && !_wsEarly.released) _wsEarly.release(null);
       _s.active = false;
       _s.sessionId = null;
       _s.liveError = err.message;
@@ -2543,8 +2823,22 @@
   // audio-ready signal, watchdogs) — only the wire changes. The gateway's
   // WS path sends the same message shapes the SSE stream does, so all
   // post-handshake traffic funnels into the shared _handleMessage.
+  //
+  // VTID-04547: `startPayload` may be the payload object (sent as soon as the
+  // socket is ready, exactly as before) OR a promise of it. _sessionStart
+  // passes a promise so the socket opens / the prewarmed socket is claimed
+  // WHILE the continuity fetch is still in flight; the `start` frame is sent
+  // only once BOTH the socket is connected AND the promise has resolved, so
+  // it carries the same payload it always did. A promise that resolves to
+  // null (the start aborted before a payload existed) closes the socket
+  // without ever sending `start`. The 8s start budget is armed when the
+  // payload arrives — the point at which this function used to be called —
+  // so its semantics are unchanged.
   function _sessionStartWs(startPayload) {
     return new Promise(function (resolve, reject) {
+      var payloadPending = !!(startPayload && typeof startPayload.then === 'function');
+      var payloadPromise = payloadPending ? startPayload : null;
+      if (payloadPending) startPayload = null;
       // VTID-03779: claim an already-open, already-prewarmed socket if one
       // is available instead of opening a fresh connection — this is the
       // "cold start becomes a warm start" reuse point. Any prewarm
@@ -2561,14 +2855,27 @@
         try { w = new WebSocket(url); } catch (e) { return reject(e); }
       }
       if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
+      // VTID-04542: beacon — a claimed prewarmed socket is already open.
+      _latNote('ws', reused);
+      if (reused) _latMark('socket_open');
+      else w.onopen = function () { _latMark('socket_open'); };
       var settled = false;
+      // VTID-04547: a reused socket already completed its 'connected'
+      // handshake during prewarm; a fresh one has not yet.
+      var connected = reused;
+      var startSent = false;
+      var startTimer = null;
       // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
-      var startTimer = setTimeout(function () {
-        if (settled) return;
-        settled = true;
-        try { w.close(); } catch (e) { /* noop */ }
-        reject(new Error('WS session start timed out after 8s'));
-      }, 8000);
+      function armStartTimer() {
+        if (startTimer || settled) return;
+        startTimer = setTimeout(function () {
+          if (settled) return;
+          settled = true;
+          try { w.close(); } catch (e) { /* noop */ }
+          reject(new Error('WS session start timed out after 8s'));
+        }, 8000);
+      }
+      if (!payloadPending) armStartTimer();
       function bail(reason) {
         // User pressed X / overlay hidden mid-handshake — mirror the SSE
         // path's stranded-session cleanup (stop + close releases upstream).
@@ -2584,7 +2891,8 @@
         try { msg = JSON.parse(event.data); } catch (e) { return; }
         if (msg.type === 'connected') {
           if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
-          try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          connected = true;
+          sendStart(); // no-op until the payload has resolved (VTID-04547)
           return;
         }
         // VTID-03471: the gateway rejected the start (bad/expired JWT, origin
@@ -2618,6 +2926,10 @@
           // frames captured during playback are gated or forwarded. Absent
           // (older gateway, flag off) ⇒ falsy ⇒ legacy barge-in, unchanged.
           _s.fullDuplex = msg.full_duplex === true;
+          // VTID-04552: server opt-in for the mobile first-burst-only lead.
+          _s.playbackLeadFirstOnly = msg.playback_lead_first_only === true;
+          _latMark('session_started'); // VTID-04542
+          _latNote('ws', null, msg.session_id);
           _signalAudioReady();
           if (msg.conversation_id) _s.conversationId = msg.conversation_id;
           _s._preDisconnectStage = null;
@@ -2649,14 +2961,47 @@
       };
       w.onerror = function () { /* onclose carries the recovery decision */ };
 
-      // VTID-03779: a reused socket already completed the 'connected'
-      // handshake during prewarm — that message will never arrive again on
-      // THIS socket, so send 'start' immediately instead of waiting for it.
-      // A fresh socket is unaffected: it waits for 'connected' exactly as
-      // before (see the onmessage handler above).
-      if (reused) {
+      // VTID-04547: the one place `start` is sent — only once the socket is
+      // connected (fresh: its 'connected' message; reused: already true) AND
+      // the payload exists. Re-checks the overlay-closed guard at the moment
+      // of sending, since with an early-opened socket the user may have
+      // closed the overlay while continuity was still loading.
+      function sendStart() {
+        if (startSent || settled || !connected || payloadPending) return;
+        if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
+        startSent = true;
         try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); }
         catch (e) { /* onclose covers */ }
+        _latMark('start_sent'); // VTID-04542
+      }
+
+      // VTID-03779: a reused socket already completed the 'connected'
+      // handshake during prewarm — that message will never arrive again on
+      // THIS socket, so send 'start' immediately (once the payload exists)
+      // instead of waiting for it. A fresh socket is unaffected: it waits
+      // for 'connected' exactly as before (see the onmessage handler above).
+      if (reused) {
+        sendStart();
+      }
+
+      // VTID-04547: payload delivered asynchronously by _sessionStart.
+      if (payloadPromise) {
+        payloadPromise.then(function (payload) {
+          if (settled) return;
+          if (!payload) {
+            // Start aborted before a payload existed — close without `start`.
+            settled = true;
+            clearTimeout(startTimer);
+            try { w.onopen = null; w.onmessage = null; w.onerror = null; w.onclose = null; } catch (e) { /* noop */ }
+            try { w.close(); } catch (e) { /* noop */ }
+            resolve();
+            return;
+          }
+          startPayload = payload;
+          payloadPending = false;
+          armStartTimer();
+          sendStart();
+        });
       }
     });
   }
@@ -2832,6 +3177,10 @@
         // exactly (msg.full_duplex === true; absent/false ⇒ legacy
         // half-duplex, unchanged).
         _s.fullDuplex = msg.full_duplex === true;
+        // VTID-04552: same opt-in as the WS session_started handshake. Only
+        // ever turns it ON here — an absent field must not undo a true
+        // already declared by session_started / the SSE start response.
+        if (msg.playback_lead_first_only === true) _s.playbackLeadFirstOnly = true;
         _updateUI();
         break;
 
@@ -4740,6 +5089,9 @@
   }
 
   function _show() {
+    // VTID-04542: the tap. Keep an in-flight cycle if the overlay is already
+    // up (a repeated show must not reset the timeline of the live one).
+    if (!(_s.overlayVisible && _s._lat && !_s._lat.posted)) _latBegin();
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
     // VTID-03292 (#3): an explicit user re-open clears the hard-close flag so the
     // session can start again. This is the ONLY place it is cleared.
@@ -4961,6 +5313,9 @@
   }
 
   function _hide() {
+    // VTID-04542: overlay closed before (or after) first audio — report what
+    // the cycle has. No-op if it was already sent at first audio.
+    _latFlush();
     _cancelPendingNav(); // VTID-04558
     // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
@@ -5831,6 +6186,17 @@
     // useOrbWidget on every React Router route change so the next orb session
     // start payload includes fresh context for the Navigator service.
     // Safe to call as often as needed — does not trigger any I/O.
+    // VTID-04548: re-warm the gateway's brain cache for the route (and thus
+    // the role) the next session will start on — the host calls this after a
+    // role switch. Cache warm only: no session, nothing spoken, no Nova
+    // stream. Best-effort; never throws.
+    prewarm: function (opts) {
+      try {
+        var route = opts && typeof opts.current_route === 'string' ? opts.current_route : null;
+        _prewarmBootstrap(route);
+      } catch (e) { /* best-effort */ }
+    },
+
     updateContext: function (ctx) {
       if (!ctx || typeof ctx !== 'object') return;
       if (typeof ctx.current_route === 'string') {

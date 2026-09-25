@@ -101,6 +101,12 @@ describe('VTID-03128: Teacher-aware reconnect recovery branch', () => {
     // The generic recovery prompt MUST still be intact further down so
     // freeform chat reconnects (anonymous, non-Teacher) keep working.
     expect(fn).toMatch(/VTID-02715/);
-    expect(fn).toMatch(/RECONNECT_STAGE = /);
+    // VTID-04551: the generic prompt text lives in its own module now.
+    expect(fn).toMatch(/buildReconnectRecoveryPrompt\(stage\)/);
+    const recoveryModule = fs.readFileSync(
+      path.resolve(__dirname, '../../../../src/orb/live/instruction/reconnect-recovery-prompt.ts'),
+      'utf8',
+    );
+    expect(recoveryModule).toMatch(/RECONNECT_STAGE = /);
   });
 });

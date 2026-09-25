@@ -78,6 +78,7 @@ import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
+import { notePersonaSwapDrained } from '../persona-swap-latency';
 import {
   detectBackendDataLeak,
   effectiveToolCallLimit,
@@ -246,6 +247,17 @@ export interface UpstreamMessageHandlerDeps {
     timeoutMs: number,
     reason: string,
   ) => void;
+  // VTID-04549 (ORB latency G): Devon pre-connect. Both optional — only the
+  // Nova connect path supplies them, and both are no-ops unless
+  // ORB_DEVON_PRECONNECT_ENABLED=true.
+  /** A tool result was delivered; start pre-connecting a queued specialist. */
+  onPersonaSwapMaybeQueued?: (session: GeminiLiveSession) => void;
+  /**
+   * Turn complete with a queued swap: hand the session over to the
+   * pre-connected stream. Returns false when there is none usable — the
+   * caller then closes the upstream exactly as before.
+   */
+  takeOverPersonaSwap?: (session: GeminiLiveSession, persona: string) => boolean;
 }
 
 /**
@@ -422,6 +434,7 @@ export function createUpstreamLiveMessageHandler(
             // user-facing WS/SSE stays connected through the swap.
             const pendingSwap = (session as any).pendingPersonaSwap;
             if (pendingSwap && session.upstreamWs && session.active) {
+              notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
               (session as any).activePersona = pendingSwap;
               (session as any).pendingPersonaSwap = null;
               // Set unambiguous flag so close + reconnect handlers know this
@@ -2147,6 +2160,9 @@ export function handleToolCall(
         if (sent) {
           recordPendingToolResult(session, toolName, modelFacingResult.result ?? '');
         }
+        // VTID-04549: a hand-off tool may just have queued a specialist swap —
+        // open the specialist's stream now, while the bridge is spoken.
+        ctx.deps.onPersonaSwapMaybeQueued?.(session);
 
         emitOasisEvent({
           vtid: 'VTID-01224',
@@ -2285,6 +2301,7 @@ export function handleTurnComplete(
   if (pendingSwap && session.active && supportsInProcessPersonaSwap(ctx.client)) {
     // VTID-04336: the cascade has no upstream stream to reconnect — swap the
     // persona in process (prompt + TTS voice role) on the same client.
+    notePersonaSwapDrained(session, 'in_process'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     const applied = ctx.client.applyPersona(buildInProcessPersonaSwap(session as any, pendingSwap));
@@ -2299,13 +2316,21 @@ export function handleTurnComplete(
       restored_base_instruction: applied.restoredBaseInstruction,
     });
   } else if (pendingSwap && session.active) {
+    notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     (session as any)._personaSwapInFlight = true;
-    console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
-    void ctx.client.close('persona_swap').catch((_e) => {
-      console.warn('[VTID-02047] persona swap close failed:', _e);
-    });
+    // VTID-04549: with a pre-connected specialist stream the route switches
+    // onto it and retires this one; otherwise (and always with the flag off)
+    // the close below runs exactly as before.
+    if (ctx.deps.takeOverPersonaSwap?.(session, pendingSwap) === true) {
+      console.log(`[VTID-04549] turn_complete fired with pending persona swap → switching to pre-connected ${pendingSwap}`);
+    } else {
+      console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
+      void ctx.client.close('persona_swap').catch((_e) => {
+        console.warn('[VTID-02047] persona swap close failed:', _e);
+      });
+    }
   }
 
   session.turn_count++;

@@ -43,8 +43,10 @@
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
-import { Router, Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+// VTID-04543: in-process cache for lookupPrimaryTenant.
+import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -67,7 +69,27 @@ import {
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
 // LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
-import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
+import { withLatencyTracker, LatencyTracker, type LatencyPhase, type SessionStartTiming } from '../orb/live/latency-tracker';
+// VTID-04542 (ORB latency P0): measurement-only helpers — provider label,
+// turn-0 context/meta, greeting dispatch + wait marks, hand-off timing,
+// client beacon. None of them changes what the model receives.
+import {
+  resolveLatencyProviderLabel,
+  attachEstablishLatencyContext,
+  prepareEstablishLatencyFinalize,
+  markGreetingDispatched,
+  startWaitProbe,
+  timeBoundedGreetingRead,
+  withLedgerWaitMark,
+  type SessionLatencyContext,
+} from '../orb/live/latency-context';
+import {
+  notePersonaSwapRequested,
+  notePersonaSwapConnectStarted,
+  notePersonaSwapConnected,
+  notePersonaSwapFirstAudio,
+} from '../orb/live/persona-swap-latency';
+import { handleClientLatencyBeacon } from '../orb/live/client-latency-beacon';
 // BOOTSTRAP-VOICE-LATENCY-SPECULATION: speculative persona-voice resolution to
 // remove the registry round-trip from the turn-0 critical path. Flag-gated
 // (FEATURE_VOICE_SPECULATION), default OFF → no-op (see voice-speculation.ts).
@@ -187,7 +209,7 @@ import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../se
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
 import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
-import type { AssistantProfile } from '../orb/profile/assistant-profile';
+import { resolveAssistantProfile, clampRoleToProfile, type AssistantProfile } from '../orb/profile/assistant-profile';
 import { sessionServedRole, sessionServedSurface, workSurfaceGreetingFields } from '../orb/profile/session-profile';
 import {
   buildSupportTicketFiledMessage,
@@ -396,8 +418,15 @@ import {
   setNewdayOverviewRungEnabled,
   setDayCloseRungEnabled,
   tryDayCloseRung,
+  overviewIndependentOpenerWins,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+// VTID-04544: the greeting's bounded payload reads, run concurrently.
+import {
+  boundedRead,
+  gatherSafeFastGreetingPayloads,
+  gatherNewdayGreetingPayload,
+} from '../services/conversation/greeting-payload-gather';
 import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
 // VTID-04416 (WS-1.4): every opening decision goes through the brain entry point.
 import { decideOpeningFlow, resolveCandidateOutcome } from '../services/conversation/decide-conversation-flow';
@@ -618,7 +647,21 @@ function hasValidIdentity(req: AuthenticatedRequest): boolean {
  * The provision_platform_user() trigger creates user_tenants rows but does NOT
  * set active_tenant_id in auth.users.raw_app_meta_data, so many JWTs are missing it.
  */
+// VTID-04543: resolved tenants are cached in-process for 5 min (positives
+// only — a missing membership is re-read every time, as before). See
+// orb/live/session/primary-tenant-cache.ts for the invalidation note.
+const primaryTenantCache = createPrimaryTenantCache();
+
+/** Test-only: forget cached primary tenants. */
+export function __resetPrimaryTenantCacheForTests(): void {
+  primaryTenantCache.clear();
+}
+
 async function lookupPrimaryTenant(userId: string): Promise<string | null> {
+  return primaryTenantCache.resolve(userId, () => lookupPrimaryTenantUncached(userId));
+}
+
+async function lookupPrimaryTenantUncached(userId: string): Promise<string | null> {
   try {
     const supabase = getSupabase();
     if (!supabase) return null;
@@ -1040,6 +1083,12 @@ export interface GeminiLiveSession {
   // Separate from latencyTracker so the greeting's audio-out — which has no
   // preceding user turn — doesn't collide with per-turn tracking.
   establishLatency?: LatencyTracker | null;
+  // VTID-04542 (ORB latency P0, measurement only): step timing of POST
+  // /live/session/start and the static latency context (entry / surface /
+  // authenticated, plus prewarm_claimed and the dispatched greeting rung set
+  // later). Read only by the turn-0 latency event — never by behaviour.
+  sessionStartTiming?: SessionStartTiming | null;
+  latencyContext?: SessionLatencyContext | null;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -1965,7 +2014,32 @@ import {
 } from '../orb/live/voice/nova-sonic-voice';
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
-import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+// VTID-04552 (ORB latency J): server switch for the widget's mobile playback lead.
+import { playbackLeadHandshakeFields } from '../orb/live/playback-lead';
+// VTID-04549 (ORB latency G): Devon pre-connect, behind ORB_DEVON_PRECONNECT_ENABLED.
+import {
+  claimPersonaPreconnect,
+  maybeStartPersonaPreconnect,
+  takeOverPersonaSwapWithPreconnect,
+  type PreconnectedUpstream,
+} from '../orb/live/session/persona-preconnect';
+import {
+  consumePrewarmedNovaSession,
+  discardPrewarmedNovaSession,
+  peekPrewarmedNovaSession,
+  registerPrewarmedNovaSession,
+  describePrewarmMiss,
+  type PrewarmedNovaSessionEntry,
+} from '../orb/live/prewarm/nova-session-prewarm';
+// VTID-04554: prewarm parity — claim a pooled Nova stream only on an exact
+// fingerprint match (ORB_PREWARM_FULL_CONTEXT_ENABLED, default off).
+import {
+  computeNovaStreamFingerprint,
+  decidePrewarmClaim,
+  isPrewarmFullContextEnabled,
+  toolNamesOf,
+  type NovaStreamShape,
+} from '../orb/live/prewarm/prewarm-fingerprint';
 import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
@@ -2029,6 +2103,7 @@ import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 import { shouldFireFirstTimeWelcome, resolveGreetingLang } from '../orb/live/instruction/greeting-gate';
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
+import { buildReconnectRecoveryPrompt } from '../orb/live/instruction/reconnect-recovery-prompt'; // VTID-04551
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -4064,6 +4139,7 @@ async function executeLiveApiToolInner(
             // was filed during the specialist call. buildLiveSystemInstruction
             // call site reads (session as any).specialistContextSection.
             (session as any).pendingPersonaSwap = 'vitana';
+            notePersonaSwapRequested(session, 'vitana'); // VTID-04542 hand-off timing
             (session as any).activePersonaTarget = 'vitana';
             (session as any).personaSystemOverride = null;
             (session as any).personaVoiceOverride = null;
@@ -4118,6 +4194,7 @@ async function executeLiveApiToolInner(
               return { success: false, result: '', error: `No system_prompt found for ${target}` };
             }
             (session as any).pendingPersonaSwap = target;
+            notePersonaSwapRequested(session, target); // VTID-04542 hand-off timing
             // Reset FORCED FIRST UTTERANCE consumption flag for the new persona
             (session as any).personaFirstUtteranceDelivered = false;
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
@@ -4422,6 +4499,7 @@ async function executeLiveApiToolInner(
               const personaPrompt = (personaRow?.system_prompt as string | undefined) ?? '';
               if (personaPrompt) {
                 (session as any).pendingPersonaSwap = swapTo;
+                notePersonaSwapRequested(session, swapTo); // VTID-04542 hand-off timing
                 // Reset FORCED FIRST UTTERANCE consumption flag for new persona
                 (session as any).personaFirstUtteranceDelivered = false;
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
@@ -7621,6 +7699,573 @@ naturally, never call a tool.`;
 export { formatClientContextForInstruction };
 
 /**
+ * VTID-04554 — the orb setup envelope (system instruction, tool catalog and
+ * the instruction / tool-catalog byte budgets, plus the pending-tool carry-
+ * over) for a session whose context is already on the session object.
+ *
+ * This is the body `buildOrbVertexSetupEnvelope` inside `connectToLiveAPI`
+ * always ran, moved to module level unchanged so the Nova prewarm
+ * (`handleWsPrewarmMessage`, `ORB_PREWARM_FULL_CONTEXT_ENABLED`) can build
+ * the SAME envelope for a pre-session shadow instead of a second, drifting
+ * builder. The live session passes the real `emitDiag` and
+ * `recordBrainContextBuilt`; the prewarm passes no-ops, so building a shadow
+ * writes no diagnostics. It still sets `deferredTools` / `declaredToolNames`
+ * on the object it is given (the shadow, for the prewarm).
+ */
+export function assembleOrbSetupEnvelope(
+  session: GeminiLiveSession,
+  _personaVoice: string,
+  hooks: {
+    emitDiag: (session: GeminiLiveSession, stage: string, extra?: Record<string, unknown>) => void;
+    recordBrainContextBuilt: (session: GeminiLiveSession, pack: BootstrapPackResult) => void;
+    /** VTID-04549: Devon pre-connect build — no diags, no session.deferredTools write, no pending-tool carry-over. */
+    preconnect?: boolean;
+  },
+): { setup: Record<string, any> } {
+  const { emitDiag, recordBrainContextBuilt } = hooks;
+  const preconnect = hooks.preconnect === true;
+  // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
+  // (resumptionHandle present), the server restores the prior context, so
+  // re-injecting transcript turns into system_instruction would DUPLICATE
+  // recent conversation on every GoAway/transparent reconnect and make the
+  // model repeat summaries / re-answer old turns — the exact "same summary
+  // every 2 minutes" defect the plan kills. Inject transcript history ONLY
+  // on a cold connection with no handle (rare fallback); native resume
+  // carries the thread itself.
+  const reconnectHistory = session.resumptionHandle
+    ? undefined
+    : renderConversationHistoryWithPersonas(session.transcriptTurns, 10);
+
+  const setupMessage = {
+    setup: {
+      model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
+      generation_config: {
+        response_modalities: session.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'],
+        speech_config: {
+          voice_config: {
+            prebuilt_voice_config: {
+              voice_name: _personaVoice
+            }
+          }
+        }
+      },
+      // VTID-RESPONSE-DELAY: Configure VAD to wait longer before treating silence as end-of-speech.
+      // Vertex's default VAD (~100ms silence threshold) responds too quickly, causing the model
+      // to start answering while the user is still mid-thought or pausing between sentences.
+      // Setting silence_duration_ms to 2000ms gives users ~2 seconds of pause tolerance.
+      // Note: Previous attempt (pre-c6f9627) set all VAD params including start/end sensitivity
+      // which destabilized sessions. This minimal config only sets silence_duration_ms to avoid that.
+      realtime_input_config: {
+        automatic_activity_detection: {
+          silence_duration_ms: session.vadSilenceMs
+        }
+      },
+      // VTID-01225: Enable transcription at setup level (not in generation_config)
+      output_audio_transcription: {},
+      input_audio_transcription: {},
+      // VTID-03273 Pillar B — native session resumption. Empty object on a
+      // fresh connect starts a resumable session; `{ handle }` on a rebuilt
+      // connection resumes the SAME server-side conversation, so the model
+      // continues the thread instead of re-greeting. The handle is captured
+      // from `sessionResumptionUpdate` (see vertex.onSessionResumption wiring).
+      session_resumption: session.resumptionHandle
+        ? { handle: session.resumptionHandle }
+        : {},
+      // VTID-03273 Pillar B — sliding-window context compression keeps long
+      // conversations under the context cap so the GoAway/resume rotation,
+      // not a hard overflow, governs connection lifetime.
+      context_window_compression: { sliding_window: {} },
+      system_instruction: {
+        parts: [{
+          // VTID-02047 voice channel-swap: when activePersona is a specialist
+          // and the session has a persona prompt override (set during the
+          // post-tool-call swap), use the specialist's prompt wholesale +
+          // append a forced first-message directive so the new voice greets
+          // the user immediately instead of waiting for input.
+          text: ((session as any).personaSystemOverride
+            ? ((session as any).personaSystemOverride as string) +
+              // FORCED FIRST UTTERANCE only fires on the actual first
+              // connect after a swap. Once Devon has spoken (flag set on
+              // the assistant transcript-push hook), we do NOT re-inject
+              // the greeting on transparent reconnects — otherwise Gemini
+              // Live's automatic ~9-min reconnect causes Devon to greet
+              // again every time and the conversation never closes.
+              (((session as any).personaForcedFirstMessage
+                  && !((session as any).personaFirstUtteranceDelivered as boolean | undefined))
+                ? `\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\n"${(session as any).personaForcedFirstMessage}"\nDo not greet with anything else first. Then continue the intake naturally.`
+                : '')
+              // v3a: dynamically inject the FIRST TURN block (greet + ask
+              // for details) only on the actual first turn after a swap.
+              // After Devon has spoken once, swap to MID-INTAKE block
+              // which forbids re-greeting on transparent reconnects.
+              + `\n\n${buildSpecialistTurnPhaseBlock(!!((session as any).personaFirstUtteranceDelivered))}`
+            : (session.isAnonymous
+                ? buildAnonymousSystemInstruction(
+                    session.lang,
+                    session.voiceStyle || 'friendly, calm, empathetic',
+                    session.clientContext,
+                    // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity.
+                    // Forwarding v2d: persona-labeled so the receiving
+                    // persona doesn't absorb another persona's lines as their own.
+                    reconnectHistory,
+                    // VTID-02047: persona swap to Vitana is NOT a generic
+                    // v2e: REVERSED. The old behavior forced isReconnect=false
+                    // on swap-back so Vitana would greet. That caused two
+                    // failures the user reported: (1) "Welcome back. What's
+                    // on your mind?" loop trigger; (2) Vitana echoing the
+                    // v3: REVERSED v2e. The user clarified they DO want
+                    // Vitana to welcome back proactively (welcome with
+                    // display_name, acknowledge specialist via role label,
+                    // ask "what else" or pick a proactive suggestion).
+                    // So on swap-back-to-Vitana, isReconnect=FALSE — the
+                    // "DO NOT speak first" rule is suppressed and she
+                    // greets. The structured welcome content comes from
+                    // the SWAP-BACK WELCOME prompt block injected via
+                    // contextInstruction (see buildSwapBackWelcomeBlock).
+                    ((session as any)._personaSwapInFlight
+                      ? false
+                      : ((session as any)._reconnectCount || 0) > 0)
+                  )
+                : buildLiveSystemInstruction(
+                    session.lang,
+                    session.voiceStyle || 'friendly, calm, empathetic',
+                    (session.contextInstruction || '')
+                      + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : '')
+                      + (((session as any).specialistContextSection as string | undefined)
+                          ? `\n\n${(session as any).specialistContextSection}\n\n${buildPersonaBehavioralRule('vitana')}`
+                          : `\n\n${buildPersonaBehavioralRule('vitana')}`)
+                      + (((session as any).lastTranscriptSection as string | undefined)
+                          ? `\n\n${(session as any).lastTranscriptSection}`
+                          : '')
+                      + (((session as any).onboardingCohortBlock as string | undefined) ?? '')
+                      // v3: SWAP-BACK WELCOME block — fires only when a
+                      // specialist just returned the user. Drives Vitana's
+                      // first turn (welcome + role-acknowledge + open or
+                      // proactive). Cleared on user's next utterance via
+                      // the same _personaSwapInFlight reset that fires
+                      // after the welcome turn.
+                      + (((session as any)._personaSwapInFlight
+                            && ((session as any)._lastSpecialistPersona as string | undefined))
+                          ? '\n\n' + buildSwapBackWelcomeBlock(
+                              ((session as any)._lastSpecialistPersona as string),
+                              session.lang,
+                            )
+                          : '')
+                      // VTID-03101: append the wake-brief override block
+                      // LAST so it has recency primacy in Gemini's
+                      // attention AND so the sentinel marker reaches
+                      // buildLiveSystemInstruction's strip+suppress
+                      // logic in the same string. The block lives on
+                      // its own session field to avoid the race where
+                      // the bootstrap promise (session.contextInstruction
+                      // = finalContext at the end of its .then) wipes
+                      // the appended override. See
+                      // live-session-controller.ts:VTID-03101 for the
+                      // write side. Empty when no override is active.
+                      + (session.wakeBriefOverrideBlock || '')
+                      // VTID-03162: VTID-03154's journeyGreetingBlock
+                      // injection removed here. Block coexisting with
+                      // the Teacher Mode block caused Gemini to follow
+                      // ambiguous turn-1 instructions and the comp-
+                      // rehension check-in language (added in
+                      // VTID-03157) made it worse — Vitana started
+                      // looping on the same capability and calling
+                      // end_teaching_session unprompted. Until the
+                      // journey-greeting vs Teacher-Mode integration
+                      // is designed properly (upstream wake-brief
+                      // suppression, not post-hoc block clearing),
+                      // we do NOT inject the journey-greeting block
+                      // into the system instruction. The controller
+                      // may still set the field on the session for
+                      // diagnostic/log purposes; it is intentionally
+                      // unread here.
+                      // VTID-03112 (T1): Teacher Mode block. Empty
+                      // when the wake-brief winner wasn't the
+                      // Teacher OR the manual resolver failed.
+                      // The block runs Teacher Mode for the WHOLE
+                      // session — turns 2+ are governed by it.
+                      // Turn 1 is still owned by the wake-brief
+                      // override (which sits ABOVE it in the
+                      // concatenation order). The model interprets
+                      // each user reply IN CONTEXT (no rule table)
+                      // and calls teacher_event / end_teaching_session
+                      // tools as appropriate.
+                      + ((session as any).teacherModeContent
+                          ? buildTeacherModeBlock({
+                              content: (session as any).teacherModeContent,
+                              lang: session.lang,
+                              firstName: (session as any).teacherModeFirstName ?? null,
+                            })
+                          : '')
+                      // VTID-03257 (Fix-1): GUIDE MODE — when the journey
+                      // guide won turn 1, inject the lead-the-journey block
+                      // so the whole session is hand-held through the
+                      // current Foundation step (no "what do you want?").
+                      + ((session as any).journeyGuideContent
+                          ? buildJourneyGuideBlock(
+                              (session as any).journeyGuideContent,
+                              session.lang,
+                              // DEV-COMHU double-speak fix: when a wake-brief
+                              // override owns turn 1 (it carries this exact
+                              // opener verbatim), suppress the guide block's
+                              // restatement so the line is spoken once.
+                              { wakeBriefOwnsTurn1: !!session.wakeBriefOverrideBlock },
+                            )
+                          : '')
+                      // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
+                      // a Guided Journey catalog topic, inject the teach-this-
+                      // topic-from-the-KB block so Vitana introduces + teaches
+                      // it (paraphrased) then guides to the practice target.
+                      + ((session as any).guidedTopicNarrationContent
+                          ? buildGuidedTopicNarrationBlock(
+                              (session as any).guidedTopicNarrationContent,
+                              session.lang,
+                            )
+                          : ''),
+                    // VTID-04560: the profile's served role, set at session
+                    // start — never null on a work surface.
+                    sessionServedRole(session),
+                    session.conversationSummary,
+                    // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
+                    // Forwarding v2d: persona-labeled so Vitana doesn't
+                    // absorb Devon/Sage/Atlas/Mira lines as her own past
+                    // speech ("Hi I'm Devon" with Vitana's voice).
+                    reconnectHistory,
+                    // v3: REVERSED v2e. On swap-back to Vitana,
+                    // isReconnect=FALSE so she greets with the structured
+                    // welcome (see buildSwapBackWelcomeBlock).
+                    ((session as any)._personaSwapInFlight
+                      ? false
+                      : ((session as any)._reconnectCount || 0) > 0),
+                    // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
+                    // model uses this to pick a time-appropriate greeting and
+                    // acknowledge the screen the user is on instead of
+                    // restarting with "Hello <name>!" every session.
+                    session.lastSessionInfo || null,
+                    session.current_route || null,
+                    session.recent_routes || null,
+                    session.clientContext || undefined,
+                    // VTID-01967: Canonical Vitana ID handle (already resolved
+                    // by optionalAuth → resolveVitanaId on session start).
+                    session.identity?.vitana_id ?? null,
+                    undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
+                    // VTID-04560: the resolved profile's surface (declared by the
+                    // screen), not a route + User-Agent guess.
+                    sessionServedSurface(session),
+                    // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: drop the redundant
+                    // `## AVAILABLE TOOLS` prose block on BOTH raw-WS
+                    // transports (Vertex and AI Studio). The prose is
+                    // generated from the exact same buildLiveApiTools()
+                    // declarations this envelope already carries
+                    // structurally (renderAvailableToolsSection), so it is
+                    // redundant by construction here; it exists only for
+                    // LiveKit, whose call site does NOT set this flag.
+                    // #2905 dropped it for AI Studio when it blew that
+                    // transport's budget; the Wave-MVA-1 catalog growth
+                    // (+35 tools, PR #2895) then pushed the authenticated
+                    // Vertex instruction to ~49k tokens → Gemini Live
+                    // closed every authenticated session with code 1007
+                    // ("user system instruction has 48787 tokens") —
+                    // prod ORB stuck at "Verbinden…". Always omit here.
+                    true,
+                    // VTID-03447: resolved spoken first name, when the
+                    // greeting-facts prefetch (live-session-controller.ts,
+                    // resolveSpokenFirstName) has already populated it on
+                    // the session. Gives this shared Vertex/Nova Sonic WS
+                    // path the same "AUTHORITATIVE USER NAME" structural
+                    // header orb-livekit.ts already has via VTID-03014 —
+                    // without it Nova Sonic falls back to greeting by the
+                    // Vitana ID handle (e.g. "Dragan3") instead of the
+                    // user's actual first name. Best-effort: null when
+                    // not yet resolved (feature flag off, or still
+                    // in-flight) — the header simply doesn't render.
+                    (session as any).greetingFirstName ?? null,
+                    // VTID-04393 (WS-1.1): record what the bootstrap
+                    // packer kept, shortened and dropped. One diag per
+                    // distinct build (a rebuilt identical envelope does
+                    // not repeat it).
+                    (pack) => recordBrainContextBuilt(session, pack),
+                  ))) as string
+        }]
+      },
+      // VTID-NAV: Anonymous sessions get a narrow Navigator-only tool allowlist
+      // (navigator_consult + navigate_to_screen) so they can be guided to public
+      // destinations during onboarding. Authenticated sessions get the full set.
+      // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
+      tools: buildLiveApiTools(
+        session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
+        session.current_route,
+        // VTID-04560: the profile's served role and surface. Before this,
+        // a null active_role at setup fell back to identity.role
+        // ('authenticated'), so the developer tools were never declared.
+        sessionServedRole(session) || session.identity?.role || undefined,
+        sessionServedSurface(session),
+      )
+    }
+  };
+
+  // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: AGGREGATE byte-budget guard.
+  //
+  // R0 root cause: the assembled `system_instruction` has NO total-size
+  // guard before it is sent. Phase A caps only the bootstrap sub-component;
+  // for heavy users the AGGREGATE (scaffold + bootstrap + history +
+  // specialist/teacher + override) can still exceed the ~32 KB Vertex Live
+  // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
+  // sends `setup_complete` → no TTS frames → "Vitana won't talk".
+  //
+  // We decompose the FINAL instruction text into ordered, individually-
+  // trimmable sections via `decomposeInstructionSections`, which anchors on
+  // the stable markers the builders already emit (bootstrap-start delimiter,
+  // `=== USER CONTEXT …`, `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>`,
+  // `=== TEACHER MODE …`, `<conversation_history>`, `=== VITANA NAVIGATOR —`).
+  // This is the R0 fix: the previous split used ONLY the history delimiter,
+  // so the ~12 KB bootstrap + specialist were lumped into the preserved
+  // scaffold and the guard could not trim them. Now the budget guard drops
+  // in priority order bootstrap → history → specialist while the static
+  // scaffold (persona, tools, navigator, greeting rules) AND the turn-1
+  // wake-brief override are preserved as long as possible.
+  try {
+    const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
+    const finalText: string | undefined =
+      Array.isArray(siParts) && typeof siParts[0]?.text === 'string'
+        ? (siParts[0].text as string)
+        : undefined;
+    if (typeof finalText === 'string' && finalText.length > 0) {
+      const sections = decomposeInstructionSections(finalText);
+
+      // VTID-04555: the budget of the upstream actually serving this
+      // session (Vertex 30 KB; Nova / cascade 64 KB).
+      const instructionBudget = resolveInstructionByteBudgetFor(session.upstreamProvider);
+      const budgetResult = enforceInstructionBudget(sections, instructionBudget);
+
+      // VTID-04534: a SHORTENED section (member context repacked, history
+      // cut to its latest turns) changes the text too — apply it.
+      if (
+        budgetResult.trimmedSections.length > 0 ||
+        budgetResult.shortenedSections.length > 0 ||
+        budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
+      ) {
+        // Apply the trimmed text back onto the envelope.
+        siParts[0].text = budgetResult.text;
+        // Fail loudly + observably: structured warning with byte accounting
+        // and per-section sizes so the R0 overflow is greppable in logs.
+        console.warn(
+          '[voice.instruction.budget_overflow]',
+          JSON.stringify({
+            sessionId: session.sessionId,
+            vitana_id: session.identity?.vitana_id ?? null,
+            isAnonymous: !!session.isAnonymous,
+            totalBytesBefore: budgetResult.totalBytesBefore,
+            totalBytesAfter: budgetResult.totalBytesAfter,
+            budget: instructionBudget,
+            // Whether the preserved-only assembly STILL exceeds budget
+            // (nothing left to trim → best-effort send / fail-open).
+            stillOverBudget: budgetResult.totalBytesAfter > instructionBudget,
+            trimmedSections: budgetResult.trimmedSections,
+            shortenedSections: budgetResult.shortenedSections,
+            sectionBytes: budgetResult.sectionBytes,
+          }),
+        );
+      } else {
+        // Under budget — emit a low-noise diagnostic so the aggregate size
+        // is observable even on the happy path (helps tune the budget).
+        console.log(
+          `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${instructionBudget}`,
+        );
+      }
+      // VTID-04525 (Conversation hub B2): the same accounting as a
+      // queryable diag, trimmed or not, so the hub can show how often each
+      // section is dropped. Sizes and section kinds only, never text.
+      if (!preconnect) emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, instructionBudget));
+    }
+  } catch (e) {
+    // Never let the guard break the handshake — fail open with a log.
+    console.warn(
+      '[voice.instruction.budget_overflow] guard_error',
+      (e as Error)?.message ?? String(e),
+    );
+  }
+
+  // VTID-04026 — tool-catalog byte budget, Vertex Serbian bridge ONLY.
+  //
+  // The instruction guard above bounds `system_instruction` at 30 KB, but
+  // `tools` shares the same generation request and had no bound at all:
+  // an authenticated community session declares ~290 function
+  // declarations (~226 KB of JSON), an anonymous one 2 (~5 KB). On the
+  // Vertex bridge that was the difference between "works every time"
+  // (anonymous, 10/10) and "1007 'Request contains an invalid argument'
+  // ~300 ms after the first client_content" (authenticated, 6/8 failed).
+  // Measured live 2026-09-17 with only the surface changed (`/admin`,
+  // ~134 declarations / 45 KB): 8/8 succeeded. Nova Sonic and the
+  // cascade are untouched — they carry the full catalog exactly as
+  // before; this block is gated on the resolved provider, never on the
+  // language, so it cannot widen past the bridge.
+  // VTID-04097 — the guard is now per-provider, not Vertex-only. Nova
+  // Sonic accepts the full 290-declaration catalog, so this was left as a
+  // bridge-only correctness fix; measured on staging 2026-09-19 it is also
+  // worth p90 -4.4s on Nova (see the budget module's own header for the
+  // A/B). `resolveToolCatalogByteBudgetFor` returns 0 for any provider
+  // without a configured budget, so the cascade is untouched and adding a
+  // provider stays opt-in.
+  {
+    try {
+      const { budgetBytes: toolBudget, envVar: toolBudgetEnvVar } =
+        resolveToolCatalogByteBudgetFor(session.upstreamProvider);
+      let toolsIn = (setupMessage.setup as any)?.tools;
+      // VTID-04427 (WS-3.2): declare get_guidance only while the live
+      // advisor is active for a signed-in session — never otherwise.
+      if (Array.isArray(toolsIn) && !session.isAnonymous && isLiveAdvisorActive()) {
+        const groups = (toolsIn as Array<Record<string, unknown>>).map((g) => ({ ...g }));
+        const first = groups.find((g) => Array.isArray(g.function_declarations));
+        if (first && !(first.function_declarations as Array<{ name?: string }>).some((d) => d?.name === GET_GUIDANCE_TOOL_NAME)) {
+          first.function_declarations = [GET_GUIDANCE_DECLARATION, ...(first.function_declarations as object[])];
+          toolsIn = groups;
+          (setupMessage.setup as any).tools = groups;
+        }
+      }
+      if (toolBudget > 0 && Array.isArray(toolsIn)) {
+        // get_guidance, when declared, is kept by the default priority
+        // (FLAG_GATED_PRIORITY_TOOLS, VTID-04427).
+        let toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
+        // VTID-04426 (WS-3.4): when the budget has to trim, fill it in a
+        // context-aware order (meta tools, the base priority list, the
+        // brain's core tools, then the tools of the screen the session is
+        // on) and keep the dropped tools reachable via find_tool/use_tool.
+        // Same budget; only the order and the reach change.
+        let _selection: { groups: string[]; contextual_kept: number; deferred: number } | null = null;
+        if (!preconnect) {
+          session.deferredTools = undefined;
+          session.declaredToolNames = undefined;
+        }
+        if (toolResult.trimmed && isToolSelectionEnabled()) {
+          const sel = buildSessionToolPriority(
+            toolsIn,
+            [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
+            session.current_route,
+          );
+          const selected = enforceToolCatalogBudget(withMetaTools(toolsIn), toolBudget, sel.priority);
+          const declared = new Set<string>();
+          for (const g of selected.tools as Array<{ function_declarations?: Array<{ name?: string }> }>) {
+            for (const d of g.function_declarations ?? []) if (typeof d?.name === 'string') declared.add(d.name);
+          }
+          if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
+            toolResult = selected;
+            if (!preconnect) {
+              session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
+              session.declaredToolNames = declared;
+            }
+            _selection = {
+              groups: sel.groups,
+              contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
+              // Read only by the tool_catalog_trimmed diag, which a
+              // pre-connect build (VTID-04549) does not emit.
+              deferred: session.deferredTools?.size ?? 0,
+            };
+          }
+        }
+        if (toolResult.trimmed) {
+          (setupMessage.setup as any).tools = toolResult.tools;
+          console.warn(
+            '[voice.tool_catalog.budget_trimmed]',
+            JSON.stringify({
+              sessionId: session.sessionId,
+              provider: session.upstreamProvider,
+              lang: session.lang,
+              budget: toolResult.budgetBytes,
+              declarationsBefore: toolResult.declarationsBefore,
+              declarationsAfter: toolResult.declarationsAfter,
+              bytesBefore: toolResult.bytesBefore,
+              bytesAfter: toolResult.bytesAfter,
+              droppedCount: toolResult.dropped.length,
+            }),
+          );
+          // OASIS, not just CloudWatch: VTID-04021's handoff could not
+          // confirm the instruction guard was even firing because its
+          // diagnostics are console-only. This one is queryable.
+          // VTID-04097: provider-neutral stage now that Nova trims too,
+          // carrying `provider` so the two are separable in a query.
+          // `vertex_tool_catalog_trimmed` is still emitted for the bridge
+          // so VTID-04026's saved queries keep resolving.
+          const _budgetDiag = {
+            budget_bytes: toolResult.budgetBytes,
+            declarations_before: toolResult.declarationsBefore,
+            declarations_after: toolResult.declarationsAfter,
+            bytes_before: toolResult.bytesBefore,
+            bytes_after: toolResult.bytesAfter,
+            dropped_count: toolResult.dropped.length,
+          };
+          if (!preconnect) emitDiag(session, 'tool_catalog_trimmed', {
+            provider: session.upstreamProvider,
+            ..._budgetDiag,
+            ...(_selection ? { selection: 'context', route_groups: _selection.groups, contextual_kept: _selection.contextual_kept, deferred_reachable: _selection.deferred } : {}),
+          });
+          if (session.upstreamProvider === 'vertex' && !preconnect) {
+            emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
+          }
+        } else {
+          console.log(
+            `[voice.tool_catalog.budget_ok] session=${session.sessionId} declarations=${toolResult.declarationsBefore} bytes=${toolResult.bytesBefore} budget=${toolBudget}`,
+          );
+        }
+      } else if (toolBudget <= 0 && toolBudgetEnvVar) {
+        console.log(`[voice.tool_catalog.budget_disabled] session=${session.sessionId} provider=${session.upstreamProvider} (${toolBudgetEnvVar}=0)`);
+      }
+    } catch (e) {
+      // Never let the guard break the handshake — fail open with a log,
+      // same posture as the instruction guard above.
+      console.warn('[voice.tool_catalog.budget_error]', (e as Error)?.message ?? String(e));
+    }
+  }
+
+  // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
+  // tool declarations for this session. Helps diagnose "redirect not
+  // working" reports by showing whether Gemini even had the tool to call.
+  const toolMode = session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous';
+  const toolDecls = (setupMessage.setup as any)?.tools?.[0]?.function_declarations as any[] | undefined;
+  const toolNames = Array.isArray(toolDecls) ? toolDecls.map(t => t?.name).filter(Boolean) : [];
+  const hasNavigateTool = toolNames.includes('navigate_to_screen');
+  console.log(`[VTID-NAV-DIAG] Session ${session.sessionId}: mode=${toolMode} isAnonymous=${session.isAnonymous} hasIdentity=${!!session.identity} toolCount=${toolNames.length} hasNavigateTool=${hasNavigateTool} toolNames=[${toolNames.join(',')}]`);
+
+  // BOOTSTRAP-ORB-TOOL-CARRYOVER: if the previous upstream died while the
+  // model was acting on a tool result, carry that result into the rebuilt
+  // session so it continues instead of coming back with no memory of it.
+  //
+  // Injected here — at the single point BOTH the Vertex path and the Nova
+  // path read the envelope from — and injected REGARDLESS of
+  // `session.resumptionHandle`. That is deliberate and is the opposite of
+  // the `reconnectHistory` rule above: a resumption handle is a periodic
+  // CHECKPOINT, and in the production trace it was issued 8s BEFORE the
+  // tool call, so native resume rewinds to a point where the tool call
+  // never happened. A handle cannot restore something newer than itself.
+  try {
+    const pendingTools = getPendingToolResults(session);
+    if (pendingTools.length > 0 && !preconnect) {
+      const resumeBlock = buildPendingToolResumeBlock(pendingTools);
+      const parts = (setupMessage.setup as any)?.system_instruction?.parts;
+      if (resumeBlock && Array.isArray(parts) && parts[0]) {
+        parts[0].text = `${parts[0].text ?? ''}${resumeBlock}`;
+        console.log(
+          `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Session ${session.sessionId}: carried ${pendingTools.length} unconsumed tool result(s) ` +
+            `into the rebuilt instruction (${pendingTools.map((p) => p.toolName).join(',')}) — ` +
+            `has_resumption_handle=${!!session.resumptionHandle}.`,
+        );
+        emitDiag(session, 'pending_tool_results_carried', {
+          count: pendingTools.length,
+          tools: pendingTools.map((p) => p.toolName),
+          has_resumption_handle: !!session.resumptionHandle,
+        });
+      }
+    }
+  } catch (e) {
+    // Never let the carry-over break the handshake — a session that
+    // reconnects without its tool context is degraded; one that fails to
+    // reconnect at all is dead.
+    console.warn(`[BOOTSTRAP-ORB-TOOL-CARRYOVER] carry_error: ${(e as Error)?.message ?? String(e)}`);
+  }
+  return setupMessage as { setup: Record<string, any> };
+}
+
+/**
  * VTID-01219: Connect to Vertex AI Live API WebSocket
  * Establishes bidirectional audio streaming connection
  * Returns a Promise that resolves only after WebSocket is open and setup is complete
@@ -7967,7 +8612,16 @@ async function connectToLiveAPI(
     // VertexLiveClient awaits this builder and sends the envelope inside
     // its own ws.on('open'), then resolves connect() when setup_complete
     // arrives.
-    const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
+    // VTID-04549 (ORB latency G): `opts` lets the Devon pre-connect build the
+    // SAME envelope for a target persona while the current persona is still
+    // live. `personaOverride` replaces session.activePersona for the voice
+    // lookup; `preconnect` makes the build side-effect free (no context wait,
+    // no diag, no session.deferredTools write, no pending-tool carry-over —
+    // those are consumed at turn complete, before the swap's own build runs).
+    // Called with no argument everywhere else: unchanged.
+    const buildOrbVertexSetupEnvelope = async (
+      opts?: { personaOverride?: string; preconnect?: boolean },
+    ): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
       // ORB-CONVERSATION-LATENCY: upstream WS open + handshake done. The gap
       // before context_awaited is how much the context build over-ran the
@@ -7981,7 +8635,7 @@ async function connectToLiveAPI(
       // has typically overlapped with context build, so this await is near
       // zero for authenticated sessions and a no-op for anonymous sessions.
       const ctxPromise = (session as any).contextReadyPromise as Promise<void> | undefined;
-      if (ctxPromise) {
+      if (ctxPromise && !opts?.preconnect) {
         const awaitStart = Date.now();
         // DEV-COMHU-0513: bound this await. Previously an unbounded `await
         // ctxPromise` — fine when the promise resolved fast (legacy inline path),
@@ -8041,7 +8695,7 @@ async function connectToLiveAPI(
       // VTID-02651: registry is data-driven so any new specialist works
       // without code change. Falls back to LIVE_API_VOICES per language for
       // the receptionist (whose voice_id is empty by convention).
-      const _persona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
+      const _persona = opts?.personaOverride || (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
       let _personaVoice = (session as any).personaVoiceOverride;
       if (!_personaVoice) {
         // BOOTSTRAP-VOICE-LATENCY-SPECULATION: when the flag is ON, the persona
@@ -8053,7 +8707,11 @@ async function connectToLiveAPI(
         // INLINE_VOICE_LOOKUP_BASELINE_MS: a conservative typical cost for the
         // inline registry round-trip on a warm cache; used only as the baseline
         // for the savings telemetry, never to gate behaviour.
-        const _speculated = await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
+        // VTID-04549: the speculation was started for this connect's own
+        // persona — a pre-connect for another persona must not consume it.
+        const _speculated = opts?.preconnect
+          ? undefined
+          : await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
         if (_speculated) {
           _personaVoice = _speculated;
         } else {
@@ -8076,538 +8734,16 @@ async function connectToLiveAPI(
       _personaVoice = enforceVertexVoiceGender(_personaVoice, _persona);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
-      // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
-      // (resumptionHandle present), the server restores the prior context, so
-      // re-injecting transcript turns into system_instruction would DUPLICATE
-      // recent conversation on every GoAway/transparent reconnect and make the
-      // model repeat summaries / re-answer old turns — the exact "same summary
-      // every 2 minutes" defect the plan kills. Inject transcript history ONLY
-      // on a cold connection with no handle (rare fallback); native resume
-      // carries the thread itself.
-      const reconnectHistory = session.resumptionHandle
-        ? undefined
-        : renderConversationHistoryWithPersonas(session.transcriptTurns, 10);
-
-      const setupMessage = {
-        setup: {
-          model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
-          generation_config: {
-            response_modalities: session.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'],
-            speech_config: {
-              voice_config: {
-                prebuilt_voice_config: {
-                  voice_name: _personaVoice
-                }
-              }
-            }
-          },
-          // VTID-RESPONSE-DELAY: Configure VAD to wait longer before treating silence as end-of-speech.
-          // Vertex's default VAD (~100ms silence threshold) responds too quickly, causing the model
-          // to start answering while the user is still mid-thought or pausing between sentences.
-          // Setting silence_duration_ms to 2000ms gives users ~2 seconds of pause tolerance.
-          // Note: Previous attempt (pre-c6f9627) set all VAD params including start/end sensitivity
-          // which destabilized sessions. This minimal config only sets silence_duration_ms to avoid that.
-          realtime_input_config: {
-            automatic_activity_detection: {
-              silence_duration_ms: session.vadSilenceMs
-            }
-          },
-          // VTID-01225: Enable transcription at setup level (not in generation_config)
-          output_audio_transcription: {},
-          input_audio_transcription: {},
-          // VTID-03273 Pillar B — native session resumption. Empty object on a
-          // fresh connect starts a resumable session; `{ handle }` on a rebuilt
-          // connection resumes the SAME server-side conversation, so the model
-          // continues the thread instead of re-greeting. The handle is captured
-          // from `sessionResumptionUpdate` (see vertex.onSessionResumption wiring).
-          session_resumption: session.resumptionHandle
-            ? { handle: session.resumptionHandle }
-            : {},
-          // VTID-03273 Pillar B — sliding-window context compression keeps long
-          // conversations under the context cap so the GoAway/resume rotation,
-          // not a hard overflow, governs connection lifetime.
-          context_window_compression: { sliding_window: {} },
-          system_instruction: {
-            parts: [{
-              // VTID-02047 voice channel-swap: when activePersona is a specialist
-              // and the session has a persona prompt override (set during the
-              // post-tool-call swap), use the specialist's prompt wholesale +
-              // append a forced first-message directive so the new voice greets
-              // the user immediately instead of waiting for input.
-              text: ((session as any).personaSystemOverride
-                ? ((session as any).personaSystemOverride as string) +
-                  // FORCED FIRST UTTERANCE only fires on the actual first
-                  // connect after a swap. Once Devon has spoken (flag set on
-                  // the assistant transcript-push hook), we do NOT re-inject
-                  // the greeting on transparent reconnects — otherwise Gemini
-                  // Live's automatic ~9-min reconnect causes Devon to greet
-                  // again every time and the conversation never closes.
-                  (((session as any).personaForcedFirstMessage
-                      && !((session as any).personaFirstUtteranceDelivered as boolean | undefined))
-                    ? `\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\n"${(session as any).personaForcedFirstMessage}"\nDo not greet with anything else first. Then continue the intake naturally.`
-                    : '')
-                  // v3a: dynamically inject the FIRST TURN block (greet + ask
-                  // for details) only on the actual first turn after a swap.
-                  // After Devon has spoken once, swap to MID-INTAKE block
-                  // which forbids re-greeting on transparent reconnects.
-                  + `\n\n${buildSpecialistTurnPhaseBlock(!!((session as any).personaFirstUtteranceDelivered))}`
-                : (session.isAnonymous
-                    ? buildAnonymousSystemInstruction(
-                        session.lang,
-                        session.voiceStyle || 'friendly, calm, empathetic',
-                        session.clientContext,
-                        // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity.
-                        // Forwarding v2d: persona-labeled so the receiving
-                        // persona doesn't absorb another persona's lines as their own.
-                        reconnectHistory,
-                        // VTID-02047: persona swap to Vitana is NOT a generic
-                        // v2e: REVERSED. The old behavior forced isReconnect=false
-                        // on swap-back so Vitana would greet. That caused two
-                        // failures the user reported: (1) "Welcome back. What's
-                        // on your mind?" loop trigger; (2) Vitana echoing the
-                        // v3: REVERSED v2e. The user clarified they DO want
-                        // Vitana to welcome back proactively (welcome with
-                        // display_name, acknowledge specialist via role label,
-                        // ask "what else" or pick a proactive suggestion).
-                        // So on swap-back-to-Vitana, isReconnect=FALSE — the
-                        // "DO NOT speak first" rule is suppressed and she
-                        // greets. The structured welcome content comes from
-                        // the SWAP-BACK WELCOME prompt block injected via
-                        // contextInstruction (see buildSwapBackWelcomeBlock).
-                        ((session as any)._personaSwapInFlight
-                          ? false
-                          : ((session as any)._reconnectCount || 0) > 0)
-                      )
-                    : buildLiveSystemInstruction(
-                        session.lang,
-                        session.voiceStyle || 'friendly, calm, empathetic',
-                        (session.contextInstruction || '')
-                          + (session.clientContext ? formatClientContextForInstruction(session.clientContext) : '')
-                          + (((session as any).specialistContextSection as string | undefined)
-                              ? `\n\n${(session as any).specialistContextSection}\n\n${buildPersonaBehavioralRule('vitana')}`
-                              : `\n\n${buildPersonaBehavioralRule('vitana')}`)
-                          + (((session as any).lastTranscriptSection as string | undefined)
-                              ? `\n\n${(session as any).lastTranscriptSection}`
-                              : '')
-                          + (((session as any).onboardingCohortBlock as string | undefined) ?? '')
-                          // v3: SWAP-BACK WELCOME block — fires only when a
-                          // specialist just returned the user. Drives Vitana's
-                          // first turn (welcome + role-acknowledge + open or
-                          // proactive). Cleared on user's next utterance via
-                          // the same _personaSwapInFlight reset that fires
-                          // after the welcome turn.
-                          + (((session as any)._personaSwapInFlight
-                                && ((session as any)._lastSpecialistPersona as string | undefined))
-                              ? '\n\n' + buildSwapBackWelcomeBlock(
-                                  ((session as any)._lastSpecialistPersona as string),
-                                  session.lang,
-                                )
-                              : '')
-                          // VTID-03101: append the wake-brief override block
-                          // LAST so it has recency primacy in Gemini's
-                          // attention AND so the sentinel marker reaches
-                          // buildLiveSystemInstruction's strip+suppress
-                          // logic in the same string. The block lives on
-                          // its own session field to avoid the race where
-                          // the bootstrap promise (session.contextInstruction
-                          // = finalContext at the end of its .then) wipes
-                          // the appended override. See
-                          // live-session-controller.ts:VTID-03101 for the
-                          // write side. Empty when no override is active.
-                          + (session.wakeBriefOverrideBlock || '')
-                          // VTID-03162: VTID-03154's journeyGreetingBlock
-                          // injection removed here. Block coexisting with
-                          // the Teacher Mode block caused Gemini to follow
-                          // ambiguous turn-1 instructions and the comp-
-                          // rehension check-in language (added in
-                          // VTID-03157) made it worse — Vitana started
-                          // looping on the same capability and calling
-                          // end_teaching_session unprompted. Until the
-                          // journey-greeting vs Teacher-Mode integration
-                          // is designed properly (upstream wake-brief
-                          // suppression, not post-hoc block clearing),
-                          // we do NOT inject the journey-greeting block
-                          // into the system instruction. The controller
-                          // may still set the field on the session for
-                          // diagnostic/log purposes; it is intentionally
-                          // unread here.
-                          // VTID-03112 (T1): Teacher Mode block. Empty
-                          // when the wake-brief winner wasn't the
-                          // Teacher OR the manual resolver failed.
-                          // The block runs Teacher Mode for the WHOLE
-                          // session — turns 2+ are governed by it.
-                          // Turn 1 is still owned by the wake-brief
-                          // override (which sits ABOVE it in the
-                          // concatenation order). The model interprets
-                          // each user reply IN CONTEXT (no rule table)
-                          // and calls teacher_event / end_teaching_session
-                          // tools as appropriate.
-                          + ((session as any).teacherModeContent
-                              ? buildTeacherModeBlock({
-                                  content: (session as any).teacherModeContent,
-                                  lang: session.lang,
-                                  firstName: (session as any).teacherModeFirstName ?? null,
-                                })
-                              : '')
-                          // VTID-03257 (Fix-1): GUIDE MODE — when the journey
-                          // guide won turn 1, inject the lead-the-journey block
-                          // so the whole session is hand-held through the
-                          // current Foundation step (no "what do you want?").
-                          + ((session as any).journeyGuideContent
-                              ? buildJourneyGuideBlock(
-                                  (session as any).journeyGuideContent,
-                                  session.lang,
-                                  // DEV-COMHU double-speak fix: when a wake-brief
-                                  // override owns turn 1 (it carries this exact
-                                  // opener verbatim), suppress the guide block's
-                                  // restatement so the line is spoken once.
-                                  { wakeBriefOwnsTurn1: !!session.wakeBriefOverrideBlock },
-                                )
-                              : '')
-                          // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
-                          // a Guided Journey catalog topic, inject the teach-this-
-                          // topic-from-the-KB block so Vitana introduces + teaches
-                          // it (paraphrased) then guides to the practice target.
-                          + ((session as any).guidedTopicNarrationContent
-                              ? buildGuidedTopicNarrationBlock(
-                                  (session as any).guidedTopicNarrationContent,
-                                  session.lang,
-                                )
-                              : ''),
-                        // VTID-04560: the profile's served role, set at session
-                        // start — never null on a work surface.
-                        sessionServedRole(session),
-                        session.conversationSummary,
-                        // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
-                        // Forwarding v2d: persona-labeled so Vitana doesn't
-                        // absorb Devon/Sage/Atlas/Mira lines as her own past
-                        // speech ("Hi I'm Devon" with Vitana's voice).
-                        reconnectHistory,
-                        // v3: REVERSED v2e. On swap-back to Vitana,
-                        // isReconnect=FALSE so she greets with the structured
-                        // welcome (see buildSwapBackWelcomeBlock).
-                        ((session as any)._personaSwapInFlight
-                          ? false
-                          : ((session as any)._reconnectCount || 0) > 0),
-                        // VTID-NAV-TIMEJOURNEY: Temporal + journey awareness. The
-                        // model uses this to pick a time-appropriate greeting and
-                        // acknowledge the screen the user is on instead of
-                        // restarting with "Hello <name>!" every session.
-                        session.lastSessionInfo || null,
-                        session.current_route || null,
-                        session.recent_routes || null,
-                        session.clientContext || undefined,
-                        // VTID-01967: Canonical Vitana ID handle (already resolved
-                        // by optionalAuth → resolveVitanaId on session start).
-                        session.identity?.vitana_id ?? null,
-                        undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
-                        // VTID-04560: the resolved profile's surface (declared by the
-                        // screen), not a route + User-Agent guess.
-                        sessionServedSurface(session),
-                        // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: drop the redundant
-                        // `## AVAILABLE TOOLS` prose block on BOTH raw-WS
-                        // transports (Vertex and AI Studio). The prose is
-                        // generated from the exact same buildLiveApiTools()
-                        // declarations this envelope already carries
-                        // structurally (renderAvailableToolsSection), so it is
-                        // redundant by construction here; it exists only for
-                        // LiveKit, whose call site does NOT set this flag.
-                        // #2905 dropped it for AI Studio when it blew that
-                        // transport's budget; the Wave-MVA-1 catalog growth
-                        // (+35 tools, PR #2895) then pushed the authenticated
-                        // Vertex instruction to ~49k tokens → Gemini Live
-                        // closed every authenticated session with code 1007
-                        // ("user system instruction has 48787 tokens") —
-                        // prod ORB stuck at "Verbinden…". Always omit here.
-                        true,
-                        // VTID-03447: resolved spoken first name, when the
-                        // greeting-facts prefetch (live-session-controller.ts,
-                        // resolveSpokenFirstName) has already populated it on
-                        // the session. Gives this shared Vertex/Nova Sonic WS
-                        // path the same "AUTHORITATIVE USER NAME" structural
-                        // header orb-livekit.ts already has via VTID-03014 —
-                        // without it Nova Sonic falls back to greeting by the
-                        // Vitana ID handle (e.g. "Dragan3") instead of the
-                        // user's actual first name. Best-effort: null when
-                        // not yet resolved (feature flag off, or still
-                        // in-flight) — the header simply doesn't render.
-                        (session as any).greetingFirstName ?? null,
-                        // VTID-04393 (WS-1.1): record what the bootstrap
-                        // packer kept, shortened and dropped. One diag per
-                        // distinct build (a rebuilt identical envelope does
-                        // not repeat it).
-                        (pack) => recordBrainContextBuilt(session, pack),
-                      ))) as string
-            }]
-          },
-          // VTID-NAV: Anonymous sessions get a narrow Navigator-only tool allowlist
-          // (navigator_consult + navigate_to_screen) so they can be guided to public
-          // destinations during onboarding. Authenticated sessions get the full set.
-          // VTID-01224: Function calling enables dynamic context retrieval during the conversation.
-          tools: buildLiveApiTools(
-            session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
-            session.current_route,
-            // VTID-04560: the profile's served role and surface. Before this,
-            // a null active_role at setup fell back to identity.role
-            // ('authenticated'), so the developer tools were never declared.
-            sessionServedRole(session) || session.identity?.role || undefined,
-            sessionServedSurface(session),
-          )
-        }
-      };
-
-      // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: AGGREGATE byte-budget guard.
-      //
-      // R0 root cause: the assembled `system_instruction` has NO total-size
-      // guard before it is sent. Phase A caps only the bootstrap sub-component;
-      // for heavy users the AGGREGATE (scaffold + bootstrap + history +
-      // specialist/teacher + override) can still exceed the ~32 KB Vertex Live
-      // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
-      // sends `setup_complete` → no TTS frames → "Vitana won't talk".
-      //
-      // We decompose the FINAL instruction text into ordered, individually-
-      // trimmable sections via `decomposeInstructionSections`, which anchors on
-      // the stable markers the builders already emit (bootstrap-start delimiter,
-      // `=== USER CONTEXT …`, `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>`,
-      // `=== TEACHER MODE …`, `<conversation_history>`, `=== VITANA NAVIGATOR —`).
-      // This is the R0 fix: the previous split used ONLY the history delimiter,
-      // so the ~12 KB bootstrap + specialist were lumped into the preserved
-      // scaffold and the guard could not trim them. Now the budget guard drops
-      // in priority order bootstrap → history → specialist while the static
-      // scaffold (persona, tools, navigator, greeting rules) AND the turn-1
-      // wake-brief override are preserved as long as possible.
-      try {
-        const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
-        const finalText: string | undefined =
-          Array.isArray(siParts) && typeof siParts[0]?.text === 'string'
-            ? (siParts[0].text as string)
-            : undefined;
-        if (typeof finalText === 'string' && finalText.length > 0) {
-          const sections = decomposeInstructionSections(finalText);
-
-          // VTID-04555: the budget of the upstream actually serving this
-          // session (Vertex 30 KB; Nova / cascade 64 KB).
-          const instructionBudget = resolveInstructionByteBudgetFor(session.upstreamProvider);
-          const budgetResult = enforceInstructionBudget(sections, instructionBudget);
-
-          // VTID-04534: a SHORTENED section (member context repacked, history
-          // cut to its latest turns) changes the text too — apply it.
-          if (
-            budgetResult.trimmedSections.length > 0 ||
-            budgetResult.shortenedSections.length > 0 ||
-            budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
-          ) {
-            // Apply the trimmed text back onto the envelope.
-            siParts[0].text = budgetResult.text;
-            // Fail loudly + observably: structured warning with byte accounting
-            // and per-section sizes so the R0 overflow is greppable in logs.
-            console.warn(
-              '[voice.instruction.budget_overflow]',
-              JSON.stringify({
-                sessionId: session.sessionId,
-                vitana_id: session.identity?.vitana_id ?? null,
-                isAnonymous: !!session.isAnonymous,
-                totalBytesBefore: budgetResult.totalBytesBefore,
-                totalBytesAfter: budgetResult.totalBytesAfter,
-                budget: instructionBudget,
-                // Whether the preserved-only assembly STILL exceeds budget
-                // (nothing left to trim → best-effort send / fail-open).
-                stillOverBudget: budgetResult.totalBytesAfter > instructionBudget,
-                trimmedSections: budgetResult.trimmedSections,
-                shortenedSections: budgetResult.shortenedSections,
-                sectionBytes: budgetResult.sectionBytes,
-              }),
-            );
-          } else {
-            // Under budget — emit a low-noise diagnostic so the aggregate size
-            // is observable even on the happy path (helps tune the budget).
-            console.log(
-              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${instructionBudget}`,
-            );
-          }
-          // VTID-04525 (Conversation hub B2): the same accounting as a
-          // queryable diag, trimmed or not, so the hub can show how often each
-          // section is dropped. Sizes and section kinds only, never text.
-          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, instructionBudget));
-        }
-      } catch (e) {
-        // Never let the guard break the handshake — fail open with a log.
-        console.warn(
-          '[voice.instruction.budget_overflow] guard_error',
-          (e as Error)?.message ?? String(e),
-        );
-      }
-
-      // VTID-04026 — tool-catalog byte budget, Vertex Serbian bridge ONLY.
-      //
-      // The instruction guard above bounds `system_instruction` at 30 KB, but
-      // `tools` shares the same generation request and had no bound at all:
-      // an authenticated community session declares ~290 function
-      // declarations (~226 KB of JSON), an anonymous one 2 (~5 KB). On the
-      // Vertex bridge that was the difference between "works every time"
-      // (anonymous, 10/10) and "1007 'Request contains an invalid argument'
-      // ~300 ms after the first client_content" (authenticated, 6/8 failed).
-      // Measured live 2026-09-17 with only the surface changed (`/admin`,
-      // ~134 declarations / 45 KB): 8/8 succeeded. Nova Sonic and the
-      // cascade are untouched — they carry the full catalog exactly as
-      // before; this block is gated on the resolved provider, never on the
-      // language, so it cannot widen past the bridge.
-      // VTID-04097 — the guard is now per-provider, not Vertex-only. Nova
-      // Sonic accepts the full 290-declaration catalog, so this was left as a
-      // bridge-only correctness fix; measured on staging 2026-09-19 it is also
-      // worth p90 -4.4s on Nova (see the budget module's own header for the
-      // A/B). `resolveToolCatalogByteBudgetFor` returns 0 for any provider
-      // without a configured budget, so the cascade is untouched and adding a
-      // provider stays opt-in.
-      {
-        try {
-          const { budgetBytes: toolBudget, envVar: toolBudgetEnvVar } =
-            resolveToolCatalogByteBudgetFor(session.upstreamProvider);
-          let toolsIn = (setupMessage.setup as any)?.tools;
-          // VTID-04427 (WS-3.2): declare get_guidance only while the live
-          // advisor is active for a signed-in session — never otherwise.
-          if (Array.isArray(toolsIn) && !session.isAnonymous && isLiveAdvisorActive()) {
-            const groups = (toolsIn as Array<Record<string, unknown>>).map((g) => ({ ...g }));
-            const first = groups.find((g) => Array.isArray(g.function_declarations));
-            if (first && !(first.function_declarations as Array<{ name?: string }>).some((d) => d?.name === GET_GUIDANCE_TOOL_NAME)) {
-              first.function_declarations = [GET_GUIDANCE_DECLARATION, ...(first.function_declarations as object[])];
-              toolsIn = groups;
-              (setupMessage.setup as any).tools = groups;
-            }
-          }
-          if (toolBudget > 0 && Array.isArray(toolsIn)) {
-            // get_guidance, when declared, is kept by the default priority
-            // (FLAG_GATED_PRIORITY_TOOLS, VTID-04427).
-            let toolResult = enforceToolCatalogBudget(toolsIn, toolBudget);
-            // VTID-04426 (WS-3.4): when the budget has to trim, fill it in a
-            // context-aware order (meta tools, the base priority list, the
-            // brain's core tools, then the tools of the screen the session is
-            // on) and keep the dropped tools reachable via find_tool/use_tool.
-            // Same budget; only the order and the reach change.
-            let _selection: { groups: string[]; contextual_kept: number; deferred: number } | null = null;
-            session.deferredTools = undefined;
-            session.declaredToolNames = undefined;
-            if (toolResult.trimmed && isToolSelectionEnabled()) {
-              const sel = buildSessionToolPriority(
-                toolsIn,
-                [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
-                session.current_route,
-              );
-              const selected = enforceToolCatalogBudget(withMetaTools(toolsIn), toolBudget, sel.priority);
-              const declared = new Set<string>();
-              for (const g of selected.tools as Array<{ function_declarations?: Array<{ name?: string }> }>) {
-                for (const d of g.function_declarations ?? []) if (typeof d?.name === 'string') declared.add(d.name);
-              }
-              if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
-                toolResult = selected;
-                session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
-                session.declaredToolNames = declared;
-                _selection = {
-                  groups: sel.groups,
-                  contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
-                  deferred: session.deferredTools.size,
-                };
-              }
-            }
-            if (toolResult.trimmed) {
-              (setupMessage.setup as any).tools = toolResult.tools;
-              console.warn(
-                '[voice.tool_catalog.budget_trimmed]',
-                JSON.stringify({
-                  sessionId: session.sessionId,
-                  provider: session.upstreamProvider,
-                  lang: session.lang,
-                  budget: toolResult.budgetBytes,
-                  declarationsBefore: toolResult.declarationsBefore,
-                  declarationsAfter: toolResult.declarationsAfter,
-                  bytesBefore: toolResult.bytesBefore,
-                  bytesAfter: toolResult.bytesAfter,
-                  droppedCount: toolResult.dropped.length,
-                }),
-              );
-              // OASIS, not just CloudWatch: VTID-04021's handoff could not
-              // confirm the instruction guard was even firing because its
-              // diagnostics are console-only. This one is queryable.
-              // VTID-04097: provider-neutral stage now that Nova trims too,
-              // carrying `provider` so the two are separable in a query.
-              // `vertex_tool_catalog_trimmed` is still emitted for the bridge
-              // so VTID-04026's saved queries keep resolving.
-              const _budgetDiag = {
-                budget_bytes: toolResult.budgetBytes,
-                declarations_before: toolResult.declarationsBefore,
-                declarations_after: toolResult.declarationsAfter,
-                bytes_before: toolResult.bytesBefore,
-                bytes_after: toolResult.bytesAfter,
-                dropped_count: toolResult.dropped.length,
-              };
-              emitDiag(session, 'tool_catalog_trimmed', {
-                provider: session.upstreamProvider,
-                ..._budgetDiag,
-                ...(_selection ? { selection: 'context', route_groups: _selection.groups, contextual_kept: _selection.contextual_kept, deferred_reachable: _selection.deferred } : {}),
-              });
-              if (session.upstreamProvider === 'vertex') {
-                emitDiag(session, 'vertex_tool_catalog_trimmed', _budgetDiag);
-              }
-            } else {
-              console.log(
-                `[voice.tool_catalog.budget_ok] session=${session.sessionId} declarations=${toolResult.declarationsBefore} bytes=${toolResult.bytesBefore} budget=${toolBudget}`,
-              );
-            }
-          } else if (toolBudget <= 0 && toolBudgetEnvVar) {
-            console.log(`[voice.tool_catalog.budget_disabled] session=${session.sessionId} provider=${session.upstreamProvider} (${toolBudgetEnvVar}=0)`);
-          }
-        } catch (e) {
-          // Never let the guard break the handshake — fail open with a log,
-          // same posture as the instruction guard above.
-          console.warn('[voice.tool_catalog.budget_error]', (e as Error)?.message ?? String(e));
-        }
-      }
-
-      // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
-      // tool declarations for this session. Helps diagnose "redirect not
-      // working" reports by showing whether Gemini even had the tool to call.
-      const toolMode = session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous';
-      const toolDecls = (setupMessage.setup as any)?.tools?.[0]?.function_declarations as any[] | undefined;
-      const toolNames = Array.isArray(toolDecls) ? toolDecls.map(t => t?.name).filter(Boolean) : [];
-      const hasNavigateTool = toolNames.includes('navigate_to_screen');
-      console.log(`[VTID-NAV-DIAG] Session ${session.sessionId}: mode=${toolMode} isAnonymous=${session.isAnonymous} hasIdentity=${!!session.identity} toolCount=${toolNames.length} hasNavigateTool=${hasNavigateTool} toolNames=[${toolNames.join(',')}]`);
-
-      // BOOTSTRAP-ORB-TOOL-CARRYOVER: if the previous upstream died while the
-      // model was acting on a tool result, carry that result into the rebuilt
-      // session so it continues instead of coming back with no memory of it.
-      //
-      // Injected here — at the single point BOTH the Vertex path and the Nova
-      // path read the envelope from — and injected REGARDLESS of
-      // `session.resumptionHandle`. That is deliberate and is the opposite of
-      // the `reconnectHistory` rule above: a resumption handle is a periodic
-      // CHECKPOINT, and in the production trace it was issued 8s BEFORE the
-      // tool call, so native resume rewinds to a point where the tool call
-      // never happened. A handle cannot restore something newer than itself.
-      try {
-        const pendingTools = getPendingToolResults(session);
-        if (pendingTools.length > 0) {
-          const resumeBlock = buildPendingToolResumeBlock(pendingTools);
-          const parts = (setupMessage.setup as any)?.system_instruction?.parts;
-          if (resumeBlock && Array.isArray(parts) && parts[0]) {
-            parts[0].text = `${parts[0].text ?? ''}${resumeBlock}`;
-            console.log(
-              `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Session ${session.sessionId}: carried ${pendingTools.length} unconsumed tool result(s) ` +
-                `into the rebuilt instruction (${pendingTools.map((p) => p.toolName).join(',')}) — ` +
-                `has_resumption_handle=${!!session.resumptionHandle}.`,
-            );
-            emitDiag(session, 'pending_tool_results_carried', {
-              count: pendingTools.length,
-              tools: pendingTools.map((p) => p.toolName),
-              has_resumption_handle: !!session.resumptionHandle,
-            });
-          }
-        }
-      } catch (e) {
-        // Never let the carry-over break the handshake — a session that
-        // reconnects without its tool context is degraded; one that fails to
-        // reconnect at all is dead.
-        console.warn(`[BOOTSTRAP-ORB-TOOL-CARRYOVER] carry_error: ${(e as Error)?.message ?? String(e)}`);
-      }
+      // VTID-04554: the instruction + tools + budget guards live in
+      // assembleOrbSetupEnvelope (module level) so the Nova prewarm can build
+      // the SAME envelope for a pre-session shadow. Byte-identical for a
+      // session: the real emitDiag / recordBrainContextBuilt are passed in.
+      const setupMessage = assembleOrbSetupEnvelope(session, _personaVoice, {
+        emitDiag,
+        recordBrainContextBuilt,
+        // VTID-04549: a Devon pre-connect build is side-effect free.
+        preconnect: opts?.preconnect === true,
+      });
 
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
@@ -8870,11 +9006,20 @@ async function connectToLiveAPI(
         // prompt) — a Devon hand-off reconnect must never claim it.
         const _prewarmPersonaIsVitana =
           (((session as any).activePersona as string | undefined) || 'vitana') === 'vitana';
-        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana
+        // VTID-04554: with ORB_PREWARM_FULL_CONTEXT_ENABLED the blind claim is
+        // off; the cold branch claims only on a fingerprint match.
+        const _prewarmFullContext = isPrewarmFullContextEnabled();
+        const _prewarmEligible = !!session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana;
+        const prewarmedNova = session.identity?.user_id && !isWorkSurface(sessionSurface) && _prewarmPersonaIsVitana && !_prewarmFullContext
           ? consumePrewarmedNovaSession(session.identity.user_id)
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
-        const reusedWarmNova = !!prewarmedNova;
+        let reusedWarmNova = !!prewarmedNova;
+        // VTID-04542: prewarm outcome diag (measurement only, see helper).
+        emitNovaPrewarmOutcome(session, { claimedAt: prewarmedNova?.createdAt ?? null, workSurface: isWorkSurface(sessionSurface), personaIsVitana: _prewarmPersonaIsVitana });
+        // VTID-04549: true when a Devon hand-off claimed the stream that was
+        // pre-connected while Vitana spoke the bridge (connect() already ran).
+        let reusedPersonaPreconnect = false;
 
         let novaSystemInstruction: string;
         let novaTools: Array<Record<string, unknown>>;
@@ -8954,16 +9099,70 @@ async function connectToLiveAPI(
             }
           }
 
-          novaClient = createUpstreamClient('nova_sonic', {
-            nova: {
-              config: novaCfg,
-              voiceId: novaVoice,
+          // VTID-04549: a persona hand-off armed at turn complete (see
+          // takeOverPersonaSwap below) claims the stream opened while the
+          // bridge was spoken — only when the instruction, tool catalog and
+          // voice it was opened with are byte-identical to what was just
+          // built above for this connect. Otherwise (and always with the flag
+          // off, where nothing is ever armed) the client is created exactly
+          // as before.
+          const claimedPersonaClient = (session as any)._personaPreconnectClaimArmed === true
+            ? await claimPersonaPreconnect<NovaSonicLiveClient>(
+                session,
+                {
+                  persona: novaPersona,
+                  systemInstruction: novaSystemInstruction,
+                  tools: novaTools,
+                  voiceId: novaVoice,
+                },
+                { emitDiag },
+              )
+            : null;
+          // VTID-04554 (never for a persona hand-off claim above): the envelope above is the cold path's own; a pooled
+          // prewarm serves only if it was opened with exactly this.
+          const fullContextPrewarm = !claimedPersonaClient && _prewarmFullContext && _prewarmEligible
+            ? claimFullContextPrewarm(session, session.identity!.user_id, {
+                systemInstruction: novaSystemInstruction,
+                tools: novaTools,
+                voiceId: novaVoice,
+                lang: session.lang || 'en',
+                model: novaCfg.modelId,
+                vadSilenceMs: session.vadSilenceMs,
+                responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+              })
+            : null;
+          if (claimedPersonaClient) {
+            novaClient = claimedPersonaClient;
+            reusedPersonaPreconnect = true;
+            // Constructed before this connect existed — repoint its four
+            // constructor-time callbacks, exactly as the prewarm claim does.
+            claimedPersonaClient.rebindSessionDeps({
               onRotationDue: handleNovaRotationDue,
               onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
               onFirstRawChunk: handleNovaFirstRawChunk,
               onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
-            },
-          });
+            });
+          } else if (fullContextPrewarm) {
+            novaClient = fullContextPrewarm.client;
+            (novaClient as NovaSonicLiveClient).rebindSessionDeps({
+              onRotationDue: handleNovaRotationDue,
+              onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
+              onFirstRawChunk: handleNovaFirstRawChunk,
+              onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
+            });
+            reusedWarmNova = true;
+          } else {
+            novaClient = createUpstreamClient('nova_sonic', {
+              nova: {
+                config: novaCfg,
+                voiceId: novaVoice,
+                onRotationDue: handleNovaRotationDue,
+                onIdleDeadlineApproaching: handleNovaIdleDeadlineApproaching,
+                onFirstRawChunk: handleNovaFirstRawChunk,
+                onEarlyNormalizedEvent: handleNovaEarlyNormalizedEvent,
+              },
+            });
+          }
         }
 
         // Stashed for the connect_failed OASIS payload — makes a rejected
@@ -9166,6 +9365,75 @@ async function connectToLiveAPI(
           }
         };
 
+        // VTID-04549 (ORB latency G) — Devon pre-connect. Both handlers below
+        // are no-ops unless ORB_DEVON_PRECONNECT_ENABLED=true.
+        //
+        // preconnectPersonaUpstream: opens the specialist's Nova stream in the
+        // background, with the envelope the swap's own connect will build
+        // (same builder, target persona, side-effect-free mode) and the voice
+        // the swap's own connect will choose (same resolver — VTID-04445:
+        // Devon male). No handlers are bound and no greeting is sent; the
+        // stream only waits to be claimed.
+        const preconnectPersonaUpstream = async (
+          persona: string,
+        ): Promise<PreconnectedUpstream<NovaSonicLiveClient>> => {
+          const pcEnvelope = (await buildOrbVertexSetupEnvelope({ personaOverride: persona, preconnect: true })) as {
+            setup?: Record<string, any>;
+          };
+          const pcSetup = pcEnvelope.setup ?? {};
+          const { text: pcInstruction } = sanitizeInstructionForNova(pcSetup.system_instruction?.parts?.[0]?.text ?? '');
+          const pcTools = Array.isArray(pcSetup.tools) ? (pcSetup.tools as Array<Record<string, unknown>>) : [];
+          const pcVoice = resolveNovaSonicVoiceOrFallback({ language: session.lang || 'en', persona }).voice;
+          const pcClient = createUpstreamClient('nova_sonic', {
+            nova: { config: novaCfg, voiceId: pcVoice },
+          }) as NovaSonicLiveClient;
+          try {
+            // Field for field the options of the cold connect below
+            // (pinned by vtid-04549-persona-preconnect-wiring.test.ts).
+            await pcClient.connect({
+              model: novaCfg.modelId,
+              voiceName: pcVoice,
+              responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+              vadSilenceMs: session.vadSilenceMs,
+              systemInstruction: pcInstruction,
+              systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
+              tools: pcTools,
+              connectTimeoutMs: novaCfg.connectTimeoutMs,
+            });
+          } catch (err) {
+            void pcClient.close('persona_preconnect_connect_failed').catch(() => { /* best-effort */ });
+            throw err;
+          }
+          return { client: pcClient, systemInstruction: pcInstruction, tools: pcTools, voiceId: pcVoice };
+        };
+
+        // A hand-off tool result was just delivered: if it queued a specialist
+        // swap, start opening that specialist's stream now.
+        const onPersonaSwapMaybeQueued = (): void => {
+          maybeStartPersonaPreconnect(session, preconnectPersonaUpstream, { emitDiag });
+        };
+
+        // Turn complete with the swap queued: switch onto the pre-connected
+        // stream (see takeOverPersonaSwapWithPreconnect). Returns false when
+        // there is none usable; the caller then closes this stream exactly as
+        // before and the onClose below runs today's reconnect.
+        const takeOverPersonaSwap = (_s: GeminiLiveSession, persona: string): boolean =>
+          takeOverPersonaSwapWithPreconnect({
+            session,
+            persona,
+            oldClient: novaClient,
+            emitDiag,
+            clearKeepalive: clearUpstreamKeepalive,
+            reconnect: () => attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ),
+          });
+
         bindUpstreamSessionHandlers({
           session,
           client: novaClient,
@@ -9185,6 +9453,9 @@ async function connectToLiveAPI(
             startResponseWatchdog,
             markVoiceLatency,
             finalizeVoiceTurnLatency,
+            // VTID-04549: Devon pre-connect (no-ops with the flag off).
+            onPersonaSwapMaybeQueued,
+            takeOverPersonaSwap,
           },
           // Nova NEEDS the synthetic PCM keepalive just like Vertex: Bedrock
           // expects continuous audio-frame cadence and terminates an idle
@@ -9614,7 +9885,11 @@ async function connectToLiveAPI(
         session.upstreamClient = novaClient;
         session.upstreamProvider = 'nova_sonic';
         const novaConnectStart = Date.now();
-        if (!reusedWarmNova) {
+        if (reusedPersonaPreconnect) {
+          // VTID-04549: opened (with this exact instruction/tools/voice) while
+          // the bridge sentence was spoken — nothing left to connect.
+          console.log(`[VTID-04549] Nova connect skipped for session ${session.sessionId} — pre-connected ${(session as any).activePersona} stream claimed`);
+        } else if (!reusedWarmNova) {
           await novaClient.connect({
             model: novaCfg.modelId,
             voiceName: novaVoice,
@@ -10277,6 +10552,8 @@ async function attemptTransparentReconnect(
   }
 
   try {
+    // VTID-04542: hand-off timing (no-op unless a swap drained).
+    if (isPersonaSwap) notePersonaSwapConnectStarted(session);
     const newWs = await connectToLiveAPI(
       session,
       onAudioResponse,
@@ -10287,6 +10564,7 @@ async function attemptTransparentReconnect(
     );
 
     session.upstreamWs = newWs;
+    if (isPersonaSwap) notePersonaSwapConnected(session);
     // Reset loop counter — fresh upstream connection starts clean
     session.consecutiveModelTurns = 0;
     // VTID-02637: clear the dedupe flag so a future genuine disconnect can
@@ -10614,6 +10892,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         _sm.markOpeningDelivered();
         void (async () => {
           try {
+            // VTID-04542: measure (never change) the facts wait below —
+            // both races, one mark. The probe does not touch the race.
+            const _factsProbeSF = startWaitProbe(_greetingFactsReady);
             await Promise.race([
               _greetingFactsReady ?? Promise.resolve(),
               new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
@@ -10655,6 +10936,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 if (ws.readyState !== WebSocket.OPEN) return;
               }
             }
+            session.establishLatency?.mark('greeting_facts_awaited', { ..._factsProbeSF(), path: 'safe_fast' });
 
             // BOOTSTRAP-ORB-GREETING-LANG: re-read the language AFTER the bounded
             // facts wait. `lang` was captured at function entry (above), before the
@@ -10709,7 +10991,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // Ledger + overview providers (dynamic imports mirror the pre-strangle
             // rungs so the module graph / bundle split is unchanged).
             const {
-              readGreetingLedger,
+              startSpeculativeGreetingLedgerRead,
               extractSpokenFactsFromPayload,
               recordGreetingFacts,
               EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_SF,
@@ -10775,6 +11057,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               voiceWakeBriefReason: null,
             };
 
+            // VTID-04544 — the three bounded reads (rung-1 new-day overview,
+            // rung-3 resume overview, spoken-facts ledger) keep their guards,
+            // budgets and fail-open values; the ledger now runs CONCURRENTLY with
+            // the gathers instead of after them (gatherSafeFastGreetingPayloads).
+            //
             // Rung-1 gather: the rich new-day overview, only when its guard
             // passes AND day-close (which outranks it) would not win anyway —
             // VTID-03743 review fix (Codex P2): day-close is eligible during
@@ -10782,66 +11069,69 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // so without this pre-check every day-close-window session paid
             // for a ~3.8s gather+ledger-read whose payload
             // computeGreetingDecision was always going to discard.
-            let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)) {
-              const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
-              const _lastSessDateSF =
-                typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
-                  ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
-                  : null;
-              _newdayOverviewSF = await Promise.race([
-                gatherOverviewPayload({
-                  supabase: _supaSF,
-                  userId: _uidSF,
-                  now: _nowSF,
-                  timezone: _tzSF,
-                  lang: greetLang,
-                  lastSessionDateUserTz: _lastSessDateSF,
-                  lastSessionAtIso: _lastSessIsoSF,
-                }),
-                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
-              ]).catch(() => null);
-            }
-            // Will rung 1 fire? If so, skip the resume gather (hot-path latency) —
-            // single-sourced with the brain via newdayHasContent.
-            const _newdayWillFireSF = !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF);
-
-            // Rung-3 gather: the resume overview, only when rung 1 won't fire and the
-            // resume guard/register says so (the guard already excludes first-timers).
-            const _resumeCheckSF = _newdayWillFireSF
-              ? { attempt: false as boolean }
-              : shouldAttemptResumeOverview(_baseCtxSF);
-            let _resumeOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (_resumeCheckSF.attempt && _supaSF && _uidSF) {
-              const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
-              const _lastSessDateR =
-                typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
-                  ? todayInTimezone(new Date(_lastSessIsoR), _tzSF)
-                  : null;
-              _resumeOverviewSF = await Promise.race([
-                gatherOverviewPayload({
-                  supabase: _supaSF,
-                  userId: _uidSF,
-                  now: _nowSF,
-                  timezone: _tzSF,
-                  lang: greetLang,
-                  lastSessionDateUserTz: _lastSessDateR,
-                  lastSessionAtIso: _lastSessIsoR,
-                }),
-                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
-              ]).catch(() => null);
-            }
-
-            // Read the spoken-facts ledger ONCE, only on a payload-bearing path
-            // (rung 1 will fire, or rung 3 was attempted) — the same paths on which
-            // the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
-            const _ledgerSF =
-              _tenantSF && _uidSF && _supaSF && (_newdayWillFireSF || _resumeCheckSF.attempt)
-                ? await Promise.race([
-                    readGreetingLedger({ supabase: _supaSF, tenantId: _tenantSF, userId: _uidSF }),
-                    new Promise<typeof _EMPTY_LEDGER_SF>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_SF }), 800)),
-                  ]).catch(() => ({ ..._EMPTY_LEDGER_SF }))
-                : { ..._EMPTY_LEDGER_SF };
+            // VTID-04544 — same reasoning for the rungs that outrank every
+            // payload rung and never read a payload (support report, tapped
+            // guided topic): when one of them is certain to win, nothing is
+            // gathered at all.
+            const _explicitOpenSF = overviewIndependentOpenerWins(_baseCtxSF);
+            const {
+              newdayOverview: _newdayOverviewSF,
+              resumeOverview: _resumeOverviewSF,
+              ledger: _ledgerSF,
+            } = await gatherSafeFastGreetingPayloads({
+              attemptNewday:
+                !_explicitOpenSF &&
+                !!(shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)),
+              // Rung-3 gather: the resume overview, only when rung 1 won't fire and
+              // the resume guard/register says so (the guard already excludes
+              // first-timers).
+              resumeGuard: _explicitOpenSF ? { attempt: false } : shouldAttemptResumeOverview(_baseCtxSF),
+              resumeGatherEligible: !!(_supaSF && _uidSF),
+              // The spoken-facts ledger is USED only on a payload-bearing path
+              // (rung 1 will fire, or rung 3 was attempted) — the same paths on
+              // which the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
+              ledgerEligible: !!(_tenantSF && _uidSF && _supaSF),
+              // Will rung 1 fire? If so, skip the resume gather (hot-path latency)
+              // — single-sourced with the brain via newdayHasContent.
+              newdayWillFire: (_newdayOverviewSF) => !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF),
+              // Each gather reads the last-session anchor at its OWN start, as the
+              // two serial gathers did (the heavy bootstrap may land in between).
+              gather: (timeoutMs, kind) => {
+                const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
+                const _lastSessDateSF =
+                  typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
+                    ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
+                    : null;
+                // VTID-04542: wait mark per gather (measurement only).
+                return timeBoundedGreetingRead(
+                  (onTimeout) =>
+                    boundedRead(
+                      () =>
+                        gatherOverviewPayload({
+                          supabase: _supaSF!,
+                          userId: _uidSF!,
+                          now: _nowSF,
+                          timezone: _tzSF,
+                          lang: greetLang,
+                          lastSessionDateUserTz: _lastSessDateSF,
+                          lastSessionAtIso: _lastSessIsoSF,
+                        }),
+                      timeoutMs,
+                      () => { onTimeout(); return null; },
+                      () => null,
+                    ),
+                  (w) => session.establishLatency?.mark('greeting_gather_awaited', { kind, ...w, path: 'safe_fast' }),
+                );
+              },
+              startLedger: () =>
+                withLedgerWaitMark(
+                  startSpeculativeGreetingLedgerRead({ supabase: _supaSF!, tenantId: _tenantSF!, userId: _uidSF! }, 800),
+                  (w) => session.establishLatency?.mark('greeting_ledger_awaited', { ...w, path: 'safe_fast' }),
+                ),
+              emptyLedger: () => ({ ..._EMPTY_LEDGER_SF }),
+              newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
+              resumeTimeoutMs: Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800),
+            });
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
@@ -10861,6 +11151,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                   client_content: { turns: [{ role: 'user', parts: [{ text: _sfDecision.directive }] }], turn_complete: true },
                 }),
               );
+              // VTID-04542: the greeting prompt is now with the upstream.
+              markGreetingDispatched(session, {
+                wake_opener: _sfDecision.wakeOpener,
+                directive_chars: _sfDecision.directive.length,
+                path: 'safe_fast',
+              });
             }
             // Durable once-per-day briefing stamp (safe_fast_newday_overview) —
             // mirror onto the session so a same-process reopen also sees it delivered.
@@ -11184,6 +11480,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${decision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${decision.directive.length} preview=${JSON.stringify(decision.directive.slice(0, 200))}`,
         );
         ws.send(_greetingClientContentMsg);
+        // VTID-04542: the greeting prompt is now with the upstream (every
+        // normal-ladder path renders through here).
+        markGreetingDispatched(session, {
+          wake_opener: decision.wakeOpener,
+          directive_chars: decision.directive.length,
+          path: 'ladder',
+        });
       }
       console.log(
         `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
@@ -11273,6 +11576,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         _openDecision.mode === 'silent' &&
         (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
       ),
+      // VTID-04544 — the same reasoning for the rungs that outrank the
+      // briefing and never read its payload: a support-report intake or a
+      // tapped guided topic wins regardless of what the gather returns, so the
+      // gather (and the facts wait before it) would only be discarded. Decided
+      // from synchronous facts only, via the brain's own rung functions.
+      no_explicit_open_rung: !overviewIndependentOpenerWins(_baseCtxSync),
     };
     const _newdaySyncPossible = Object.values(_ndGates).every(Boolean);
     if (!_newdaySyncPossible) {
@@ -11304,6 +11613,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // has too.
           const _factsReadyNS: Promise<void> | undefined = (session as any).greetingFactsReady;
           const _firstWaitMsNS = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+          // VTID-04542: measure (never change) both facts waits, one mark.
+          const _factsProbeNS = startWaitProbe(_factsReadyNS);
           await Promise.race([
             _factsReadyNS ?? Promise.resolve(),
             new Promise<void>((r) => setTimeout(r, _firstWaitMsNS)),
@@ -11331,9 +11642,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               if (ws.readyState !== WebSocket.OPEN) return;
             }
           }
+          session.establishLatency?.mark('greeting_facts_awaited', { ..._factsProbeNS(), path: 'ladder' });
 
-          const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
-            await import('../services/conversation/greeting-facts-ledger');
+          const {
+            startSpeculativeGreetingLedgerRead,
+            extractSpokenFactsFromPayload,
+            recordGreetingFacts,
+            EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS,
+          } = await import('../services/conversation/greeting-facts-ledger');
           const { gatherOverviewPayload } = await import(
             '../services/assistant-continuation/providers/new-day-overview-payload'
           );
@@ -11378,29 +11694,41 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
                 ? todayInTimezone(new Date(_lastSessIsoNS), _tzSync)
                 : null;
-            const _overviewNS = await Promise.race([
-              gatherOverviewPayload({
-                supabase: _syncSupa!,
-                userId: _syncUid!,
-                now: _nowNS,
-                timezone: _tzSync,
-                lang,
-                lastSessionDateUserTz: _lastSessDateNS,
-                lastSessionAtIso: _lastSessIsoNS,
-              }),
-              new Promise<null>((r) =>
-                setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000)),
-              ),
-            ]).catch(() => null);
-
+            // VTID-04544 — the ledger is started WITH the gather and used only
+            // when the gather returned a payload (as before); each keeps its
+            // own budget and fail-open value.
             const _tenantNS = session.identity?.tenant_id || null;
-            const _ledgerNS =
-              _overviewNS && _tenantNS
-                ? await Promise.race([
-                    readGreetingLedger({ supabase: _syncSupa!, tenantId: _tenantNS, userId: _syncUid! }),
-                    new Promise<typeof _EMPTY_LEDGER_NS>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_NS }), 800)),
-                  ]).catch(() => ({ ..._EMPTY_LEDGER_NS }))
-                : { ..._EMPTY_LEDGER_NS };
+            const { overview: _overviewNS, ledger: _ledgerNS } = await gatherNewdayGreetingPayload({
+              ledgerEligible: !!_tenantNS,
+              // VTID-04542: wait marks (measurement only).
+              gather: (timeoutMs, kind) =>
+                timeBoundedGreetingRead(
+                  (onTimeout) =>
+                    boundedRead(
+                      () =>
+                        gatherOverviewPayload({
+                          supabase: _syncSupa!,
+                          userId: _syncUid!,
+                          now: _nowNS,
+                          timezone: _tzSync,
+                          lang,
+                          lastSessionDateUserTz: _lastSessDateNS,
+                          lastSessionAtIso: _lastSessIsoNS,
+                        }),
+                      timeoutMs,
+                      () => { onTimeout(); return null; },
+                      () => null,
+                    ),
+                  (w) => session.establishLatency?.mark('greeting_gather_awaited', { kind, ...w, path: 'ladder' }),
+                ),
+              startLedger: () =>
+                withLedgerWaitMark(
+                  startSpeculativeGreetingLedgerRead({ supabase: _syncSupa!, tenantId: _tenantNS!, userId: _syncUid! }, 800),
+                  (w) => session.establishLatency?.mark('greeting_ledger_awaited', { ...w, path: 'ladder' }),
+                ),
+              emptyLedger: () => ({ ..._EMPTY_LEDGER_NS }),
+              newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
+            });
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
@@ -11869,57 +12197,14 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   // itself a bug generator: `fr`/`es` idle asked "what do you want to talk
   // about?" while `en`/`de` promised to show the next step — three languages
   // that disagreed about what the assistant just committed to.
-  const stageIntents: Record<string, string> = {
-    thinking:
-      'briefly acknowledge that the connection dropped for a moment, name what the user had been asking about in 3-6 words drawn from the conversation history (never their exact words), and lead straight into the answer',
-    listening_user_speaking:
-      'briefly acknowledge that the connection dropped while they were mid-sentence, name the topic of their partial utterance in 3-6 words drawn from the conversation history, and invite them to carry on',
-    speaking:
-      'briefly acknowledge that the connection dropped while you were answering, and say you are picking your answer back up',
-    idle: 'briefly acknowledge you are back, and hand the floor to the user',
-  };
-  const stageIntent = stageIntents[stage] || stageIntents['idle'];
-
-  // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
-  // open AND what to do next (answer / wait / continue) based on the stage.
-  // VTID-02715: language is "brief connection blip" not "network disconnect"
-  // — Gemini was paraphrasing "network" → "internet" to the user, who has
-  // perfectly working Wi-Fi. The drop is on the upstream WS / Cloud Run
-  // side; we don't blame the user's network.
-  const prompt = [
-    'You are recovering from a brief connection blip that interrupted a live voice conversation.',
-    '',
-    'Read the conversation history that has been injected into your system instruction.',
-    '',
-    `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
-    '',
-    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action.',
-    '',
-    `YOUR ACKNOWLEDGMENT for this stage must: ${stageIntent}.`,
-    '',
-    'Compose that sentence YOURSELF, in your own words, fresh for this reconnect.',
-    'You are NOT given a script and there is no approved phrasing to reproduce.',
-    'Vary it every time — the user reconnects often and must never hear the same',
-    'sentence twice. Keep it to one short sentence.',
-    '',
-    'Then take the follow-up action for the stage:',
-    `- "thinking": IMMEDIATELY answer the user's last question using the conversation history. Keep the answer focused and concise.`,
-    `- "listening_user_speaking": STOP and wait after your acknowledgment. NEVER ask the user to repeat themselves — their words are in the history, so name the topic yourself. If there really is no recent user turn in the history, just say you got cut off and are listening. Do NOT guess what they were about to ask.`,
-    `- "speaking": RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
-    `- "idle" or unknown: STOP and wait.`,
-    '',
-    'CRITICAL RULES:',
-    '- Speak in the user\'s language (it is set in your system instruction).',
-    '- Do NOT speak a memorised or fixed sentence. Never reuse a previous recovery line.',
-    '- Do NOT introduce yourself.',
-    '- Do NOT say "Hello", "Hi", or the user\'s name.',
-    '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
-    '- Do NOT use the words "internet", "network", "Wi-Fi" or equivalents — say "connection" or "we got cut off". The drop is on our side.',
-    '- Use the word "Sorry" / equivalent ONCE, not repeatedly.',
-    '- Speak immediately when this prompt arrives.',
-    '',
-    `Now produce the recovery line for stage "${stage}" and any follow-up action.`
-  ].join('\n');
+  //
+  // VTID-04551 — the stage intents and the prompt itself now live in
+  // orb/live/instruction/reconnect-recovery-prompt.ts, restated as what TO do.
+  // Measured: 29 of 30 sessions whose first open was this prompt were closed by
+  // Nova's content filter (0 of 107 greeting-brain opens); the prompt carried an
+  // eleven-deep stack of negative imperatives, the VTID-03797/VTID-04124 shape.
+  // See that module's header for the data and the clause-by-clause map.
+  const prompt = buildReconnectRecoveryPrompt(stage);
 
   const message = {
     client_content: {
@@ -12247,9 +12532,10 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   // upstream selection has always resolved by the time a per-turn tracker
   // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
   // here at construction time — no setProvider() correction needed later.
-  const provider = session.upstreamProvider === 'nova_sonic'
-    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
-    : `vertex/${GEMINI_MODEL}`;
+  // VTID-04542: one label rule for every provider. The old ternary labelled
+  // every non-Nova turn `vertex/gemini-2.0-flash-exp` (a stale constant),
+  // cascade sessions included.
+  const provider = resolveLatencyProviderLabel(session);
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
@@ -12262,9 +12548,56 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   tracker.mark('audio_in_first_byte');
 }
 
+/**
+ * VTID-04542 (ORB latency P0, measurement only): after the Nova connect
+ * decided whether to claim a login prewarm, emit `nova_prewarm_claimed` or
+ * `nova_prewarm_missed` with the reason (work_surface / persona / expired /
+ * dead_on_claim / none_available), and record `prewarm_claimed` for the
+ * turn-0 latency event. Reads the decision already made — never changes
+ * which path runs. Authenticated sessions only (anonymous ones cannot have a
+ * prewarm). Never throws.
+ */
+function emitNovaPrewarmOutcome(
+  session: GeminiLiveSession,
+  outcome: { claimedAt: number | null; workSurface: boolean; personaIsVitana: boolean },
+): void {
+  const userId = session.identity?.user_id;
+  if (!userId) return;
+  try {
+    const claimed = outcome.claimedAt !== null;
+    if (session.latencyContext) session.latencyContext.prewarm_claimed = claimed;
+    const transport = session.clientWs ? 'websocket' : 'sse';
+    if (claimed) {
+      emitDiag(session, 'nova_prewarm_claimed', {
+        provider: 'nova_sonic',
+        transport,
+        prewarm_age_ms: Date.now() - (outcome.claimedAt as number),
+      });
+    } else {
+      emitDiag(session, 'nova_prewarm_missed', {
+        provider: 'nova_sonic',
+        transport,
+        reason: outcome.workSurface
+          ? 'work_surface'
+          : !outcome.personaIsVitana
+            ? 'persona'
+            : describePrewarmMiss(userId),
+      });
+    }
+  } catch {
+    // Telemetry never breaks the connect path.
+  }
+}
+
 /** Record a phase mark on the active turn tracker (no-op if no turn in flight). */
 function markVoiceLatency(session: GeminiLiveSession, phase: LatencyPhase, detail?: Record<string, unknown>): void {
   session.latencyTracker?.mark(phase, detail);
+  // VTID-04542: 'audio_out_first_chunk' is marked by every provider's
+  // "model started speaking" path, so it is also where a persona hand-off's
+  // first audio lands. No-op unless a swap has drained; fire-and-forget.
+  if (phase === 'audio_out_first_chunk') {
+    notePersonaSwapFirstAudio(session, resolveLatencyProviderLabel(session));
+  }
 }
 
 /**
@@ -13036,6 +13369,8 @@ configureLiveSessionController({
   sendAudioToLiveAPI,
   startResponseWatchdog,
   emitDiag,
+  // VTID-04542: SSE audio starts the same per-turn latency tracker as WS.
+  startVoiceTurnLatency,
   getGoogleAuthReady: () => !!googleAuth,
 });
 
@@ -15841,6 +16176,25 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 });
 
 /**
+ * VTID-04542 — POST /live/client-latency (ORB latency P0, measurement only).
+ *
+ * The widget's latency beacon: ms since the member tapped the ORB for each
+ * client-side milestone. 204 immediately, then one `voice.latency.client`
+ * OASIS event (fire-and-forget); 400 on a bad body, 413 over 4 KB, never 5xx
+ * for a telemetry fault. `text/plain` is accepted for navigator.sendBeacon.
+ * Contract + validation: orb/live/client-latency-beacon.ts.
+ */
+// public-route — deliberately optionalAuth: anonymous voice sessions send the beacon too.
+router.post('/live/client-latency', express.text({ type: 'text/plain', limit: '16kb' }), optionalAuth, (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — the handler itself emits voice.latency.client (client-latency-beacon.ts).
+  try {
+    handleClientLatencyBeacon(req as any, res);
+  } catch {
+    if (!res.headersSent) res.status(204).end();
+  }
+});
+
+/**
  * VTID-03471 (L-04/L-05) — GET /live/transport
  *
  * Which client transport the gateway wants browsers to use for voice:
@@ -15894,21 +16248,57 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
   // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
   // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
-  // brain build that gates the Gemini setup. Community/orb is the dominant
-  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
-  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
-  void import('../services/vitana-brain-cache')
-    .then(({ warmBrainCache }) =>
-      warmBrainCache({
-        user_id: identity.user_id,
-        tenant_id: identity.tenant_id || 'default',
-        role: 'community',
-        channel: 'orb',
-      }),
-    )
-    .catch(() => { /* best-effort warm */ });
+  // brain build that gates the Gemini setup. Flag-gated (no-op when
+  // FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  //
+  // VTID-04548: warm the key the NEXT session start will look up, not a fixed
+  // `community` one. The role comes from the same resolver the session start
+  // uses (Command Hub → developer, mobile → community), from the same inputs:
+  // the route the widget is on (optional `current_route` in the body; absent
+  // keeps the old community warm), the user agent and the timezone the
+  // session's client context is built from (`buildClientContext` — also reads
+  // `client_timezone` from the body). Calling this again after a route/role
+  // switch warms the new key; an already-warm key is a cache hit, not a
+  // second build. Runs after the response — never delays the page.
+  void warmBrainCacheForNextSession(req).catch(() => { /* best-effort warm */ });
   return res.json({ ok: true, prewarm: 'started' });
 });
+
+/**
+ * VTID-04548 — warm the brain cache for the session this user will open
+ * next, keyed exactly as `handleLiveSessionStart` will look it up. Shared by
+ * the HTTP prewarm endpoint and the WS `prewarm` message. Returns the key it
+ * warmed (null when it warmed nothing); never throws.
+ */
+async function warmBrainCacheForNextSession(
+  req: AuthenticatedRequest,
+  overrides: { currentRoute?: string | null } = {},
+): Promise<string | null> {
+  try {
+    // The same identity resolution and client context the session start runs.
+    const identity = await resolveOrbIdentity(req);
+    if (!identity?.user_id) return null;
+    const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
+    if (!(await isVitanaBrainOrbEnabled())) return null; // the session would not read it
+    const clientContext = await buildClientContext(req);
+    const bodyRoute = typeof (req.body as any)?.current_route === 'string' ? (req.body as any).current_route : '';
+    const { prewarmBrainInput } = await import('../orb/live/session/session-context-builder');
+    const { brainRole, input } = prewarmBrainInput({
+      identity: identity as SupabaseIdentity & { active_role?: string | null },
+      route: overrides.currentRoute ?? bodyRoute,
+      isMobile: clientContext.isMobile,
+      timezone: clientContext.timezone,
+    });
+    const { warmBrainCache, brainCacheKey } = await import('../services/vitana-brain-cache');
+    warmBrainCache(input);
+    const key = brainCacheKey(input);
+    console.log(`[VTID-04548] brain cache warm requested (role=${brainRole}, tz=${input.user_timezone || 'none'}) for user ${identity.user_id.substring(0, 8)}...`);
+    return key;
+  } catch (err: any) {
+    console.warn(`[VTID-04548] brain cache warm failed (non-fatal): ${err?.message || err}`);
+    return null;
+  }
+}
 
 
 /**
@@ -16340,6 +16730,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
       transport: 'sse',
     });
+    // VTID-04542: session-start step timing + entry/surface/authenticated.
+    attachEstablishLatencyContext(session);
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
@@ -16354,9 +16746,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
           // is only known once connectToLiveAPI resolves) — correct it now so
           // voice.latency.measured attributes the timeline to the provider that
           // actually generated this audio.
-          if (session.upstreamProvider === 'nova_sonic') {
-            session.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
-          }
+          // VTID-04542: for every provider (cascade was left as vertex/…),
+          // plus the fields only known by now (role, prewarm, rung).
+          prepareEstablishLatencyFinalize(session);
           session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void session.establishLatency.finalize('success');
           session.establishLatency = null;
@@ -16427,6 +16819,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
             // playback before this fix, on the exact commit that shipped
             // full duplex.
             full_duplex: isFullDuplexEnabled(),
+            // VTID-04552: mobile playback lead on the first burst only (omitted when off).
+            ...playbackLeadHandshakeFields(),
           })}\n\n`);
         } catch (err) {
           // SSE might be closed
@@ -17295,6 +17689,10 @@ interface WsClientMessage {
   screen_title?: string;
   app_state?: Record<string, unknown>;
   is_mobile?: boolean;
+  // VTID-04548: the browser's IANA timezone, optional on 'prewarm' (the same
+  // field the start body carries), so the prewarm warms the brain cache key
+  // the session start will look up.
+  client_timezone?: string;
   // Text message fields
   text?: string;
   // Start message fields
@@ -17600,7 +17998,7 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       // login, before the ORB overlay is ever opened. Never blocks, never
       // errors back to the client (a failed/skipped prewarm is invisible —
       // the real 'start' just falls through to its normal cold-connect path).
-      void handleWsPrewarmMessage(clientSession).catch((err: any) => {
+      void handleWsPrewarmMessage(clientSession, message).catch((err: any) => {
         console.warn(`[VTID-03779] prewarm failed for ${clientSession.sessionId}: ${err?.message}`);
       });
       break;
@@ -17747,8 +18145,27 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
  *     decided fresh at real start time regardless, via the unchanged
  *     wake-brief pipeline — personalization surfaces there, unaffected.
  */
-async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<void> {
+async function handleWsPrewarmMessage(clientSession: WsClientSession, message: WsClientMessage = { type: 'prewarm' }): Promise<void> {
+  // VTID-04548: the authenticated, endpoint-less brain-cache warm. The widget
+  // resends 'prewarm' (with `current_route` / `client_timezone`) after a route
+  // or role switch; this warms the key the next session start will look up.
+  // Gated only by the brain cache flag (inside warmBrainCache), not by
+  // ORB_NOVA_PREWARM — a warm cache helps every transport. An already-warm key
+  // is a cache hit, not a second build.
+  if (clientSession.identity?.user_id) {
+    void warmBrainCacheForNextSession(wsPrewarmRequest(clientSession, message), {
+      currentRoute: typeof message.current_route === 'string' ? message.current_route : null,
+    }).catch(() => { /* best-effort warm */ });
+  }
   if (!isFeatureLive('ORB_NOVA_PREWARM')) return;
+  // VTID-04554: with ORB_PREWARM_FULL_CONTEXT_ENABLED the prewarm builds the
+  // session's real envelope (context, budgets, trimmed catalog) and records
+  // its fingerprint; the session claims it only on an exact match. Flag off:
+  // everything below runs exactly as before.
+  if (isPrewarmFullContextEnabled()) {
+    await prewarmNovaFullContext(clientSession, message);
+    return;
+  }
   const userId = clientSession.identity?.user_id;
   if (!userId) return; // Anonymous sessions already meet the latency target — nothing to warm.
   if (clientSession.liveSession?.active) return; // A real session is already running on this socket.
@@ -17837,6 +18254,309 @@ async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<v
   // anyway, orphaning the prewarmed client this handler just built. This
   // ack is the client's actual "safe to reuse now" signal.
   sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
+}
+
+/**
+ * VTID-04548 — the request surface `buildClientContext` / `resolveOrbIdentity`
+ * read, built from a WS prewarm frame the same way `startLiveSessionForWs`
+ * (ws-start-adapter.ts) builds it from a start frame: the upgrade headers
+ * (user agent, forwarded IP, x-client-timezone), the socket's verified
+ * identity, and the frame as the body. So a prewarm resolves the same device,
+ * timezone and identity the start frame on this socket will.
+ */
+function wsPrewarmRequest(clientSession: WsClientSession, message: WsClientMessage): AuthenticatedRequest {
+  const headers: IncomingHttpHeaders = { ...clientSession.upgradeHeaders };
+  const body: Record<string, unknown> = { ...message };
+  delete body.type;
+  return {
+    identity: clientSession.identity,
+    headers,
+    body,
+    ip: clientSession.clientIP,
+    get(name: string): string | undefined {
+      const v = headers[name.toLowerCase() as keyof IncomingHttpHeaders];
+      return Array.isArray(v) ? v[0] : (v as string | undefined);
+    },
+  } as unknown as AuthenticatedRequest;
+}
+
+/**
+ * VTID-04554 — the fields of a session the envelope builder reads, as the
+ * session start would set them for an ordinary (non-guided, first-connect,
+ * Vitana-persona) authenticated open. Pure. The prewarm builds its envelope
+ * over this shadow with `assembleOrbSetupEnvelope`, the function the live
+ * session uses.
+ *
+ * Deliberately NOT reproduced, because the prewarm cannot know them before
+ * the member opens the ORB (a session carrying any of them builds a
+ * different instruction, its fingerprint differs, and it connects cold):
+ * the wake-brief override block, Teacher / journey-guide / guided-topic
+ * content, the fast-greeting first name, a conversation summary, recent
+ * routes, and the ENVIRONMENT block's current UTC time (rendered to the
+ * millisecond when the envelope is built).
+ */
+export function buildPrewarmShadowSession(input: {
+  sessionId: string;
+  lang: string;
+  identity: SupabaseIdentity;
+  clientContext: ClientContext;
+  contextInstruction: string;
+  activeRole: string | null;
+  lastSessionInfo: { time: string; wasFailure: boolean } | null;
+  currentRoute?: string | null;
+  onboardingCohortBlock?: string;
+  voiceStyle?: string;
+  responseModalities?: string[];
+  vadSilenceMs?: number;
+}): GeminiLiveSession {
+  return {
+    sessionId: input.sessionId,
+    lang: input.lang,
+    voiceStyle: input.voiceStyle || 'friendly, calm, empathetic',
+    responseModalities: input.responseModalities || ['audio', 'text'],
+    identity: input.identity,
+    isAnonymous: false,
+    clientContext: input.clientContext,
+    contextInstruction: input.contextInstruction,
+    active_role: input.activeRole,
+    lastSessionInfo: input.lastSessionInfo,
+    current_route: input.currentRoute || undefined,
+    recent_routes: undefined,
+    conversationSummary: undefined,
+    transcriptTurns: [],
+    vadSilenceMs: input.vadSilenceMs ?? getVadSilenceDurationMs(),
+    upstreamProvider: 'nova_sonic',
+    onboardingCohortBlock: input.onboardingCohortBlock ?? '',
+  } as unknown as GeminiLiveSession;
+}
+
+/** No-op diagnostics for a shadow session: building it writes nothing. */
+const PREWARM_SHADOW_ENVELOPE_HOOKS = {
+  emitDiag: (_s: GeminiLiveSession, _stage: string, _extra?: Record<string, unknown>) => { /* shadow: no diag */ },
+  recordBrainContextBuilt: (_s: GeminiLiveSession, _pack: BootstrapPackResult) => { /* shadow: no diag */ },
+};
+
+/**
+ * VTID-04554 — the Nova stream parameters for an envelope, exactly as the
+ * cold connect branch derives them: sanitized instruction, the envelope's
+ * tool groups, the persona voice for the language, the modality. Pure apart
+ * from the voice table lookup.
+ */
+export function novaStreamShapeFromEnvelope(
+  envelope: { setup?: Record<string, any> },
+  session: Pick<GeminiLiveSession, 'lang' | 'responseModalities' | 'vadSilenceMs'> & { activePersona?: string },
+  model: string,
+): NovaStreamShape {
+  const setup = envelope.setup ?? {};
+  const { text } = sanitizeInstructionForNova(setup.system_instruction?.parts?.[0]?.text ?? '');
+  const tools = Array.isArray(setup.tools) ? (setup.tools as Array<Record<string, unknown>>) : [];
+  const voice = resolveNovaSonicVoiceOrFallback({
+    language: session.lang || 'en',
+    persona: session.activePersona || 'vitana',
+  }).voice;
+  return {
+    systemInstruction: text,
+    tools,
+    voiceId: voice,
+    lang: session.lang || 'en',
+    model,
+    vadSilenceMs: session.vadSilenceMs,
+    responseModalities: (session.responseModalities || []).includes('audio') ? ['audio'] : ['text'],
+  };
+}
+
+/**
+ * VTID-04554 — full-context Nova prewarm (`ORB_PREWARM_FULL_CONTEXT_ENABLED`).
+ * Assembles the context the session start would (the same builders: brain
+ * base through the shared context builder — a brain-cache hit when warmed —
+ * the effective role, the Autopilot offer and admin briefing (read-only
+ * paths), the journey standing block, the onboarding cohort block, the last
+ * session info, the client context), builds the envelope with
+ * `assembleOrbSetupEnvelope`, opens Nova with exactly that, and pools it with
+ * its fingerprint. Writes nothing to the database and emits no OASIS event.
+ */
+async function prewarmNovaFullContext(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
+  const userId = clientSession.identity?.user_id;
+  if (!userId) return;
+  if (clientSession.liveSession?.active) return;
+  const req = wsPrewarmRequest(clientSession, message);
+  const identity = await resolveOrbIdentity(req);
+  if (!identity?.user_id) return;
+  const route = typeof message.current_route === 'string' ? message.current_route : '';
+  const clientContext = await buildClientContext(req);
+  // VTID-04560: the same Assistant Profile the session start resolves (the
+  // screen's declared surface + view role, verified by the token). Never
+  // prewarm for a work surface: the session never claims there.
+  const prewarmProfile = resolveAssistantProfile({
+    declaredSurface: (message as any).surface,
+    declaredViewRole: (message as any).view_role,
+    currentRoute: route,
+    isAnonymous: false,
+    isExafyAdmin: !!identity.exafy_admin,
+  });
+  if (prewarmProfile.isWorkSurface) return;
+
+  // Language: the same order the session start resolves it (client-requested
+  // → stored preference → 'en').
+  const clientLang = typeof message.lang === 'string' && message.lang ? message.lang : null;
+  const storedLang = !clientLang && identity.tenant_id
+    ? await getStoredLanguagePreference(identity.tenant_id, identity.user_id).catch(() => null)
+    : null;
+  const lang = normalizeLang(clientLang || storedLang || 'en');
+
+  const shadowId = `prewarm-${userId.substring(0, 8)}-${Date.now()}`;
+  const {
+    prewarmBrainInput,
+    buildBaseSessionContext,
+    composeSessionContext,
+    fetchJourneyStandingBlock,
+  } = await import('../orb/live/session/session-context-builder');
+  const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
+  const useBrain = await isVitanaBrainOrbEnabled().catch(() => false);
+  const { brainRole } = prewarmBrainInput({
+    identity: identity as SupabaseIdentity & { active_role?: string | null },
+    route,
+    isMobile: clientContext.isMobile,
+    timezone: clientContext.timezone,
+  });
+  const [base, fetchedRole, lastSessionInfo, adminBriefing, autopilotOffer, journeyBlock, onboardingCohortBlock] = await Promise.all([
+    buildBaseSessionContext(
+      { identity, sessionId: shadowId, brainRole, timezone: clientContext.timezone, useBrain },
+      { legacy: buildBootstrapContextPack },
+    ),
+    resolveEffectiveRole(identity.user_id, identity.tenant_id || ''),
+    fetchLastSessionInfo(identity.user_id, clientContext.timezone),
+    identity.tenant_id ? fetchAdminBriefingBlock(identity.tenant_id, 3).catch(() => null) : Promise.resolve(null),
+    import('./autopilot-recommendations')
+      .then((m) => m.buildAutopilotOfferBlock(identity.user_id))
+      .catch(() => ''),
+    fetchJourneyStandingBlock(identity.user_id, lang),
+    fetchOnboardingCohortBlock(identity.user_id).catch(() => ''),
+  ]);
+  // VTID-04560: the member role the session start serves (clamped by the profile).
+  const activeRole = clampRoleToProfile(prewarmProfile, fetchedRole);
+  const contextInstruction = composeSessionContext({
+    base: base.contextInstruction || '',
+    role: activeRole,
+    isAdminRole: isAdminRole(activeRole),
+    extras: { autopilotOffer: autopilotOffer || null, adminBriefing: adminBriefing || null },
+    journeyBlock,
+  }).text;
+
+  const shadow = buildPrewarmShadowSession({
+    sessionId: shadowId,
+    lang,
+    identity,
+    clientContext,
+    contextInstruction,
+    activeRole,
+    lastSessionInfo,
+    currentRoute: route || null,
+    onboardingCohortBlock,
+    voiceStyle: typeof message.voice_style === 'string' && message.voice_style ? message.voice_style : undefined,
+    // The session start's own rules for these two start-frame fields
+    // (live-session-controller.ts), so a prewarm frame carrying what the start
+    // frame will carry builds the same stream.
+    responseModalities: Array.isArray(message.response_modalities) ? message.response_modalities : undefined,
+    vadSilenceMs: message.vad_silence_ms && message.vad_silence_ms >= 500 && message.vad_silence_ms <= 3000
+      ? message.vad_silence_ms
+      : undefined,
+  });
+  // The Vertex speech voice is not part of a Nova stream; any value serves.
+  const envelope = assembleOrbSetupEnvelope(shadow, getLiveApiVoice(lang), PREWARM_SHADOW_ENVELOPE_HOOKS);
+  const novaPrewarmCfg = getNovaSonicConfig(process.env);
+  const shape = novaStreamShapeFromEnvelope(envelope, shadow, novaPrewarmCfg.modelId);
+  const fingerprint = computeNovaStreamFingerprint(shape);
+
+  if (clientSession.liveSession?.active) return; // a real session started while we assembled
+  const novaClient = new NovaSonicLiveClient({ config: novaPrewarmCfg, voiceId: shape.voiceId });
+  try {
+    await novaClient.connect({
+      model: shape.model,
+      voiceName: shape.voiceId,
+      responseModalities: shape.responseModalities as Array<'audio' | 'text'>,
+      vadSilenceMs: shape.vadSilenceMs,
+      systemInstruction: shape.systemInstruction,
+      systemInstructionChunkBytes: novaPrewarmCfg.instructionChunkBytes || undefined,
+      tools: shape.tools,
+      connectTimeoutMs: novaPrewarmCfg.connectTimeoutMs,
+    });
+  } catch (err: any) {
+    console.warn(`[VTID-04554] full-context prewarm connect failed for user ${userId.substring(0, 8)}...: ${err?.message}`);
+    void novaClient.close('prewarm_connect_failed').catch(() => { /* best-effort */ });
+    return;
+  }
+  registerPrewarmedNovaSession(userId, {
+    client: novaClient,
+    systemInstruction: shape.systemInstruction,
+    tools: shape.tools,
+    voiceId: shape.voiceId,
+    lang,
+    fingerprint,
+  });
+  console.log(
+    `[VTID-04554] full-context Nova prewarm pooled for user ${userId.substring(0, 8)}... ` +
+      `(lang=${lang}, role=${activeRole || 'none'}, builder=${base.builder}, chars=${shape.systemInstruction.length}, ` +
+      `tools=${toolNamesOf(shape.tools).length}, fp=${fingerprint.substring(0, 12)})`,
+  );
+  sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
+}
+
+/**
+ * VTID-04554 — the session-side half: after the session has built its own
+ * envelope exactly as a cold start does, claim the pooled prewarm only when
+ * the fingerprints match. Returns the claimed entry, or null (connect cold).
+ * Emits `nova_prewarm_missed` with the reason on every non-claim, and
+ * `nova_warm_start_claimed` on a claim. Never throws.
+ */
+function claimFullContextPrewarm(
+  session: GeminiLiveSession,
+  userId: string,
+  coldShape: NovaStreamShape,
+): PrewarmedNovaSessionEntry | null {
+  try {
+    const pooled = peekPrewarmedNovaSession(userId);
+    if (!pooled) return null;
+    const coldFingerprint = computeNovaStreamFingerprint(coldShape);
+    const isGuidedTopic = !!((session as any).guided_topic_id || (session as any).guidedTopicNarrationContent || session.contextBuilder === 'lesson');
+    const decision = decidePrewarmClaim({
+      prewarm: { lang: pooled.lang, fingerprint: pooled.fingerprint ?? null },
+      session: { lang: coldShape.lang, fingerprint: coldFingerprint, isGuidedTopic },
+    });
+    if (!decision.claim) {
+      // Diagnostic only: does everything but the render-time lines match?
+      const pooledTimeless = computeNovaStreamFingerprint(
+        { ...coldShape, systemInstruction: pooled.systemInstruction, tools: pooled.tools, voiceId: pooled.voiceId, lang: pooled.lang },
+        { ignoreRenderTime: true },
+      );
+      const coldTimeless = computeNovaStreamFingerprint(coldShape, { ignoreRenderTime: true });
+      emitDiag(session, 'nova_prewarm_missed', {
+        provider: 'nova_sonic',
+        reason: decision.reason,
+        discarded: decision.discard,
+        prewarm_age_ms: Date.now() - pooled.createdAt,
+        differs_only_in_render_time: decision.reason === 'fingerprint_mismatch' && pooledTimeless === coldTimeless,
+        instruction_chars_prewarm: pooled.systemInstruction.length,
+        instruction_chars_session: coldShape.systemInstruction.length,
+      });
+      if (decision.discard) discardPrewarmedNovaSession(userId, `prewarm_${decision.reason}`);
+      return null;
+    }
+    const entry = consumePrewarmedNovaSession(userId);
+    if (!entry) {
+      emitDiag(session, 'nova_prewarm_missed', { provider: 'nova_sonic', reason: 'prewarm_dead', discarded: true });
+      return null;
+    }
+    emitDiag(session, 'nova_warm_start_claimed', {
+      provider: 'nova_sonic',
+      full_context: true,
+      prewarm_age_ms: Date.now() - entry.createdAt,
+    });
+    return entry;
+  } catch (err: any) {
+    console.warn(`[VTID-04554] prewarm claim check failed, connecting cold: ${err?.message}`);
+    return null;
+  }
 }
 
 /**
@@ -17952,6 +18672,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
       transport: 'websocket',
     });
+    // VTID-04542: session-start step timing + entry/surface/authenticated.
+    attachEstablishLatencyContext(liveSession);
 
     const upstreamWs = await connectToLiveAPI(
       liveSession,
@@ -17962,9 +18684,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
           // comment — the tracker's Vertex default needs correcting once
           // upstream selection has actually resolved.
-          if (liveSession.upstreamProvider === 'nova_sonic') {
-            liveSession.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
-          }
+          // VTID-04542: same helper as the SSE handler, every provider.
+          prepareEstablishLatencyFinalize(liveSession);
           liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;
@@ -18123,6 +18844,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // versa) would be a half-applied change with no single place to debug.
       // Absent/false ⇒ the widget keeps its pre-existing barge-in behavior.
       full_duplex: isFullDuplexEnabled(),
+            // VTID-04552: mobile playback lead on the first burst only (omitted when off).
+            ...playbackLeadHandshakeFields(),
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
@@ -18634,3 +19357,9 @@ function sendWsMessage(ws: WebSocket, message: Record<string, unknown>): void {
 }
 
 export default router;
+
+// VTID-04542 — test-only handle on the connect path, so the voice-payload
+// identity suite (test/orb/latency) can drive the REAL envelope build and
+// capture exactly what each upstream receives (instruction + tool catalog).
+// Re-export only: no behaviour, no new code path.
+export { connectToLiveAPI as __connectToLiveAPIForTest };

@@ -29,12 +29,17 @@
  *
  * Reuses (do NOT reimplement):
  *   - getActivePolicy() from llm-routing-policy-service.ts
- *   - startLLMCall / completeLLMCall / failLLMCall from llm-telemetry-service.ts
+ *   - startLLMCallDetached / completeLLMCallDetached / failLLMCallDetached from
+ *     llm-telemetry-service.ts (non-blocking since VTID-04546)
  *   - LLM_SAFE_DEFAULTS / estimateCost from constants/llm-defaults.ts
  */
 
 import { getActivePolicy } from './llm-routing-policy-service';
-import { startLLMCall, completeLLMCall, failLLMCall } from './llm-telemetry-service';
+import {
+  startLLMCallDetached,
+  completeLLMCallDetached,
+  failLLMCallDetached,
+} from './llm-telemetry-service';
 import { invokeBedrock, type BedrockContentBlock } from '../providers/bedrock';
 import {
   LLM_SAFE_DEFAULTS,
@@ -1150,7 +1155,12 @@ async function runProviderCall(
     };
   }
 
-  const ctx = await startLLMCall({
+  // VTID-04546: telemetry is emitted in the background — the llm.call.started
+  // insert no longer sits between the caller and the provider, and the
+  // completed/failed insert no longer sits between the provider and the
+  // caller. Payloads are unchanged; the terminal event is issued only after
+  // the started insert settles (see llm-telemetry-service.ts).
+  const ctx = startLLMCallDetached({
     vtid: opts.vtid ?? null,
     service: opts.service,
     stage,
@@ -1172,7 +1182,7 @@ async function runProviderCall(
   });
 
   if (result.ok) {
-    await completeLLMCall(ctx, {
+    void completeLLMCallDetached(ctx, {
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
       fallbackUsed,
@@ -1204,7 +1214,7 @@ async function runProviderCall(
     };
   }
 
-  await failLLMCall(ctx, {
+  void failLLMCallDetached(ctx, {
     code: 'provider_error',
     message: result.error || 'unknown',
   });

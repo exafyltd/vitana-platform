@@ -86,6 +86,11 @@ import type {
 } from './types';
 import { TranscribeStreamSession } from './cascaded/transcribe-stream';
 import { synthesizeCascadeReply } from './cascaded/tts-backend';
+import {
+  isCascadeStreamingEnabled,
+  speakableSegments,
+  speakSegmentsInOrder,
+} from './cascaded/sentence-pipeline';
 import { evaluateCascadeEligibility } from './cascaded-config';
 import {
   callViaRouter,
@@ -299,6 +304,11 @@ export class CascadedLiveClient implements UpstreamLiveClient {
    * it alongside `turnInFlight`. See `sendAudioChunk()` for why this exists.
    */
   private busyUntilMs = 0;
+  /**
+   * VTID-04550 — estimated end of client playback for the audio emitted so
+   * far in the current pipelined turn (flag-on path only; reset per turn).
+   */
+  private pipelinePlaybackEndMs = 0;
 
   private audioHandler: ((e: AudioOutputEvent) => void) | null = null;
   private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
@@ -717,6 +727,35 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       // drawn there and what does/doesn't need a Polly-backed regression
       // test when changed. Behaviour here is unchanged from before the
       // extraction (VTID-03970's original selection).
+      // VTID-04550: sentence-pipelined TTS, only when
+      // ORB_CASCADE_STREAMING_ENABLED is exactly 'true'. Same text, same
+      // backend selection, same failure report — the member just hears the
+      // first sentence before the last one has been synthesized. Flag off
+      // falls through to the unchanged single-call path below.
+      if (isCascadeStreamingEnabled()) {
+        const specialist = this.voiceRole === 'specialist';
+        this.pipelinePlaybackEndMs = 0;
+        const pipeline = await speakSegmentsInOrder(
+          speakableSegments(replyText),
+          (segment) =>
+            specialist
+              ? synthesizeCascadeReply(segment, this.lang, { voiceRole: 'specialist' })
+              : synthesizeCascadeReply(segment, this.lang),
+          (audioB64) => this.emitPipelinedAudio(audioB64),
+          () => this.state !== 'closing' && this.state !== 'closed',
+        );
+        if (pipeline.stopped) return;
+        if (!pipeline.ok) {
+          this.errorHandler?.({
+            code: 'cascade_tts_failed',
+            message: `No TTS provider returned audio for lang='${this.lang}'`,
+          });
+          return;
+        }
+        this.turnCompleteHandler?.({ durationMs: Date.now() - startedAt });
+        return;
+      }
+
       // VTID-04336: the voice role only tells the backends WHO is speaking
       // (receptionist = the exact pre-swap request); selection is unchanged.
       const speech =
@@ -761,6 +800,26 @@ export class CascadedLiveClient implements UpstreamLiveClient {
     // long as Vitana is actually talking, not just while she is thinking.
     const estimatedPlaybackMs = Math.round((buf.length / 2 / POLLY_PCM_SAMPLE_RATE_HZ) * 1000);
     this.busyUntilMs = Date.now() + estimatedPlaybackMs + PLAYBACK_MARGIN_MS;
+    for (let offset = 0; offset < buf.length; offset += this.audioChunkBytes) {
+      const slice = buf.subarray(offset, Math.min(offset + this.audioChunkBytes, buf.length));
+      this.audioHandler?.({ dataB64: slice.toString('base64'), mimeType });
+    }
+  }
+
+  /**
+   * VTID-04550 — emit one sentence of a pipelined reply. The client queues
+   * the segments back to back, so the busy gate must extend to the end of
+   * the WHOLE queued playback, not just this segment: each segment starts
+   * where the previous one ends (or now, if that has already passed), and
+   * `busyUntilMs` covers the cumulative end plus the VTID-03986 margin.
+   */
+  private emitPipelinedAudio(audioB64: string): void {
+    const buf = Buffer.from(audioB64, 'base64');
+    const mimeType = `audio/pcm;rate=${POLLY_PCM_SAMPLE_RATE_HZ}`;
+    const segmentMs = Math.round((buf.length / 2 / POLLY_PCM_SAMPLE_RATE_HZ) * 1000);
+    const startMs = Math.max(Date.now(), this.pipelinePlaybackEndMs);
+    this.pipelinePlaybackEndMs = startMs + segmentMs;
+    this.busyUntilMs = this.pipelinePlaybackEndMs + PLAYBACK_MARGIN_MS;
     for (let offset = 0; offset < buf.length; offset += this.audioChunkBytes) {
       const slice = buf.subarray(offset, Math.min(offset + this.audioChunkBytes, buf.length));
       this.audioHandler?.({ dataB64: slice.toString('base64'), mimeType });

@@ -46,7 +46,8 @@ describe('VTID-03779 orb-widget Nova session prewarm', () => {
     expect(body).toMatch(/msg\.type === 'connected'/);
     const connectedBranch = body.match(/if \(msg\.type === 'connected'\) \{[\s\S]*?\n\s*\}/)?.[0];
     expect(connectedBranch).toBeDefined();
-    expect(connectedBranch).toMatch(/w\.send\(JSON\.stringify\(\{ type: 'prewarm' \}\)\)/);
+    // VTID-04548: the message now also carries route + timezone (_prewarmContext).
+    expect(connectedBranch).toMatch(/_pwMsg\.type = 'prewarm';[\s\S]*w\.send\(JSON\.stringify\(_pwMsg\)\)/);
     // Codex review (PR #3218): setting ready here — merely having SENT
     // 'prewarm' — let a 'start' race in before the server's real (multi-
     // second) Nova connect() finished, reusing a socket with nothing

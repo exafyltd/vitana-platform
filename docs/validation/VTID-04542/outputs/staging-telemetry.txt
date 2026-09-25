@@ -1,0 +1,21 @@
+# voice.latency.measured, turn 0, staging, AFTER window (>= 18:34 UTC, 22 sessions; read-only query)
+phase                     n   p50 offset_ms   note
+context_awaited          16   303             16/16 timed out at the 300 ms gate (ORB_CONTEXT_READY_GATE_TIMEOUT_MS=300)
+setup_sent               22   317
+nova_first_raw_chunk     22   488
+greeting_sent            22   490             (pipeline entered — unchanged meaning)
+greeting_facts_awaited   16   635             p50 wait 23 ms, 0 timed out           (NEW, P0)
+greeting_dispatched      22   934             the real send                          (NEW, P0)
+greeting_gather_awaited  16  1058             p50 wait 374 ms, 1 timed out           (NEW, P0)
+greeting_ledger_awaited  16  1058             p50 wait 0 ms (runs concurrently, B)   (NEW, P0)
+audio_out_first_chunk    22  2735             BEFORE window (18:16-18:25, 24 sessions): 2816
+
+# Context source at setup (same windows): before fresh 11 / snapshot 9 / none 3 / anon 6;
+# after fresh 5 / snapshot 8 / none 3 / anon 6 — same shape, "none" pre-exists.
+
+# Real-browser (Playwright, staging SPA, test account, auth only) — client beacon voice.latency.client:
+# {"session_id":"live-dcc6a280-…","entry":"desktop","transport":"sse","marks":{"tap":0,
+#  "reconnect1_start":330,…,"reconnect2_session_started":5120,"first_audio_scheduled":5844,…}}
+# Findings: (1) a cycle closed before any session posts session_id "" and was rejected 400 — fixed
+# here (recorded as session_id null); (2) the SPA loads orb-widget.js under an immutable edge-cached
+# ?v= tag, so most requests still got the pre-change widget — fixed in exafyltd/vitana-v1 (tag bump).

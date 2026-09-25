@@ -55,10 +55,27 @@ interface Entry {
 
 const cache = new Map<string, Entry>();
 
+/**
+ * The cache key. role + channel are baked into the produced instruction, so
+ * they MUST be in the key. tenant + user scope the personalization (no
+ * cross-user leakage).
+ *
+ * VTID-04548: `user_timezone` is in the key too. The build renders it — the
+ * proactive guide's time-of-day framing and the memory block's timestamps
+ * (`vitana-brain.ts` passes it to both) — so a build made for one zone must
+ * never be served to a session in another. Before this, the prewarm endpoint
+ * warmed a build with NO timezone (rendered as UTC) under the same key the
+ * session start then looked up WITH the browser's zone, and the session was
+ * served the UTC build. An unset zone keys as '' (the same thing the build
+ * renders for it). Exported so the prewarm path and its tests use the exact
+ * key the session start looks up.
+ */
+export function brainCacheKey(input: Pick<BrainInput, 'tenant_id' | 'user_id' | 'role' | 'channel' | 'user_timezone'>): string {
+  return [input.tenant_id, input.user_id, input.role, input.channel, input.user_timezone || ''].join('|');
+}
+
 function keyOf(input: BrainInput): string {
-  // role + channel are baked into the produced instruction, so they MUST be in
-  // the key. tenant + user scope the personalization (no cross-user leakage).
-  return [input.tenant_id, input.user_id, input.role, input.channel].join('|');
+  return brainCacheKey(input);
 }
 
 function evictIfNeeded(): void {
@@ -210,8 +227,11 @@ export function buildBrainSystemInstructionCached(
 
 /**
  * Fire-and-forget warm for the prewarm endpoint. Builds (and caches) the brain
- * instruction for the common authenticated community ORB path so the user's
- * first tap is a cache hit. No-op when the flag is off; never throws.
+ * instruction so the user's first tap is a cache hit. The caller passes the
+ * same input the session start will build with (VTID-04548:
+ * `prewarmBrainInput` in orb/live/session/session-context-builder.ts), so the
+ * warmed key is the key the session looks up. No-op when the flag is off;
+ * never throws.
  */
 export function warmBrainCache(input: BrainInput): void {
   if (!isFeatureLive('ORB_BRAIN_CACHE')) return;

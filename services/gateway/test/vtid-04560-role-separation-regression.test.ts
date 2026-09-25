@@ -354,7 +354,7 @@ describe('source contracts — the wiring cannot silently disappear', () => {
   });
 
   test('the setup envelope reads role, surface and tools from the profile', () => {
-    expect(orbLive).toContain('sessionServedRole(session),\n                        session.conversationSummary,');
+    expect(orbLive).toMatch(/sessionServedRole\(session\),\s*\n\s*session\.conversationSummary,/);
     expect(orbLive).toContain('sessionServedSurface(session),');
     expect(orbLive).toMatch(/tools: buildLiveApiTools\([\s\S]{0,700}sessionServedRole\(session\)[\s\S]{0,200}sessionServedSurface\(session\)/);
     expect(orbLive).not.toContain('undefined, // surface — unchanged (route-based heuristic)');
@@ -362,6 +362,14 @@ describe('source contracts — the wiring cannot silently disappear', () => {
 
   test('every greeting context carries the work-surface fields', () => {
     expect((orbLive.match(/\.\.\.workSurfaceGreetingFields\(session as any\)/g) || []).length).toBe(3);
+  });
+
+  test('the Nova prewarm resolves the same profile and member role as the session start', () => {
+    const fn = orbLive.slice(orbLive.indexOf('async function prewarmNovaFullContext('), orbLive.indexOf('async function prewarmNovaFullContext(') + 6000);
+    expect(fn).toContain('const prewarmProfile = resolveAssistantProfile({');
+    expect(fn).toContain('if (prewarmProfile.isWorkSurface) return;');
+    expect(fn).toContain('const activeRole = clampRoleToProfile(prewarmProfile, fetchedRole);');
+    expect(widget).toContain('if (_s.viewRole) ctx.view_role = _s.viewRole;');
   });
 
   test('the widget declares surface + view_role and restarts on a role switch', () => {
