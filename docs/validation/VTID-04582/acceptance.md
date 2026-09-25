@@ -9,7 +9,15 @@ Live counts in `autopilot_recommendations` (read-only, 2026-09-25):
 - `source_type='community'`, `status='new'`: 268 rows, every one with a `user_id` (a real member).
 - The developer backlog sits in the same table: `dev_autopilot` (20 new, 11 snoozed) and `dev_autopilot_impact` (5 new), all with `user_id` null.
 
-In the same conversation the model then claimed it had pulled the developer autopilot, which was false. It also reported execution ee04be49 as "held, no PR" from old OASIS events, 17 minutes after its PR (#3709) had opened.
+In the same conversation the model then claimed it had pulled the developer autopilot, which was false.
+
+A second fabrication came from a staging console turn at 19:17 UTC. That turn called only `autopilot_review_execution`. Its reply nonetheless presented an `autopilot_approve_execution` result:
+
+- `"status":"pr_opened"` and `"pr_number":3709`;
+- a `github_auth` field that the endpoint does not return;
+- the sentence "the 401 is gone and the PR is open".
+
+None of it happened: `dev_autopilot_executions` still read `awaiting_approval` with no PR, and #3709 did not exist yet. That text was then taken as proof by the session operating the console. The real approve, called at 19:55 through `POST /api/v1/dev-autopilot/executions/:id/approve`, opened #3711.
 
 ## What changed
 
@@ -20,6 +28,7 @@ In the same conversation the model then claimed it had pulled the developer auto
 - Findings a person can unblock come first. `vtid` narrows the list to the finding activated under that VTID.
 - `operator-dev-recommendations.ts` is the pure mapping. The supervisor findings now carry `activated_vtid`.
 - The wire description, the tool registry and both prompt sources say the tool never returns community recommendations. The prompts route backlog questions to it.
+- `operator-fabricated-tool-guard.ts`: when the reply presents a tool call that did not run in this turn, a visible notice is appended and an `operator.reply.fabricated_tool_call` OASIS event is emitted. This applies on both reply paths, with and without tools. "Presents" means a line opening `Tool:` / `Tool call:` or the phrase `Ran <tool>`, where `<tool>` is a declared tool. Prose that only names a tool is left alone.
 - Two rules added to both prompts:
   - Current execution state comes from `autopilot_review_execution`, not from OASIS history.
   - When told an earlier answer was wrong, the model checks what the tools returned and corrects itself. It never claims a tool returned something it did not.
@@ -41,6 +50,9 @@ TEST: services/gateway/test/vtid-03838-operator-prompt-lists-execute-tool.test.t
 
 AC-5 The operator pipeline regression suite stays green (Part 1 rule 42e).
 TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
+
+AC-6 A reply that presents a declared tool call which did not run in the turn gets a visible "Not verified" notice, on the tool path and on the direct path. Honest replies and prose mentions are left untouched.
+TEST: services/gateway/test/vtid-04582-operator-fabricated-tool-guard.test.ts
 
 ## Not covered here
 

@@ -49,6 +49,7 @@ import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 import { toDevRecommendations, type DevRecommendationSnapshot } from './operator-dev-recommendations';
+import { findFabricatedToolClaims, fabricatedToolNotice } from './operator-fabricated-tool-guard';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
@@ -4593,6 +4594,26 @@ function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: 
  *
  * VTID-01106: Added optional systemInstruction override for ORB memory context
  */
+/**
+ * VTID-04582: a reply that presents a tool call which did not run this turn
+ * gets a visible notice and an OASIS event (see operator-fabricated-tool-guard).
+ */
+function guardReplyAgainstFabricatedToolCalls(reply: string, calledTools: string[], threadId: string): string {
+  const declared = GEMINI_TOOL_DEFINITIONS.functionDeclarations.map((d: { name: string }) => d.name);
+  const fabricated = findFabricatedToolClaims(reply, calledTools, declared);
+  if (fabricated.length === 0) return reply;
+  console.warn(`[VTID-04582] reply presents tool call(s) that did not run: ${fabricated.join(', ')} (thread ${threadId})`);
+  emitOasisEvent({
+    vtid: 'VTID-04582',
+    type: 'operator.reply.fabricated_tool_call',
+    source: 'operator-console',
+    status: 'warning',
+    message: `Operator reply presented tool call(s) that did not run: ${fabricated.join(', ')}`,
+    payload: { threadId, fabricated, called: calledTools },
+  }).catch(() => {});
+  return reply + fabricatedToolNotice(fabricated);
+}
+
 export async function processWithGemini(input: {
   text: string;
   threadId: string;
@@ -4725,7 +4746,7 @@ export async function processWithGemini(input: {
           { model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage },
         ]);
         return {
-          reply: finalResponse.reply,
+          reply: guardReplyAgainstFabricatedToolCalls(finalResponse.reply, toolResults.map((r) => r.name), threadId),
           toolResults,
           meta: {
             provider: vertexResponse.provider ?? 'router',
@@ -4745,7 +4766,7 @@ export async function processWithGemini(input: {
 
       // No tool calls, return Vertex's direct response
       return {
-        reply: vertexResponse.reply,
+        reply: guardReplyAgainstFabricatedToolCalls(vertexResponse.reply, [], threadId),
         meta: {
           provider: vertexResponse.provider ?? 'router',
           model: vertexResponse.model ?? 'router',
