@@ -42,7 +42,7 @@ export interface RememberBackstopSession {
 type EmitDiag = (session: any, stage: string, extra?: Record<string, unknown>) => void;
 
 export function isRememberBackstopEnabled(): boolean {
-  return process.env.ORB_REMEMBER_BACKSTOP_ENABLED !== 'false';
+  return (process.env.ORB_REMEMBER_BACKSTOP_ENABLED ?? 'true') !== 'false';
 }
 
 async function defaultDeps(): Promise<RememberBackstopDeps | null> {
