@@ -1,0 +1,6 @@
+# VTID-04473 slice 1 — commands run in this session (services/gateway)
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .          # clean
+node node_modules/.bin/jest test/vtid-04473 test/routes/jev-decisions.test.ts # 5 suites, 49 tests
+node node_modules/.bin/jest <every suite that reads AWS-STAGE-DEPLOY-GATEWAY.yml> test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+bash -n scripts/aws/setup-typesafe-secret.sh && scripts/aws/setup-typesafe-secret.sh provision --env staging   # dry run only
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/jev/decisions      # before: 404 text/html (read-only GET)

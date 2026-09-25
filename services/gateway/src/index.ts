@@ -485,6 +485,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Conversation-flow roadmap Step 4 — Command Hub "Conversation" section (READ-ONLY:
   // config / Simulator preview / Monitor / Tool Health). Admin-gated in-router.
   const conversationHubRouter = require('./routes/conversation-hub').default;
+  // VTID-04473: Jev (TypeSafe System One) typed decisions — internal roles only.
+  const jevDecisionsRouter = require('./routes/jev-decisions').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -1334,6 +1336,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Conversation-flow Step 4 — read-only Command Hub Conversation section
   mountRouterSync(app, '/api/v1', conversationHubRouter, { owner: 'conversation-hub' });
+  // VTID-04473: Jev typed decisions (inert until TYPESAFE_API_KEY + JEV_DECISIONS_ENABLED)
+  mountRouterSync(app, '/api/v1', jevDecisionsRouter, { owner: 'jev-decisions' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
