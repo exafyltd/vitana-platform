@@ -7518,6 +7518,10 @@ export function detectStillHereComplaint(text: string): boolean {
 // produce byte-identical client behavior (the widget's existing
 // `orb_directive: end_conversation` handler, unchanged either way).
 export function dispatchEndConversationDirective(session: GeminiLiveSession, reason: string): void {
+  // VTID-04592: once per session, whichever path fires first (the tool, the
+  // still-here complaint, or the stop-request backstop).
+  if ((session as any).endConversationDirectiveSent) return;
+  (session as any).endConversationDirectiveSent = true;
   const directive = {
     type: 'orb_directive',
     directive: 'end_conversation',

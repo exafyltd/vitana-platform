@@ -32,6 +32,7 @@
  *      changes.
  */
 
+import { shouldEndConversationAfterTurn } from './end-conversation-intent';
 import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
@@ -2476,6 +2477,19 @@ export function handleTurnComplete(
     ) {
       (session as any).stillHereEndDispatched = true;
       ctx.deps.dispatchEndConversationDirective(session, 'still_here_complaint_detected');
+    }
+
+    // VTID-04592: the member asked to stop and Vitana's reply this turn agreed
+    // ("Ich beende jetzt das Gespräch"), but no end_conversation tool call came
+    // — measured live on production, 9 stop requests in one session, 0 calls.
+    // Close the same way the tool would; see end-conversation-intent.ts.
+    if (
+      session.active &&
+      !(session as any).stillHereEndDispatched &&
+      shouldEndConversationAfterTurn(userText, session.outputTranscriptBuffer || '')
+    ) {
+      (session as any).stillHereEndDispatched = true;
+      ctx.deps.dispatchEndConversationDirective(session, 'stop_request_acknowledged');
     }
 
     // VTID-04591: a remember request the model answered without calling
