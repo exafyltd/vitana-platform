@@ -581,6 +581,10 @@ export type CicdEventType =
   | 'admin.insight.dismissed'
   // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
   | 'admin.briefing.injected'
+  // VTID-04560/04563: which Vitana serves a session; developer deep dives
+  | 'orb.session.profile.resolved'
+  | 'orb.deep_dive.completed'
+  | 'orb.deep_dive.failed'
   | 'admin.insight.urgent_notified'
   // BOOTSTRAP-ADMIN-GG: tenant health index
   | 'tenant.health.computed'

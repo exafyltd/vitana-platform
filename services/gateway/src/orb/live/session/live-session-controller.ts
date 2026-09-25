@@ -866,7 +866,7 @@ export async function handleLiveSessionStart(
   });
   emitOasisEvent({
     vtid: 'VTID-04560',
-    type: 'orb.session.profile.resolved' as any,
+    type: 'orb.session.profile.resolved',
     source: 'orb-live',
     status: assistantProfile.resolution === 'unverified' ? 'warning' : 'info',
     message: `assistant profile: surface=${assistantProfile.surface} role=${assistantProfile.role ?? 'pending'} (${assistantProfile.resolution})`,

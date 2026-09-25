@@ -6819,6 +6819,12 @@ async function executeLiveApiToolInner(
         return await runOperatorDelegateAsync(session, args ?? {});
       }
 
+      // VTID-04563: Command Hub voice → the developer deep dive (async job).
+      case 'dev_deep_dive': {
+        const { runDeepDiveAsync } = await import('../orb/live/tools/delegation-tools');
+        return await runDeepDiveAsync(session, args ?? {});
+      }
+
       // VTID-04397: member ORB → the support specialist (agent-as-tool).
       case 'ask_support_specialist': {
         const { runAskSupportSpecialist } = await import('../orb/live/tools/delegation-tools');

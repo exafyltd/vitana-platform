@@ -65,6 +65,26 @@ export const CANCEL_DELEGATION_TOOL = {
 export const DELEGATION_COMPANION_TOOLS = [GET_DELEGATION_RESULT_TOOL, CANCEL_DELEGATION_TOOL];
 
 /**
+ * VTID-04563: the developer's deep dive — an async investigation across code,
+ * history, events, logs, rows and live endpoints (read-only). Command Hub only.
+ */
+export const DEEP_DIVE_TOOL_NAME = 'dev_deep_dive';
+export const DEEP_DIVE_TOOL = {
+  name: DEEP_DIVE_TOOL_NAME,
+  description: [
+    'Start a deep investigation for the developer when a question needs evidence from several places:',
+    'code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints, or a screen\'s implementation.',
+    'It runs in the background (up to about two minutes): tell the developer you are digging and roughly how long it takes,',
+    'then call get_delegation_result with the returned job_id on a later turn or when they ask. Read-only.',
+  ].join(' '),
+  parameters: {
+    type: 'object',
+    properties: { question: { type: 'string', description: 'The full question, with every name, id, time window and environment the developer mentioned.' } },
+    required: ['question'],
+  },
+};
+
+/**
  * VTID-04397: the member ORB's support specialist (agent-as-tool). Declared
  * only on the member surface, only when ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED
  * is 'true'. The specialist returns findings; Vitana answers in her own words.
@@ -122,7 +142,7 @@ export interface DelegationSession {
   operator_thread_id?: string;
   active_role?: string | null;
   identity?: { user_id?: string | null; exafy_admin?: boolean | null; tenant_id?: string | null; role?: string | null } | null;
-  assistantProfile?: { surface: import('../surface').OrbSurface };
+  assistantProfile?: { surface: import('../surface').OrbSurface; role?: string | null };
 }
 
 export interface ToolResult { success: boolean; result: string; error?: string }
@@ -131,7 +151,9 @@ export function callerFromSession(session: DelegationSession): DelegationCaller 
   // VTID-04560: the session's resolved profile when it has one.
   const surface = session.assistantProfile ? session.assistantProfile.surface : resolveOrbSurface({ currentRoute: session.current_route ?? null });
   const exafyAdmin = session.identity?.exafy_admin === true;
-  const role = surface === 'command-hub' && exafyAdmin ? 'developer' : (session.active_role ?? null);
+  const role = surface === 'command-hub' && exafyAdmin
+    ? 'developer'
+    : (session.assistantProfile?.role ?? session.active_role ?? null);
   return {
     user_id: session.identity?.user_id ?? null,
     tenant_id: session.identity?.tenant_id ?? null,
@@ -177,6 +199,37 @@ export async function runOperatorDelegateAsync(session: DelegationSession, args:
       };
     case 'failed':
       return { success: false, result: '', error: `Operator turn failed: ${r.error}` };
+    case 'escalate':
+      return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
+    default:
+      return { success: false, result: '', error: r.error };
+  }
+}
+
+/** VTID-04563: dev_deep_dive, through the dispatcher (acks at once; the answer arrives as a job result). */
+export async function runDeepDiveAsync(session: DelegationSession, args: Record<string, unknown>): Promise<ToolResult> {
+  registerDefaultDelegationTargets();
+  const caller = callerFromSession(session);
+  if (caller.surface !== 'command-hub') {
+    return { success: false, result: '', error: 'dev_deep_dive is only available in the Command Hub' };
+  }
+  const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
+  const { DEEP_DIVE_AGENT_ID } = await import('../../developer/deep-dive');
+  const r = await delegateToAgent(DEEP_DIVE_AGENT_ID, question, caller);
+  switch (r.status) {
+    case 'done':
+      return { success: true, result: JSON.stringify(r.result) };
+    case 'working':
+      return {
+        success: true,
+        result: JSON.stringify({
+          status: 'working',
+          job_id: r.job_id,
+          note: 'The deep dive is running (up to about two minutes). Tell the developer briefly that you are digging; call get_delegation_result with this job_id on a later turn or when they ask.',
+        }),
+      };
+    case 'failed':
+      return { success: false, result: '', error: `Deep dive failed: ${r.error}` };
     case 'escalate':
       return { success: true, result: JSON.stringify({ status: 'needs_confirmation', note: r.note, reason: r.policy.reason }) };
     default:

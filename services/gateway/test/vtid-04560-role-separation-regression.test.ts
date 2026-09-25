@@ -660,3 +660,159 @@ describe('VTID-04562 text path — the tool-result turn is gated like the main t
     expect(src).toContain('sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole))');
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-04563 — the deep-dive engine
+// ---------------------------------------------------------------------------
+
+import {
+  buildDeepDiveExecutor, DEEP_DIVE_TARGET, DEEP_DIVE_STAGE, DEEP_DIVE_MAX_TOOL_CALLS, findScreen,
+  isDeveloperCaller, numberedWindow, probeUrl, routeLines, runDeepDive, type DeepDiveDeps,
+} from '../src/orb/developer/deep-dive';
+import { buildLiveApiTools } from '../src/orb/live/tools/live-tool-catalog';
+import { callerFromSession } from '../src/orb/live/tools/delegation-tools';
+import { listDelegationTargets, clearDelegationTargets } from '../src/services/orchestrator/dispatcher';
+import { registerDefaultDelegationTargets, resetDefaultRegistration } from '../src/services/orchestrator/delegation-targets';
+
+function toolNames(catalog: object[]): string[] {
+  const out: string[] = [];
+  for (const g of catalog as Array<Record<string, unknown>>) {
+    if (Array.isArray(g.function_declarations)) for (const d of g.function_declarations as Array<{ name: string }>) out.push(d.name);
+  }
+  return out;
+}
+
+function fakeDeps(over: Partial<DeepDiveDeps> = {}): DeepDiveDeps & { emitted: Array<[boolean, Record<string, unknown>]> } {
+  const emitted: Array<[boolean, Record<string, unknown>]> = [];
+  let t = 1_000;
+  return {
+    emitted,
+    runLoop: jest.fn(async () => ({
+      ok: true, text: 'Answer: X. Evidence: services/gateway/src/a.ts:12.', provider: 'bedrock', model: 'opus',
+      fallbackUsed: false, usage: { inputTokens: 10, outputTokens: 5 }, turns: 2, toolCalls: 1, toolNames: ['dev_index_query'],
+      history: [], steps: [], budgetExhausted: false, stalled: false,
+    })) as unknown as DeepDiveDeps['runLoop'],
+    indexTool: async (name) => ({ result: `index:${name}` }),
+    readRepoFile: async (repo, p) => {
+      if (p === 'src/navigation/registry/screens.json') return JSON.stringify({ 'AI.COMPANION': { id: 'AI.COMPANION', route: '/ai/companion', i18n: { en: { title: 'AI Companion' } } } });
+      if (p === 'src/App.tsx') return 'a\n<Route path="/ai/companion" element={<Companion />} />\nb';
+      return `line1\nline2\nline3 of ${repo}`;
+    },
+    gitHistory: async () => [{ sha: 'abcdef1234', date: '2026-09-24T10:00:00Z', author: 'dev', message: 'fix it' }],
+    fetchImpl: jest.fn(async () => new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch,
+    triageTool: async (name) => ({ result: `triage:${name}` }),
+    systemStatus: async () => 'SNAPSHOT',
+    emit: (ok, payload) => { emitted.push([ok, payload]); },
+    now: () => (t += 50),
+    ...over,
+  };
+}
+
+const DEV_CALLER = { user_id: 'u1', tenant_id: null, platform_role: 'developer', exafy_admin: true, surface: 'command-hub' as const, channel: 'voice' as const, session_id: 's1' };
+
+describe('VTID-04563 deep dive — read-only tools with guard rails', () => {
+  test('the probe only GETs /alive and /api/v1/* on the two known hosts', () => {
+    expect(probeUrl(undefined, '/api/v1/admin/build-info')).toEqual({ ok: true, env: 'staging', url: 'https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info' });
+    expect(probeUrl('production', '/alive')).toMatchObject({ ok: true, url: 'https://gateway.vitanaland.com/alive' });
+    expect(probeUrl('staging', '/admin/delete').ok).toBe(false);
+    expect(probeUrl('staging', '/api/v1/../../etc').ok).toBe(false);
+    expect(probeUrl('staging', 'https://evil.example/api/v1/x').ok).toBe(false);
+  });
+
+  test('file windows are numbered and bounded', () => {
+    const content = Array.from({ length: 500 }, (_, i) => `l${i + 1}`).join('\n');
+    const w = numberedWindow(content, 10, 12);
+    expect(w.split('\n').slice(0, 3)).toEqual(['10\tl10', '11\tl11', '12\tl12']);
+    expect(numberedWindow(content).split('\n').filter((l) => /^\d+\t/.test(l)).length).toBe(300);
+  });
+
+  test('a screen resolves by id, route or title to its App.tsx mount', () => {
+    const screens = [{ id: 'AI.COMPANION', route: '/ai/companion', i18n: { en: { title: 'AI Companion' } } }];
+    expect(findScreen(screens, 'ai companion')?.id).toBe('AI.COMPANION');
+    expect(findScreen(screens, '/ai/companion')?.id).toBe('AI.COMPANION');
+    expect(findScreen(screens, 'nothing')).toBeNull();
+    expect(routeLines('x\n<Route path="/ai/companion" element={<C/>} />', '/ai/companion')).toEqual(['2\t<Route path="/ai/companion" element={<C/>} />']);
+  });
+
+  test('the executor routes every tool and never throws', async () => {
+    const deps = fakeDeps();
+    const exec = buildDeepDiveExecutor(deps);
+    expect((await exec('dev_index_query', { query: 'x' })).result).toBe('index:dev_index_query');
+    expect((await exec('read_repo_file', { path: 'a.ts', repo: 'exafyltd/vitana-v1' })).result).toContain('exafyltd/vitana-v1:a.ts\n1\tline1');
+    expect((await exec('dev_git_history', { path: 'a.ts' })).result).toContain('abcdef12 2026-09-24 dev: fix it');
+    expect((await exec('dev_screen_trace', { screen: 'AI Companion' })).result).toContain('2\t<Route path="/ai/companion"');
+    expect((await exec('dev_domain_atlas', { domain: 'voice' })).result).toContain('[voice]');
+    expect((await exec('dev_system_status', {})).result).toBe('SNAPSHOT');
+    expect((await exec('query_oasis_events', { vtid: 'VTID-1' })).result).toBe('triage:query_oasis_events');
+    const probe = await exec('dev_probe_endpoint', { env: 'production', path: '/api/v1/admin/build-info' });
+    expect(probe.result).toMatch(/^\[production\] GET https:\/\/gateway\.vitanaland\.com\/api\/v1\/admin\/build-info → 200/);
+    const [, init] = (deps.fetchImpl as unknown as jest.Mock).mock.calls[0];
+    expect(init.method).toBe('GET');
+    expect(JSON.stringify(init.headers)).not.toMatch(/authorization/i);
+    const broken = buildDeepDiveExecutor(fakeDeps({ readRepoFile: async () => { throw new Error('GitHub 404'); } }));
+    expect(await broken('read_repo_file', { path: 'x' })).toEqual({ result: 'read_repo_file failed: GitHub 404', isError: true });
+  });
+});
+
+describe('VTID-04563 deep dive — only developers, on the planner stage, with telemetry', () => {
+  test('member and admin-surface callers are refused before any model call', async () => {
+    const deps = fakeDeps();
+    for (const c of [
+      { ...DEV_CALLER, surface: 'vitanaland' as const, exafy_admin: false, platform_role: 'community' },
+      { ...DEV_CALLER, exafy_admin: false, platform_role: 'community' },
+    ]) {
+      const r = await runDeepDive('why', c, new AbortController().signal, deps);
+      expect(r.ok).toBe(false);
+    }
+    expect(deps.runLoop).not.toHaveBeenCalled();
+    expect(isDeveloperCaller({ ...DEV_CALLER, exafy_admin: false, platform_role: 'developer' })).toBe(true);
+  });
+
+  test('a developer question runs bounded on the planner stage and reports findings with telemetry', async () => {
+    const deps = fakeDeps();
+    const r = await runDeepDive('why did PR 3543 revert?', DEV_CALLER, new AbortController().signal, deps);
+    expect(r.ok).toBe(true);
+    expect((r.result as { findings: string }).findings).toContain('Evidence');
+    const opts = (deps.runLoop as unknown as jest.Mock).mock.calls[0][0];
+    expect(opts.stage).toBe(DEEP_DIVE_STAGE);
+    expect(DEEP_DIVE_STAGE).toBe('planner');
+    expect(opts.maxToolCalls).toBe(DEEP_DIVE_MAX_TOOL_CALLS);
+    const names = opts.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['dev_index_query', 'read_repo_file', 'dev_git_history', 'dev_probe_endpoint', 'dev_screen_trace', 'query_oasis_events', 'dev_cloudwatch_logs', 'dev_run_sql_readonly']));
+    expect(deps.emitted[0][0]).toBe(true);
+    expect(deps.emitted[0][1]).toMatchObject({ question: 'why did PR 3543 revert?', provider: 'bedrock', tools_used: ['dev_index_query'] });
+  });
+
+  test('a loop failure is reported as failed, never as findings', async () => {
+    const deps = fakeDeps({ runLoop: (async () => ({ ok: false, error: 'stage failed', fallbackUsed: false, usage: { inputTokens: 0, outputTokens: 0 }, turns: 0, toolCalls: 0, toolNames: [], history: [], steps: [], budgetExhausted: false, stalled: false })) as unknown as DeepDiveDeps['runLoop'] });
+    const r = await runDeepDive('q', DEV_CALLER, new AbortController().signal, deps);
+    expect(r).toMatchObject({ ok: false, error: 'stage failed' });
+    expect(deps.emitted[0][0]).toBe(false);
+  });
+
+  test('the target is registered for the Command Hub only, read tier', () => {
+    clearDelegationTargets();
+    resetDefaultRegistration();
+    registerDefaultDelegationTargets();
+    const t = listDelegationTargets('command-hub').find((x) => x.agent_id === 'deep_dive');
+    expect(t).toMatchObject({ surfaces: ['command-hub'], tier: 'read', domain: 'dev' });
+    expect(listDelegationTargets('vitanaland').some((x) => x.agent_id === 'deep_dive')).toBe(false);
+    expect(DEEP_DIVE_TARGET.agent_id).toBe('deep_dive');
+  });
+
+  test('the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do', () => {
+    expect(toolNames(buildLiveApiTools('authenticated', '/command-hub', 'developer', 'command-hub'))).toContain('dev_deep_dive');
+    expect(toolNames(buildLiveApiTools('authenticated', '/home', 'community', 'vitanaland'))).not.toContain('dev_deep_dive');
+    expect(toolNames(buildLiveApiTools('authenticated', '/admin/users', 'admin', 'admin'))).not.toContain('dev_deep_dive');
+  });
+
+  test('a delegation caller carries the served role from the profile', () => {
+    const c = callerFromSession({ sessionId: 's', identity: { user_id: 'u', exafy_admin: false }, active_role: null, assistantProfile: { surface: 'command-hub', role: 'developer' } });
+    expect(c.platform_role).toBe('developer');
+  });
+
+  test('orb-live dispatches dev_deep_dive to the async runner', () => {
+    const src = read('src/routes/orb-live.ts');
+    expect(src).toMatch(/case 'dev_deep_dive': \{\s*const \{ runDeepDiveAsync \}/);
+  });
+});
