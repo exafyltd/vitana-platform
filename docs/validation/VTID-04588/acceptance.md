@@ -9,13 +9,15 @@ The same run showed the model inventing the year 1900 for "5. Mai" and sending
 
 ## Acceptance criteria
 
-- AC-1: a voice session id is never sent as the uuid thread id; a uuid still is.
-  TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
-- AC-2: a placeholder year (1900/0001/0000) is stored as day and month only (`--MM-DD`), and matches "5. Mai".
-  TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
-- AC-3: `confirm_replace` is honoured only after this tool reported the conflict for the same member and key, within 30 minutes; otherwise the result is `conflict` and nothing is written.
-  TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
-- AC-4: the real write error is logged (`[VTID-04581] remember_fact <key> -> failed error=…`).
-- AC-5 (live, staging): a German voice session saves a sibling birthday, then asks which is right when told a different one, and writes nothing until confirmed. Recorded in `outputs/`.
-- AC-6: a fact stored under another key for the same thing (extractor `paul_birthday`, model `bruder_paul_geburtstag`) is found: German/English words map to one set, and a match needs two shared words with one key's words inside the other's. Conflict and replace then use the stored key, so there is one fact per thing.
-  TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
+AC-1: a voice session id is never sent as the uuid thread id; a uuid still is.
+TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
+AC-2: a placeholder year (1900/0001/0000) is stored as day and month only (`--MM-DD`), and matches "5. Mai".
+TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
+AC-3: `confirm_replace` is honoured only after this tool reported the conflict for the same member and key, within 30 minutes; otherwise the result is `conflict` and nothing is written.
+TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
+The real write error is now logged (`[VTID-04581] remember_fact <key> -> failed error=…`).
+
+AC-5 (live, staging): a German voice session saves a sibling birthday, then asks which is right when told a different one, and writes nothing until confirmed. Recorded in `outputs/`.
+UI: live German voice session on preview-aws-gateway.vitanaland.com as the test user, see outputs/live-staging.md
+AC-6: a fact stored under another key for the same thing (extractor `paul_birthday`, model `bruder_paul_geburtstag`) is found: German/English words map to one set, and a match needs two shared words with one key's words inside the other's. Conflict and replace then use the stored key, so there is one fact per thing.
+TEST: services/gateway/test/services/vtid-04581-remember-fact-tool.test.ts
