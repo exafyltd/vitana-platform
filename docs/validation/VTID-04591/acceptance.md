@@ -30,3 +30,5 @@ AC-6 (live, staging): the same German utterances produce a correct spoken outcom
 UI: live German voice session on preview-aws-gateway.vitanaland.com as the test user, see outputs/live-staging.md
 
 Nova only (the Vertex bridge answers injected client_content twice). Off switch: `ORB_REMEMBER_BACKSTOP_ENABLED=false`.
+
+OASIS_PROOF: each backstop run emits `orb.live.diag` with `stage=remember_backstop` and `{trigger, statuses, injected}` (asserted in services/gateway/test/services/vtid-04591-remember-backstop.test.ts, "runs the rules and hands the model the result"). The live rows are recorded in outputs/live-staging.md after the staging deploy.
