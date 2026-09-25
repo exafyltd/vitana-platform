@@ -124,6 +124,11 @@ describe('VTID-04548 the warmed key is the key the session start looks up', () =
 });
 
 describe('VTID-04548 warm → session hit, end to end through the cache', () => {
+  // VTID-04556 (main): a cached build is reused only while the member's
+  // memory is unchanged since it was built. These cases are about the cache
+  // KEY (role + zone), so memory is stated unchanged, as in
+  // test/vitana-brain-cache.test.ts; a failed/absent probe rebuilds by design.
+  const memoryUnchanged = async () => false;
   const FLAG = 'FEATURE_ORB_BRAIN_CACHE_ENV';
   const prev = process.env[FLAG];
   const mockBuild = buildBrainSystemInstruction as jest.Mock;
@@ -148,7 +153,7 @@ describe('VTID-04548 warm → session hit, end to end through the cache', () => 
     await new Promise((r) => setTimeout(r, 0));
     const r = await buildBaseSessionContext(
       { identity, sessionId: 'live-1', brainRole: 'developer', timezone: 'Europe/Berlin', useBrain: true },
-      { legacy, buildBrain: (i) => buildBrainSystemInstructionCached(i) },
+      { legacy, buildBrain: (i) => buildBrainSystemInstructionCached(i, { memoryChangedSince: memoryUnchanged }) },
     );
     expect(mockBuild).toHaveBeenCalledTimes(1);
     expect(r.contextInstruction).toBe('role=developer tz=Europe/Berlin');
@@ -159,7 +164,7 @@ describe('VTID-04548 warm → session hit, end to end through the cache', () => 
     await new Promise((r) => setTimeout(r, 0));
     const r = await buildBaseSessionContext(
       { identity, sessionId: 'live-2', brainRole: 'community', timezone: 'Europe/Berlin', useBrain: true },
-      { legacy, buildBrain: (i) => buildBrainSystemInstructionCached(i) },
+      { legacy, buildBrain: (i) => buildBrainSystemInstructionCached(i, { memoryChangedSince: memoryUnchanged }) },
     );
     expect(mockBuild).toHaveBeenCalledTimes(2);
     expect(r.contextInstruction).toBe('role=community tz=Europe/Berlin');
