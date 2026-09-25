@@ -216,6 +216,12 @@
   };
 
   var _s = {
+    // VTID-04560: the screen declares which Vitana it wants — the surface it
+    // is (vitanaland / command-hub / admin / backoffice / commerce) and the
+    // role whose screens are displayed. The gateway verifies both against the
+    // token; it no longer guesses them from the route and the User-Agent.
+    surface: null,
+    viewRole: null,
     // Session
     sessionId: null,
     active: false,
@@ -2214,6 +2220,9 @@
         if (_tz) startPayload.client_timezone = _tz;
       } catch (e) { /* Intl unavailable — gateway falls back to geo-IP */ }
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
+      // VTID-04560: declared surface + view role (verified server-side).
+      if (_s.surface) startPayload.surface = _s.surface;
+      if (_s.viewRole) startPayload.view_role = _s.viewRole;
       // VTID-04520: the host knows its layout; the gateway used to guess from the User-Agent.
       if (typeof _s.isMobileHost === 'boolean') startPayload.is_mobile = _s.isMobileHost;
       // VTID-04309: Command Hub binds the voice session to the Operator
@@ -5576,6 +5585,9 @@
         if (typeof opts.initialContext.is_mobile === 'boolean') {
           _s.isMobileHost = opts.initialContext.is_mobile; // VTID-04520
         }
+        // VTID-04560: which Vitana this screen wants.
+        if (typeof opts.initialContext.surface === 'string') _s.surface = opts.initialContext.surface || null;
+        if (typeof opts.initialContext.view_role === 'string') _s.viewRole = opts.initialContext.view_role || null;
         if (typeof opts.initialContext.operator_thread_id === 'string') {
           _s.operatorThreadId = opts.initialContext.operator_thread_id || null;
         }
@@ -5797,6 +5809,24 @@
       _cfg.lang = lang || 'en';
     },
 
+    // VTID-04560/04561: the host switched the role whose screens are shown
+    // (or the surface). A different role is a different Vitana, so an open
+    // conversation ends and a fresh one starts under the new profile — no
+    // context from one role carries into the other. A closed overlay just
+    // records the new values for the next start.
+    setViewRole: function (role, surface) {
+      var r = typeof role === 'string' && role ? role : null;
+      var sf = typeof surface === 'string' && surface ? surface : null;
+      if (r === _s.viewRole && sf === _s.surface) return;
+      _s.viewRole = r;
+      _s.surface = sf;
+      if (_s.overlayVisible) {
+        console.log('[VTOrb] view role changed to ' + r + ' (' + sf + ') — restarting the conversation');
+        _hide();
+        setTimeout(function () { if (!_s.overlayVisible) _show(); }, 300);
+      }
+    },
+
     // VTID-NAV: Push current navigation context from the host app. Called by
     // useOrbWidget on every React Router route change so the next orb session
     // start payload includes fresh context for the Navigator service.
@@ -5818,6 +5848,14 @@
         _s.appState = ctx.app_state;
       }
       if (typeof ctx.is_mobile === 'boolean') _s.isMobileHost = ctx.is_mobile;
+      // VTID-04560/04561: a changed surface or view role means a different
+      // Vitana — handled by setViewRole (restarts an open conversation).
+      if (typeof ctx.surface === 'string' || typeof ctx.view_role === 'string') {
+        window.VitanaOrb.setViewRole(
+          typeof ctx.view_role === 'string' ? ctx.view_role : _s.viewRole,
+          typeof ctx.surface === 'string' ? ctx.surface : _s.surface
+        );
+      }
       _scheduleContextUpdate();
       // VTID-04309: the host switched Operator Console threads.
       if (typeof ctx.operator_thread_id === 'string') {

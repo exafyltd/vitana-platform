@@ -122,12 +122,14 @@ export interface DelegationSession {
   operator_thread_id?: string;
   active_role?: string | null;
   identity?: { user_id?: string | null; exafy_admin?: boolean | null; tenant_id?: string | null; role?: string | null } | null;
+  assistantProfile?: { surface: import('../surface').OrbSurface };
 }
 
 export interface ToolResult { success: boolean; result: string; error?: string }
 
 export function callerFromSession(session: DelegationSession): DelegationCaller {
-  const surface = resolveOrbSurface({ currentRoute: session.current_route ?? null });
+  // VTID-04560: the session's resolved profile when it has one.
+  const surface = session.assistantProfile ? session.assistantProfile.surface : resolveOrbSurface({ currentRoute: session.current_route ?? null });
   const exafyAdmin = session.identity?.exafy_admin === true;
   const role = surface === 'command-hub' && exafyAdmin ? 'developer' : (session.active_role ?? null);
   return {

@@ -187,6 +187,8 @@ import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../se
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
 import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
+import type { AssistantProfile } from '../orb/profile/assistant-profile';
+import { sessionServedRole, sessionServedSurface, workSurfaceGreetingFields } from '../orb/profile/session-profile';
 import {
   buildSupportTicketFiledMessage,
   ticketFromTypedToolResult,
@@ -958,6 +960,9 @@ import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
  */
 export interface GeminiLiveSession {
   sessionId: string;
+  // VTID-04560: which Vitana serves this session (surface, role, persona),
+  // resolved once at session start before any upstream setup is built.
+  assistantProfile?: AssistantProfile;
   lang: string;
   voiceStyle?: string;
   responseModalities: string[];
@@ -2307,6 +2312,11 @@ const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 // promise resolves well under this cap, so behavior is unchanged. Env-tunable
 // for staging without a redeploy.
 const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+// VTID-04560: a work-surface session's context is its role's knowledge (the
+// developer's system snapshot, the admin briefing) — cheap, cached, and the
+// only thing the opener can lead with. It gets its own, longer gate so a
+// 300 ms member-tuned gate never sends a developer session up with no facts.
+const WORK_SURFACE_CONTEXT_GATE_MS = Number(process.env.ORB_WORK_SURFACE_CONTEXT_GATE_MS || 2500);
 // VTID-04399 (WS-1.2): extra time the gate may wait for the core-snapshot
 // read when the fresh build missed CONTEXT_READY_GATE_TIMEOUT_MS. The read
 // starts at session/start, so by the gate it has usually settled already.
@@ -3511,7 +3521,7 @@ async function handleNavigate(
         identity: {
           user_id: session.identity!.user_id,
           tenant_id: session.identity!.tenant_id as string,
-          role: session.active_role || session.identity!.role || undefined,
+          role: sessionServedRole(session) || session.identity!.role || undefined,
         },
         screen: {
           screen_id: result.screen_id,
@@ -4298,7 +4308,7 @@ async function executeLiveApiToolInner(
               // VTID-04332: surface from the session's route (never null),
               // plus session id + route for OASIS correlation.
               surface: feedbackSurfaceForOrb(
-                resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+                sessionServedSurface(session),
               ),
               session_id: session.sessionId ?? null,
               current_route: session.current_route ?? null,
@@ -4516,7 +4526,7 @@ async function executeLiveApiToolInner(
 
       case 'search_calendar': {
         const query = (args.query as string) || '';
-        const role = session.active_role || 'community';
+        const role = sessionServedRole(session) || 'community';
         const userId = session.identity.user_id;
         const userTz = session.clientContext?.timezone || 'UTC';
 
@@ -4595,7 +4605,7 @@ async function executeLiveApiToolInner(
         const description = (args.description as string) || '';
         const location = (args.location as string) || '';
         const eventType = (args.event_type as string) || 'personal';
-        const role = session.active_role || 'community';
+        const role = sessionServedRole(session) || 'community';
         const userId = session.identity.user_id;
 
         if (!title || !eventStart) {
@@ -6879,9 +6889,9 @@ async function executeLiveApiToolInner(
               tenantId: session.identity?.tenant_id || '',
               userId: session.identity?.user_id || '',
               email: session.identity?.email ?? null,
-              activeRole: session.active_role || session.identity?.role || 'community',
+              activeRole: sessionServedRole(session) || session.identity?.role || 'community',
               isExafyAdmin: !!session.identity?.exafy_admin,
-              surface: resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+              surface: sessionServedSurface(session),
               sessionId: session.sessionId,
               turnNumber: session.turn_count,
             },
@@ -6894,7 +6904,7 @@ async function executeLiveApiToolInner(
             {
               tenantId: session.identity!.tenant_id || '',
               userId: session.identity!.user_id,
-              activeRole: session.active_role || session.identity?.role || 'community',
+              activeRole: sessionServedRole(session) || session.identity?.role || 'community',
             },
             args,
           );
@@ -6919,7 +6929,7 @@ async function executeLiveApiToolInner(
               {
                 user_id: lens.user_id,
                 tenant_id: lens.tenant_id ?? null,
-                role: session.active_role || session.identity?.role || null,
+                role: sessionServedRole(session) || session.identity?.role || null,
                 vitana_id: session.identity?.vitana_id ?? null,
                 session_id: session.sessionId,
                 thread_id: session.thread_id || session.sessionId,
@@ -7984,7 +7994,9 @@ async function connectToLiveAPI(
               setTimeout(() => {
                 ctxTimedOut = true;
                 resolve();
-              }, CONTEXT_READY_GATE_TIMEOUT_MS),
+              }, session.assistantProfile?.isWorkSurface
+                ? Math.max(CONTEXT_READY_GATE_TIMEOUT_MS, WORK_SURFACE_CONTEXT_GATE_MS)
+                : CONTEXT_READY_GATE_TIMEOUT_MS),
             ),
           ]);
         } catch (e) {
@@ -8256,7 +8268,9 @@ async function connectToLiveAPI(
                                   session.lang,
                                 )
                               : ''),
-                        session.active_role,
+                        // VTID-04560: the profile's served role, set at session
+                        // start — never null on a work surface.
+                        sessionServedRole(session),
                         session.conversationSummary,
                         // VTID-STREAM-KEEPALIVE: Pass last 10 turns for reconnect continuity.
                         // Forwarding v2d: persona-labeled so Vitana doesn't
@@ -8281,7 +8295,9 @@ async function connectToLiveAPI(
                         // by optionalAuth → resolveVitanaId on session start).
                         session.identity?.vitana_id ?? null,
                         undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
-                        undefined, // surface — unchanged (route-based heuristic)
+                        // VTID-04560: the resolved profile's surface (declared by the
+                        // screen), not a route + User-Agent guess.
+                        sessionServedSurface(session),
                         // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: drop the redundant
                         // `## AVAILABLE TOOLS` prose block on BOTH raw-WS
                         // transports (Vertex and AI Studio). The prose is
@@ -8325,9 +8341,11 @@ async function connectToLiveAPI(
           tools: buildLiveApiTools(
             session.identity && !session.isAnonymous ? 'authenticated' : 'anonymous',
             session.current_route,
-            session.active_role || session.identity?.role || undefined,
-            // VTID-03848: mobile is always the community surface; route decides otherwise.
-            resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile }),
+            // VTID-04560: the profile's served role and surface. Before this,
+            // a null active_role at setup fell back to identity.role
+            // ('authenticated'), so the developer tools were never declared.
+            sessionServedRole(session) || session.identity?.role || undefined,
+            sessionServedSurface(session),
           )
         }
       };
@@ -8841,7 +8859,7 @@ async function connectToLiveAPI(
         // race, or the connection died while it waited) — zero behavior
         // change for every session this doesn't apply to.
         // VTID-03848: never reuse the (community-persona, no-route) login prewarm on a work surface.
-        const sessionSurface = resolveOrbSurface({ currentRoute: session.current_route, isMobile: !!session.clientContext?.isMobile });
+        const sessionSurface = sessionServedSurface(session);
         // VTID-04445: a login prewarm is always Vitana (female voice, Vitana's
         // prompt) — a Devon hand-off reconnect must never claim it.
         const _prewarmPersonaIsVitana =
@@ -10699,6 +10717,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             // Base context (no payloads yet) — enough for the brain's gather guards.
             const _baseCtxSF: GreetingDecisionContext = {
+              // VTID-04560: a work surface opens with its own role's opener.
+              ...workSurfaceGreetingFields(session as any),
               contextReadyResolved: false,
               isAnonymous: !!session.isAnonymous,
               safeFastGreetingLive: true,
@@ -10825,7 +10845,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               newdayOverview: _newdayOverviewSF,
               resumeOverview: _resumeOverviewSF,
               greetingLedger: _ledgerSF,
-            }, { transport: 'vertex', role: session.active_role ?? null });
+            }, { transport: 'vertex', role: sessionServedRole(session) });
 
             // RENDER + perform effects (greetingSent / markOpeningDelivered were
             // already claimed synchronously above; do NOT re-apply here).
@@ -11059,6 +11079,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       ? (_providerResultsSync.find((r: any) => r?.providerKey === 'voice_wake_brief')?.reason ?? null)
       : null;
     const _baseCtxSync: GreetingDecisionContext = {
+              // VTID-04560: a work surface opens with its own role's opener.
+              ...workSurfaceGreetingFields(session as any),
       contextReadyResolved: true, // past the safe-fast block -> force the normal ladder
       isAnonymous: !!session.isAnonymous,
       safeFastGreetingLive: false,
@@ -11320,6 +11342,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           const _nowNS = new Date();
           const _temporalNS = describeTimeSince(session.lastSessionInfo);
           const _ctxNS: GreetingDecisionContext = {
+              // VTID-04560: a work surface opens with its own role's opener.
+              ...workSurfaceGreetingFields(session as any),
             ..._baseCtxSync,
             firstName: (session as any).greetingFirstName ?? null,
             greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
@@ -11378,7 +11402,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               ..._ctxNS,
               newdayOverview: _overviewNS,
               greetingLedger: _ledgerNS,
-            }, { transport: 'vertex', role: session.active_role ?? null });
+            }, { transport: 'vertex', role: sessionServedRole(session) });
 
             // VTID-03609 — the three ways this can still not fire, named apart.
             emitDiag(session, 'newday_briefing_eval', {
@@ -11505,7 +11529,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             lang,
           });
           if (ws.readyState !== WebSocket.OPEN) return;
-          const _fallbackNS = decideOpeningFlow(_ctxNS, { transport: 'vertex', role: session.active_role ?? null });
+          const _fallbackNS = decideOpeningFlow(_ctxNS, { transport: 'vertex', role: sessionServedRole(session) });
           if (_fallbackNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
           _renderSync(_fallbackNS);
           // VTID-03604 — this IS the path a routine evening takes: the user
@@ -11536,7 +11560,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           });
           try {
             if (ws.readyState !== WebSocket.OPEN) return;
-            const _recoverNS = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
+            const _recoverNS = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: sessionServedRole(session) });
             if (_recoverNS.wakeOpener !== 'legacy_default') _sm.markOpeningDelivered();
             _renderSync(_recoverNS);
             // VTID-03743 review fix — this recovery path renders through the
@@ -11562,7 +11586,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       return true;
     }
 
-    const _syncDecision = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: session.active_role ?? null });
+    const _syncDecision = decideOpeningFlow(_baseCtxSync, { transport: 'vertex', role: sessionServedRole(session) });
     // legacy_default historically did NOT advance the opening state machine; the
     // other rungs did. Preserve that exactly.
     if (_syncDecision.wakeOpener !== 'legacy_default') {

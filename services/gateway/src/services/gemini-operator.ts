@@ -4132,6 +4132,19 @@ export async function executeTool(
  * Fail-open elsewhere (a failed/empty recall means no block, never an error
  * surfaced to the user) — this only formats hits that already came back.
  */
+/**
+ * VTID-04560 — may this turn carry the platform's engineering context
+ * (dev_agent_memory recall, codebase orientation, operator bootstrap pack)?
+ * Yes for the Operator Console itself (no custom system instruction) and for
+ * developer/admin callers; no for any member-facing caller that brings its
+ * own system instruction (ORB text fallbacks, conversation client).
+ */
+export function engineeringContextAllowed(customSystemInstruction: string | undefined, userRole: string | undefined): boolean {
+  if (!customSystemInstruction) return true;
+  const role = (userRole || '').toLowerCase();
+  return role === 'developer' || role === 'admin' || role === 'infra' || role === 'exafy_admin';
+}
+
 function buildDevMemoryContextBlock(hits: DevMemoryHit[]): string {
   // VTID-04027: category-diverse top-10 selection over the wider candidate
   // set, rendered with a per-row clip and a total budget.
@@ -4309,8 +4322,15 @@ async function callVertexWithTools(
   // catalog rendered from the declarations below). '' unless
   // OPERATOR_BOOTSTRAP_PACK_ENABLED=true; fail-open by construction.
   const routerTools = getRouterToolDefinitions(userRole);
-  const bootstrapPack = await getOperatorBootstrapPack({ toolDefs: routerTools });
-  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}`;
+  // VTID-04560: the engineering context (codebase orientation, bootstrap pack)
+  // is for the Operator Console and developer/admin callers only. Before this,
+  // a community ORB text fallback that passed its own member system
+  // instruction still received the platform's internal engineering context.
+  const engineering = engineeringContextAllowed(customSystemInstruction, userRole);
+  const bootstrapPack = engineering ? await getOperatorBootstrapPack({ toolDefs: routerTools }) : '';
+  const systemPrompt = engineering
+    ? `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}`
+    : withMemory;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
@@ -4583,7 +4603,8 @@ export async function processWithGemini(input: {
       // empty result never blocks or degrades the operator turn, it just
       // means no memory block gets appended.
       let memoryContextBlock: string | undefined;
-      try {
+      // VTID-04560: developer memory only for the console and developer/admin callers.
+      if (engineeringContextAllowed(systemInstruction, userRole)) try {
         // VTID-04027: fetch a wider candidate set; buildDevMemoryContextBlock diversifies and bounds it.
         const memRes = await recallDevMemory(buildRecallQuery(threadSummary, text), 'vitana-platform', { limit: RECALL_CANDIDATES });
         if (memRes.ok && memRes.hits.length > 0) {

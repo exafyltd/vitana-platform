@@ -58,6 +58,7 @@ import {
 // structured function_declarations via the BidiGenerate setup message —
 // redundancy is harmless for Vertex and load-bearing for LiveKit.
 import { resolveOrbSurface, SURFACE_PERSONA_KEY } from '../surface';
+import { extractWorkSurfaceContext } from '../../profile/session-profile';
 import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
 import {
   capBootstrapContext,
@@ -399,6 +400,46 @@ function buildTemporalJourneyContextSection(
  * model can pick a time-appropriate greeting and acknowledge where the
  * user is in the app instead of restarting with "Hello <name>!" every time.
  */
+/**
+ * VTID-04560 — conduct rules for a work-surface Vitana, in place of the
+ * member RULE 0 (which steers toward journey sessions, matches and the
+ * Vitana Index). English intent only (NEVER rule 41); ends with a blank line
+ * so the next section starts cleanly.
+ */
+export function WORK_SURFACE_CONDUCT_BLOCK(surface: string): string {
+  const common = `- Answer with evidence: name where a fact comes from (a file, a table, an event, a commit, a check) and how fresh it is.
+- When you have not checked something, say so plainly and offer to look it up; never guess a number, a status or a cause.
+- Close each turn with ONE concrete next step you can take for them, as a proposal.
+- This is a work conversation: the member app's personal topics (their own health, progress and community life) stay out of it unless the user raises them.`;
+  if (surface === 'command-hub') {
+    return `WORK SURFACE — DEVELOPER SUPERVISOR (Command Hub):
+- You are the developer's system supervisor and expert for the whole Vitanaland system: gateway and routes, database and migrations, memory and knowledge graph, ORB voice pipeline, autopilot and self-healing, agents and orchestrator, LLM routing, OASIS events and the VTID ledger, deploys and CI, screens and navigation, commerce, BackOffice, support, notifications and i18n.
+- You hold a map of the system and the live snapshot below; for anything deeper, dig: use your developer tools, and for questions that need a real investigation across code, data and runtime, start a deep dive and tell the user roughly how long it takes. Taking time for a correct answer is expected here.
+${common}
+
+`;
+  }
+  if (surface === 'admin') {
+    return `WORK SURFACE — TENANT ADMINISTRATION:
+- You assist the tenant administrator with approvals, moderation, members, content, notifications and the tenant's KPIs.
+${common}
+
+`;
+  }
+  if (surface === 'backoffice') {
+    return `WORK SURFACE — BACKOFFICE OPERATIONS:
+- You assist with the business operations of this tenant (CRM, sales, finance, accounting) through the typed BackOffice commands and their approval rules.
+${common}
+
+`;
+  }
+  return `WORK SURFACE — BUSINESS (${surface}):
+- You assist this partner organisation with its business work on Vitanaland.
+${common}
+
+`;
+}
+
 // Exported for characterization testing (A0.1, orb-live-refactor).
 // No behavior change — this is the same function, just made externally
 // addressable so the refactor can lock its current output as a contract
@@ -525,6 +566,9 @@ export function buildLiveSystemInstruction(
   // `surface` param wins so voice-lab eval and tests can force one).
   const resolvedSurface = resolveOrbSurface({ currentRoute, isMobile: !!clientContext?.isMobile, explicit: surface });
   const isCommandHubSurface = resolvedSurface === 'command-hub';
+  // VTID-04560: every surface other than the member app is a work surface —
+  // its own persona, its own context, none of the member rule blocks below.
+  const isMemberSurface = resolvedSurface === 'vitanaland';
   let identityLockRoleLine = "the user's life companion and instruction manual";
   const overlayKey = SURFACE_PERSONA_KEY[resolvedSurface];
   if (overlayKey) {
@@ -712,7 +756,7 @@ ${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
 - Use natural conversational tone, not bullet points
 - Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
 
-PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
+${isMemberSurface ? `PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
 - You lead. Close each turn with ONE concrete next move you offer to take for them: a proposal, never a preference question and never a menu. Asking permission to lead ("May I show you your next step?") is fine.
 - Keep the choice with you: no "What can I do for you?", "How can I help?", "What would you like to do next?", "Would you like to see…?", "Wie kann ich dir helfen?", "Was möchtest du (als Nächstes)?" or any paraphrase of them, in any language.
 - OPEN-DOOR-PLUS-PROPOSAL: in place of "Would you like to know more?" / "Möchtest du mehr darüber erfahren?", tell them they can ask for more about <X>, then propose <Y> yourself.
@@ -726,9 +770,9 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
   If a proposal fits none of the three, DO NOT MAKE THE OFFER — propose something you can deliver.
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
-ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
+` : WORK_SURFACE_CONDUCT_BLOCK(resolvedSurface)}ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
 
-${guidedTopicNarrationActive ? `GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.` : `GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
+${!isMemberSurface ? '' : guidedTopicNarrationActive ? `GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.` : `GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
@@ -753,7 +797,7 @@ TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
-${isCommandHubSurface ? '' : `- You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
+${!isMemberSurface ? '' : `- You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
 - HARD RULE — handoff truthfulness (VTID-03033): say you are connecting the user to a colleague, speak a bridge, or imply a colleague joined ONLY when the most recent report_to_specialist call returned a tool message that begins with "STATUS: handoff_created." Any other STATUS (stay_inline / vague / failed / failed_network / ticket_filed_no_handoff) means the handoff did NOT happen — follow that branch's ACTION line and stay with the user yourself.
@@ -799,7 +843,13 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // Command Hub keeps its existing behaviour (the developer is also a member).
   // VTID-04326: commerce joins them — a partner org's business session never
   // carries the member's personal health/diary/community context.
-  const bootstrapForSurface = (resolvedSurface === 'admin' || resolvedSurface === 'backoffice' || resolvedSurface === 'commerce') ? '' : bootstrapContext;
+  // VTID-04560: the Command Hub joins them — it used to keep the member brain
+  // ("the developer is also a member"), which is how the developer was greeted
+  // with journey progress. Every work surface now keeps ONLY the text from the
+  // work-surface context marker on (session-profile.ts); anything a caller
+  // concatenates in front of it (brain context, wake-brief, journey blocks)
+  // cannot reach a work-surface prompt.
+  const bootstrapForSurface = isMemberSurface ? bootstrapContext : extractWorkSurfaceContext(bootstrapContext);
   let effectiveBootstrap = bootstrapForSurface ?? '';
   if (
     effectiveBootstrap &&
@@ -901,14 +951,20 @@ ${trimmedHistory}
   // heavy-context users — silently deleting the "you MUST call
   // resolve_recipient" contract and leaving the model to improvise instead
   // of calling the messaging tools.
-  instruction += buildNavigatorPolicySection(lang) + MESSAGING_CONTRACT;
+  // VTID-04560: the member navigator (the "navigation guide for the Maxina
+  // community", with the member messaging contract) is member-surface only.
+  // A work surface gets its own short navigation note under the SAME marker,
+  // so instruction-budget.ts still preserves the scaffold tail from here on.
+  instruction += isMemberSurface
+    ? buildNavigatorPolicySection(lang) + MESSAGING_CONTRACT
+    : `\n\n=== VITANA NAVIGATOR — WORK SURFACE (${resolvedSurface}) ===\nYou can move the user between the screens of this surface with the navigation tools you have (navigator_consult, navigate_to_screen, get_current_screen). Refer to a screen by its title — never say a route, URL or screen_id aloud. Offer to open a screen when it is the natural next step; do not navigate without the user's go-ahead.`;
 
   // NAV_GUIDED_JOURNEY — teach Vitana the DECLARATIVE distinction between the
   // two views of "My Journey" (Guided/Einführung vs Full App/Vollversion) so it
   // can EXPLAIN the difference in open conversation, not just switch modes on
   // the navigate path. Gated by the same flag that powers the mode switch, so
   // knowledge and capability stay in lockstep.
-  if (process.env.NAV_GUIDED_JOURNEY === 'true') {
+  if (process.env.NAV_GUIDED_JOURNEY === 'true' && isMemberSurface) {
     instruction += buildJourneyModesSection(lang);
   }
 
@@ -957,7 +1013,7 @@ ${trimmedHistory}
   // greeting policy + the generic baseline above. The companion architecture
   // depends on this — without primacy, Gemini's trained "How can I help?"
   // reflex wins.
-  if (includeProactiveOpener)
+  if (includeProactiveOpener && isMemberSurface)
   instruction += `\n\n## PROACTIVE OPENER OVERRIDE (HIGHEST PRIORITY — VTID-01927)
 
 When the brain context appended below contains either:

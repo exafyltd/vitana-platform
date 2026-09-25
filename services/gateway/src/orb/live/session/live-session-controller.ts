@@ -29,6 +29,8 @@ import { handleContextUpdateMessage } from './context-update';
 import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
 import type { Response } from 'express';
 import { resolveOrbSurface, isWorkSurface } from '../surface';
+import { resolveAssistantProfile, profileTelemetry, clampRoleToProfile } from '../../profile/assistant-profile';
+import { buildWorkSurfaceContextSection } from '../../profile/session-profile';
 import type WebSocket from 'ws';
 import WebSocketPkg from 'ws';
 import { randomUUID } from 'crypto';
@@ -851,6 +853,33 @@ export async function handleLiveSessionStart(
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
+  // VTID-04560: resolve which Vitana serves this session — ONCE, before any
+  // context, greeting or upstream setup is built. The screen declares its
+  // surface and view role (widget init/updateContext); the verified token
+  // confirms it. Every consumer reads session.assistantProfile from here on.
+  const assistantProfile = resolveAssistantProfile({
+    declaredSurface: (body as any).surface,
+    declaredViewRole: (body as any).view_role,
+    currentRoute: typeof (body as any).current_route === 'string' ? (body as any).current_route : null,
+    isAnonymous: isAnonymousSession,
+    isExafyAdmin: !!req.identity?.exafy_admin,
+  });
+  emitOasisEvent({
+    vtid: 'VTID-04560',
+    type: 'orb.session.profile.resolved' as any,
+    source: 'orb-live',
+    status: assistantProfile.resolution === 'unverified' ? 'warning' : 'info',
+    message: `assistant profile: surface=${assistantProfile.surface} role=${assistantProfile.role ?? 'pending'} (${assistantProfile.resolution})`,
+    payload: {
+      session_id: sessionId,
+      tenant_id: req.identity?.tenant_id ?? null,
+      user_id: req.identity?.user_id ?? null,
+      ...profileTelemetry(assistantProfile),
+    },
+    actor_id: req.identity?.user_id ?? undefined,
+    surface: 'orb',
+  }).catch(() => {});
+
   // DEV-COMHU-0502 — ORB Recovery 1 (auth contract): structured identity
   // resolution telemetry. This is the OASIS signal that lets the Phase D
   // cockpit count "anonymous sessions on an authenticated surface" — the
@@ -860,7 +889,9 @@ export async function handleLiveSessionStart(
     const idResolvedRoute =
       typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
     // VTID-03848: shared resolver (adds /backoffice; same mobile-first rule).
-    const idResolvedSurface = resolveOrbSurface({ currentRoute: idResolvedRoute, isMobile: !!clientContext.isMobile });
+    // VTID-04560: the resolved profile, not a second route/UA guess.
+    void idResolvedRoute;
+    const idResolvedSurface = assistantProfile.surface;
     emitOasisEvent({
       vtid: 'DEV-COMHU-0502',
       type: 'orb.session.identity.resolved',
@@ -1016,6 +1047,69 @@ export async function handleLiveSessionStart(
       }
     });
     console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (+journey awareness) for fast first audio`);
+  } else if (bootstrapIdentity && assistantProfile.isWorkSurface) {
+    // VTID-04560: WORK SURFACE (Command Hub / admin / BackOffice / commerce).
+    // The member brain — health, diary, journey, memory garden, wake-brief —
+    // is never built here: it is the wrong assistant's context, and it is
+    // what made the Command Hub speak as the community Vitana. The role is
+    // fixed by the profile, so it is on the session from the first byte of
+    // the setup envelope instead of arriving after the 300 ms context gate.
+    contextBootstrapSkippedReason = 'work_surface_context';
+    sseActiveRole = assistantProfile.role;
+    const wsIdentity = bootstrapIdentity;
+    const wsStart = Date.now();
+    contextReadyPromise = Promise.resolve().then(async () => {
+      const [briefingResult, storedLangResult, workContextResult] = await Promise.allSettled([
+        wsIdentity.tenant_id ? fetchAdminBriefingBlock(wsIdentity.tenant_id, 3) : Promise.resolve(null),
+        storedLangPromise,
+        import('../../profile/work-surface-context')
+          .then((m) => m.buildWorkSurfaceKnowledge(assistantProfile, {
+            userId: wsIdentity.user_id,
+            tenantId: wsIdentity.tenant_id ?? null,
+          }))
+          .catch((err) => {
+            console.warn(`[VTID-04560] work-surface knowledge failed for ${sessionId}: ${err?.message || err}`);
+            return null;
+          }),
+      ]);
+      const adminBriefing = briefingResult.status === 'fulfilled' ? briefingResult.value : null;
+      const knowledge = workContextResult.status === 'fulfilled' ? workContextResult.value : null;
+      const contextText = buildWorkSurfaceContextSection(assistantProfile, {
+        adminBriefing,
+        systemSnapshot: knowledge?.systemSnapshot ?? null,
+        domainAtlas: knowledge?.domainAtlas ?? null,
+        devMemory: knowledge?.devMemory ?? null,
+      });
+      session.active_role = assistantProfile.role;
+      session.lastSessionInfo = null;
+      session.contextInstruction = contextText;
+      session.contextPack = undefined;
+      session.contextBootstrapLatencyMs = Date.now() - wsStart;
+      session.contextBootstrapSkippedReason = 'work_surface_context';
+      session.contextBootstrapBuiltAt = Date.now();
+      session.contextBuilder = 'work_surface';
+      session.contextBrainRole = assistantProfile.role ?? 'unverified';
+      session.contextExtras = { autopilotOffer: null, adminBriefing: adminBriefing || null };
+      (session as any).workSurfaceBriefing = adminBriefing || null;
+      (session as any).workSurfaceKnowledge = knowledge || null;
+      const storedLang = storedLangResult.status === 'fulfilled' ? storedLangResult.value : null;
+      if (storedLang && !clientRequestedLang && storedLang !== session.lang) session.lang = storedLang;
+      if (adminBriefing) {
+        emitOasisEvent({
+          vtid: 'BOOTSTRAP-ADMIN-EE',
+          type: 'admin.briefing.injected',
+          source: 'orb-live',
+          status: 'info',
+          message: `Admin briefing injected into work-surface session ${sessionId}`,
+          payload: { session_id: sessionId, tenant_id: wsIdentity.tenant_id, role: assistantProfile.role, chars: adminBriefing.length },
+          actor_id: wsIdentity.user_id,
+          actor_role: 'admin',
+          surface: 'orb',
+        }).catch(() => {});
+      }
+      console.log(`[VTID-04560] Work-surface context ready for ${sessionId} in ${Date.now() - wsStart}ms (surface=${assistantProfile.surface}, role=${assistantProfile.role}, chars=${contextText.length})`);
+    });
+    console.log(`[VTID-04560] Work-surface session ${sessionId}: surface=${assistantProfile.surface} role=${assistantProfile.role} — member brain and wake-brief skipped`);
   } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
@@ -1117,15 +1211,15 @@ export async function handleLiveSessionStart(
 
     contextReadyPromise = bootstrapWork
       .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
-        let resolvedRole = fetchedSseRole;
-        const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
-          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'developer';
-        }
-        if (clientContext.isMobile && resolvedRole !== 'community') {
-          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'community';
+        // VTID-04560: this branch serves the MEMBER surface only (work
+        // surfaces take the branch above). The role is the screen's declared
+        // member-plane role, else the stored one clamped to a member-plane
+        // role — a stored developer/admin role viewing community screens is
+        // served as community. Replaces the old /command-hub override and the
+        // phone-means-community rule.
+        const resolvedRole = clampRoleToProfile(assistantProfile, fetchedSseRole);
+        if (resolvedRole !== fetchedSseRole) {
+          console.log(`[VTID-04560] Member-surface role ${fetchedSseRole || 'null'} served as ${resolvedRole} (${assistantProfile.resolution})`);
         }
 
         // VTID-04414 (WS-1.3): the extras are composed by the shared builder
@@ -1482,6 +1576,7 @@ export async function handleLiveSessionStart(
   // Create session object
   const session: GeminiLiveSession = {
     sessionId,
+    assistantProfile,
     lang,
     voiceStyle,
     responseModalities,
@@ -2201,7 +2296,16 @@ export async function handleLiveSessionStart(
     isGuidedTopicSession,
     hasUserId: !!orbIdentity?.user_id,
   });
-  if (fastStartDeferWake) {
+  if (assistantProfile.isWorkSurface) {
+    // VTID-04560: no member wake-brief on a work surface. Its providers
+    // (login briefing, journey guide, new-day overview, first-time welcome,
+    // teacher, unread messages, conversation resume) are all community
+    // content — the Command Hub greeting that said "you completed 9 sessions
+    // today, shall we continue the guided journey?" came from here. The
+    // work-surface opener is decided by the greeting ladder's own
+    // work_surface_open rung from the work-surface context.
+    console.log(`[VTID-04560] session ${sessionId}: wake-brief skipped on work surface ${assistantProfile.surface}`);
+  } else if (fastStartDeferWake) {
     // Compose onto the SAME promise the stream-open gate already awaits, so
     // first personalized audio still carries the full continuation / Teacher /
     // Journey blocks — but session/start returns now instead of after the

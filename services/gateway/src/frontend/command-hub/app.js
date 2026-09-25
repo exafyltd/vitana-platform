@@ -39727,6 +39727,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showFab: false, // Command Hub has its own sidebar trigger
                 initialContext: {
                     current_route: window.location.pathname,
+                    // VTID-04560: this screen is the developer's Command Hub, so the
+                    // developer Vitana answers — declared, then verified server-side.
+                    surface: 'command-hub',
+                    view_role: 'developer',
                     // VTID-04309: voice turns land in this Operator Console thread.
                     operator_thread_id: state.operatorActiveThreadId || ''
                 },
