@@ -153,6 +153,7 @@ import {
   instructionBudgetDiagPayload,
   decomposeInstructionSections,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
+  resolveInstructionByteBudgetFor,
 } from '../orb/live/instruction/instruction-budget';
 // VTID-04026: the tool catalog's OWN byte budget, applied only to the Vertex
 // Serbian bridge envelope — the instruction guard above never covered the
@@ -1823,6 +1824,24 @@ export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
  * takes the same `hasProducedAudio` (backed by `transportHasShownLife`, not
  * the chime-inclusive `audioOutChunks`) for the identical reason.
  */
+/**
+ * VTID-04539: the response watchdog (audio_stall / forwarding_no_ack) ends a
+ * stalled upstream by terminating it with `_stallRecoveryPending=true`,
+ * expecting the close handler to reconnect in place. The Vertex close handler
+ * honoured that flag; the Nova close handler never read it. A locally
+ * initiated close with audio already produced matched none of Nova's other
+ * branches, so the session died without a reconnect and without telling the
+ * client: the widget sat in listening mode with the mic feeding a dead stream
+ * (`audio_no_ws`). Production, 2026-09-25 16:25 UTC, session live-ce128077.
+ */
+export function shouldRecoverNovaStall(args: {
+  stallRecoveryPending: boolean;
+  sessionActive: boolean;
+  rotationInFlight: boolean;
+}): boolean {
+  return args.stallRecoveryPending && args.sessionActive && !args.rotationInFlight;
+}
+
 export function shouldRetryNovaOnPrematureClose(args: {
   sessionActive: boolean;
   initiatedLocally: boolean;
@@ -7155,6 +7174,12 @@ THE CONVERSATION:
      same request.
   5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for
      that and help in voice.
+  6. "Open / show me / take me to" wins over content tools. "Open my messages",
+     "show me today's events", "zeig mir meine Nachrichten" → navigate, not a
+     tool that reads messages or searches events. Use those only when they ask
+     about the content itself ("what did Anna write?", "which events are on?").
+  7. Never say you are opening, showing or taking them to a screen unless a
+     navigation tool returned that it opens. No navigation call → no such claim.
 
 Panels (a calendar, the Vitana Index, the wallet) open on top of the current
 screen and the conversation carries on. After a full screen change the
@@ -7986,10 +8011,16 @@ export function assembleOrbSetupEnvelope(
     if (typeof finalText === 'string' && finalText.length > 0) {
       const sections = decomposeInstructionSections(finalText);
 
-      const budgetResult = enforceInstructionBudget(sections);
+      // VTID-04555: the budget of the upstream actually serving this
+      // session (Vertex 30 KB; Nova / cascade 64 KB).
+      const instructionBudget = resolveInstructionByteBudgetFor(session.upstreamProvider);
+      const budgetResult = enforceInstructionBudget(sections, instructionBudget);
 
+      // VTID-04534: a SHORTENED section (member context repacked, history
+      // cut to its latest turns) changes the text too — apply it.
       if (
         budgetResult.trimmedSections.length > 0 ||
+        budgetResult.shortenedSections.length > 0 ||
         budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
       ) {
         // Apply the trimmed text back onto the envelope.
@@ -8004,11 +8035,12 @@ export function assembleOrbSetupEnvelope(
             isAnonymous: !!session.isAnonymous,
             totalBytesBefore: budgetResult.totalBytesBefore,
             totalBytesAfter: budgetResult.totalBytesAfter,
-            budget: INSTRUCTION_TOTAL_BYTE_BUDGET,
+            budget: instructionBudget,
             // Whether the preserved-only assembly STILL exceeds budget
             // (nothing left to trim → best-effort send / fail-open).
-            stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
+            stillOverBudget: budgetResult.totalBytesAfter > instructionBudget,
             trimmedSections: budgetResult.trimmedSections,
+            shortenedSections: budgetResult.shortenedSections,
             sectionBytes: budgetResult.sectionBytes,
           }),
         );
@@ -8016,13 +8048,13 @@ export function assembleOrbSetupEnvelope(
         // Under budget — emit a low-noise diagnostic so the aggregate size
         // is observable even on the happy path (helps tune the budget).
         console.log(
-          `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
+          `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${instructionBudget}`,
         );
       }
       // VTID-04525 (Conversation hub B2): the same accounting as a
       // queryable diag, trimmed or not, so the hub can show how often each
       // section is dropped. Sizes and section kinds only, never text.
-      if (!preconnect) emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
+      if (!preconnect) emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, instructionBudget));
     }
   } catch (e) {
     // Never let the guard break the handshake — fail open with a log.
@@ -9484,6 +9516,45 @@ async function connectToLiveAPI(
             }).catch((e) => {
               (session as any)._personaSwapInFlight = false;
               console.warn(`[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed: ${(e as Error).message}`);
+            });
+            return;
+          }
+          // VTID-04539: watchdog stall recovery — reconnect in place, as the
+          // Vertex close handler does. See shouldRecoverNovaStall's doc.
+          if (shouldRecoverNovaStall({
+            stallRecoveryPending: (session as any)._stallRecoveryPending === true,
+            sessionActive: session.active,
+            rotationInFlight,
+          })) {
+            (session as any)._stallRecoveryPending = false;
+            console.warn(`[VTID-04539] Nova stream for session ${session.sessionId} stalled — reconnecting in place.`);
+            emitDiag(session, 'reconnect_triggered', { reason: 'stall_recovery', provider: 'nova_sonic' });
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                console.warn(`[VTID-04539] Stall recovery reconnect failed for session ${session.sessionId}.`);
+                emitConnectionIssue(session, 'upstream_disconnected');
+                return;
+              }
+              session.consecutiveModelTurns = 0;
+              if (session.turn_count === 0) {
+                resendGreetingIfStuckAtZeroTurns(session, 'VTID-04539-stall-recovery');
+              } else {
+                // Mid-conversation: history is in the rebuilt setup; do not re-greet.
+                emitDiag(session, 'stall_recovery_resumed', {
+                  provider: 'nova_sonic',
+                  reconnect_count: (session as any)._reconnectCount || 0,
+                });
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-04539] Stall recovery reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
             });
             return;
           }

@@ -514,6 +514,13 @@ export type CicdEventType =
   | 'llm.call.started'
   | 'llm.call.completed'
   | 'llm.call.failed'
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. One event per
+  // decision call, same shape of purpose as llm.call.* (served traffic with
+  // provider, model, latency, tokens and cost), plus plane/role/tenant so
+  // spend can be split internal vs community (docs/JEV-INTEGRATION-PLAN.md §8.5).
+  | 'jev.decision.completed'
+  | 'jev.decision.failed'
+  | 'jev.decision.fallback'
   // VTID-03565: an operator preflighting a provider before flipping routing at
   // it. Deliberately its OWN topic rather than an llm.call.* event: a preflight
   // is not served traffic, and booking it as llm.call.completed would corrupt

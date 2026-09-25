@@ -142,7 +142,7 @@ describe('VTID-04525 — Phase A routes', () => {
 describe('VTID-04525 B2 — instruction_budget diag', () => {
   test('the setup path emits it on every setup, sizes only', () => {
     const src = readFileSync(join(__dirname, '../../src/routes/orb-live.ts'), 'utf8');
-    expect(src).toContain("emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET))");
+    expect(src).toContain("emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, instructionBudget))");
   });
 
   test('payload builder carries byte accounting and section kinds, never text', () => {

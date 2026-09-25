@@ -229,6 +229,27 @@ jobs:
                    {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
             sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
           cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
+      # VTID-04473: Jev (TypeSafe System One) typed decisions, internal roles
+      # only. Rides on connected-apps.json so the task-definition step stays
+      # unchanged. The key is wired only when the secret exists
+      # (scripts/aws/setup-typesafe-secret.sh); JEV_DECISIONS_ENABLED is
+      # always written - 'true' with the key, 'false' without - so a stale
+      # value can never outlive its key. JEV_COMMUNITY_ENABLED is never set.
+      - name: Resolve Jev decision config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/typesafe-api-key"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo "  $NAME absent - Jev stays inert (VTID-04473)"
+            jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"JEV_DECISIONS_ENABLED", value:"true"}] | .sec += [{name:"TYPESAFE_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming

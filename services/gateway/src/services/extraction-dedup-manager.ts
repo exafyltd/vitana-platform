@@ -160,7 +160,10 @@ export function deduplicatedExtract(
   }
 
   // Check minimum content length
-  if (input.conversationText.length < DEDUP_CONFIG.MIN_NEW_CONTENT_LENGTH) {
+  // VTID-04540: a forced extraction (session end, a typed turn) is never
+  // skipped for length — "I'm vegan" with a short reply is under 50 chars.
+  // extractAndPersistFacts still skips text too short to carry a fact.
+  if (!input.force && input.conversationText.length < DEDUP_CONFIG.MIN_NEW_CONTENT_LENGTH) {
     return { extracted: false, skip_reason: 'content_too_short' };
   }
 
