@@ -653,6 +653,15 @@ jobs:
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
         #
+        # VTID-04573 -- vitana/github/token (last set 2026-08-26 09:54 UTC)
+        # returns 401 from GitHub since ~2026-09-25 10:00 UTC, consistent with
+        # a 30-day fine-grained token expiring; every GitHub call from the
+        # staging gateway failed (PR open on approve, operator repo reads).
+        # Staging now reads vitana/github/pat -- the secret the autopilot
+        # executor already uses successfully under the same execution role.
+        # Production (vitana-gateway-awsdr) still reads vitana/github/token
+        # and needs that token rotated.
+        #
         # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
 # consumer, an Operator-chat-created task (metadata.source='operator-chat')
 # sat at status=scheduled/spec_status=missing forever -- confirmed live
@@ -853,7 +862,7 @@ jobs:
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
-            "SEC_GITHUB_TOKEN:vitana/github/token" \
+            "SEC_GITHUB_TOKEN:vitana/github/pat" \
             "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
