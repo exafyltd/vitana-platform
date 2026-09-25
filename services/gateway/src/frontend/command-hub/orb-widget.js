@@ -87,6 +87,11 @@
   var _PLAYBACK_LEAD_FIRST_SEC = 0.3;
   var _PLAYBACK_LEAD_LATER_SEC = 0.05;
 
+  // VTID-04554: upper bound on how long _signalAudioReady waits for a
+  // not-yet-running playback context before sending audio_ready anyway. Well
+  // under the server's 1s fallback, so the ack always arrives first.
+  var _AUDIO_READY_RESUME_BOUND_MS = 300;
+
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
 
@@ -1820,41 +1825,86 @@
   // POST once per session when the playback pipeline is genuinely ready
   // (AudioContext exists + running). The backend records the ack so it can
   // release the greeting on ack-or-3s. Idempotent + best-effort.
+  //
+  // VTID-04554: audio_ready is now ALWAYS sent. It used to be sent only if the
+  // context was already 'running' at the moment session_started arrived;
+  // otherwise it waited for a resume() that only _processQueue kicks — and
+  // _processQueue only runs once greeting audio arrives, which the server was
+  // holding for this very ack. So the server's 1s fallback released the
+  // greeting (measured on ~50% of WS sessions). Now, when the context is not
+  // yet running, we wait for it — its resume() was already requested in the
+  // tap gesture — bounded by _AUDIO_READY_RESUME_BOUND_MS, and send then; a
+  // statechange → 'running' inside that window sends immediately. Either way
+  // at most once per session, and never before the session id is known. The
+  // "tap to hear" suspended-context recovery is untouched: audio that arrives
+  // while the context is still suspended is held by _processQueue exactly as
+  // it was after the server's own fallback released it.
   function _signalAudioReady() {
     if (_s._audioReadySignaled) return;
     if (!_s.sessionId) return;
+    var sid = _s.sessionId;
+    function send() {
+      if (_s._audioReadySignaled) return;
+      // A later session (reconnect) owns its own ack.
+      if (!_s.sessionId || _s.sessionId !== sid) return;
+      _s._audioReadySignaled = true;
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
+      // audio_ready message (the WS path defers the greeting on it).
+      if (_s.ws && _s.ws.readyState === 1) {
+        try {
+          _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
+          console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
+        } catch (e) { /* greeting falls back to the server timeout */ }
+        return;
+      }
+      try {
+        var headers = { 'Content-Type': 'application/json' };
+        if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+        fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
+          method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
+        }).catch(function () { /* greeting falls back to the 3s server timeout */ });
+        console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
+      } catch (e) { /* best-effort */ }
+    }
     // Ensure a playback context exists; if it's suspended, kick a resume so the
     // pipeline reaches 'running' (the canonical "ready" state).
+    var ctx;
+    var resumeP = null;
     try {
       if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
         _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      var ctx = _s.playbackCtx;
+      ctx = _s.playbackCtx;
       if (ctx.state === 'suspended' && ctx.resume) {
-        ctx.resume().catch(function () {});
+        resumeP = ctx.resume();
+        if (resumeP && resumeP.catch) resumeP.catch(function () {});
       }
-      if (ctx.state !== 'running') return; // not ready yet; will retry on resume
+      if (ctx.state !== 'running') {
+        // VTID-04554: not ready yet — wait (bounded) instead of giving up.
+        // Armed at most once per session id.
+        if (_s._audioReadyWaitSid === sid) return;
+        _s._audioReadyWaitSid = sid;
+        var fired = false;
+        var boundTimer = null;
+        var onState = function () {
+          if (ctx.state === 'running') fire();
+        };
+        var fire = function () {
+          if (fired) return;
+          fired = true;
+          clearTimeout(boundTimer);
+          try { ctx.removeEventListener('statechange', onState); } catch (e) { /* noop */ }
+          send();
+        };
+        try { ctx.addEventListener('statechange', onState); } catch (e) { /* older WebKit — bound covers it */ }
+        if (resumeP && resumeP.then) resumeP.then(function () { if (ctx.state === 'running') fire(); }, function () {});
+        boundTimer = setTimeout(fire, _AUDIO_READY_RESUME_BOUND_MS);
+        return;
+      }
     } catch (e) {
       return; // no audio context available — let the server 3s timeout cover it
     }
-    _s._audioReadySignaled = true;
-    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
-    // audio_ready message (the WS path defers the greeting on it).
-    if (_s.ws && _s.ws.readyState === 1) {
-      try {
-        _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
-        console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
-      } catch (e) { /* greeting falls back to the server timeout */ }
-      return;
-    }
-    try {
-      var headers = { 'Content-Type': 'application/json' };
-      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-      fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
-        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
-      }).catch(function () { /* greeting falls back to the 3s server timeout */ });
-      console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
-    } catch (e) { /* best-effort */ }
+    send();
   }
 
   function _playAudio(base64Data, mimeType) {
