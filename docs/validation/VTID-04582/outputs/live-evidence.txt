@@ -1,0 +1,13 @@
+Operator Console, 2026-09-25 (owner's thread), turn "pull Dev Autopilot recommendations":
+  tool: autopilot_get_recommendations (VTID-01221) · 283ms
+  returned 10 items: Complete your profile ×2, Add your photo ×2, Start a streak on your weakest pillar ×5, Start a health streak ×1
+  -> community member recommendations (source_type='community', each tied to a real member's user_id)
+
+Next turn, the model claimed: "what I actually pulled was the developer autopilot" — false.
+Same turn claimed ee04be49 "No PR opened yet"; PR #3709 had opened at 19:17 UTC via the staging console.
+
+Staging console turn 19:17 UTC (thread-b), message "Approve the held execution ee04be49 ...":
+  tools actually called: ["autopilot_review_execution"]   (oasis_events: one assistant.turn "Tool call: autopilot_review_execution")
+  reply text presented: "Tool: autopilot_approve_execution / Result: {... pr_number 3709, github_auth app_token_vitana/github/pat}"
+  dev_autopilot_executions ee04be49 at 19:55: status=awaiting_approval, pr_number=null   -> fabricated
+Real approve 19:55 UTC: POST /api/v1/dev-autopilot/executions/ee04be49-.../approve -> {"ok":true,"pr_number":3711}
