@@ -1,0 +1,18 @@
+# VTID-04582 — commands run in the session
+
+# Live data, read-only (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select pg_get_function_arguments(p.oid) from pg_proc p where proname='get_autopilot_recommendations';
+  -> p_status text[], p_limit int, p_offset int, p_user_id uuid DEFAULT NULL   (no source_type filter, no source_type column returned)
+select source_type, status, count(*), count(*) filter (where user_id is null) from autopilot_recommendations group by 1,2;
+  -> community/new 268 (all with user_id); dev_autopilot/new 20, dev_autopilot/snoozed 11, dev_autopilot_impact/new 5 (all user_id null)
+select surface_key from ai_personality_config;
+  -> no rows (the code-default operator prompt is what serves)
+
+# Checks
+cd services/gateway
+npx tsc --noEmit -p .                                        -> clean
+node node_modules/.bin/jest test/vtid-04582-operator-dev-recommendations.test.ts \
+  test/vtid-03838-operator-prompt-lists-execute-tool.test.ts \
+  test/vtid-04465-operator-pipeline-regression.test.ts \
+  test/vtid-03835-operator-console-read-tools.test.ts test/vtid-04281* test/vtid-04282*
+  -> 6 suites, 96 tests passed

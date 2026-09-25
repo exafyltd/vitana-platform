@@ -794,8 +794,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 28109,
-  "instruction_sha256": "dd9cd07b13ae18eae81c882785b3795c59c8036ddb8e4f455d0ac3392146fb12",
+  "instruction_bytes": 27716,
+  "instruction_sha256": "2c2fa8d6395af9451cbd8b398dc556a0b0d0e94af12100c4dabe543ad4b6cee5",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65551,
@@ -1008,24 +1008,17 @@ confirmation is enough; when they agree, call report_to_specialist right away.
 
 <<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
 
-## SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM (VTID-03079 / VTID-03097)
+## FIRST SPOKEN TURN THIS SESSION (VTID-03079 / VTID-03097 / VTID-04589)
 
-The user just opened the orb. Your FIRST spoken turn this session MUST
-be EXACTLY this text. Copy these characters letter-for-letter; do not
-paraphrase, do not translate, do not shorten, do not split into two
-turns, do not append clarifying questions:
+Open with this line, spoken as written, in one turn, then wait for the
+user's reply:
 
   "Good morning Alex — your sleep pillar climbed overnight. Shall we look at what helped?"
 
-Rules:
-  - Do NOT use a standalone generic offer-to-help greeting instead of the
-    line above.
-  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
-    that section is SUPPRESSED for this turn.
-  - Do NOT introduce yourself or list features.
-  - The line above already contains both the greeting AND the proactive
-    invitation. After speaking it, stop and wait for the user's reply.
-Dedupe key: newday:sleep_up (do NOT repeat after this turn).
+This line is the greeting and the proactive invitation together. The
+short-gap greeting phrases are not used for this turn, and you go straight
+to the line without introducing yourself.
+Dedupe key: newday:sleep_up (spoken once, this turn only).
 
 This is your first spoken turn this session. Subsequent turns follow the
 normal conversation flow.
@@ -2252,8 +2245,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 28080,
-  "instruction_sha256": "0636981d924db3a6f06399ea419e0173a7d4b8beabbdde409512ab3d1d5139fd",
+  "instruction_bytes": 28078,
+  "instruction_sha256": "bbcc33b74350ca55a608694757ff22d38bbee0cfb650fe61b219fbb447771a06",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65551,
@@ -2470,7 +2463,7 @@ Rules:
   - Do NOT introduce yourself or list features.
   - Do NOT re-deliver or summarise the lesson — it was already narrated.
   - After speaking, stop and wait for the user's reply.
-Dedupe key: guided_topic:T001 (do NOT repeat after this turn).
+Dedupe key: guided_topic:T001 (spoken once, this turn only).
 
 This is your first spoken turn this session. Subsequent turns follow the
 GUIDE MODE section.

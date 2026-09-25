@@ -32,8 +32,8 @@
   "connect:authenticated-community-en-returning": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "dd9cd07b13ae18eae81c882785b3795c59c8036ddb8e4f455d0ac3392146fb12",
-    "instruction_bytes": 28109,
+    "instruction_sha256": "2c2fa8d6395af9451cbd8b398dc556a0b0d0e94af12100c4dabe543ad4b6cee5",
+    "instruction_bytes": 27716,
     "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
     "tools_bytes": 65551,
     "tool_count": 45,
@@ -72,8 +72,8 @@
   "connect:guided-topic-de": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "0636981d924db3a6f06399ea419e0173a7d4b8beabbdde409512ab3d1d5139fd",
-    "instruction_bytes": 28080,
+    "instruction_sha256": "bbcc33b74350ca55a608694757ff22d38bbee0cfb650fe61b219fbb447771a06",
+    "instruction_bytes": 28078,
     "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
     "tools_bytes": 65551,
     "tool_count": 45,

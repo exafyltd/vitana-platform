@@ -171,6 +171,8 @@ export type CicdEventType =
   | 'governance.evaluation'
   // VTID-0536: Gemini Operator Tools Bridge events
   | 'assistant.turn'
+  // VTID-04582: an Operator Console reply presented a tool call that did not run
+  | 'operator.reply.fabricated_tool_call'
   // VTID-0150-B: Assistant Core events
   | 'assistant.session.started'
   | 'autopilot.intent.created'

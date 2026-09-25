@@ -2284,11 +2284,14 @@ under `docs/`).
 
 Where the tokens actually live, and how each consumer gets them:
 
-- **Gateway / executor (`GITHUB_SAFE_MERGE_TOKEN`)** — AWS Secrets Manager,
-  wired into the ECS task definitions by `AWS-STAGE-DEPLOY-GATEWAY.yml` /
+- **Gateway / executor (`GITHUB_SAFE_MERGE_TOKEN`)** — AWS Secrets Manager
+  secret **`vitana/github/pat`**, for both gateways and the executor, wired
+  into the ECS task definitions by `AWS-STAGE-DEPLOY-GATEWAY.yml` /
   `AWS-PROD-DEPLOY-*.yml`; the platform repo's PR/merge/dispatch calls in
   `services/gateway/src/services/github-service.ts` read it from the
-  environment.
+  environment. `vitana/github/token` expired on 2026-09-25 (401) and is
+  **retired by owner decision (VTID-04573/04583)** — never point a task
+  definition back at it.
 - **`exafyltd/vitana-v1` (`FRONTEND_DEPLOY_TOKEN`)** — same mechanism; the
   operator's cross-repo reads (`dev_read_file` / `dev_search_codebase` with
   `repo:"exafyltd/vitana-v1"`) and the PUBLISH button's frontend promotion

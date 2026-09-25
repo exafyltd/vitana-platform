@@ -57,6 +57,8 @@ export interface OpenFinding {
   impact_score: number | null;
   snoozed_until: string | null;
   created_at: string;
+  /** VTID-04582: the VTID the finding was activated under, if any. */
+  activated_vtid?: string | null;
   spec_snapshot: { scanner?: string; rule?: string; file_path?: string; severity?: string } | null;
 }
 
@@ -397,7 +399,7 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
 
   const [findings, runs, execs, rules, impactRecs, scanners, engineLast, approvedToday] = await Promise.all([
     get<OpenFinding[]>(s, '/rest/v1/autopilot_recommendations?source_type=in.(dev_autopilot,dev_autopilot_impact)'
-      + '&status=in.(new,snoozed)&select=id,title,status,source_type,risk_class,effort_score,impact_score,snoozed_until,created_at,spec_snapshot'
+      + '&status=in.(new,snoozed)&select=id,title,status,source_type,risk_class,effort_score,impact_score,snoozed_until,created_at,activated_vtid,spec_snapshot'
       + '&order=impact_score.desc.nullslast,created_at.asc&limit=300'),
     get<ScanRun[]>(s, '/rest/v1/dev_autopilot_runs?select=run_id,triggered_by,status,signal_count,new_finding_count,started_at,completed_at,error&order=started_at.desc&limit=40'),
     get<Array<ExecRow & { finding?: { source_type?: string | null } | null }>>(s, `/rest/v1/dev_autopilot_executions?or=(created_at.gte.${encodeURIComponent(weekAgoIso)},status.in.(${IN_FLIGHT_STATUSES.join(',')}))`
@@ -471,6 +473,7 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       has_plan: planned.has(f.id),
       age_days: Math.floor((nowMs - Date.parse(f.created_at)) / 86400000),
       attempts: (execsByFinding.get(f.id) || []).length,
+      activated_vtid: f.activated_vtid ?? null,
       blocker: d,
     };
   });

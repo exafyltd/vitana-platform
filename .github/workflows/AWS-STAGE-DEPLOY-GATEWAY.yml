@@ -659,8 +659,10 @@ jobs:
         # staging gateway failed (PR open on approve, operator repo reads).
         # Staging now reads vitana/github/pat -- the secret the autopilot
         # executor already uses successfully under the same execution role.
-        # Production (vitana-gateway-awsdr) still reads vitana/github/token
-        # and needs that token rotated.
+        # Production was repointed the same day (env-only run 332). Owner
+        # decision 2026-09-25 (VTID-04583): vitana/github/pat is the permanent
+        # GitHub token for both gateways and the executor. vitana/github/token
+        # is retired -- do not point anything back at it.
         #
         # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
 # consumer, an Operator-chat-created task (metadata.source='operator-chat')
