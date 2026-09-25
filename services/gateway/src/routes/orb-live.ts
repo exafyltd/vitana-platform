@@ -155,6 +155,8 @@ import {
   INSTRUCTION_TOTAL_BYTE_BUDGET,
   resolveInstructionByteBudgetFor,
 } from '../orb/live/instruction/instruction-budget';
+// VTID-04577: per-provider brain-context cap.
+import { resolveBootstrapMaxCharsFor } from '../orb/live/instruction/bootstrap-cap';
 // VTID-04026: the tool catalog's OWN byte budget, applied only to the Vertex
 // Serbian bridge envelope — the instruction guard above never covered the
 // 226 KB of function declarations an authenticated session declares, and
@@ -7985,6 +7987,9 @@ export function assembleOrbSetupEnvelope(
                     // distinct build (a rebuilt identical envelope does
                     // not repeat it).
                     (pack) => recordBrainContextBuilt(session, pack),
+                    // VTID-04577: brain-context cap for the serving upstream
+                    // (Nova / cascade 24,000 chars, Vertex 12,000).
+                    resolveBootstrapMaxCharsFor(session.upstreamProvider),
                   ))) as string
         }]
       },

@@ -176,7 +176,10 @@ export function byteLength(text: string): number {
  * than silently believing the context was complete.
  */
 export const SECTION_TRIM_SENTINEL = (kind: InstructionSectionKind): string =>
-  `\n[${kind} context omitted to fit the Vertex Live setup budget]`;
+  // VTID-04579: the member's memory is still reachable through search_memory.
+  kind === 'bootstrap' || kind === 'history'
+    ? `\n[${kind} context omitted to fit the Vertex Live setup budget; use search_memory for anything not shown here]`
+    : `\n[${kind} context omitted to fit the Vertex Live setup budget]`;
 
 /**
  * Enforce an aggregate byte budget on an assembled instruction built from
