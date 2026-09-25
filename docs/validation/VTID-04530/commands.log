@@ -1,0 +1,4 @@
+npx tsc --noEmit -p services/gateway
+npx jest test/vtid-04530 test/routes/autopilot.test.ts test/routes/autopilot-recommendations.test.ts
+mutation: see outputs/mutation.txt
+curl (bogus bearer) on staging + prod /api/v1/autopilot/recommendations/count: see outputs/live-evidence.txt
