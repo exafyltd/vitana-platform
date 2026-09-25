@@ -1,0 +1,8 @@
+boto3 sts.get_caller_identity -> arn:aws:iam::472838866351:user/claude-code-aws-agent
+boto3 secretsmanager.describe_secret vitana/github/token -> LastChanged 2026-08-26 09:54:37 UTC
+boto3 secretsmanager.describe_secret vitana/github/pat   -> LastChanged 2026-07-24 11:26:23 UTC
+boto3 secretsmanager.get_secret_value (both) -> AccessDeniedException (by design; values never read)
+boto3 ecs.describe_task_definition vitana-gateway rev 601 / vitana-gateway-awsdr rev 119 -> GITHUB_SAFE_MERGE_TOKEN <- vitana/github/token
+boto3 ecs.describe_task_definition vitana-autopilot-executor rev 26 -> GITHUB_SAFE_MERGE_TOKEN <- vitana/github/pat
+all three task defs: executionRoleArn vitana-ecs-task-execution-role
+npx jest (28 staging-workflow suites incl. new VTID-04573 pin) -> 28 passed, 198 tests
