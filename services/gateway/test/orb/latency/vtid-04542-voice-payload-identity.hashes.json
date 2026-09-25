@@ -52,8 +52,8 @@
   "connect:command-hub-developer-en": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "13f35c6fe978b783d30eaf4c9d1e5c666e1a148d2fee346b48598a4d3113ddcd",
-    "instruction_bytes": 12171,
+    "instruction_sha256": "848c1f8abe38b9b41c3f3831261fca8d038f7ff70deba97fe9bce0596e779938",
+    "instruction_bytes": 12272,
     "tools_sha256": "11951a97b1abef4630d09063094fb323cc3cdc060ddcc65f43aa522047dc9c2f",
     "tools_bytes": 54941,
     "tool_count": 157,

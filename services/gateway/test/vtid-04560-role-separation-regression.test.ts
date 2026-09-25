@@ -33,6 +33,7 @@ import {
 } from '../src/orb/profile/session-profile';
 import {
   computeGreetingDecision,
+  overviewIndependentOpenerWins,
   type GreetingDecisionContext,
 } from '../src/services/conversation/compute-greeting-decision';
 import { buildLiveSystemInstruction } from '../src/orb/live/instruction/live-system-instruction';
@@ -210,6 +211,36 @@ describe('greeting ladder — a work surface never reaches a member rung', () =>
   test('no facts loaded → the opener offers to check, it does not invent', () => {
     const d = computeGreetingDecision(greetingCtx({ surface: 'command-hub', workSurfaceRole: 'developer' }));
     expect(d.directive).toMatch(/none loaded yet/);
+  });
+
+  // VTID-04586 — Command Hub first audio regressed ~1.6 s after VTID-04560:
+  // the member new-day gather ran for a work surface (payload always discarded)
+  // and the opener made the model re-fetch its own snapshot with a tool call.
+  test.each(ladders)('VTID-04586: a work surface skips the member payload gathers — %s', (_label, over) => {
+    const ctx = greetingCtx({ ...over, surface: 'command-hub', workSurfaceRole: 'developer' });
+    expect(overviewIndependentOpenerWins(ctx)).toBe(true);
+    expect(overviewIndependentOpenerWins(greetingCtx({ ...over, surface: 'admin', workSurfaceRole: 'admin' }))).toBe(true);
+  });
+
+  test.each(ladders)('VTID-04586: the member surface still gathers — %s', (_label, over) => {
+    expect(overviewIndependentOpenerWins(greetingCtx({ ...over, currentRoute: '/home' }))).toBe(false);
+    expect(overviewIndependentOpenerWins(greetingCtx({ ...over, surface: 'vitanaland', currentRoute: '/home' }))).toBe(false);
+  });
+
+  test('VTID-04586: the opener speaks from the loaded facts and calls no tool first', () => {
+    const d = computeGreetingDecision(greetingCtx({
+      surface: 'command-hub',
+      workSurfaceRole: 'developer',
+      workSurfaceHighlights: ['2 executions awaiting approval'],
+    }));
+    expect(d.directive).toMatch(/call no tool before this first reply/);
+    expect(d.directive).toMatch(/loaded as this session opened/);
+  });
+
+  test('VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../src/orb/live/instruction/live-system-instruction.ts'), 'utf8');
+    expect(src).toContain('Use them before you state a current fact the live snapshot below does not already cover');
+    expect(src).not.toMatch(/Use them before you state a current fact\.\n/);
   });
 
   test('a genuine transport reconnect stays silent on a work surface too', () => {
