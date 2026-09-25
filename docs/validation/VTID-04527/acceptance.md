@@ -19,6 +19,8 @@ Follow-up to VTID-04499. A connection's own routes (detail, mapping preview and 
 - **Mapping decisions** record the calling admin as `decided_by`, the same rule as the portal. **Activation** stays on the admin router; there is no approve route on either surface.
 - **Bug avoided in the move:** the FHIR authorize handler destructured a request-body field named `scope`. Inside the new function, that would shadow the `scope` parameter and throw a TDZ `ReferenceError` on every call. The body field is now read as `scope: oauthScope`, so the request API is unchanged. The existing portal FHIR test sends `scope`, which covers the rename.
 
+- **Impact-scan finding addressed:** the move re-indented the lines that read `SHOPIFY_OAUTH_REDIRECT_URI` and `FHIR_OAUTH_REDIRECT_URI`, so the scan saw them as new. They are pre-existing (VTID-03603/03605), but they and their companions (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `FHIR_OAUTH_STATE_SECRET`) were never documented. They are now in `services/gateway/.env.example`, empty, with the note that both flows answer 503 `not_configured` until set. Runtime behaviour is unchanged.
+
 ## Acceptance criteria
 
 AC-1 Any org_admin (not only the owner) reads a connection of the org; the lookup is filtered by id and `partner_tenant.partner_organization_id`.
