@@ -83,6 +83,8 @@ const READ_OVERRIDES = new Set<string>([
   'dev_run_simulator', 'dev_voice_lab_probe', 'dev_run_orb_selfcheck', 'admin_test_notification_category',
   'admin_test_specialist_connection', 'admin_kb_search', 'admin_kb_list_docs',
   'admin_marketplace_overview', 'admin_feedback_kpis', 'dev_recent_events',
+  // VTID-04562: the developer's map of the system (read-only lookup).
+  'dev_domain_atlas',
 ]);
 
 const HEALTH_TOOLS = new Set<string>([

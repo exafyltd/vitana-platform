@@ -4402,7 +4402,10 @@ async function callVertexWithTools(
 async function sendToolResultsToVertex(
   originalText: string,
   toolResults: GeminiToolResult[],
-  threadId: string
+  threadId: string,
+  // VTID-04560: false for a member caller — the tool-result turn then carries
+  // no engineering context either (same gate as the main turn).
+  engineering = true,
   // VTID-04031: who served the final call and what it cost, for the turn's meta.
 ): Promise<{ reply: string; usage?: LLMUsage; provider?: string; model?: string }> {
   const baseToolResultPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
@@ -4417,7 +4420,7 @@ CRITICAL — Sharing links:
   https://vitanaland.com/e/city-by-bike`;
   // VTID-04018 (§4.1 "same prompt for tool-result turns"): the tool-result
   // turn carries the same bootstrap pack as the main turn — '' when disabled.
-  const toolResultPack = await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) });
+  const toolResultPack = engineering ? await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) }) : '';
   const systemPrompt = toolResultPack ? `${baseToolResultPrompt}\n\n${toolResultPack}` : baseToolResultPrompt;
 
   // VTID-03579: results are presented as a TEXT turn, not as tool_result blocks,
@@ -4663,7 +4666,7 @@ export async function processWithGemini(input: {
 
         // Send tool results back to Vertex for final response
         const finalStartedAt = Date.now();
-        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId);
+        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole));
         emitTurnEvent(onEvent, {
           type: 'model.turn',
           stage: 'final',

@@ -10673,6 +10673,31 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
         },
       },
       {
+        "description": "DEVELOPER ONLY. Live system snapshot: which build staging and production serve, the Dev Autopilot state (kill switch, provider outage, executions in flight and waiting for approval, 7-day success rate, alerts) and the last hour of error events and voice sessions. Pass fresh:true to bypass the 90-second cache.",
+        "name": "dev_system_status",
+        "parameters": {
+          "properties": {
+            "fresh": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs.",
+        "name": "dev_domain_atlas",
+        "parameters": {
+          "properties": {
+            "domain": {
+              "description": "A domain key or a topic, e.g. "voice" or "knowledge graph".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
         "description": "ADMIN ONLY. Find a user by name, email, or vitana_id.",
         "name": "admin_lookup_user",
         "parameters": {

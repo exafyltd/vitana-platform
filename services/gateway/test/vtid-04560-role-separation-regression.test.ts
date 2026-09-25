@@ -445,3 +445,218 @@ describe('VTID-04561 one role truth — both switchers write both tables', () =>
     expect(app).toContain("'backoffice': COMMUNITY_APP_ORIGIN + '/backoffice/dashboard'");
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-04562 — the developer Vitana's knowledge: atlas, snapshot, loader, tools
+// ---------------------------------------------------------------------------
+
+import { DOMAIN_ATLAS, domainsForRoute, findDomain, renderAtlasIndex } from '../src/orb/developer/domain-atlas';
+import {
+  assembleSnapshot, buildSystemSnapshot, getSystemSnapshot, resetSystemSnapshotCache,
+  type SnapshotAutopilot, type SystemSnapshotDeps,
+} from '../src/orb/developer/system-snapshot';
+import { loadDeveloperKnowledge, renderRecentDevMemory } from '../src/orb/developer/developer-knowledge';
+import { buildWorkSurfaceKnowledge } from '../src/orb/profile/work-surface-context';
+import { dev_domain_atlas, dev_system_status, DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS } from '../src/services/orb-tools/developer-knowledge-tools';
+import { DEVELOPER_DOMAIN_TOOL_DECLARATIONS, ORB_TOOL_REGISTRY } from '../src/services/orb-tools-shared';
+import { WORK_SURFACE_CONDUCT_BLOCK } from '../src/orb/live/instruction/live-system-instruction';
+
+function listRouteFiles(): string[] {
+  const root = path.join(ROOT, 'src', 'routes');
+  const out: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    for (const f of fs.readdirSync(dir)) {
+      const p = path.join(dir, f);
+      const r = rel ? `${rel}/${f}` : f;
+      if (fs.statSync(p).isDirectory()) walk(p, r);
+      else if (f.endsWith('.ts') && !f.endsWith('.test.ts') && !f.endsWith('.d.ts')) out.push(r);
+    }
+  };
+  walk(root, '');
+  return out;
+}
+
+const CLEAN_AUTOPILOT: SnapshotAutopilot = {
+  kill_switch: false, provider_outage: 'clear', awaiting_approval: 0, active: 1,
+  success_rate_7d: 80, failed_7d: 1, total_7d: 5, open_findings: 3, top_failure: null, alerts: [],
+};
+
+describe('VTID-04562 domain atlas — a map that cannot silently fall behind the code', () => {
+  test('every gateway route file is claimed by at least one domain (drift guard)', () => {
+    const files = listRouteFiles();
+    expect(files.length).toBeGreaterThan(100);
+    const unclaimed = files.filter((f) => domainsForRoute(f).length === 0);
+    expect(unclaimed).toEqual([]);
+  });
+
+  test('keys are unique and every domain names code, tables and docs or flags', () => {
+    const keys = DOMAIN_ATLAS.map((d) => d.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const d of DOMAIN_ATLAS) {
+      expect(d.code.length).toBeGreaterThan(0);
+      expect(d.tables.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('the developer\'s words find the right domain', () => {
+    expect(findDomain('how does the knowledge graph get written')?.key).toBe('memory');
+    expect(findDomain('nova sonic keeps dropping')?.key).toBe('voice');
+    expect(findDomain('why did the executor fail')?.key).toBe('autopilot');
+    expect(findDomain('autopilot')?.key).toBe('autopilot');
+    expect(findDomain('bedrock fallback')?.key).toBe('llm');
+    expect(findDomain('zzzz')).toBeNull();
+  });
+
+  test('the prompt index is one line per domain and names the lookup tool', () => {
+    const idx = renderAtlasIndex();
+    expect(idx).toContain('dev_domain_atlas');
+    expect(idx.split('\n').length).toBe(DOMAIN_ATLAS.length + 1);
+    expect(idx.length).toBeLessThan(6000);
+  });
+});
+
+describe('VTID-04562 live system snapshot — facts with a timestamp, never a throw', () => {
+  const now = Date.parse('2026-09-25T10:00:00Z');
+
+  test('critical facts lead the highlights (kill switch, provider outage, error spike)', () => {
+    const s = assembleSnapshot({
+      nowMs: now,
+      autopilot: { ok: true, value: { ...CLEAN_AUTOPILOT, kill_switch: true, provider_outage: 'outage', awaiting_approval: 2 } },
+      builds: { ok: true, value: [{ label: 'staging', ok: true, env: 'staging', git_commit: 'aaaaaaa1' }, { label: 'production', ok: true, env: 'production', git_commit: 'bbbbbbb2' }] },
+      events: { ok: true, value: Array.from({ length: 12 }, () => ({ topic: 'orb.live.diag', status: 'error', message: 'nova_validation', created_at: '2026-09-25T09:50:00Z' })) },
+    });
+    expect(s.asOf).toBe('2026-09-25T10:00:00.000Z');
+    expect(s.highlights[0]).toMatch(/kill switch/);
+    expect(s.highlights[1]).toMatch(/LLM providers/);
+    expect(s.highlights[2]).toMatch(/orb\.live\.diag errored 12 times/);
+    expect(s.text).toContain('staging serves aaaaaaa');
+    expect(s.text).toContain('2 waiting for approval');
+    expect(s.text).toMatch(/taken 2026-09-25T10:00:00.000Z/);
+  });
+
+  test('a clean system says so instead of inventing a problem', () => {
+    const s = assembleSnapshot({
+      nowMs: now,
+      autopilot: { ok: true, value: CLEAN_AUTOPILOT },
+      builds: { ok: true, value: [] },
+      events: { ok: true, value: [{ topic: 'vtid.live.session.start', status: 'info', created_at: '2026-09-25T09:59:00Z' }] },
+    });
+    expect(s.highlights).toEqual(['nothing is on fire: no autopilot alerts and no error spike in the last hour']);
+    expect(s.text).toContain('1 voice session(s) started');
+  });
+
+  test('a failed source renders as unavailable, the rest still renders', async () => {
+    const deps: SystemSnapshotDeps = {
+      now: () => now,
+      loadAutopilot: async () => { throw new Error('Supabase not configured'); },
+      loadBuildInfo: async () => [{ label: 'staging', ok: false, error: 'HTTP 503' }],
+      loadRecentEvents: async () => [],
+    };
+    const s = await buildSystemSnapshot(deps);
+    expect(s.text).toContain('Dev Autopilot: (unavailable: Supabase not configured)');
+    expect(s.text).toContain('Build staging: unreachable (HTTP 503)');
+    expect(s.highlights).toContain('staging build-info is unreachable');
+  });
+
+  test('snapshots are cached and concurrent builds coalesce into one', async () => {
+    resetSystemSnapshotCache();
+    let calls = 0;
+    const deps: SystemSnapshotDeps = {
+      now: () => now,
+      loadAutopilot: async () => { calls++; return CLEAN_AUTOPILOT; },
+      loadBuildInfo: async () => [],
+      loadRecentEvents: async () => [],
+    };
+    const [a, b] = await Promise.all([getSystemSnapshot(deps), getSystemSnapshot(deps)]);
+    const c = await getSystemSnapshot(deps);
+    expect(a).toBe(b);
+    expect(c).toBe(a);
+    expect(calls).toBe(1);
+    resetSystemSnapshotCache();
+  });
+});
+
+describe('VTID-04562 developer knowledge loader — fails open, never member memory', () => {
+  const snap = { asOf: '2026-09-25T10:00:00.000Z', text: 'LIVE SYSTEM SNAPSHOT ...', highlights: ['2 executions waiting for approval'] };
+
+  test('snapshot, atlas and engineering memory all reach the session', async () => {
+    const k = await loadDeveloperKnowledge({
+      snapshot: async () => snap,
+      recentMemory: async () => [{ category: 'incident', vtid: 'VTID-04221', title: 'Deploys reverted', content: 'topic mismatch', created_at: '2026-09-24T10:00:00Z' }],
+    });
+    expect(k.systemSnapshot).toBe(snap.text);
+    expect(k.domainAtlas).toContain('DOMAIN ATLAS');
+    expect(k.devMemory).toContain('dev_agent_memory');
+    expect(k.devMemory).toContain('VTID-04221');
+    expect(k.pulse).toEqual({ highlights: snap.highlights, asOf: snap.asOf });
+  });
+
+  test('failing sources degrade to null, the atlas stays', async () => {
+    const k = await loadDeveloperKnowledge({
+      snapshot: async () => { throw new Error('down'); },
+      recentMemory: async () => { throw new Error('down'); },
+    });
+    expect(k.systemSnapshot).toBeNull();
+    expect(k.pulse).toBeNull();
+    expect(k.devMemory).toBeNull();
+    expect(k.domainAtlas).toContain('DOMAIN ATLAS');
+    expect(renderRecentDevMemory([])).toBeNull();
+  });
+
+  test('the Command Hub loader is registered and the member surface gets nothing', async () => {
+    const dev = resolveAssistantProfile({ declaredSurface: 'command-hub', declaredViewRole: 'developer', isAnonymous: false, isExafyAdmin: true });
+    const member = resolveAssistantProfile({ declaredSurface: 'vitanaland', declaredViewRole: 'community', isAnonymous: false, isExafyAdmin: true });
+    const k = await buildWorkSurfaceKnowledge(dev, { userId: 'u1', tenantId: null });
+    expect(k.domainAtlas).toContain('DOMAIN ATLAS');
+    expect(await buildWorkSurfaceKnowledge(member, { userId: 'u1', tenantId: null })).toEqual({ systemSnapshot: null, domainAtlas: null, devMemory: null, pulse: null });
+  });
+
+  test('the developer loader reads dev_agent_memory, never the member memory tables', () => {
+    const src = read('src/orb/developer/developer-knowledge.ts');
+    expect(src).toContain('/rest/v1/dev_agent_memory');
+    expect(src).not.toMatch(/memory_items|memory_facts|user_session_summaries/);
+  });
+});
+
+describe('VTID-04562 developer knowledge tools', () => {
+  const dev = { user_id: 'u1', role: 'developer', tenant_id: null } as never;
+  const member = { user_id: 'u1', role: 'community', tenant_id: null } as never;
+
+  test('both tools are declared for developers and registered with a handler', () => {
+    const names = DEVELOPER_DOMAIN_TOOL_DECLARATIONS.map((d) => d.name);
+    for (const t of DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS) {
+      expect(names).toContain(t.name);
+      expect(typeof ORB_TOOL_REGISTRY[t.name as string]).toBe('function');
+    }
+    const manifest = JSON.parse(read('src/services/tool-manifest.json')) as { tools: Array<{ name: string }> };
+    expect(manifest.tools.map((t) => t.name)).toEqual(expect.arrayContaining(['dev_system_status', 'dev_domain_atlas']));
+  });
+
+  test('a community caller is refused', async () => {
+    expect((await dev_domain_atlas({ domain: 'voice' }, member, {} as never)).ok).toBe(false);
+    expect((await dev_system_status({}, member, {} as never)).ok).toBe(false);
+  });
+
+  test('dev_domain_atlas answers a topic with code, tables and docs', async () => {
+    const r = await dev_domain_atlas({ domain: 'knowledge graph' }, dev, {} as never);
+    expect(r.ok).toBe(true);
+    expect(r.text).toContain('memory_facts');
+    const idx = await dev_domain_atlas({}, dev, {} as never);
+    expect(idx.text).toContain('DOMAIN ATLAS');
+  });
+
+  test('the developer conduct block names both tools', () => {
+    const block = WORK_SURFACE_CONDUCT_BLOCK('command-hub');
+    expect(block).toContain('dev_system_status');
+    expect(block).toContain('dev_domain_atlas');
+    expect(WORK_SURFACE_CONDUCT_BLOCK('admin')).not.toContain('dev_system_status');
+  });
+});
+
+describe('VTID-04562 text path — the tool-result turn is gated like the main turn', () => {
+  test('sendToolResultsToVertex only loads the pack for engineering callers', () => {
+    const src = read('src/services/gemini-operator.ts');
+    expect(src).toContain("const toolResultPack = engineering ? await getOperatorBootstrapPack(");
+    expect(src).toContain('sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole))');
+  });
+});

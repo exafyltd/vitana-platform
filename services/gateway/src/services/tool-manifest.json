@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-07-20T09:46:17.624Z",
   "source": "reconciled",
-  "total": 683,
+  "total": 686,
   "tools": [
     {
       "name": "search_knowledge",
@@ -12002,6 +12002,44 @@
       "risk": "write",
       "plan_domain": "A30 Post-purchase & follow-up",
       "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "dev_system_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "live",
+      "description": "Live system snapshot: builds per stack, Dev Autopilot state, last hour of errors",
+      "wired_in": [
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_domain_atlas",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "live",
+      "description": "Map of Vitanaland: code, tables, flags and docs per domain",
+      "wired_in": [
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
     }
   ]
 }
