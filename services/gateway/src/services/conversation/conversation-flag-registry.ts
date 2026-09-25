@@ -269,8 +269,29 @@ export const CONVERSATION_FLAGS: readonly ConversationFlagDef[] = [
   featureFlag('ORB_NOVA_PREWARM', 'voice', 'VTID-03779', 'A Nova stream is opened before the member taps the ORB.'),
   featureFlag('ORB_GREETING_PREBUFFER', 'voice', 'DEV-COMHU-0513', 'The greeting is generated during the client audio unlock and held until audio_ready.'),
   featureFlag('ORB_WS_TRANSPORT', 'voice', 'VTID-03471', 'Browsers use one WebSocket for voice; off moves new sessions to SSE.'),
+  // VTID-04542 latency plan — each one is off unless the exact string `true`.
+  {
+    name: 'ORB_CASCADE_STREAMING_ENABLED', area: 'voice', vtid: 'VTID-04550', parse: 'exact_true', code_default: 'off',
+    description: 'Cascade languages synthesize and play the reply sentence by sentence instead of all at once.',
+    read: exactTrue('ORB_CASCADE_STREAMING_ENABLED'),
+  },
+  {
+    name: 'ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED', area: 'voice', vtid: 'VTID-04552', parse: 'exact_true', code_default: 'off',
+    description: 'Phones keep the 300 ms playback lead only on the first burst of a session, not on every reply.',
+    read: exactTrue('ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED'),
+  },
+  {
+    name: 'ORB_TOOL_ACK_INTENT_ENABLED', area: 'voice', vtid: 'VTID-04553', parse: 'exact_true', code_default: 'off',
+    description: 'Vitana briefly says she is checking, in her own words, before a slow tool call.',
+    read: exactTrue('ORB_TOOL_ACK_INTENT_ENABLED'),
+  },
 
   // --- Hand-offs -----------------------------------------------------------
+  {
+    name: 'ORB_DEVON_PRECONNECT_ENABLED', area: 'handoffs', vtid: 'VTID-04549', parse: 'exact_true', code_default: 'off',
+    description: "Devon's Nova stream is opened while Vitana speaks the hand-off bridge, and used only if byte-identical.",
+    read: exactTrue('ORB_DEVON_PRECONNECT_ENABLED'),
+  },
   {
     name: 'ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED', area: 'handoffs', vtid: 'VTID-04397', parse: 'exact_true', code_default: 'off',
     description: "Read-only support specialist over the member's own tickets and the knowledge base.",
