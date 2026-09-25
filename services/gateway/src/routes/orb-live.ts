@@ -120,6 +120,7 @@ import { formatClientContextForInstruction } from '../orb/live/instruction/clien
 // budget (which otherwise closes the handshake with WS 1009 → silent ORB).
 import {
   enforceInstructionBudget,
+  instructionBudgetDiagPayload,
   decomposeInstructionSections,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
 } from '../orb/live/instruction/instruction-budget';
@@ -8287,6 +8288,10 @@ async function connectToLiveAPI(
               `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
             );
           }
+          // VTID-04525 (Conversation hub B2): the same accounting as a
+          // queryable diag, trimmed or not, so the hub can show how often each
+          // section is dropped. Sizes and section kinds only, never text.
+          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
         }
       } catch (e) {
         // Never let the guard break the handshake — fail open with a log.

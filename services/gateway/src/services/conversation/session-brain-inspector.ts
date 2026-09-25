@@ -73,6 +73,19 @@ export interface SessionBrainSummary {
     setup_context_source: string | null;
     snapshot_used: { chars: number | null; fresh_timed_out: boolean | null } | null;
     rebuilt_on_reconnect: Array<{ at: string; builder: string | null; started_builder: string | null; chars: number | null; brain_error: string | null }>;
+    /**
+     * VTID-04525 (hub B2): the system-instruction byte budget per upstream
+     * setup — the latest one wins; `setups` counts them (reconnects included).
+     */
+    instruction_budget?: {
+      budget_bytes: number | null;
+      total_bytes_before: number | null;
+      total_bytes_after: number | null;
+      trimmed_sections: string[];
+      still_over_budget: boolean | null;
+      section_bytes: Record<string, number>;
+      setups: number;
+    } | null;
   };
   decision: Array<{
     at: string;
@@ -307,6 +320,25 @@ export function summarizeSessionEvents(sessionId: string, rows: InspectorEventRo
           candidate_outranked_by: str(m.candidate_outranked_by),
         });
         break;
+      case 'instruction_budget': {
+        const sb: Record<string, number> = {};
+        if (m.section_bytes && typeof m.section_bytes === 'object') {
+          for (const [k, v] of Object.entries(m.section_bytes as Record<string, unknown>)) {
+            const n = num(v);
+            if (n != null) sb[k] = n;
+          }
+        }
+        summary.context.instruction_budget = {
+          budget_bytes: num(m.budget_bytes),
+          total_bytes_before: num(m.total_bytes_before),
+          total_bytes_after: num(m.total_bytes_after),
+          trimmed_sections: Array.isArray(m.trimmed_sections) ? (m.trimmed_sections as unknown[]).map(String) : [],
+          still_over_budget: bool(m.still_over_budget),
+          section_bytes: sb,
+          setups: (summary.context.instruction_budget?.setups ?? 0) + 1,
+        };
+        break;
+      }
       case 'tool_catalog_trimmed':
       case 'vertex_tool_catalog_trimmed':
         summary.tools = {

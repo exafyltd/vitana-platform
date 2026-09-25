@@ -529,6 +529,9 @@ export type CicdEventType =
   | 'conversation.turn.completed'
   // VTID-04353 (WS-0.4): one per finalized ORB live session.
   | 'conversation.session.finalized'
+  // VTID-04525 (Conversation hub B1): the conversation system changed with a
+  // build — tools, opening providers or flags differ from the last snapshot.
+  | 'conversation.system.snapshot'
   // VTID-04355 (WS-0.5): every offered action ends in exactly one outcome.
   | 'conversation.offer.accepted'
   | 'conversation.offer.declined'
