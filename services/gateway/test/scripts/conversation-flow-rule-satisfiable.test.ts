@@ -52,6 +52,8 @@ describe('VTID-03721: conversation-flow gate is satisfiable', () => {
   it.each([
     'services/gateway/test/routes/orb-livekit.test.ts',
     'services/gateway/test/routes/orb-live.test.ts',
+    // VTID-04586: the canonical suite for the work-surface greeting rung (rule 42h).
+    'services/gateway/test/vtid-04560-role-separation-regression.test.ts',
   ])('accepts %s — the canonical test for a file the rule flags', (p) => {
     expect(re.test(p)).toBe(true);
   });
