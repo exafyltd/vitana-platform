@@ -401,6 +401,21 @@ export async function tool_remember_fact(
         const row = Array.isArray(data) ? data[0] : null;
         return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
       },
+      async listCurrentFacts(tenantId, userId) {
+        const { data } = await sb
+          .from('memory_facts')
+          .select('fact_key, fact_value, extracted_at')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
+          .is('superseded_at', null)
+          .order('extracted_at', { ascending: false })
+          .limit(500);
+        return (Array.isArray(data) ? data : []).map((r: any) => ({
+          fact_key: String(r.fact_key),
+          fact_value: String(r.fact_value),
+          extracted_at: r.extracted_at ?? null,
+        }));
+      },
       async readProfileValue(userId, key) {
         const column = profileColumnFor(key);
         if (!column) return null;
@@ -411,7 +426,7 @@ export async function tool_remember_fact(
       write: rememberFact,
     },
   );
-  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}`);
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
   return { ok: true, result, text: formatRememberFactResult(result) };
 }
 
