@@ -285,6 +285,11 @@ export const CONVERSATION_FLAGS: readonly ConversationFlagDef[] = [
     description: 'Vitana briefly says she is checking, in her own words, before a slow tool call.',
     read: exactTrue('ORB_TOOL_ACK_INTENT_ENABLED'),
   },
+  {
+    name: 'ORB_PREWARM_FULL_CONTEXT_ENABLED', area: 'voice', vtid: 'VTID-04554', parse: 'exact_true', code_default: 'off',
+    description: 'A prewarmed Nova stream is claimed only when it carries exactly the session envelope (never a memory-less one).',
+    read: exactTrue('ORB_PREWARM_FULL_CONTEXT_ENABLED'),
+  },
 
   // --- Hand-offs -----------------------------------------------------------
   {

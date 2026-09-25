@@ -59,6 +59,11 @@ export interface PrewarmedNovaSessionBase {
   tools: Array<Record<string, unknown>>;
   voiceId: string;
   lang: string;
+  /** VTID-04554: fingerprint of what the stream was opened with
+   *  (prewarm-fingerprint.ts). Set only by the full-context prewarm
+   *  (`ORB_PREWARM_FULL_CONTEXT_ENABLED`); the session claims such an entry
+   *  only when its own cold envelope has the same fingerprint. */
+  fingerprint?: string;
 }
 
 export interface PrewarmedNovaSessionEntry extends PrewarmedNovaSessionBase {
@@ -170,6 +175,15 @@ export function consumePrewarmedNovaSession(userId: string): PrewarmedNovaSessio
   }
   lastEndReasonByUserId.delete(userId);
   return entry;
+}
+
+/**
+ * VTID-04554: read this user's pooled entry without claiming it, so the
+ * session can compare fingerprints first and leave the entry pooled when it
+ * must not be claimed now (a guided-topic open). Null when nothing is pooled.
+ */
+export function peekPrewarmedNovaSession(userId: string): PrewarmedNovaSessionEntry | null {
+  return prewarmedByUserId.get(userId) ?? null;
 }
 
 /** Test-only: drop every pooled entry without closing (unit tests construct

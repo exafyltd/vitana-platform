@@ -335,7 +335,7 @@ describe('VTID-04542 orb-live.ts wiring (source contracts)', () => {
   });
 
   it('prewarm outcome: claimed / missed diag with a reason, after the claim decision', () => {
-    const claim = src.indexOf('const reusedWarmNova = !!prewarmedNova;');
+    const claim = src.indexOf('let reusedWarmNova = !!prewarmedNova;'); // `let` since VTID-04554
     expect(src.slice(claim, claim + 400)).toMatch(
       /emitNovaPrewarmOutcome\(session, \{ claimedAt: prewarmedNova\?\.createdAt \?\? null, workSurface: isWorkSurface\(sessionSurface\), personaIsVitana: _prewarmPersonaIsVitana \}\)/,
     );

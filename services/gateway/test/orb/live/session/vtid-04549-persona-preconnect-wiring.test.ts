@@ -51,14 +51,20 @@ describe('VTID-04549 envelope builder', () => {
     expect(code).toContain('if (ctxPromise && !opts?.preconnect) {');
     expect(code).toContain('const _persona = opts?.personaOverride || (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;');
     expect(code).toMatch(/const _speculated = opts\?\.preconnect\s*\?\s*undefined\s*:\s*await consumeSpeculatedVoice\(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS\);/);
-    expect(code).toContain("if (!opts?.preconnect) emitDiag(session, 'instruction_budget'");
-    expect(code).toContain("if (!opts?.preconnect) emitDiag(session, 'tool_catalog_trimmed'");
-    expect(code).toContain("if (session.upstreamProvider === 'vertex' && !opts?.preconnect) {");
-    expect(code).toContain('if (pendingTools.length > 0 && !opts?.preconnect) {');
+    // VTID-04554 moved the instruction/tool/budget body into the module-level
+    // assembleOrbSetupEnvelope (shared with the Nova prewarm); the builder
+    // hands it the pre-connect flag and the gates live there now.
+    expect(code).toMatch(/assembleOrbSetupEnvelope\(session, _personaVoice, \{[^}]*preconnect: opts\?\.preconnect === true,\s*\}\)/);
+    const asm = code.slice(code.indexOf('export function assembleOrbSetupEnvelope('), code.indexOf('return setupMessage as { setup: Record<string, any> };'));
+    expect(asm).toContain('const preconnect = hooks.preconnect === true;');
+    expect(asm).toContain("if (!preconnect) emitDiag(session, 'instruction_budget'");
+    expect(asm).toContain("if (!preconnect) emitDiag(session, 'tool_catalog_trimmed'");
+    expect(asm).toContain("if (session.upstreamProvider === 'vertex' && !preconnect) {");
+    expect(asm).toContain('if (pendingTools.length > 0 && !preconnect) {');
     // Every write of the deferred-tool maps is behind the gate.
-    const writes = code.match(/^\s*session\.(deferredTools|declaredToolNames) = [^\n]*$/gm) ?? [];
+    const writes = asm.match(/^\s*session\.(deferredTools|declaredToolNames) = [^\n]*$/gm) ?? [];
     expect(writes.length).toBe(4);
-    const guarded = code.match(/if \(!opts\?\.preconnect\) \{\s*\n\s*session\.deferredTools = /g) ?? [];
+    const guarded = asm.match(/if \(!preconnect\) \{\s*\n\s*session\.deferredTools = /g) ?? [];
     expect(guarded.length).toBe(2);
   });
 });
