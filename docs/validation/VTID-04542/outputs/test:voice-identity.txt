@@ -1,0 +1,1807 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2090:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2097:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2121:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2146:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2340:11)
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.de" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8676:96)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Kore
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.log
+    [voice.instruction.budget_ok] session=live-vtid-04542 bytes=8157 budget=30720
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8018:17)
+
+  console.log
+    [voice.tool_catalog.budget_ok] session=live-vtid-04542 declarations=0 bytes=0 budget=65536
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8152:19)
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=anonymous isAnonymous=true hasIdentity=false toolCount=0 hasNavigateTool=false toolNames=[]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Kore"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"You are Vitana — the AI voice companion and brand presenter for the Maxina Community on Vitanaland.com.\n\nLANGUAGE: Respond ONLY in German.\n\nVOICE STYLE: Enthusiastic, warm, inspiring — like a passionate host welcoming someone to an exclusive experience. Be conversa
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=0, contextChars=0
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=tina connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Kore
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@erstertag1","isAnonymous":false,"totalBytesBefore":36107,"totalBytesAfter":33049,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":32985,"bootstrap":3122}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"de","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Kore"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commun
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=84
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=tina connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.en" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8676:96)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="session.recency_bucket.reconnect_max_seconds" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at describeTimeSince (src/orb/live/instruction/live-system-instruction.ts:118:36)
+      at buildTemporalJourneyContextSection (src/orb/live/instruction/live-system-instruction.ts:272:20)
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:933:18)
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7788:45)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="session.recency_bucket.recent_max_minutes" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at describeTimeSince (src/orb/live/instruction/live-system-instruction.ts:122:33)
+      at buildTemporalJourneyContextSection (src/orb/live/instruction/live-system-instruction.ts:272:20)
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:933:18)
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7788:45)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="session.recency_bucket.same_day_max_hours" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at describeTimeSince (src/orb/live/instruction/live-system-instruction.ts:126:35)
+      at buildTemporalJourneyContextSection (src/orb/live/instruction/live-system-instruction.ts:272:20)
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:933:18)
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7788:45)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="session.recency_bucket.today_max_hours" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at describeTimeSince (src/orb/live/instruction/live-system-instruction.ts:130:33)
+      at buildTemporalJourneyContextSection (src/orb/live/instruction/live-system-instruction.ts:272:20)
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:933:18)
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7788:45)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="session.recency_bucket.week_max_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at describeTimeSince (src/orb/live/instruction/live-system-instruction.ts:134:31)
+      at buildTemporalJourneyContextSection (src/orb/live/instruction/live-system-instruction.ts:272:20)
+      at buildLiveSystemInstruction (src/orb/live/instruction/live-system-instruction.ts:933:18)
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7788:45)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@vet180","isAnonymous":false,"totalBytesBefore":37547,"totalBytesAfter":34180,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":33084,"bootstrap":3431,"override":1032}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"en","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commu
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=495
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=amy connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.warn
+    [VTID-04445] Gemini voice "Aoede" is not male — persona "devon" speaks with "Charon"
+
+      109 |   if (!required || isVoiceGender('gemini', voice, required)) return voice;
+      110 |   const replacement = required === 'male' ? VERTEX_SPECIALIST_FALLBACK_VOICE : VERTEX_VITANA_FALLBACK_VOICE;
+    > 111 |   console.warn(
+          |           ^
+      112 |     `[VTID-04445] Gemini voice "${voice}" is not ${required} — persona "${persona || 'vitana'}" speaks with "${replacement}"`,
+      113 |   );
+      114 |   return replacement;
+
+      at enforceVertexVoiceGender (src/orb/live/upstream/vertex-serbian-bridge.ts:111:11)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8678:47)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=devon voice=Charon
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.log
+    [voice.instruction.budget_ok] session=live-vtid-04542 bytes=1973 budget=30720
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8018:17)
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"en","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Charon"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"You are Devon, the Vitanaland technical support specialist (fixture prompt). Collect the details of the member's problem and keep the ticket updated.\n\n--- FORCED FIRST UTTERANCE ---\nWhen the upstream session opens, your VERY FIRST spoken sentence must be exactly:\
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=0
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=matthew connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.log
+    [voice.instruction.budget_ok] session=live-vtid-04542 bytes=32886 budget=30720
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8018:17)
+
+  console.log
+    [voice.tool_catalog.budget_ok] session=live-vtid-04542 declarations=134 bytes=45493 budget=65536
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8152:19)
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=134 hasNavigateTool=false toolNames=[get_current_screen,navigate,search_knowledge,end_conversation,admin_briefing,admin_kpi_snapshot,admin_insight_detail,admin_approve,admin_reject,admin_snooze,admin_history,admin_health_check,admin_pause_autopilot,admin_lookup_user,admin_list_users,admin_get_user_detail,admin_roles_summary,admin_grant_role,admin_revoke_role,admin_set_trust_tier,admin_get_at_risk_members,admin_list_moderation_queue,admin_get_moderation_item,admin_moderation_stats,admin_approve_content,admin_reject_content,admin_flag_content,admin_list_reports,admin_get_report,admin_marketplace_overview,admin_list_merchants,admin_update_merchant,admin_list_products,admin_update_product,admin_bulk_product_action,admin_get_feed_curation,admin_update_feed_curation,admin_list_geo_policies,admin_update_geo_policy,admin_trigger_source_sync,admin_get_ingestion_coverage,admin_compose_broadcast,admin_send_broadcast,admin_list_broadcasts,admin_notification_pref_stats,admin_create_notification_category,admin_update_notification_category,admin_test_notification_category,admin_governance_status,admin_list_governance_rules,admin_list_violations,admin_list_proposals,admin_create_proposal,admin_update_proposal_status,admin_get_control_key,admin_set_control_key,admin_list_feedback_tickets,admin_get_feedback_ticket,admin_feedback_kpis,admin_list_handoffs,admin_act_on_ticket,admin_list_tenants,admin_get_tenant,admin_update_tenant_profile,admin_get_feature_flags,admin_set_feature_flag,admin_update_branding,admin_list_tenant_integrations,admin_list_signups,admin_get_signup_stats,admin_list_signup_attempts,admin_repair_signup,admin_create_invitation,admin_list_invitations,admin_revoke_invitation,admin_list_meetups,admin_delete_meetup,admin_list_groups,admin_list_live_rooms,admin_list_creators,admin_list_memberships,admin_community_stats,admin_activity_feed,admin_credit_wallet,admin_debit_wallet,admin_get_founding_status,admin_get_monetization_config,admin_run_monetization_detect,admin_kb_search,admin_kb_list_docs,admin_kb_create_doc,admin_kb_update_doc,admin_kb_delete_doc,admin_kb_reindex,admin_kb_baseline_optout,admin_system_kb_update,admin_get_assistant_config,admin_set_assistant_config,admin_list_assistant_speeches,admin_set_assistant_speech,admin_get_awareness_config,admin_set_awareness_config,admin_bulk_set_awareness,admin_get_autopilot_settings,admin_update_autopilot_settings,admin_list_autopilot_bindings,admin_create_autopilot_binding,admin_delete_autopilot_binding,admin_list_autopilot_runs,admin_autopilot_run_stats,admin_update_autopilot_wave,admin_analytics_summary,admin_assistant_analytics,admin_journey_analytics,admin_feature_analytics,admin_interest_analytics,admin_intent_engine_stats,admin_close_intent,admin_recompute_intent,admin_resolve_dispute,admin_archive_intent,admin_list_specialists,admin_get_specialist,admin_create_specialist,admin_update_specialist,admin_rollback_specialist,admin_set_specialist_tools,admin_set_specialist_kb,admin_set_specialist_status,admin_test_specialist_connection,admin_audit_actions_log,admin_audit_access_log,admin_run_memory_consolidator,admin_run_embeddings_backfill]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: ADMIN\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are admin.\"
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=31
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=amy connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@dev1","isAnonymous":false,"totalBytesBefore":31055,"totalBytesAfter":28181,"budget":30720,"stillOverBudget":false,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":28117,"bootstrap":2938}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [voice.tool_catalog.budget_ok] session=live-vtid-04542 declarations=153 bytes=53279 budget=65536
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8152:19)
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=153 hasNavigateTool=false toolNames=[get_current_screen,navigate,search_memory,search_knowledge,end_conversation,dev_list_vtids,dev_get_vtid_status,dev_list_pending_approvals,dev_count_approvals,dev_approve_pr,dev_reject_pr,dev_list_voice_sessions,dev_list_routines,dev_get_routine_detail,dev_list_active_healing,dev_get_autonomy_pulse,dev_list_agents,dev_discover_tasks,dev_get_vtid_projection,dev_get_allocator_status,dev_query_oasis_events,dev_list_work_orders,dev_get_work_order,dev_evaluate_governance,dev_governance_status,dev_list_governance_rules,dev_get_governance_rule,dev_list_violations,dev_list_enforcements,dev_governance_feed,dev_list_proposals,dev_create_proposal,dev_update_proposal,dev_get_control,dev_set_control,dev_get_control_history,dev_create_pr,dev_get_pr_status,dev_get_pr_checks,dev_list_open_prs,dev_merge_pr,dev_safe_merge,dev_revert_pr,dev_trigger_workflow,dev_list_workflow_runs,dev_get_run_jobs,dev_get_merge_lock,dev_release_merge_lock,dev_cicd_health,dev_approvals_feed,dev_deploy_service,dev_publish_to_prod,dev_list_revisions,dev_list_deployments,dev_deployment_health,dev_promote_canary,dev_abort_canary,dev_revert_deploy,dev_revert_both,dev_canary_status,dev_staging_status,dev_compare_staging_prod,dev_release_feed,dev_build_info,dev_service_health,dev_error_rate,dev_latency_summary,dev_telemetry_snapshot,dev_recent_events,dev_agent_trace,dev_supervisor_summary,dev_get_session_turns,dev_get_session_diagnostics,dev_conversation_decisions,dev_tool_failures,dev_tool_health,dev_greeting_decisions,dev_get_agent_detail,dev_list_workers,dev_orchestrator_stats,dev_list_pending_worker_tasks,dev_release_claim,dev_list_subagents,dev_list_worker_skills,dev_cleanup_stale_claims,dev_orchestrator_health,dev_route_to_subagent,dev_autopilot_loop_status,dev_start_autopilot_loop,dev_stop_autopilot_loop,dev_autopilot_loop_history,dev_reset_loop_cursor,dev_controller_status,dev_list_controller_runs,dev_get_controller_run,dev_validate_task,dev_list_pending_plans,dev_get_task_spec,dev_autopilot_pipeline_health,dev_list_scanners,dev_list_impact_rules,dev_get_auto_approve_config,dev_list_scan_runs,dev_get_scan_run,dev_findings_queue,dev_get_finding,dev_generate_finding_plan,dev_reject_finding,dev_snooze_finding,dev_approve_auto_execute,dev_cancel_execution,dev_list_executions,dev_get_execution_lineage,dev_report_incident,dev_healing_config,dev_set_healing_mode,dev_healing_kill_switch,dev_healing_history,dev_healing_metrics,dev_approve_heal,dev_reject_heal,dev_verify_heal,dev_rollback_heal,dev_list_quarantine,dev_release_quarantine,dev_shadow_comparison,dev_run_test_suite,dev_list_test_suites,dev_list_test_runs,dev_get_test_run,dev_run_e2e,dev_orb_monitor_status,dev_trigger_orb_monitor,dev_list_test_contracts,dev_run_orb_selfcheck,dev_voice_lab_probe,dev_run_staging_migration,dev_run_prod_migration,dev_migration_status,dev_run_backfill,dev_list_dev_users,dev_grant_access,dev_revoke_access,dev_mint_token,dev_open_hub_panel,dev_run_simulator,dev_journey_context,dev_voice_catalog_stats,dev_get_voice_tool_detail,dev_system_briefing,operator_delegate,get_delegation_result,cancel_delegation]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: DEVELOPER\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are devel
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=0
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=amy connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Kore
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@guardrail1","isAnonymous":false,"totalBytesBefore":35524,"totalBytesAfter":32097,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":29366,"bootstrap":3491,"override":2667}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"de","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Kore"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commun
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=553
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=tina connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=cascaded requested=nova_sonic reason=cascaded_language_rescue livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.ru" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8676:96)
+      at src/routes/orb-live.ts:8736:35
+
+  console.warn
+    [voice-fallback] live_api: lang="ru" using "en" voice "Aoede" — native voice not yet shipped for "ru"
+
+      67 |   loggedFallbacks.add(tag);
+      68 |   // eslint-disable-next-line no-console
+    > 69 |   console.warn(
+         |           ^
+      70 |     `[voice-fallback] live_api: lang="${lang}" using "${cfg.fallback_lang}" voice "${cfg.voice_name}" — native voice not yet shipped for "${lang}"`,
+      71 |   );
+      72 | }
+
+      at logFallbackOnce (src/orb/live/voice/live-api-voice.ts:69:11)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:82:3)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8676:96)
+      at src/routes/orb-live.ts:8736:35
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@guardrail1","isAnonymous":false,"totalBytesBefore":35890,"totalBytesAfter":32991,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":32927,"bootstrap":2963}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8736:35
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=293 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,set_capability_preference,read_email,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,find_contact,consult_external_ai,get_day_summary,get_life_compass,get_social_context,view_messages,list_followers,list_following,recent_conversations,narrate_guided_session,get_vitana_index,get_index_improvement_suggestions,create_index_improvement_plan,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,ask_pillar_agent,explain_feature,resolve_recipient,send_chat_message,activate_recommendation,confirm_pending_action,start_autopilot_slot,get_autopilot_recommendations,activate_autopilot_recommendations,share_link,find_match,post_intent,view_intent_matches,list_my_intents,respond_to_match,mark_intent_fulfilled,create_community_post,share_intent_post,navigate_to_screen,scan_existing_matches,get_matchmaker_result,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,get_highest_vitana_index,get_top_in_pillar,get_first_member,get_newest_member,get_most_followed,ask_who_is,list_diary_entries,get_diary_streak,get_memory_timeline,recall_memory_about,get_memory_garden_summary,forget_memory,reschedule_event,cancel_event,complete_event,find_free_slot,get_event_details,check_calendar_conflicts,snooze_reminder,update_reminder,acknowledge_reminder,complete_reminder,list_missed_reminders,set_alarm,list_alarms,delete_alarm,start_timer,start_pomodoro,list_active_timers,get_world_time,list_my_groups,create_group,join_group,invite_to_group,accept_invitation,decline_invitation,rsvp_event,cancel_rsvp,list_upcoming_meetups,join_live_room,start_conversation,list_conversations,mark_conversation_read,mute_conversation,archive_conversation,update_account_visibility,update_privacy_field,block_user,unblock_user,submit_bug_report,submit_support_ticket,submit_marketplace_dispute,submit_account_issue,list_my_tickets,set_language,set_theme,set_voice_preferences,list_connected_apps,disconnect_app,global_search,browse_news_feed,snooze_recommendation,dismiss_recommendation,explain_recommendation,update_intent,delete_intent,browse_intent_board,dispute_match,find_perfect_match,get_emotional_state,get_situational_awareness,get_availability,get_environmental_context,get_life_stage_context,follow_member,unfollow_member,get_notifications,mark_notifications_read,get_wallet_balance,update_profile,play_podcast,like_post,comment_on_post,search_marketplace,get_product_details,browse_supplements,add_supplement_to_regimen,list_my_supplements,remove_supplement_from_regimen,browse_wellness_services,get_provider_profile,browse_doctors_coaches,get_coach_compatibility,browse_deals_offers,apply_discount_code,get_ai_product_picks,list_my_orders,get_order_status,reorder_last_order,add_to_cart,view_cart,update_cart_item,remove_from_cart,clear_cart,set_shopping_budget,review_agent_purchase_proposals,start_checkout,get_wallet_summary,list_wallet_transactions,send_funds,request_payment,exchange_currency,get_exchange_rate,set_display_currency,get_referral_earnings,get_commissions_summary,get_pending_rewards,list_payment_requests,send_group_chat_message,reply_to_message,react_to_message,create_group_chat,add_group_chat_member,leave_group_chat,send_calendar_invite_in_chat,start_voice_call,start_video_call,create_event,update_my_event,cancel_my_event,create_meetup,update_my_meetup,invite_to_event,buy_event_ticket,list_my_event_tickets,share_event,get_event_attendees,log_meal,log_vitals,log_mood,log_biomarker,get_health_trends,get_health_streaks,order_lab_test,get_lab_results,generate_health_plan,list_my_health_plans,get_health_plan_progress,list_my_conditions,get_health_education,get_next_best_action,connect_health_device,get_health_test_status,get_health_test_result,get_my_subscription,compare_subscription_plans,upgrade_subscription,cancel_subscription,add_voice_minutes,redeem_subscription_code,get_billing_history,get_referral_link,invite_friend,get_referral_status,list_live_rooms_now,get_live_room_details,go_live,create_live_room,schedule_live_session,purchase_room_access,end_live_session,list_open_asks,edit_my_post,delete_my_post,set_goal,list_my_goals,update_goal,get_goal_progress,get_journey_checkpoints,create_service,edit_memory,reinforce_memory,set_memory_permissions,get_what_vitana_knows,add_diary_photo,get_profile_completeness,share_my_profile,get_my_milestones,view_member_profile,update_service_offerings,start_marketplace_discover_assistant,build_personalized_shopping_guide,refine_marketplace_recommendations,explain_marketplace_recommendation,complete_marketplace_selection,capture_shopping_goal,clarify_shopping_need,classify_marketplace_intent,save_marketplace_preferences,get_marketplace_preferences,reset_marketplace_preferences,get_marketplace_context,dismiss_marketplace_recommendation,discover_marketplace_options,search_products_by_need,search_services_by_need,search_marketplace_by_values,search_marketplace_alternatives,generate_top_marketplace_picks,recommend_marketplace_path,recommend_lower_cost_option,explain_why_recommended,summarize_product_for_user,get_key_product_facts,compare_marketplace_options,shortlist_marketplace_options,view_marketplace_shortlist,remove_from_marketplace_shortlist,check_product_suitability,check_cart_duplication,review_shopping_budget,confirm_marketplace_selection,add_selected_option_to_cart,review_cart_suitability,explain_cart_item]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commu
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=29
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [VTID-03683] cascaded pipeline open for session live-vtid-04542: lang=ru connect_ms=0 reason=cascaded_language_rescue
+
+      at src/routes/orb-live.ts:8797:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=vertex requested=nova_sonic reason=vertex_serbian_bridge livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8571:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.sr" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8676:96)
+      at MockFakeVertexLiveClient.connect (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:151:24)
+      at src/routes/orb-live.ts:9928:7
+
+  console.warn
+    [voice-fallback] live_api: lang="sr" using "en" voice "Aoede" — native voice not yet shipped for "sr"
+
+      67 |   loggedFallbacks.add(tag);
+      68 |   // eslint-disable-next-line no-console
+    > 69 |   console.warn(
+         |           ^
+      70 |     `[voice-fallback] live_api: lang="${lang}" using "${cfg.fallback_lang}" voice "${cfg.voice_name}" — native voice not yet shipped for "${lang}"`,
+      71 |   );
+      72 | }
+
+      at logFallbackOnce (src/orb/live/voice/live-api-voice.ts:69:11)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:82:3)
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8676:96)
+      at MockFakeVertexLiveClient.connect (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:151:24)
+      at src/routes/orb-live.ts:9928:7
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@guardrail1","isAnonymous":false,"totalBytesBefore":35902,"totalBytesAfter":32993,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":32929,"bootstrap":2973}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8685:28)
+      at MockFakeVertexLiveClient.connect (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:151:24)
+      at src/routes/orb-live.ts:9928:7
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"vertex","lang":"sr","budget":49152,"declarationsBefore":293,"declarationsAfter":32,"bytesBefore":228433,"bytesAfter":49130,"droppedCount":261}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8685:28)
+      at MockFakeVertexLiveClient.connect (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:151:24)
+      at src/routes/orb-live.ts:9928:7
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=32 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,get_recommendations,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,narrate_guided_session,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,mark_intent_fulfilled,navigate_to_screen,log_water,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commu
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=31
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at Object.buildOrbVertexSetupEnvelope [as customSetupMessage] (src/routes/orb-live.ts:8696:15)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.silence_keepalive.interval_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getSilenceKeepaliveIntervalMs (src/orb/upstream/constants.ts:127:30)
+      at armUpstreamKeepalive (src/orb/live/session/upstream-keepalive.ts:132:61)
+      at src/routes/orb-live.ts:9973:25
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@vet180","isAnonymous":false,"totalBytesBefore":37547,"totalBytesAfter":34180,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":33084,"bootstrap":3431,"override":1032}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"en","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commu
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=495
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=amy connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.log
+    [VTID-01219] connectToLiveAPI called for session live-vtid-04542
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8227:11)
+
+  console.log
+    [VTID-02976] upstream provider selected: provider=nova_sonic requested=nova_sonic reason=nova_forced_vertex_unavailable livekit_ready=false canary=false
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8360:11)
+
+  console.log
+    [VTID-01219] Using model: gemini-live-2.5-flash-native-audio
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8463:11)
+
+  console.log
+    [VTID-01219] Project: lovable-vitana-vers1, Location: us-central1
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8464:11)
+
+  console.log
+    [BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: vertex (OAuth/ADC)
+
+      at connectToLiveAPI (src/routes/orb-live.ts:8465:11)
+
+  console.log
+    [VTID-01219] Live API WebSocket connected for session live-vtid-04542
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8571:15)
+
+  console.log
+    [VTID-02047] Setup voice for session live-vtid-04542: persona=vitana voice=Aoede
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8679:15)
+
+  console.warn
+    [voice.instruction.budget_overflow] {"sessionId":"live-vtid-04542","vitana_id":"@vet180","isAnonymous":false,"totalBytesBefore":37547,"totalBytesAfter":34180,"budget":30720,"stillOverBudget":true,"trimmedSections":["bootstrap"],"sectionBytes":{"scaffold":33084,"bootstrap":3431,"override":1032}}
+
+      7997 |         // Fail loudly + observably: structured warning with byte accounting
+      7998 |         // and per-section sizes so the R0 overflow is greppable in logs.
+    > 7999 |         console.warn(
+           |                 ^
+      8000 |           '[voice.instruction.budget_overflow]',
+      8001 |           JSON.stringify({
+      8002 |             sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:7999:17)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.warn
+    [voice.tool_catalog.budget_trimmed] {"sessionId":"live-vtid-04542","provider":"nova_sonic","lang":"en","budget":65536,"declarationsBefore":293,"declarationsAfter":43,"bytesBefore":228433,"bytesAfter":65499,"droppedCount":250}
+
+      8112 |         if (toolResult.trimmed) {
+      8113 |           (setupMessage.setup as any).tools = toolResult.tools;
+    > 8114 |           console.warn(
+           |                   ^
+      8115 |             '[voice.tool_catalog.budget_trimmed]',
+      8116 |             JSON.stringify({
+      8117 |               sessionId: session.sessionId,
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8114:19)
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8685:28)
+      at src/routes/orb-live.ts:8996:29
+
+  console.log
+    [VTID-NAV-DIAG] Session live-vtid-04542: mode=authenticated isAnonymous=false hasIdentity=true toolCount=43 hasNavigateTool=true toolNames=[get_current_screen,navigate,search_memory,search_knowledge,search_calendar,create_calendar_event,search_events,search_community,find_community_member,find_perfect_product,find_perfect_practitioner,get_recommendations,play_music,get_schedule,add_to_calendar,switch_persona,report_to_specialist,append_to_ticket,get_day_summary,view_messages,list_following,narrate_guided_session,get_vitana_index,save_diary_entry,record_journey_answer,set_reminder,find_reminders,delete_reminder,explain_feature,resolve_recipient,send_chat_message,navigate_to_screen,log_water,log_sleep,log_exercise,log_meditation,get_pillar_subscores,teacher_event,end_teaching_session,end_guided_topic_teaching,end_conversation,submit_bug_report,submit_support_ticket]
+
+      at assembleOrbSetupEnvelope (src/routes/orb-live.ts:8173:11)
+
+  console.log
+    [VTID-01219] Sending setup message: {"setup":{"model":"projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio","generation_config":{"response_modalities":["AUDIO"],"speech_config":{"voice_config":{"prebuilt_voice_config":{"voice_name":"Aoede"}}}},"realtime_input_config":{"automatic_activity_detection":{"silence_duration_ms":1200}},"output_audio_transcription":{},"input_audio_transcription":{},"session_resumption":{},"context_window_compression":{"sliding_window":{}},"system_instruction":{"parts":[{"text":"=== AUTHORITATIVE USER ROLE ===\nThe user's role RIGHT NOW is: COMMUNITY\nThis is the definitive source of truth for this session. If the user asks\nabout their role (\"what is my role?\", \"can you see my role?\", \"who am I?\"),\nanswer plainly: \"Yes, you are commu
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8693:15)
+
+  console.log
+    [VTID-01224] Setup includes: tools=3, contextChars=495
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8694:15)
+
+  console.log
+    [VTID-RESPONSE-DELAY] VAD silence_duration_ms=1200
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8695:15)
+
+  console.log
+    [VTID-01219] Setup envelope built for session live-vtid-04542 — VertexLiveClient will send
+
+      at buildOrbVertexSetupEnvelope (src/routes/orb-live.ts:8696:15)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session live-vtid-04542: model=amazon.nova-2-sonic-v1:0 region=eu-north-1 voice=amy connect_ms=0 reused_warm_start=false
+
+      at src/routes/orb-live.ts:9819:17
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.post_turn.cooldown_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getPostTurnCooldownMs (src/orb/upstream/constants.ts:120:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2268:143)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1162:27
+      at withTrackedTimers (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:279:18)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1161:58
+      at withRecordedFetchWrites (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1014:26)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1161:28
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session live-vtid-04542-turn — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2268:11)
+
+  console.log
+    [VTID-01219] Turn complete for session live-vtid-04542-turn (turn 1, isGreeting=true, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2339:11)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_model_turns" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getMaxConsecutiveModelTurns (src/orb/upstream/constants.ts:162:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2424:100)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1162:27
+      at withTrackedTimers (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:279:18)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1161:58
+      at withRecordedFetchWrites (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1014:26)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1161:28
+
+  console.log
+    [VTID-VOICE-INIT] Skipping memory write for greeting turn: "Guten Morgen Ana — schön, dass du da bist. Sollen wir mit deinem Schlaf weiterma..."
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2650:15)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session live-vtid-04542-turn: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2828:13)
+
+(node:21174) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session live-vtid-04542-turn — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2268:11)
+
+  console.log
+    [VTID-01219] Turn complete for session live-vtid-04542-turn (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2339:11)
+
+  console.log
+    [VTID-01225] Writing assistant turn to memory: "Das klingt anstrengend. Magst du, dass ich deinen Schlaf heute Abend im Blick behalte?..."
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2658:15)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session live-vtid-04542-turn: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2828:13)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session live-vtid-04542-turn — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2268:11)
+
+  console.log
+    [VTID-01219] Turn complete for session live-vtid-04542-turn (turn 2, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2339:11)
+
+  console.log
+    [VTID-01225] Writing assistant turn to memory: "Vitanaland is a longevity community — shall I show you around?..."
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2658:15)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session live-vtid-04542-turn: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2828:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:764:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'de' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:883:11)
+
+  console.log
+    [VTID-ANON] Session live-6936865c-2c6f-4fc8-bbef-6cc211192b3e: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:949:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Berlin, country=DE, time=Tuesday morning, 09:30, device=Desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:950:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: de (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1002:13)
+
+  console.log
+    [VTID-ANON] Anonymous session live-6936865c-2c6f-4fc8-bbef-6cc211192b3e — skipping memory, tools, lastSessionInfo. Context: city=Berlin
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1086:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.vad.silence_duration_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getVadSilenceDurationMs (src/orb/upstream/constants.ts:113:30)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1656:63)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1281:9
+      at withTrackedTimers (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:279:12)
+      at withRecordedFetchWrites (test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1014:20)
+      at test/orb/latency/vtid-04542-voice-payload-identity.test.ts:1280:22
+
+  console.log
+    [VTID-ORBC] Live session created: live-6936865c-2c6f-4fc8-bbef-6cc211192b3e (user=anonymous, tenant=none, lang=de, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2359:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:764:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'de' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:883:11)
+
+  console.log
+    [VTID-ANON] Session live-53fe490f-ced6-4d74-8782-7d1e0e4bba33: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=11111111-1111-4111-8111-111111111111, orbIdentity.user_id=11111111-1111-4111-8111-111111111111, bootstrapIdentity=11111111
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:949:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Berlin, country=DE, time=Tuesday morning, 09:30, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:950:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: de (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1002:13)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-53fe490f-ced6-4d74-8782-7d1e0e4bba33 user=11111111...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1125:13)
+
+  console.log
+    [ORB-BRAIN-CACHE] MISS 22222222-2222-4222-8222-222222222222|11111111-1111-4111-8111-111111111111|community|orb|Europe/Berlin — building
+
+      at buildBrainSystemInstructionCached (src/services/vitana-brain-cache.ts:150:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://localhost:54321/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=40&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.11111111-1111-4111-8111-111111111111&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:485:13)
+          at async Promise.all (index 5)
+
+  console.warn
+    [VTID-01180] listCommunityAutopilotRecommendations failed (non-fatal): rows is not iterable
+
+      1110 |     }));
+      1111 |   } catch (err: any) {
+    > 1112 |     console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+           |             ^
+      1113 |     return [];
+      1114 |   }
+      1115 | }
+
+      at listCommunityAutopilotRecommendations (src/routes/autopilot-recommendations.ts:1112:13)
+      at Object.buildAutopilotOfferBlock (src/routes/autopilot-recommendations.ts:1195:18)
+          at async Promise.all (index 5)
+
+  console.warn
+    [Calendar] Context fetch failed (non-fatal): events.filter is not a function
+
+      1036 |           };
+      1037 |         } catch (calErr: any) {
+    > 1038 |           console.warn(`[Calendar] Context fetch failed (non-fatal): ${calErr.message}`);
+           |                   ^
+      1039 |         }
+      1040 |       })()
+      1041 |     );
+
+      at src/services/context-pack-builder.ts:1038:19
+          at async Promise.all (index 4)
+      at buildContextPack (src/services/context-pack-builder.ts:1149:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:603:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day1_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:534:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:676:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:221:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:103:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:578:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day3_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:535:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:676:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:221:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:103:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:578:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day7_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:536:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:676:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:221:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:103:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:578:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day14_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:537:17)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:676:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:221:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:103:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:578:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day30plus_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:538:17)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:676:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:221:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:103:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:578:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.log
+    [VTID-04399] session live-53fe490f-ced6-4d74-8782-7d1e0e4bba33: no usable core snapshot (absent)
+
+      at src/orb/live/session/live-session-controller.ts:1154:19
+
+  console.log
+    [VTID-01216] relationship graph returned 0 connections (NETWORK block)
+
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:468:13)
+          at async Promise.all (index 2)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224-FIX] fetchDiaryHits: 0 diary entries found
+
+      at fetchDiaryHits (src/services/context-pack-builder.ts:415:13)
+          at async Promise.all (index 3)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-03156] Broker EPISODIC: 0 hits (0ms)
+
+      at fetchMemoryHits (src/services/context-pack-builder.ts:168:13)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [SOCIAL-MEMORY] context built in 0ms — intent=[general_social] follows=0/0 matches=0 posts=0 events=0 person=no degraded=[]
+
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:102:11)
+          at async Promise.allSettled (index 4)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01192] Fact retrieval failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      243 |
+      244 |     if (error) {
+    > 245 |       console.error(`[${VTID}] Fact retrieval failed:`, error.message);
+          |               ^
+      246 |       return { ok: false, facts: [], error: error.message };
+      247 |     }
+      248 |
+
+      at getCurrentFacts (src/services/memory-facts-service.ts:245:15)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:278:26)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1149:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:603:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [VTID-01952] identity-guardrail: app_users select error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      80 |
+      81 |     if (error) {
+    > 82 |       console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
+         |               ^
+      83 |       return '';
+      84 |     }
+      85 |     row = (data as unknown) as IdentityRow | null;
+
+      at buildIdentityGuardrailBlock (src/services/identity-guardrail-block.ts:82:15)
+          at async Promise.all (index 3)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.warn
+    [VTID-01216] Semantic search failed (non-fatal): embedding_failed
+
+      314 |       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+      315 |     } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+    > 316 |       console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
+          |               ^
+      317 |     }
+      318 |
+      319 |     // --- Tier 3: General facts (confidence + recency sorted) ---
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:316:15)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1149:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:603:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:359:108)
+
+  console.log
+    [REAL-LIFE-INVITE] user=11111111 lang=de activity=walk pillar=default
+
+      at Object.produce (src/services/assistant-continuation/providers/real-life-invite-provider.ts:98:15)
+          at async Promise.all (index 13)
+
+  console.log
+    [VTID-01216] structured facts: 0 identity core + 0 semantic + 0 general = 0 total
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:344:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01955] REDIS_URL not set — Tier 0 Redis disabled (legacy in-process buffer in use)
+
+      at getRedisClient (src/services/redis-client.ts:40:13)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [Guide:opener-mvp] no candidate available for user 11111111-1111-4111-8111-111111111111 (no Life Compass goal set)
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:232:11)
+          at async Promise.all (index 2)
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=c22fbb23-ed99-4625-a45c-ced5af5c42c7, source=voice_wake_brief, block_chars=1020)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:2115:15)
+
+  console.log
+    [MEMORY-ORCHESTRATOR] context built in 0ms — hits=0 facts=0 goals=0 prefs=0 dnr=0 degraded=[]
+
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:705:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [VITANA-BRAIN] System instruction built in 0ms (18946 chars, 0 memory hits, calendar=false, compass=on, guide=on, identity=off, profile=off)
+
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:456:11)
+
+  console.log
+    [wake-decision] {"tag":"wake_decision","transport":"vertex","session_id":"live-53fe490f-ced6-4d74-8782-7d1e0e4bba33","decision_id":"c22fbb23-ed99-4625-a45c-ced5af5c42c7","winner":{"provider_key":"new_day_return","kind":"wake_brief","source_kind":null,"dedupe_key":"new-day-return:2026-06-30","line_present":true,"line_chars":70},"suppression_reason":null,"providers":[{"key":"voice_wake_brief","status":"suppressed","reason":"no_grounded_line_grounded_or_silent","latency_ms":0},{"key":"contextual_next_action","status":"suppressed","reason":"all_sources_skipped","latency_ms":0},{"key":"feature_discovery_teacher","status":"skipped","reason":"no_teacher_inputs","latency_ms":0},{"key":"new_day_return","status":"returned","reason":null,"latency_ms":0},{"key":"first_time_welcome","status":"suppressed","reason":"no_user_journey_row","latency_ms":0},{"key":"goal_completion_inquiry","status":"suppressed","reason":"no_active_life_compass","latency_ms":0},{"key":"journey_guide","status":"returned","reason":null,"latency_ms":0},{"key":"guided_topic_narration","status":"skipped","reason":"no_topic_tapped","latency_ms":0},{"key":"login_briefing","status":"returned","reason":null,"latency_ms":0},{"key":"unread_messages_announce","status":"suppressed","reason":"no_unread_messages","latency_ms":0},{"key":"partner_health_result_ready","status":"suppressed","reason":"no_unsurfaced_result","latency_ms":0},{"key":"autopilot_slot_due","status":"suppressed","reason":"no_due_slot","latency_ms":0},{"key":"conversation_flow_v3","status":"suppressed","reason":"nothing_to_surface:greeting","latency_ms":0},{"key":"real_life_invite","status":"returned","reason":null,"latency_ms":0}],"turn1_blocks":{"wake_brief_override":true,"teacher_mode_content":false,"journey_greeting":false},"turn1_block_count":1,"turn1_collision":false,"first_name":{"present":true,"source":"email","len":9},"lang":"de","bucket":"today","is_reconnect":false,"timezone_present":true}
+
+      at logWakeDecisionSnapshot (src/orb/live/instruction/wake-decision-snapshot.ts:194:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-53fe490f-ced6-4d74-8782-7d1e0e4bba33 (user=11111111-1111-4111-8111-111111111111, tenant=22222222-2222-4222-8222-222222222222, lang=de, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2359:11)
+
+  console.log
+    [VITANA-BRAIN] ORB context built in 0ms (18946 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1176:19
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-53fe490f-ced6-4d74-8782-7d1e0e4bba33: 0ms, base chars=18946
+
+      at src/orb/live/session/live-session-controller.ts:1271:19
+
+  console.log
+    [VTID-04399] core snapshot written for session live-53fe490f-ced6-4d74-8782-7d1e0e4bba33 (absent)
+
+      at src/orb/live/session/live-session-controller.ts:1189:40
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-53fe490f-ced6-4d74-8782-7d1e0e4bba33 in 0ms (role=community, chars=18946)
+
+      at src/orb/live/session/live-session-controller.ts:1328:17
+
+PASS test/orb/latency/vtid-04542-voice-payload-identity.test.ts
+  VTID-04542 A — connect-time payload identity (real connectToLiveAPI)
+    ✓ anonymous-de (32 ms)
+    ✓ authenticated-community-de-first-day (41 ms)
+    ✓ authenticated-community-en-returning (58 ms)
+    ✓ devon-specialist-en (26 ms)
+    ✓ admin-surface-en (20 ms)
+    ✓ command-hub-developer-en (23 ms)
+    ✓ guided-topic-de (35 ms)
+    ✓ cascade-ru (32 ms)
+    ✓ vertex-serbian-bridge-sr (41 ms)
+    ✓ is deterministic — the same scenario twice yields byte-identical payloads (74 ms)
+  VTID-04542 B — greeting decision identity (computeGreetingDecision)
+    ✓ first_time_welcome (safe-fast) (3 ms)
+    ✓ conv_resume (3 ms)
+    ✓ newday_overview (safe-fast ladder) (2 ms)
+    ✓ newday_overview (normal ladder) (2 ms)
+    ✓ short-gap reconnect (legacy_default, bucket=reconnect) (1 ms)
+    ✓ silent reconnect (native resume)
+    ✓ guided topic (override_v2 guided) (1 ms)
+    ✓ support report (1 ms)
+    ✓ day_close (full) (1 ms)
+    ✓ day_close (reduced retry) (1 ms)
+    ✓ override_v2 (wake-brief line) (1 ms)
+    ✓ anonymous (legacy_default intro) (1 ms)
+  VTID-04542 C1 — per-turn persistence identity (handleTurnComplete)
+    ✓ greeting turn (first assistant turn, no user speech) (39 ms)
+    ✓ regular turn (user + assistant, authenticated) (7 ms)
+    ✓ regular turn (anonymous, no identity) (6 ms)
+  VTID-04542 C2 — session-start persistence identity (handleLiveSessionStart)
+    ✓ anonymous de (211 ms)
+    ✓ authenticated community de (555 ms)
+  VTID-04542 — hash manifest
+    ✓ matches the committed quick-diff manifest (regenerated with -u) (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   56 passed, 56 total
+Time:        4.407 s
+Ran all test suites matching /test\/orb\/latency/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
