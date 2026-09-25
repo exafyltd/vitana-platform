@@ -8,6 +8,11 @@ import {
   normalizeDate,
   valuesMatch,
   resolveProfileKey,
+  createPendingConflictStore,
+  dropPlaceholderYear,
+  uuidOrNull,
+  findRelatedFact,
+  keyTokens,
   type RememberFactDeps,
 } from '../../src/services/memory/remember-fact-tool';
 
@@ -16,6 +21,7 @@ function deps(over: Partial<RememberFactDeps> = {}): RememberFactDeps & { write:
     readCurrentFact: jest.fn(async () => null),
     readProfileValue: jest.fn(async () => null),
     write: jest.fn(async () => ({ ok: true, fact_id: 'f1' })),
+    pendingConflicts: createPendingConflictStore(),
     ...over,
   } as any;
 }
@@ -98,12 +104,54 @@ describe('facts about the member and others', () => {
     expect(d.write).not.toHaveBeenCalled();
   });
 
-  it('after the member confirms, confirm_replace writes the new value', async () => {
+  it('after the conflict was reported and the member confirms, confirm_replace writes the new value', async () => {
     const d = deps({ readCurrentFact: jest.fn(async () => ({ fact_value: '4. November 1997', extracted_at: 'x' })) });
+    const first = await runRememberFact({ ...base, fact_key: 'spouse_birthday', fact_value: '4. November 1999' }, d);
+    expect(first.status).toBe('conflict');
     const r = await runRememberFact({ ...base, fact_key: 'spouse_birthday', fact_value: '4. November 1999', confirm_replace: true }, d);
     expect(r.status).toBe('saved');
     expect(r.replaced_value).toBe('4. November 1997');
     expect(d.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirm_replace without a reported conflict is still a conflict: the member is asked first', async () => {
+    const d = deps({ readCurrentFact: jest.fn(async () => ({ fact_value: '5. Mai', extracted_at: 'x' })) });
+    const r = await runRememberFact({ ...base, fact_key: 'brother_paul_birthday', fact_value: '7. Mai', about: 'other', confirm_replace: true }, d);
+    expect(r.status).toBe('conflict');
+    expect(d.write).not.toHaveBeenCalled();
+  });
+
+  it('a confirmation older than the window is not honoured', async () => {
+    let t = 0;
+    const d = deps({
+      readCurrentFact: jest.fn(async () => ({ fact_value: '5. Mai', extracted_at: 'x' })),
+      pendingConflicts: createPendingConflictStore(1000),
+      now: () => t,
+    });
+    await runRememberFact({ ...base, fact_key: 'k', fact_value: '7. Mai' }, d);
+    t = 5000;
+    const r = await runRememberFact({ ...base, fact_key: 'k', fact_value: '7. Mai', confirm_replace: true }, d);
+    expect(r.status).toBe('conflict');
+  });
+
+  it('a voice session id is never sent as the uuid thread id (live staging: every write failed)', async () => {
+    const d = deps();
+    await runRememberFact({ ...base, fact_key: 'pet_name', fact_value: 'Bello', thread_id: 'live-d6c34724-16d5-4463-8072-05f971577708' }, d);
+    expect(d.write.mock.calls[0][0].thread_id).toBeNull();
+    const uuid = 'd6c34724-16d5-4463-8072-05f971577708';
+    await runRememberFact({ ...base, fact_key: 'pet_type', fact_value: 'Hund', thread_id: uuid }, d);
+    expect(d.write.mock.calls[1][0].thread_id).toBe(uuid);
+    expect(uuidOrNull('live-x')).toBeNull();
+  });
+
+  it('a year the member never said (1900) is stored as day and month only', async () => {
+    expect(dropPlaceholderYear('1900-05-05')).toBe('--05-05');
+    expect(dropPlaceholderYear('1969-09-09')).toBe('1969-09-09');
+    const d = deps();
+    const r = await runRememberFact({ ...base, fact_key: 'brother_paul_birthday', fact_value: '1900-05-05', about: 'other' }, d);
+    expect(r.status).toBe('saved');
+    expect(d.write.mock.calls[0][0].fact_value).toBe('--05-05');
+    expect(valuesMatch('--05-05', '5. Mai')).toBe(true);
   });
 
   it('a failed write is reported as failed, never as saved', async () => {
@@ -111,5 +159,46 @@ describe('facts about the member and others', () => {
     const r = await runRememberFact({ ...base, fact_key: 'pet_name', fact_value: 'Bello' }, d);
     expect(r.status).toBe('failed');
     expect(r.instruction).toMatch(/do not say it was saved/);
+  });
+});
+
+describe('VTID-04588 — the same thing stored under another key', () => {
+  const stored = [
+    { fact_key: 'paul_birthday', fact_value: 'May 5', extracted_at: '2026-09-25T20:28:50Z' },
+    { fact_key: 'sibling_name', fact_value: 'Paul', extracted_at: '2026-09-25T20:28:50Z' },
+    { fact_key: 'spouse_birthday', fact_value: '4. November 1999', extracted_at: '2026-09-20T10:00:00Z' },
+  ];
+
+  it('maps German and English words to one set', () => {
+    expect([...keyTokens('Bruder Paul Geburtstag')].sort()).toEqual(['birthday', 'brother', 'paul']);
+    expect([...keyTokens('birthday_of_my_wife')].sort()).toEqual(['birthday', 'spouse']);
+  });
+
+  it('finds the related fact, and never on a single shared word', () => {
+    expect(findRelatedFact('bruder_paul_geburtstag', stored)?.fact_key).toBe('paul_birthday');
+    expect(findRelatedFact('geburtstag_meiner_frau', stored)?.fact_key).toBe('spouse_birthday');
+    expect(findRelatedFact('birthday', stored)).toBeNull();
+    expect(findRelatedFact('lena_birthday', stored)).toBeNull();
+  });
+
+  it('a different value under another key is a conflict on the stored key (the live staging case)', async () => {
+    const d = deps({ listCurrentFacts: jest.fn(async () => stored) });
+    const r = await runRememberFact({ ...base, fact_key: 'Bruder Paul Geburtstag', fact_value: '1900-05-07', about: 'other' }, d);
+    expect(r.status).toBe('conflict');
+    expect(r.fact_key).toBe('paul_birthday');
+    expect(r.stored_value).toBe('May 5');
+    expect(d.write).not.toHaveBeenCalled();
+
+    const ok = await runRememberFact({ ...base, fact_key: 'Bruder Paul Geburtstag', fact_value: '1900-05-07', about: 'other', confirm_replace: true }, d);
+    expect(ok.status).toBe('saved');
+    expect(d.write.mock.calls[0][0].fact_key).toBe('paul_birthday');
+    expect(d.write.mock.calls[0][0].fact_value).toBe('--05-07');
+  });
+
+  it('the same value under another key is already known', async () => {
+    const d = deps({ listCurrentFacts: jest.fn(async () => stored) });
+    const r = await runRememberFact({ ...base, fact_key: 'wife_birthday', fact_value: 'November 4, 1999', about: 'other' }, d);
+    expect(r.status).toBe('already_known');
+    expect(d.write).not.toHaveBeenCalled();
   });
 });
