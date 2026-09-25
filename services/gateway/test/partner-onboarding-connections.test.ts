@@ -117,13 +117,26 @@ function wire(over: Partial<World> = {}): World {
     if (c.op === 'insert') { w.partnerTenant = { ...c.args[0] }; return { data: null, error: null }; }
     return { data: w.partnerTenant ? { id: w.partnerTenant.id } : null, error: null };
   };
+  const orgOf = (m: any) => m.org ?? 'org-1';
+  const filter = (c: Call, key: string) => c.filters.find(([k]) => k === key)?.[1];
   handlers.integration_manifest = (c) => {
     if (c.op === 'insert') {
       w.manifests.push({ ...c.args[0], partner_tenant: { name: w.partnerTenant?.name, jurisdiction: w.partnerTenant?.jurisdiction } });
       return { data: null, error: null };
     }
-    return { data: w.manifests, error: null };
+    if (c.op === 'update') {
+      const m = w.manifests.find((x) => x.id === filter(c, 'id'));
+      if (m) Object.assign(m, c.args[0]);
+      return { data: null, error: null };
+    }
+    const org = filter(c, 'partner_tenant.partner_organization_id');
+    if (c.terminal === 'maybeSingle') {
+      const m = w.manifests.find((x) => x.id === filter(c, 'id') && orgOf(x) === org);
+      return { data: m ? { ...m } : null, error: null };
+    }
+    return { data: w.manifests.filter((x) => orgOf(x) === org), error: null };
   };
+  handlers.oasis_events = () => ({ data: null, error: null });
   handlers.integration_version = () => ({ data: null, error: null });
   handlers.schema_source = () => ({ data: null, error: null });
   handlers.partner_onboarding_steps = (c) => {
@@ -284,5 +297,69 @@ describe('GET /:orgId/connections', () => {
     const r = await request(app()).get(BASE).set('Authorization', 'Bearer owner-1');
     expect(r.body).toEqual({ ok: true, connections: [], mapping_step: null });
     expect(stepUpserts()).toHaveLength(0);
+  });
+});
+
+describe('per-connection routes, org-scoped (VTID-04527)', () => {
+  const CONN = { id: 'c-1', connector_id: 'shopify', provider_id: 'shopify_storefront', connection_type: 'api', risk_level: 'medium', status: 'certified', partner_tenant: { name: 'Acme', owner_user_id: 'owner-1' } };
+
+  it('any org admin (not only the owner) reads a connection of the org', async () => {
+    wire({ manifests: [{ ...CONN }] });
+    const r = await request(app()).get(`${BASE}/c-1`).set('Authorization', 'Bearer admin-2');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ id: 'c-1', name: 'Acme', state: 'certified' });
+    const q = calls.find((c) => c.table === 'integration_manifest' && c.terminal === 'maybeSingle')!;
+    expect(q.filters).toContainEqual(['id', 'c-1']);
+    expect(q.filters).toContainEqual(['partner_tenant.partner_organization_id', 'org-1']);
+  });
+
+  it("another org's connection id is a 404", async () => {
+    wire({ manifests: [{ ...CONN, id: 'c-9', org: 'org-2' }] });
+    const r = await request(app()).get(`${BASE}/c-9`).set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(404);
+  });
+
+  it('a non-admin is refused before any connection is read', async () => {
+    wire({ manifests: [{ ...CONN }], admin: false });
+    const r = await request(app()).post(`${BASE}/c-1/revoke`).set('Authorization', 'Bearer other-1');
+    expect(r.status).toBe(403);
+    expect(calls.some((c) => c.table === 'integration_manifest')).toBe(false);
+  });
+
+  it('revoke moves the connection, records the onboarding surface, and reconciles the mapping step', async () => {
+    const w = wire({ manifests: [{ ...CONN }], priorStep: 'done' });
+    const r = await request(app()).post(`${BASE}/c-1/revoke`).set('Authorization', 'Bearer admin-2');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toEqual({ id: 'c-1', state: 'revoked' });
+    expect(w.manifests[0].status).toBe('revoked');
+
+    const audit = calls.find((c) => c.table === 'oasis_events' && c.op === 'insert')!;
+    expect(audit.args[0]).toMatchObject({ type: 'vcaop.portal.connection.revoked', metadata: { surface: 'partner_onboarding', actor: 'admin-2' } });
+
+    expect(stepUpserts()[0].args[0]).toMatchObject({ step_key: 'mapping', status: 'in_progress' });
+    expect(emitOasisEventMock.mock.calls[0][0]).toMatchObject({
+      type: 'partner_org.mapping_step_changed',
+      payload: { from: 'done', to: 'in_progress', connection_count: 1 },
+    });
+  });
+
+  it('an illegal transition is a 409 and changes nothing', async () => {
+    const w = wire({ manifests: [{ ...CONN, status: 'revoked' }] });
+    const r = await request(app()).post(`${BASE}/c-1/resume`).set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(409);
+    expect(w.manifests[0].status).toBe('revoked');
+    expect(stepUpserts()).toHaveLength(0);
+  });
+
+  it('there is no activation route on this surface', async () => {
+    wire({ manifests: [{ ...CONN }] });
+    const r = await request(app()).post(`${BASE}/c-1/approve-activation`).set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(404);
+  });
+
+  it('guards run per route, so an unrelated path under an org stays a plain 404', async () => {
+    wire();
+    const r = await request(app()).get('/api/v1/partner-onboarding/org-1/nothing-here');
+    expect(r.status).toBe(404);
   });
 });

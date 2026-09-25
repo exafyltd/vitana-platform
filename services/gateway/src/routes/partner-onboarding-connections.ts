@@ -15,7 +15,8 @@
  * (partner_tenant.partner_organization_id, VTID-04471). Its owner_user_id is the
  * org owner, so the portal's existing per-connection endpoints (mapping
  * preview and decisions, sandbox tests, OAuth, pause/revoke) keep working for
- * the owner; wrapping those org-scoped for every org_admin is its own VTID.
+ * the owner; the same routes are also registered org-scoped below
+ * (VTID-04527), so every org_admin reaches them under /:orgId/connections/:id.
  *
  * The connector and provider default to the org's website detection
  * (business_details.platform_detection, VTID-04481) when the body names none.
@@ -32,14 +33,15 @@
  * the admin router, exactly as in the portal.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import { randomUUID } from 'crypto';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
 import { loadOrg, respondWithState, type Supa } from './partner-onboarding';
-import { insertConnection } from './vcaop-portal-my';
+import { insertConnection, registerConnectionRoutes } from './vcaop-portal-my';
+import * as vcaopRepo from '../services/vcaop-portal/vcaop-portal-repository';
 
 const router = Router();
 
@@ -150,6 +152,23 @@ function mappingEvent(orgId: string, step: { from: string | null; to: string | n
   });
 }
 
+/**
+ * Lists the org's connections and reconciles the mapping step, emitting
+ * `partner_org.mapping_step_changed` only on a real move.
+ */
+export async function refreshMappingStep(
+  s: Supa,
+  orgId: string,
+  callerId: string | null,
+): Promise<{ error: string | null; rows: ConnectionRow[]; to: string | null }> {
+  const listed = await listOrgConnections(s, orgId);
+  if (listed.error) return { error: listed.error, rows: [], to: null };
+  const step = await reconcileMappingStep(s, orgId, listed.rows, callerId);
+  if (step.error) return { error: step.error, rows: listed.rows, to: step.to };
+  if (step.changed) await mappingEvent(orgId, step, listed.rows.length, callerId);
+  return { error: null, rows: listed.rows, to: step.to };
+}
+
 // ==================== List ====================
 
 router.get('/:orgId/connections', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
@@ -163,13 +182,10 @@ router.get('/:orgId/connections', requireAuth, requireOrgAdmin(), async (req: Re
   if (error) return res.status(500).json({ ok: false, error });
   if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
 
-  const listed = await listOrgConnections(s, org.id);
-  if (listed.error) return res.status(500).json({ ok: false, error: listed.error });
-  const step = await reconcileMappingStep(s, org.id, listed.rows, callerId);
-  if (step.error) return res.status(500).json({ ok: false, error: step.error });
-  if (step.changed) await mappingEvent(org.id, step, listed.rows.length, callerId);
+  const refreshed = await refreshMappingStep(s, org.id, callerId);
+  if (refreshed.error) return res.status(500).json({ ok: false, error: refreshed.error });
 
-  return res.json({ ok: true, connections: listed.rows.map(publicConnection), mapping_step: step.to });
+  return res.json({ ok: true, connections: refreshed.rows.map(publicConnection), mapping_step: refreshed.to });
 });
 
 // ==================== Create ====================
@@ -280,15 +296,41 @@ router.post('/:orgId/connections', requireAuth, requireOrgAdmin(), async (req: R
     actor_id: callerId ?? undefined,
   });
 
-  const listed = await listOrgConnections(s, orgId);
-  if (listed.error) return res.status(500).json({ ok: false, error: listed.error });
-  const step = await reconcileMappingStep(s, orgId, listed.rows, callerId);
-  if (step.error) return res.status(500).json({ ok: false, error: step.error });
-  if (step.changed) await mappingEvent(orgId, step, listed.rows.length, callerId);
+  const refreshed = await refreshMappingStep(s, orgId, callerId);
+  if (refreshed.error) return res.status(500).json({ ok: false, error: refreshed.error });
 
   return respondWithState(res, s, orgId, 201, {
     connection: { id: created.manifestId, connector_id: connectorId, provider_id: providerId, state: created.initialState },
   });
 });
+
+// ==================== Per connection (VTID-04527) ====================
+
+/**
+ * The portal's per-connection routes (detail, mapping preview and decisions,
+ * sandbox tests, activation summary, Shopify/SMART-on-FHIR authorize, pause,
+ * resume, reauthorize, revoke), registered with an org scope: any org_admin of
+ * the org reaches any of the org's connections; another org's connection id is
+ * a 404, exactly like a foreign id on the portal. Mapping decisions record the
+ * calling admin as `decided_by`. Every state change reconciles the mapping
+ * step. Activation stays on the admin router.
+ */
+const perConnection = Router({ mergeParams: true });
+registerConnectionRoutes(perConnection, {
+  guards: [requireAuth as RequestHandler, requireOrgAdmin()],
+  fetchManifest: (supabase, req) => vcaopRepo.fetchOrgManifest(supabase, req.params.id, req.params.orgId),
+  surface: 'partner_onboarding',
+  onStateChange: async (supabase, req) => {
+    // The connection already moved; a failed reconciliation must not turn
+    // that into an error response. The next list or state change retries it.
+    try {
+      const r = await refreshMappingStep(supabase, req.params.orgId, getCallerId(req));
+      if (r.error) console.warn(`[partner-onboarding] mapping step reconcile failed for ${req.params.orgId}: ${r.error}`);
+    } catch (err) {
+      console.warn(`[partner-onboarding] mapping step reconcile threw for ${req.params.orgId}:`, err);
+    }
+  },
+});
+router.use('/:orgId', perConnection);
 
 export default router;

@@ -1,0 +1,4 @@
+src/routes/vcaop-portal-my.ts: no syntax diagnostics
+src/routes/partner-onboarding-connections.ts: no syntax diagnostics
+src/services/vcaop-portal/vcaop-portal-repository.ts: no syntax diagnostics
+test/partner-onboarding-connections.test.ts: no syntax diagnostics

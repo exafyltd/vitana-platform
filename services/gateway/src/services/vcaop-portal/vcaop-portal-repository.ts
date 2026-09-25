@@ -28,6 +28,8 @@ const MANIFEST_SELECT_BY_TENANT =
   'id,partner_tenant_id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(id,tenant_id,name,jurisdiction)';
 const MANIFEST_SELECT_BY_OWNER =
   'id,partner_tenant_id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(id,tenant_id,name,jurisdiction,owner_user_id)';
+const MANIFEST_SELECT_BY_ORG =
+  'id,partner_tenant_id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(id,tenant_id,name,jurisdiction,partner_organization_id)';
 const CONNECTIONS_LIST_SELECT_BY_TENANT =
   'id,connector_id,provider_id,connection_type,risk_level,status,created_at,updated_at, partner_tenant!inner(tenant_id,name,jurisdiction)';
 const CONNECTIONS_LIST_SELECT_BY_OWNER =
@@ -67,6 +69,17 @@ export async function fetchOwnedManifestByOwner(supabase: SupabaseClient, manife
     .select(MANIFEST_SELECT_BY_OWNER)
     .eq('id', manifestId)
     .eq('partner_tenant.owner_user_id', ownerUserId)
+    .maybeSingle();
+  return data ?? null;
+}
+
+/** Partner onboarding's scope (VTID-04527): partner_tenant.partner_organization_id === the org. Same array-vs-object typing note as above. */
+export async function fetchOrgManifest(supabase: SupabaseClient, manifestId: string, orgId: string): Promise<any> {
+  const { data } = await supabase
+    .from('integration_manifest')
+    .select(MANIFEST_SELECT_BY_ORG)
+    .eq('id', manifestId)
+    .eq('partner_tenant.partner_organization_id', orgId)
     .maybeSingle();
   return data ?? null;
 }
