@@ -47,3 +47,12 @@ TEST: services/gateway/test/orb/live/session/vtid-04592-end-conversation-backsto
 
 AC-7: On staging, a spoken "schluss" makes the session emit `conversation_ended` (reason stop_request_acknowledged or the tool's own) and the widget close.
 UI: staging voice session with the test account; oasis_events orb.live.diag stage=conversation_ended
+
+## Round 2 (after staging round 1 — see outputs/staging-round1.txt)
+
+- AC-8: an unambiguous request ("schalte dich ab", "du sollst gehen", a bare "Schluss.") closes even when Vitana refuses or does not say goodbye.
+  TEST: services/gateway/test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts
+- AC-9: "Ich wünsche dir einen schönen Tag" / "dass du die Unterhaltung beenden möchtest" count as agreeing to stop.
+  TEST: services/gateway/test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts
+- AC-10: "hör auf", "stop talking", "schluss" inside a sentence still need Vitana to agree.
+  TEST: services/gateway/test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts
