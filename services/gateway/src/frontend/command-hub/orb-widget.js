@@ -1438,10 +1438,24 @@
   // /live/session/start hits the gateway's 5-min bootstrap cache instead of
   // paying 400-800ms of Supabase fetches on the click-to-first-audio path.
   // Safe to call repeatedly (server cache absorbs it); anonymous = no-op.
-  function _prewarmBootstrap() {
+  // VTID-04548: the route + browser timezone the NEXT session start will send,
+  // so the gateway warms the brain-cache key that start will actually look up
+  // (role follows the route; the timezone is part of the key).
+  function _prewarmContext(route) {
+    var ctx = {};
+    var r = typeof route === 'string' && route ? route : _s.currentRoute;
+    if (r) ctx.current_route = r;
+    try {
+      var _tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (_tz) ctx.client_timezone = _tz;
+    } catch (e) { /* Intl unavailable — gateway falls back as at session start */ }
+    return ctx;
+  }
+
+  function _prewarmBootstrap(route) {
     if (!_cfg.token) return; // anonymous — server would no-op anyway
     var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
-    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: '{}' })
+    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: JSON.stringify(_prewarmContext(route)) })
       .then(function (r) { if (r.ok) console.log('[VTOrb] Bootstrap prewarm requested'); })
       .catch(function () { /* best-effort — never surfaces */ });
   }
@@ -1495,7 +1509,10 @@
         // reuse a socket with nothing behind it server-side yet, silently
         // falling to a cold connect while orphaning the in-flight prewarm.
         // Wait for the server's own 'prewarm_ready' ack below instead.
-        try { w.send(JSON.stringify({ type: 'prewarm' })); }
+        // VTID-04548: route + timezone so the brain-cache warm uses the next start's key.
+        var _pwMsg = _prewarmContext();
+        _pwMsg.type = 'prewarm';
+        try { w.send(JSON.stringify(_pwMsg)); }
         catch (e) { drop(); }
         return;
       }
@@ -6123,6 +6140,17 @@
     // useOrbWidget on every React Router route change so the next orb session
     // start payload includes fresh context for the Navigator service.
     // Safe to call as often as needed — does not trigger any I/O.
+    // VTID-04548: re-warm the gateway's brain cache for the route (and thus
+    // the role) the next session will start on — the host calls this after a
+    // role switch. Cache warm only: no session, nothing spoken, no Nova
+    // stream. Best-effort; never throws.
+    prewarm: function (opts) {
+      try {
+        var route = opts && typeof opts.current_route === 'string' ? opts.current_route : null;
+        _prewarmBootstrap(route);
+      } catch (e) { /* best-effort */ }
+    },
+
     updateContext: function (ctx) {
       if (!ctx || typeof ctx !== 'object') return;
       if (typeof ctx.current_route === 'string') {
