@@ -413,8 +413,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26236,
-  "instruction_sha256": "dca61e3b8ecab1095047fd0eab1e27b4d77e1fa7099b4de5babc97a67eadc026",
+  "instruction_bytes": 26498,
+  "instruction_sha256": "48350aa43e559084b3d45cf714710f7a6ed8cd4ccba16557dcfbccd27af4e67d",
   "provider": "nova_sonic",
   "tool_count": 44,
   "tools_bytes": 65548,
@@ -546,6 +546,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY LOOKUP: the member context in this prompt is a selection, not everything you know about them. When they mention a person, plan, conversation or detail you do not see here, call search_memory before saying you do not know it or asking them to repeat it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -792,8 +793,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 27676,
-  "instruction_sha256": "2b02609bd90f40b813275cfddcd2e792ab53032beb2cd3f8a43999d00642bf7d",
+  "instruction_bytes": 27938,
+  "instruction_sha256": "11328ddd2c7204cebfda0db5cfe6d64204101060e64c82023e1af8ce67274467",
   "provider": "nova_sonic",
   "tool_count": 44,
   "tools_bytes": 65548,
@@ -925,6 +926,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY LOOKUP: the member context in this prompt is a selection, not everything you know about them. When they mention a person, plan, conversation or detail you do not see here, call search_memory before saying you do not know it or asking them to repeat it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -1198,8 +1200,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26380,
-  "instruction_sha256": "e0ea57ad513a342b628c52dad65a7875cd4dca1df23dd235ad552c2693616dbf",
+  "instruction_bytes": 26642,
+  "instruction_sha256": "fdb8a93ca99a6ef6d2a9f9cb83a6e38bb923d0986d0d1cceae417c644f2ee43b",
   "provider": "cascaded",
   "tool_count": 294,
   "tools_bytes": 228482,
@@ -1338,6 +1340,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY LOOKUP: the member context in this prompt is a selection, not everything you know about them. When they mention a person, plan, conversation or detail you do not see here, call search_memory before saying you do not know it or asking them to repeat it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -2245,8 +2248,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 27647,
-  "instruction_sha256": "60256eae3dcfffe713ee784f021bbeb128cc40e067b5ccbd7c5afe5c9fce1c65",
+  "instruction_bytes": 27909,
+  "instruction_sha256": "2c3deb4d5292d5706faef0a0ee7e9234fd49ebd08bb3a63566e790cb8d69b2a6",
   "provider": "nova_sonic",
   "tool_count": 44,
   "tools_bytes": 65548,
@@ -2370,6 +2373,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY LOOKUP: the member context in this prompt is a selection, not everything you know about them. When they mention a person, plan, conversation or detail you do not see here, call search_memory before saying you do not know it or asking them to repeat it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -2663,8 +2667,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26396,
-  "instruction_sha256": "54b72e08556b92d82dac5603e09d7581ffe2ca892daeaa6f3e1930df8d958ec8",
+  "instruction_bytes": 26658,
+  "instruction_sha256": "2568d388facde6d63bb556f33f43b30737b1ba5535a2e7b3e6f7103e0b88b1df",
   "provider": "vertex",
   "tool_count": 33,
   "tools_bytes": 49179,
@@ -2803,6 +2807,7 @@ TOOLS:
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- MEMORY LOOKUP: the member context in this prompt is a selection, not everything you know about them. When they mention a person, plan, conversation or detail you do not see here, call search_memory before saying you do not know it or asking them to repeat it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
