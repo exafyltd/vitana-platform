@@ -24,6 +24,7 @@
  *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
+import { playbackLeadHandshakeFields } from '../playback-lead';
 import { handleNavResultMessage } from '../../../navigation/nav-ack';
 import { handleContextUpdateMessage } from './context-update';
 import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
@@ -2382,6 +2383,8 @@ export async function handleLiveSessionStart(
     ok: true,
     session_id: sessionId,
     conversation_id: resolvedConversationId,
+    // VTID-04552: mobile playback lead on the first burst only (omitted when off).
+    ...playbackLeadHandshakeFields(),
     meta: {
       lang,
       voice: deps.getVoiceForLang(lang),

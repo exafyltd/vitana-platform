@@ -1990,6 +1990,8 @@ import {
 } from '../orb/live/voice/nova-sonic-voice';
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
+// VTID-04552 (ORB latency J): server switch for the widget's mobile playback lead.
+import { playbackLeadHandshakeFields } from '../orb/live/playback-lead';
 import { consumePrewarmedNovaSession, registerPrewarmedNovaSession, describePrewarmMiss } from '../orb/live/prewarm/nova-session-prewarm';
 // VTID-04549 (ORB latency G): Devon pre-connect, behind ORB_DEVON_PRECONNECT_ENABLED.
 import {
@@ -16602,6 +16604,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
             // playback before this fix, on the exact commit that shipped
             // full duplex.
             full_duplex: isFullDuplexEnabled(),
+            // VTID-04552: mobile playback lead on the first burst only (omitted when off).
+            ...playbackLeadHandshakeFields(),
           })}\n\n`);
         } catch (err) {
           // SSE might be closed
@@ -18299,6 +18303,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // versa) would be a half-applied change with no single place to debug.
       // Absent/false ⇒ the widget keeps its pre-existing barge-in behavior.
       full_duplex: isFullDuplexEnabled(),
+            // VTID-04552: mobile playback lead on the first burst only (omitted when off).
+            ...playbackLeadHandshakeFields(),
       // VTID-01224: Include context bootstrap status
       context_bootstrap: {
         included: !!contextInstruction,
