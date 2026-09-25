@@ -30,9 +30,10 @@ describe('VTID-04517: staging pins registry navigation', () => {
     }
   });
 
-  it('leaves production alone', () => {
-    expect(prod).not.toContain('NAV_V2_ENABLED');
-    expect(prod).not.toContain('NAV_REGISTRY_URL');
+  it('points production at its own registry, never the staging one (VTID-04541)', () => {
+    expect(prod).toContain('{name:"NAV_V2_ENABLED", value:"true"}');
+    expect(prod).toContain('{name:"NAV_REGISTRY_URL", value:"https://vitanaland.com/nav-registry.json"}');
+    expect(prod).not.toContain('preview-aws.vitanaland.com/nav-registry.json');
   });
 
   it('is read with the exact-string check (a typo is off)', () => {
