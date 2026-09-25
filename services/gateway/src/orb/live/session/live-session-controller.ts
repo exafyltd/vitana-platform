@@ -225,6 +225,65 @@ export interface LiveSessionControllerDeps {
 
 let configuredDeps: LiveSessionControllerDeps | null = null;
 
+// =============================================================================
+// VTID-04543: per-session resolved-identity cache for /live/stream/send
+// =============================================================================
+//
+// The SSE transport POSTs every 64 ms mic frame to /live/stream/send, and each
+// POST used to await `resolveOrbIdentity(req)` — which, whenever the JWT has
+// no tenant (Cognito tokens never do), re-ran `lookupPrimaryTenant` (1-2
+// Supabase reads) ~15 times a second. The identity is used there ONLY for the
+// ownership-mismatch log line.
+//
+// The tenant resolved for the session owner at session start (or on the first
+// send) is remembered here, keyed by the session object (so it dies with the
+// session) and by user_id. A request from any OTHER user never reads this
+// entry: it goes through `resolveOrbIdentity` exactly as before, and the
+// mismatch is logged exactly as before. A WeakMap keeps the session object's
+// own fields untouched.
+const sendIdentityCache = new WeakMap<object, { userId: string; tenantId: string | null }>();
+
+/**
+ * Remember the tenant `resolveOrbIdentity` produced for the session owner.
+ * Only stored when the resolved identity belongs to the JWT user that owns
+ * the session.
+ */
+export function rememberSessionOwnerIdentity(
+  session: object,
+  jwtUserId: string | null | undefined,
+  resolved: SupabaseIdentity | null | undefined,
+): void {
+  if (!jwtUserId || !resolved || resolved.user_id !== jwtUserId) return;
+  sendIdentityCache.set(session, { userId: jwtUserId, tenantId: resolved.tenant_id || null });
+}
+
+/**
+ * The identity `resolveOrbIdentity(req)` would return, without re-reading the
+ * tenant for the session owner. Same shape as before:
+ *   - JWT carries a tenant → that identity, unchanged;
+ *   - owner with a remembered tenant → `{ ...req.identity, tenant_id }`;
+ *   - owner with a remembered "no tenant" → `req.identity`;
+ *   - anything else (another user, no JWT, dev sandbox) → the resolver.
+ */
+export async function resolveStreamSendIdentity(
+  req: AuthenticatedRequest,
+  session: GeminiLiveSession,
+  resolve: (req: AuthenticatedRequest) => Promise<SupabaseIdentity | null>,
+): Promise<SupabaseIdentity | null> {
+  const jwt = req.identity;
+  const ownerId = session.identity?.user_id;
+  if (jwt && jwt.user_id && !jwt.tenant_id && ownerId && jwt.user_id === ownerId) {
+    const cached = sendIdentityCache.get(session);
+    if (cached && cached.userId === jwt.user_id) {
+      return cached.tenantId ? { ...jwt, tenant_id: cached.tenantId } : jwt;
+    }
+    const resolved = await resolve(req);
+    rememberSessionOwnerIdentity(session, jwt.user_id, resolved);
+    return resolved;
+  }
+  return resolve(req);
+}
+
 /**
  * Wire orb-live.ts locals into the controller. MUST be called exactly
  * once at gateway module-load before any handler fires.
@@ -1589,6 +1648,8 @@ export async function handleLiveSessionStart(
 
   // Store session
   liveSessions.set(sessionId, session);
+  // VTID-04543: the owner's resolved tenant, reused by every /live/stream/send.
+  if (hasJwtIdentity) rememberSessionOwnerIdentity(session, req.identity?.user_id, orbIdentity);
 
   // DEV-COMHU-0513 (new-day): expose the fast greeting-facts pre-fetch on the
   // session so the greeting builder (sendGreetingPromptToLiveAPI) can do a
@@ -2565,9 +2626,6 @@ export async function handleLiveStreamSend(
   const body = req.body as LiveStreamMessage & { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
 
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
-  const identity = await deps.resolveOrbIdentity(req);
-
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
   }
@@ -2580,6 +2638,12 @@ export async function handleLiveStreamSend(
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
+
+  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
+  // VTID-04543: resolved once per session for the owner (see
+  // resolveStreamSendIdentity) instead of on every mic frame. It is only read
+  // by the ownership check below, which no early return above needed.
+  const identity = await resolveStreamSendIdentity(req, session, deps.resolveOrbIdentity);
 
   // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
   if (

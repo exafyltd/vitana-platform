@@ -45,6 +45,8 @@ import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/l
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+// VTID-04543: in-process cache for lookupPrimaryTenant.
+import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -615,7 +617,21 @@ function hasValidIdentity(req: AuthenticatedRequest): boolean {
  * The provision_platform_user() trigger creates user_tenants rows but does NOT
  * set active_tenant_id in auth.users.raw_app_meta_data, so many JWTs are missing it.
  */
+// VTID-04543: resolved tenants are cached in-process for 5 min (positives
+// only — a missing membership is re-read every time, as before). See
+// orb/live/session/primary-tenant-cache.ts for the invalidation note.
+const primaryTenantCache = createPrimaryTenantCache();
+
+/** Test-only: forget cached primary tenants. */
+export function __resetPrimaryTenantCacheForTests(): void {
+  primaryTenantCache.clear();
+}
+
 async function lookupPrimaryTenant(userId: string): Promise<string | null> {
+  return primaryTenantCache.resolve(userId, () => lookupPrimaryTenantUncached(userId));
+}
+
+async function lookupPrimaryTenantUncached(userId: string): Promise<string | null> {
   try {
     const supabase = getSupabase();
     if (!supabase) return null;
