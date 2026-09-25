@@ -1641,3 +1641,74 @@ describe('CA-5 community-scan endpoint', () => {
     expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'community_autopilot.scan.completed' }));
   });
 });
+
+// =============================================================================
+// VTID-04523: at most 3 open suggestions per role on every read surface
+// =============================================================================
+
+describe('VTID-04523 lineup cap (owner decision 3)', () => {
+  const openRows = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `open-${i + 1}`,
+      title: `Open ${i + 1}`,
+      status: 'new',
+      source_ref: `scan_t${i + 1}`,
+      action: { kind: 'open_screen', params: { route: '/diary' } },
+    }));
+
+  it('GET role=community: serves only the top 3 open rows, keeps activated rows, and reports no next page', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')),
+      [...openRows(6), { id: 'act-1', title: 'Doing it', status: 'activated', source_ref: 'onboarding_profile' }],
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=community&status=new,activated&limit=20');
+
+    expect(res.status).toBe(200);
+    const ids = res.body.recommendations.map((r: any) => r.id);
+    expect(ids).toEqual(['open-1', 'open-2', 'open-3', 'act-1']);
+    expect(res.body.has_more).toBe(false);
+  });
+
+  it('GET role=community: rows with a typed action survive the retired-source filter', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')),
+      [...openRows(1), { id: 'legacy-retired', title: 'Organize', status: 'new', source_ref: 'organize_meetup' }],
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=community');
+    expect(res.body.recommendations.map((r: any) => r.id)).toEqual(['open-1']);
+  });
+
+  it('GET role=developer: not capped (developer findings are a different surface)', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')),
+      Array.from({ length: 5 }, (_, i) => ({ id: `dev-${i}`, title: `Dev ${i}`, status: 'new', source_ref: null })),
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=developer');
+    expect(res.body.recommendations).toHaveLength(5);
+  });
+
+  it('GET /count role=community: the badge never exceeds 3', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')), [], { contentRange: '0-0/15' });
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations/count?role=community');
+    expect(res.body.count).toBe(3);
+  });
+
+  it('GET /count role=developer: unchanged', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')), [], { contentRange: '0-0/15' });
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations/count?role=developer');
+    expect(res.body.count).toBe(15);
+  });
+
+  it('voice list: lists the same top 3, including typed-action scan rows', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')), openRows(6));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { listCommunityAutopilotRecommendations } = require('../../src/routes/autopilot-recommendations');
+    const recs = await listCommunityAutopilotRecommendations(USER_ID, 10);
+    expect(recs.map((r: any) => r.id)).toEqual(['open-1', 'open-2', 'open-3']);
+  });
+});

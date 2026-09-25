@@ -17,6 +17,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { runScanners, type MemberSnapshot, type PillarKey, type ScanCandidate, type ScanCategory } from './scanners';
 import { rankCandidates, SCAN_ROW_TTL_HOURS, type HistoryRow, type RankResult } from './ranker';
+import { selectExcessOpenRows, type OpenRow } from './lineup-cap';
 
 export const SCAN_LOCAL_HOURS = new Set([7, 17]);
 export const SCAN_SOURCE_PREFIX = 'scan_';
@@ -44,7 +45,44 @@ export function isDue(now: Date, tz: string, hours: Set<number> = SCAN_LOCAL_HOU
 export interface ScanMemberResult {
   userId: string;
   inserted: number;
+  /** Open rows beyond the cap retired (auto_archived) before ranking. VTID-04523. */
+  retired: number;
   rank: RankResult;
+}
+
+/**
+ * VTID-04523: retire open community rows beyond MAX_OPEN_PER_ROLE (rows
+ * written before the cap existed). Runs before the member is ranked, so the
+ * freed slots are visible to the ranker. A dry run computes and writes nothing.
+ * The update is scoped to status 'new', so a row the member acted on in the
+ * meantime is never touched.
+ */
+export async function retireExcessOpenRows(
+  sb: SupabaseClient,
+  userId: string,
+  now: Date,
+  dryRun: boolean,
+): Promise<string[]> {
+  const open = await rows<OpenRow>(
+    sb.from('autopilot_recommendations')
+      .select('id,action,impact_score,created_at,expires_at')
+      .eq('user_id', userId).eq('status', 'new').eq('role_scope', 'community').limit(200),
+  );
+  const ids = selectExcessOpenRows(open, now);
+  if (dryRun || ids.length === 0) return ids;
+  try {
+    const { error } = await sb.from('autopilot_recommendations')
+      .update({ status: 'auto_archived', updated_at: now.toISOString() })
+      .in('id', ids).eq('status', 'new');
+    if (error) {
+      console.warn(`[community-scan] retire failed for ${userId.slice(0, 8)}: ${(error as any).message}`);
+      return [];
+    }
+  } catch (err) {
+    console.warn(`[community-scan] retire failed for ${userId.slice(0, 8)}: ${(err as Error).message}`);
+    return [];
+  }
+  return ids;
 }
 
 async function rows<T>(p: PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
@@ -177,20 +215,23 @@ export async function scanMember(
   userId: string,
   opts: { excluded: Set<string>; locale: string; now: Date; dryRun: boolean },
 ): Promise<ScanMemberResult> {
+  const retiredIds = await retireExcessOpenRows(sb, userId, opts.now, opts.dryRun);
+  // In a dry run this is what WOULD be retired (the summary carries dry_run).
+  const retired = retiredIds.length;
   const [snapshot, history] = await Promise.all([
     loadSnapshot(sb, userId, opts.excluded, opts.now),
     loadHistory(sb, userId, opts.now),
   ]);
   const rank = rankCandidates({ candidates: runScanners(snapshot), history, usedFeatures: snapshot.usedFeatures, now: opts.now });
-  if (opts.dryRun || rank.picks.length === 0) return { userId, inserted: 0, rank };
+  if (opts.dryRun || rank.picks.length === 0) return { userId, inserted: 0, retired, rank };
   const { tt } = await import('../../i18n/catalog');
   const payload = rank.picks.map((p) => buildRow(userId, p, opts.locale, opts.now, tt as any));
   const { error } = await sb.from('autopilot_recommendations').insert(payload);
   if (error) {
     console.warn(`[community-scan] insert failed for ${userId.slice(0, 8)}: ${(error as any).message}`);
-    return { userId, inserted: 0, rank };
+    return { userId, inserted: 0, retired, rank };
   }
-  return { userId, inserted: payload.length, rank };
+  return { userId, inserted: payload.length, retired, rank };
 }
 
 export interface ScanRunSummary {
@@ -200,7 +241,8 @@ export interface ScanRunSummary {
   members_due: number;
   members_scanned: number;
   rows_inserted: number;
-  results: Array<{ user_id: string; inserted: number; picks: string[]; dropped: number }>;
+  rows_retired: number;
+  results: Array<{ user_id: string; inserted: number; retired: number; picks: string[]; dropped: number }>;
 }
 
 /**
@@ -249,11 +291,13 @@ export async function runCommunityScan(
 
   const results: ScanRunSummary['results'] = [];
   let inserted = 0;
+  let retired = 0;
   for (const userId of batch) {
     try {
       const r = await scanMember(sb, userId, { excluded, locale: String(locales.get(userId) ?? 'de'), now, dryRun });
       inserted += r.inserted;
-      results.push({ user_id: userId, inserted: r.inserted, picks: r.rank.picks.map((p) => p.fingerprint), dropped: r.rank.dropped.length });
+      retired += r.retired;
+      results.push({ user_id: userId, inserted: r.inserted, retired: r.retired, picks: r.rank.picks.map((p) => p.fingerprint), dropped: r.rank.dropped.length });
     } catch (err) {
       console.warn(`[community-scan] member ${userId.slice(0, 8)} failed: ${(err as Error).message}`);
     }
@@ -265,6 +309,7 @@ export async function runCommunityScan(
     members_due: due.length,
     members_scanned: results.length,
     rows_inserted: inserted,
+    rows_retired: retired,
     results,
   };
 }
