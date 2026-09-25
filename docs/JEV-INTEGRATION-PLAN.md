@@ -367,6 +367,187 @@ Only if 2d holds up in production:
 3. The promotion bar for Phase 2 (proposed 95% shadow agreement).
 4. Whether Phase 3's `book_service` should target `services_catalog` providers only in v1 (recommended).
 5. Whether Phase 4 proceeds now or waits for VCAOP's own production blockers.
+6. The community cost policy in §8.5: per-user quotas, and community browser jobs off by default.
+7. Which Drive holds the back-office documents, and whether scanned PDFs are in scope (they need Amazon Textract OCR first).
+8. Whether to ask TypeSafe for an enterprise tier early. The 1,200 requests/min limit is reached before cost becomes a problem (§8.4).
+
+## 8. Use cases by role, and cost awareness
+
+Added 2026-09-25 at the owner's request. Every use case is listed by role, with who pays and how much.
+
+### 8.1 What actually costs money
+
+The owner's expectation, stated in their request:
+- Internal roles (developer, admin, back office, staff) may use Jev without limits, because it helps the team run the business.
+- Community use needs cost awareness.
+
+The numbers change where the risk actually sits:
+
+| Cost item | Unit price | Billed by | Notes |
+|---|---|---|---|
+| **Jev decision** | $0.042 per 1M **input** tokens; output free | **TypeSafe, a separate invoice** | Jev is **not on AWS Marketplace** (checked 2026-09-25), so it does **not** count against the AWS budget. A typical decision of ~1,000 tokens costs **$0.000042**; 1 million decisions cost **$42**. |
+| Bedrock Claude Sonnet 4.6 (what several classifiers use today) | $3 per 1M input + $15 per 1M output | AWS | The same ~1,000-token classification with ~50 output tokens costs **≈$0.0038**. That is **~90× the Jev price**. |
+| DeepSeek Flash (`operator` stage) | $0.15 / $0.60 per 1M | DeepSeek | ≈$0.00018 per call; Jev is still ~4× cheaper. |
+| Browser worker (Fargate, 2 vCPU / 4 GB, eu-central-1) | ≈$0.11 per hour (list price, to re-check) | AWS | A 5-minute job costs ≈$0.01 of compute. |
+| One browser job, end to end | ≈$0.03–0.05 | AWS + TypeSafe | ≈40 steps × 3k tokens of Jev (≈$0.005), plus a few Bedrock text calls (≈$0.02), plus compute (≈$0.01). |
+| Amazon Textract (scanned documents only) | ≈$1.50 per 1,000 pages (to re-check) | AWS | Only for image PDFs; Jev accepts text only. |
+
+**Three consequences:**
+1. **A single Jev decision is almost free.** The community cost risk is not Jev itself. It is **what a Jev decision triggers**: a browser job, a Bedrock call, a push notification or a paid API.
+2. **Wherever Jev replaces an existing Bedrock classification, it saves money.** Jev can lower total AI spend rather than add to it.
+3. **Before cost, the binding limit is the vendor rate limit**: 1,200 requests/min for the whole account during early access. Heavy community traffic could crowd out the team's internal decisions. That needs separate quotas, not a larger budget (§8.5).
+
+### 8.2 Internal roles: unlimited use, still metered
+
+These roles run the business. Per the owner's rule they have **no per-call limits**. Spend is still recorded (`decision.call.*` → the existing `orchestrator/budgets.ts` view), so a runaway loop shows up. It is never throttled for being a legitimate volume.
+
+#### Back office (`backoffice` role, BackOffice / ERP)
+
+| # | Use case | Jev question(s) | Volume and Jev cost | Benefit |
+|---|---|---|---|---|
+| B1 | **Find the ~200 relevant documents among 10,000 in a Drive** (the owner's example) | Per document, one call with parallel questions. Examples: `noul` "is this a signed partner contract?", `choice` document type, `score` relevance to the search brief. | 10k docs × ~4k tokens = 40M tokens ≈ **$1.70 per full sweep**. At 1,200 rpm ≈ 9 min. The same sweep on Sonnet ≈ $120+. | Hours of manual work become minutes. |
+| B2 | Classify incoming invoices and receipts to the chart of accounts | `choice` over accounts (≤255 per question; split larger charts) | 1,000 docs/month ≈ $0.10 | Faster bookkeeping. The ERP Draft card still asks a human to confirm. |
+| B3 | Contract clause checks | `noul`: auto-renewal? notice period > 3 months? exclusivity? liability cap present? | ≈$0.0002 per contract | Risk found before signing. |
+| B4 | CRM lead scoring and routing | `score` fit, `choice` owner or team | Negligible | The sales team works the right leads first. |
+| B5 | Pre-screen a command's risk before maker-checker | `choice` suggested tier | Negligible | The approver sees a hint. **The tier itself stays in `command-policy.ts` code.** |
+| B6 | Affiliate commission reconciliation | `noul` "does this payout match this order?" | Negligible | Revenue leakage found. |
+| B7 | Shared inbox routing (info@, partners@) | `choice` team, `noul` urgent | Negligible | Faster response. |
+| B8 | Partner portal and supplier form automation (Jev Ultrafast, Phase 4) | Jev picks the action on each step | ≈$0.03–0.05 per job | Repetitive portal work automated. Payment, signature and final submit stay human-gated. |
+
+B1 in practice:
+- Jev is a **classifier, not a search index**. The pipeline is: list the Drive → extract text (Textract only for scans) → optional cheap keyword or pgvector pre-filter (the existing `knowledge-hub`) → Jev per document → a ranked list → a human opens the hits.
+- Documents above ~32k tokens are chunked, and the best chunk score counts.
+- Reading Drive through the Google Workspace API is a data source, not a Google model. It does not conflict with the "no Google LLM routing" rule, but it needs its own OAuth scope and owner approval.
+
+#### Admin (tenant admins, exafy admins, Command Hub business side)
+
+| # | Use case | Jev question(s) | Benefit |
+|---|---|---|---|
+| A1 | Content moderation queue ranking (posts, comments, chat reports) | `score` severity, `choice` policy category | Worst items first. **Removal stays a human decision.** |
+| A2 | Campaign audience selection (which members fit a campaign) | `noul` per member on anonymised profile enums | Better targeting. Test and service accounts are excluded in code first (rule 45). |
+| A3 | Partner and merchant application screening | `score` completeness, `noul` category fit | Faster onboarding. KYB stays human (VCAOP human gate). |
+| A4 | Notification fan-out gate: "is this notification relevant for this segment?" | `noul` | Less notification fatigue, fewer unsubscribes. |
+| A5 | Tenant health summary buckets | `choice` status per signal | A quicker morning overview. |
+| A6 | Feedback and review theme clustering | `choice` over a fixed theme list | Product decisions from real member voice. |
+
+#### Staff and support (`staff`, Devon specialist)
+
+| # | Use case | Jev question(s) | Benefit |
+|---|---|---|---|
+| S1 | Ticket triage: bug / how-to / account / billing | `choice` | Replaces an LLM call in the intake path. |
+| S2 | Duplicate ticket detection | `noul` "same issue as ticket X?" against the top-N candidates | Fewer duplicate fixes. |
+| S3 | Priority and urgency | `score` | Critical tickets first. |
+| S4 | Hand-off readiness: "is the summary specific enough?" | `noul` (augments `isVagueSummary`) | Fewer vague tickets reaching Devon. |
+| S5 | Escalation and distress detection in a support conversation | `noul` | Safety. A human is always paged; Jev only raises the flag. |
+
+#### Developer and infra (Command Hub, Dev Autopilot, self-healing)
+
+| # | Use case | Jev question(s) | Benefit |
+|---|---|---|---|
+| D1 | OASIS error-event triage: which service, severity, known pattern? | `choice` service, `score` severity, `choice` over the known-incident catalog | Faster root-cause start. Cheaper than the current `triage` stage call. |
+| D2 | CI failure bucketing: test / type error / infra / dependency | `choice` | Better routing for the self-heal bridge. **"Flake" is never an accepted verdict on its own.** |
+| D3 | Dev Autopilot finding de-duplication across scanners | `noul` "same finding?" | Fewer duplicate executions (a known defect class). |
+| D4 | Operator Console tool-group routing | `choice` over tool groups | Smaller tool catalog per turn, so faster and cheaper turns. |
+| D5 | Spec quality gate before planning | `score` completeness per criterion | Fewer planner round trips. |
+| D6 | Voice session self-healing classifier (replaces `classifyVoiceSession`'s LLM call) | `choice` | Cheaper and faster. |
+| D7 | Alert de-duplication (Google Chat / SNS alerts) | `noul` | Less alert noise. |
+| D8 | PR risk hint for reviewers | `score` | Review focus. **Merge and approval gates stay in code.** |
+
+**Internal volume estimate** (generous): 200k decisions/month ≈ 200M tokens ≈ **$8.40/month** of Jev. B1 sweeps and B8 browser jobs are extra and small. A realistic internal Jev bill is **under $50/month**. Replacing D1/D6/S1 LLM calls likely **reduces** the Bedrock line by more than that.
+
+### 8.3 Community users: long list, with a cost class
+
+Every community use case gets one of three cost classes:
+- **Class A — saves money.** Jev replaces an existing LLM call. Always on, no quota.
+- **Class B — Jev only.** No downstream cost beyond Jev. On, with a generous per-user daily quota as a runaway guard.
+- **Class C — triggers expensive downstream work** (browser job, Bedrock generation, paid API, push fan-out). Only when **revenue-linked or explicitly entitled**, with a hard quota.
+
+The last column says whether the use case earns revenue for Vitanaland.
+
+| # | Community use case | Jev question(s) | Class | Revenue? |
+|---|---|---|---|---|
+| C1 | Intent routing of an utterance (today `classifyIntentKind` → Bedrock) | `choice` | **A** | no, but saves cost |
+| C2 | Voice tool pre-selection per turn (tool groups) | `choice` | **A** | no, but faster and smaller prompts |
+| C3 | Marketplace intent (today an LLM tool call) | `choice` | **A** | **yes**, the first step to a sale |
+| C4 | Product and service shortlist soft-fit ranking (price and distance stay in code) | `score` per candidate | B | **yes** (affiliate, marketplace) |
+| C5 | Booking readiness: missing slot, needs clarification? | `noul` / `choice` | B | **yes** (bookings) |
+| C6 | Coach, doctor and practitioner compatibility | `score` | B | **yes** (professional bookings) |
+| C7 | Event and ticket fit | `score` | B | **yes** |
+| C8 | Deal and offer relevance | `noul` | B | **yes** (affiliate) |
+| C9 | Retrieval routing: memory vs knowledge vs web | `choice` | B | no |
+| C10 | "Is this worth remembering?" before a memory write | `noul` | **A**, fewer memory-extraction LLM calls | no |
+| C11 | Diary entry mood and topic tag (fixed lists) | `choice`, `score` | B | no |
+| C12 | Daily log category (sleep / water / exercise…) | `choice` | B | no |
+| C13 | Proactive nudge gate: "should Vitana reach out today?" | `noul` | B, gates push cost | no, retention |
+| C14 | Notification relevance per member | `noul` | B, **reduces** push volume | no, retention |
+| C15 | Group and connection recommendation fit | `score` | B | no, engagement |
+| C16 | Community post safety pre-screen | `score` | B, **mandatory** | no, safety |
+| C17 | Distress and escalation signal in conversation | `noul` | B, **mandatory; never quota-blocked** | no, safety |
+| C18 | Journey step completion check ("did the member understand?") | `noul` | B | no |
+| C19 | Support ticket self-triage (member side of S1) | `choice` | **A** | no |
+| C20 | "Book it for me" on an external site with no API (Jev Ultrafast) | browser job | **C** | **yes** only if a paid booking or commission results |
+| C21 | Price or availability watch on external sites | recurring browser job | **C** | weak; **off** for community |
+| C22 | Form filling for the member (insurance, registration) | browser job | **C** | no; **off** (also the PII and consent risk) |
+
+Health-data rule:
+- Any use case touching lab results, patient records or health metrics (the patient role) keeps health values **out of Jev state**.
+- Only enums derived in code may be sent, for example "has new lab report: yes/no".
+- This follows the §3.1 minimal-state rule and the open DPA question (Phase 0).
+
+### 8.4 Community cost model
+
+Assumptions:
+- An active member triggers **≈30 Jev decisions per day** (voice turns, intents, shortlists, gates) at ≈1,000 tokens each.
+- That is 900 decisions ≈ 0.9M tokens per member-month ≈ **$0.038 per active member per month** for Jev.
+
+| Active members | Jev decisions / month | Jev cost / month | Bedrock saved if C1/C2/C10 replace a Sonnet call¹ | Rate-limit status (1,200 rpm ≈ 52M/month if perfectly flat) |
+|---|---|---|---|---|
+| 500 (today's tenant is ~450) | 0.45M | **≈$19** | ≈$500 | fine |
+| 10,000 | 9M | **≈$380** | ≈$10k | peaks will hit the limit → needs enterprise quota |
+| 100,000 | 90M | **≈$3,800** | ≈$100k | **over the limit**; enterprise tier required |
+
+¹ This column assumes roughly a third of the decisions replace a Bedrock Sonnet classification that runs today. It is an upper bound until Phase 1 shadow data shows the real replacement ratio.
+
+**The expensive part is Class C.**
+- 10,000 members × 1 browser job/day × $0.04 ≈ **$12,000/month**. That alone is over the $10k envelope.
+- This is why Class C is off by default for community, and only allowed when it produces revenue:
+  - a confirmed booking or purchase with commission, or
+  - a paid entitlement.
+- In either case there is a hard monthly quota per member.
+
+One heavy member making 1,000 Class B decisions a day costs ≈ $1.26/month in Jev. That is irrelevant for money. It matters only as rate-limit pressure.
+
+### 8.5 Cost controls to build (additions to Phases 1–4)
+
+1. **Every Jev call carries a `plane`: `internal` or `community`**, plus `tenant_id` and `role`.
+   - This closes the gap `budgets.ts` names itself ("per-tenant budgets need a tenant on the telemetry row").
+   - `decision.call.*` events include them.
+2. **Two TypeSafe API keys**: one for internal planes, one for community.
+   - The community key has its own share of the vendor rate limit, so member traffic can never starve back office, admin or developer decisions.
+   - If the vendor cannot split limits per key, the gateway enforces the split with a token bucket per plane.
+3. **Per-member daily quotas, configurable in `decision_policy`** (the existing table):
+   - Class A: no quota. Over quota it would only fall back to the more expensive LLM path, so a quota would raise cost.
+   - Class B: default 300/day, as a runaway guard; over quota → the deterministic fallback.
+   - Class C: default 0 per member; entitlement-based (e.g. 3 bookings/month); over quota → "I can show you the options, but I can't book this one for you".
+   - Safety cases C16/C17 are **exempt from every quota**.
+4. **Budget views**:
+   - `budgets.ts` gains a `jev` line and a `community` line alongside the platform line.
+   - Community Class C gets its own daily ceiling (proposed $50/day ≈ $1.5k/month).
+   - Crossing it turns Class C off for the rest of the day and pages the owner. It never silently degrades.
+5. **Command Hub panel** "Decisions & cost":
+   - decisions/day by plane and class, the fallback rate, Jev $ vs Bedrock $ saved, top members by Class C usage, and quota hits.
+6. **Revenue attribution for Class C**: every browser job records the `order_id` / `booking_id` it produced. The weekly report shows cost per converted booking, so the "revenue-linked" rule is measured, not assumed.
+
+### 8.6 Summary per role
+
+| Role | What Jev does for them | Cost stance |
+|---|---|---|
+| Developer / infra | Faster incident, CI and finding triage; cheaper Operator turns | Unlimited, metered; net saving vs today |
+| Admin | Moderation ranking, audience selection, partner screening | Unlimited, metered |
+| Back office | Document search at scale (B1), bookkeeping, contracts, portal automation | Unlimited, metered; B1 costs ~$2 per 10k-document sweep |
+| Staff / support | Ticket triage, duplicates, priority, safety flags | Unlimited, metered |
+| Professional / partner | Lead fit (VAEA), listing quality, catalog categorisation | Metered, generous quota; revenue-linked |
+| Community | Faster, cheaper voice and routing (A); better recommendations and safety (B); "book it for me" only when it earns (C) | A always on; B quota as runaway guard; C off unless revenue-linked or entitled |
 
 ## Sources
 
