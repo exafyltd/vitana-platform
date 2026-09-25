@@ -83,6 +83,7 @@ router.get('/jev/decisions', requireAuth, async (req: AuthenticatedRequest, res:
 });
 
 router.post('/jev/decisions/:name', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: decide() emits the jev.decision.* OASIS event for every call.
   const caller = await resolveJevCaller(req);
   const input = (req.body && typeof req.body === 'object' && 'input' in req.body) ? req.body.input : req.body;
   sendResult(res, await decide(String(req.params.name), input, caller, { source: 'api' }));
@@ -98,6 +99,7 @@ const classifyBody = z.object({
 });
 
 router.post('/jev/documents/classify', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: decideMany() -> decide() emits one jev.decision.* OASIS event per document.
   const parsed = classifyBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ ok: false, error: 'invalid_input', detail: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });

@@ -19,7 +19,7 @@ Plan: `docs/JEV-INTEGRATION-PLAN.md`.
 - AC-5: `decideMany()` keeps input order and never exceeds its concurrency limit.
   TEST: services/gateway/test/vtid-04473-jev-decision-service.test.ts
 - AC-6: Routes: role comes from `user_tenants.active_role`, never the body; community sees no decisions and gets 403; bulk document classification ranks relevant documents with token cost, answers 503 once when not configured, caps at 500; stats are exafy_admin only.
-  TEST: services/gateway/test/routes/vtid-04473-jev-decisions-routes.test.ts
+  TEST: services/gateway/test/routes/jev-decisions.test.ts
 - AC-7: Staging wiring is optional (describe-secret, absent → inert), the key is a secret reference, `JEV_DECISIONS_ENABLED` is always written, community is never set, production is untouched.
   TEST: services/gateway/test/vtid-04473-jev-staging-wiring.test.ts
 
