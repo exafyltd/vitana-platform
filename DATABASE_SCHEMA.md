@@ -1116,6 +1116,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-25 | VTID-04561, **applied live** (`vtid_04561_one_role_truth`): the two role switchers now keep the two role tables in step. `set_role_preference()` (community app) also upserts `user_active_roles`; `me_set_active_role()` (Command Hub) also upserts `role_preferences` when the caller has a tenant. One-time backfill in both directions (5 of 6 users with rows disagreed before). Two `role_preferences` rows still differ from `user_active_roles` afterwards; both belong to a secondary tenant, and the ORB reads the role per tenant, so they are expected. Migration `20260925120000_vtid_04561_one_role_truth.sql`. | Claude Code | VTID-04561 |
 | 2026-09-24 | VTID-04494, **applied live**: `write_fact()` takes a per-key `pg_advisory_xact_lock` (tenant, user, entity, fact_key), compares against the newest current row and supersedes EVERY other current row (was `FOR UPDATE SKIP LOCKED` + one-row supersede, which let concurrent writers create duplicate current facts that never cleared). One-time repair: 80 duplicate current rows in 70 key groups marked superseded by the newest row; nothing deleted. Invariant: one `superseded_by IS NULL` row per (tenant_id, user_id, entity, fact_key). | Claude Code | VTID-04494 |
 | 2026-09-24 | VTID-04489, **applied live** (read-only, additive): functions `get_index_boost(p_user_id uuid) RETURNS jsonb` (SECURITY DEFINER, `authenticated` only, NULL without a JWT) and helper `_index_boost_activity_key(text)` (IMMUTABLE; normalises free-text workout `activity_type` — e.g. `laufen`, `Fahrrad gefahren`, `Padel-Tennis` — to running / cycling / strength / racket / yoga_pilates / swimming / walking / workout). Returns the member's top 3 activity drivers over the last 7 days (when at least 2 things were logged in them) or else 30: workouts by type, meals, water, sleep, meditation (`health_features_daily`) and guided journey sessions (`journey_session_index_awards`), with counts; drivers whose Index pillar rose rank first, then by count. `kind` = `boost` when the Index rose over the window, else `active`. Visible to every signed-in member with numbers (owner decision 2026-09-24); hidden when `profiles.account_visibility.indexBoost` = `private` (or `connections` for non-connections). New visibility key `indexBoost`, default `public`. Migration `20260924170000_vtid_04489_index_boost.sql`; ranking corrected and re-applied the same day before any consumer shipped. | Claude Code | VTID-04489 |
 | 2026-09-24 | VTID-04498, **applied live** (read-only, additive): function `get_index_standing(p_user_id uuid) RETURNS jsonb` (SECURITY DEFINER, `authenticated` only, NULL without a JWT) behind the profile Vitana Index card's real "Top X%" badge. Cohort = the subject's tenant, each member's latest `vitana_index_scores` row in the last 30 days, excluding `service_bot_accounts` and `notification_test_actors`. Returns `{show:true, top_percent, cohort_size}` only when the cohort has >= 20 members, at least one member scores lower (48 of 66 members were tied at the starting score on 2026-09-24 and would otherwise each read "Top 29%"), and the rank is in the top half; otherwise `{show:false, reason}` with no percentage. Migration `20260924190000_vtid_04498_index_standing.sql`. | Claude Code | VTID-04498 |
@@ -2453,6 +2454,15 @@ RLS: `authenticated` may SELECT own rows; `service_role` ALL. `hr.*` / `payroll.
 created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, never a role default).
 
 ## role_preferences — the frontend role switcher's write target (VTID-03832 / VTID-03916)
+
+**VTID-04561 (`20260925120000_vtid_04561_one_role_truth.sql`, applied 2026-09-25):
+one role truth.** `role_preferences` (written by the community app's
+`set_role_preference()`, read by the ORB per tenant) and `user_active_roles`
+(written by the Command Hub's `me_set_active_role()`) used to drift apart, so
+the same user could be "developer" in one app and "community" in the other.
+Both functions now write BOTH tables in the same transaction, and a one-time
+backfill aligned the existing rows. `user_active_roles` is the canonical one
+for the Command Hub; `role_preferences` stays per tenant for the member app.
 
 Not previously documented here — the table (and `set_role_preference()`/
 `get_my_permitted_roles()`/`validate_role_assignment()`/`me_set_active_role()`)
