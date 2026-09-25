@@ -2,7 +2,7 @@
  * VTID-01952 — Identity Guardrail Block (brain prompt section)
  *
  * Builds the [USER IDENTITY] block injected at the TOP of every brain system
- * prompt. Identity values come from app_users (canonical) — NEVER from
+ * prompt. Identity values come from profiles + app_users (canonical) — NEVER from
  * memory_facts (mirror) — so even if an extractor or some legacy bug wrote a
  * wrong name into memory, the brain can never speak it.
  *
@@ -21,21 +21,6 @@ import * as repo from './identity-guardrail-block-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-// Columns on app_users that we treat as identity-class for the prompt block.
-// Mirrors IDENTITY_LOCKED_KEYS in memory-identity-lock.ts (different shape
-// because app_users uses snake_case column names without the user_ prefix).
-const IDENTITY_COLUMNS = [
-  'first_name',
-  'last_name',
-  'display_name',
-  'date_of_birth',
-  'gender',
-  'pronouns',
-  'locale',
-  'country',
-  'city',
-] as const;
 
 interface IdentityRow {
   first_name?: string | null;
@@ -74,15 +59,24 @@ export async function buildIdentityGuardrailBlock(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // VTID-04572: profile fields from `profiles`, locale from `app_users`.
+  // Either read failing degrades to what the other returned — a missing
+  // locale must not hide the member's name and birthday.
   let row: IdentityRow | null = null;
   try {
-    const { data, error } = await repo.fetchAppUserIdentityRow(supabase, IDENTITY_COLUMNS.join(','), input.user_id);
-
-    if (error) {
-      console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
-      return '';
+    const [profileRes, appUserRes] = await Promise.all([
+      repo.fetchProfileIdentityRow(supabase, input.user_id),
+      repo.fetchAppUserIdentityRow(supabase, input.user_id),
+    ]);
+    if (profileRes.error) {
+      console.warn('[VTID-01952] identity-guardrail: profiles select error:', profileRes.error.message);
     }
-    row = (data as unknown) as IdentityRow | null;
+    if (appUserRes.error) {
+      console.warn('[VTID-01952] identity-guardrail: app_users select error:', appUserRes.error.message);
+    }
+    const profile = (profileRes.error ? null : profileRes.data) as IdentityRow | null;
+    const appUser = (appUserRes.error ? null : appUserRes.data) as IdentityRow | null;
+    row = profile || appUser ? { ...(profile ?? {}), locale: appUser?.locale ?? null } : null;
   } catch (err) {
     console.warn('[VTID-01952] identity-guardrail: lookup failed:', err);
     return '';

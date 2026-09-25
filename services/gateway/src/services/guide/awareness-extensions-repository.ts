@@ -43,13 +43,16 @@ export async function fetchRecentGreetingOpenings(supabase: SupabaseClient, user
   return supabase.from('user_journey').select('recent_greeting_openings').eq('user_id', userId).maybeSingle();
 }
 
-// ==================== app_users ====================
+// ==================== profiles ====================
 
+// VTID-04572: these columns live on `profiles`. `app_users` has none of them,
+// so the old query failed on every call and every member read as 0% complete.
 export async function fetchProfileCompletionFields(supabase: SupabaseClient, userId: string) {
   return supabase
-    .from('app_users')
+    .from('profiles')
     .select('first_name, last_name, date_of_birth, gender, city, country, avatar_url')
     .eq('user_id', userId)
+    .limit(1)
     .maybeSingle();
 }
 

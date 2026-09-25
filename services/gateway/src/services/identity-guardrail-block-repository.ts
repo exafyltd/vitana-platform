@@ -21,10 +21,27 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function fetchAppUserIdentityRow(
+/**
+ * VTID-04572: the identity columns are split across two tables. Name, birth
+ * date, gender and location live on `profiles`; only `locale` lives on
+ * `app_users`. The block used to select all of them from `app_users`, which
+ * has no `first_name`/`date_of_birth`/... at all — PostgREST refused every
+ * call ("column app_users.first_name does not exist") and the brain never
+ * learned the member's name or birthday.
+ */
+export const PROFILE_IDENTITY_COLUMNS = 'first_name,last_name,display_name,date_of_birth,gender,city,country';
+export const APP_USER_IDENTITY_COLUMNS = 'locale';
+
+export async function fetchProfileIdentityRow(
   sb: SupabaseClient,
-  columns: string,
   userId: string,
 ): Promise<{ data: any; error: any }> {
-  return sb.from('app_users').select(columns).eq('user_id', userId).maybeSingle();
+  return sb.from('profiles').select(PROFILE_IDENTITY_COLUMNS).eq('user_id', userId).limit(1).maybeSingle();
+}
+
+export async function fetchAppUserIdentityRow(
+  sb: SupabaseClient,
+  userId: string,
+): Promise<{ data: any; error: any }> {
+  return sb.from('app_users').select(APP_USER_IDENTITY_COLUMNS).eq('user_id', userId).limit(1).maybeSingle();
 }

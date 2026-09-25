@@ -299,6 +299,48 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     expect(session.outputTranscriptBuffer).toBe('Ich helfe dir gern.');
   });
 
+  // VTID-04571: live member session live-03af48b7 (staging, 2026-09-25).
+  it('a FINAL block arriving after turnComplete does not seed the next turn', () => {
+    const { session, client } = makeContext();
+    const greeting = 'Ich sehe, dass du gerade zurückgekommen bist. Lass uns weitermachen.';
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    // Nova delivers the same turn's FINAL block after END_TURN.
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('');
+    // The next reply starts clean and is NOT treated as a duplicate.
+    client.emitTranscript({ direction: 'output', text: 'Der Geburtstag deiner Frau ist der 4. November.', isFinal: false, generationStage: 'SPECULATIVE' });
+    expect(session.outputTranscriptBuffer).toBe('Der Geburtstag deiner Frau ist der 4. November.');
+    expect(session.suppressCurrentTurnAudio).not.toBe(true);
+  });
+
+  it('a genuine repeat of the previous reply is still caught after a late FINAL', () => {
+    const { session, client } = makeContext();
+    const greeting = 'Ich sehe, dass du gerade zurückgekommen bist. Lass uns weitermachen.';
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: true, generationStage: 'FINAL' });
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    expect(session.suppressCurrentTurnAudio).toBe(true);
+  });
+
+  it('a FINAL within an open turn still replaces the speculative text', () => {
+    const { session, client } = makeContext();
+    client.emitTranscript({ direction: 'output', text: 'Erste Antwort hier.', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    client.emitTranscript({ direction: 'output', text: 'Zweite ', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTranscript({ direction: 'output', text: 'Zweite Antwort.', isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('Zweite Antwort.');
+  });
+
+  it('a FINAL arriving after an interruption is dropped', () => {
+    const { session, client } = makeContext();
+    client.emitTranscript({ direction: 'output', text: 'Ich erzähle dir', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitInterrupted({});
+    client.emitTranscript({ direction: 'output', text: 'Ich erzähle dir etwas.', isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('');
+  });
+
   it('turn complete flushes buffers, bumps counters, notifies onTurnComplete', () => {
     const { session, client, callbacks, deps } = makeContext();
     session.inputTranscriptBuffer = 'wie geht es dir';
