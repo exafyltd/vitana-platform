@@ -18533,3 +18533,9 @@ function sendWsMessage(ws: WebSocket, message: Record<string, unknown>): void {
 }
 
 export default router;
+
+// VTID-04542 — test-only handle on the connect path, so the voice-payload
+// identity suite (test/orb/latency) can drive the REAL envelope build and
+// capture exactly what each upstream receives (instruction + tool catalog).
+// Re-export only: no behaviour, no new code path.
+export { connectToLiveAPI as __connectToLiveAPIForTest };
