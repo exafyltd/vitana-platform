@@ -322,6 +322,50 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     expect(session._personaSwapInFlight).toBe(true);
   });
 
+  // VTID-04549 (ORB latency G): Devon pre-connect hand-over.
+  it('persona swap: a takeOverPersonaSwap that declines leaves today\'s close path unchanged', () => {
+    const takeOverPersonaSwap = jest.fn().mockReturnValue(false);
+    const { session, client } = makeContext({ deps: { takeOverPersonaSwap } });
+    session.pendingPersonaSwap = 'devon';
+    client.emitTurnComplete({});
+    expect(takeOverPersonaSwap).toHaveBeenCalledWith(session, 'devon');
+    expect(client.closeReasons).toEqual(['persona_swap']);
+    expect(session.activePersona).toBe('devon');
+    expect(session.pendingPersonaSwap).toBeNull();
+    expect(session._personaSwapInFlight).toBe(true);
+  });
+
+  it('persona swap: a takeOverPersonaSwap that takes over replaces the close, same session state', () => {
+    let seen: any = null;
+    const takeOverPersonaSwap = jest.fn((s: any) => {
+      // the swap state is already set, exactly as today, when it is called
+      seen = { active: s.activePersona, pending: s.pendingPersonaSwap, inFlight: s._personaSwapInFlight };
+      return true;
+    });
+    const { session, client, callbacks } = makeContext({ deps: { takeOverPersonaSwap } });
+    session.pendingPersonaSwap = 'devon';
+    client.emitTurnComplete({});
+    expect(seen).toEqual({ active: 'devon', pending: null, inFlight: true });
+    expect(client.closeReasons).toEqual([]);
+    expect(session.turn_count).toBe(1);
+    expect(callbacks.onTurnComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('a delivered tool result asks the pre-connect hook whether a swap was queued', async () => {
+    const onPersonaSwapMaybeQueued = jest.fn();
+    const executeLiveApiTool = jest.fn(async (s: any) => {
+      s.pendingPersonaSwap = 'devon';
+      return { success: true, result: 'STATUS: handoff_created.' };
+    });
+    const { session, client } = makeContext({ deps: { onPersonaSwapMaybeQueued, executeLiveApiTool } });
+    session.lang = 'de';
+    client.emitToolCall({ calls: [{ id: 't1', name: 'get_current_screen', args: {} }] });
+    await flushPromises();
+    expect(client.sentToolResults).toHaveLength(1);
+    expect(onPersonaSwapMaybeQueued).toHaveBeenCalledWith(session);
+    expect(onPersonaSwapMaybeQueued.mock.calls[0][0].pendingPersonaSwap).toBe('devon');
+  });
+
   it('pending navigation dispatches an orb_directive at turn complete', () => {
     const sendWsMessage = jest.fn();
     const session = makeSession();
