@@ -723,10 +723,17 @@ export async function tool_search_events(
   // which the frontend orb widget already knows how to open as a drawer.
   // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
   // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  //
+  // VTID-04533: auto-redirect ALSO requires `open_event === true`. Opening the
+  // drawer closes the voice session, and before this a question that happened
+  // to match one event ("are there any other events except these two?")
+  // opened that event and ended the conversation instead of being answered.
   const EVENT_AUTONAV_GAP = 0.15;
+  const wantsOpen = args.open_event === true;
   const top = sr?.best?.[0];
   const second = sr?.best?.[1];
   const dominant =
+    wantsOpen &&
     !!top &&
     !hasRooms &&
     (

@@ -345,7 +345,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -364,6 +364,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -13309,7 +13313,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -13328,6 +13332,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",

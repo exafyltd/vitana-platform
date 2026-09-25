@@ -617,7 +617,7 @@ function buildLiveApiToolsUngated(
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
+          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.',
           parameters: {
             type: 'object',
             properties: {
@@ -649,6 +649,13 @@ function buildLiveApiToolsUngated(
                 type: 'string',
                 enum: ['meetup', 'live_room', 'all'],
                 description: 'Filter by event type. Defaults to all.',
+              },
+              // VTID-04533: opening an event closes the voice session, so it
+              // must be the member's explicit ask, never a side effect of a
+              // question that happens to return one event.
+              open_event: {
+                type: 'boolean',
+                description: 'true only if the member asked to open one event; omit for questions.',
               },
             },
             required: [],
