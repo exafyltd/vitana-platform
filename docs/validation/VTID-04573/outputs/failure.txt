@@ -1,0 +1,4 @@
+2026-09-25 staging Operator Console, autopilot_approve_execution ee04be49:
+  approve failed: open PR failed: GitHub API error: 401 - Unauthorized
+Same turn, bootstrap pack: CLAUDE.md / change log / service path map / schema index / open PRs -> "unavailable: GitHub API 401"
+jq filter dry-run vs live prod task def rev 119: 12 secrets before/after; only GITHUB_SAFE_MERGE_TOKEN changed (token-lb9VTe -> pat-g82ixI); rest identical

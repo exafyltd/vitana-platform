@@ -1,0 +1,8 @@
+# evidence queries (read-only) on oasis_events, sessions live-ce128077 / live-2434324c, 2026-09-25 16:23–16:31 UTC
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ CI=true node node_modules/.bin/jest --ci test/orb/vtid-04539-evening-session.test.ts
+Tests: 8 passed, 8 total
+$ CI=true node node_modules/.bin/jest --ci --silent
+Test Suites: 1 skipped, 1254 passed, 1254 of 1255 total
+Tests:       29 skipped, 6 todo, 20015 passed, 20050 total

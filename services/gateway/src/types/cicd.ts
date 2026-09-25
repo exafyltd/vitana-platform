@@ -514,6 +514,13 @@ export type CicdEventType =
   | 'llm.call.started'
   | 'llm.call.completed'
   | 'llm.call.failed'
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. One event per
+  // decision call, same shape of purpose as llm.call.* (served traffic with
+  // provider, model, latency, tokens and cost), plus plane/role/tenant so
+  // spend can be split internal vs community (docs/JEV-INTEGRATION-PLAN.md §8.5).
+  | 'jev.decision.completed'
+  | 'jev.decision.failed'
+  | 'jev.decision.fallback'
   // VTID-03565: an operator preflighting a provider before flipping routing at
   // it. Deliberately its OWN topic rather than an llm.call.* event: a preflight
   // is not served traffic, and booking it as llm.call.completed would corrupt
@@ -529,6 +536,9 @@ export type CicdEventType =
   | 'conversation.turn.completed'
   // VTID-04353 (WS-0.4): one per finalized ORB live session.
   | 'conversation.session.finalized'
+  // VTID-04525 (Conversation hub B1): the conversation system changed with a
+  // build — tools, opening providers or flags differ from the last snapshot.
+  | 'conversation.system.snapshot'
   // VTID-04355 (WS-0.5): every offered action ends in exactly one outcome.
   | 'conversation.offer.accepted'
   | 'conversation.offer.declined'
@@ -571,6 +581,10 @@ export type CicdEventType =
   | 'admin.insight.dismissed'
   // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
   | 'admin.briefing.injected'
+  // VTID-04560/04563: which Vitana serves a session; developer deep dives
+  | 'orb.session.profile.resolved'
+  | 'orb.deep_dive.completed'
+  | 'orb.deep_dive.failed'
   | 'admin.insight.urgent_notified'
   // BOOTSTRAP-ADMIN-GG: tenant health index
   | 'tenant.health.computed'
@@ -979,6 +993,11 @@ export type CicdEventType =
   // All emitted with env=staging|production via env-tagging in emitOasisEvent().
   // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
   | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  // VTID-04542 (ORB latency P0): persona hand-off timing (request → drain →
+  // reconnect → first audio of the new persona) and the client-side beacon
+  // (ms since tap, posted by the widget to /orb/live/client-latency).
+  | 'voice.latency.handoff'
+  | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so

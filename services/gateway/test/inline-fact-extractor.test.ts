@@ -212,6 +212,46 @@ describe('VTID-01225: Inline Fact Extractor', () => {
       expect(writeFactCalls[0].body.p_provenance_confidence).toBeCloseTo(0.95);
     });
 
+    // VTID-04581: a stated value is not silently replaced by a different one.
+    function existingFact(row: Record<string, unknown>) {
+      mockFetch.mockImplementation(async (url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        const body = options?.body ? JSON.parse(options.body as string) : undefined;
+        fetchCalls.push({ url, method, body });
+        if (url.includes('/rest/v1/memory_facts?')) return { ok: true, json: async () => [row] };
+        if (url.includes('/rest/v1/rpc/write_fact')) return { ok: true, json: async () => 'fact-uuid-123' };
+        return { ok: true, json: async () => ({}), text: async () => '' };
+      });
+    }
+
+    it('does not overwrite a stated value with a different one (VTID-04581)', async () => {
+      vertexResponseText = JSON.stringify([
+        { fact_key: 'spouse_birthday', fact_value: '4. November 1999', entity: 'disclosed', fact_value_type: 'text', stated: true },
+      ]);
+      existingFact({ fact_value: '4. November 1997', provenance_confidence: 0.9, provenance_source: 'user_stated' });
+      await extractAndPersistFacts({
+        conversationText: 'User: der Geburtstag meiner Frau ist der vierte November neunundneunzig\nAssistant: ok',
+        tenant_id: 'tenant-123',
+        user_id: 'user-456',
+        session_id: 'session-789',
+      });
+      expect(fetchCalls.filter(c => c.url.includes('rpc/write_fact'))).toHaveLength(0);
+    });
+
+    it('still replaces an inferred value (VTID-04581)', async () => {
+      vertexResponseText = JSON.stringify([
+        { fact_key: 'user_favorite_tea', fact_value: 'Green tea', entity: 'self', fact_value_type: 'text', stated: true },
+      ]);
+      existingFact({ fact_value: 'Earl Grey', provenance_confidence: 0.7, provenance_source: 'assistant_inferred' });
+      await extractAndPersistFacts({
+        conversationText: 'User: Actually my favorite tea is green tea these days.\nAssistant: Noted.',
+        tenant_id: 'tenant-123',
+        user_id: 'user-456',
+        session_id: 'session-789',
+      });
+      expect(fetchCalls.filter(c => c.url.includes('rpc/write_fact'))).toHaveLength(1);
+    });
+
     it('should pass correct authorization headers to write_fact', async () => {
       await extractAndPersistFacts({
         conversationText: 'User: My name is Dragan and I live in Aachen.\nAssistant: Nice to meet you!',

@@ -91,7 +91,7 @@ describe('packBootstrapContext', () => {
     expect(outcome('context_profile')).toBe('dropped');
     expect(outcome('memory_items')).toBe('shortened');
     expect(outcome('wake_brief_override')).toBe('kept');
-    expect(r.text).toMatch(/\[context packed to fit budget — shortened: memory_items; omitted: context_profile, social_context\]$/);
+    expect(r.text).toMatch(/\[context packed to fit budget — shortened: memory_items; omitted: context_profile, social_context; use search_memory for anything not shown here\]$/);
   });
 
   it('keeps the original order of the kept sections', () => {

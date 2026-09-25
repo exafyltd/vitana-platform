@@ -229,6 +229,33 @@ jobs:
                    {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
             sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
           cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
+      # VTID-04473: Jev (TypeSafe System One) typed decisions, internal roles
+      # only. Rides on connected-apps.json so the task-definition step stays
+      # unchanged. The key is wired only when the secret exists
+      # (scripts/aws/setup-typesafe-secret.sh); JEV_DECISIONS_ENABLED is
+      # always written - 'true' with the key, 'false' without - so a stale
+      # value can never outlive its key. JEV_COMMUNITY_ENABLED is never set.
+      - name: Resolve Jev decision config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/typesafe-api-key"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo "  $NAME absent - Jev stays inert (VTID-04473)"
+            jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"JEV_DECISIONS_ENABLED", value:"true"}] | .sec += [{name:"TYPESAFE_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
+      # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
+      # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
+      # (04550), mobile lead on the first burst only (04552), tool acknowledgement
+      # intent (04553). ORB_PREWARM_FULL_CONTEXT_ENABLED (04554) is deliberately NOT
+      # pinned: it would stop the blind prewarm claim, losing its latency gain. Rollback: one value to 'false'.
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -626,6 +653,15 @@ jobs:
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
         #
+        # VTID-04573 -- vitana/github/token (last set 2026-08-26 09:54 UTC)
+        # returns 401 from GitHub since ~2026-09-25 10:00 UTC, consistent with
+        # a 30-day fine-grained token expiring; every GitHub call from the
+        # staging gateway failed (PR open on approve, operator repo reads).
+        # Staging now reads vitana/github/pat -- the secret the autopilot
+        # executor already uses successfully under the same execution role.
+        # Production (vitana-gateway-awsdr) still reads vitana/github/token
+        # and needs that token rotated.
+        #
         # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
 # consumer, an Operator-chat-created task (metadata.source='operator-chat')
 # sat at status=scheduled/spec_status=missing forever -- confirmed live
@@ -826,7 +862,7 @@ jobs:
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
-            "SEC_GITHUB_TOKEN:vitana/github/token" \
+            "SEC_GITHUB_TOKEN:vitana/github/pat" \
             "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
@@ -914,7 +950,7 @@ jobs:
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
-                                                "ORB_FULL_DUPLEX_ENABLED",
+                                                "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
                                                 "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -963,7 +999,7 @@ jobs:
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
-                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"}, {name:"ORB_DEVON_PRECONNECT_ENABLED", value:"true"}, {name:"ORB_CASCADE_STREAMING_ENABLED", value:"true"}, {name:"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED", value:"true"}, {name:"ORB_TOOL_ACK_INTENT_ENABLED", value:"true"},
                           {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
                           {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},

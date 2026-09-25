@@ -83,7 +83,22 @@ export interface LedgerIdentity {
 
 /** Fail-open read of the greeting ledger. Never throws; empty on error. */
 export async function readGreetingLedger(inputs: LedgerIdentity): Promise<GreetingLedger> {
-  if (!inputs.tenantId || !inputs.userId) return { ...EMPTY_GREETING_LEDGER };
+  const outcome = await readGreetingLedgerOutcome(inputs);
+  if (outcome.failure !== null) emitLedgerReadFailure(inputs, outcome.failure);
+  return outcome.ledger;
+}
+
+/**
+ * The read itself, with the failure REPORTED rather than emitted. VTID-04544:
+ * split out of `readGreetingLedger` (whose behaviour is unchanged — it emits
+ * exactly as before) so a read that is started speculatively, before the
+ * caller knows whether the ledger will be used, can stay silent when it turns
+ * out not to be — see `startSpeculativeGreetingLedgerRead`.
+ */
+async function readGreetingLedgerOutcome(
+  inputs: LedgerIdentity,
+): Promise<{ ledger: GreetingLedger; failure: string | null }> {
+  if (!inputs.tenantId || !inputs.userId) return { ledger: { ...EMPTY_GREETING_LEDGER }, failure: null };
   const nowIso = inputs.nowIso ?? new Date().toISOString();
   try {
     const { data, error } = await repo.fetchGreetingLedgerSignals(inputs.supabase, inputs.tenantId, inputs.userId, [
@@ -92,8 +107,7 @@ export async function readGreetingLedger(inputs: LedgerIdentity): Promise<Greeti
       'wake_cadence:sessions_today',
     ]);
     if (error) {
-      emitLedgerReadFailure(inputs, error.message);
-      return { ...EMPTY_GREETING_LEDGER };
+      return { ledger: { ...EMPTY_GREETING_LEDGER }, failure: error.message };
     }
     const out: GreetingLedger = { ...EMPTY_GREETING_LEDGER, facts: {} };
     for (const row of (data || []) as Array<{ signal_name: string; value: unknown }>) {
@@ -118,11 +132,68 @@ export async function readGreetingLedger(inputs: LedgerIdentity): Promise<Greeti
         }
       }
     }
-    return out;
+    return { ledger: out, failure: null };
   } catch (e) {
-    emitLedgerReadFailure(inputs, e instanceof Error ? e.message : String(e));
-    return { ...EMPTY_GREETING_LEDGER };
+    return { ledger: { ...EMPTY_GREETING_LEDGER }, failure: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * VTID-04544 — a greeting-ledger read started BEFORE the caller knows whether
+ * the ledger will be used, so it can run concurrently with the overview gather
+ * instead of after it.
+ *
+ * Equivalence with the serial read it replaces
+ * (`Promise.race([readGreetingLedger(..), timeout(timeoutMs → EMPTY)]).catch(→ EMPTY)`):
+ *   - `bounded` resolves to the ledger iff the read settles within
+ *     `timeoutMs` of ITS OWN start, else to a fresh EMPTY copy — the same
+ *     per-read bound; starting it earlier never lengthens the wait.
+ *   - The only side effect of the read path is the `read_failed` OASIS event.
+ *     It is emitted only when the caller calls `consume()` (i.e. the ledger is
+ *     actually used), exactly as the serial read would have emitted it. A
+ *     discarded speculative read writes nothing.
+ *   - Never rejects.
+ */
+export interface SpeculativeGreetingLedgerRead {
+  /** Marks the read as used (failure telemetry as `readGreetingLedger` would emit) and returns the bounded result. */
+  consume(): Promise<GreetingLedger>;
+  /** VTID-04542 (measurement only): true once the underlying read has settled — false after consume() resolves means the bound fired. */
+  readSettled(): boolean;
+}
+
+export function startSpeculativeGreetingLedgerRead(
+  inputs: LedgerIdentity,
+  timeoutMs: number,
+): SpeculativeGreetingLedgerRead {
+  const outcome = readGreetingLedgerOutcome(inputs).catch((e) => ({
+    ledger: { ...EMPTY_GREETING_LEDGER },
+    failure: e instanceof Error ? e.message : String(e),
+  }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bounded: Promise<GreetingLedger> = Promise.race([
+    outcome.then((o) => o.ledger),
+    new Promise<GreetingLedger>((r) => {
+      timer = setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), timeoutMs);
+    }),
+  ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+  let settled = false;
+  void outcome.then(() => {
+    settled = true;
+    if (timer !== undefined) clearTimeout(timer);
+  });
+  let consumed = false;
+  return {
+    readSettled: () => settled,
+    consume() {
+      if (!consumed) {
+        consumed = true;
+        void outcome.then((o) => {
+          if (o.failure !== null) emitLedgerReadFailure(inputs, o.failure);
+        });
+      }
+      return bounded;
+    },
+  };
 }
 
 /**

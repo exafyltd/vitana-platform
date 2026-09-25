@@ -713,6 +713,12 @@ jobs:
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("NAV_CONTINUATION_BIND") | not) ]
                 + [ {name:"NAV_CONTINUATION_BIND", value:"true"} ] )')
+          # VTID-04541 registry navigator on prod; rollback = "false" (legacy).
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("NAV_V2_ENABLED","NAV_REGISTRY_URL") | not) ]
+                + [ {name:"NAV_V2_ENABLED", value:"true"},
+                    {name:"NAV_REGISTRY_URL", value:"https://vitanaland.com/nav-registry.json"} ] )')
 
           # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
           # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
@@ -832,6 +838,17 @@ jobs:
 
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         env:
+          # VTID-04573: the gateway's GitHub token. vitana/github/token (last
+          # set 2026-08-26) returns 401 since 2026-09-25 ~10:00 UTC (30-day
+          # token expiry); vitana/github/pat is the secret the autopilot
+          # executor already uses under the same execution role. Full ARN,
+          # hardcoded for the same reason as the executor workflow's
+          # DEEPSEEK_SECRET_ARN: this role has no secretsmanager:Describe*,
+          # and ECS only accepts a bare name for SSM parameters. An ARN is
+          # not a credential. If the secret is ever recreated, update it here.
+          # Applied unconditionally below, in every deploy mode (env-only too),
+          # in this step because step 1/2 is at the 20,000-char run limit.
+          GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
@@ -1095,6 +1112,12 @@ jobs:
                 ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
                   + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
           fi
+
+          # VTID-04573: GITHUB_SAFE_MERGE_TOKEN <- vitana/github/pat (see env).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg GH "$GITHUB_TOKEN_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "GITHUB_SAFE_MERGE_TOKEN") ]
+                + [ {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$GH} ] )')
 
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set

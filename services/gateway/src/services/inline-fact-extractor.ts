@@ -18,6 +18,12 @@
  */
 
 import { rememberFact } from './memory/remember'; // VTID-04364 single fact-write path
+import { valuesMatch } from './memory/remember-fact-tool';
+
+const STATED_SOURCES = new Set(['user_stated', 'user_stated_via_settings', 'user_edited', 'user_stated_via_memory_garden_ui']);
+function isStatedProvenance(source: string | undefined): boolean {
+  return !!source && STATED_SOURCES.has(source);
+}
 import { callViaRouter } from './llm-router'; // VTID-03579: provider comes from llm_routing_policy, never hardcoded
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
 // inline-fact-extractor activity.
@@ -233,7 +239,7 @@ async function persistFact(
       `${SUPABASE_URL}/rest/v1/memory_facts?` +
         `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
         `fact_key=eq.${encodeURIComponent(effectiveFactKey)}&superseded_at=is.null&` +
-        `select=fact_value,provenance_confidence&limit=1`,
+        `select=fact_value,provenance_confidence,provenance_source&limit=1`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE,
@@ -242,8 +248,23 @@ async function persistFact(
       },
     );
     if (existingResp.ok) {
-      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number }>;
+      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number; provenance_source?: string }>;
       const existing = rows?.[0];
+      // VTID-04581: a value the member stated is never silently replaced by
+      // a different one from background extraction. The live assistant asks
+      // which is right (remember_fact STATUS: conflict) and writes the
+      // answer itself with confirm_replace.
+      if (
+        existing &&
+        typeof existing.fact_value === 'string' &&
+        isStatedProvenance(existing.provenance_source) &&
+        !valuesMatch(existing.fact_value, fact.fact_value)
+      ) {
+        console.log(
+          `[VTID-04581] conflict kept for review: ${effectiveFactKey} stored="${existing.fact_value}" new="${fact.fact_value}" — not overwritten`,
+        );
+        return false;
+      }
       if (
         existing &&
         typeof existing.fact_value === 'string' &&

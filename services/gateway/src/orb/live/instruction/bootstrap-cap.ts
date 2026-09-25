@@ -26,6 +26,34 @@
 export const BOOTSTRAP_CONTEXT_MAX_CHARS = 12_000;
 
 /**
+ * VTID-04577 — the brain-context cap for the upstream serving the session.
+ *
+ * The 12 KB cap above was sized for the Vertex Live setup frame. VTID-04555
+ * gave Nova Sonic and the cascade a 64 KB instruction budget, but this cap
+ * still applied to them, so the packer kept dropping the member's social
+ * context (and sometimes the proactive rules) from every Nova session while
+ * the assembled prompt used ~36 KB of its 64 KB. Measured on staging
+ * 2026-09-25: bootstrap 15,575–16,766 chars before packing, `social_context`
+ * dropped in every session.
+ *
+ * Nova and the cascade get 24,000 chars (`NOVA_BRAIN_CONTEXT_MAX_CHARS`
+ * overrides; a garbage or too-small value falls back to the default). Vertex
+ * and any unknown provider keep 12,000. Pure; reads only `env`.
+ */
+export const NOVA_BOOTSTRAP_CONTEXT_MAX_CHARS = 24_000;
+export const NOVA_BOOTSTRAP_MAX_CHARS_ENV = 'NOVA_BRAIN_CONTEXT_MAX_CHARS';
+
+export function resolveBootstrapMaxCharsFor(
+  provider: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  if (provider !== 'nova_sonic' && provider !== 'cascaded') return BOOTSTRAP_CONTEXT_MAX_CHARS;
+  const raw = (env[NOVA_BOOTSTRAP_MAX_CHARS_ENV] || '').trim();
+  const n = raw === '' ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= BOOTSTRAP_CONTEXT_MAX_CHARS ? Math.floor(n) : NOVA_BOOTSTRAP_CONTEXT_MAX_CHARS;
+}
+
+/**
  * Sentinel appended in place of trimmed content so the model (and any human reading
  * a captured instruction) knows truncation happened rather than silently believing
  * the context was complete.

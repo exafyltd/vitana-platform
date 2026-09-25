@@ -1,0 +1,167 @@
+{
+  "connect:admin-surface-en": {
+    "provider": "nova_sonic",
+    "voice": "amy",
+    "instruction_sha256": "4b91adaa222a34faa90ad768f5c9b7e95183a14c524efbee27e1de7cc6f49182",
+    "instruction_bytes": 10558,
+    "tools_sha256": "ed74c4150734f6999c93c5d9573ab47b2ef6bec1ffb3efb64cfe97aca0bc4495",
+    "tools_bytes": 45542,
+    "tool_count": 135,
+    "deferred_tools": 0
+  },
+  "connect:anonymous-de": {
+    "provider": "nova_sonic",
+    "voice": "tina",
+    "instruction_sha256": "c28d92b257331a2715ec012336ee2896e3e83cf89398470790154e0b93256919",
+    "instruction_bytes": 8157,
+    "tools_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "tools_bytes": 2,
+    "tool_count": 0,
+    "deferred_tools": 0
+  },
+  "connect:authenticated-community-de-first-day": {
+    "provider": "nova_sonic",
+    "voice": "tina",
+    "instruction_sha256": "915d76811acee95ed0c28a6abd205d801dd36c532ff113117d754b3d542812d0",
+    "instruction_bytes": 26669,
+    "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+    "tools_bytes": 65551,
+    "tool_count": 45,
+    "deferred_tools": 0
+  },
+  "connect:authenticated-community-en-returning": {
+    "provider": "nova_sonic",
+    "voice": "amy",
+    "instruction_sha256": "dd9cd07b13ae18eae81c882785b3795c59c8036ddb8e4f455d0ac3392146fb12",
+    "instruction_bytes": 28109,
+    "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+    "tools_bytes": 65551,
+    "tool_count": 45,
+    "deferred_tools": 0
+  },
+  "connect:cascade-ru": {
+    "provider": "cascaded",
+    "voice": "polly:ru",
+    "instruction_sha256": "5e5523e88c017d9ccf47981eb8f9f8c8c9a94e84ffe3df25aa3634e42fb0acb1",
+    "instruction_bytes": 26813,
+    "tools_sha256": "6ac3743a6cb06eb3a6b298e78379073c4877ef15d79492cf964ae1ae8010a3c1",
+    "tools_bytes": 228600,
+    "tool_count": 295,
+    "deferred_tools": 0
+  },
+  "connect:command-hub-developer-en": {
+    "provider": "nova_sonic",
+    "voice": "amy",
+    "instruction_sha256": "13f35c6fe978b783d30eaf4c9d1e5c666e1a148d2fee346b48598a4d3113ddcd",
+    "instruction_bytes": 12171,
+    "tools_sha256": "85290a3c45d88b9f7fa3c5483dbdc3605eccf943c127c9054acec5cec38cab88",
+    "tools_bytes": 54750,
+    "tool_count": 157,
+    "deferred_tools": 0
+  },
+  "connect:devon-specialist-en": {
+    "provider": "nova_sonic",
+    "voice": "matthew",
+    "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
+    "instruction_bytes": 1973,
+    "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+    "tools_bytes": 65551,
+    "tool_count": 45,
+    "deferred_tools": 0
+  },
+  "connect:guided-topic-de": {
+    "provider": "nova_sonic",
+    "voice": "tina",
+    "instruction_sha256": "0636981d924db3a6f06399ea419e0173a7d4b8beabbdde409512ab3d1d5139fd",
+    "instruction_bytes": 28080,
+    "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+    "tools_bytes": 65551,
+    "tool_count": 45,
+    "deferred_tools": 0
+  },
+  "connect:vertex-serbian-bridge-sr": {
+    "provider": "vertex",
+    "voice": "Aoede",
+    "instruction_sha256": "e25ca0da9e01316270550b1bd77b92c5e89c2bd3dd71b3397da37192d74557ac",
+    "instruction_bytes": 26829,
+    "tools_sha256": "61829612b5a980b38e288c2631dbb76a985c02a799d5312004d3be56e0d1e8cf",
+    "tools_bytes": 49200,
+    "tool_count": 34,
+    "deferred_tools": 0
+  },
+  "greeting:anonymous (legacy_default intro)": {
+    "wake_opener": "legacy_default",
+    "directive_sha256": "898995761b9d761da7036c83af67b3ce7b3ed38936c68d6134531e7a37e5bcb4",
+    "directive_bytes": 82
+  },
+  "greeting:conv_resume": {
+    "wake_opener": "conv_resume",
+    "directive_sha256": "85e7bce5bcbf3e046db08e0187c8e42f2b96278bcbc6bbe235c3dc5dcb9003cb",
+    "directive_bytes": 3976
+  },
+  "greeting:day_close (full)": {
+    "wake_opener": "day_close",
+    "directive_sha256": "2d0d9cb49bcedb52150f559e417d6b69032333cb16bbe25426a656b25e1cc399",
+    "directive_bytes": 4666
+  },
+  "greeting:day_close (reduced retry)": {
+    "wake_opener": "day_close",
+    "directive_sha256": "2c99c7584479e98767471882cf60e28263e9af0fb44bf703c24c3437cba876fa",
+    "directive_bytes": 713
+  },
+  "greeting:first_time_welcome (safe-fast)": {
+    "wake_opener": "safe_fast_first_time_welcome",
+    "directive_sha256": "510d33eda433aaf5db9bf8f87a43cdb8aa4b41bb2ac9bbaf32c1cb8da8a90dce",
+    "directive_bytes": 561
+  },
+  "greeting:guided topic (override_v2 guided)": {
+    "wake_opener": "override_v2",
+    "directive_sha256": "c0fbd9323785f289b66abbd314bdf0f48dc29e73a2e21090edad8e059b58604d",
+    "directive_bytes": 364
+  },
+  "greeting:newday_overview (normal ladder)": {
+    "wake_opener": "newday_overview",
+    "directive_sha256": "0462421325504f6f107e91e177041fd3eccc5817b1bb4211abfd8493bdee2648",
+    "directive_bytes": 1119
+  },
+  "greeting:newday_overview (safe-fast ladder)": {
+    "wake_opener": "safe_fast_newday_overview",
+    "directive_sha256": "0462421325504f6f107e91e177041fd3eccc5817b1bb4211abfd8493bdee2648",
+    "directive_bytes": 1119
+  },
+  "greeting:override_v2 (wake-brief line)": {
+    "wake_opener": "override_v2",
+    "directive_sha256": "21471d79ce35a0db986412e7079f79f1528fac780a02b034cdeea9f4c2b90f06",
+    "directive_bytes": 1343
+  },
+  "greeting:short-gap reconnect (legacy_default, bucket=reconnect)": {
+    "wake_opener": "legacy_default",
+    "directive_sha256": "a81588b4129535ead274c417f31c537edc2e73b338bc9f055cd93a551b86927e",
+    "directive_bytes": 458
+  },
+  "greeting:silent reconnect (native resume)": {
+    "wake_opener": "silent_reconnect",
+    "directive_sha256": null,
+    "directive_bytes": 0
+  },
+  "greeting:support report": {
+    "wake_opener": "support_report",
+    "directive_sha256": "dfec85632c95621476871f57948eb2c669fdec71759bd600c4275c93e2f08deb",
+    "directive_bytes": 464
+  },
+  "session_start:anonymous de": {
+    "sha256": "e366bd226d91315d79f295a36f342766785465c7ab0ed4958343b1ef1cd347f7"
+  },
+  "session_start:authenticated community de": {
+    "sha256": "65bee51870e747392cb51f232759e32fa68ba71b1970e1f24d73a6551bd64337"
+  },
+  "turn:greeting turn (first assistant turn, no user speech)": {
+    "sha256": "6f39ef99ca7a3c297926c7a0224fc47c8b83857e0b66394b0c36db6ba4615a9c"
+  },
+  "turn:regular turn (anonymous, no identity)": {
+    "sha256": "d059c4acd94bc4fa4e4efe40ee2816b10692d94bae17a817c0535598caba45fd"
+  },
+  "turn:regular turn (user + assistant, authenticated)": {
+    "sha256": "71a1236179fc288a5682bf8f957b602442b80742a3f4846eb28ea10c083edeff"
+  }
+}

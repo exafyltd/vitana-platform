@@ -48,7 +48,7 @@
  * - autopilot.validation.completed and autopilot.task.finalized events
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { isAutopilotExecutionArmed } from '../services/system-controls-service';
 import {
   getPendingPlanTasks,
@@ -120,7 +120,7 @@ const router = Router();
 // with just that header. Reuses the same GATEWAY_SERVICE_TOKEN bearer
 // pattern as admin-staging.ts / execute.ts.
 // =============================================================================
-function requireServiceToken(req: Request, res: Response, next: () => void): void {
+function requireServiceToken(req: Request, res: Response, next: NextFunction): void {
   // VTID-03598: this router is mounted at /api/v1/autopilot BEFORE the
   // prompts/recommendations sub-routers (see index.ts), so every request
   // under that prefix passes through here first — including requests meant
@@ -136,6 +136,17 @@ function requireServiceToken(req: Request, res: Response, next: () => void): voi
     req.path === "/recommendations/health"
   ) {
     next();
+    return;
+  }
+  // VTID-04530: /recommendations/* belongs to the member-facing Autopilot
+  // recommendations router (mounted at /api/v1/autopilot/recommendations,
+  // after this one), which verifies the member's own JWT on every path. This
+  // gate is for the service-to-service pipeline only; applying it here turned
+  // every member request (Autopilot popup list, count, activate, draft) into
+  // 401 "invalid service token" from 2026-08-10 (#2867) onward. Hand those
+  // requests to the router that owns them.
+  if (req.path === "/recommendations" || req.path.startsWith("/recommendations/")) {
+    next("router");
     return;
   }
   const header = req.header("authorization") ?? req.header("Authorization");

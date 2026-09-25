@@ -115,6 +115,7 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   'search_knowledge',
   // Memory / diary / reminders
   'search_memory',
+  'remember_fact',
   'save_diary_entry',
   'set_reminder',
   'find_reminders',

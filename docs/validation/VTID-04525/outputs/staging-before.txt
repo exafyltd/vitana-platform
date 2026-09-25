@@ -1,0 +1,5 @@
+Staging, signed out, before this PR (2026-09-25T04:05:09Z):
+404 text/html; charset=utf-8 GET /api/v1/admin/conversation/system -> <!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <title>Error</tit
+404 text/html; charset=utf-8 GET /api/v1/admin/conversation/system/history -> <!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <title>Error</tit
+404 text/html; charset=utf-8 GET /api/v1/admin/conversation/aggregates -> <!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <title>Error</tit
+401 application/json; charset=utf-8 GET /api/v1/admin/conversation/shadow-ranking -> {"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorizatio

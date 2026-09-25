@@ -1,0 +1,87 @@
+# VTID-04531 fix-mode round 1 — jest evidence (2026-09-25)
+
+$ npx jest \
+    services/gateway/test/orb/live/vtid-04531-latency-provider-label.test.ts \
+    services/gateway/test/orb/live/vtid-04542-latency-p0.test.ts \
+    services/gateway/test/orb/live/session/vtid-04542-latency-wiring.test.ts
+
+PASS test/orb/live/session/vtid-04542-latency-wiring.test.ts
+  VTID-04542 SSE per-turn latency tracking
+    ✓ a forwarded SSE audio chunk starts the per-turn tracker (the WS helper, via deps)
+    ✓ audio dropped while the model speaks does not start a turn
+    ✓ a throwing tracker never breaks the audio forward
+    ✓ deps without startVoiceTurnLatency (older wiring) still forward audio
+  VTID-04542 session-start timing + latency context
+    ✓ SSE route: records steps + total, and derives entry from headers
+    ✓ WS adapter: the same timing/context lands on the session (command hub origin)
+    ✓ the start response body is unchanged by the instrumentation
+  VTID-04542 orb-live.ts wiring (source contracts)
+    ✓ safe-fast path: facts mark, then the concurrent gather (gather+ledger marks), THEN the send, THEN greeting_dispatched
+    ✓ ladder path: every render goes through _renderSync, which marks dispatch right after ws.send
+    ✓ the awaited races are unchanged in bound: the same env budgets are still raced
+    ✓ greeting_sent stays marked before the greeting function is entered (dashboards)
+    ✓ turn-0 tracker: context attached right after construction, on both transports
+    ✓ turn-0 tracker: provider/meta prepared right before the first-audio finalize, on both transports
+    ✓ per-turn provider label comes from the shared resolver, not vertex/<stale constant>
+    ✓ SSE: orb-live passes startVoiceTurnLatency into the controller deps
+    ✓ hand-off timing: request at every swap site, drain in the handler, connect in the reconnect, first audio on the shared mark
+    ✓ prewarm outcome: claimed / missed diag with a reason, after the claim decision
+
+PASS test/orb/live/vtid-04542-latency-p0.test.ts
+  LatencyTracker — VTID-04542 additions
+    ✓ records the new greeting phases with their detail, in order
+    ✓ setMeta merges top-level fields, and core fields win on a clash
+    ✓ setSessionStart emits a session_start block with the offset to tracker start
+    ✓ no session_start block when none was attached
+    ✓ flag off: marks, meta and session start are all no-ops and nothing is emitted
+    ✓ finalize never throws when the OASIS write rejects
+  deriveLatencyEntry
+    ✓ origin containing "gateway" → command_hub, even with a mobile UA
+    ✓ falls back to the Referer when Origin is absent
+    ✓ mobile user agents → mobile
+    ✓ everything else → desktop, including missing headers
+  resolveLatencyProviderLabel
+    ✓ nova_sonic → nova_sonic/<model>
+    ✓ cascaded → cascade/polly for a Polly-backed cascade language (was vertex/…)
+    ✓ cascaded with no TTS backend for the language → cascade/unknown, never vertex
+    ✓ vertex only when the session is really on Vertex, with the live model
+    ✓ unset provider → unknown (no guessed vertex label)
+  SessionStartTimer
+    ✓ records step offsets and durations from handler entry
+  startWaitProbe
+    ✓ timed_out=false when the awaited promise wins the race
+    ✓ timed_out=true when the timeout wins the race
+    ✓ a rejected promise counts as settled and is still visible to the race
+    ✓ an absent promise (the code races Promise.resolve()) is never a timeout
+  turn-0 attach / finalize / dispatch helpers
+    ✓ attach puts session_start + entry/surface/authenticated on the event
+    ✓ finalize prep sets the real provider label, role, prewarm and rung
+    ✓ all helpers are no-ops (and never throw) without a tracker
+  persona hand-off timing (voice.latency.handoff)
+    ✓ reconnect mode: emits once, after the new upstream connected, with every leg
+    ✓ in-process mode (cascade): no connect leg
+    ✓ a rejected OASIS write never throws out of the hand-off hook
+    ✓ first audio with no swap in flight is a no-op
+    ✓ buildHandoffLatencyPayload is pure and ISO-stamps the request
+  VTID-04542 × VTID-04544 — wait marks on the concurrent greeting reads
+    ✓ timeBoundedGreetingRead passes the value through and marks timed_out from the read's own timeout branch
+    ✓ a throwing mark never reaches the caller
+    ✓ withLedgerWaitMark marks only on consume, with timed_out = read not settled
+
+PASS test/orb/live/vtid-04531-latency-provider-label.test.ts
+  VTID-04531: per-turn voice latency provider label
+    ✓ labels Nova Sonic sessions with the real Nova model id
+    ✓ gives the cascade its own label, never the Vertex model it never used
+    ✓ labels the Vertex bridge with the configured Vertex Live model id
+    ✓ never returns the stale gemini-2.0-flash-exp label for any provider
+    ✓ keeps the three providers distinguishable in the event
+    ✓ orb-live's per-turn tracker resolves the label from the shared session-aware resolver
+    ✓ a single resolver owns the label — no duplicate upstream module, no provider-only call
+
+Test Suites: 3 passed, 3 total
+Tests:       55 passed, 55 total
+Snapshots:   0 total
+Time:        1.741 s, estimated 8 s
+
+# tsc (services/gateway): exit_code=0
+# grep -n "^<<<<<<<\|^=======\|^>>>>>>>" services/gateway/src/routes/orb-live.ts → no matches

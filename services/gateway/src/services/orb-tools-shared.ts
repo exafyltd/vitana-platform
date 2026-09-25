@@ -107,6 +107,8 @@ import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLA
 import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
 import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
 import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
+// VTID-04562: developer knowledge tools (live snapshot + domain atlas).
+import { DEVELOPER_KNOWLEDGE_TOOL_HANDLERS, DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS } from './orb-tools/developer-knowledge-tools';
 // WAVE-MVA-1 — Marketplace Voice Assistant (expansion v3, plan sections
 // A17–A30): guided-shopping orchestrators + intent/preferences, and the
 // discovery/recommendation/explanation/compare/suitability/cart-confirm
@@ -360,6 +362,57 @@ async function _runRetrievalSearch(
     result: { items: knowledgeHits },
     text: `Found ${knowledgeHits.length} relevant knowledge entries:\n${formatted}`,
   };
+}
+
+/**
+ * VTID-04581: save a fact the member just stated, and report what is already
+ * stored (profile field, same value, or a conflicting value) so the model
+ * can answer truthfully in the same turn. See services/memory/remember-fact-tool.ts.
+ */
+export async function tool_remember_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'remember_fact requires a tenant_id on the session.' };
+  const { runRememberFact, formatRememberFactResult, profileColumnFor } = await import('./memory/remember-fact-tool');
+  const { rememberFact } = await import('./memory/remember');
+  const result = await runRememberFact(
+    {
+      tenant_id: id.tenant_id,
+      user_id: id.user_id,
+      fact_key: String(args.fact_key ?? ''),
+      fact_value: String(args.fact_value ?? ''),
+      about: typeof args.about === 'string' ? args.about : undefined,
+      confirm_replace: args.confirm_replace === true || args.confirm_replace === 'true',
+      thread_id: id.thread_id ?? id.session_id ?? null,
+    },
+    {
+      async readCurrentFact(tenantId, userId, factKey) {
+        const { data } = await sb
+          .from('memory_facts')
+          .select('fact_value, extracted_at')
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
+          .eq('fact_key', factKey)
+          .is('superseded_at', null)
+          .order('extracted_at', { ascending: false })
+          .limit(1);
+        const row = Array.isArray(data) ? data[0] : null;
+        return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
+      },
+      async readProfileValue(userId, key) {
+        const column = profileColumnFor(key);
+        if (!column) return null;
+        const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
+        const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+        return typeof value === 'string' && value.trim() ? value.trim() : null;
+      },
+      write: rememberFact,
+    },
+  );
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}`);
+  return { ok: true, result, text: formatRememberFactResult(result) };
 }
 
 export async function tool_search_memory(
@@ -723,10 +776,17 @@ export async function tool_search_events(
   // which the frontend orb widget already knows how to open as a drawer.
   // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
   // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  //
+  // VTID-04533: auto-redirect ALSO requires `open_event === true`. Opening the
+  // drawer closes the voice session, and before this a question that happened
+  // to match one event ("are there any other events except these two?")
+  // opened that event and ended the conversation instead of being answered.
   const EVENT_AUTONAV_GAP = 0.15;
+  const wantsOpen = args.open_event === true;
   const top = sr?.best?.[0];
   const second = sr?.best?.[1];
   const dominant =
+    wantsOpen &&
     !!top &&
     !hasRooms &&
     (
@@ -5725,6 +5785,7 @@ type OrbToolHandler = (
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
+  remember_fact: tool_remember_fact,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
@@ -5864,6 +5925,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
   ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
+  ...DEVELOPER_KNOWLEDGE_TOOL_HANDLERS,
   // WAVE-MVA-1 (Marketplace Voice Assistant)
   ...MARKETPLACE_GUIDE_TOOL_HANDLERS,
   ...MARKETPLACE_JOURNEY_TOOL_HANDLERS,
@@ -5927,6 +5989,8 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   // WAVE-6-VOICE-CATALOG-V2
   ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
+  // VTID-04562
+  ...DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by

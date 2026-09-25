@@ -1,0 +1,13 @@
+Staging and production, 2026-09-25 (read-only; bogus bearer, no user token used):
+  preview-aws-gateway  build ec9d5ee01  GET /api/v1/autopilot/recommendations/count -> 401 {"ok":false,"error":"invalid service token"}
+  gateway              build ec9d5ee01  GET /api/v1/autopilot/recommendations/count -> 401 {"ok":false,"error":"invalid service token"}
+"invalid service token" is emitted only by requireServiceToken in routes/autopilot.ts,
+never by routes/autopilot-recommendations.ts (which answers UNAUTHENTICATED).
+Owner screenshot: device preview Autopilot popup "Could not load recommendations - Fetch failed: 401".
+
+Member activations of community suggestions per week (read-only SQL):
+  2026-08-03  62 activated/completed
+  2026-08-10   0   <- #2867 (b1c092d73) merged 2026-08-10 17:52 +0200
+  2026-08-17 .. 2026-09-21  0 every week
+(rejections kept appearing: those are server-side archive/regeneration, not members.)
+Voice listing/activation call the functions in-process, not over HTTP, so voice was unaffected.

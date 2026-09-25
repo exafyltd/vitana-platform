@@ -63,7 +63,7 @@ const SELF_COMMIT_TOOLS = new Set<string>([
   'set_language', 'set_theme', 'set_voice_preferences', 'set_capability_preference',
   'mark_notifications_read', 'mark_conversation_read', 'mute_conversation', 'archive_conversation',
   'like_post', 'rsvp_event', 'cancel_rsvp', 'complete_event', 'add_to_calendar',
-  'set_goal', 'update_goal', 'reinforce_memory',
+  'set_goal', 'update_goal', 'reinforce_memory', 'remember_fact',
   'snooze_recommendation', 'dismiss_recommendation', 'dismiss_marketplace_recommendation',
   // VTID-04493: activating the member's OWN Autopilot item (books their own
   // calendar slot) — owner decision 2026-09-24: a spoken yes may commit it.
@@ -83,6 +83,8 @@ const READ_OVERRIDES = new Set<string>([
   'dev_run_simulator', 'dev_voice_lab_probe', 'dev_run_orb_selfcheck', 'admin_test_notification_category',
   'admin_test_specialist_connection', 'admin_kb_search', 'admin_kb_list_docs',
   'admin_marketplace_overview', 'admin_feedback_kpis', 'dev_recent_events',
+  // VTID-04562: the developer's map of the system (read-only lookup).
+  'dev_domain_atlas',
 ]);
 
 const HEALTH_TOOLS = new Set<string>([

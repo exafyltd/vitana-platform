@@ -32,7 +32,9 @@ import type { SupabaseIdentity } from '../../../middleware/auth-supabase-jwt';
 import type { ContextPack } from '../../../types/conversation';
 import { splitBootstrapSections } from '../instruction/bootstrap-packer';
 
-export type ContextBuilderKind = 'brain' | 'legacy' | 'lesson';
+// VTID-04560: 'work_surface' — Command Hub / admin / BackOffice / commerce
+// sessions carry only the work-surface context, never the member brain.
+export type ContextBuilderKind = 'brain' | 'legacy' | 'lesson' | 'work_surface';
 
 export interface BaseContextResult {
   contextInstruction?: string;
@@ -95,6 +97,78 @@ export function resolveBrainRole(input: {
   return input.identityRole || 'community';
 }
 
+/**
+ * VTID-04548 — the session's `active_role` (what the instruction's "role"
+ * line, the tool catalog, the Autopilot offer and the admin briefing key on).
+ * `fetchedRole` is the effective role (`resolveEffectiveRole`:
+ * role_preferences wins, else user_tenants.active_role — see
+ * services/orchestrator/active-role.ts). The Command Hub lifts a missing or
+ * community role to developer; mobile is always community. Pure; the rule
+ * the session start applied inline before this helper existed, and the rule
+ * the prewarm now applies too. `override` says which lift fired so the caller
+ * can log it.
+ */
+export function resolveSessionActiveRole(input: {
+  fetchedRole: string | null | undefined;
+  route?: string | null;
+  isMobile?: boolean;
+}): { role: string | null; override: 'command_hub' | 'mobile' | null } {
+  let role: string | null = input.fetchedRole ?? null;
+  let override: 'command_hub' | 'mobile' | null = null;
+  if ((input.route || '').startsWith('/command-hub') && (!role || role === 'community')) {
+    role = 'developer';
+    override = 'command_hub';
+  }
+  if (input.isMobile && role !== 'community') {
+    role = 'community';
+    override = 'mobile';
+  }
+  return { role, override };
+}
+
+/**
+ * VTID-04548 — the exact brain input the session start builds with
+ * (`buildBaseSessionContext` below), minus the per-session thread id. The
+ * prewarm warms the brain cache with this, so the cache key it warms is the
+ * key the session start looks up (`brainCacheKey` in
+ * services/vitana-brain-cache.ts: tenant, user, role, channel, timezone).
+ */
+export function brainBuildInputFor(req: {
+  identity: Pick<SupabaseIdentity, 'user_id' | 'tenant_id'>;
+  brainRole: string;
+  timezone?: string | null;
+}): Omit<BrainBuildInput, 'thread_id'> {
+  return {
+    user_id: req.identity.user_id,
+    tenant_id: req.identity.tenant_id || 'default',
+    role: req.brainRole,
+    channel: 'orb',
+    user_timezone: req.timezone || undefined,
+  };
+}
+
+/**
+ * VTID-04548 — what the prewarm needs to warm the cache the NEXT session
+ * start will read: the brain role that session will build for (same
+ * `resolveBrainRole` call, same inputs — the JWT identity carries no app role
+ * today, so role_preferences does not move the brain role; it moves only the
+ * session's `active_role`, see `resolveSessionActiveRole`) and the brain
+ * input it will build with.
+ */
+export function prewarmBrainInput(req: {
+  identity: Pick<SupabaseIdentity, 'user_id' | 'tenant_id'> & { active_role?: string | null };
+  route?: string | null;
+  isMobile?: boolean;
+  timezone?: string | null;
+}): { brainRole: string; input: Omit<BrainBuildInput, 'thread_id'> } {
+  const brainRole = resolveBrainRole({
+    isMobile: req.isMobile,
+    route: req.route || '',
+    identityRole: req.identity.active_role || null,
+  });
+  return { brainRole, input: brainBuildInputFor({ identity: req.identity, brainRole, timezone: req.timezone }) };
+}
+
 // ---------------------------------------------------------------------------
 // Base build (brain or legacy)
 // ---------------------------------------------------------------------------
@@ -134,12 +208,8 @@ export async function buildBaseSessionContext(
   const start = Date.now();
   try {
     const { instruction, contextPack, coreInstruction } = await (deps.buildBrain ?? defaultBuildBrain)({
-      user_id: req.identity.user_id,
-      tenant_id: req.identity.tenant_id || 'default',
-      role: req.brainRole,
-      channel: 'orb',
+      ...brainBuildInputFor({ identity: req.identity, brainRole: req.brainRole, timezone: req.timezone }),
       thread_id: req.sessionId,
-      user_timezone: req.timezone || undefined,
     });
     return {
       contextInstruction: instruction,

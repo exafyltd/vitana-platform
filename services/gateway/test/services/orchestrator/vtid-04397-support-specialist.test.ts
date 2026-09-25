@@ -102,7 +102,8 @@ describe('AC-1 off by default', () => {
   test('off: no target registered, no tools declared, member catalog unchanged', async () => {
     delete process.env[SUPPORT_SPECIALIST_ENABLED_ENV];
     registerDefaultDelegationTargets();
-    expect(listDelegationTargets().map((t) => t.agent_id)).toEqual(['operator']);
+    // VTID-04563: the developer deep dive registers next to the operator (Command Hub only).
+    expect(listDelegationTargets().map((t) => t.agent_id)).toEqual(['operator', 'deep_dive']);
     expect(memberDelegationTools({})).toEqual([]);
     const cat = names(buildLiveApiTools('authenticated', '/community', 'community'));
     for (const n of SUPPORT_NAMES) expect(cat).not.toContain(n);
@@ -219,7 +220,7 @@ describe('AC-5 through the dispatcher', () => {
     process.env[SUPPORT_SPECIALIST_ENABLED_ENV] = 'true';
     registerDefaultDelegationTargets();
     expect(listDelegationTargets('vitanaland').map((t) => t.agent_id)).toEqual(['support']);
-    expect(listDelegationTargets('command-hub').map((t) => t.agent_id)).toEqual(['operator']);
+    expect(listDelegationTargets('command-hub').map((t) => t.agent_id)).toEqual(['operator', 'deep_dive']);
   });
 
   test('a community member on voice gets the findings inside the ack window', async () => {

@@ -1,11 +1,11 @@
 # VTID-04531 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
 
-# 2026-09-25T09:34:47.256Z
-# execution_id=ee04be49-1736-4122-a539-752a3ac39246 finding_id=30f4096a-bd05-4d7f-a4e4-6420fc4c36c0 plan_version=1
+# 2026-09-25T20:47:44.418Z
+# execution_id=12d91c58-6262-4f88-8b31-f6609dea51df finding_id=30f4096a-bd05-4d7f-a4e4-6420fc4c36c0 plan_version=1
 # branch=dev-autopilot/ee04be49 base=main
 # llm provider=deepseek model=deepseek-flash
 
-# agent turns=115 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=13 fallback_used=false
+# agent turns=78 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=1 fallback_used=false
 
 $ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/ee04be49
 $ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
@@ -15,9 +15,12 @@ $ autopilot-agent: git status --porcelain → changed files; scope check against
 $ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
 $ npx jest <test file(s) paired to the changed files>   # runner, per project
 # a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add docs/validation/VTID-04531/acceptance.md   # create
+$ git add docs/validation/VTID-04531/commands.log   # create
+$ git add docs/validation/VTID-04531/outputs/execution.json   # create
+$ git add docs/validation/VTID-04531/outputs/fix-mode-jest.txt   # create
 $ git add services/gateway/src/routes/orb-live.ts   # modify
-$ git add services/gateway/src/orb/live/upstream/latency-provider-label.ts   # create
-$ git add services/gateway/test/orb/live/upstream/latency-provider-label.test.ts   # create
+$ git add services/gateway/test/orb/live/vtid-04531-latency-provider-label.test.ts   # create
 $ dev-autopilot: write docs/validation/VTID-04531/ evidence pack (this file)
 $ git commit && git push origin dev-autopilot/ee04be49
 $ gh pr create --base main --head dev-autopilot/ee04be49

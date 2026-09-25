@@ -49,7 +49,7 @@ import {
   resolveGreetingDirectiveByteBudget,
   greetingDirectiveExceedsBudget,
 } from '../../orb/live/instruction/greeting-directive-budget';
-import { buildOpeningIntentDirective } from './phrasing-rule';
+import { buildOpeningIntentDirective, PHRASING_RULE } from './phrasing-rule';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
@@ -142,8 +142,45 @@ export type WakeOpener =
   | 'override_v2'
   /** VTID-04395 — the member opened the ORB from Support to report a problem. */
   | 'support_report'
+  /** VTID-04575 — the member reopened a conversation that carries its earlier
+   *  turns: turn 1 continues that thread instead of starting a new one. */
+  | 'resume_thread'
   | 'silenced_on_cadence'
-  | 'legacy_default';
+  | 'legacy_default'
+  /** VTID-04560 — a work surface (Command Hub / admin / BackOffice /
+   *  commerce) opens with its own role's opener; no member rung can win. */
+  | 'work_surface_open';
+
+/**
+ * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
+ * declares them (not the ladder's evaluation order), for the Command Hub
+ * Opening tab. The `Record` makes this exhaustive at compile time: adding a
+ * member to `WakeOpener` without listing it here fails `tsc`.
+ */
+const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
+  safe_fast_newday_overview: 0,
+  safe_fast_first_time_welcome: 1,
+  conv_resume: 2,
+  safe_fast_proactive: 3,
+  safe_fast_newday: 4,
+  safe_fast_pending_context: 5,
+  silent_reconnect: 6,
+  day_close: 7,
+  newday_overview: 8,
+  override_v2: 9,
+  support_report: 10,
+  resume_thread: 11,
+  silenced_on_cadence: 12,
+  legacy_default: 13,
+  work_surface_open: 14,
+};
+export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
+  .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
+
+/** Whether a rung is switched on in this process (module switches set at boot by orb-live.ts). */
+export function wakeOpenerRungSwitches(): { newday_overview: boolean; day_close: boolean } {
+  return { newday_overview: _newdayOverviewRungEnabled, day_close: _dayCloseRungEnabled };
+}
 
 /** Side effects the live adapter must still perform after rendering, kept as
  *  DATA so the pure core never performs them (it only describes them). Mirrors
@@ -302,6 +339,12 @@ export interface GreetingDecisionContext {
    * support-report rung then opens as an intake instead of any briefing.
    */
   supportReportOpen?: boolean;
+  /**
+   * VTID-04575: true when this session was started by the client with the
+   * earlier turns of the same conversation (`transcript_history`) and nothing
+   * has been said on it yet. The resume_thread rung then continues that thread.
+   */
+  reopenedWithHistory?: boolean;
   /** One-shot: true only on the resend that follows a `day_close` open getting
    *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
    *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
@@ -344,6 +387,16 @@ export interface GreetingDecisionContext {
   /** A prepared autopilot checkpoint that can genuinely be activated tonight —
    *  offered by name, never invented. */
   pendingCheckpointTitle?: string | null;
+
+  // --- VTID-04560 work surface ---------------------------------------------
+  /** The session's served surface (session.assistantProfile.surface). Any
+   *  surface other than `vitanaland` takes the work_surface_open rung first. */
+  surface?: string | null;
+  /** The role the work surface serves (developer / admin / backoffice / commerce). */
+  workSurfaceRole?: string | null;
+  /** Short factual lines the opener may lead with (system pulse / admin
+   *  briefing). Facts, never finished sentences. */
+  workSurfaceHighlights?: string[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +664,79 @@ export function shouldAttemptResumeOverview(ctx: GreetingDecisionContext): {
  * adapter must perform. The ladder order + guards mirror orb-live.ts exactly.
  */
 export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-04560: a work surface never reaches a member rung, on either ladder
+  // and whether or not context resolved in time.
+  const workSurface = tryWorkSurfaceRung(ctx);
+  if (workSurface) return workSurface;
   return safeFastApplies(ctx) ? computeSafeFastLadder(ctx) : computeNormalLadder(ctx);
+}
+
+/** Per-role opener intent for the work surfaces (English INTENT, NEVER rule 41). */
+const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
+  developer:
+    'You are the developer\'s system supervisor for Vitanaland. Lead with the single most important thing ' +
+    'in the system right now, taken from the facts below: a failure, something waiting for their approval, ' +
+    'or a difference between staging and production. When nothing needs attention, say in fresh words that ' +
+    'the system looks steady. Then offer ONE concrete next step you can take for them: dig into it, show it, ' +
+    'or start a task. Stay on the system and the engineering work.',
+  admin:
+    'You are the tenant administrator\'s assistant. Lead with the single most important item from the facts ' +
+    'below (an approval, a flagged item, a KPI that moved). When nothing needs attention, say so in fresh words. ' +
+    'Then offer ONE concrete next step you can take for them. Stay on administration of the community.',
+  backoffice:
+    'You are the BackOffice operations assistant. Lead with the most important pending item from the facts ' +
+    'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
+    'ONE concrete next step. Stay on business operations.',
+  commerce:
+    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
+    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
+    'Stay on the organisation\'s business work.',
+};
+
+/**
+ * VTID-04560 — the work-surface opener. Returns null on the member surface
+ * (and for anonymous sessions), so every existing ladder is unchanged there.
+ * Keeps a genuine transport reconnect silent, exactly like silent_reconnect.
+ */
+export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  const surface = typeof ctx.surface === 'string' ? ctx.surface : null;
+  if (!surface || surface === 'vitanaland') return null;
+  if (ctx.isAnonymous) return null;
+  const od = ctx.openDecision;
+  if (od && od.mode === 'silent' && (od.source === 'native_resume' || od.source === 'reconnect_no_handle')) {
+    return {
+      wakeOpener: 'silent_reconnect',
+      directive: null,
+      diag: { lang: ctx.lang, prompt_len: 0, wake_opener: 'silent_reconnect', opening_source: od.source, surface },
+      effects: { markGreetingSent: true, armWatchdog: false },
+    };
+  }
+  const role = ctx.workSurfaceRole || 'developer';
+  const intent = WORK_SURFACE_OPENER_INTENT[role] || WORK_SURFACE_OPENER_INTENT.developer;
+  const highlights = (ctx.workSurfaceHighlights || [])
+    .map((h) => (typeof h === 'string' ? h.replace(/\s+/g, ' ').trim() : ''))
+    .filter((h) => h.length > 0)
+    .slice(0, 6)
+    .map((h) => (h.length > 240 ? `${h.slice(0, 237)}...` : h));
+  const facts = highlights.length > 0
+    ? `\nFacts (as of this session start):\n${highlights.map((h) => `- ${h}`).join('\n')}`
+    : '\nFacts: none loaded yet — offer to check the system status for them.';
+  const directive =
+    `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${intent} ` +
+    `Compose the wording yourself, fresh each time.${facts}`;
+  return {
+    wakeOpener: 'work_surface_open',
+    directive,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: directive.length,
+      wake_opener: 'work_surface_open',
+      surface,
+      role,
+      highlight_count: highlights.length,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
 }
 
 /**
@@ -839,6 +964,42 @@ export function buildSupportReportOpenTrigger(): string {
   );
 }
 
+/**
+ * VTID-04575 — the member closed and reopened the voice conversation, and the
+ * client sent its earlier turns. Turn 1 continues that conversation.
+ *
+ * This replaced the reconnect recovery prompt for reopens: a long user-role
+ * block ("You are recovering from a brief connection blip…" plus a stack of
+ * prohibitions) that Nova's content filter rejected on 44 of 61 reopens in
+ * 14 days. Written as a positive English intent (NEVER-rule 41, VTID-04124):
+ * no quoted dialogue, no prohibition stack, the model composes the words.
+ */
+export function buildResumeThreadOpenTrigger(): string {
+  return (
+    `Open with one to three short spoken sentences, as audio. ` +
+    `INTENT: The member closed this voice conversation and has just reopened it; its earlier turns are in the conversation history in your instructions. ` +
+    `Continue that conversation from where it stopped: name the topic you were on in a few words and carry it forward. ` +
+    `When their last question is still unanswered, answer it now; otherwise offer the next step on that same topic and ask whether to go ahead. ` +
+    `${PHRASING_RULE} Then stop and listen.`
+  );
+}
+
+function tryResumeThreadRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.reopenedWithHistory || ctx.isAnonymous) return null;
+  const trigger = buildResumeThreadOpenTrigger();
+  return {
+    wakeOpener: 'resume_thread',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'resume_thread',
+      decision_id: ctx.wakeBriefDecisionId || null,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.supportReportOpen || ctx.isAnonymous) return null;
   const trigger = buildSupportReportOpenTrigger();
@@ -881,6 +1042,25 @@ function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | nu
   };
 }
 
+/**
+ * VTID-04544 — true when a rung that never reads the overview payloads or the
+ * spoken-facts ledger is certain to win this opening, so the caller can skip
+ * gathering them (the payloads would be discarded).
+ *
+ * Single-sourced with the ladders: it asks the SAME rung functions both
+ * ladders consult, and both ladders consult them ABOVE day-close, the new-day
+ * overview and the resume rung (`computeSafeFastLadder`, `computeNormalLadder`).
+ * The normal ladder's `silent_reconnect` sits above these too; it skips the
+ * payloads as well, and the caller's pre-guard already excludes it.
+ *
+ * Reads only facts that are fixed synchronously at greeting time
+ * (`supportReportOpen`, `guidedTopicNarrationContent`, `isAnonymous`,
+ * `openDecision`) — never a greeting-facts pre-fetch field. Pure.
+ */
+export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boolean {
+  return trySupportReportRung(ctx) !== null || tryGuidedTopicRung(ctx) !== null;
+}
+
 /** VTID-04420: the name clause of the first-time welcome intent. */
 function firstTimeNamePart(firstName: string | null | undefined): string {
   const n = typeof firstName === 'string' ? firstName.trim().replace(/"/g, '') : '';
@@ -900,6 +1080,11 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
+
+  // VTID-04575 — a reopened conversation continues its own thread; it
+  // outranks every briefing, resume-NBA and proactive rung below.
+  const resumeFast = tryResumeThreadRung(ctx);
+  if (resumeFast) return resumeFast;
 
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
   // At 00:15 the calendar date has rolled and the morning briefing believes it
@@ -1121,6 +1306,10 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;
+
+  // VTID-04575 — same position on the normal ladder (see computeSafeFastLadder).
+  const resumeNormal = tryResumeThreadRung(ctx);
+  if (resumeNormal) return resumeNormal;
 
   // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
   // and a goodnight is loud) and above every morning rung.

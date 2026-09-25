@@ -31,6 +31,7 @@
  */
 import { buildBrainSystemInstruction } from './vitana-brain';
 import { isFeatureLive } from './feature-flags';
+import { getSupabase } from '../lib/supabase';
 
 type BrainInput = Parameters<typeof buildBrainSystemInstruction>[0];
 type BrainResult = Awaited<ReturnType<typeof buildBrainSystemInstruction>>;
@@ -54,10 +55,27 @@ interface Entry {
 
 const cache = new Map<string, Entry>();
 
+/**
+ * The cache key. role + channel are baked into the produced instruction, so
+ * they MUST be in the key. tenant + user scope the personalization (no
+ * cross-user leakage).
+ *
+ * VTID-04548: `user_timezone` is in the key too. The build renders it — the
+ * proactive guide's time-of-day framing and the memory block's timestamps
+ * (`vitana-brain.ts` passes it to both) — so a build made for one zone must
+ * never be served to a session in another. Before this, the prewarm endpoint
+ * warmed a build with NO timezone (rendered as UTC) under the same key the
+ * session start then looked up WITH the browser's zone, and the session was
+ * served the UTC build. An unset zone keys as '' (the same thing the build
+ * renders for it). Exported so the prewarm path and its tests use the exact
+ * key the session start looks up.
+ */
+export function brainCacheKey(input: Pick<BrainInput, 'tenant_id' | 'user_id' | 'role' | 'channel' | 'user_timezone'>): string {
+  return [input.tenant_id, input.user_id, input.role, input.channel, input.user_timezone || ''].join('|');
+}
+
 function keyOf(input: BrainInput): string {
-  // role + channel are baked into the produced instruction, so they MUST be in
-  // the key. tenant + user scope the personalization (no cross-user leakage).
-  return [input.tenant_id, input.user_id, input.role, input.channel].join('|');
+  return brainCacheKey(input);
 }
 
 function evictIfNeeded(): void {
@@ -103,9 +121,56 @@ export function brainCacheSize(): number {
  *
  * Failures are still never cached, under either setting.
  */
+/**
+ * VTID-04556 — did this user's memory change after `sinceMs`?
+ *
+ * The cached instruction carries the member's memory. Found in the staging
+ * end-to-end test (2026-09-25): session B reused a build cached 3 minutes
+ * earlier, before session A saved five facts and a session summary, and the
+ * model said it knew nothing about them. The gateway runs several tasks, so an
+ * in-process invalidation on the task that wrote the memory is not enough;
+ * this asks the store instead (two indexed `limit 1` reads).
+ *
+ * Returns true (changed), false (unchanged) or null (no store configured, so
+ * nothing can be known — the old behaviour). A failed or slow probe resolves
+ * true: rebuilding costs a few seconds, serving stale memory costs the
+ * member's trust.
+ */
+export const MEMORY_FRESHNESS_PROBE_TIMEOUT_MS = 400;
+
+export async function memoryChangedSince(
+  input: Pick<BrainInput, 'tenant_id' | 'user_id'>,
+  sinceMs: number,
+): Promise<boolean | null> {
+  const supabase = getSupabase();
+  if (!supabase || !input.user_id) return null;
+  const since = new Date(sinceMs).toISOString();
+  const probe = (async () => {
+    const [facts, items] = await Promise.all([
+      supabase.from('memory_facts').select('id').eq('user_id', input.user_id).gt('extracted_at', since).limit(1),
+      supabase.from('memory_items').select('id').eq('user_id', input.user_id).gt('created_at', since).limit(1),
+    ]);
+    if (facts.error || items.error) return true;
+    return (facts.data?.length ?? 0) > 0 || (items.data?.length ?? 0) > 0;
+  })();
+  const timeout = new Promise<boolean>((resolve) => {
+    const t = setTimeout(() => resolve(true), MEMORY_FRESHNESS_PROBE_TIMEOUT_MS);
+    (t as any).unref?.();
+  });
+  try {
+    return await Promise.race([probe, timeout]);
+  } catch {
+    return true;
+  }
+}
+
 export function buildBrainSystemInstructionCached(
   input: BrainInput,
-  opts: { now?: () => number } = {},
+  opts: {
+    now?: () => number;
+    /** VTID-04556: injectable for tests; defaults to the store probe. */
+    memoryChangedSince?: (input: BrainInput, sinceMs: number) => Promise<boolean | null>;
+  } = {},
 ): Promise<BrainResult> {
   const now = opts.now ?? Date.now;
   const key = keyOf(input);
@@ -120,8 +185,19 @@ export function buildBrainSystemInstructionCached(
       return hit.promise;
     }
     if (ttlReuseEnabled && now() - hit.builtAt < TTL_MS) {
-      console.log(`[ORB-BRAIN-CACHE] HIT ${key} (age ${now() - hit.builtAt}ms)`);
-      return hit.promise;
+      // VTID-04556: a completed build is reused only while the member's
+      // memory is unchanged since it was built.
+      const probe = opts.memoryChangedSince ?? memoryChangedSince;
+      const cachedEntry = hit;
+      return probe(input, cachedEntry.builtAt).then((changed) => {
+        if (changed === true) {
+          console.log(`[ORB-BRAIN-CACHE] STALE ${key} (memory changed since build, age ${now() - cachedEntry.builtAt}ms) — rebuilding`);
+          if (cache.get(key) === cachedEntry) cache.delete(key);
+          return buildBrainSystemInstructionCached(input, opts);
+        }
+        console.log(`[ORB-BRAIN-CACHE] HIT ${key} (age ${now() - cachedEntry.builtAt}ms)`);
+        return cachedEntry.promise;
+      });
     }
   }
 
@@ -151,8 +227,11 @@ export function buildBrainSystemInstructionCached(
 
 /**
  * Fire-and-forget warm for the prewarm endpoint. Builds (and caches) the brain
- * instruction for the common authenticated community ORB path so the user's
- * first tap is a cache hit. No-op when the flag is off; never throws.
+ * instruction so the user's first tap is a cache hit. The caller passes the
+ * same input the session start will build with (VTID-04548:
+ * `prewarmBrainInput` in orb/live/session/session-context-builder.ts), so the
+ * warmed key is the key the session looks up. No-op when the flag is off;
+ * never throws.
  */
 export function warmBrainCache(input: BrainInput): void {
   if (!isFeatureLive('ORB_BRAIN_CACHE')) return;
