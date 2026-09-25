@@ -43,7 +43,7 @@
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
-import { Router, Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
@@ -85,6 +85,7 @@ import {
   notePersonaSwapConnected,
   notePersonaSwapFirstAudio,
 } from '../orb/live/persona-swap-latency';
+import { handleClientLatencyBeacon } from '../orb/live/client-latency-beacon';
 // BOOTSTRAP-VOICE-LATENCY-SPECULATION: speculative persona-voice resolution to
 // remove the registry round-trip from the turn-0 critical path. Flag-gated
 // (FEATURE_VOICE_SPECULATION), default OFF → no-op (see voice-speculation.ts).
@@ -15868,6 +15869,28 @@ async function getStoredLanguagePreference(
 router.post('/live/session/start', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveSessionStart(req, res);
 });
+
+/**
+ * VTID-04542 — POST /live/client-latency (ORB latency P0, measurement only).
+ *
+ * The widget's latency beacon: ms since the member tapped the ORB for each
+ * client-side milestone. 204 immediately, then one `voice.latency.client`
+ * OASIS event (fire-and-forget); 400 on a bad body, 413 over 4 KB, never 5xx
+ * for a telemetry fault. `text/plain` is accepted for navigator.sendBeacon.
+ * Contract + validation: orb/live/client-latency-beacon.ts.
+ */
+router.post(
+  '/live/client-latency',
+  express.text({ type: 'text/plain', limit: '16kb' }),
+  optionalAuth,
+  (req: AuthenticatedRequest, res: Response) => {
+    try {
+      handleClientLatencyBeacon(req as any, res);
+    } catch {
+      if (!res.headersSent) res.status(204).end();
+    }
+  },
+);
 
 /**
  * VTID-03471 (L-04/L-05) — GET /live/transport
