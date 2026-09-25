@@ -93,3 +93,13 @@ No live voice session was run: a session writes rows as the test member on
 the one production database, which CLAUDE.md forbids on every host. The
 staging evidence is the `orb.navigator.acknowledged` / `resolved` events that
 real staging sessions produce after this deploys (read-only query).
+
+## OASIS
+
+OASIS_PROOF: new event `orb.navigator.acknowledged` (vtid VTID-04520, source
+`nav-ack`, status info on `opened`, warning otherwise; payload session_id,
+screen_id, route, status, reason, entry_kind, applied, route_changed,
+latency_ms), asserted in services/gateway/test/navigation/nav-ack.test.ts
+("records the outcome as orb.navigator.acknowledged"). Registered in
+`src/types/cicd.ts`. The existing `conversation.offer.*` events gain source
+`navigator_v2_offer`; no new topic.
