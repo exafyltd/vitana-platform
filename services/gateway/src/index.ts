@@ -100,6 +100,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRouter = require('./routes/autopilot').default;
   // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
+  // VTID-04508: Community Autopilot CA-7 personal invite links
+  const communityInvitesRouter = require('./routes/community-invites').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
@@ -193,6 +195,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   const partnerOrgsRouter = require('./routes/partner-orgs').default;
+  // VTID-04478: Commerce partner onboarding engine (checklist, submit, lifecycle)
+  const partnerOnboardingRouter = require('./routes/partner-onboarding').default;
+  const partnerOnboardingCatalogueRouter = require('./routes/partner-onboarding-catalogue').default;
+  const partnerOnboardingConnectionsRouter = require('./routes/partner-onboarding-connections').default;
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -825,6 +831,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
 
+  // VTID-04508: Community Autopilot CA-7 — personal invite links + attribution
+  mountRouterSync(app, '/api/v1/invites', communityInvitesRouter, { owner: 'community-invites' });
+
   // VTID-02402: VAEA Phase 1.5 — read + CRUD for Business Hub panel
   mountRouterSync(app, '/api/v1/vaea', vaeaRouter, { owner: 'vaea' });
 
@@ -1004,7 +1013,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
   // surface that groups recent B0d-real OASIS events by decision_id.
   // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
-  // Auth: requireExafyAdmin (exposes operator-grade decision metadata).
+  // Auth: requireAuth + requireExafyAdmin (exposes operator-grade decision
+  // metadata; requireAuth was missing until VTID-04491, so it always 401'd).
   const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
   mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
 
@@ -1131,6 +1141,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter, { owner: 'partner-orgs' });
+  // VTID-04478: Commerce partner onboarding engine
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingRouter, { owner: 'partner-onboarding' });
+  // VTID-04488: onboarding catalogue step (/:orgId/catalogue/*); its paths do
+  // not collide with the engine router's, so requests fall through to it.
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingCatalogueRouter, { owner: 'partner-onboarding-catalogue' });
+  // VTID-04499: onboarding connections step (/:orgId/connections)
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1957,6 +1974,56 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       } catch (error) {
         console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
       }
+
+      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // frontend's /nav-registry.json and builds the screen index in the
+      // background; the bundled vectors make that near-instant unless the
+      // registry gained texts. Non-fatal: tools fall back to the legacy
+      // navigator until the index exists.
+      if (process.env.NAV_V2_ENABLED === 'true') {
+        const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
+        warmNavService()
+          .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))
+          .catch((err: any) => console.warn('⚠️ Registry navigation warm failed (non-fatal):', err.message));
+      }
+
+      // VTID-04525 (Conversation hub B1): record one conversation.system.snapshot
+      // per stack when this build changed the conversation system (tools,
+      // opening providers or flags). Deferred so boot is never slowed; a no-op
+      // when the fingerprint matches the last recorded one; never throws.
+      setTimeout(() => {
+        try {
+          const intro = require('./services/conversation/conversation-system-introspection');
+          const { getSupabase } = require('./lib/supabase');
+          const { fetchSystemSnapshotEvents } = require('./routes/conversation-hub-repository');
+          const { emitOasisEvent } = require('./services/oasis-event-service');
+          const { VITANA_ENV } = require('./env');
+          intro.recordConversationSystemSnapshot({
+            env: VITANA_ENV,
+            readLatest: async (env: string) => {
+              const sb = getSupabase();
+              if (!sb) throw new Error('Database not configured');
+              const { data, error } = await fetchSystemSnapshotEvents(sb, env, 1);
+              if (error) throw new Error(error.message);
+              return data && data[0] ? (data[0].metadata as any) : null;
+            },
+            emit: (payload: any) => emitOasisEvent({
+              vtid: 'VTID-04525',
+              type: 'conversation.system.snapshot',
+              source: 'gateway',
+              status: 'info',
+              message: `Conversation system changed: ${payload.counts.tools} tools, ${payload.counts.providers} opening providers, ${payload.counts.flags} flags`,
+              payload,
+              surface: 'system',
+              actor_role: 'system',
+            }),
+          }).then((r: { recorded: boolean; reason: string; fingerprint?: string }) =>
+            console.log(`🧭 Conversation system snapshot: ${r.recorded ? 'recorded' : 'not recorded'} (${r.reason}) ${r.fingerprint ?? ''}`),
+          );
+        } catch (error) {
+          console.warn('⚠️ Conversation system snapshot failed (non-fatal):', error);
+        }
+      }, 45_000).unref();
 
       // Agents Registry: bootstrap Tier 2 (embedded) agents — they live in this
       // process so if the gateway is up, they are up. Marks each as healthy.

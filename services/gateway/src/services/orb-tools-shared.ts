@@ -45,6 +45,7 @@ import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './
 import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
 import { FEEDBACK_SETTINGS_TOOL_HANDLERS, FEEDBACK_SETTINGS_TOOL_DECLARATIONS } from './orb-tools/feedback-settings-tools';
 import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/discovery-tools';
+import { COMMUNITY_AUTOPILOT_TOOL_HANDLERS, activateForVoice } from './orb-tools/community-autopilot-tools';
 import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
 import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
 import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
@@ -722,10 +723,17 @@ export async function tool_search_events(
   // which the frontend orb widget already knows how to open as a drawer.
   // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
   // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  //
+  // VTID-04533: auto-redirect ALSO requires `open_event === true`. Opening the
+  // drawer closes the voice session, and before this a question that happened
+  // to match one event ("are there any other events except these two?")
+  // opened that event and ended the conversation instead of being answered.
   const EVENT_AUTONAV_GAP = 0.15;
+  const wantsOpen = args.open_event === true;
   const top = sr?.best?.[0];
   const second = sr?.best?.[1];
   const dominant =
+    wantsOpen &&
     !!top &&
     !hasRooms &&
     (
@@ -1819,11 +1827,29 @@ export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdenti
     steps_voice_en: result.steps_voice_en,
     steps_voice_de: result.steps_voice_de,
     redirect_route: result.redirect_route,
+    // VTID-04521: navigate_to_screen takes a screen id, not a route.
+    redirect_screen_id: await redirectScreenIdFor(result.redirect_route),
     redirect_offer_en: result.redirect_offer_en,
     redirect_offer_de: result.redirect_offer_de,
     citation: result.citation,
   };
   return { ok: true, result: payload, text: '' };
+}
+
+/** VTID-04521: the screen id for an explain_feature redirect_route. */
+async function redirectScreenIdFor(route: string | null | undefined): Promise<string | null> {
+  if (!route) return null;
+  try {
+    if (process.env.NAV_V2_ENABLED === 'true') {
+      const { findRegistryScreenByRoute } = await import('../navigation/nav-dispatch');
+      const s = findRegistryScreenByRoute(route);
+      if (s) return s.id;
+    }
+    const { lookupByRoute } = await import('../lib/navigation-catalog');
+    return lookupByRoute(route)?.screen_id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function tool_resolve_recipient(
@@ -2617,9 +2643,9 @@ export async function tool_send_chat_message(
  * registry; LiveKit's tool runner uses it via the same registry. Single
  * source — no per-pipeline divergence.
  *
- * Verifies ownership (rec.user_id must be set and match the actor — VTID-04464),
- * that it is a community item in an activatable state, flips status
- * new/snoozed→activated only if not already activated, and emits
+ * Delegates to the canonical community activation (VTID-04493): owner,
+ * community source and activatable status are checked there, and the same
+ * calendar slot / OASIS event / notification as the popup are produced. Emits
  * guide.initiative.executed telemetry fire-and-forget so the funnel
  * dashboards stay accurate regardless of which surface drove activation.
  */
@@ -2671,56 +2697,33 @@ export async function tool_activate_recommendation(
     return { ok: false, error: 'not_signed_in' };
   }
   try {
-    const { data: rec, error: fetchErr } = await sb
-      .from('autopilot_recommendations')
-      .select('id, title, summary, status, user_id, source_type')
-      .eq('id', recId)
-      .maybeSingle();
-
-    if (fetchErr) {
-      return { ok: false, error: fetchErr.message };
+    // VTID-04493 (CA-1): one activation for every surface. The canonical
+    // community activation checks owner + source_type + status and books the
+    // calendar slot, emits the OASIS event and notifies — the same result the
+    // popup's Go button produces. This tool used to only flip the status.
+    const outcome = await activateForVoice(id.user_id, recId, id.tenant_id, { confirmed: args.confirm === true });
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.error ?? 'activation_failed' };
     }
-    if (!rec) {
-      return { ok: false, error: 'recommendation_not_found' };
+    // VTID-04503: a medium-risk action needs the member's confirmation after a
+    // read-back. Nothing has changed yet; the pending offer is kept.
+    if (outcome.needs_app) {
+      return {
+        ok: true,
+        result: { finish_in_app: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done by voice: this one is published only from the app preview. Tell the member in your own words that the draft is waiting in their Autopilot to review and post. ${outcome.readback ?? ''}`,
+      };
     }
-    const recRow = rec as {
-      id: string;
-      title: string | null;
-      summary: string | null;
-      status: string | null;
-      user_id: string | null;
-      source_type: string | null;
-    };
-    // VTID-04464: owner must be present and equal. The old check let an
-    // ownerless row (user_id null) be activated by any signed-in member.
-    if (!recRow.user_id || recRow.user_id !== id.user_id) {
-      return { ok: false, error: 'recommendation_belongs_to_another_user' };
-    }
-    // VTID-04464: a member's voice "yes" only activates community Autopilot
-    // items. Dev Autopilot findings have their own governed activation path
-    // (autopilot_activate_recommendation in the Operator Console).
-    if (recRow.source_type !== 'community') {
-      return { ok: false, error: 'not_a_community_recommendation' };
+    if (outcome.needs_confirmation) {
+      return {
+        ok: true,
+        result: { awaiting_confirmation: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done yet. Read this back to the member in your own words and, if they agree, call activate_recommendation again with confirm=true: ${outcome.readback ?? ''}`,
+      };
     }
 
-    const alreadyActive = recRow.status === 'activated';
-    // VTID-04464: rejected / expired / completed items are not re-opened by voice.
-    if (!alreadyActive && recRow.status !== 'new' && recRow.status !== 'snoozed') {
-      return { ok: false, error: `recommendation_not_activatable:${recRow.status ?? 'unknown'}` };
-    }
-    if (!alreadyActive) {
-      const { error: updErr } = await sb
-        .from('autopilot_recommendations')
-        .update({ status: 'activated', updated_at: new Date().toISOString() })
-        .eq('id', recId);
-      if (updErr) {
-        return { ok: false, error: updErr.message };
-      }
-    }
-
-    // Fire-and-forget telemetry. Mirrors the inline Vertex case path so
-    // funnel dashboards (`guide.initiative.executed`) keep counting both
-    // voice and REST activations under the same event type.
+    // Fire-and-forget telemetry: funnel dashboards (`guide.initiative.executed`)
+    // keep counting voice activations under the same event type.
     import('./guide')
       .then(({ emitGuideTelemetry }) => {
         emitGuideTelemetry('guide.initiative.executed', {
@@ -2728,30 +2731,32 @@ export async function tool_activate_recommendation(
           initiative_key: 'autopilot_top_recommendation',
           on_yes_tool: 'activate_recommendation',
           recommendation_id: recId,
-          already_active: alreadyActive,
+          already_active: outcome.already_active,
         }).catch(() => {});
       })
       .catch(() => {});
 
-    // DEV-COMHU-0505 (review follow-up): consume the pending CTA ONLY now that
-    // activation has verified+succeeded, so a transient fetch/update error
-    // above leaves the row intact for the user's retry. Fire-and-forget.
+    // DEV-COMHU-0505: consume the pending CTA ONLY after activation succeeded,
+    // so a transient error leaves it intact for the user's retry.
     if (recIdFromPendingCta && id.user_id) {
       void import('./orb/orb-session-state')
         .then(({ clearOrbSessionState }) => clearOrbSessionState(sb, id.user_id, 'pending_cta'))
         .catch(() => {});
     }
 
-    const title = recRow.title ?? 'that recommendation';
+    const title = outcome.title ?? 'that recommendation';
     return {
       ok: true,
       result: {
-        title: recRow.title,
-        already_active: alreadyActive,
+        title: outcome.title,
+        already_active: outcome.already_active,
+        calendar_event_id: outcome.calendar_event_id,
+        action_result: outcome.action_result ?? null,
       },
-      text: alreadyActive
-        ? `"${title}" was already on your active list — I'll keep it there.`
-        : `Done — "${title}" is on your active list. Open Autopilot when you're ready to start it.`,
+      text: outcome.already_active
+        ? `"${title}" was already active; nothing changed.`
+        : `Activated "${title}"` +
+          (outcome.calendar_event_id ? '; a calendar slot was booked for it.' : '.'),
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'activate_recommendation error';
@@ -3188,6 +3193,28 @@ export async function tool_navigate_to_screen(
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
 
+  // VTID-04517: with NAV_V2_ENABLED the screen registry decides. Screens that
+  // need an entity id (a member's profile, one meetup) and role surfaces the
+  // registry does not cover yet still use the legacy path below.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
+      const screen = nav.findRegistryScreen(screenIdArg);
+      if (screen && !nav.needsEntity(screen)) {
+        return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
+      }
+      if (!screen) {
+        // An id the registry does not know is usually invented. Resolve what
+        // the model said it wanted instead of fuzzy-matching the id string.
+        const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+        const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+        const r = await nav.navigateByRequest(query, 'open', navCtx);
+        if (r) return r;
+      }
+    }
+  }
+
   const { emitOasisEvent } = await import('./oasis-event-service');
 
   // Three-tier resolution: exact → alias → intent-recovery → fuzzy.
@@ -3623,6 +3650,35 @@ export async function tool_navigate(
   // either user_id or tenant_id is missing.
   const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
   const isAnonymous = !id.user_id || !id.tenant_id;
+
+  // VTID-04517: with NAV_V2_ENABLED the registry resolver answers. `intent`
+  // says whether the member asked to open something or where it is; only an
+  // explicit open moves the screen. Falls back to the legacy navigator below
+  // when the resolver cannot run, or on role surfaces it does not cover yet.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const intent = args.intent === 'open' ? 'open' : 'where';
+      // VTID-04521: a "where" answer ends with an offer; hold it so a bare
+      // "yes" opens that screen (the continuation bind consumes pending_cta).
+      const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
+        ? async (o: { screen_id: string; title: string; route: string }) => {
+            const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+            await recordPendingOffer(sb, id.user_id as string, {
+              tool: 'navigate_to_screen',
+              payload: { screen_id: o.screen_id, route: o.route, title: o.title },
+              source: 'navigator_v2_offer',
+              key: `nav:${o.screen_id}`,
+              ttlMinutes: 5,
+            });
+          }
+        : undefined;
+      const r = await nav.navigateByRequest(question, intent, {
+        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+      });
+      if (r) return r;
+    }
+  }
 
   const { consultNavigator } = await import('./navigator-consult');
   const { emitOasisEvent } = await import('./oasis-event-service');
@@ -5767,6 +5823,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...CHAT_PRIVACY_TOOL_HANDLERS,
   ...FEEDBACK_SETTINGS_TOOL_HANDLERS,
   ...DISCOVERY_TOOL_HANDLERS,
+  // VTID-04493: member Autopilot list/activate — declared in live-tool-catalog.ts.
+  ...COMMUNITY_AUTOPILOT_TOOL_HANDLERS,
   ...AWARENESS_TOOL_HANDLERS,
   ...DEVELOPER_TOOL_HANDLERS,
   ...P0_GAP_TOOL_HANDLERS,

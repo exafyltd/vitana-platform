@@ -32,6 +32,7 @@
  *      changes.
  */
 
+import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
 import {
@@ -77,6 +78,16 @@ import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
+import {
+  detectBackendDataLeak,
+  effectiveToolCallLimit,
+  isBeforeFirstUserWord,
+  isOpeningActionTool,
+  OPENING_ACTION_GUIDANCE,
+  loopGuardReplyMaxAudioMs,
+  outputPreview,
+  pcmChunkDurationMs,
+} from './opening-turn-guard';
 
 /**
  * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
@@ -668,30 +679,25 @@ export function createUpstreamLiveMessageHandler(
                         makeSupabaseAcceptanceDeps(_accSb),
                       ),
                     )
-                    .then((bound) => {
+                    .then(async (bound) => {
                       if (!bound || bound.tool !== 'navigate_to_screen') return;
                       const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-                      if (!p.screen_id || !p.route) return;
-                      // Re-check at dispatch time: if the LLM navigated while the
-                      // async read was in flight, defer to it (no double-nav).
+                      // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+                      // openScreen (every gate, speak first, no session latch).
+                      const built = await buildContinuationDirective(session as any, p);
+                      if (!built) return;
+                      // Re-check at dispatch time: if the LLM navigated while the async
+                      // read was in flight, defer to it (no double-nav).
                       if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
-                      const directive = {
-                        type: 'orb_directive',
-                        directive: 'navigate',
-                        screen_id: p.screen_id,
-                        route: p.route,
-                        title: p.title || p.screen_id,
-                        reason: 'continuation_accept',
-                        vtid: 'VTID-NAV-01',
-                      };
+                      const directive = built.directive;
                       if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
                       if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                         try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
                       }
-                      session.navigationDispatched = true;
+                      if (built.latch) session.navigationDispatched = true;
                       markNavigationDispatchedThisTurn(session);
                       console.log(
-                        `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+                        `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${String(directive.route)}) — session=${session.sessionId}`,
                       );
                     })
                     .catch((err) =>
@@ -724,7 +730,8 @@ export function createUpstreamLiveMessageHandler(
                   user_id: session.identity.user_id,
                   tenant_id: session.identity.tenant_id,
                   // VTID-04367: the role the user is speaking in scopes the row.
-                  active_role: session.active_role || session.identity.role || null,
+                  // VTID-04495: never the JWT role claim ('authenticated').
+                  active_role: session.active_role || null,
                 };
               } else if (ctx.deps.isDevSandbox()) {
                 userMemoryIdentity = {
@@ -1098,6 +1105,9 @@ export function createUpstreamLiveMessageHandler(
               // navigationDispatched stays TRUE so input audio stays gated until
               // the widget closes the connection.
               session.pendingNavigation = undefined;
+              // VTID-04521: per-directive, not per-session — reset so a later
+              // navigation in the same session is not skipped as a duplicate.
+              session.navigationDirectiveSentImmediately = false;
             } else {
               // VTID-NAV-DIAG: turn_complete fired but no navigation was queued.
               // This is what "stuck in listening after asking for redirect" looks
@@ -1771,6 +1781,23 @@ export function handleAudioOutput(
 
   ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
   session.audioOutChunks++;
+  // VTID-04480: the reply that follows the loop guard was asked for one
+  // short sentence. Past the cap, mute the rest of the turn.
+  const guardReply = (session as any).loopGuardReply as { audioMs: number } | undefined;
+  if (guardReply && (session as any).suppressCurrentTurnAudio !== true) {
+    guardReply.audioMs += pcmChunkDurationMs(event.dataB64, event.mimeType);
+    const capMs = loopGuardReplyMaxAudioMs();
+    if (guardReply.audioMs > capMs) {
+      (session as any).suppressCurrentTurnAudio = true;
+      console.warn(
+        `[VTID-04480] Reply after the loop guard passed ${capMs}ms of audio for session ${session.sessionId} — muting the rest of the turn.`,
+      );
+      ctx.deps.emitDiag(session, 'loop_guard_reply_capped', {
+        audio_ms: Math.round(guardReply.audioMs),
+        cap_ms: capMs,
+      });
+    }
+  }
   if ((session as any).suppressCurrentTurnAudio === true) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
@@ -1883,6 +1910,27 @@ export function handleTranscript(
   }
   session.outputTranscriptBuffer += outputTranscription;
 
+  // VTID-04480: the model is reading a tool payload aloud (JSON, ids,
+  // snake_case keys). Nova's speculative text runs ahead of its audio, so
+  // muting here stops it before most of it is heard.
+  if ((session as any).suppressCurrentTurnAudio !== true) {
+    // The new text plus a little before it, so a key or id split across two
+    // transcript chunks is still seen whole.
+    const leak = detectBackendDataLeak(
+      session.outputTranscriptBuffer.slice(-(outputTranscription.length + 80)),
+    );
+    if (leak) {
+      (session as any).suppressCurrentTurnAudio = true;
+      console.warn(
+        `[VTID-04480] Backend data (${leak}) in spoken output for session ${session.sessionId} — muting the rest of the turn.`,
+      );
+      ctx.deps.emitDiag(session, 'backend_data_speech_suppressed', {
+        kind: leak,
+        buffer_len: session.outputTranscriptBuffer.length,
+      });
+    }
+  }
+
   // VTID-03143 duplicate-turn detection (same normalization + prefix rule
   // as the raw handler).
   const SUPPRESS_PREFIX_CHARS = 30;
@@ -1932,15 +1980,28 @@ export function handleToolCall(
     try { ctx.deps.sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
   }
 
-  if (session.consecutiveToolCalls > getMaxConsecutiveToolCalls()) {
-    console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${getMaxConsecutiveToolCalls()}). Sending synthetic loop-break response.`);
-    ctx.deps.emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
+  // VTID-04480: before the first word of a session the budget is smaller —
+  // an opening that gathers data through a chain of tools ends in a
+  // monologue that reads the payloads aloud.
+  const toolLimit = effectiveToolCallLimit(session, getMaxConsecutiveToolCalls());
+  if (session.consecutiveToolCalls > toolLimit.limit) {
+    console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${toolLimit.limit}${toolLimit.opening ? ', opening turn' : ''}). Sending synthetic loop-break response.`);
+    ctx.deps.emitDiag(session, 'tool_loop_guard', {
+      consecutive: session.consecutiveToolCalls,
+      dropped_tools: toolNames,
+      limit: toolLimit.limit,
+      opening_turn: toolLimit.opening,
+    });
     ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
       session_id: session.sessionId,
       consecutive: session.consecutiveToolCalls,
       tools: toolNames,
       function_call_count: event.calls.length,
+      opening_turn: toolLimit.opening,
     }, 'warning').catch(() => { });
+    // VTID-04480: the reply this guidance asks for is one short sentence;
+    // handleAudioOutput caps it (the turn_complete resets it).
+    if (!(session as any).loopGuardReply) (session as any).loopGuardReply = { audioMs: 0 };
 
     // VTID-TOOLGUARD-FIX: the guard previously sent {success:false, error:
     // '...'} — a shape observed live (2026-07-28, session live-be473671...)
@@ -1996,10 +2057,23 @@ export function handleToolCall(
     return;
   }
 
+  // VTID-04509: before the user has said a word nothing has been accepted,
+  // so an action tool (the opener's suggested step, a booking, a session
+  // narration, a navigation) is answered with guidance to OFFER it instead.
+  const beforeFirstUserWord = isBeforeFirstUserWord(session);
+
   for (const fc of event.calls) {
     const toolName = fc.name;
     const toolArgs = fc.args || {};
     const callId = fc.id || randomUUID();
+
+    if (beforeFirstUserWord && isOpeningActionTool(toolName)) {
+      console.warn(`[VTID-04509] Opening-turn action refused for session ${session.sessionId}: ${toolName} (no user speech yet)`);
+      ctx.deps.emitDiag(session, 'opening_action_refused', { tool: toolName });
+      ctx.client.sendToolResult({ callId, name: toolName, success: true, output: OPENING_ACTION_GUIDANCE });
+      session.modelRespondedThisTurn = false;
+      continue;
+    }
 
     console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
 
@@ -2176,7 +2250,19 @@ export function handleTurnComplete(
   session.modelRespondedThisTurn = false;
   session.turnCompleteAt = Date.now();
   console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
-  ctx.deps.emitDiag(session, 'turn_complete');
+  // VTID-04480: what the model said this turn, bounded — a session that
+  // ends before a user turn writes no transcript anywhere else.
+  const turnOutputPreview = outputPreview(session.outputTranscriptBuffer || '');
+  if (turnOutputPreview) {
+    ctx.deps.emitDiag(session, 'turn_complete', {
+      output_preview: turnOutputPreview,
+      output_chars: (session.outputTranscriptBuffer || '').length,
+      output_suppressed: (session as any).suppressCurrentTurnAudio === true,
+    });
+  } else {
+    ctx.deps.emitDiag(session, 'turn_complete');
+  }
+  (session as any).loopGuardReply = undefined;
 
   if (session.identity?.tenant_id && session.identity?.user_id) {
     const _cadenceSb = getSupabase();
@@ -2391,28 +2477,25 @@ export function handleTurnComplete(
               makeSupabaseAcceptanceDeps(_accSb),
             ),
           )
-          .then((bound) => {
+          .then(async (bound) => {
             if (!bound || bound.tool !== 'navigate_to_screen') return;
             const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-            if (!p.screen_id || !p.route) return;
+            // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+            // openScreen (every gate, speak first, no session latch).
+            const built = await buildContinuationDirective(session as any, p);
+            if (!built) return;
+            // Re-check at dispatch time: if the LLM navigated while the async
+            // read was in flight, defer to it (no double-nav).
             if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
-            const directive = {
-              type: 'orb_directive',
-              directive: 'navigate',
-              screen_id: p.screen_id,
-              route: p.route,
-              title: p.title || p.screen_id,
-              reason: 'continuation_accept',
-              vtid: 'VTID-NAV-01',
-            };
+            const directive = built.directive;
             if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
             if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
               try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
             }
-            session.navigationDispatched = true;
+            if (built.latch) session.navigationDispatched = true;
             markNavigationDispatchedThisTurn(session);
             console.log(
-              `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+              `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${String(directive.route)}) — session=${session.sessionId}`,
             );
           })
           .catch((err) =>
@@ -2441,7 +2524,8 @@ export function handleTurnComplete(
         user_id: session.identity.user_id,
         tenant_id: session.identity.tenant_id,
         // VTID-04367: the role the user is speaking in scopes the row.
-        active_role: session.active_role || session.identity.role || null,
+        // VTID-04495: never the JWT role claim ('authenticated').
+        active_role: session.active_role || null,
       };
     } else if (ctx.deps.isDevSandbox()) {
       userMemoryIdentity = {
@@ -2713,6 +2797,8 @@ export function handleTurnComplete(
       console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
     }
     session.pendingNavigation = undefined;
+    // VTID-04521: per-directive — see the raw handler's mirror.
+    session.navigationDirectiveSentImmediately = false;
   } else {
     console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
   }

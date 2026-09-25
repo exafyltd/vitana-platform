@@ -27,7 +27,10 @@ export type OrbSessionStateKey =
   | 'recent_openers'
   // VTID-04423 — the opening's provider candidates, re-ranked mid-conversation
   // by get_next_best_action (services/conversation/turn-candidates.ts).
-  | 'brain_candidates';
+  | 'brain_candidates'
+  // VTID-04493 — ids of the Autopilot items Vitana just read aloud, so
+  // "activate those" / "the second one" resolves on every voice transport.
+  | 'autopilot_listed_ids';
 
 export interface OrbSessionStateRecord<T = unknown> {
   value: T;

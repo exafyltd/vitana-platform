@@ -1,0 +1,12 @@
+# VTID-04480 — commands run
+# Investigation (read-only, Supabase MCP execute_sql on the shared project):
+select ... from oasis_events where topic='vtid.live.session.start' and metadata->>'origin' like '%preview-aws%'   # found the two staging sessions
+select ... from oasis_events where metadata->>'session_id'='live-a5e6462d-…'                                       # full timeline (outputs/incident-timeline.txt)
+select ... from oasis_events where metadata->>'stage'='tool_loop_guard' (14 days)                                  # 4 sessions, 2 opening-turn, both ~70 s
+select ... from oasis_events where metadata->>'stage'='nova_instruction_debug_dump'                                  # instruction diff: only the screen line differs; brain context omitted in both
+# Build / test:
+cd services/gateway && node node_modules/.bin/tsc --noEmit -p tsconfig.json                                        # clean
+CI=true node node_modules/.bin/jest --ci test/orb/live/session/vtid-04480-opening-turn-guard.test.ts               # 15/15
+# Mutation check (each guard removed, then restored):
+#   opening budget removed -> 2 failed; reply cap removed -> 1 failed; leak mute removed -> 2 failed; preview removed -> 1 failed
+CI=true node node_modules/.bin/jest --ci --silent                                                                    # full suite, see outputs/test-summary.txt

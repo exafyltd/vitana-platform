@@ -5,7 +5,7 @@
  * fingerprint matching that actually delivers the feature.
  */
 import { lookup as dnsLookup } from 'node:dns/promises';
-import { detectPlatform } from '../../src/services/platform-detect';
+import { detectPlatform, extractSiteName } from '../../src/services/platform-detect';
 
 jest.mock('node:dns/promises', () => ({ lookup: jest.fn() }));
 
@@ -163,5 +163,21 @@ describe('fingerprint detection', () => {
     const result = await detectPlatform('https://down.example.test/');
     expect(result.ok).toBe(false);
     expect(result.error).toBe('ECONNREFUSED');
+  });
+});
+
+describe('extractSiteName (VTID-04481)', () => {
+  it('prefers og:site_name in either attribute order, decoding entities', () => {
+    expect(extractSiteName('<meta property="og:site_name" content="Acme &amp; Co"><title>Home</title>')).toBe('Acme & Co');
+    expect(extractSiteName('<meta content="Nord Praxis" property="og:site_name">')).toBe('Nord Praxis');
+  });
+
+  it('falls back to <title>, collapsing whitespace', () => {
+    expect(extractSiteName('<title>\n  Mein   Shop &#8211; Start\n</title>')).toBe('Mein Shop – Start');
+  });
+
+  it('returns null without a name and caps long names at 120 characters', () => {
+    expect(extractSiteName('<html><body></body></html>')).toBeNull();
+    expect(extractSiteName('<title>' + 'x'.repeat(300) + '</title>')).toHaveLength(120);
   });
 });

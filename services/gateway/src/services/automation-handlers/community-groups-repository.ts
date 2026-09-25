@@ -64,7 +64,7 @@ export async function fetchApprovedGroupsWithMembers(supabase: SupabaseClient) {
 }
 
 export async function fetchExistingGroupByCategory(supabase: SupabaseClient, interest: string) {
-  return supabase.from('global_community_groups').select('id').ilike('category', interest).limit(1).maybeSingle();
+  return supabase.from('global_community_groups').select('id, name').ilike('category', interest).limit(1).maybeSingle();
 }
 
 export async function insertGroup(supabase: SupabaseClient, row: Record<string, unknown>) {

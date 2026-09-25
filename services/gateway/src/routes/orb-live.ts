@@ -41,6 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
+import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
@@ -110,6 +111,14 @@ import {
   navigationDispatchedThisTurn,
   markNavigationDispatchedThisTurn,
 } from '../orb/live/session/navigation-turn-scope';
+// VTID-04520: the app confirms what a navigation actually did.
+import { recordPendingNavAck, handleNavResultMessage, takeNavFailureNote, type PendingNavAck, type NavFailure } from '../navigation/nav-ack';
+
+/** VTID-04520: tell the model when the previous navigation did not open. */
+function withNavFailureNote(session: GeminiLiveSession, text: string): string {
+  const note = takeNavFailureNote(session);
+  return note ? `${note}\n${text}` : text;
+}
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -119,6 +128,7 @@ import { formatClientContextForInstruction } from '../orb/live/instruction/clien
 // budget (which otherwise closes the handshake with WS 1009 → silent ORB).
 import {
   enforceInstructionBudget,
+  instructionBudgetDiagPayload,
   decomposeInstructionSections,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
 } from '../orb/live/instruction/instruction-budget';
@@ -1039,10 +1049,6 @@ export interface GeminiLiveSession {
   thread_id?: string;
   conversation_id?: string;
   turn_count: number;
-  // VTID-03201: ids of the Autopilot recommendations most recently read aloud
-  // by get_autopilot_recommendations, so a follow-up "activate those" resolves
-  // to exactly what Vitana just listed (in order).
-  lastListedAutopilotIds?: { ids: string[]; ts: number };
   // VTID-01224: Bootstrap context (injected into system instruction)
   contextInstruction?: string;
   contextPack?: ContextPack;
@@ -1253,6 +1259,11 @@ export interface GeminiLiveSession {
   // session was refused for the rest of that session. Use
   // `navigationDispatchedTurn` for per-turn questions.
   navigationDispatched?: boolean;
+  // VTID-04520: the registry directive awaiting the app's nav_result, and the
+  // last navigation the app reported as not opened (one-shot note for the
+  // next navigation tool result).
+  pendingNavAck?: PendingNavAck | null;
+  lastNavFailure?: NavFailure | null;
   // VTID-03583: turn_count at the moment a navigation was dispatched. A
   // per-turn marker, not a latch — `turn_count` advancing at turn_complete IS
   // the reset, so there is no clear-path that an error branch can skip.
@@ -1652,16 +1663,11 @@ import {
   isNovaSonicLanguageSupported,
   NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
-// BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
-// greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
-// take 5-8+s to first greeting audio; this fills the silence).
-import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
-import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
-// VTID-04100: the bridge phrase is deterministic per (lang, rendered text).
-import {
-  getCachedGreetingBridgeAudio,
-  putCachedGreetingBridgeAudio,
-} from '../services/tts/greeting-bridge-cache';
+// VTID-04511: the pre-connect greeting AUDIO bridge (a Polly filler phrase
+// played before Nova's own greeting) is REMOVED. It is a second voice from a
+// different engine, heard over or cut off by the real one; the owner's rule
+// is that it must never play. Do not reintroduce it behind a flag — a
+// staging deploy pin kept re-enabling it (VTID-04128 removed only the prod pin).
 
 /**
  * VTID-03502: should a closed Nova stream fall back to Vertex?
@@ -2286,11 +2292,6 @@ const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_
 // read when the fresh build missed CONTEXT_READY_GATE_TIMEOUT_MS. The read
 // starts at session/start, so by the gate it has usually settled already.
 const CORE_SNAPSHOT_GATE_WAIT_MS = Number(process.env.BRAIN_CORE_SNAPSHOT_GATE_WAIT_MS || 150);
-
-// VTID-04100 — hard ceiling on how long the pre-connect greeting bridge may
-// hold the session before the real upstream connect starts. Sized above a
-// normal Polly synthesis (~0.3-0.8s) and far below the connect it precedes.
-const GREETING_BRIDGE_MAX_WAIT_MS = Number(process.env.ORB_GREETING_BRIDGE_MAX_WAIT_MS || 1500);
 
 // BOOTSTRAP-ORB-CONNECT-HANG: the native WebSocket session-start path
 // (handleWsClientMessage) builds its bootstrap context (language pref,
@@ -3207,8 +3208,15 @@ async function executeLiveApiTool(
   // Posten klappt gerade nicht") even though the row was already inserted in
   // the background. Give them the same extended budget as the Autopilot tools.
   const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
+  // VTID-04485: the read-only orchestrator specialists wait up to their own
+  // voice ack window (specialistAckWindowMs, 4.5 s default) so the answer lands
+  // in the same turn. The flat 3 s budget cut them off first — measured live on
+  // staging: a 3.2 s support lookup returned "timed out after 3000ms" and the
+  // member heard "I can't check that right now". Budget = ack window + 1 s, never below 3 s.
+  const SPECIALIST_VOICE_TOOLS = new Set(['ask_support_specialist', 'ask_commerce_specialist']);
   const TOOL_TIMEOUT_MS =
     toolName === 'consult_external_ai' ? 16_000 :
+    SPECIALIST_VOICE_TOOLS.has(toolName) ? Math.max(3_000, (specialistAckWindowMs('voice') ?? SPECIALIST_VOICE_ACK_DEFAULT_MS) + 1_000) :
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
     INTENT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
@@ -3395,6 +3403,8 @@ async function handleNavigate(
     'navigate',
     {
       question,
+      // VTID-04517: open vs. where — only read when NAV_V2_ENABLED.
+      intent: args.intent === 'open' ? 'open' : args.intent === 'where' ? 'where' : undefined,
       current_route: session.current_route ?? null,
       recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
       transcript_excerpt: session.inputTranscriptBuffer || '',
@@ -3457,13 +3467,20 @@ async function handleNavigate(
       decision_source: 'direct',
       requested_at: Date.now(),
     };
-    session.navigationDispatched = true;
+    // VTID-04521: a registry (V2) directive plays out after the model's
+    // sentence, so the session-lifetime latch that silences everything after
+    // a navigation stays off; the per-turn marker still stops a second
+    // navigation in the same turn. The route moves when the app confirms
+    // (nav_result), not before.
+    const speakFirst = (directive as { after_speech?: boolean }).after_speech === true;
+    if (!speakFirst) session.navigationDispatched = true;
     markNavigationDispatchedThisTurn(session);
     session.pendingNavigation = undefined;
+    if (speakFirst) recordPendingNavAck(session, directive as unknown as Record<string, unknown>);
 
     const previousRoute = session.current_route;
-    session.current_route = result.route;
-    if (previousRoute && previousRoute !== result.route) {
+    if (!speakFirst) session.current_route = result.route;
+    if (!speakFirst && previousRoute && previousRoute !== result.route) {
       const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
       const deduped = trail.filter((rt) => rt !== previousRoute);
       session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
@@ -3491,7 +3508,7 @@ async function handleNavigate(
     }
   }
 
-  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+  return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
 // Legacy handler — kept for test imports but no longer called by the tool path
@@ -3693,12 +3710,16 @@ export async function handleNavigateToScreen(
       decision_source: 'direct',
       requested_at: Date.now(),
     };
-    session.navigationDispatched = true;
+    // VTID-04521: see handleNavigate — no session-lifetime latch for a V2
+    // directive, and the route moves on the app's confirmation.
+    const speakFirst = (result.directive as { after_speech?: boolean }).after_speech === true;
+    if (!speakFirst) session.navigationDispatched = true;
     markNavigationDispatchedThisTurn(session);
     session.navigationDirectiveSentImmediately = true;
+    if (speakFirst) recordPendingNavAck(session, result.directive as unknown as Record<string, unknown>);
 
     const isOverlay = result.entry_kind === 'overlay';
-    if (!isOverlay) {
+    if (!isOverlay && !speakFirst) {
       const baseRoutePath = result.base_route || result.route.split('?')[0];
       const previousRoute = session.current_route;
       session.current_route = baseRoutePath;
@@ -3731,7 +3752,7 @@ export async function handleNavigateToScreen(
     }
   }
 
-  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+  return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
 /**
@@ -5720,98 +5741,35 @@ async function executeLiveApiToolInner(
         );
       }
 
-      // VTID-03201: read + activate the user's Autopilot queue by voice, via
-      // the SAME shared service the popup uses (listCommunity… / activateCommunity…),
-      // so the spoken list and the visual list never diverge.
-      case 'get_autopilot_recommendations': {
-        const userId = lens.user_id;
-        if (!userId) {
-          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
-        }
-        const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
-        const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
-        // autoGenerate: explicit "what's in my Autopilot?" must match opening the
-        // popup, which generates recs for first-time/expired/all-activated users
-        // rather than returning empty. VTID-03201 (Codex review #2486).
-        const recs = await listCommunityAutopilotRecommendations(userId, limit, { autoGenerate: true });
-        const summary = summarizeAutopilotForVoice(recs);
-        // Remember exactly what we read aloud so "activate those" resolves to it.
-        session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
-        return {
-          success: true,
-          result: JSON.stringify({
-            ok: true,
-            count: summary.count,
-            spoken: summary.spoken,
-            items: recs.map(r => ({ id: r.id, title: r.title })),
-          }),
-        };
-      }
-
+      // VTID-03201 / VTID-04493: read + activate the user's Autopilot queue by
+      // voice. Lifted to services/orb-tools/community-autopilot-tools.ts so
+      // every transport (this one, LiveKit, /api/v1/orb/tool) runs the same
+      // canonical activation; the read-out ids live in orb_session_state.
+      case 'get_autopilot_recommendations':
       case 'activate_autopilot_recommendations': {
-        const userId = lens.user_id;
-        if (!userId) {
+        if (!lens.user_id) {
           return { success: false, result: '', error: 'NOT_SIGNED_IN' };
         }
-        const { activateCommunityAutopilotRecommendation } = await import('./autopilot-recommendations');
-
-        // Resolve target ids: explicit `ids` arg, else the last-listed set.
-        const explicit: string[] = Array.isArray(args?.ids)
-          ? (args.ids as unknown[]).filter((x): x is string => typeof x === 'string')
-          : [];
-        const listed = session.lastListedAutopilotIds?.ids ?? [];
-        const targetIds = explicit.length > 0 ? explicit : listed;
-
-        if (targetIds.length === 0) {
-          return {
-            success: true,
-            result: JSON.stringify({
-              ok: false,
-              activated: 0,
-              spoken: "I don't have any prepared actions queued to activate yet — ask me what's in your Autopilot first.",
-            }),
-          };
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
         }
-
-        // Activate sequentially (calendar slotting reads the live calendar, so
-        // parallel runs could double-book the same slot). Replenishment is
-        // skipped inline for voice latency — the popup refills on next open.
-        const tenantId = lens.tenant_id ?? '';
-        const activated: string[] = [];
-        const failed: string[] = [];
-        for (const id of targetIds) {
-          try {
-            const r = await activateCommunityAutopilotRecommendation(userId, id, {
-              tenantId: tenantId || undefined,
-              skipReplenish: true,
-            });
-            if (r.ok) activated.push(r.title || id);
-            else failed.push(id);
-          } catch {
-            failed.push(id);
-          }
-        }
-
-        let spoken: string;
-        if (activated.length === 0) {
-          spoken = "I couldn't activate those — they may have already been done or aren't yours to action.";
-        } else if (activated.length === 1) {
-          spoken = `Done — I've activated "${activated[0]}".`;
-        } else {
-          spoken = `Done — I've activated ${activated.length} actions: ${activated.join('; ')}.`;
-        }
-        // Clear the remembered list so a stray repeat call can't re-activate.
-        session.lastListedAutopilotIds = { ids: [], ts: Date.now() };
-
-        return {
-          success: true,
-          result: JSON.stringify({
-            ok: activated.length > 0,
-            activated: activated.length,
-            failed: failed.length,
-            spoken,
-          }),
-        };
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId ?? null,
+          },
+          supabase,
+        );
       }
 
       case 'share_link': {
@@ -7079,6 +7037,61 @@ If the user mentions sending a message, sharing a link, texting, inviting, or te
 If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
 
 /**
+ * VTID-04521 — the navigator policy when the screen registry answers
+ * (NAV_V2_ENABLED). Instructions to the model, so English for every session
+ * language (§13b); the model replies in the member's language. It describes
+ * the tools as they now behave: `navigate` with an intent, an offer that is
+ * opened only on a yes, and a screen change that plays out after the reply.
+ */
+export const NAVIGATOR_POLICY_V2 = `
+
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+
+  • get_current_screen() — the screen the member is on right now. Call it for
+    "where am I?", "what is this page?", "what can I do here?". Never answer
+    those from memory.
+
+  • navigate(question, intent) — pass the member's own words; the backend knows
+    every screen in every language. intent is "open" when they asked to open,
+    show or go to something ("open my wallet", "zeig mir meine Termine"), and
+    "where" when they asked where something is or whether it exists ("where can
+    I see my lab results?", "wo finde ich …", "is there a page for …").
+
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave
+    you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
+
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match
+     opens: say ONE short sentence that you are taking them there, then stop.
+     The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens.
+     Answer in one or two sentences: which screen it is (its title) and what
+     they will find there. Then ask whether you should open it.
+  3. They say yes → call navigate_to_screen with that exact screen_id. They say
+     no or change the subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → if one clearly fits, call navigate_to_screen with it; if
+     two fit equally, ask one short either/or question with their titles, then
+     call navigate_to_screen with their pick. Never call navigate twice for the
+     same request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for
+     that and help in voice.
+
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current
+screen and the conversation carries on. After a full screen change the
+conversation closes.
+
+Do NOT call navigate for questions that only mention a feature: "what is X",
+"how does X work", "what's the difference between X and Y", small talk. If you
+are unsure whether they want to go there or hear about it, ask once.
+
+If a navigation result starts with NOTE, the previous screen did not open. Say
+so plainly if the member asks about it — never claim it opened.
+
+Never say a route, URL or screen_id aloud — use the screen's title.`;
+
+/**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
  * instruction. Teaches the model when to call navigator_consult,
  * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
@@ -7087,6 +7100,8 @@ If the user asks to be shown a screen, list, or detail page, call navigate_to_sc
 // in orb/live/instruction/live-system-instruction.ts can call it. Same
 // behavior; only module-level visibility changes.
 export function buildNavigatorPolicySection(lang: string): string {
+  // VTID-04521: the screen registry answers navigation (NAV_V2_ENABLED).
+  if (process.env.NAV_V2_ENABLED === 'true') return NAVIGATOR_POLICY_V2;
   const isDe = lang.startsWith('de');
   if (isDe) {
     return `
@@ -8354,6 +8369,10 @@ async function connectToLiveAPI(
               `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
             );
           }
+          // VTID-04525 (Conversation hub B2): the same accounting as a
+          // queryable diag, trimmed or not, so the hub can show how often each
+          // section is dropped. Sizes and section kinds only, never text.
+          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
         }
       } catch (e) {
         // Never let the guard break the handshake — fail open with a log.
@@ -11501,64 +11520,6 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 }
 
 /**
- * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge (SSE transport only —
- * the SSE session/start path is what both the Nova bench and the majority
- * of real Connect & Talk traffic use today).
- *
- * Synthesizes a short "Good morning! Today is <date>. <motivational line>.
- * Let me pull up your latest data…" phrase via Cloud TTS (LINEAR16 @ 24kHz —
- * same wire format as the real greeting audio) and writes it to the SSE
- * stream BEFORE the real upstream connect is even initiated, so ordering is
- * trivially correct: this function is awaited to completion, and the caller
- * only opens the real (slow) upstream connection afterward. Feature-flagged
- * (default off) and fully best-effort — any failure here (TTS unavailable,
- * synthesis error, closed connection) is swallowed; it never blocks or
- * breaks the real greeting path that follows.
- *
- * Skipped for anonymous sessions (their intro flow is untouched/different)
- * and for reconnects (a mid-conversation reconnect doesn't need a fresh
- * "today is..." — the real reconnect-recovery prompt handles that case).
- */
-async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void> {
-  if (!isFeatureLive('ORB_GREETING_TTS_BRIDGE')) return;
-  if (session.isAnonymous) return;
-  if (session.transcriptTurns.length > 0) return; // reconnect, not a fresh session
-  if (!session.sseResponse) return;
-
-  try {
-    const lang = session.lang || 'en';
-    const timezone = session.clientContext?.timezone || 'UTC';
-    const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
-    // VTID-04100: the phrase is deterministic for (lang, text) and the text
-    // embeds the date, so the key rotates daily on its own. Without this every
-    // session re-synthesized the identical phrase through Polly — a per-session
-    // bill and a per-session delay on the one path whose entire job is to be
-    // instant.
-    const cached = getCachedGreetingBridgeAudio(lang, text);
-    const bridgeAudio = cached ?? (await synthesizeGreetingBridgeAudioPcm(text, lang));
-    if (bridgeAudio && !cached) putCachedGreetingBridgeAudio(lang, text, bridgeAudio);
-    if (!bridgeAudio) {
-      emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
-      return;
-    }
-    if (!session.sseResponse) return; // client disconnected while we were synthesizing
-    session.sseResponse.write(`data: ${JSON.stringify({
-      type: 'audio',
-      data_b64: bridgeAudio.audioB64,
-      // VTID-03495: rate comes from the synthesis result, not a constant —
-      // Polly PCM is 16kHz, Cloud TTS 24kHz. Hardcoding either plays the
-      // other at the wrong speed.
-      mime: `audio/pcm;rate=${bridgeAudio.sampleRateHz}`,
-      chunk_number: session.audioOutChunks++,
-      source: 'greeting_bridge',
-    })}\n\n`);
-    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length, cache: cached ? 'hit' : 'miss' });
-  } catch (err) {
-    console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
-  }
-}
-
-/**
  * VTID-03650: play the pre-synthesized Polly guided-topic lesson audio to the
  * client, BEFORE the live model's first turn. The audio itself was already
  * synthesized during wake-brief decision (see
@@ -11566,7 +11527,7 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
  * guided-topic-narration provider) and is bundled on
  * `session.guidedTopicNarrationContent.narrationAudio` — this function only
  * dispatches it, transport-aware (SSE write / WS message), mirroring
- * `sendGreetingAudioBridge`'s message shape so the client's existing PCM
+ * the (removed, VTID-04511) greeting bridge's message shape so the client's PCM
  * playback queue (orb-widget.js `_processQueue`) handles it identically.
  *
  * One-shot: `guidedTopicAudioDelivered` is set (true on send, false when
@@ -16256,36 +16217,10 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     },
   });
 
-  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — synthesize + write a
-  // short filler phrase BEFORE opening the real (slow) upstream connection.
-  // Awaited deliberately: this guarantees the bridge audio is written to the
-  // SSE stream strictly before any real-greeting audio chunk could possibly
-  // arrive, with no extra buffering/sequencing machinery needed. Adds at
-  // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
-  // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
-  // can be disabled instantly if that tradeoff is ever wrong.
-  //
-  // VTID-04100 — the await is now BOUNDED. Awaiting it unbounded is what made
-  // VTID-03802 a production outage: `synthesizeGreetingBridgeAudioPcm` used to
-  // fall through to a decommissioned Google TTS host and hang here, before
-  // `connectToLiveAPI` was ever called and before a single diagnostic was
-  // emitted, so the session never connected ("just connecting all the time")
-  // until an unrelated 90-145s idle watchdog closed it. Removing the Google
-  // branch fixed that particular hang; it did not make an unbounded await of a
-  // third-party API on the pre-connect critical path safe. The ordering
-  // guarantee this await exists for is preserved in the normal case (a cache
-  // hit is ~0ms, a Polly miss ~0.3-0.8s, against a connect that takes seconds),
-  // and on timeout we proceed to connect rather than strand the session — a
-  // lost bridge phrase beats a session that never starts.
-  await withBootstrapTimeout(
-    sendGreetingAudioBridge(session),
-    undefined,
-    'greeting-audio-bridge',
-    GREETING_BRIDGE_MAX_WAIT_MS,
-  );
+  // VTID-04511: no greeting audio bridge — Nova's own voice is the only voice.
   // VTID-03650: guided-topic lesson audio (if a topic was tapped and Polly
   // could serve it) — also before the real upstream connect, same ordering
-  // rationale as the greeting bridge above.
+  // rationale as the (removed, VTID-04511) greeting bridge had.
   sendGuidedTopicNarrationAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
@@ -17252,7 +17187,7 @@ router.get('/health', async (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update' | 'nav_result';
   // VTID-04425: context_update fields (validated by applyContextUpdate)
   current_route?: string;
   recent_routes?: string[];
@@ -17363,6 +17298,21 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
   }
 
   incrementConnection(clientIP);
+  // VTID-04512: release the per-IP slot the moment the socket goes away —
+  // registered BEFORE the token/tenant awaits below. The close handler used
+  // to be attached only after those awaits, so a socket closed during them
+  // (the widget's 8 s start timeout, the user closing the ORB, a dropped
+  // prewarm socket) never gave its slot back; after MAX_CONNECTIONS_PER_IP
+  // such leaks every new WebSocket from that IP was refused with 4029 and the
+  // ORB sat on "connecting". Idempotent: close and error both fire it.
+  let connectionReleased = false;
+  const releaseConnection = (): void => {
+    if (connectionReleased) return;
+    connectionReleased = true;
+    decrementConnection(clientIP);
+  };
+  ws.once('close', releaseConnection);
+  ws.once('error', releaseConnection);
 
   // VTID-01224: Extract auth token from query params or Authorization header
   // Priority: 1. ?token= query param  2. Authorization: Bearer header  3. Sec-WebSocket-Protocol
@@ -17510,14 +17460,14 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     console.log(`[VTID-01222] WebSocket disconnected: ${sessionId}, code=${code}, reason=${reason}`);
     clearInterval(clientPingInterval);
     cleanupWsSession(sessionId, 'client_disconnect'); // VTID-03561
-    decrementConnection(clientIP);
+    releaseConnection();
   });
 
   // Handle errors
   ws.on('error', (error) => {
     console.error(`[VTID-01222] WebSocket error for ${sessionId}:`, error);
     cleanupWsSession(sessionId, 'client_error'); // VTID-03561
-    decrementConnection(clientIP);
+    releaseConnection();
   });
 }
 
@@ -17655,6 +17605,11 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       if (liveSession && liveSession.active) {
         handleContextUpdate(liveSession, message);
       }
+      break;
+
+    case 'nav_result':
+      // VTID-04520: the app reports what a registry navigation did.
+      if (liveSession) handleNavResultMessage(liveSession, message);
       break;
 
     default:

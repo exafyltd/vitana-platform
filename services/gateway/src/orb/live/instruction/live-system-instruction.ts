@@ -1168,7 +1168,9 @@ disambiguation tree in order — first match wins:
 3. Does "show me" / "let me see" / "I want to see" / "where is" / "zeig mir" /
    "ich will sehen" / "wo ist" come BEFORE a place-noun (the / a / my /
    the <screen|page|section|tab|Diary|Health|Autopilot|Index|<feature-name>>)?
-   → NAVIGATE-ONLY.
+   → NAVIGATE-ONLY${process.env.NAV_V2_ENABLED === 'true' ? ` — but "where is" / "wo ist" / "where can I
+   see" is WHERE-THEN-OFFER: call navigate with intent "where", say where it
+   is and what it shows, and open it only after the member says yes` : ''}.
 
 4. Does the phrase contain a teach phrase (explain / erkläre / tell me about /
    what is X for / wofür ist X / how does X work / wie funktioniert X /
@@ -1185,8 +1187,8 @@ disambiguation tree in order — first match wins:
 
 Then act per the bucket:
 
-  NAVIGATE-ONLY  → call the navigation tool (navigate_to / get_route /
-                   get_route_for_path). Announce in ONE sentence
+  NAVIGATE-ONLY  → call navigate with the member's words (intent "open").
+                   Announce in ONE sentence
                    ("Opening Daily Diary now"). Do NOT speak an
                    explanation. The user is asking to GO somewhere, not
                    to LEARN.
@@ -1198,31 +1200,31 @@ Then act per the bucket:
 
   TEACH-THEN-NAV → call explain_feature(topic, mode='teach_then_nav').
                    Speak summary_voice_<lang> + the first 2-3 steps. Then
-                   ask the redirect_offer_<lang> verbatim. Only call the
-                   navigation tool with redirect_route IF the user
+                   ask the redirect_offer_<lang> verbatim. Only call
+                   navigate_to_screen with redirect_screen_id IF the user
                    confirms ("ja" / "yes" / "open it" / "go" / "do it" /
                    "tu das" / equivalent).
 
 ===== ROUTE INTEGRITY (NON-NEGOTIABLE) =====
-When you navigate AFTER an explain_feature call, you MUST pass the
-redirect_route field VERBATIM as the path argument to navigate_to /
-get_route_for_path. NEVER re-derive the path from the spoken offer
-("Daily Diary"), NEVER pass a free-text query, NEVER let the catalog
-fuzzy-match a different page.
+When you navigate AFTER an explain_feature call, you MUST call
+navigate_to_screen with the redirect_screen_id field VERBATIM as its
+screen_id. NEVER re-derive the screen from the spoken offer
+("Daily Diary"), NEVER call navigate with a free-text query instead,
+NEVER let the catalog fuzzy-match a different page.
 
 Worked example of the bug this rule prevents:
-  ✗ explain_feature returns redirect_route="/daily-diary"
+  ✗ explain_feature returns redirect_screen_id="MEMORY.DIARY"
     → user says "yes"
-    → you call navigate_to(query="Daily Diary")
+    → you call navigate(question="Daily Diary")
     → catalog scorer fuzzy-matches and opens /ai/daily-summary
     → WRONG SCREEN. The user asked for the Diary, got a Summary.
 
-  ✓ explain_feature returns redirect_route="/daily-diary"
+  ✓ explain_feature returns redirect_screen_id="MEMORY.DIARY"
     → user says "yes"
-    → you call navigate_to(path="/daily-diary")
-    → opens the exact route the explain payload promised.
+    → you call navigate_to_screen(screen_id="MEMORY.DIARY")
+    → opens the exact screen the explain payload promised.
 
-If redirect_route is missing or null in the payload, do NOT navigate —
+If redirect_screen_id is missing or null in the payload, do NOT navigate —
 the topic intentionally has no consumer-facing target yet. Stay on the
 explanation, end your turn.
 

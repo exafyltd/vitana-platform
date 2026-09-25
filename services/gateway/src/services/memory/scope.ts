@@ -19,11 +19,19 @@
 const PERSONAL_ROLES = new Set(['', 'community', 'user', 'member', 'patient']);
 
 /**
+ * VTID-04495: database roles, not Vitana roles. `identity.role` is the
+ * Supabase JWT `role` claim, which is 'authenticated' for every signed-in
+ * user; storing it scoped the row away from the user's personal memory.
+ */
+const DATABASE_ROLES = new Set(['authenticated', 'anon', 'service_role', 'supabase_admin']);
+
+/**
  * Lower-cased role, or '' for anything that is not a plain role name. The
  * value is interpolated into a PostgREST filter, so only [a-z_] is allowed.
  */
 function normalize(role: string | null | undefined): string {
   const r = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  if (DATABASE_ROLES.has(r)) return '';
   return /^[a-z_]{1,32}$/.test(r) ? r : '';
 }
 

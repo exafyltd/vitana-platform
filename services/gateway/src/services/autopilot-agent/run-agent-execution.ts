@@ -29,6 +29,7 @@ import { loadAutopilotContext } from '../dev-autopilot/context-loader';
 import type { LLMProvider, LLMRouterMessage } from '../llm-router';
 import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
+import { buildStartingMap, explorationThresholds } from './agent-exploration';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
@@ -289,6 +290,17 @@ export async function runAgentExecutionSession(
         mergeBase: mergeBase ? { status: mergeBase.status, conflicts: mergeBase.conflicts, baseBranch: GITHUB_BASE_BRANCH } : undefined,
       })
       : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded, devMemoryBlock });
+    // VTID-04466: the index's answer for this task, before turn 1. Live, the
+    // agent made ~95 navigation calls per capped run and queried the index
+    // ~once per six runs; starting from the map replaces the blind search.
+    if (!fixMode) {
+      const startingMap = buildStartingMap(codeIndex.bundle, plan.plan_markdown, plan.files_referenced || []);
+      if (startingMap) {
+        prompt = `${prompt}\n\n${startingMap}`;
+        onStep({ turn: 0, kind: 'tool', name: 'runner:starting_map', detail: `${startingMap.length} chars from the code index`, data: { starting_map_chars: startingMap.length } });
+      }
+    }
+    const explorationEnabled = !fixMode && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;
@@ -304,6 +316,9 @@ export async function runAgentExecutionSession(
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
         callLlm, maxTurns: fixRoundTurnBudget(round, AGENT_MAX_TURNS, totalTurns, AGENT_FIX_ROUND_MIN_TURNS), deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
         isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,
+        // VTID-04466: first round of a non-fix run only — a fix round starts
+        // from a diff that already exists.
+        exploration: explorationEnabled && round === 0 ? explorationThresholds(AGENT_MAX_TURNS) : null,
       });
       history = loop.history; totalTurns += loop.turns;
       memHistory = history; memFinished = loop.finished || memFinished;
@@ -317,7 +332,12 @@ export async function runAgentExecutionSession(
 
       // --- runner-side verification, independent of what the model claims ---
       changed = await repoDirChanged();
-      if (changed.length === 0) return finish({ ok: false, error: 'agent finished with an empty diff — refusing to open an empty PR', session_id: sessionId, branch });
+      if (changed.length === 0) {
+        // VTID-04466: a hand-off finish carries the agent's findings — keep
+        // them on the failure so the operator (and the next attempt) sees them.
+        const findings = (finished.summary || '').trim().slice(0, 1500);
+        return finish({ ok: false, error: `agent finished with an empty diff — refusing to open an empty PR${findings ? `. Agent findings: ${findings}` : ''}`, session_id: sessionId, branch });
+      }
       if (fixMode && mergeBase?.status !== 'merged' && (await listChangedFiles(repoDir)).length === 0) {
         // The PR diff is non-empty (the parent's work) but this run edited
         // nothing — pushing would re-run the same red CI. (VTID-04217: a

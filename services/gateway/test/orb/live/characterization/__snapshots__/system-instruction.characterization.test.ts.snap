@@ -679,7 +679,7 @@ IMPORTANT:
 - After creating, confirm the event title and time back to the user.
 
 ### search_events
-Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.
+Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.
 
 ### search_community
 Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.
@@ -1458,6 +1458,19 @@ Returns { ok, title, completion_message }. If ok=false, briefly
 acknowledge ("Hmm, couldn't schedule that one") and offer to
 open the Autopilot screen instead via navigate_to_screen.
 
+### confirm_pending_action
+The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.
+
+### start_autopilot_slot
+Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.
+
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME
 list shown in the Autopilot popup. Call this when the user asks
@@ -1480,9 +1493,11 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.
 
 ### share_link
 Share a link with another Vitana user as a chat message with a
@@ -3642,7 +3657,7 @@ IMPORTANT:
 - After creating, confirm the event title and time back to the user.
 
 ### search_events
-Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.
+Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.
 
 ### search_community
 Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.
@@ -4421,6 +4436,19 @@ Returns { ok, title, completion_message }. If ok=false, briefly
 acknowledge ("Hmm, couldn't schedule that one") and offer to
 open the Autopilot screen instead via navigate_to_screen.
 
+### confirm_pending_action
+The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.
+
+### start_autopilot_slot
+Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.
+
 ### get_autopilot_recommendations
 Read out what is prepared in the user's Autopilot — the SAME
 list shown in the Autopilot popup. Call this when the user asks
@@ -4443,9 +4471,11 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.
 
 ### share_link
 Share a link with another Vitana user as a chat message with a

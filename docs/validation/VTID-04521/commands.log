@@ -1,0 +1,12 @@
+# VTID-04521 — commands run
+# Registry: vitana-v1 main after #1152 (6143558) + the client branch (wallet popup re-enabled), rebuilt locally:
+node scripts/nav/build-nav-registry.mjs          # 185 screens → public/nav-registry.json
+cp public/nav-registry.json ../vitana-platform/services/gateway/src/navigation/data/nav-registry.snapshot.json
+cd services/gateway
+BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts   # 9222 texts, 44 new → data/nav-embeddings.{json,bin}
+NAV_GOLDEN_WRITE_BASELINE=1 npx jest test/nav-golden/nav-registry-loo.test.ts test/nav-golden/nav-golden-registry.test.ts
+npx tsc --noEmit -p .                             # clean
+npx jest test/nav-golden test/navigation         # 327 passed
+npx jest test/frontend/orb-widget-speak-then-navigate.test.ts
+npx jest --silent                                 # 1244 suites passed, 1 skipped; 19916 tests passed
+node --check src/frontend/command-hub/orb-widget.js

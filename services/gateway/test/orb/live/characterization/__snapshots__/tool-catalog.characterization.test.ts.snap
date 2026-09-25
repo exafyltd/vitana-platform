@@ -345,7 +345,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -364,6 +364,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -1835,6 +1839,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -1842,6 +1850,47 @@ open the Autopilot screen instead via navigate_to_screen.",
           },
           "required": [
             "id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
           ],
           "type": "object",
         },
@@ -1879,16 +1928,29 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.",
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
                 "type": "string",
+              },
+              "type": "array",
+            },
+            "positions": {
+              "description": "OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").",
+              "items": {
+                "type": "integer",
               },
               "type": "array",
             },
@@ -13251,7 +13313,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -13270,6 +13332,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -14741,6 +14807,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -14748,6 +14818,47 @@ open the Autopilot screen instead via navigate_to_screen.",
           },
           "required": [
             "id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
           ],
           "type": "object",
         },
@@ -14785,16 +14896,29 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.",
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
                 "type": "string",
+              },
+              "type": "array",
+            },
+            "positions": {
+              "description": "OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").",
+              "items": {
+                "type": "integer",
               },
               "type": "array",
             },

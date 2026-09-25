@@ -197,6 +197,38 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
+      # VTID-04507: Connected Apps sign-in. Pins the public URLs the OAuth
+      # redirect and the post-consent return are built from (unset, both fell
+      # back to https://vitana.app), and wires the Google / Microsoft client
+      # and the credential-encryption key when their secrets exist. Absent
+      # secrets are left untouched and never fail the deploy — provision them
+      # with scripts/aws/setup-connected-apps-oauth-secrets.sh. Written to a
+      # file so the task-definition step (near GitHub's 20,000-char run limit)
+      # merges it with one short jq clause.
+      - name: Resolve Connected Apps sign-in config
+        run: |
+          set -euo pipefail
+          SEC='[]'
+          for pair in \
+            "GOOGLE_OAUTH_CLIENT_ID:google-oauth-client-id" \
+            "GOOGLE_OAUTH_CLIENT_SECRET:google-oauth-client-secret" \
+            "MICROSOFT_OAUTH_CLIENT_ID:microsoft-oauth-client-id" \
+            "MICROSOFT_OAUTH_CLIENT_SECRET:microsoft-oauth-client-secret" \
+            "AI_CREDENTIALS_ENC_KEY:credentials-enc-key" ; do
+            VAR="${pair%%:*}"; NAME="vitana/gateway/staging/${pair#*:}"
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "  $NAME absent - $VAR not wired (VTID-04507)"
+            else
+              echo "  resolved $NAME -> $VAR"
+              SEC=$(jq -c --arg n "$VAR" --arg a "$ARN" '. + [{name:$n, valueFrom:$a}]' <<<"$SEC")
+            fi
+          done
+          jq -n --argjson sec "$SEC" '{
+            env: [ {name:"GATEWAY_PUBLIC_URL", value:"https://preview-aws-gateway.vitanaland.com"},
+                   {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
+            sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
+          cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -256,31 +288,10 @@ jobs:
         # exactly one variable change + one dispatch. Never AWS access keys
         # here — Nova auth is the task role via the SDK default chain.
         #
-        # BOOTSTRAP-NOVA-SONIC-VOICE / VTID-04100:
-        # FEATURE_ORB_GREETING_TTS_BRIDGE_ENV was upserted to "off" on
-        # 2026-07-28, rejected on PRODUCT grounds, not technical ones: the
-        # bridge phrase is synthesized by a different engine from the live
-        # upstream, so the user hears one voice say the filler and another
-        # voice continue. That objection has NOT gone away — the bridge is
-        # Polly now rather than Cloud TTS, and Polly is still not a Nova
-        # Sonic voice.
-        #
-        # It is set to "staging-only" here so the trade can be HEARD and
-        # decided on evidence, because the measured cost of not having it is
-        # large: on staging 2026-09-19, authenticated `de`, first MODEL audio
-        # was p50 ~2.5-3.0s and p90 up to 7.5s, while a bridge frame lands in
-        # the time it takes to write one SSE event. VTID-04100 also made the
-        # bridge cached and its pre-connect await bounded, so the mechanism no
-        # longer costs a Polly round trip per session and can no longer stall
-        # a connect the way VTID-03802 did.
-        #
-        # PROD IS DELIBERATELY NOT CHANGED. Reversing a recorded product
-        # decision for every real user is the platform owner's call, not a
-        # side effect of a latency VTID. Listen on preview-aws first; if the
-        # voice change is acceptable, promote by pinning the same value on
-        # AWS-PROD-DEPLOY-GATEWAY.yml. If it is not, set this back to "off"
-        # and the measured win has to come from the directive and tool-catalog
-        # budgets (VTID-04096/04097) alone.
+        # VTID-04511: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is pinned "off". The
+        # bridge was a Polly filler phrase played before Nova's greeting -- a
+        # second voice. The owner's rule is that it never plays; the gateway
+        # code path is removed too, this pin only keeps the flag honest.
         #
         # VTID-04349 -- community automation engine (AP-XXXX) back on STAGING in
         # shadow mode: AUTOMATIONS_DELIVERY_MODE=shadow records every
@@ -678,6 +689,11 @@ jobs:
 # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
 # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
 #
+# VTID-04517 -- NAV_V2_ENABLED=true + NAV_REGISTRY_URL, STAGING ONLY: voice
+# navigation answered by the screen registry the frontend publishes
+# (/nav-registry.json on the staging frontend). Falls back to the legacy
+# navigator when the registry resolver cannot run. Rollback: "false".
+#
 # VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
 # decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
 # spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
@@ -884,6 +900,7 @@ jobs:
                  --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
+                 --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -917,6 +934,7 @@ jobs:
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
                                                 "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED",
+                                                "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
@@ -924,7 +942,7 @@ jobs:
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
                                                 "GCP_SERVICE_ACCOUNT_JSON",
-                                                "OPERATOR_CODEINTEL_ENABLED",
+                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                                 "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
@@ -938,7 +956,7 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
@@ -951,6 +969,7 @@ jobs:
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
                           {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"NAV_V2_ENABLED", value:"true"}, {name:"NAV_REGISTRY_URL", value:"https://preview-aws.vitanaland.com/nav-registry.json"},
                           {name:"VITANA_ENV", value:"staging"},
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
@@ -991,7 +1010,7 @@ jobs:
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
-                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"}, {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
                           {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
                           {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )
@@ -1044,6 +1063,8 @@ jobs:
                           ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_TOKEN") | not) ]
                             + [ {name:"OPERATOR_MACHINE_AUTH_TOKEN", valueFrom:$SEC_MACHINE_AUTH} ] ) )
                     else . end )
+                | .containerDefinitions[0].environment |= ( [ .[] | select(.name as $n | ($CA[0].env + $CA[0].sec) | map(.name) | index($n) | not) ] + $CA[0].env )
+                | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

@@ -62,12 +62,14 @@ import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
 import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from './dev-autopilot-deploy-topics';
 import { gatewayBaseUrl } from '../env';
 // VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
-import { claimStamp, filterOwnedExecutions, currentEnv } from './dev-autopilot-env-ownership';
+import { claimStamp, filterOwnedExecutions, currentEnv, executorClaimsHere } from './dev-autopilot-env-ownership';
 import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-owner';
 // VTID-04006: single-shot vs agent executor selection.
 import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
 import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-autopilot-vtid-allocate';
 import { decideRetryBreaker, detectProviderOutage, slotsUnderOutage, type OutageState } from './dev-autopilot-retry-breaker';
+// VTID-04467: agent runs are requeued, never run in-process without a toolchain.
+import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
@@ -2157,6 +2159,7 @@ export function applyExecTerminalSideEffects(
   s: SupaConfig,
   executionId: string,
   status: string,
+  opts: { deferLedger?: boolean } = {},
 ): void {
   // VTID-03895: propagate to vtid_ledger regardless of which of the three
   // terminal outcomes this is — separate from the completed/failed-only
@@ -2164,7 +2167,11 @@ export function applyExecTerminalSideEffects(
   // reason for excluding 'cancelled' (see its own docstring).
   // VTID-04378: `failed_escalated` (the bridge's give-up state) closes the
   // ledger as failed; `reverted` does not — a self-heal child continues it.
-  const ledgerStatus = ledgerStatusForExecution(status);
+  // VTID-04472: a watcher failure that is handed to the self-heal bridge
+  // defers the ledger to the bridge — its child continues the VTID, or it
+  // escalates and closes it (closeLedgerForEscalation). Closing here made a
+  // fix-mode lineage's VTID `failed` at the first red CI, permanently.
+  const ledgerStatus = opts.deferLedger ? null : ledgerStatusForExecution(status);
   if (ledgerStatus) {
     void terminalizeVtidLedgerForExecution(s, executionId, ledgerStatus);
   }
@@ -2263,7 +2270,7 @@ export function ledgerStatusForExecution(status: string): 'completed' | 'failed'
   return null;
 }
 
-async function terminalizeVtidLedgerForExecution(
+export async function terminalizeVtidLedgerForExecution(
   s: SupaConfig,
   executionId: string,
   status: 'completed' | 'failed' | 'cancelled',
@@ -2794,6 +2801,8 @@ export function buildWatchdogReclaimPatch(
   };
 }
 
+let claimGateLogged = false;
+
 export async function backgroundExecutorTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
@@ -2979,6 +2988,16 @@ export async function backgroundExecutorTick(): Promise<void> {
   if (!cfg) return;
   if (cfg.kill_switch) return;
 
+  // 1b. VTID-04497: only the staging gateway claims new executions — a merge
+  //     to main deploys staging, so only staging can see the lifecycle end.
+  if (!executorClaimsHere()) {
+    if (!claimGateLogged) {
+      claimGateLogged = true;
+      console.log(`${LOG_PREFIX} env=${currentEnv()}: not claiming new executions (DEV_AUTOPILOT_PROD_CLAIM_ENABLED != 'true'); owned rows are still watched`);
+    }
+    return;
+  }
+
   // 2. Concurrency cap — and VTID-04368: claim nothing during an LLM
   //    provider outage (cooling rows wait), one at a time while probing.
   const pipeline = await countPipeline(s);
@@ -3032,6 +3051,7 @@ export async function backgroundExecutorTick(): Promise<void> {
     // fire-and-forget Promises. Used for orb-live.ts and any execution
     // expected to take >3 min. Falls back to in-process when the Job
     // dispatch isn't configured or fails to enqueue.
+    let dispatchError: string | null = null;
     if (USE_JOB_RUNTIME) {
       try {
         // VTID-03415: AWS RunTask and GCP Cloud Run Job are the two
@@ -3052,10 +3072,26 @@ export async function backgroundExecutorTick(): Promise<void> {
           // don't double-fire.
           continue;
         }
-        console.warn(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) failed for ${exec.id}: ${dispatched.error}; falling back to in-process`);
+        dispatchError = String(dispatched.error || 'dispatch returned not ok');
+        console.warn(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) failed for ${exec.id}: ${dispatched.error}`);
       } catch (err) {
+        dispatchError = err instanceof Error ? err.message : String(err);
         console.error(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) threw for ${exec.id}:`, err);
       }
+      // VTID-04467: an agent run never falls back into a process that cannot
+      // run its checks (the gateway image has no tsc) — requeue, then fail.
+      const claimedMeta = { ...(exec.metadata || {}), ...claimExecutorStamp(exec.metadata) };
+      const fallback = decideDispatchFallback({
+        mode: resolveExecutorMode(claimedMeta),
+        toolchainPresent: agentToolchainPresent(),
+        priorDispatchFailures: priorDispatchFailures(exec.metadata),
+        maxAttempts: resolveMaxDispatchAttempts(),
+      });
+      if (fallback !== 'in_process') {
+        await handleDispatchFailure(s, exec, fallback, dispatchError || 'unknown dispatch error');
+        continue;
+      }
+      console.warn(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: running in-process after dispatch failure`);
     }
 
     // In-process fallback (existing behaviour). Fire-and-forget so one
@@ -3066,6 +3102,66 @@ export async function backgroundExecutorTick(): Promise<void> {
       console.error(`${LOG_PREFIX} unhandled executor error for ${exec.id}:`, err);
     });
   }
+}
+
+/**
+ * VTID-04467: an agent execution whose executor task could not be started.
+ * `requeue` puts the row back to `cooling` with a growing delay; `fail`
+ * closes it with an outage-class reason (never bridged to self-healing — the
+ * finding did nothing wrong). Both release the run lease the claim took.
+ */
+async function handleDispatchFailure(
+  s: SupaConfig,
+  exec: ExecutionRow,
+  decision: 'requeue' | 'fail',
+  dispatchError: string,
+): Promise<void> {
+  const attempts = priorDispatchFailures(exec.metadata) + 1;
+  const nowIso = new Date().toISOString();
+  const baseMeta = { ...(exec.metadata || {}), ...claimStamp(), ...claimExecutorStamp(exec.metadata) };
+  if (isRunLeaseEnabled()) {
+    await releaseDevRunLease(leaseRest(s), exec.id, decision === 'fail' ? 'failed' : 'cancelled', `dispatch failed: ${dispatchError.slice(0, 200)}`);
+  }
+  if (decision === 'requeue') {
+    const executeAfter = new Date(Date.now() + requeueDelayMs(attempts)).toISOString();
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.running`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'cooling',
+        execute_after: executeAfter,
+        updated_at: nowIso,
+        metadata: { ...baseMeta, dispatch_failures: attempts, last_dispatch_error: dispatchError.slice(0, 500), last_dispatch_at: nowIso },
+      }),
+    });
+    console.warn(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: executor task not started (attempt ${attempts}); requeued until ${executeAfter}`);
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.dispatch_deferred',
+      source: 'dev-autopilot',
+      status: 'warning',
+      message: `Execution ${exec.id.slice(0, 8)}: executor task not started (attempt ${attempts}); requeued`,
+      payload: { execution_id: exec.id, attempt: attempts, execute_after: executeAfter, error: dispatchError.slice(0, 500) },
+    });
+    return;
+  }
+  const error = dispatchFailureError(attempts, dispatchError);
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.running`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      ...buildExecutionFailurePatch({ ...baseMeta, dispatch_failures: attempts, last_dispatch_error: dispatchError.slice(0, 500), last_dispatch_at: nowIso }, error),
+    }),
+  });
+  console.error(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: ${error}`);
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.dispatch_failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Execution ${exec.id.slice(0, 8)} failed: ${error}`,
+    payload: { execution_id: exec.id, attempts, error },
+  });
 }
 
 /**

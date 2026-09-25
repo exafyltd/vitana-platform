@@ -99,7 +99,9 @@ describe('registry — the 5 PLANNED community-groups gaps are now implemented',
  */
 function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; count?: number; error?: any }>>) {
   const cursors: Record<string, number> = {};
+  const inserts: Array<{ table: string; row: any }> = [];
   return {
+    inserts,
     from(table: string) {
       const queue = resultsByTable[table] || [{ data: [], error: null }];
       const idx = Math.min(cursors[table] || 0, queue.length - 1);
@@ -107,7 +109,7 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
       const result = queue[idx];
       const chain: any = {
         select: () => chain,
-        insert: () => chain,
+        insert: (row: any) => { inserts.push({ table, row }); return chain; },
         eq: () => chain,
         neq: () => chain,
         in: () => chain,
@@ -158,25 +160,45 @@ function makeCtx(
 }
 
 describe('runAutoCreateGroupFromInterestCluster (AP-0201)', () => {
-  it('creates a group and notifies members when a cluster meets the threshold', async () => {
+  it('VTID-04510: proposes a "start a group" suggestion to each member — creates no group, adds nobody, notifies nobody', async () => {
     const clusterUsers = ['u1', 'u2', 'u3', 'u4', 'u5'].map((user_id) => ({
       user_id, interest: 'pickleball', confidence_score: 0.9,
     }));
     const supabase = makeFakeSupabase({
       user_interests: [{ data: clusterUsers, error: null }],
-      global_community_groups: [
-        { data: null, error: null }, // existing-group check: none found
-        { data: { id: 'g-1', name: 'Pickleball Circle' }, error: null }, // insert().select().single()
-      ],
-      global_community_group_members: [{ data: null, error: null }],
+      global_community_groups: [{ data: null, error: null }], // existing-group check: none found
     });
     const { ctx, notify } = makeCtx(supabase);
 
     const handler = getHandler('runAutoCreateGroupFromInterestCluster')!;
     const result = await handler(ctx);
 
-    expect(notify).toHaveBeenCalledTimes(5);
+    expect(notify).not.toHaveBeenCalled();
+    expect(supabase.inserts.filter((i) => i.table.startsWith('global_community_group'))).toHaveLength(0);
+    const recs = supabase.inserts.filter((i) => i.table === 'autopilot_recommendations').map((i) => i.row);
+    expect(recs).toHaveLength(5);
+    expect(recs[0]).toMatchObject({
+      source_ref: 'auto_group_interest', status: 'new',
+      action: { kind: 'open_screen', params: { route: '/community/groups' } },
+      fingerprint: 'group_interest:pickleball',
+      provenance: { source: 'automation', automation_id: 'AP-TEST', run_id: 'run-1' },
+    });
     expect(result.usersAffected).toBe(5);
+  });
+
+  it('VTID-04510: when a group for the interest exists, proposes joining it', async () => {
+    const clusterUsers = ['u1', 'u2', 'u3', 'u4', 'u5'].map((user_id) => ({
+      user_id, interest: 'pickleball', confidence_score: 0.9,
+    }));
+    const supabase = makeFakeSupabase({
+      user_interests: [{ data: clusterUsers, error: null }],
+      global_community_groups: [{ data: { id: 'g-1', name: 'Pickleball Circle' }, error: null }],
+    });
+    const { ctx } = makeCtx(supabase);
+    await getHandler('runAutoCreateGroupFromInterestCluster')!(ctx);
+    const recs = supabase.inserts.filter((i) => i.table === 'autopilot_recommendations').map((i) => i.row);
+    expect(recs).toHaveLength(5);
+    expect(recs[0].action).toEqual({ kind: 'join_group', params: { group_id: 'g-1', group_name: 'Pickleball Circle' } });
   });
 
   it('is a no-op when no interest cluster meets the minimum user threshold', async () => {
@@ -352,7 +374,7 @@ describe('runCrossGroupIntroduction (AP-0206)', () => {
 });
 
 describe('runGroupCreationFromMatchCluster (AP-0209)', () => {
-  it('creates a group for a mutually-connected triangle with no shared group yet', async () => {
+  it('VTID-04510: proposes a circle to each of three mutual connections — creates no group, notifies nobody', async () => {
     const supabase = makeFakeSupabase({
       relationship_edges: [{
         data: [
@@ -365,16 +387,19 @@ describe('runGroupCreationFromMatchCluster (AP-0209)', () => {
         ],
         error: null,
       }],
-      global_community_group_members: [{ data: [], error: null }, { data: null, error: null }],
-      global_community_groups: [{ data: { id: 'g-new', name: 'Your Match Circle' }, error: null }],
+      global_community_group_members: [{ data: [], error: null }],
     });
     const { ctx, notify } = makeCtx(supabase);
 
     const handler = getHandler('runGroupCreationFromMatchCluster')!;
     const result = await handler(ctx);
 
-    expect(notify).toHaveBeenCalledTimes(3);
-    expect(result).toEqual({ usersAffected: 3, actionsTaken: 4 });
+    expect(notify).not.toHaveBeenCalled();
+    expect(supabase.inserts.filter((i) => i.table.startsWith('global_community_group'))).toHaveLength(0);
+    const recs = supabase.inserts.filter((i) => i.table === 'autopilot_recommendations').map((i) => i.row);
+    expect(recs.map((r) => r.user_id).sort()).toEqual(['u1', 'u2', 'u3']);
+    expect(recs[0]).toMatchObject({ source_ref: 'auto_group_circle', fingerprint: 'group_circle:u1|u2|u3' });
+    expect(result).toEqual({ usersAffected: 3, actionsTaken: 3 });
   });
 
   it('is a no-op when no fully-connected triangle exists', async () => {

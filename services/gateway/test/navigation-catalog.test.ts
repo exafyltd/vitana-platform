@@ -283,9 +283,7 @@ const ROUTING_CASES: RoutingCase[] = [
   // ── PHASE 2: FULL COVERAGE EXPANSION ──────────────────────────────────
 
   // ── HOME expanded ──
-  { utterance: 'show me my pending actions',                  lang: 'en', expected_screen_id: 'HOME.ACTIONS' },
-  { utterance: 'what tasks are pending for me',              lang: 'en', expected_screen_id: 'HOME.ACTIONS' },
-  { utterance: 'show me my context',                         lang: 'en', expected_screen_id: 'HOME.CONTEXT' },
+  { utterance: 'show me my pending actions',                  lang: 'en', expected_screen_id: 'AUTOPILOT.MY_JOURNEY' },
 
   // ── AI expanded ──
   { utterance: 'open the AI assistant',                      lang: 'en', expected_screen_id: 'AI.OVERVIEW' },
@@ -589,10 +587,7 @@ describe('navigation-catalog — 89 canonical paths snapshot (VTID-02770)', () =
     { path: '/alkalma', expectedScreenId: 'AUTH.ALKALMA_PORTAL' },
     { path: '/earthlinks', expectedScreenId: 'AUTH.EARTHLINKS_PORTAL' },
     { path: '/home', expectedScreenId: 'HOME.OVERVIEW' },
-    { path: '/home/context', expectedScreenId: 'HOME.CONTEXT' },
-    { path: '/home/actions', expectedScreenId: 'HOME.ACTIONS' },
-    { path: '/home/matches', expectedScreenId: 'HOME.MATCHES' },
-    { path: '/home/aifeed', expectedScreenId: 'HOME.AI_FEED' },
+    { path: '/me/matches', expectedScreenId: 'HOME.MATCHES' },
     // /community → /comm (canonical alias)
     { path: '/community/events', expectedScreenId: 'COMM.EVENTS' },
     { path: '/community/live-rooms', expectedScreenId: 'COMM.LIVE_ROOMS' },

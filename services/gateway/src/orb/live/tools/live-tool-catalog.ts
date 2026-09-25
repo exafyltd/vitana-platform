@@ -109,7 +109,7 @@ export function buildLiveApiTools(
   surface?: string | null,
 ): object[] {
   return applySurfaceGate(
-    buildLiveApiToolsUngated(mode, currentRoute, activeRole),
+    withNavV2ScreenDescription(buildLiveApiToolsUngated(mode, currentRoute, activeRole)),
     resolveOrbSurface({ currentRoute, explicit: surface }),
     mode,
   );
@@ -124,6 +124,15 @@ export function buildLiveApiTools(
  * applyCommandHubGate (VTID-04310).
  */
 const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
+/**
+ * VTID-04521: on the work surfaces (admin, backoffice, commerce) a screen
+ * that `navigate` found or offered is opened with navigate_to_screen, so
+ * with the screen registry it belongs to the navigation set there too.
+ * Before, a work surface could find a screen and never open it.
+ */
+function isSurfaceNavigationTool(name: string): boolean {
+  return NAVIGATION_TOOL_NAMES.has(name) || (name === 'navigate_to_screen' && process.env.NAV_V2_ENABLED === 'true');
+}
 // Computed lazily: the declaration arrays come from modules that some route
 // tests mock at import time, so reading them at module load would throw.
 const namesOf = (decls: unknown): string[] =>
@@ -201,7 +210,7 @@ function applyCommerceGate(tools: object[]): object[] {
   for (const group of tools as Array<Record<string, unknown>>) {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
-        NAVIGATION_TOOL_NAMES.has(typeof d?.name === 'string' ? d.name : ''));
+        isSurfaceNavigationTool(typeof d?.name === 'string' ? d.name : ''));
       if (extra.length > 0) {
         const present = new Set(kept.map((d) => String(d?.name ?? '')));
         kept.push(...extra.filter((t) => !present.has(String(t.name))));
@@ -245,7 +254,7 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
         const name = typeof d?.name === 'string' ? d.name : '';
-        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+        return isSurfaceNavigationTool(name) || allowed.has(name);
       });
       if (surface === 'backoffice') {
         const present = new Set(kept.map((d) => String(d.name)));
@@ -258,6 +267,96 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
   }
   return out;
 }
+
+/**
+ * VTID-04521 — `navigate_to_screen` as the screen registry opens it. The
+ * legacy description told the model that "where is …" is a hard redirect;
+ * with the registry a "where" question is answered with an offer and the
+ * screen opens only on a yes (owner decision 2026-09-24). Parameters are
+ * unchanged — entity screens still use them.
+ */
+export const NAVIGATE_TO_SCREEN_V2_DESCRIPTION = [
+  'Open one screen, panel or overlay of the Vitana app by its screen_id.',
+  '',
+  'Call it when:',
+  '- navigate returned POSSIBLE SCREENS and one clearly fits, or the member picked one;',
+  '- you offered a screen (after navigate said FOUND, or from your own knowledge) and the member said yes;',
+  '- the member asked to open a screen whose screen_id you already know.',
+  '',
+  'Do NOT call it for "where is …" / "wo finde ich …" questions — call navigate with intent "where",',
+  'tell them where it is and what it shows, and ask whether to open it.',
+  '',
+  'Use the exact screen_id a tool gave you; never guess one from a title. If you do not know the',
+  'screen_id, call navigate with the member\'s words instead.',
+  '',
+  'The screen opens when you finish speaking: say one short sentence that you are taking them there,',
+  'then stop. Panels (entry_kind overlay) open on top of the current screen and the conversation',
+  'carries on. If the result starts with NOTE, the previous screen did not open — say so plainly if',
+  'the member asks about it.',
+  '',
+  'Screens about one specific item need its id from a prior tool result: match_id, vitana_id,',
+  'meetup_id, event_id, user_id, recipient_id, chat_group_id, id, groupId, roomId. Never invent one.',
+  'Never speak a route or a screen_id aloud — use the title.',
+].join('\n');
+
+function withNavV2ScreenDescription(tools: object[]): object[] {
+  if (process.env.NAV_V2_ENABLED !== 'true') return tools;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (!Array.isArray(group.function_declarations)) return group;
+    const decls = group.function_declarations as Array<Record<string, unknown>>;
+    if (!decls.some((d) => d?.name === 'navigate_to_screen')) return group;
+    return {
+      ...group,
+      function_declarations: decls.map((d) =>
+        d?.name === 'navigate_to_screen' ? { ...d, description: NAVIGATE_TO_SCREEN_V2_DESCRIPTION } : d),
+    };
+  });
+}
+
+/** VTID-04517 — `navigate` as the registry resolver answers it (NAV_V2_ENABLED). */
+export const NAVIGATE_V2_DECLARATION = {
+  name: 'navigate',
+  description: [
+    'Find the screen in the Vitana app that has what the member is asking',
+    'about, and open it or offer it. Pass the member\'s words; the backend',
+    'knows every screen, in every language.',
+    '',
+    'Set intent:',
+    '- "open": they asked to see or go somewhere ("open my wallet", "show me',
+    '  the news", "zeig mir meine Termine", "take me to…"). A clear match opens',
+    '  right away — say one short sentence that you are taking them there.',
+    '- "where": they asked where something is or whether it exists ("where can',
+    '  I see my lab results?", "wo finde ich…", "is there a page for…"). Nothing',
+    '  opens: you get the screen, tell them what they will find there, and ask',
+    '  whether to open it. On a yes, call navigate_to_screen with that',
+    '  screen_id — never navigate again for the same request.',
+    '',
+    'Do NOT call it for small talk or general knowledge questions.',
+    '',
+    'What comes back:',
+    '- "… opens as soon as you finish speaking": say one short sentence, then stop.',
+    '- FOUND: one screen, for a "where" question — answer and offer.',
+    '- POSSIBLE SCREENS: pick the one that fits and call navigate_to_screen',
+    '  with its screen_id, or ask one either/or question and then call it.',
+    '- NO MATCHING SCREEN: do not navigate; answer in voice.',
+    'Never speak a route or a screen_id aloud — use the title.',
+  ].join('\n'),
+  parameters: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description: 'What the member is looking for, in their own words and language.',
+      },
+      intent: {
+        type: 'string',
+        enum: ['open', 'where'],
+        description: '"open" when they asked to open/show/go to it; "where" when they asked where it is.',
+      },
+    },
+    required: ['question', 'intent'],
+  },
+};
 
 function buildLiveApiToolsUngated(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
@@ -372,6 +471,15 @@ function buildLiveApiToolsUngated(
       },
     },
   ];
+
+  // VTID-04517: with NAV_V2_ENABLED, `navigate` is answered by the screen
+  // registry and says whether the member wants the screen OPENED or only
+  // asked WHERE it is. Same name, so every other description that mentions
+  // navigate / navigate_to_screen stays true.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const i = navigatorTools.findIndex((t) => t.name === 'navigate');
+    navigatorTools[i] = NAVIGATE_V2_DECLARATION;
+  }
 
   if (mode === 'anonymous') {
     // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO
@@ -509,7 +617,7 @@ function buildLiveApiToolsUngated(
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
+          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.',
           parameters: {
             type: 'object',
             properties: {
@@ -541,6 +649,13 @@ function buildLiveApiToolsUngated(
                 type: 'string',
                 enum: ['meetup', 'live_room', 'all'],
                 description: 'Filter by event type. Defaults to all.',
+              },
+              // VTID-04533: opening an event closes the voice session, so it
+              // must be the member's explicit ask, never a side effect of a
+              // question that happens to return one event.
+              open_event: {
+                type: 'boolean',
+                description: 'true only if the member asked to open one event; omit for questions.',
               },
             },
             required: [],
@@ -1980,8 +2095,55 @@ function buildLiveApiToolsUngated(
                 description:
                   'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
               },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.',
+              },
             },
             required: ['id'],
+          },
+        },
+        {
+          // VTID-04503 (Community Autopilot CA-3)
+          name: 'confirm_pending_action',
+          description: [
+            'The user just agreed ("yes", "okay, do it", "ja, mach das") to the',
+            'offer you made. Runs exactly that stored offer — no id needed.',
+            'If the result says awaiting_confirmation, read the details back in',
+            'your own words and, if the user agrees, call again with confirm=true.',
+            'If it says there is no open offer, ask what they would like to do.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              confirm: {
+                type: 'boolean',
+                description: 'True only after a read-back the user agreed to.',
+              },
+              offer_id: {
+                type: 'string',
+                description: 'OPTIONAL — the offer_id of the offer, when you have it.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          // VTID-04506 (Community Autopilot CA-6)
+          name: 'start_autopilot_slot',
+          description: [
+            'Start an Autopilot calendar slot that is due now and mark it done,',
+            'together with the suggestion it came from. Use it when the user',
+            'agrees to the due slot you offered (confirm_pending_action runs it',
+            'for you after a "yes"). Returns the screen to open, if any.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'The calendar event id of the due slot.' },
+            },
+            required: ['event_id'],
           },
         },
         {
@@ -2021,9 +2183,11 @@ function buildLiveApiToolsUngated(
             '',
             'You normally call this with NO arguments right after',
             'get_autopilot_recommendations — it activates the actions you',
-            'just read aloud. To activate a subset, pass `ids` with the',
-            'specific recommendation ids from the items list (never guess an',
-            'id). Returns { ok, activated, spoken }; speak `spoken` verbatim.',
+            'just read aloud. To activate a subset, pass `positions` (1-based',
+            'numbers as read aloud: "the second one" → [2]) or `ids` from the',
+            'items list (never guess an id). Returns per-item results; confirm',
+            'in your own words what was activated and where it landed (calendar',
+            'slot), and say plainly if something could not be activated.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -2033,6 +2197,17 @@ function buildLiveApiToolsUngated(
                 items: { type: 'string' },
                 description:
                   'OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.',
+              },
+              positions: {
+                type: 'array',
+                items: { type: 'integer' },
+                description:
+                  'OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").',
+              },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.',
               },
             },
             required: [],
