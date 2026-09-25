@@ -1,0 +1,61 @@
+VTID-04560 → VTID-04565 — staging verification, 2026-09-25 (UTC)
+
+DEPLOY
+- vitana-platform #3706 squash-merged as a07a332a at 19:21:06; AWS-STAGE-DEPLOY-GATEWAY
+  rolled it out. 12/12 build-info samples on preview-aws-gateway.vitanaland.com report
+  git_commit a07a332a…; /api/v1/admin/health → env=staging.
+- vitana-v1 #1167 squash-merged as 4a370134 at 19:21:11; staging frontend redeployed.
+- Route checks (JSON, never HTML 404):
+    /alive                          200 application/json
+    /api/v1/orb/health              200 application/json
+    POST /api/v1/operator/chat {}   400 application/json (route mounted, body rejected)
+
+VOICE SESSIONS — ASSISTANT PROFILE (greeting only, no user audio)
+Probe: POST /api/v1/orb/live/session/start + SSE, then /session/stop.
+oasis_events topic=orb.session.profile.resolved, env=staging:
+
+  scenario                               surface      role       resolution  persona
+  auth, community screens                vitanaland   community  declared    -
+  auth, view_role=developer on community vitanaland   community  narrowed    -
+  auth, Command Hub                      command-hub  developer  declared    dev_orb
+  anonymous (x4, with/without surface)   vitanaland   (none)     anonymous   -
+
+Greetings heard:
+  community        "…schön, dass du wieder da bist. Ich würde vorschlagen, wir schauen
+                    uns deine ungelesenen Nachrichten an…"            (member Vitana)
+  developer viewing community screens  "…wir setzen die geführte Journey fort…"  (member)
+  Command Hub      "The system snapshot shows a critical Dev Autopilot issue: only 2% of
+                    executions succeeded this week, with 328 failures due to LLM call
+                    errors from Bedrock. Two executions are also waiting for your
+                    approval. I can dig into the Autopilot execution logs…"
+                    → developer Vitana, opened from the live system snapshot (VTID-04562).
+
+One anonymous start returned 502 on the first request during the rollout; the next four
+anonymous starts (with and without surface) all returned ok. Transient, not reproduced.
+
+Test-account side effect, reverted: the probe's lang=en made the gateway write
+memory_facts preferred_language=English (id 50594215…). It was deleted and the prior
+row (19f22db7…, Russian) un-superseded, restoring the account exactly. No memory_items,
+notifications or chat messages were written.
+
+BROWSER — what each app declares (session start intercepted and aborted; no session)
+  community /home   1400x900  surface=vitanaland  view_role=community
+  community /home    390x844  surface=vitanaland  view_role=community
+  Command Hub       1400x900  surface=command-hub view_role=developer
+  Command Hub        390x844  surface=command-hub view_role=developer
+
+DEFECT FOUND AND FIXED DURING THIS VERIFICATION
+The first browser run showed the community app starting sessions WITHOUT surface/view_role,
+although the widget's init received both. Cause: the gateway serves orb-widget.js as
+`immutable, max-age=1y` through Cloudflare, keyed by URL, and vitana-v1 index.html still
+requested ?v=20260925-vtid-04542-orb-latency (cf-cache-status HIT, cached 19:01, before the
+merge). The Command Hub loads the widget without ?v= and was already correct.
+Fix: exafyltd/vitana-v1#1168 (0ab62767) bumps ?v= to 20260925-vtid-04560-view-role in both
+tags and documents the rule in index.html. Re-run after its staging deploy: all four rows
+above (8/8 staging HTML samples on the new URL).
+
+NOT VERIFIED LIVE
+- A spoken turn (audio needs a real device); the deep dive is reached by asking a question,
+  so dev_deep_dive has not run on staging. Covered by test:roles and the gateway suite.
+- The Operator Console eval (scripts/orb/eval-developer-assistant.mjs) needs
+  OPERATOR_MACHINE_AUTH_TOKEN, which this session does not hold.
