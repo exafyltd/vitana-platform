@@ -8466,15 +8466,16 @@ async function connectToLiveAPI(
               }
               if (declared.has(FIND_TOOL_NAME) && declared.has(USE_TOOL_NAME)) {
                 toolResult = selected;
-                const _deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
                 if (!opts?.preconnect) {
-                  session.deferredTools = _deferredTools;
+                  session.deferredTools = deferredDeclarationMap(toolsIn, selected.dropped) as Map<string, Record<string, unknown>>;
                   session.declaredToolNames = declared;
                 }
                 _selection = {
                   groups: sel.groups,
                   contextual_kept: sel.contextual.filter((n) => declared.has(n)).length,
-                  deferred: _deferredTools.size,
+                  // Read only by the tool_catalog_trimmed diag, which a
+                  // pre-connect build (VTID-04549) does not emit.
+                  deferred: session.deferredTools?.size ?? 0,
                 };
               }
             }
