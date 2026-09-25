@@ -98,7 +98,6 @@ import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
 // VTID-03255 — write a Journey Foundation session summary at session end.
 import { createClient as createJourneySupabaseClient } from '@supabase/supabase-js';
 import { recordJourneySessionSummary } from '../../../services/journey-foundation/session-summary-writer';
-import { buildJourneyFoundationSnapshot } from '../../../services/journey-foundation/journey-foundation-state';
 // VTID-03210: single structured turn-1 wake-decision observability line.
 import {
   logWakeDecisionSnapshot,
@@ -116,6 +115,7 @@ import {
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
 import { finalizeLiveSession } from './finalize-live-session';
+import { createRequestMemo } from './request-memo';
 import {
   sessions,
   liveSessions,
@@ -224,6 +224,65 @@ export interface LiveSessionControllerDeps {
 }
 
 let configuredDeps: LiveSessionControllerDeps | null = null;
+
+// =============================================================================
+// VTID-04543: per-session resolved-identity cache for /live/stream/send
+// =============================================================================
+//
+// The SSE transport POSTs every 64 ms mic frame to /live/stream/send, and each
+// POST used to await `resolveOrbIdentity(req)` — which, whenever the JWT has
+// no tenant (Cognito tokens never do), re-ran `lookupPrimaryTenant` (1-2
+// Supabase reads) ~15 times a second. The identity is used there ONLY for the
+// ownership-mismatch log line.
+//
+// The tenant resolved for the session owner at session start (or on the first
+// send) is remembered here, keyed by the session object (so it dies with the
+// session) and by user_id. A request from any OTHER user never reads this
+// entry: it goes through `resolveOrbIdentity` exactly as before, and the
+// mismatch is logged exactly as before. A WeakMap keeps the session object's
+// own fields untouched.
+const sendIdentityCache = new WeakMap<object, { userId: string; tenantId: string | null }>();
+
+/**
+ * Remember the tenant `resolveOrbIdentity` produced for the session owner.
+ * Only stored when the resolved identity belongs to the JWT user that owns
+ * the session.
+ */
+export function rememberSessionOwnerIdentity(
+  session: object,
+  jwtUserId: string | null | undefined,
+  resolved: SupabaseIdentity | null | undefined,
+): void {
+  if (!jwtUserId || !resolved || resolved.user_id !== jwtUserId) return;
+  sendIdentityCache.set(session, { userId: jwtUserId, tenantId: resolved.tenant_id || null });
+}
+
+/**
+ * The identity `resolveOrbIdentity(req)` would return, without re-reading the
+ * tenant for the session owner. Same shape as before:
+ *   - JWT carries a tenant → that identity, unchanged;
+ *   - owner with a remembered tenant → `{ ...req.identity, tenant_id }`;
+ *   - owner with a remembered "no tenant" → `req.identity`;
+ *   - anything else (another user, no JWT, dev sandbox) → the resolver.
+ */
+export async function resolveStreamSendIdentity(
+  req: AuthenticatedRequest,
+  session: GeminiLiveSession,
+  resolve: (req: AuthenticatedRequest) => Promise<SupabaseIdentity | null>,
+): Promise<SupabaseIdentity | null> {
+  const jwt = req.identity;
+  const ownerId = session.identity?.user_id;
+  if (jwt && jwt.user_id && !jwt.tenant_id && ownerId && jwt.user_id === ownerId) {
+    const cached = sendIdentityCache.get(session);
+    if (cached && cached.userId === jwt.user_id) {
+      return cached.tenantId ? { ...jwt, tenant_id: cached.tenantId } : jwt;
+    }
+    const resolved = await resolve(req);
+    rememberSessionOwnerIdentity(session, jwt.user_id, resolved);
+    return resolved;
+  }
+  return resolve(req);
+}
 
 /**
  * Wire orb-live.ts locals into the controller. MUST be called exactly
@@ -716,6 +775,24 @@ export async function handleLiveSessionStart(
     });
   }
 
+  // VTID-04545: identity resolution and client context (IP geo, device, time)
+  // depend only on the request, and the quota gate below reads the JWT claims
+  // (req.identity), not the resolved identity — so all three start together
+  // instead of one after another. Results are awaited at the same point as
+  // before; on the 402 path they are simply discarded (both are reads with no
+  // side effect besides log lines). The no-op catches only stop an unused
+  // rejection on the 402 path from surfacing as an unhandled rejection; the
+  // awaits below still throw exactly what the serial calls would have thrown,
+  // in the same order (identity first).
+  const orbIdentityPromise = deps.resolveOrbIdentity(req);
+  const clientContextPromise = deps.buildClientContext(req);
+  orbIdentityPromise.catch(() => undefined);
+  clientContextPromise.catch(() => undefined);
+
+  // VTID-04545: reads that more than one part of this session start issue with
+  // identical parameters are shared through this per-request memo.
+  const startReads = createRequestMemo();
+
   // VTID-03107: Live AI voice quota gate (authenticated sessions only).
   // Anonymous sessions skip the gate (no user to bill). For authenticated
   // users we reserve quota up front; if exhausted with degrade behavior, we
@@ -843,11 +920,12 @@ export async function handleLiveSessionStart(
   const isAnonymousSession = !hasJwtIdentity;
 
   // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback)
-  const orbIdentity = await deps.resolveOrbIdentity(req);
+  // VTID-04545: started before the quota gate (see orbIdentityPromise above).
+  const orbIdentity = await orbIdentityPromise;
   const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
 
   // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
-  const clientContext = await deps.buildClientContext(req);
+  const clientContext = await clientContextPromise;
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
@@ -895,7 +973,10 @@ export async function handleLiveSessionStart(
   let lang = deps.normalizeLang(clientRequestedLang || 'en');
   const needsStoredLang = !clientRequestedLang && bootstrapIdentity?.user_id && bootstrapIdentity?.tenant_id;
   const storedLangPromise: Promise<string | null> = needsStoredLang
-    ? deps.getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id)
+    ? startReads.getOnce(
+        `storedLang:${bootstrapIdentity!.tenant_id!}:${bootstrapIdentity!.user_id}`,
+        () => deps.getStoredLanguagePreference(bootstrapIdentity!.tenant_id!, bootstrapIdentity!.user_id),
+      )
     : Promise.resolve(null);
   if (clientRequestedLang) {
     console.log(`[LANG-PREF] Using client-requested language: ${lang} (user's UI selection)`);
@@ -1094,7 +1175,10 @@ export async function handleLiveSessionStart(
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      deps.fetchLastSessionInfo(bootstrapIdentity.user_id, clientContext?.timezone),
+      startReads.getOnce(
+        `lastSessionInfo:${bootstrapIdentity.user_id}:${clientContext?.timezone ?? ''}`,
+        () => deps.fetchLastSessionInfo(bootstrapIdentity.user_id, clientContext?.timezone),
+      ),
       storedLangPromise,
       bootstrapIdentity.tenant_id
         ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
@@ -1170,6 +1254,15 @@ export async function handleLiveSessionStart(
         // off) to the STANDING bootstrap context — so Vitana knows the user is on
         // e.g. session 10 on EVERY turn, not only at the greeting. Best-effort;
         // empty for brand-new users and any failure never blocks bootstrap.
+        // VTID-04545: the onboarding-cohort block (below) depends only on the
+        // user id, so it is fetched in parallel with the journey block instead
+        // of after it. It is still assigned to the session at the same point,
+        // and a failure still leaves the field untouched (settled result).
+        const cohortBlockResult = (async () => deps.fetchOnboardingCohortBlock(bootstrapIdentity.user_id))()
+          .then(
+            (value) => ({ ok: true as const, value }),
+            () => ({ ok: false as const }),
+          );
         const journeyBlock = bootstrapIdentity.user_id
           ? await fetchJourneyStandingBlock(bootstrapIdentity.user_id, finalLang)
           : '';
@@ -1191,9 +1284,11 @@ export async function handleLiveSessionStart(
         session.contextBuilder = (bootstrapResult as { builder?: ContextBuilderKind }).builder ?? 'legacy';
         session.contextBrainRole = brainRole;
         session.contextExtras = contextExtras;
-        try {
-          (session as any).onboardingCohortBlock = await deps.fetchOnboardingCohortBlock(bootstrapIdentity.user_id);
-        } catch { /* non-blocking */ }
+        {
+          const cohort = await cohortBlockResult;
+          if (cohort.ok) (session as any).onboardingCohortBlock = cohort.value;
+          /* else: non-blocking, field left untouched — as before */
+        }
         if (finalLang !== session.lang) {
           session.lang = finalLang;
         }
@@ -1258,21 +1353,31 @@ export async function handleLiveSessionStart(
           const { getSupabase } = await import('../../../lib/supabase');
           const supa = getSupabase() ?? undefined;
           const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult, langPrefResult] = await Promise.allSettled([
-            deps.fetchLastSessionInfo(_ndIdentity.user_id, clientContext?.timezone),
+            // VTID-04545: same read as bootstrapWork's — shared via the memo.
+            startReads.getOnce(
+              `lastSessionInfo:${_ndIdentity.user_id}:${clientContext?.timezone ?? ''}`,
+              () => deps.fetchLastSessionInfo(_ndIdentity.user_id, clientContext?.timezone),
+            ),
+            // VTID-04545: the wake-brief name resolution issues the identical
+            // two reads below; both share them via the memo.
             supa
-              ? supa
-                  .from('memory_facts')
-                  .select('fact_value')
-                  .eq('user_id', _ndIdentity.user_id)
-                  .eq('fact_key', 'user_name')
-                  .maybeSingle()
+              ? startReads.getOnce(`memoryFactUserName:${_ndIdentity.user_id}`, () =>
+                  supa
+                    .from('memory_facts')
+                    .select('fact_value')
+                    .eq('user_id', _ndIdentity.user_id)
+                    .eq('fact_key', 'user_name')
+                    .maybeSingle(),
+                )
               : Promise.resolve(null as any),
             supa
-              ? supa
-                  .from('app_users')
-                  .select('display_name')
-                  .eq('user_id', _ndIdentity.user_id)
-                  .maybeSingle()
+              ? startReads.getOnce(`appUserDisplayName:${_ndIdentity.user_id}`, () =>
+                  supa
+                    .from('app_users')
+                    .select('display_name')
+                    .eq('user_id', _ndIdentity.user_id)
+                    .maybeSingle(),
+                )
               : Promise.resolve(null as any),
             // Authoritative first-time signal — a single cheap column read, in
             // the SAME parallel batch so it adds no latency. Drives the first-time
@@ -1319,9 +1424,12 @@ export async function handleLiveSessionStart(
             // language so it matches the system-instruction language and does not
             // flip from 'en' to the stored 'de' on turn 2. Skipped (→ null) when
             // the client already requested a language explicitly — that wins.
+            // VTID-04545: same read as storedLangPromise — shared via the memo.
             !clientRequestedLang && _ndIdentity.tenant_id
-              ? deps
-                  .getStoredLanguagePreference(_ndIdentity.tenant_id, _ndIdentity.user_id)
+              ? startReads
+                  .getOnce(`storedLang:${_ndIdentity.tenant_id}:${_ndIdentity.user_id}`, () =>
+                    deps.getStoredLanguagePreference(_ndIdentity.tenant_id!, _ndIdentity.user_id),
+                  )
                   .catch(() => null)
               : Promise.resolve(null),
           ]);
@@ -1589,6 +1697,8 @@ export async function handleLiveSessionStart(
 
   // Store session
   liveSessions.set(sessionId, session);
+  // VTID-04543: the owner's resolved tenant, reused by every /live/stream/send.
+  if (hasJwtIdentity) rememberSessionOwnerIdentity(session, req.identity?.user_id, orbIdentity);
 
   // DEV-COMHU-0513 (new-day): expose the fast greeting-facts pre-fetch on the
   // session so the greeting builder (sendGreetingPromptToLiveAPI) can do a
@@ -1821,17 +1931,23 @@ export async function handleLiveSessionStart(
           tenantId: orbIdentity.tenant_id,
           userId: orbIdentity.user_id,
         }),
-        supabaseClient
-          .from('memory_facts')
-          .select('fact_value')
-          .eq('user_id', orbIdentity.user_id)
-          .eq('fact_key', 'user_name')
-          .maybeSingle(),
-        supabaseClient
-          .from('app_users')
-          .select('display_name')
-          .eq('user_id', orbIdentity.user_id)
-          .maybeSingle(),
+        // VTID-04545: identical to the greeting-facts pre-fetch's two reads —
+        // shared via the per-start memo (a miss when the pre-fetch is off).
+        startReads.getOnce(`memoryFactUserName:${orbIdentity.user_id}`, () =>
+          supabaseClient
+            .from('memory_facts')
+            .select('fact_value')
+            .eq('user_id', orbIdentity.user_id)
+            .eq('fact_key', 'user_name')
+            .maybeSingle(),
+        ),
+        startReads.getOnce(`appUserDisplayName:${orbIdentity.user_id}`, () =>
+          supabaseClient
+            .from('app_users')
+            .select('display_name')
+            .eq('user_id', orbIdentity.user_id)
+            .maybeSingle(),
+        ),
       ]);
       if (cadenceResult.status === 'fulfilled') {
         cadenceSignals = cadenceResult.value;
@@ -2028,15 +2144,23 @@ export async function handleLiveSessionStart(
     );
   }
 
-  // VTID-03154 Slices C + D: journey-greeting block.
+  // VTID-03154 Slices C + D: journey-greeting bookkeeping.
   // Resolves the persistent user_journey row (Slice A) and decides whether
-  // this session should open with the one-time first-session welcome
-  // (is_first_session=true) or the daily-morning greeting (new calendar
-  // day in user TZ). Anonymous and missing-user sessions are skipped.
-  // Best-effort: any failure leaves journeyGreetingBlock empty and the
-  // session falls back to today's behavior. Self-contained scope — uses
-  // its own supabase handle so wake-brief failures upstream don't
-  // suppress the journey greeting.
+  // this session is the one-time first session or the first session of a new
+  // calendar day in the user's TZ; if so it stamps last_session_date (and
+  // clears is_first_session) so same-day reopens do not re-fire. Anonymous
+  // and missing-user sessions are skipped. Best-effort: any failure is logged
+  // and never blocks the session. Self-contained scope — uses its own
+  // supabase handle so wake-brief failures upstream don't suppress it.
+  //
+  // VTID-04545: this block used to also BUILD the journey-greeting prompt
+  // text (journeyGreetingBlock) — reading life_compass, app_users.display_name
+  // and the journey-foundation snapshot to fill it. VTID-03162 removed that
+  // block from the system instruction (orb-live.ts), and nothing has read it
+  // since, so those three reads and the text are gone. The greeting KIND and
+  // the user_journey writes below depend only on the journey row and today's
+  // date, and are unchanged (decideGreetingKind is exactly what
+  // buildJourneyGreetingBlock used to decide whether it produced a block).
   try {
     if (orbIdentity?.user_id) {
       const { getSupabase: getSupa } = await import('../../../lib/supabase');
@@ -2044,12 +2168,10 @@ export async function handleLiveSessionStart(
       if (supa) {
         const [
           { getJourneyState, updateSessionEndState, ensureUserJourneyRow },
-          { buildJourneyGreetingBlock, todayInTimezone },
-          { fetchLifeCompass },
+          { decideGreetingKind, todayInTimezone },
         ] = await Promise.all([
           import('../../../services/journey/user-journey-service'),
           import('../instruction/journey-greeting'),
-          import('../../../services/user-context-profiler'),
         ]);
         const journey = await getJourneyState(supa, orbIdentity.user_id);
         if (journey) {
@@ -2070,92 +2192,22 @@ export async function handleLiveSessionStart(
               console.warn(`[VTID-03154] ensureUserJourneyRow (fallback seed) failed (non-fatal): ${err?.message}`),
             );
           }
-          const lifeCompass = await fetchLifeCompass(supa, orbIdentity.user_id).catch(() => null);
           const tz = (session as any).clientContext?.timezone ?? null;
           const todayDateIso = todayInTimezone(new Date(), tz);
-          // Best-effort first-name read for the contract. The wake-brief
-          // resolves firstName upstream; we read app_users.display_name
-          // here as a self-contained fallback so this block does not
-          // depend on the wake-brief try-block scope.
-          let nameForGreeting: string | null = null;
-          try {
-            const { data: prof } = await supa
-              .from('app_users')
-              .select('display_name')
-              .eq('user_id', orbIdentity.user_id)
-              .maybeSingle();
-            const dn = (prof?.display_name as string | undefined) ?? null;
-            if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
-          } catch { /* leave nameForGreeting null */ }
-          // VTID-03255 — the one guided next move, so the morning greeting
-          // drives the journey. Best-effort: never block the greeting on it.
-          let journeyNextMove: { title: string; benefit: string } | null = null;
-          try {
-            const jfSnap = await buildJourneyFoundationSnapshot(supa, orbIdentity.user_id);
-            if (jfSnap.current_next_step) {
-              journeyNextMove = {
-                title: jfSnap.current_next_step.title,
-                benefit: jfSnap.current_next_step.benefit,
-              };
-            }
-          } catch { /* leave journeyNextMove null */ }
-          const result = buildJourneyGreetingBlock({
-            journey,
-            lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
-            firstName: nameForGreeting,
-            // BOOTSTRAP-ORB-GREETING-LANG: prefer the resolved session language so
-            // this prompt block's "Speak in <LANG>" matches the conversation
-            // language instead of pinning the default 'en'.
-            lang: (typeof session.lang === 'string' && session.lang.length > 0 ? session.lang : lang),
-            todayDateIso,
-            nextMove: journeyNextMove,
-          });
-          if (result.block && result.meta) {
-            (session as any).journeyGreetingBlock = result.block;
-            (session as any).journeyGreetingMeta = result.meta;
-            // VTID-03160 REVERT: VTID-03154 cleared wakeBriefOverrideBlock
-            // and VTID-03157 cleared teacherModeContent so the journey
-            // greeting could own turn 1. Both clearings broke the Teacher
-            // flow in production: with teacherModeContent null, the
-            // Teacher's permission-asking opener still fired (via the
-            // wake-brief Say-exactly OR via Gemini's general prompt
-            // memory) but there were no turn-2+ instructions to guide
-            // what to teach, so Gemini fell back to the
-            // end_teaching_session tool and closed the overlay the
-            // moment the user said yes.
-            //
-            // Restoring the working Teacher experience is more important
-            // than the journey-greeting framing right now. The greeting
-            // block is still set on the session (orb-live.ts appends it
-            // into the system instruction), so the LLM sees the
-            // journey-day context, but it does NOT pre-empt the existing
-            // wake-brief or Teacher Mode pathways. Proper journey-vs-
-            // Teacher integration is a follow-up slice that requires
-            // either (a) reordering the concat so journeyGreetingBlock
-            // gets recency primacy AND adding journey-aware preamble to
-            // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
-            // suppressing the wake-brief's Teacher-winner selection
-            // upstream when journey-greeting will fire.
-            // TODO(R1 slice): migrate the plan_phase + life_compass-state
-            // derivation onto resolveJourneyPlanPhase / resolveLifeCompassState
-            // (services/awareness-unified-context.ts). NOT done here because it
-            // is NOT a no-op: the live derivation in new-day-overview-payload.ts
-            // is 3-way (it folds a past target_date into on_personalized_goal +
-            // a separate days_past_deadline), whereas the canonical resolver is
-            // the §1.4 4-way that promotes a past target_date to 'goal_completed'.
-            // The 'set'/'unset' below is also object-presence, not the canonical
-            // primary_goal/set_at rule. Migrating either changes behavior, so it
-            // waits for the R7 goal-completion provider that consumes the 4th phase.
+          const kind = decideGreetingKind(journey, todayDateIso);
+          if (kind) {
+            const meta = { kind, today_date_iso: todayDateIso };
+            (session as any).journeyGreetingMeta = meta;
             console.log(
-              `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
+              `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'}`,
             );
             // Fire-and-forget update: clear is_first_session for Slice C,
             // advance last_session_date for both kinds so same-day repeat
             // sessions don't re-fire the morning greeting.
             const userIdForUpdate = orbIdentity.user_id;
             updateSessionEndState(supa, userIdForUpdate, {
-              last_session_date: result.meta.today_date_iso,
-              clear_first_session: result.meta.kind === 'first_session',
+              last_session_date: meta.today_date_iso,
+              clear_first_session: meta.kind === 'first_session',
             }).catch((err: any) =>
               console.warn(`[VTID-03154] update after fire failed (non-fatal): ${err.message}`),
             );
@@ -2180,7 +2232,9 @@ export async function handleLiveSessionStart(
     blocks: {
       wakeBriefOverride: !!session.wakeBriefOverrideBlock,
       teacherModeContent: !!(session as any).teacherModeContent,
-      journeyGreeting: !!(session as any).journeyGreetingBlock,
+      // VTID-04545: set exactly when a journey greeting kind fired (the old
+      // journeyGreetingBlock was non-empty in exactly those cases).
+      journeyGreeting: !!(session as any).journeyGreetingMeta,
     },
     firstName: { value: firstName, source: firstNameSource },
     lang,
@@ -2565,9 +2619,6 @@ export async function handleLiveStreamSend(
   const body = req.body as LiveStreamMessage & { session_id?: string };
   const effectiveSessionId = (session_id as string) || body.session_id;
 
-  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
-  const identity = await deps.resolveOrbIdentity(req);
-
   if (!effectiveSessionId) {
     return res.status(400).json({ ok: false, error: 'session_id required' });
   }
@@ -2580,6 +2631,12 @@ export async function handleLiveStreamSend(
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
   }
+
+  // VTID-ORBC: Resolve identity - JWT if present, DEV_IDENTITY in dev-sandbox, or anonymous.
+  // VTID-04543: resolved once per session for the owner (see
+  // resolveStreamSendIdentity) instead of on every mic frame. It is only read
+  // by the ownership check below, which no early return above needed.
+  const identity = await resolveStreamSendIdentity(req, session, deps.resolveOrbIdentity);
 
   // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
   if (
