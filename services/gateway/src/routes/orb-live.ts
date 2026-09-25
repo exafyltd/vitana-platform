@@ -16154,18 +16154,15 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
  * for a telemetry fault. `text/plain` is accepted for navigator.sendBeacon.
  * Contract + validation: orb/live/client-latency-beacon.ts.
  */
-router.post(
-  '/live/client-latency',
-  express.text({ type: 'text/plain', limit: '16kb' }),
-  optionalAuth,
-  (req: AuthenticatedRequest, res: Response) => {
-    try {
-      handleClientLatencyBeacon(req as any, res);
-    } catch {
-      if (!res.headersSent) res.status(204).end();
-    }
-  },
-);
+// public-route — deliberately optionalAuth: anonymous voice sessions send the beacon too.
+router.post('/live/client-latency', express.text({ type: 'text/plain', limit: '16kb' }), optionalAuth, (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — the handler itself emits voice.latency.client (client-latency-beacon.ts).
+  try {
+    handleClientLatencyBeacon(req as any, res);
+  } catch {
+    if (!res.headersSent) res.status(204).end();
+  }
+});
 
 /**
  * VTID-03471 (L-04/L-05) — GET /live/transport
