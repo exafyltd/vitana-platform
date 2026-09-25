@@ -4,3 +4,5 @@ export * from './nav-embedder';
 export * from './nav-resolver';
 export * from './nav-service';
 export * from './nav-dispatch';
+export * from './nav-ack';
+export * from './nav-continuation';

@@ -1820,11 +1820,29 @@ export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdenti
     steps_voice_en: result.steps_voice_en,
     steps_voice_de: result.steps_voice_de,
     redirect_route: result.redirect_route,
+    // VTID-04521: navigate_to_screen takes a screen id, not a route.
+    redirect_screen_id: await redirectScreenIdFor(result.redirect_route),
     redirect_offer_en: result.redirect_offer_en,
     redirect_offer_de: result.redirect_offer_de,
     citation: result.citation,
   };
   return { ok: true, result: payload, text: '' };
+}
+
+/** VTID-04521: the screen id for an explain_feature redirect_route. */
+async function redirectScreenIdFor(route: string | null | undefined): Promise<string | null> {
+  if (!route) return null;
+  try {
+    if (process.env.NAV_V2_ENABLED === 'true') {
+      const { findRegistryScreenByRoute } = await import('../navigation/nav-dispatch');
+      const s = findRegistryScreenByRoute(route);
+      if (s) return s.id;
+    }
+    const { lookupByRoute } = await import('../lib/navigation-catalog');
+    return lookupByRoute(route)?.screen_id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function tool_resolve_recipient(
@@ -3634,8 +3652,22 @@ export async function tool_navigate(
     const nav = await import('../navigation/nav-dispatch');
     if (!nav.isLegacySurface(currentRoute)) {
       const intent = args.intent === 'open' ? 'open' : 'where';
+      // VTID-04521: a "where" answer ends with an offer; hold it so a bare
+      // "yes" opens that screen (the continuation bind consumes pending_cta).
+      const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
+        ? async (o: { screen_id: string; title: string; route: string }) => {
+            const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+            await recordPendingOffer(sb, id.user_id as string, {
+              tool: 'navigate_to_screen',
+              payload: { screen_id: o.screen_id, route: o.route, title: o.title },
+              source: 'navigator_v2_offer',
+              key: `nav:${o.screen_id}`,
+              ttlMinutes: 5,
+            });
+          }
+        : undefined;
       const r = await nav.navigateByRequest(question, intent, {
-        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null,
+        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
       });
       if (r) return r;
     }

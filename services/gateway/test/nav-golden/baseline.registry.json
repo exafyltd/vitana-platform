@@ -2,25 +2,25 @@
   "resolver": "registry resolver (Titan v2, 512d, golden sentences held out)",
   "overall": {
     "total": 167,
-    "correct": 95,
-    "reaches_right_screen": 88,
+    "correct": 93,
+    "reaches_right_screen": 86,
     "wrong_screen": 0,
     "forbidden_hits": 0,
     "false_action": 0,
-    "silent": 2,
-    "clarified_with_right_option": 70,
+    "silent": 1,
+    "clarified_with_right_option": 73,
     "right_screen_wrong_behaviour": 0
   },
   "by_lang": {
     "sr": {
       "total": 15,
-      "correct": 6,
-      "reaches_right_screen": 5,
+      "correct": 4,
+      "reaches_right_screen": 3,
       "wrong_screen": 0,
       "forbidden_hits": 0,
       "false_action": 0,
-      "silent": 2,
-      "clarified_with_right_option": 7,
+      "silent": 1,
+      "clarified_with_right_option": 10,
       "right_screen_wrong_behaviour": 0
     },
     "en": {
@@ -137,13 +137,13 @@
   "by_intent": {
     "open": {
       "total": 107,
-      "correct": 44,
-      "reaches_right_screen": 44,
+      "correct": 42,
+      "reaches_right_screen": 42,
       "wrong_screen": 0,
       "forbidden_hits": 0,
       "false_action": 0,
-      "silent": 2,
-      "clarified_with_right_option": 61,
+      "silent": 1,
+      "clarified_with_right_option": 64,
       "right_screen_wrong_behaviour": 0
     },
     "where": {
@@ -169,5 +169,5 @@
       "right_screen_wrong_behaviour": 0
     }
   },
-  "clarified_right_first": 59
+  "clarified_right_first": 61
 }

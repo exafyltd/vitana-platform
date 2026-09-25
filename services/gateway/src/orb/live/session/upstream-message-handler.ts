@@ -32,6 +32,7 @@
  *      changes.
  */
 
+import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
 import {
@@ -678,30 +679,25 @@ export function createUpstreamLiveMessageHandler(
                         makeSupabaseAcceptanceDeps(_accSb),
                       ),
                     )
-                    .then((bound) => {
+                    .then(async (bound) => {
                       if (!bound || bound.tool !== 'navigate_to_screen') return;
                       const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-                      if (!p.screen_id || !p.route) return;
-                      // Re-check at dispatch time: if the LLM navigated while the
-                      // async read was in flight, defer to it (no double-nav).
+                      // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+                      // openScreen (every gate, speak first, no session latch).
+                      const built = await buildContinuationDirective(session as any, p);
+                      if (!built) return;
+                      // Re-check at dispatch time: if the LLM navigated while the async
+                      // read was in flight, defer to it (no double-nav).
                       if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
-                      const directive = {
-                        type: 'orb_directive',
-                        directive: 'navigate',
-                        screen_id: p.screen_id,
-                        route: p.route,
-                        title: p.title || p.screen_id,
-                        reason: 'continuation_accept',
-                        vtid: 'VTID-NAV-01',
-                      };
+                      const directive = built.directive;
                       if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
                       if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
                         try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
                       }
-                      session.navigationDispatched = true;
+                      if (built.latch) session.navigationDispatched = true;
                       markNavigationDispatchedThisTurn(session);
                       console.log(
-                        `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+                        `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${String(directive.route)}) — session=${session.sessionId}`,
                       );
                     })
                     .catch((err) =>
@@ -1109,6 +1105,9 @@ export function createUpstreamLiveMessageHandler(
               // navigationDispatched stays TRUE so input audio stays gated until
               // the widget closes the connection.
               session.pendingNavigation = undefined;
+              // VTID-04521: per-directive, not per-session — reset so a later
+              // navigation in the same session is not skipped as a duplicate.
+              session.navigationDirectiveSentImmediately = false;
             } else {
               // VTID-NAV-DIAG: turn_complete fired but no navigation was queued.
               // This is what "stuck in listening after asking for redirect" looks
@@ -2478,28 +2477,25 @@ export function handleTurnComplete(
               makeSupabaseAcceptanceDeps(_accSb),
             ),
           )
-          .then((bound) => {
+          .then(async (bound) => {
             if (!bound || bound.tool !== 'navigate_to_screen') return;
             const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-            if (!p.screen_id || !p.route) return;
+            // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+            // openScreen (every gate, speak first, no session latch).
+            const built = await buildContinuationDirective(session as any, p);
+            if (!built) return;
+            // Re-check at dispatch time: if the LLM navigated while the async
+            // read was in flight, defer to it (no double-nav).
             if (session.pendingNavigation || navigationDispatchedThisTurn(session)) return;
-            const directive = {
-              type: 'orb_directive',
-              directive: 'navigate',
-              screen_id: p.screen_id,
-              route: p.route,
-              title: p.title || p.screen_id,
-              reason: 'continuation_accept',
-              vtid: 'VTID-NAV-01',
-            };
+            const directive = built.directive;
             if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
             if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
               try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
             }
-            session.navigationDispatched = true;
+            if (built.latch) session.navigationDispatched = true;
             markNavigationDispatchedThisTurn(session);
             console.log(
-              `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+              `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${String(directive.route)}) — session=${session.sessionId}`,
             );
           })
           .catch((err) =>
@@ -2801,6 +2797,8 @@ export function handleTurnComplete(
       console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
     }
     session.pendingNavigation = undefined;
+    // VTID-04521: per-directive — see the raw handler's mirror.
+    session.navigationDirectiveSentImmediately = false;
   } else {
     console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
   }

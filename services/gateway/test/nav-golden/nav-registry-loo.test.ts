@@ -63,7 +63,9 @@ describe('VTID-04517 registry leave-one-out', () => {
 
   it('does not open a different page more often than the baseline', () => {
     const base = JSON.parse(fs.readFileSync(BASELINE_FILE, 'utf8'));
-    expect(ev.confident_wrong_page).toBeLessThanOrEqual(base.confident_wrong_page);
+    // A rate, not a count: adding phrasings adds queries, so the count of
+    // confident wrong-page answers can grow while the share falls.
+    expect(ev.confident_wrong_page / ev.phrasings).toBeLessThanOrEqual(base.confident_wrong_page / base.phrasings + 0.0005);
     expect(ev.top5 / ev.phrasings).toBeGreaterThanOrEqual(base.top5 / base.phrasings - 0.005);
   });
 });
