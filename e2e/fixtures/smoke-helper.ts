@@ -42,6 +42,21 @@ function isFatalError(e: string): boolean {
 }
 
 /**
+ * Chrome logs a failed request only as "Failed to load resource: the server
+ * responded with a status of 400 ()", without the URL, which made the 400s in
+ * the 2026-09-25 staging run untraceable. Record the response itself instead.
+ */
+function httpErrorEntry(status: number, method: string, url: string): string {
+  const u = new URL(url);
+  const query = u.search.length > 160 ? `${u.search.slice(0, 160)}…` : u.search;
+  return `HTTP ${status} ${method} ${u.origin}${u.pathname}${query}`;
+}
+
+function isAppHttpError(entry: string): boolean {
+  return !entry.includes('favicon') && !entry.includes('cloudflareinsights');
+}
+
+/**
  * Creates smoke tests for a set of routes.
  * Each route is tested for: HTTP status, non-blank content, no 404, no fatal JS errors.
  */
@@ -50,25 +65,39 @@ export function createSmokeTests(suiteName: string, routes: string[]) {
     for (const route of routes) {
       test(`loads ${route} without errors`, async ({ page }) => {
         const errors: string[] = [];
+        const httpErrors: string[] = [];
         page.on('console', msg => {
           if (msg.type() === 'error') errors.push(msg.text());
         });
         page.on('pageerror', err => errors.push(err.message));
+        page.on('response', res => {
+          if (res.status() >= 400) httpErrors.push(httpErrorEntry(res.status(), res.request().method(), res.url()));
+        });
+        const fatal = () => [
+          // The URL-less console line is replaced by the httpErrors entry.
+          ...errors.filter(e => !e.startsWith('Failed to load resource')).filter(isFatalError),
+          ...httpErrors.filter(isAppHttpError),
+        ];
 
         const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
 
         // HTTP status < 500
         expect(response?.status()).toBeLessThan(500);
 
-        // Not blank (waits for the SPA to render)
-        const bodyText = await renderedBodyText(page);
+        // Not blank (waits for the SPA to render). On failure, say where the
+        // page ended up and what failed, so a blank screen is diagnosable.
+        let bodyText: string;
+        try {
+          bodyText = await renderedBodyText(page);
+        } catch (e) {
+          throw new Error(`${(e as Error).message}\nlanded on: ${page.url()}\nerrors: ${JSON.stringify(fatal(), null, 1)}`);
+        }
 
         // No 404 text
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
-        // No fatal JS errors (ignore common noise)
-        const fatalErrors = errors.filter(isFatalError);
-        expect(fatalErrors).toHaveLength(0);
+        // No fatal JS errors or failed app requests (ignore common noise)
+        expect(fatal()).toHaveLength(0);
       });
     }
   });
@@ -169,27 +198,47 @@ export function createMobilePerfTests(suiteName: string, targets: MobilePerfTarg
   });
 }
 
+/** The path a navigation ended on, or the ?redirectTo= target of a sign-in page. */
+function landedPath(url: string): string {
+  const u = new URL(url);
+  const redirectTo = u.searchParams.get('redirectTo');
+  return redirectTo ? redirectTo.split('?')[0] : u.pathname;
+}
+
 /**
  * Creates redirect tests — verifies legacy routes resolve to new paths.
- * Each redirect is tested: navigate to old path, assert URL contains new path.
+ * Each redirect is tested: navigate to old path, assert the page lands on the
+ * new path. `signedOut` runs the suite in a fresh context with no session.
  */
-export function createRedirectTests(suiteName: string, redirectMap: Record<string, string>) {
+export function createRedirectTests(
+  suiteName: string,
+  redirectMap: Record<string, string>,
+  options: { signedOut?: boolean } = {},
+) {
   test.describe(suiteName, () => {
+    if (options.signedOut) test.use({ storageState: { cookies: [], origins: [] } });
     for (const [oldPath, newPath] of Object.entries(redirectMap)) {
       test(`redirects ${oldPath} → ${newPath}`, async ({ page }) => {
         await page.goto(oldPath, { waitUntil: 'domcontentloaded' });
 
-        // Strip query params from expected path for matching, then wait for
-        // the client-side redirect instead of sleeping a fixed 2 s.
+        // Compare the landed pathname exactly (a substring match on the whole
+        // URL passed trivially for '/'). A route the test user may not open
+        // lands on a sign-in page that carries the target as ?redirectTo=,
+        // which still proves the redirect resolved to the right place.
         const expectedBase = newPath.split('?')[0];
-        await expect.poll(() => page.url(), { timeout: NAVIGATION_TIMEOUT_MS }).toContain(expectedBase);
+        await expect
+          .poll(() => landedPath(page.url()), { timeout: NAVIGATION_TIMEOUT_MS })
+          .toBe(expectedBase);
       });
     }
   });
 }
 
+const SIGNED_OUT_LANDING = /^\/($|auth\b|maxina\b|alkalma\b|earthlinks\b|exafy-admin\b|dev\/login\b)/;
+
 /**
- * Creates auth guard tests — verifies unauthenticated users are redirected to /auth.
+ * Creates auth guard tests — verifies unauthenticated users are redirected to
+ * the landing page or a sign-in page.
  * Uses a fresh browser context with no stored session.
  */
 export function createAuthGuardTests(suiteName: string, protectedRoutes: string[]) {
@@ -201,14 +250,12 @@ export function createAuthGuardTests(suiteName: string, protectedRoutes: string[
         await page.goto(route, { waitUntil: 'domcontentloaded' });
 
         // Wait for the auth guard redirect instead of sleeping a fixed 3 s.
-        // Should land on /auth or a tenant portal login.
-        const isAuthPage = (url: string) =>
-          url.includes('/auth') ||
-          url.includes('/maxina') ||
-          url.includes('/alkalma') ||
-          url.includes('/earthlinks') ||
-          url.includes('/dev/login');
-        await expect.poll(() => isAuthPage(page.url()), { timeout: NAVIGATION_TIMEOUT_MS }).toBe(true);
+        // A signed-out user is sent to the landing page '/' (the portal
+        // selector, useSmartRouting) or to a tenant portal / sign-in page.
+        // Poll the pathname so a failure prints where the page really landed.
+        await expect
+          .poll(() => new URL(page.url()).pathname, { timeout: NAVIGATION_TIMEOUT_MS })
+          .toMatch(SIGNED_OUT_LANDING);
       });
     }
   });
