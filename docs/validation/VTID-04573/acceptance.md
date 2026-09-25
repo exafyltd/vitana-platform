@@ -27,3 +27,15 @@ TEST: services/gateway/test/vtid-04573-staging-github-token-secret.test.ts
 The production gateway (`vitana-gateway-awsdr`) still reads `vitana/github/token`. The durable fix is for the owner to generate a new token and write it to that secret. GitHub has no API for creating personal access tokens, and this session cannot write secret values. Production then needs a restart, for example an env-only dispatch of `AWS-PROD-DEPLOY-GATEWAY.yml`.
 
 OASIS_IMPACT: no
+
+## Production (owner-approved quick fix, 2026-09-25)
+
+The owner approved the quick fix for production in this session. `AWS-PROD-DEPLOY-GATEWAY.yml` now repoints `GITHUB_SAFE_MERGE_TOKEN` to `vitana/github/pat`.
+
+- Where: step 2/2, unconditionally, before the `env_overrides` block, so an `env-only` dispatch applies it. Step 1/2 is at the 20,000-character run limit.
+- How the secret is named: a hardcoded full ARN, `vitana/github/pat-g82ixI`, following the executor workflow's `DEEPSEEK_SECRET_ARN` precedent. The production deploy role has no `secretsmanager:Describe*`.
+
+AC-3 The production workflow pins the full `vitana/github/pat` ARN and replaces only the `GITHUB_SAFE_MERGE_TOKEN` secret. It does so outside every optional-input block, so an `env-only` dispatch applies it.
+TEST: services/gateway/test/vtid-04573-staging-github-token-secret.test.ts
+
+Dry run of the same jq filter against the live production task definition (`vitana-gateway-awsdr` revision 119): all 12 secrets are kept, only `GITHUB_SAFE_MERGE_TOKEN` changes (`vitana/github/token-lb9VTe` becomes `vitana/github/pat-g82ixI`), and everything else in the task definition is byte-identical.

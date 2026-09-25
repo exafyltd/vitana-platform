@@ -6,3 +6,4 @@ boto3 ecs.describe_task_definition vitana-gateway rev 601 / vitana-gateway-awsdr
 boto3 ecs.describe_task_definition vitana-autopilot-executor rev 26 -> GITHUB_SAFE_MERGE_TOKEN <- vitana/github/pat
 all three task defs: executionRoleArn vitana-ecs-task-execution-role
 npx jest (28 staging-workflow suites incl. new VTID-04573 pin) -> 28 passed, 198 tests
+npx jest (48 deploy-workflow suites incl. VTID-03788 run-size guard, VTID-03958 env_overrides) -> 48 passed, 523 tests
