@@ -11,7 +11,9 @@
  * only matches the "du bist (immer) noch da" complaint, which the member
  * never said.
  *
- * Two signals, both required, both from the same turn:
+ * Unambiguous requests ("schalte dich ab", "du sollst gehen", a bare
+ * "Schluss.") close on their own — see USER_STOP_UNAMBIGUOUS_PATTERNS.
+ * Otherwise two signals, both required, both from the same turn:
  *   1. the member's utterance asks to end or leave the conversation, and
  *   2. the assistant's reply says it is ending / leaving / saying goodbye.
  * Either alone is not enough: "hör auf" can mean "stop this answer" (the
@@ -47,9 +49,35 @@ const USER_STOP_PATTERNS: RegExp[] = [
   /\bi\s+don'?t\s+want\s+to\s+talk\s+(to\s+you\s+)?(any\s*more)?\b/,
 ];
 
+/**
+ * Requests that can only mean "end this conversation". Staging (VTID-04592,
+ * session live-1458e898): "du sollst gehen, schalte dich ab" was answered
+ * with a refusal ("ich kann nicht auf Anweisungen eingehen, die darauf
+ * abzielen, mich zu deaktivieren") — waiting for the model to agree left the
+ * member stuck exactly as before. These close on the member's words alone.
+ * Ambiguous ones ("hör auf", "stop talking", "schluss" inside a sentence)
+ * stay in USER_STOP_PATTERNS and still need the reply to agree.
+ */
+const USER_STOP_UNAMBIGUOUS_PATTERNS: RegExp[] = [
+  // The whole utterance is a farewell word ("Schluss.", "Tschüss!", "Bye").
+  /^(schlu(ss|ß)|tsch(ü|u)(ss?|ß)|auf\s+wiedersehen|good\s*bye|bye(\s+bye)?)(\s+jetzt)?[\s.!]*$/,
+  /\bschalt(e)?\s+(dich\s+)?(jetzt\s+)?(ab|aus)\b/,
+  /\bdu\s+(sollst|kannst|darfst)\s+(jetzt\s+)?gehen\b/,
+  /\bgeh(\s+jetzt|\s+weg)\b/,
+  /\bbeend(e|en)\s+(jetzt\s+)?(das|die|unser(e)?)\s+(gespr(ä|a)ch|unterhaltung|konversation|sitzung)\b/,
+  /\b(gespr(ä|a)ch|unterhaltung|konversation)\s+beenden\b/,
+  /\bich\s+will\s+nicht\s+(mehr\s+)?mit\s+dir\s+reden\b/,
+  /\blass\s+mich\s+in\s+ruhe\b/,
+  /\bgo\s+away\b/,
+  /\b(shut|switch|turn)\s+(yourself\s+)?(down|off)\b/,
+  /\bend\s+(the|this|our)\s+(conversation|session|call|chat)\b/,
+  /\bleave\s+me\s+alone\b/,
+  /\bi\s+don'?t\s+want\s+to\s+talk\s+to\s+you\b/,
+];
+
 const ASSISTANT_ENDING_PATTERNS: RegExp[] = [
   // German
-  /\bich\s+beende\s+(jetzt\s+)?(das|unser(e)?|die)\s+(gespr(ä|a)ch|unterhaltung|sitzung)\b/,
+  /\bich\s+beende\s+(jetzt\s+)?(das|unser(e)?|die)\s+(gespr(ä|a)ch|unterhaltung|konversation|sitzung)\b/,
   /\bich\s+schalte\s+mich\s+(jetzt\s+)?(ab|aus)\b/,
   /\bich\s+(gehe|verabschiede\s+mich)\b/,
   /\bich\s+bin\s+(jetzt\s+)?weg\b/,
@@ -57,6 +85,10 @@ const ASSISTANT_ENDING_PATTERNS: RegExp[] = [
   /\bauf\s+wiedersehen\b/,
   /\bbis\s+(sp(ä|a)ter|bald|zum\s+n(ä|a)chsten\s+mal)\b/,
   /\bwir\s+sprechen\s+(uns\s+)?sp(ä|a)ter\b/,
+  // Staging live-287b3c15: "Ich verstehe, dass du die Unterhaltung beenden
+  // möchtest. Ich wünsche dir einen schönen Tag".
+  /\bich\s+w(ü|u)nsche\s+dir\s+(noch\s+)?(einen|eine)\s+sch(ö|o)ne(n)?\s+(tag|abend|nacht|zeit)\b/,
+  /\bdass\s+du\s+(die|das|unser(e)?)\s+(gespr(ä|a)ch|unterhaltung|konversation|sitzung)\s+beenden\s+(m(ö|o)chtest|willst)\b/,
   // English
   /\b(i'?m|i\s+am|i\s+will|i'?ll)\s+(now\s+)?(ending|end|closing|close)\s+(the|this|our)\s+(conversation|session|call|chat)\b/,
   /\b(i'?m|i\s+am)\s+(signing|logging|switching|shutting)\s+off\b/,
@@ -82,7 +114,18 @@ export function detectAssistantAgreedToEnd(text: string): boolean {
   return ASSISTANT_ENDING_PATTERNS.some((p) => p.test(t));
 }
 
-/** Both signals in the same turn: the conversation should close. */
+/** The member's utterance can only mean "end this conversation". */
+export function detectUnambiguousUserStop(text: string): boolean {
+  const t = normalize(text);
+  if (!t) return false;
+  return USER_STOP_UNAMBIGUOUS_PATTERNS.some((p) => p.test(t));
+}
+
+/**
+ * The conversation should close after this turn: an unambiguous request on
+ * its own, or any stop request that the reply agreed to.
+ */
 export function shouldEndConversationAfterTurn(userText: string, assistantText: string): boolean {
+  if (detectUnambiguousUserStop(userText)) return true;
   return detectUserStopIntent(userText) && detectAssistantAgreedToEnd(assistantText);
 }

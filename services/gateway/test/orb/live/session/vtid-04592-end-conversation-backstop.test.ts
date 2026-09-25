@@ -138,6 +138,7 @@ import {
   detectUserStopIntent,
   detectAssistantAgreedToEnd,
   shouldEndConversationAfterTurn,
+  detectUnambiguousUserStop,
 } from '../../../../src/orb/live/session/end-conversation-intent';
 
 describe('VTID-04592 end-conversation intent', () => {
@@ -181,9 +182,34 @@ describe('VTID-04592 end-conversation intent', () => {
   });
 
   it('needs both signals: a stop request answered with help, or a farewell without a request, does not close', () => {
-    expect(shouldEndConversationAfterTurn('schluss', 'Wie kann ich dir sonst helfen?')).toBe(false);
+    expect(shouldEndConversationAfterTurn('hör auf zu reden', 'Wie kann ich dir sonst helfen?')).toBe(false);
+    expect(shouldEndConversationAfterTurn('mach schluss mit dem thema', 'Gut, reden wir über etwas anderes.')).toBe(false);
     expect(shouldEndConversationAfterTurn('zeig mir meine termine', 'Hier sind deine Termine. Bis später!')).toBe(false);
     expect(shouldEndConversationAfterTurn('schluss', 'Alles klar. Ich beende jetzt das Gespräch.')).toBe(true);
+  });
+});
+
+describe('VTID-04592 staging round 1 (2026-09-25 23:08 UTC): the two sessions that stayed open', () => {
+  it('closes on an unambiguous request even when Vitana refuses (live-1458e898)', () => {
+    expect(shouldEndConversationAfterTurn(
+      'du sollst gehen schalte dich ab',
+      'Leider kann ich nicht auf Anweisungen eingehen, die darauf abzielen, mich zu deaktivieren.',
+    )).toBe(true);
+  });
+
+  it('recognises "ich wünsche dir einen schönen Tag" as agreeing (live-287b3c15)', () => {
+    expect(detectAssistantAgreedToEnd(
+      'Ich verstehe, dass du die Unterhaltung beenden möchtest. Ich wünsche dir einen schönen Tag',
+    )).toBe(true);
+  });
+
+  it('treats a bare farewell word and explicit requests as unambiguous, but not "hör auf" or "schluss" inside a sentence', () => {
+    for (const u of ['Schluss.', 'schluss', 'Tschüss!', 'bye', 'schalte dich ab', 'du sollst gehen', 'geh weg', 'beende das Gespräch', 'shut yourself down', 'end the conversation']) {
+      expect({ u, hit: detectUnambiguousUserStop(u) }).toEqual({ u, hit: true });
+    }
+    for (const u of ['hör auf', 'hör auf zu reden', 'stop talking', 'mach schluss mit dem thema', 'zum schluss noch eine frage', 'wie schalte ich die benachrichtigungen ab']) {
+      expect({ u, hit: detectUnambiguousUserStop(u) }).toEqual({ u, hit: false });
+    }
   });
 });
 
