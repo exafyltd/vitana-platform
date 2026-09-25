@@ -47,6 +47,8 @@ import {
   type ActionOutcome,
   type RecommendationAction,
 } from '../services/community-autopilot/action-registry';
+import { capOpenLineup } from '../services/community-autopilot/lineup-cap';
+import { MAX_OPEN_PER_ROLE } from '../services/community-autopilot/ranker';
 import {
   DRAFTABLE_KINDS,
   currentDraft,
@@ -241,7 +243,8 @@ async function buildCommunityRecsResponse(
   }
 
   // Retired-action filter: only keep refs that map to a real community action.
-  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+  // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
 
   // Wave/horizon enrichment (mirrors GET /).
   const templateToWave = buildTemplateToWaveMap();
@@ -265,6 +268,9 @@ async function buildCommunityRecsResponse(
       startDay <= 7  ? 'thisWeek' :
       startDay <= 30 ? 'month'    : 'future';
   }
+
+  // VTID-04523: at most MAX_OPEN_PER_ROLE open suggestions (owner decision 3).
+  recommendations = capOpenLineup(recommendations).kept;
 
   const locale = await resolveRecommendationLocale(userId);
   return annotateWithPillarImpact(recommendations, locale).slice(0, limit);
@@ -741,6 +747,16 @@ router.get('/', async (req: Request, res: Response) => {
         }
       }
 
+      // VTID-04523: the member sees at most MAX_OPEN_PER_ROLE open suggestions
+      // (owner decision 3). Applied after ranking, so these are the top ones;
+      // activated/completed rows are unaffected.
+      let lineupCapped = 0;
+      if (role === 'community') {
+        const cap = capOpenLineup(recommendations);
+        recommendations = cap.kept;
+        lineupCapped = cap.capped;
+      }
+
       // Enrich community recommendations with wave metadata
       let waves: any[] | undefined;
       if (role === 'community') {
@@ -788,7 +804,8 @@ router.get('/', async (req: Request, res: Response) => {
         ok: true,
         recommendations: annotateWithPillarImpact(recommendations, roleLocale),
         count: recommendations.length,
-        has_more: hasMore,
+        // Capped open rows are not a next page: paging must not re-reveal them.
+        has_more: hasMore && lineupCapped === 0,
         ...(waves ? { waves } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
@@ -863,7 +880,9 @@ router.get('/count', async (req: Request, res: Response) => {
     // Role-based count: query table directly with same filters
     if (role) {
       const result = await queryRecommendationsByRole(role, userId, ['new'], 0, 0);
-      const count = result.ok ? (result.count || 0) : 0;
+      const rawCount = result.ok ? (result.count || 0) : 0;
+      // VTID-04523: the badge matches the lineup, which shows at most MAX_OPEN_PER_ROLE.
+      const count = role === 'community' ? Math.min(rawCount, MAX_OPEN_PER_ROLE) : rawCount;
       console.log(`${LOG_PREFIX} Count result (role-based)`, { role, userId: userId || 'null', count, ok: result.ok, error: result.error || 'none' });
       return res.status(200).json({
         ok: true,
@@ -1058,7 +1077,8 @@ export async function listCommunityAutopilotRecommendations(
     }
 
     // Retired-action filter: only refs that map to a real community action.
-    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+    // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
 
     // G4 index-weighted re-rank (same module the popup uses).
     try {
@@ -1074,6 +1094,9 @@ export async function listCommunityAutopilotRecommendations(
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} listCommunity re-rank failed (non-fatal):`, rankErr?.message);
     }
+
+    // VTID-04523: voice lists the same top MAX_OPEN_PER_ROLE the popup shows.
+    recs = capOpenLineup(recs).kept;
 
     return recs.slice(0, clamped).map(rec => ({
       id: rec.id,
