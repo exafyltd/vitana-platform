@@ -35,7 +35,8 @@ describe('VTID-03779 orb-live.ts prewarm wiring', () => {
     // so a slow/failed prewarm can never surface as a WS-level error.
     const prewarmCase = code.match(/case 'prewarm':[\s\S]{0,400}?break;/)?.[0];
     expect(prewarmCase).toBeDefined();
-    expect(prewarmCase).toMatch(/void handleWsPrewarmMessage\(clientSession\)\.catch\(/);
+    // VTID-04548: the frame is passed through (current_route / client_timezone).
+    expect(prewarmCase).toMatch(/void handleWsPrewarmMessage\(clientSession, message\)\.catch\(/);
   });
 
   it('handleWsPrewarmMessage is gated on the ORB_NOVA_PREWARM feature flag and bails with no identity/active session', () => {

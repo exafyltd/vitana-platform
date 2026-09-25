@@ -50,6 +50,7 @@ import {
   composeSessionContext,
   fetchJourneyStandingBlock,
   resolveBrainRole,
+  resolveSessionActiveRole,
   type ContextBuilderKind,
 } from './session-context-builder';
 import { clearUpstreamKeepalive } from './upstream-keepalive';
@@ -1117,15 +1118,20 @@ export async function handleLiveSessionStart(
 
     contextReadyPromise = bootstrapWork
       .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
-        let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
-        if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
-          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'developer';
+        // VTID-04548: the rule lives in session-context-builder.ts so the
+        // prewarm resolves the same role this session start does.
+        const commandHubLift = resolveSessionActiveRole({ fetchedRole: fetchedSseRole, route: sseRoute });
+        if (commandHubLift.override === 'command_hub') {
+          console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub session (was: ${fetchedSseRole || 'null'})`);
         }
-        if (clientContext.isMobile && resolvedRole !== 'community') {
-          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${resolvedRole || 'null'})`);
-          resolvedRole = 'community';
+        const { role: resolvedRole, override: roleOverride } = resolveSessionActiveRole({
+          fetchedRole: fetchedSseRole,
+          route: sseRoute,
+          isMobile: clientContext.isMobile,
+        });
+        if (roleOverride === 'mobile') {
+          console.log(`[BOOTSTRAP-ORB-MOBILE-ROLE] Forcing role to "community" for mobile session (was: ${commandHubLift.role || 'null'})`);
         }
 
         // VTID-04414 (WS-1.3): the extras are composed by the shared builder

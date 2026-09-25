@@ -15793,21 +15793,57 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
   // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
   // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
-  // brain build that gates the Gemini setup. Community/orb is the dominant
-  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
-  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
-  void import('../services/vitana-brain-cache')
-    .then(({ warmBrainCache }) =>
-      warmBrainCache({
-        user_id: identity.user_id,
-        tenant_id: identity.tenant_id || 'default',
-        role: 'community',
-        channel: 'orb',
-      }),
-    )
-    .catch(() => { /* best-effort warm */ });
+  // brain build that gates the Gemini setup. Flag-gated (no-op when
+  // FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  //
+  // VTID-04548: warm the key the NEXT session start will look up, not a fixed
+  // `community` one. The role comes from the same resolver the session start
+  // uses (Command Hub → developer, mobile → community), from the same inputs:
+  // the route the widget is on (optional `current_route` in the body; absent
+  // keeps the old community warm), the user agent and the timezone the
+  // session's client context is built from (`buildClientContext` — also reads
+  // `client_timezone` from the body). Calling this again after a route/role
+  // switch warms the new key; an already-warm key is a cache hit, not a
+  // second build. Runs after the response — never delays the page.
+  void warmBrainCacheForNextSession(req).catch(() => { /* best-effort warm */ });
   return res.json({ ok: true, prewarm: 'started' });
 });
+
+/**
+ * VTID-04548 — warm the brain cache for the session this user will open
+ * next, keyed exactly as `handleLiveSessionStart` will look it up. Shared by
+ * the HTTP prewarm endpoint and the WS `prewarm` message. Returns the key it
+ * warmed (null when it warmed nothing); never throws.
+ */
+async function warmBrainCacheForNextSession(
+  req: AuthenticatedRequest,
+  overrides: { currentRoute?: string | null } = {},
+): Promise<string | null> {
+  try {
+    // The same identity resolution and client context the session start runs.
+    const identity = await resolveOrbIdentity(req);
+    if (!identity?.user_id) return null;
+    const { isVitanaBrainOrbEnabled } = await import('../services/system-controls-service');
+    if (!(await isVitanaBrainOrbEnabled())) return null; // the session would not read it
+    const clientContext = await buildClientContext(req);
+    const bodyRoute = typeof (req.body as any)?.current_route === 'string' ? (req.body as any).current_route : '';
+    const { prewarmBrainInput } = await import('../orb/live/session/session-context-builder');
+    const { brainRole, input } = prewarmBrainInput({
+      identity: identity as SupabaseIdentity & { active_role?: string | null },
+      route: overrides.currentRoute ?? bodyRoute,
+      isMobile: clientContext.isMobile,
+      timezone: clientContext.timezone,
+    });
+    const { warmBrainCache, brainCacheKey } = await import('../services/vitana-brain-cache');
+    warmBrainCache(input);
+    const key = brainCacheKey(input);
+    console.log(`[VTID-04548] brain cache warm requested (role=${brainRole}, tz=${input.user_timezone || 'none'}) for user ${identity.user_id.substring(0, 8)}...`);
+    return key;
+  } catch (err: any) {
+    console.warn(`[VTID-04548] brain cache warm failed (non-fatal): ${err?.message || err}`);
+    return null;
+  }
+}
 
 
 /**
@@ -17194,6 +17230,10 @@ interface WsClientMessage {
   screen_title?: string;
   app_state?: Record<string, unknown>;
   is_mobile?: boolean;
+  // VTID-04548: the browser's IANA timezone, optional on 'prewarm' (the same
+  // field the start body carries), so the prewarm warms the brain cache key
+  // the session start will look up.
+  client_timezone?: string;
   // Text message fields
   text?: string;
   // Start message fields
@@ -17499,7 +17539,7 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       // login, before the ORB overlay is ever opened. Never blocks, never
       // errors back to the client (a failed/skipped prewarm is invisible —
       // the real 'start' just falls through to its normal cold-connect path).
-      void handleWsPrewarmMessage(clientSession).catch((err: any) => {
+      void handleWsPrewarmMessage(clientSession, message).catch((err: any) => {
         console.warn(`[VTID-03779] prewarm failed for ${clientSession.sessionId}: ${err?.message}`);
       });
       break;
@@ -17646,7 +17686,18 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
  *     decided fresh at real start time regardless, via the unchanged
  *     wake-brief pipeline — personalization surfaces there, unaffected.
  */
-async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<void> {
+async function handleWsPrewarmMessage(clientSession: WsClientSession, message: WsClientMessage = { type: 'prewarm' }): Promise<void> {
+  // VTID-04548: the authenticated, endpoint-less brain-cache warm. The widget
+  // resends 'prewarm' (with `current_route` / `client_timezone`) after a route
+  // or role switch; this warms the key the next session start will look up.
+  // Gated only by the brain cache flag (inside warmBrainCache), not by
+  // ORB_NOVA_PREWARM — a warm cache helps every transport. An already-warm key
+  // is a cache hit, not a second build.
+  if (clientSession.identity?.user_id) {
+    void warmBrainCacheForNextSession(wsPrewarmRequest(clientSession, message), {
+      currentRoute: typeof message.current_route === 'string' ? message.current_route : null,
+    }).catch(() => { /* best-effort warm */ });
+  }
   if (!isFeatureLive('ORB_NOVA_PREWARM')) return;
   const userId = clientSession.identity?.user_id;
   if (!userId) return; // Anonymous sessions already meet the latency target — nothing to warm.
@@ -17736,6 +17787,30 @@ async function handleWsPrewarmMessage(clientSession: WsClientSession): Promise<v
   // anyway, orphaning the prewarmed client this handler just built. This
   // ack is the client's actual "safe to reuse now" signal.
   sendWsMessage(clientSession.clientWs, { type: 'prewarm_ready' });
+}
+
+/**
+ * VTID-04548 — the request surface `buildClientContext` / `resolveOrbIdentity`
+ * read, built from a WS prewarm frame the same way `startLiveSessionForWs`
+ * (ws-start-adapter.ts) builds it from a start frame: the upgrade headers
+ * (user agent, forwarded IP, x-client-timezone), the socket's verified
+ * identity, and the frame as the body. So a prewarm resolves the same device,
+ * timezone and identity the start frame on this socket will.
+ */
+function wsPrewarmRequest(clientSession: WsClientSession, message: WsClientMessage): AuthenticatedRequest {
+  const headers: IncomingHttpHeaders = { ...clientSession.upgradeHeaders };
+  const body: Record<string, unknown> = { ...message };
+  delete body.type;
+  return {
+    identity: clientSession.identity,
+    headers,
+    body,
+    ip: clientSession.clientIP,
+    get(name: string): string | undefined {
+      const v = headers[name.toLowerCase() as keyof IncomingHttpHeaders];
+      return Array.isArray(v) ? v[0] : (v as string | undefined);
+    },
+  } as unknown as AuthenticatedRequest;
 }
 
 /**
