@@ -64,6 +64,7 @@ import {
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
+import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop } from './remember-backstop-hook';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -1842,6 +1843,9 @@ export function handleTranscript(
 
   if (event.direction === 'input') {
     const inputTranscription = event.text;
+    // VTID-04591: the gateway's memory-check note, echoed back as USER text,
+    // is not member speech — never buffered, shown or stored.
+    if (inputTranscription.trimStart().startsWith(REMEMBER_BACKSTOP_MARKER)) return;
     const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
       (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
     if (isGreetingPrompt) {
@@ -1853,6 +1857,8 @@ export function handleTranscript(
     session.transportHasShownLife = true;
     if (!session.inputTranscriptBuffer) {
       ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
+      // VTID-04591: a new member utterance starts a new remember_fact window.
+      (session as any).rememberFactCalledThisTurn = false;
     }
     ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
     if (session.sseResponse) {
@@ -1996,6 +2002,9 @@ export function handleToolCall(
 ): void {
   const { session } = ctx;
   const toolNames = event.calls.map((c) => c.name);
+  // VTID-04591: the member's remember request was handled by the tool — the
+  // turn_complete backstop stands down for this turn.
+  if (toolNames.includes('remember_fact')) (session as any).rememberFactCalledThisTurn = true;
   session.consecutiveToolCalls++;
   console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}): ${toolNames.join(',')}`);
   ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
@@ -2468,6 +2477,10 @@ export function handleTurnComplete(
       (session as any).stillHereEndDispatched = true;
       ctx.deps.dispatchEndConversationDirective(session, 'still_here_complaint_detected');
     }
+
+    // VTID-04591: a remember request the model answered without calling
+    // remember_fact is run by the gateway, and the model is told the result.
+    maybeRunRememberBackstop(ctx, session, userText);
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {

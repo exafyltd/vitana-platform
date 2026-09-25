@@ -369,14 +369,60 @@ async function _runRetrievalSearch(
  * stored (profile field, same value, or a conflicting value) so the model
  * can answer truthfully in the same turn. See services/memory/remember-fact-tool.ts.
  */
+/**
+ * VTID-04588/04591: the readers and writer remember_fact uses — shared by the
+ * tool and by the gateway backstop that runs it when the model does not.
+ */
+export async function buildRememberFactDeps(sb: SupabaseClient) {
+  const { profileColumnFor } = await import('./memory/remember-fact-tool');
+  const { rememberFact } = await import('./memory/remember');
+  return {
+    async readCurrentFact(tenantId: string, userId: string, factKey: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(1);
+      const row = Array.isArray(data) ? data[0] : null;
+      return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
+    },
+    async listCurrentFacts(tenantId: string, userId: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_key, fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(500);
+      return (Array.isArray(data) ? data : []).map((r: any) => ({
+        fact_key: String(r.fact_key),
+        fact_value: String(r.fact_value),
+        extracted_at: r.extracted_at ?? null,
+      }));
+    },
+    async readProfileValue(userId: string, key: Parameters<typeof profileColumnFor>[0]) {
+      const column = profileColumnFor(key);
+      if (!column) return null;
+      const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
+      const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+      return typeof value === 'string' && value.trim() ? value.trim() : null;
+    },
+    write: rememberFact,
+  };
+}
+
 export async function tool_remember_fact(
   args: OrbToolArgs,
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
   if (!id.tenant_id) return { ok: false, error: 'remember_fact requires a tenant_id on the session.' };
-  const { runRememberFact, formatRememberFactResult, profileColumnFor } = await import('./memory/remember-fact-tool');
-  const { rememberFact } = await import('./memory/remember');
+  const { runRememberFact, formatRememberFactResult } = await import('./memory/remember-fact-tool');
   const result = await runRememberFact(
     {
       tenant_id: id.tenant_id,
@@ -387,44 +433,7 @@ export async function tool_remember_fact(
       confirm_replace: args.confirm_replace === true || args.confirm_replace === 'true',
       thread_id: id.thread_id ?? id.session_id ?? null,
     },
-    {
-      async readCurrentFact(tenantId, userId, factKey) {
-        const { data } = await sb
-          .from('memory_facts')
-          .select('fact_value, extracted_at')
-          .eq('tenant_id', tenantId)
-          .eq('user_id', userId)
-          .eq('fact_key', factKey)
-          .is('superseded_at', null)
-          .order('extracted_at', { ascending: false })
-          .limit(1);
-        const row = Array.isArray(data) ? data[0] : null;
-        return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
-      },
-      async listCurrentFacts(tenantId, userId) {
-        const { data } = await sb
-          .from('memory_facts')
-          .select('fact_key, fact_value, extracted_at')
-          .eq('tenant_id', tenantId)
-          .eq('user_id', userId)
-          .is('superseded_at', null)
-          .order('extracted_at', { ascending: false })
-          .limit(500);
-        return (Array.isArray(data) ? data : []).map((r: any) => ({
-          fact_key: String(r.fact_key),
-          fact_value: String(r.fact_value),
-          extracted_at: r.extracted_at ?? null,
-        }));
-      },
-      async readProfileValue(userId, key) {
-        const column = profileColumnFor(key);
-        if (!column) return null;
-        const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
-        const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
-        return typeof value === 'string' && value.trim() ? value.trim() : null;
-      },
-      write: rememberFact,
-    },
+    await buildRememberFactDeps(sb),
   );
   console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
   return { ok: true, result, text: formatRememberFactResult(result) };
