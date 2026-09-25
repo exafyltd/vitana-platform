@@ -42,10 +42,20 @@ export interface StoredFact {
   extracted_at: string | null;
 }
 
+export interface StoredKeyedFact extends StoredFact {
+  fact_key: string;
+}
+
 export interface RememberFactDeps {
   readCurrentFact(tenantId: string, userId: string, factKey: string): Promise<StoredFact | null>;
   readProfileValue(userId: string, factKey: IdentityLockedKey): Promise<string | null>;
   write: typeof rememberFact;
+  /**
+   * The member's current facts, to find one stored under a different key for
+   * the same thing (the background extractor wrote "paul_birthday", the model
+   * says "bruder_paul_geburtstag"). Optional; without it only the exact key is checked.
+   */
+  listCurrentFacts?(tenantId: string, userId: string): Promise<StoredKeyedFact[]>;
   /** Conflicts this tool reported and the member has not resolved yet. Defaults to a process-wide store. */
   pendingConflicts?: PendingConflictStore;
   now?: () => number;
@@ -214,6 +224,58 @@ export function valuesMatch(a: string, b: string): boolean {
   return norm(a) === norm(b);
 }
 
+// Words that do not identify the fact.
+const KEY_STOPWORDS = new Set([
+  'my', 'the', 'of', 'a', 'an', 'user', 'users', 'is', 'date', 'value',
+  'mein', 'meine', 'meiner', 'meines', 'von', 'der', 'die', 'das', 'am', 'des', 'dem', 'den', 'ist',
+  'mi', 'moj', 'moja', 'de', 'la', 'el',
+]);
+
+// One word for each concept, across the languages the member speaks.
+const KEY_SYNONYMS: Record<string, string> = {
+  geburtstag: 'birthday', geburtsdatum: 'birthday', bday: 'birthday', birth: 'birthday', dob: 'birthday',
+  cumpleanos: 'birthday', rodjendan: 'birthday',
+  bruder: 'brother', schwester: 'sister', sibling: 'sibling', geschwister: 'sibling',
+  wife: 'spouse', husband: 'spouse', partner: 'spouse', frau: 'spouse', ehefrau: 'spouse',
+  mann: 'spouse', ehemann: 'spouse', partnerin: 'spouse', fiancee: 'spouse', verlobte: 'spouse',
+  mutter: 'mother', mama: 'mother', mom: 'mother', vater: 'father', papa: 'father', dad: 'father',
+  sohn: 'son', tochter: 'daughter', kind: 'child', kids: 'child', children: 'child',
+  hund: 'dog', katze: 'cat', haustier: 'pet',
+  lieblingsessen: 'favorite_food', lieblings: 'favorite', favourite: 'favorite',
+  arbeit: 'job', beruf: 'job', work: 'job', occupation: 'job',
+  wohnort: 'city', stadt: 'city',
+};
+
+export function keyTokens(factKey: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of normalizeFactKey(factKey).split('_')) {
+    if (!raw || KEY_STOPWORDS.has(raw)) continue;
+    out.add(KEY_SYNONYMS[raw] ?? raw);
+  }
+  return out;
+}
+
+/**
+ * The stored fact that names the same thing under another key: one key's
+ * words contain the other's, and they share at least two words (so
+ * "birthday" alone never matches "paul_birthday").
+ */
+export function findRelatedFact(factKey: string, facts: StoredKeyedFact[]): StoredKeyedFact | null {
+  const want = keyTokens(factKey);
+  if (want.size < 2) return null;
+  let best: { fact: StoredKeyedFact; shared: number } | null = null;
+  for (const f of facts) {
+    const have = keyTokens(f.fact_key);
+    let shared = 0;
+    for (const t of have) if (want.has(t)) shared++;
+    const nested = shared === have.size || shared === want.size;
+    if (shared < 2 || !nested) continue;
+    const newer = best && shared === best.shared && String(f.extracted_at ?? '') > String(best.fact.extracted_at ?? '');
+    if (!best || shared > best.shared || newer) best = { fact: f, shared };
+  }
+  return best?.fact ?? null;
+}
+
 export interface RememberFactToolInput {
   tenant_id: string;
   user_id: string;
@@ -228,7 +290,7 @@ export async function runRememberFact(
   input: RememberFactToolInput,
   deps: RememberFactDeps,
 ): Promise<RememberFactToolResult> {
-  const factKey = normalizeFactKey(input.fact_key);
+  let factKey = normalizeFactKey(input.fact_key);
   const newValue = dropPlaceholderYear(String(input.fact_value ?? ''));
   const base = { fact_key: factKey, new_value: newValue };
   if (!factKey || !newValue) {
@@ -263,7 +325,17 @@ export async function runRememberFact(
 
   const pendingConflicts = deps.pendingConflicts ?? defaultPendingConflicts;
   const now = (deps.now ?? Date.now)();
-  const stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
+  let stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
+  if (!stored && deps.listCurrentFacts) {
+    const facts = await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[]);
+    const related = findRelatedFact(factKey, facts);
+    if (related) {
+      // Keep one fact per thing: compare against, and replace, the stored key.
+      factKey = related.fact_key;
+      stored = { fact_value: related.fact_value, extracted_at: related.extracted_at };
+    }
+  }
+  base.fact_key = factKey;
   if (stored && valuesMatch(stored.fact_value, newValue)) {
     return {
       ...base,
