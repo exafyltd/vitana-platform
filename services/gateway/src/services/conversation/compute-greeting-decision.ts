@@ -145,6 +145,35 @@ export type WakeOpener =
   | 'silenced_on_cadence'
   | 'legacy_default';
 
+/**
+ * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
+ * declares them (not the ladder's evaluation order), for the Command Hub
+ * Opening tab. The `Record` makes this exhaustive at compile time: adding a
+ * member to `WakeOpener` without listing it here fails `tsc`.
+ */
+const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
+  safe_fast_newday_overview: 0,
+  safe_fast_first_time_welcome: 1,
+  conv_resume: 2,
+  safe_fast_proactive: 3,
+  safe_fast_newday: 4,
+  safe_fast_pending_context: 5,
+  silent_reconnect: 6,
+  day_close: 7,
+  newday_overview: 8,
+  override_v2: 9,
+  support_report: 10,
+  silenced_on_cadence: 11,
+  legacy_default: 12,
+};
+export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
+  .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
+
+/** Whether a rung is switched on in this process (module switches set at boot by orb-live.ts). */
+export function wakeOpenerRungSwitches(): { newday_overview: boolean; day_close: boolean } {
+  return { newday_overview: _newdayOverviewRungEnabled, day_close: _dayCloseRungEnabled };
+}
+
 /** Side effects the live adapter must still perform after rendering, kept as
  *  DATA so the pure core never performs them (it only describes them). Mirrors
  *  exactly what the corresponding live rung does today. */

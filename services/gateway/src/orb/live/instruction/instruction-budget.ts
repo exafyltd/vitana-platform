@@ -354,3 +354,39 @@ function pushBootstrapRegion(
     out.push({ kind, text: text.slice(cursor, end) });
   }
 }
+
+/**
+ * VTID-04525 (Conversation hub B2) — the `instruction_budget` diag payload.
+ *
+ * The budget guard used to report only to the console
+ * (`[voice.instruction.budget_ok|overflow]`), so neither the Command Hub nor
+ * a query could say how often context was dropped, or which section. One diag
+ * per upstream setup carries the byte accounting as a state record, not a
+ * heartbeat. It carries sizes and section kinds only, never instruction text.
+ *
+ * Pure.
+ */
+export type InstructionBudgetDiag = {
+  budget_bytes: number;
+  total_bytes_before: number;
+  total_bytes_after: number;
+  trimmed: boolean;
+  trimmed_sections: InstructionSectionKind[];
+  still_over_budget: boolean;
+  section_bytes: Record<string, number>;
+};
+
+export function instructionBudgetDiagPayload(
+  result: InstructionBudgetResult,
+  budget: number = INSTRUCTION_TOTAL_BYTE_BUDGET,
+): InstructionBudgetDiag {
+  return {
+    budget_bytes: budget,
+    total_bytes_before: result.totalBytesBefore,
+    total_bytes_after: result.totalBytesAfter,
+    trimmed: result.trimmedSections.length > 0,
+    trimmed_sections: [...result.trimmedSections],
+    still_over_budget: result.totalBytesAfter > budget,
+    section_bytes: { ...result.sectionBytes },
+  };
+}

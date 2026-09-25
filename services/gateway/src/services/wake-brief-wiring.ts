@@ -316,6 +316,13 @@ ensureWakeBriefProviderRegistered();
 // GreetingPolicyInput, which flows through here naturally).
 // ---------------------------------------------------------------------------
 
+/**
+ * VTID-03741 — per-provider timeout for an explicitly tapped topic or focus
+ * step, instead of the ambient default. Exported (VTID-04525) so the
+ * Conversation hub reports the value the ranker actually uses.
+ */
+export const EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS = 10_000;
+
 export interface DecideWakeBriefArgs {
   sessionId: string;
   tenantId: string | null;
@@ -693,7 +700,7 @@ export async function decideWakeBriefForSession(
   // fought to fix. Give explicit-selection turns a generous ceiling instead of
   // the ambient default — this still bounds a genuinely hung Supabase/Polly
   // call, it just does not mistake a slow cache-miss synthesis for one.
-  const EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS = 10_000;
+  // (EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS is a module export, see above.)
 
   let storedRecentOpeners: string[] = [];
   if (args.supabase && args.userId) {
