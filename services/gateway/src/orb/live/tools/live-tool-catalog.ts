@@ -511,13 +511,14 @@ function buildLiveApiToolsUngated(
         ...navigatorTools,
         {
           name: 'search_memory',
-          description: 'Search the user\'s personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.',
+          // VTID-04581: shortened to make room for remember_fact in the Nova budget.
+          description: 'Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'The search query to find relevant memories, diary entries, or personal records',
+                description: 'What to look for',
               },
               categories: {
                 type: 'array',
@@ -526,6 +527,23 @@ function buildLiveApiToolsUngated(
               },
             },
             required: ['query'],
+          },
+        },
+        // VTID-04581: save a stated fact and learn what is already stored.
+        // Deliberately terse — the rules live in the prompt's MEMORY line and
+        // the Nova catalog budget is nearly full (VTID-04426).
+        {
+          name: 'remember_fact',
+          description: 'Save a stated fact; reply per STATUS.',
+          parameters: {
+            type: 'object',
+            properties: {
+              fact_key: { type: 'string' },
+              fact_value: { type: 'string' },
+              about: { type: 'string', enum: ['self', 'other'] },
+              confirm_replace: { type: 'boolean' },
+            },
+            required: ['fact_key', 'fact_value'],
           },
         },
         {

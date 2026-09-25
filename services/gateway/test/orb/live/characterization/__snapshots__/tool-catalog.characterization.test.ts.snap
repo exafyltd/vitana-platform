@@ -224,7 +224,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -236,12 +236,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },
@@ -13217,7 +13246,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -13229,12 +13258,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },

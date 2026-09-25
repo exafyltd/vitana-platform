@@ -1,0 +1,273 @@
+/**
+ * VTID-04581: `remember_fact` — the assistant saves a fact while the member is
+ * talking, and learns in the same turn what is already stored.
+ *
+ * Before this tool, facts were only written by a background extractor after
+ * the turn. The model had no way to see, while answering, that
+ *   - the fact is a profile field (birthday, name, …) that only the profile
+ *     can change — so it cheerfully "saved" a birthday that was then refused;
+ *   - a different value is already stored — so "my wife's birthday is B"
+ *     silently replaced A without asking which one is right.
+ *
+ * The tool answers with one status the model acts on:
+ *   profile_owned  nothing saved; the profile's current value, if any
+ *   already_known  nothing saved; the same value is stored
+ *   conflict       nothing saved; a different value is stored — ask which is right
+ *   saved          written (after confirm_replace when it replaced a value)
+ *
+ * The text returned to the model is an instruction (intent), never a
+ * sentence for Vitana to speak (CLAUDE.md NEVER rule 41).
+ */
+
+import { isIdentityLockedKey, getRedirectTarget, type IdentityLockedKey } from '../memory-identity-lock';
+import { rememberFact } from './remember';
+
+export type RememberFactStatus = 'profile_owned' | 'already_known' | 'conflict' | 'saved' | 'failed';
+
+export interface RememberFactToolResult {
+  status: RememberFactStatus;
+  fact_key: string;
+  new_value: string;
+  stored_value?: string | null;
+  stored_at?: string | null;
+  profile_value?: string | null;
+  profile_field?: string;
+  replaced_value?: string | null;
+  error?: string;
+  instruction: string;
+}
+
+export interface StoredFact {
+  fact_value: string;
+  extracted_at: string | null;
+}
+
+export interface RememberFactDeps {
+  readCurrentFact(tenantId: string, userId: string, factKey: string): Promise<StoredFact | null>;
+  readProfileValue(userId: string, factKey: IdentityLockedKey): Promise<string | null>;
+  write: typeof rememberFact;
+}
+
+// Words a model may use for a profile field, mapped to the locked key.
+const PROFILE_ALIASES: Record<string, IdentityLockedKey> = {
+  birthday: 'user_birthday',
+  my_birthday: 'user_birthday',
+  birth_date: 'user_birthday',
+  birthdate: 'user_birthday',
+  date_of_birth: 'user_date_of_birth',
+  dob: 'user_date_of_birth',
+  user_dob: 'user_date_of_birth',
+  user_birth_date: 'user_date_of_birth',
+  name: 'user_first_name',
+  my_name: 'user_first_name',
+  first_name: 'user_first_name',
+  user_name: 'user_first_name',
+  last_name: 'user_last_name',
+  surname: 'user_last_name',
+  full_name: 'user_full_name',
+  display_name: 'user_display_name',
+  gender: 'user_gender',
+  pronouns: 'user_pronouns',
+  email: 'user_email',
+  email_address: 'user_email',
+  phone: 'user_phone',
+  phone_number: 'user_phone',
+  city: 'user_city',
+  country: 'user_country',
+  address: 'user_address',
+  home_address: 'user_address',
+};
+
+/** Profile column read for each locked key; null = no profile column. */
+const PROFILE_COLUMN: Partial<Record<IdentityLockedKey, string>> = {
+  user_birthday: 'date_of_birth',
+  user_date_of_birth: 'date_of_birth',
+  user_first_name: 'first_name',
+  user_last_name: 'last_name',
+  user_display_name: 'display_name',
+  user_full_name: 'full_name',
+  user_gender: 'gender',
+  user_city: 'city',
+  user_country: 'country',
+};
+
+export function profileColumnFor(key: IdentityLockedKey): string | null {
+  return PROFILE_COLUMN[key] ?? null;
+}
+
+export function normalizeFactKey(raw: string): string {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/** The member's own profile field this key names, or null. */
+export function resolveProfileKey(factKey: string, about: string | undefined): IdentityLockedKey | null {
+  if (about && about !== 'self') return null;
+  if (isIdentityLockedKey(factKey)) return factKey;
+  return PROFILE_ALIASES[factKey] ?? null;
+}
+
+const MONTHS: Record<string, number> = {
+  jan: 1, january: 1, januar: 1, jaenner: 1, jänner: 1,
+  feb: 2, february: 2, februar: 2,
+  mar: 3, march: 3, marz: 3, märz: 3, maerz: 3,
+  apr: 4, april: 4,
+  may: 5, mai: 5,
+  jun: 6, june: 6, juni: 6,
+  jul: 7, july: 7, juli: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10, okt: 10, oktober: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12, dez: 12, dezember: 12,
+};
+
+/** "4. November 1997", "November 4th, 1997", "1997-11-04", "04.11.1997" → "1997-11-04". */
+export function normalizeDate(value: string): string | null {
+  const v = value.trim().toLowerCase();
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const tokens = v.replace(/[.,]/g, ' ').split(/\s+/).filter(Boolean);
+  let day: number | null = null;
+  let month: number | null = null;
+  let year: number | null = null;
+  for (const t of tokens) {
+    const n = t.replace(/(st|nd|rd|th)$/, '');
+    if (MONTHS[t] !== undefined) month = MONTHS[t];
+    else if (/^\d{4}$/.test(n)) year = Number(n);
+    else if (/^\d{1,2}$/.test(n) && day === null) day = Number(n);
+  }
+  if (day === null || month === null) return null;
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return year ? `${year}-${mm}-${dd}` : `--${mm}-${dd}`;
+}
+
+export function valuesMatch(a: string, b: string): boolean {
+  const da = normalizeDate(a);
+  const db = normalizeDate(b);
+  if (da && db) {
+    // A day-and-month value matches a full date with the same day and month.
+    if (da.startsWith('--') || db.startsWith('--')) return da.slice(-5) === db.slice(-5);
+    return da === db;
+  }
+  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return norm(a) === norm(b);
+}
+
+export interface RememberFactToolInput {
+  tenant_id: string;
+  user_id: string;
+  fact_key: string;
+  fact_value: string;
+  about?: string;
+  confirm_replace?: boolean;
+  thread_id?: string | null;
+}
+
+export async function runRememberFact(
+  input: RememberFactToolInput,
+  deps: RememberFactDeps,
+): Promise<RememberFactToolResult> {
+  const factKey = normalizeFactKey(input.fact_key);
+  const newValue = String(input.fact_value ?? '').trim();
+  const base = { fact_key: factKey, new_value: newValue };
+  if (!factKey || !newValue) {
+    return {
+      ...base,
+      status: 'failed',
+      error: 'fact_key and fact_value are required',
+      instruction: 'Nothing was saved. Ask the member what exactly they want you to remember.',
+    };
+  }
+
+  const profileKey = resolveProfileKey(factKey, input.about);
+  if (profileKey) {
+    const profileValue = await deps.readProfileValue(input.user_id, profileKey).catch(() => null);
+    const target = getRedirectTarget(profileKey);
+    const field = target.payload.field ?? profileKey;
+    const sameAsProfile = profileValue ? valuesMatch(profileValue, newValue) : false;
+    const instruction = profileValue
+      ? sameAsProfile
+        ? `Nothing was saved: this is a profile field and the profile already has exactly this value (${profileValue}). Tell the member you already know it. If they ever want to change it, that is done in their profile.`
+        : `Nothing was saved: this is a profile field. The profile says ${profileValue}; the member just said ${newValue}. Tell them you already know it from their profile (say the profile value), that it differs from what they just said, and that profile basics like this are changed in their profile — offer to open it for them.`
+      : `Nothing was saved: this is a profile field and their profile has no value yet. Tell the member that basics like this are entered in their profile, where every part of Vitanaland uses them, and offer to open it now.`;
+    return {
+      ...base,
+      status: 'profile_owned',
+      fact_key: profileKey,
+      profile_field: field,
+      profile_value: profileValue,
+      instruction,
+    };
+  }
+
+  const stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
+  if (stored && valuesMatch(stored.fact_value, newValue)) {
+    return {
+      ...base,
+      status: 'already_known',
+      stored_value: stored.fact_value,
+      stored_at: stored.extracted_at,
+      instruction: `Nothing new to save: you already have ${factKey} = "${stored.fact_value}". Tell the member you already knew that.`,
+    };
+  }
+  if (stored && !input.confirm_replace) {
+    return {
+      ...base,
+      status: 'conflict',
+      stored_value: stored.fact_value,
+      stored_at: stored.extracted_at,
+      instruction:
+        `Nothing was saved. You already have a DIFFERENT value for ${factKey}: "${stored.fact_value}". ` +
+        `The member just said "${newValue}". Tell them you have the other value stored, name both, and ask which one is correct. ` +
+        `When they answer, call remember_fact again with the correct value and confirm_replace=true. Do not say it is saved before that call returns status=saved.`,
+    };
+  }
+
+  const written = await deps.write({
+    tenant_id: input.tenant_id,
+    user_id: input.user_id,
+    fact_key: factKey,
+    fact_value: newValue,
+    entity: input.about && input.about !== 'self' ? 'disclosed' : 'self',
+    provenance_source: 'user_stated',
+    provenance_confidence: 0.95,
+    thread_id: input.thread_id ?? null,
+    actor: 'orb-remember-fact-tool',
+  });
+  if (!written.ok) {
+    if (written.blocked === 'identity_lock') {
+      return {
+        ...base,
+        status: 'profile_owned',
+        profile_value: null,
+        instruction: 'Nothing was saved: this is a profile field. Tell the member it is set in their profile and offer to open it.',
+      };
+    }
+    return {
+      ...base,
+      status: 'failed',
+      error: written.error,
+      instruction: 'Saving failed. Tell the member honestly that you could not save it right now; do not say it was saved.',
+    };
+  }
+  return {
+    ...base,
+    status: 'saved',
+    replaced_value: stored?.fact_value ?? null,
+    instruction: stored
+      ? `Saved: ${factKey} = "${newValue}" (replaced "${stored.fact_value}"). Confirm briefly to the member.`
+      : `Saved: ${factKey} = "${newValue}". Confirm briefly to the member.`,
+  };
+}
+
+/** One line per status, for the model. */
+export function formatRememberFactResult(r: RememberFactToolResult): string {
+  return `STATUS: ${r.status}. ${r.instruction}`;
+}

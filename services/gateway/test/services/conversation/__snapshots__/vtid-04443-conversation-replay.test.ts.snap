@@ -25,7 +25,7 @@ exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = 
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 46,
+      "declared_tool_count": 47,
       "declared_tools_sample": [
         "add_group_chat_member",
         "add_to_calendar",
@@ -90,7 +90,7 @@ exports[`replay first-time-member matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 49,
+      "declared_tool_count": 50,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -147,7 +147,6 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
-        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -157,8 +156,9 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
+        "get_current_screen",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -178,7 +178,6 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
-        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -188,8 +187,9 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
+        "get_current_screen",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 1,
       "leads": [
@@ -258,7 +258,7 @@ exports[`replay personal-weights-shadow matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 45,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -318,7 +318,7 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 47,
+      "declared_tool_count": 48,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -406,7 +406,7 @@ exports[`replay scored-opening-serves-relevant matches its recorded transcript 1
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 45,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -466,7 +466,7 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 49,
+      "declared_tool_count": 50,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -505,7 +505,6 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
-        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -515,8 +514,9 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
+        "get_current_screen",
       ],
-      "deferred_tool_count": 249,
+      "deferred_tool_count": 250,
       "find_tool_results": null,
       "index": 1,
       "leads": [
@@ -589,7 +589,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": false,
-      "declared_tool_count": 45,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -613,7 +613,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
     },
     {
       "advisor_eligible": false,
-      "declared_tool_count": 45,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -637,7 +637,7 @@ exports[`replay small-talk-no-advisor matches its recorded transcript 1`] = `
     },
     {
       "advisor_eligible": true,
-      "declared_tool_count": 45,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
