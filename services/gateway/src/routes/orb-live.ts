@@ -2005,6 +2005,7 @@ import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 import { shouldFireFirstTimeWelcome, resolveGreetingLang } from '../orb/live/instruction/greeting-gate';
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
+import { buildReconnectRecoveryPrompt } from '../orb/live/instruction/reconnect-recovery-prompt'; // VTID-04551
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -11768,57 +11769,14 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   // itself a bug generator: `fr`/`es` idle asked "what do you want to talk
   // about?" while `en`/`de` promised to show the next step — three languages
   // that disagreed about what the assistant just committed to.
-  const stageIntents: Record<string, string> = {
-    thinking:
-      'briefly acknowledge that the connection dropped for a moment, name what the user had been asking about in 3-6 words drawn from the conversation history (never their exact words), and lead straight into the answer',
-    listening_user_speaking:
-      'briefly acknowledge that the connection dropped while they were mid-sentence, name the topic of their partial utterance in 3-6 words drawn from the conversation history, and invite them to carry on',
-    speaking:
-      'briefly acknowledge that the connection dropped while you were answering, and say you are picking your answer back up',
-    idle: 'briefly acknowledge you are back, and hand the floor to the user',
-  };
-  const stageIntent = stageIntents[stage] || stageIntents['idle'];
-
-  // The full prompt sent as a "user" turn to Gemini. It tells Gemini how to
-  // open AND what to do next (answer / wait / continue) based on the stage.
-  // VTID-02715: language is "brief connection blip" not "network disconnect"
-  // — Gemini was paraphrasing "network" → "internet" to the user, who has
-  // perfectly working Wi-Fi. The drop is on the upstream WS / Cloud Run
-  // side; we don't blame the user's network.
-  const prompt = [
-    'You are recovering from a brief connection blip that interrupted a live voice conversation.',
-    '',
-    'Read the conversation history that has been injected into your system instruction.',
-    '',
-    `RECONNECT_STAGE = "${stage}" (the user was in this state when the connection dropped).`,
-    '',
-    'STRUCTURE — speak ONE acknowledgment sentence first, then take the matching follow-up action.',
-    '',
-    `YOUR ACKNOWLEDGMENT for this stage must: ${stageIntent}.`,
-    '',
-    'Compose that sentence YOURSELF, in your own words, fresh for this reconnect.',
-    'You are NOT given a script and there is no approved phrasing to reproduce.',
-    'Vary it every time — the user reconnects often and must never hear the same',
-    'sentence twice. Keep it to one short sentence.',
-    '',
-    'Then take the follow-up action for the stage:',
-    `- "thinking": IMMEDIATELY answer the user's last question using the conversation history. Keep the answer focused and concise.`,
-    `- "listening_user_speaking": STOP and wait after your acknowledgment. NEVER ask the user to repeat themselves — their words are in the history, so name the topic yourself. If there really is no recent user turn in the history, just say you got cut off and are listening. Do NOT guess what they were about to ask.`,
-    `- "speaking": RESUME the assistant's last answer using the conversation history — pick up logically from where you left off. Do not restart the answer from scratch.`,
-    `- "idle" or unknown: STOP and wait.`,
-    '',
-    'CRITICAL RULES:',
-    '- Speak in the user\'s language (it is set in your system instruction).',
-    '- Do NOT speak a memorised or fixed sentence. Never reuse a previous recovery line.',
-    '- Do NOT introduce yourself.',
-    '- Do NOT say "Hello", "Hi", or the user\'s name.',
-    '- Do NOT use the standard greeting prompt — this is a RECOVERY, not a fresh start.',
-    '- Do NOT use the words "internet", "network", "Wi-Fi" or equivalents — say "connection" or "we got cut off". The drop is on our side.',
-    '- Use the word "Sorry" / equivalent ONCE, not repeatedly.',
-    '- Speak immediately when this prompt arrives.',
-    '',
-    `Now produce the recovery line for stage "${stage}" and any follow-up action.`
-  ].join('\n');
+  //
+  // VTID-04551 — the stage intents and the prompt itself now live in
+  // orb/live/instruction/reconnect-recovery-prompt.ts, restated as what TO do.
+  // Measured: 29 of 30 sessions whose first open was this prompt were closed by
+  // Nova's content filter (0 of 107 greeting-brain opens); the prompt carried an
+  // eleven-deep stack of negative imperatives, the VTID-03797/VTID-04124 shape.
+  // See that module's header for the data and the clause-by-clause map.
+  const prompt = buildReconnectRecoveryPrompt(stage);
 
   const message = {
     client_content: {
