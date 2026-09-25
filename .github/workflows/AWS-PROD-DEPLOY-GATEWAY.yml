@@ -846,6 +846,8 @@ jobs:
           # DEEPSEEK_SECRET_ARN: this role has no secretsmanager:Describe*,
           # and ECS only accepts a bare name for SSM parameters. An ARN is
           # not a credential. If the secret is ever recreated, update it here.
+          # Permanent (owner decision 2026-09-25, VTID-04583): vitana/github/token
+          # is retired.
           # Applied unconditionally below, in every deploy mode (env-only too),
           # in this step because step 1/2 is at the 20,000-char run limit.
           GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI
