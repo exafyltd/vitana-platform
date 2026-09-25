@@ -49,6 +49,12 @@ export interface NavCallContext {
   sessionId: string | null;
   /** Tenant switch-offs from the Command Hub (none wired yet). */
   excluded?: ReadonlySet<string>;
+  /**
+   * VTID-04521: hold an offer so a bare "yes" on the next turn opens it
+   * (the continuation bind consumes it). Best effort; never awaited for
+   * correctness of the answer.
+   */
+  recordOffer?: (offer: { screen_id: string; title: string; route: string }) => Promise<void>;
 }
 
 function resolveContext(c: NavCallContext): NavResolveContext {
@@ -80,6 +86,20 @@ export function findRegistryScreen(idOrAlias: string): NavScreen | null {
     screens.find((s) => (s.aliases || []).some((a) => a.toLowerCase() === lower)) ||
     null
   );
+}
+
+/**
+ * VTID-04521 — the registry screen a route belongs to (explain_feature hands
+ * back a route; navigate_to_screen takes a screen id). Exact route first,
+ * then the page (query stripped) among voice-reachable screens.
+ */
+export function findRegistryScreenByRoute(route: string | null | undefined): NavScreen | null {
+  if (!route) return null;
+  const screens = getNavRegistry().registry.screens.filter(isVoiceTarget);
+  const exact = screens.find((s) => s.route === route || s.mobileRoute === route);
+  if (exact) return exact;
+  const page = pageOf(route);
+  return screens.find((s) => s.route === page) || screens.find((s) => pageOf(s.route) === page) || null;
 }
 
 /** Screens that need an entity id go through the legacy handler, which resolves entities. */
@@ -146,6 +166,10 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
     reason: reason || 'navigate_to_screen tool call',
     entry_kind: isOverlay ? 'overlay' : 'route',
     vtid: 'VTID-04517',
+    // VTID-04521: speak first, then navigate. The widget holds the directive
+    // until the reply has played out, so the member hears where they are
+    // going, and it reports the outcome back as nav_result.
+    after_speech: true,
     ...(opts.keepOrbOpen ? { keep_orb_open: true } : {}),
   };
   await emit('orb.navigator.requested', 'info', `open ${screen.id} (${route})`, {
@@ -155,9 +179,22 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
     ok: true,
     result: { screen_id: screen.id, route, base_route: basePath, title, entry_kind: directive.entry_kind, directive },
     text: isOverlay
-      ? `Opened ${title} as a panel on the current screen. The member stays where they are; carry on the conversation.`
-      : `Opening ${title} now. Say one short sentence that you are taking them there, then stop — the screen changes after you finish.`,
+      ? `${title} opens as a panel on the current screen as soon as you finish this sentence. Say one short sentence about it; the member stays where they are and the conversation carries on.`
+      : `${title} opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop.`,
   };
+}
+
+/** Record the offered screen so the continuation bind can open it on "yes". */
+async function holdOffer(c: NavCallContext, screenId: string | undefined): Promise<void> {
+  if (!c.recordOffer || !screenId) return;
+  const screen = findRegistryScreen(screenId);
+  if (!screen || !isVoiceTarget(screen)) return;
+  const ctx = resolveContext(c);
+  try {
+    await c.recordOffer({ screen_id: screen.id, title: candidateFor(screen, 1, ctx).title, route: routeFor(screen, ctx.viewport) });
+  } catch {
+    // Holding the offer is a convenience; the model can still call navigate_to_screen.
+  }
 }
 
 function describe(cands: NavCandidate[]): string {
@@ -195,6 +232,7 @@ export async function navigateByRequest(
   }
   if (r.kind === 'match') {
     const s = r.screen;
+    await holdOffer(c, s.screen_id);
     return {
       ok: true,
       result: { decision: 'offer', offer: { screen_id: s.screen_id, title: s.title }, candidates: r.candidates },
@@ -207,6 +245,9 @@ export async function navigateByRequest(
     };
   }
   if (r.kind === 'ambiguous') {
+    // Hold the best fit: a bare "yes" opens it; naming another candidate goes
+    // through navigate_to_screen and supersedes this.
+    if (intent === 'where') await holdOffer(c, r.candidates[0]?.screen_id);
     return {
       ok: true,
       result: { decision: 'ambiguous', candidates: r.candidates },

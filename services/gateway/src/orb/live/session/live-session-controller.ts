@@ -24,6 +24,7 @@
  *   4. No LiveKit adapter, no provider selection — L-lane work.
  */
 
+import { handleNavResultMessage } from '../../../navigation/nav-ack';
 import { handleContextUpdateMessage } from './context-update';
 import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
 import type { Response } from 'express';
@@ -2593,6 +2594,14 @@ export async function handleLiveStreamSend(
   }
 
   session.lastActivity = new Date();
+
+  // VTID-04520: the app reports what a registry navigation did. Handled
+  // before every input gate — it is not input, and it must land even after
+  // the anonymous turn limit or while mic audio is being dropped.
+  if ((body as { type?: string }).type === 'nav_result') {
+    const r = handleNavResultMessage(session, body);
+    return res.json({ ok: true, applied: r?.applied ?? false });
+  }
 
   // VTID-ANON-NUDGE: Block all input after turn limit on anonymous sessions.
   if (session.isAnonymous && (session.turn_count > 8 || session.signupIntentDetected)) {

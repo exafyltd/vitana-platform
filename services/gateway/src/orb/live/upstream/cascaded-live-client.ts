@@ -152,6 +152,18 @@ export const CASCADE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
   'cancel_delegation',
 ]);
 
+/**
+ * VTID-04521 — voice navigation on the cascade. With the screen registry
+ * (NAV_V2_ENABLED) the three navigation tools run here exactly as on Nova:
+ * the same executeLiveApiTool path, the directive played out after the
+ * reply. Off the flag the cascade keeps its hand-off-only catalog.
+ */
+export const CASCADE_NAV_TOOLS: ReadonlySet<string> = new Set(['navigate', 'navigate_to_screen', 'get_current_screen']);
+
+export function isCascadeTool(name: string): boolean {
+  return CASCADE_TOOL_ALLOWLIST.has(name) || (process.env.NAV_V2_ENABLED === 'true' && CASCADE_NAV_TOOLS.has(name));
+}
+
 /** VTID-04336 — how long one tool call may take before a synthetic error result. */
 export const CASCADE_TOOL_RESULT_TIMEOUT_MS = 20_000;
 
@@ -220,7 +232,7 @@ export function extractCascadeTools(
   const seen = new Set<string>();
   for (const d of flat) {
     const name = d.name as string;
-    if (!CASCADE_TOOL_ALLOWLIST.has(name) || seen.has(name)) continue;
+    if (!isCascadeTool(name) || seen.has(name)) continue;
     seen.add(name);
     const params = d.parameters;
     out.push({
@@ -518,7 +530,7 @@ export class CascadedLiveClient implements UpstreamLiveClient {
     }));
     const handler = this.toolCallHandler;
     const waits = withIds.map((c) => {
-      if (!CASCADE_TOOL_ALLOWLIST.has(c.name) || !handler) {
+      if (!isCascadeTool(c.name) || !handler) {
         return Promise.resolve({ result: `tool ${c.name} is not available on this voice path`, isError: true });
       }
       const id = c.id as string;
@@ -535,7 +547,7 @@ export class CascadedLiveClient implements UpstreamLiveClient {
         });
       });
     });
-    const dispatchable = withIds.filter((c) => CASCADE_TOOL_ALLOWLIST.has(c.name));
+    const dispatchable = withIds.filter((c) => isCascadeTool(c.name));
     if (dispatchable.length > 0 && handler) {
       handler({ calls: dispatchable.map((c) => ({ name: c.name, args: c.arguments, id: c.id })) });
     }

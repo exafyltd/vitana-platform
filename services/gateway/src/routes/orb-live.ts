@@ -111,6 +111,14 @@ import {
   navigationDispatchedThisTurn,
   markNavigationDispatchedThisTurn,
 } from '../orb/live/session/navigation-turn-scope';
+// VTID-04520: the app confirms what a navigation actually did.
+import { recordPendingNavAck, handleNavResultMessage, takeNavFailureNote, type PendingNavAck, type NavFailure } from '../navigation/nav-ack';
+
+/** VTID-04520: tell the model when the previous navigation did not open. */
+function withNavFailureNote(session: GeminiLiveSession, text: string): string {
+  const note = takeNavFailureNote(session);
+  return note ? `${note}\n${text}` : text;
+}
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -1250,6 +1258,11 @@ export interface GeminiLiveSession {
   // session was refused for the rest of that session. Use
   // `navigationDispatchedTurn` for per-turn questions.
   navigationDispatched?: boolean;
+  // VTID-04520: the registry directive awaiting the app's nav_result, and the
+  // last navigation the app reported as not opened (one-shot note for the
+  // next navigation tool result).
+  pendingNavAck?: PendingNavAck | null;
+  lastNavFailure?: NavFailure | null;
   // VTID-03583: turn_count at the moment a navigation was dispatched. A
   // per-turn marker, not a latch — `turn_count` advancing at turn_complete IS
   // the reset, so there is no clear-path that an error branch can skip.
@@ -3453,13 +3466,20 @@ async function handleNavigate(
       decision_source: 'direct',
       requested_at: Date.now(),
     };
-    session.navigationDispatched = true;
+    // VTID-04521: a registry (V2) directive plays out after the model's
+    // sentence, so the session-lifetime latch that silences everything after
+    // a navigation stays off; the per-turn marker still stops a second
+    // navigation in the same turn. The route moves when the app confirms
+    // (nav_result), not before.
+    const speakFirst = (directive as { after_speech?: boolean }).after_speech === true;
+    if (!speakFirst) session.navigationDispatched = true;
     markNavigationDispatchedThisTurn(session);
     session.pendingNavigation = undefined;
+    if (speakFirst) recordPendingNavAck(session, directive as unknown as Record<string, unknown>);
 
     const previousRoute = session.current_route;
-    session.current_route = result.route;
-    if (previousRoute && previousRoute !== result.route) {
+    if (!speakFirst) session.current_route = result.route;
+    if (!speakFirst && previousRoute && previousRoute !== result.route) {
       const trail = Array.isArray(session.recent_routes) ? [...session.recent_routes] : [];
       const deduped = trail.filter((rt) => rt !== previousRoute);
       session.recent_routes = [previousRoute, ...deduped].slice(0, 5);
@@ -3487,7 +3507,7 @@ async function handleNavigate(
     }
   }
 
-  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+  return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
 // Legacy handler — kept for test imports but no longer called by the tool path
@@ -3689,12 +3709,16 @@ export async function handleNavigateToScreen(
       decision_source: 'direct',
       requested_at: Date.now(),
     };
-    session.navigationDispatched = true;
+    // VTID-04521: see handleNavigate — no session-lifetime latch for a V2
+    // directive, and the route moves on the app's confirmation.
+    const speakFirst = (result.directive as { after_speech?: boolean }).after_speech === true;
+    if (!speakFirst) session.navigationDispatched = true;
     markNavigationDispatchedThisTurn(session);
     session.navigationDirectiveSentImmediately = true;
+    if (speakFirst) recordPendingNavAck(session, result.directive as unknown as Record<string, unknown>);
 
     const isOverlay = result.entry_kind === 'overlay';
-    if (!isOverlay) {
+    if (!isOverlay && !speakFirst) {
       const baseRoutePath = result.base_route || result.route.split('?')[0];
       const previousRoute = session.current_route;
       session.current_route = baseRoutePath;
@@ -3727,7 +3751,7 @@ export async function handleNavigateToScreen(
     }
   }
 
-  return { success: true, result: typeof r.text === 'string' ? r.text : '' };
+  return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
 /**
@@ -7012,6 +7036,61 @@ If the user mentions sending a message, sharing a link, texting, inviting, or te
 If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
 
 /**
+ * VTID-04521 — the navigator policy when the screen registry answers
+ * (NAV_V2_ENABLED). Instructions to the model, so English for every session
+ * language (§13b); the model replies in the member's language. It describes
+ * the tools as they now behave: `navigate` with an intent, an offer that is
+ * opened only on a yes, and a screen change that plays out after the reply.
+ */
+export const NAVIGATOR_POLICY_V2 = `
+
+=== VITANA NAVIGATOR — FINDING AND OPENING SCREENS ===
+Helping members find where things are in the app is one of your main jobs.
+Tools:
+
+  • get_current_screen() — the screen the member is on right now. Call it for
+    "where am I?", "what is this page?", "what can I do here?". Never answer
+    those from memory.
+
+  • navigate(question, intent) — pass the member's own words; the backend knows
+    every screen in every language. intent is "open" when they asked to open,
+    show or go to something ("open my wallet", "zeig mir meine Termine"), and
+    "where" when they asked where something is or whether it exists ("where can
+    I see my lab results?", "wo finde ich …", "is there a page for …").
+
+  • navigate_to_screen(screen_id) — open one screen whose screen_id a tool gave
+    you: the member's pick from POSSIBLE SCREENS, or an offer they said yes to.
+
+THE CONVERSATION:
+  1. "Open / show me / take me to X" → navigate(intent "open"). A clear match
+     opens: say ONE short sentence that you are taking them there, then stop.
+     The screen changes after you finish speaking — never before.
+  2. "Where is X / where can I see X" → navigate(intent "where"). Nothing opens.
+     Answer in one or two sentences: which screen it is (its title) and what
+     they will find there. Then ask whether you should open it.
+  3. They say yes → call navigate_to_screen with that exact screen_id. They say
+     no or change the subject → carry on; never open it anyway.
+  4. POSSIBLE SCREENS → if one clearly fits, call navigate_to_screen with it; if
+     two fit equally, ask one short either/or question with their titles, then
+     call navigate_to_screen with their pick. Never call navigate twice for the
+     same request.
+  5. NO MATCHING SCREEN → do not navigate; say you could not find a screen for
+     that and help in voice.
+
+Panels (a calendar, the Vitana Index, the wallet) open on top of the current
+screen and the conversation carries on. After a full screen change the
+conversation closes.
+
+Do NOT call navigate for questions that only mention a feature: "what is X",
+"how does X work", "what's the difference between X and Y", small talk. If you
+are unsure whether they want to go there or hear about it, ask once.
+
+If a navigation result starts with NOTE, the previous screen did not open. Say
+so plainly if the member asks about it — never claim it opened.
+
+Never say a route, URL or screen_id aloud — use the screen's title.`;
+
+/**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
  * instruction. Teaches the model when to call navigator_consult,
  * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
@@ -7020,6 +7099,8 @@ If the user asks to be shown a screen, list, or detail page, call navigate_to_sc
 // in orb/live/instruction/live-system-instruction.ts can call it. Same
 // behavior; only module-level visibility changes.
 export function buildNavigatorPolicySection(lang: string): string {
+  // VTID-04521: the screen registry answers navigation (NAV_V2_ENABLED).
+  if (process.env.NAV_V2_ENABLED === 'true') return NAVIGATOR_POLICY_V2;
   const isDe = lang.startsWith('de');
   if (isDe) {
     return `
@@ -17101,7 +17182,7 @@ router.get('/health', async (_req: Request, res: Response) => {
  * VTID-01224: Added auth_token for server-verified identity
  */
 interface WsClientMessage {
-  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update';
+  type: 'start' | 'audio' | 'video' | 'text' | 'end_turn' | 'stop' | 'ping' | 'interrupt' | 'audio_ready' | 'prewarm' | 'context_update' | 'nav_result';
   // VTID-04425: context_update fields (validated by applyContextUpdate)
   current_route?: string;
   recent_routes?: string[];
@@ -17519,6 +17600,11 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
       if (liveSession && liveSession.active) {
         handleContextUpdate(liveSession, message);
       }
+      break;
+
+    case 'nav_result':
+      // VTID-04520: the app reports what a registry navigation did.
+      if (liveSession) handleNavResultMessage(liveSession, message);
       break;
 
     default:

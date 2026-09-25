@@ -26,7 +26,7 @@
 import { randomUUID } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type OfferSource = 'offer_action' | 'navigator_ambiguous' | 'navigator_reopened' | 'wake_brief';
+export type OfferSource = 'offer_action' | 'navigator_ambiguous' | 'navigator_reopened' | 'wake_brief' | 'navigator_v2_offer';
 export type OfferOutcome = 'made' | 'accepted' | 'declined' | 'ignored';
 
 /** Stored under orb_session_state.key='pending_cta'. Older rows lack the ids. */

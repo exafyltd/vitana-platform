@@ -109,7 +109,7 @@ export function buildLiveApiTools(
   surface?: string | null,
 ): object[] {
   return applySurfaceGate(
-    buildLiveApiToolsUngated(mode, currentRoute, activeRole),
+    withNavV2ScreenDescription(buildLiveApiToolsUngated(mode, currentRoute, activeRole)),
     resolveOrbSurface({ currentRoute, explicit: surface }),
     mode,
   );
@@ -124,6 +124,15 @@ export function buildLiveApiTools(
  * applyCommandHubGate (VTID-04310).
  */
 const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
+/**
+ * VTID-04521: on the work surfaces (admin, backoffice, commerce) a screen
+ * that `navigate` found or offered is opened with navigate_to_screen, so
+ * with the screen registry it belongs to the navigation set there too.
+ * Before, a work surface could find a screen and never open it.
+ */
+function isSurfaceNavigationTool(name: string): boolean {
+  return NAVIGATION_TOOL_NAMES.has(name) || (name === 'navigate_to_screen' && process.env.NAV_V2_ENABLED === 'true');
+}
 // Computed lazily: the declaration arrays come from modules that some route
 // tests mock at import time, so reading them at module load would throw.
 const namesOf = (decls: unknown): string[] =>
@@ -201,7 +210,7 @@ function applyCommerceGate(tools: object[]): object[] {
   for (const group of tools as Array<Record<string, unknown>>) {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
-        NAVIGATION_TOOL_NAMES.has(typeof d?.name === 'string' ? d.name : ''));
+        isSurfaceNavigationTool(typeof d?.name === 'string' ? d.name : ''));
       if (extra.length > 0) {
         const present = new Set(kept.map((d) => String(d?.name ?? '')));
         kept.push(...extra.filter((t) => !present.has(String(t.name))));
@@ -245,7 +254,7 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
         const name = typeof d?.name === 'string' ? d.name : '';
-        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+        return isSurfaceNavigationTool(name) || allowed.has(name);
       });
       if (surface === 'backoffice') {
         const present = new Set(kept.map((d) => String(d.name)));
@@ -257,6 +266,51 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
     }
   }
   return out;
+}
+
+/**
+ * VTID-04521 — `navigate_to_screen` as the screen registry opens it. The
+ * legacy description told the model that "where is …" is a hard redirect;
+ * with the registry a "where" question is answered with an offer and the
+ * screen opens only on a yes (owner decision 2026-09-24). Parameters are
+ * unchanged — entity screens still use them.
+ */
+export const NAVIGATE_TO_SCREEN_V2_DESCRIPTION = [
+  'Open one screen, panel or overlay of the Vitana app by its screen_id.',
+  '',
+  'Call it when:',
+  '- navigate returned POSSIBLE SCREENS and one clearly fits, or the member picked one;',
+  '- you offered a screen (after navigate said FOUND, or from your own knowledge) and the member said yes;',
+  '- the member asked to open a screen whose screen_id you already know.',
+  '',
+  'Do NOT call it for "where is …" / "wo finde ich …" questions — call navigate with intent "where",',
+  'tell them where it is and what it shows, and ask whether to open it.',
+  '',
+  'Use the exact screen_id a tool gave you; never guess one from a title. If you do not know the',
+  'screen_id, call navigate with the member\'s words instead.',
+  '',
+  'The screen opens when you finish speaking: say one short sentence that you are taking them there,',
+  'then stop. Panels (entry_kind overlay) open on top of the current screen and the conversation',
+  'carries on. If the result starts with NOTE, the previous screen did not open — say so plainly if',
+  'the member asks about it.',
+  '',
+  'Screens about one specific item need its id from a prior tool result: match_id, vitana_id,',
+  'meetup_id, event_id, user_id, recipient_id, chat_group_id, id, groupId, roomId. Never invent one.',
+  'Never speak a route or a screen_id aloud — use the title.',
+].join('\n');
+
+function withNavV2ScreenDescription(tools: object[]): object[] {
+  if (process.env.NAV_V2_ENABLED !== 'true') return tools;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (!Array.isArray(group.function_declarations)) return group;
+    const decls = group.function_declarations as Array<Record<string, unknown>>;
+    if (!decls.some((d) => d?.name === 'navigate_to_screen')) return group;
+    return {
+      ...group,
+      function_declarations: decls.map((d) =>
+        d?.name === 'navigate_to_screen' ? { ...d, description: NAVIGATE_TO_SCREEN_V2_DESCRIPTION } : d),
+    };
+  });
 }
 
 /** VTID-04517 — `navigate` as the registry resolver answers it (NAV_V2_ENABLED). */
@@ -280,7 +334,7 @@ export const NAVIGATE_V2_DECLARATION = {
     'Do NOT call it for small talk or general knowledge questions.',
     '',
     'What comes back:',
-    '- "Opening …": the screen is changing; stop after one short sentence.',
+    '- "… opens as soon as you finish speaking": say one short sentence, then stop.',
     '- FOUND: one screen, for a "where" question — answer and offer.',
     '- POSSIBLE SCREENS: pick the one that fits and call navigate_to_screen',
     '  with its screen_id, or ask one either/or question and then call it.',

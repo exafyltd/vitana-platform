@@ -19,12 +19,15 @@ jest.mock('../../src/services/orb-memory-bridge', () => ({
 }));
 
 import { emitOasisEvent } from '../../src/services/oasis-event-service';
-import { NavCallContext, navigateByRequest, openScreen } from '../../src/navigation/nav-dispatch';
+import { NavCallContext, findRegistryScreenByRoute, navigateByRequest, openScreen } from '../../src/navigation/nav-dispatch';
+import { buildContinuationDirective } from '../../src/navigation/nav-continuation';
+import { isCascadeTool } from '../../src/orb/live/upstream/cascaded-live-client';
 import { __setNavServiceForTests } from '../../src/navigation/nav-service';
 import { createStaticNavEmbedder } from '../../src/navigation/nav-embedder';
-import { buildLiveApiTools } from '../../src/orb/live/tools/live-tool-catalog';
+import { buildLiveApiTools, NAVIGATE_TO_SCREEN_V2_DESCRIPTION } from '../../src/orb/live/tools/live-tool-catalog';
 import { dispatchOrbTool } from '../../src/services/orb-tools-shared';
-import { handleNavigateToScreen } from '../../src/routes/orb-live';
+import { buildNavigatorPolicySection, handleNavigateToScreen, NAVIGATOR_POLICY_V2 } from '../../src/routes/orb-live';
+import { handleNavResultMessage } from '../../src/navigation/nav-ack';
 import { loadRegistryFixture } from '../nav-golden/registry-fixture';
 
 const member: NavCallContext = { lang: 'en', isAnonymous: false, isMobile: false, currentRoute: '/home', sessionId: 's1' };
@@ -68,7 +71,7 @@ describe('openScreen — every gate in one place', () => {
   });
 
   it('refuses unknown, disabled and entity-only screens without guessing', async () => {
-    for (const id of ['NOT.A_SCREEN', 'OVERLAY.WALLET_POPUP', 'COMM.GROUP_DETAIL']) {
+    for (const id of ['NOT.A_SCREEN', 'OVERLAY.MASTER_ACTION', 'COMM.GROUP_DETAIL']) {
       const r = await openScreen(id, '', member);
       expect(r.ok).toBe(false);
     }
@@ -170,8 +173,15 @@ describe('the "where → offer → yes → open" conversation through orb-live',
     const r = await handleNavigateToScreen(session, { screen_id: offered, reason: 'member said yes' });
     expect(r.success).toBe(true);
     expect(sse).toHaveLength(1);
-    expect(JSON.parse(sse[0].replace(/^data: /, ''))).toMatchObject({ directive: 'navigate', screen_id: 'MEMORY.DIARY' });
+    expect(JSON.parse(sse[0].replace(/^data: /, ''))).toMatchObject({ directive: 'navigate', screen_id: 'MEMORY.DIARY', after_speech: true });
+    // VTID-04521/04520: no session-lifetime latch, and the route moves only
+    // when the app confirms the screen opened.
+    expect(session.navigationDispatched).toBeFalsy();
+    expect(session.current_route).toBe('/home');
+    expect(session.pendingNavAck).toMatchObject({ screen_id: 'MEMORY.DIARY' });
+    handleNavResultMessage(session, { type: 'nav_result', screen_id: 'MEMORY.DIARY', route: '/memory/diary', status: 'opened', entry_kind: 'route' });
     expect(session.current_route).toBe('/memory/diary');
+    expect(session.recent_routes[0]).toBe('/home');
   });
 });
 
@@ -188,5 +198,95 @@ describe('tool declarations', () => {
     const decl = navigateDecl();
     expect(decl?.parameters?.properties?.question).toBeDefined();
     expect(decl?.parameters?.properties?.intent).toBeUndefined();
+  });
+});
+
+describe('VTID-04521 — speak first, hold the offer, open on yes', () => {
+  it('marks every registry directive to play out after the reply', async () => {
+    expect(directive(await openScreen('INBOX.OVERVIEW', '', member))?.after_speech).toBe(true);
+    expect(directive(await openScreen('LIFE_COMPASS.OVERLAY', '', member))?.after_speech).toBe(true);
+  });
+
+  it('holds a "where" answer as an offer, and never an "open" one', async () => {
+    const recordOffer = jest.fn().mockResolvedValue(undefined);
+    await navigateByRequest('Where can I write my daily diary?', 'where', { ...member, recordOffer });
+    expect(recordOffer).toHaveBeenCalledWith(expect.objectContaining({ screen_id: 'MEMORY.DIARY', route: '/memory/diary' }));
+    recordOffer.mockClear();
+    await navigateByRequest('Open my messages', 'open', { ...member, recordOffer });
+    expect(recordOffer).not.toHaveBeenCalled();
+  });
+
+  it('still answers when holding the offer fails', async () => {
+    const recordOffer = jest.fn().mockRejectedValue(new Error('db down'));
+    const r = await navigateByRequest('Where can I write my daily diary?', 'where', { ...member, recordOffer });
+    expect(ok(r).result.offer.screen_id).toBe('MEMORY.DIARY');
+  });
+
+  it('maps an explain_feature route to its screen', () => {
+    expect(findRegistryScreenByRoute('/memory/diary')?.id).toBe('MEMORY.DIARY');
+    expect(findRegistryScreenByRoute('/inbox?tab=x')?.id).toBe('INBOX.OVERVIEW');
+    expect(findRegistryScreenByRoute(null)).toBeNull();
+  });
+
+  it('opens an accepted offer through the gates, without the session latch', async () => {
+    const session: any = { sessionId: 's1', lang: 'en', isAnonymous: false, current_route: '/home' };
+    const built = await buildContinuationDirective(session, { screen_id: 'MEMORY.DIARY', route: '/memory/diary' });
+    expect(built?.latch).toBe(false);
+    expect(built?.directive).toMatchObject({ screen_id: 'MEMORY.DIARY', after_speech: true, reason: 'continuation_accept' });
+    expect(session.pendingNavAck).toMatchObject({ screen_id: 'MEMORY.DIARY' });
+  });
+
+  it('opens nothing when the accepted screen is blocked or already showing', async () => {
+    expect(await buildContinuationDirective({ current_route: '/home' } as any, { screen_id: 'OVERLAY.MASTER_ACTION', route: '/home' })).toBeNull();
+    expect(await buildContinuationDirective({ current_route: '/wallet' } as any, { screen_id: 'WALLET.OVERVIEW', route: '/wallet' })).toBeNull();
+    expect(await buildContinuationDirective({ current_route: '/home', isAnonymous: true } as any, { screen_id: 'WALLET.OVERVIEW', route: '/wallet' })).toBeNull();
+  });
+
+  it('keeps the legacy directive and latch with the flag off', async () => {
+    delete process.env.NAV_V2_ENABLED;
+    const built = await buildContinuationDirective({ current_route: '/home' } as any, { screen_id: 'MEMORY.DIARY', route: '/memory/diary', title: 'Diary' });
+    expect(built).toEqual({ latch: true, directive: expect.objectContaining({ route: '/memory/diary', vtid: 'VTID-NAV-01' }) });
+    expect(built?.directive.after_speech).toBeUndefined();
+  });
+});
+
+describe('VTID-04521 — prompts and tool lists under the flag', () => {
+  const decl = (name: string, surface?: string) => (buildLiveApiTools('authenticated', surface === 'admin' ? '/admin/users' : '/home', undefined, surface) as any[])
+    .flatMap((t) => t.function_declarations || []).find((d: any) => d.name === name);
+
+  it('describes navigate_to_screen without the "where is = redirect" lexicon', () => {
+    const d = decl('navigate_to_screen')?.description as string;
+    expect(d).toBe(NAVIGATE_TO_SCREEN_V2_DESCRIPTION);
+    expect(d).not.toMatch(/HARD-REDIRECT|Locate/);
+    delete process.env.NAV_V2_ENABLED;
+    expect(decl('navigate_to_screen')?.description).toMatch(/HARD-REDIRECT/);
+  });
+
+  it('lets the admin surface open what navigate found', () => {
+    expect(decl('navigate_to_screen', 'admin')).toBeDefined();
+    delete process.env.NAV_V2_ENABLED;
+    expect(decl('navigate_to_screen', 'admin')).toBeUndefined();
+  });
+
+  it('gives the cascade the three navigation tools', () => {
+    for (const t of ['navigate', 'navigate_to_screen', 'get_current_screen']) expect(isCascadeTool(t)).toBe(true);
+    expect(isCascadeTool('send_chat_message')).toBe(false);
+    delete process.env.NAV_V2_ENABLED;
+    expect(isCascadeTool('navigate')).toBe(false);
+    expect(isCascadeTool('switch_persona')).toBe(true);
+  });
+
+  it('uses the V2 navigator policy, which describes the offer and speak-first', () => {
+    const p = buildNavigatorPolicySection('de');
+    expect(p).toBe(NAVIGATOR_POLICY_V2);
+    expect(p).toMatch(/intent "where"/);
+    expect(p).toMatch(/after you finish speaking/);
+    delete process.env.NAV_V2_ENABLED;
+    expect(buildNavigatorPolicySection('en')).not.toBe(NAVIGATOR_POLICY_V2);
+  });
+
+  it('never tells the model to call tools that do not exist', () => {
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/orb/live/instruction/live-system-instruction.ts'), 'utf8');
+    expect(src).not.toMatch(/navigate_to\s*\(|navigate_to \/|get_route_for_path|get_route \//);
   });
 });

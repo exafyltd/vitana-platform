@@ -2167,6 +2167,8 @@
     _s.navigationPending = false;
     _s.signupClosing = false;
     _s.conversationEnding = false; // VTID-03824: same reset, same reason
+    _s.pendingNavDirective = null; // VTID-04521: a speak-then-navigate from a prior session never fires here
+    clearTimeout(_s._pendingNavSafety);
 
     // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
     // silent-buffer unlock + resume() was MOVED UP to before the continuity
@@ -2212,6 +2214,8 @@
         if (_tz) startPayload.client_timezone = _tz;
       } catch (e) { /* Intl unavailable — gateway falls back to geo-IP */ }
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
+      // VTID-04520: the host knows its layout; the gateway used to guess from the User-Agent.
+      if (typeof _s.isMobileHost === 'boolean') startPayload.is_mobile = _s.isMobileHost;
       // VTID-04309: Command Hub binds the voice session to the Operator
       // Console thread on screen, so voice turns land in that thread.
       if (_s.operatorThreadId) startPayload.operator_thread_id = _s.operatorThreadId;
@@ -2901,6 +2905,13 @@
 
       case 'turn_complete':
         _touchGuidedTopicActivity(); // VTID-03799: a turn just landed — not idle
+        if (_s.pendingNavDirective) {
+          // VTID-04521: the turn that announced the navigation is over.
+          var _pendingNav = _s.pendingNavDirective;
+          _s.pendingNavDirective = null;
+          clearTimeout(_s._pendingNavSafety);
+          _runNavDirective(_pendingNav, _s._sessionGeneration);
+        }
         // VTID-NAV-HOTFIX: Only reset the scheduling cursor if no audio is
         // still scheduled. Otherwise next-turn chunks schedule at `now` via
         // _processQueue's `lastScheduledEnd < now` check and play on top of
@@ -3368,6 +3379,25 @@
           } catch (_e) {
             console.error('[VTOrb] open_url failed:', _e);
           }
+          break;
+        }
+        if (msg.directive === 'navigate' && msg.after_speech === true) {
+          // VTID-04521: speak, then navigate. The registry dispatcher sends the
+          // directive while the model is still talking ("Opening your
+          // calendar"). Keep playing this turn; navigate once the turn is
+          // complete and its audio has drained. A turn that never completes
+          // still navigates after 15 s.
+          if (!msg.route && !msg.screen_id) break;
+          _s.pendingNavDirective = msg;
+          clearTimeout(_s._pendingNavSafety);
+          (function (myGen) {
+            _s._pendingNavSafety = setTimeout(function () {
+              if (_s._sessionGeneration !== myGen) return;
+              var pending = _s.pendingNavDirective;
+              _s.pendingNavDirective = null;
+              if (pending) _runNavDirective(pending, myGen);
+            }, 15000);
+          })(_s._sessionGeneration);
           break;
         }
         if (msg.directive === 'navigate') {
@@ -5041,6 +5071,94 @@
     _s._suppressContinuityPersist = false;
   }
 
+  // VTID-04520/04521 — run a registry navigation directive once the current
+  // turn's audio has drained. A screen closes the orb; an overlay or a
+  // keep_orb_open directive keeps the conversation going. The host reports
+  // what actually happened (opened / refused / not_found / error) and the
+  // result goes back to the gateway before the session closes, so the server
+  // learns the outcome instead of assuming it. A host that returns nothing
+  // reports "unknown"; one that returns a Promise gets up to 1.5 s.
+  function _runNavDirective(msg, myGen) {
+    var stays = msg.keep_orb_open === true || msg.entry_kind === 'overlay';
+    if (!stays) _s.navigationPending = true;
+    var attempts = 0;
+    (function _waitDrain() {
+      setTimeout(function () {
+        if (_s._sessionGeneration !== myGen) return;
+        var stillPlaying = _s.audioPlaying ||
+          (_s.scheduledSources && _s.scheduledSources.length > 0) ||
+          (_s.audioQueue && _s.audioQueue.length > 0);
+        if (stillPlaying && attempts++ < 100) { _waitDrain(); return; }
+        setTimeout(function () {
+          if (_s._sessionGeneration !== myGen) return;
+          if (!stays) {
+            _s.audioQueue = [];
+            if (_s.scheduledSources && _s.scheduledSources.length > 0) {
+              for (var i = 0; i < _s.scheduledSources.length; i++) {
+                try { _s.scheduledSources[i].stop(); } catch (_e) { /* ok */ }
+              }
+              _s.scheduledSources = [];
+            }
+            _s.lastScheduledEnd = 0;
+            _s.audioPlaying = false;
+          }
+          // Captured now: _hide() ends the session and clears both.
+          var target = { sessionId: _s.sessionId, ws: _s.ws };
+          var result = null;
+          var ctx = {
+            screen_id: msg.screen_id, reason: msg.reason, title: msg.title,
+            entry_kind: msg.entry_kind || 'route', params: msg.params || null
+          };
+          if (typeof _cfg.onNavigationRequest === 'function') {
+            try { result = _cfg.onNavigationRequest(msg.route, ctx); }
+            catch (e) {
+              console.error('[VTOrb] onNavigationRequest failed:', e);
+              result = { status: 'error', reason: String(e && e.message || e) };
+            }
+          } else if (msg.route) {
+            try { window.location.href = msg.route; result = { status: 'opened' }; }
+            catch (e) { result = { status: 'error', reason: String(e && e.message || e) }; }
+          }
+          var done = false;
+          var finish = function (r) {
+            if (done) return;
+            done = true;
+            _sendNavResult(msg, r, target);
+            if (!stays && _s._sessionGeneration === myGen) _hide();
+          };
+          if (result && typeof result.then === 'function') {
+            setTimeout(function () { finish({ status: 'unknown', reason: 'host did not answer in time' }); }, 1500);
+            result.then(finish, function (e) { finish({ status: 'error', reason: String(e && e.message || e) }); });
+          } else {
+            finish(result);
+          }
+        }, 200);
+      }, 300);
+    })();
+  }
+
+  function _sendNavResult(msg, result, target) {
+    var sid = target && target.sessionId;
+    if (!sid) return;
+    var r = (result && typeof result === 'object') ? result : {};
+    var body = JSON.stringify({
+      type: 'nav_result',
+      screen_id: msg.screen_id || null,
+      route: typeof r.route === 'string' ? r.route : (msg.route || null),
+      status: typeof r.status === 'string' ? r.status : 'unknown',
+      reason: typeof r.reason === 'string' ? r.reason.slice(0, 200) : null,
+      entry_kind: msg.entry_kind || 'route'
+    });
+    try {
+      if (target.ws && target.ws.readyState === 1) { target.ws.send(body); return; }
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + encodeURIComponent(sid), {
+        method: 'POST', headers: headers, body: body, keepalive: true
+      }).catch(function () { /* telemetry only */ });
+    } catch (_e) { /* telemetry only */ }
+  }
+
   // VTID-NAV: Returns true when the widget is in any close-pending state.
   // Used by the turn_complete handler to suppress the listening transition
   // so we don't reactivate the orb while we are about to navigate away.
@@ -5443,6 +5561,9 @@
         }
         // VTID-03300: optional one-shot journey-step focus (see focusJourneyStep).
         // VTID-04309: Operator Console thread for Command Hub voice turns.
+        if (typeof opts.initialContext.is_mobile === 'boolean') {
+          _s.isMobileHost = opts.initialContext.is_mobile; // VTID-04520
+        }
         if (typeof opts.initialContext.operator_thread_id === 'string') {
           _s.operatorThreadId = opts.initialContext.operator_thread_id || null;
         }
