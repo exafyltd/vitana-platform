@@ -270,6 +270,9 @@
     // mobile burst gets the 300 ms lead (the original behaviour).
     playbackLeadFirstOnly: false,
     _firstBurstLeadUsed: false,
+    // VTID-04542: current tap cycle of the tap-to-audio latency beacon
+    // (see _latBegin). null ⇒ no cycle; marks are then silently dropped.
+    _lat: null,
     // VTID-03706: start of the current playback burst, for the AEC warm-up
     // window in the capture handler. 0 ⇒ not currently playing.
     audioPlayStartedAt: 0,
@@ -1818,6 +1821,125 @@
   }
 
   // ============================================================
+  // 4b. TAP-TO-AUDIO LATENCY BEACON (VTID-04542)
+  // ============================================================
+  // One POST per tap cycle to the gateway's client-latency route, carrying
+  // client-side marks in ms relative to the tap (performance.now()):
+  //   tap, continuity_done, socket_open, start_sent, session_started,
+  //   first_audio_scheduled (first model-audio AudioBufferSourceNode.start),
+  //   first_audio_played (that source's scheduled start, converted to wall
+  //   clock), plus reconnect<N>_* for each reconnect attempt in the cycle.
+  // Sent once, after first audio — or with whatever exists when the overlay
+  // is closed before any audio. Fire-and-forget (keepalive), never throws,
+  // never on the audio path (deferred with setTimeout 0). Purely observational:
+  // it reads the timeline, it changes nothing about the session.
+  var _LAT_BEACON_PATH = '/api/v1/orb/live/client-latency';
+
+  function _latNow() {
+    try {
+      if (window.performance && typeof performance.now === 'function') return performance.now();
+    } catch (e) { /* fall through */ }
+    return Date.now();
+  }
+
+  // Start a tap cycle. Called from _show() — the tap.
+  function _latBegin() {
+    try {
+      if (_s._lat && !_s._lat.posted) _latFlush(); // an older cycle never flushed
+      _s._lat = {
+        t0: _latNow(),
+        marks: { tap: 0 },
+        prefix: '',
+        attempts: 0,
+        posted: false,
+        transport: null,
+        prewarm: false,
+        sessionId: null
+      };
+    } catch (e) { _s._lat = null; }
+  }
+
+  // Each _sessionStart in the cycle: the first is the tap's own start; every
+  // later one is a reconnect, and its marks get a reconnect<N>_ prefix so the
+  // original attempt's marks are never overwritten.
+  function _latSessionAttempt() {
+    var l = _s._lat;
+    if (!l || l.posted) return; // no cycle (or already reported) — do nothing
+    l.attempts++;
+    if (l.attempts > 1) {
+      l.prefix = 'reconnect' + (l.attempts - 1) + '_';
+      _latMark('start');
+    }
+  }
+
+  // First value wins. `unprefixed` is for the first-audio marks, which are
+  // the cycle's outcome regardless of which attempt produced the audio.
+  function _latMark(name, unprefixed, atMs) {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    var key = unprefixed ? name : (l.prefix + name);
+    if (l.marks[key] !== undefined) return;
+    var t = typeof atMs === 'number' ? atMs : _latNow();
+    l.marks[key] = Math.max(0, Math.round(t - l.t0));
+  }
+
+  function _latNote(transport, prewarmReady, sessionId) {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    if (transport === 'ws' || transport === 'sse') l.transport = transport;
+    if (typeof prewarmReady === 'boolean') l.prewarm = prewarmReady;
+    if (sessionId) l.sessionId = String(sessionId);
+  }
+
+  // Called by _processQueue right after the first model-audio source.start().
+  function _latFirstAudio(ctx, startAt) {
+    var l = _s._lat;
+    if (!l || l.posted || l.marks.first_audio_scheduled !== undefined) return;
+    try {
+      var now = _latNow();
+      _latMark('first_audio_scheduled', true, now);
+      var aheadSec = (ctx && typeof ctx.currentTime === 'number') ? (startAt - ctx.currentTime) : 0;
+      _latMark('first_audio_played', true, now + Math.max(0, aheadSec) * 1000);
+    } catch (e) { /* observational only */ }
+    setTimeout(_latFlush, 0); // off the audio scheduling path
+  }
+
+  function _latEntry() {
+    try {
+      if (String(window.location && window.location.pathname || '').indexOf('/command-hub') === 0) return 'command_hub';
+    } catch (e) { /* fall through */ }
+    try {
+      if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return 'mobile';
+    } catch (e) { /* fall through */ }
+    return 'desktop';
+  }
+
+  function _latFlush() {
+    var l = _s._lat;
+    if (!l || l.posted) return;
+    l.posted = true;
+    try {
+      if (!_cfg.gw) return;
+      var transport = l.transport;
+      if (transport !== 'ws' && transport !== 'sse') {
+        try { transport = _useWsTransport() ? 'ws' : 'sse'; } catch (e) { transport = 'sse'; }
+      }
+      var body = JSON.stringify({
+        session_id: String(l.sessionId || _s.sessionId || ''),
+        entry: _latEntry(),
+        transport: transport,
+        marks: l.marks,
+        prewarm_socket_ready: !!l.prewarm
+      });
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + _LAT_BEACON_PATH, {
+        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: body
+      }).catch(function () { /* beacon is best-effort; a 404 is fine */ });
+    } catch (e) { /* never throw from the beacon */ }
+  }
+
+  // ============================================================
   // 5. AUDIO PLAYBACK PIPELINE
   // ============================================================
 
@@ -2057,6 +2179,8 @@
         }
 
         src.start(_s.lastScheduledEnd);
+        // VTID-04542: first model-audio source of the tap cycle (no-op after).
+        _latFirstAudio(ctx, _s.lastScheduledEnd);
 
         _s.scheduledSources.push(src);
         // VTID-03185 — Phase 0 of ORB Recovery: wrap onended in an IIFE that
@@ -2145,6 +2269,8 @@
     // session's answer and the new session's first burst gets the full lead.
     _s.playbackLeadFirstOnly = false;
     _s._firstBurstLeadUsed = false;
+    // VTID-04542: beacon — first start of the tap cycle, or reconnect<N>.
+    _latSessionAttempt();
 
     // DEV-COMHU-ORB-AUDIO-FIRST-GREETING: unlock the playback AudioContext
     // SYNCHRONOUSLY, before ANY await in this function. On mobile (iOS/Android)
@@ -2184,6 +2310,7 @@
     // POST /live/session/start body IS the payload, which needs continuity.
     var _wsEarly = null;
     if (_useWsTransport()) {
+      _latNote('ws'); // VTID-04542
       _wsEarly = { released: false, release: null, promise: null };
       var _wsPayloadGate = new Promise(function (resolveGate) {
         _wsEarly.release = function (payload) {
@@ -2259,6 +2386,7 @@
         }
       } catch (e) { /* continuity is an optimization — never block session start */ }
     }
+    _latMark('continuity_done'); // VTID-04542 (also when skipped: anonymous / in-memory)
 
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
@@ -2505,6 +2633,8 @@
           startSignal = ctrl.signal;
         } catch (e) { startSignal = undefined; }
       }
+      _latNote('sse', false); // VTID-04542
+      _latMark('start_sent');
       var resp = await fetch(_cfg.gw + '/api/v1/orb/live/session/start', {
         method: 'POST',
         headers: headers,
@@ -2554,6 +2684,8 @@
       _s._sessionGeneration++;
       // VTID-04552: server opt-in for the mobile first-burst-only lead.
       _s.playbackLeadFirstOnly = data.playback_lead_first_only === true;
+      _latMark('session_started'); // VTID-04542
+      _latNote(null, null, data.session_id);
       // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
       // signal audio-pipeline readiness so the backend can release the greeting
       // the moment the client can actually play it (ack-or-3s gate server-side).
@@ -2575,6 +2707,7 @@
 
       var es = new EventSource(sseUrl);
       es.onopen = function () {
+        _latMark('socket_open'); // VTID-04542
         console.log('[VTOrb] SSE connected');
         _startWatchdog();
         // DEV-COMHU-0501: arm the cross-provider speaking-state watchdog + emit
@@ -2692,6 +2825,10 @@
         try { w = new WebSocket(url); } catch (e) { return reject(e); }
       }
       if (_s.prewarmWs === w) { _s.prewarmWs = null; _s.prewarmWsReady = false; }
+      // VTID-04542: beacon — a claimed prewarmed socket is already open.
+      _latNote('ws', reused);
+      if (reused) _latMark('socket_open');
+      else w.onopen = function () { _latMark('socket_open'); };
       var settled = false;
       // VTID-04547: a reused socket already completed its 'connected'
       // handshake during prewarm; a fresh one has not yet.
@@ -2761,6 +2898,8 @@
           _s.fullDuplex = msg.full_duplex === true;
           // VTID-04552: server opt-in for the mobile first-burst-only lead.
           _s.playbackLeadFirstOnly = msg.playback_lead_first_only === true;
+          _latMark('session_started'); // VTID-04542
+          _latNote('ws', null, msg.session_id);
           _signalAudioReady();
           if (msg.conversation_id) _s.conversationId = msg.conversation_id;
           _s._preDisconnectStage = null;
@@ -2803,6 +2942,7 @@
         startSent = true;
         try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); }
         catch (e) { /* onclose covers */ }
+        _latMark('start_sent'); // VTID-04542
       }
 
       // VTID-03779: a reused socket already completed the 'connected'
@@ -4918,6 +5058,9 @@
   }
 
   function _show() {
+    // VTID-04542: the tap. Keep an in-flight cycle if the overlay is already
+    // up (a repeated show must not reset the timeline of the live one).
+    if (!(_s.overlayVisible && _s._lat && !_s._lat.posted)) _latBegin();
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
     // VTID-03292 (#3): an explicit user re-open clears the hard-close flag so the
     // session can start again. This is the ONLY place it is cleared.
@@ -5139,6 +5282,9 @@
   }
 
   function _hide() {
+    // VTID-04542: overlay closed before (or after) first audio — report what
+    // the cycle has. No-op if it was already sent at first audio.
+    _latFlush();
     // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
     // silently re-open. Cleared only on an explicit re-open in _show().
