@@ -679,7 +679,7 @@ IMPORTANT:
 - After creating, confirm the event title and time back to the user.
 
 ### search_events
-Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.
+Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.
 
 ### search_community
 Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.
@@ -3657,7 +3657,7 @@ IMPORTANT:
 - After creating, confirm the event title and time back to the user.
 
 ### search_events
-Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.
+Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.
 
 ### search_community
 Search community groups and their activities. Use when the user asks about groups, communities, who to connect with, or community activities.

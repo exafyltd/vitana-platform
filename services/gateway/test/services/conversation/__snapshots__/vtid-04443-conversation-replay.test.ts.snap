@@ -25,7 +25,7 @@ exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = 
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 47,
+      "declared_tool_count": 46,
       "declared_tools_sample": [
         "add_group_chat_member",
         "add_to_calendar",
@@ -40,7 +40,7 @@ exports[`replay find-tool-deferred-wallet matches its recorded transcript 1`] = 
         "find_reminders",
         "find_tool",
       ],
-      "deferred_tool_count": 248,
+      "deferred_tool_count": 249,
       "find_tool_results": [
         "get_wallet_balance",
         "get_wallet_summary",
@@ -147,6 +147,7 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
+        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -156,7 +157,6 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
-        "get_current_screen",
       ],
       "deferred_tool_count": 249,
       "find_tool_results": null,
@@ -178,6 +178,7 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
+        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -187,7 +188,6 @@ exports[`replay health-screen-logging matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
-        "get_current_screen",
       ],
       "deferred_tool_count": 249,
       "find_tool_results": null,
@@ -318,7 +318,7 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
   "turns": [
     {
       "advisor_eligible": true,
-      "declared_tool_count": 48,
+      "declared_tool_count": 47,
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
@@ -333,7 +333,7 @@ exports[`replay returning-wallet-balance matches its recorded transcript 1`] = `
         "find_tool",
         "get_current_screen",
       ],
-      "deferred_tool_count": 247,
+      "deferred_tool_count": 248,
       "find_tool_results": null,
       "index": 0,
       "leads": [
@@ -505,6 +505,7 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
       "declared_tools_sample": [
         "add_to_calendar",
         "append_to_ticket",
+        "compare_subscription_plans",
         "create_calendar_event",
         "delete_reminder",
         "end_conversation",
@@ -514,7 +515,6 @@ exports[`replay screen-change-leads matches its recorded transcript 1`] = `
         "find_community_member",
         "find_reminders",
         "find_tool",
-        "get_current_screen",
       ],
       "deferred_tool_count": 249,
       "find_tool_results": null,
