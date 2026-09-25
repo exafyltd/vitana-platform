@@ -1,0 +1,2 @@
+npx jest vtid-04581 inline-fact-extractor   # 46 passed
+npx tsc --noEmit -p services/gateway        # clean

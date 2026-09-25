@@ -411,7 +411,7 @@ export async function tool_remember_fact(
       write: rememberFact,
     },
   );
-  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}`);
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
   return { ok: true, result, text: formatRememberFactResult(result) };
 }
 

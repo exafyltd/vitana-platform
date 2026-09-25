@@ -46,6 +46,58 @@ export interface RememberFactDeps {
   readCurrentFact(tenantId: string, userId: string, factKey: string): Promise<StoredFact | null>;
   readProfileValue(userId: string, factKey: IdentityLockedKey): Promise<string | null>;
   write: typeof rememberFact;
+  /** Conflicts this tool reported and the member has not resolved yet. Defaults to a process-wide store. */
+  pendingConflicts?: PendingConflictStore;
+  now?: () => number;
+}
+
+/**
+ * A replace is honoured only after this tool reported the conflict to the
+ * member, so the model cannot skip the "which one is right?" question by
+ * sending confirm_replace on its own.
+ */
+export interface PendingConflictStore {
+  mark(userId: string, factKey: string, at: number): void;
+  isPending(userId: string, factKey: string, now: number): boolean;
+  clear(userId: string, factKey: string): void;
+}
+
+export const CONFLICT_CONFIRM_WINDOW_MS = 30 * 60 * 1000;
+
+export function createPendingConflictStore(windowMs = CONFLICT_CONFIRM_WINDOW_MS): PendingConflictStore {
+  const pending = new Map<string, number>();
+  const k = (u: string, f: string) => `${u}:${f}`;
+  return {
+    mark(userId, factKey, at) {
+      pending.set(k(userId, factKey), at);
+      if (pending.size > 5000) pending.delete(pending.keys().next().value as string);
+    },
+    isPending(userId, factKey, now) {
+      const at = pending.get(k(userId, factKey));
+      return at !== undefined && now - at <= windowMs;
+    },
+    clear(userId, factKey) {
+      pending.delete(k(userId, factKey));
+    },
+  };
+}
+
+const defaultPendingConflicts = createPendingConflictStore();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** write_fact's p_thread_id is a uuid; a voice session id ("live-…") is not. */
+export function uuidOrNull(value: string | null | undefined): string | null {
+  return value && UUID_RE.test(value) ? value : null;
+}
+
+/**
+ * A year the member never said: models fill a missing year with 1900 or 0001.
+ * "1900-05-05" becomes "--05-05" (day and month only).
+ */
+export function dropPlaceholderYear(value: string): string {
+  const m = value.trim().match(/^(1900|0001|0000)-(\d{2})-(\d{2})$/);
+  return m ? `--${m[2]}-${m[3]}` : value.trim();
 }
 
 // Words a model may use for a profile field, mapped to the locked key.
@@ -128,7 +180,9 @@ const MONTHS: Record<string, number> = {
 /** "4. November 1997", "November 4th, 1997", "1997-11-04", "04.11.1997" → "1997-11-04". */
 export function normalizeDate(value: string): string | null {
   const v = value.trim().toLowerCase();
-  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  let m = v.match(/^--(\d{1,2})-(\d{1,2})$/);
+  if (m) return `--${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
   m = v.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
   if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
@@ -175,7 +229,7 @@ export async function runRememberFact(
   deps: RememberFactDeps,
 ): Promise<RememberFactToolResult> {
   const factKey = normalizeFactKey(input.fact_key);
-  const newValue = String(input.fact_value ?? '').trim();
+  const newValue = dropPlaceholderYear(String(input.fact_value ?? ''));
   const base = { fact_key: factKey, new_value: newValue };
   if (!factKey || !newValue) {
     return {
@@ -207,6 +261,8 @@ export async function runRememberFact(
     };
   }
 
+  const pendingConflicts = deps.pendingConflicts ?? defaultPendingConflicts;
+  const now = (deps.now ?? Date.now)();
   const stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
   if (stored && valuesMatch(stored.fact_value, newValue)) {
     return {
@@ -217,7 +273,10 @@ export async function runRememberFact(
       instruction: `Nothing new to save: you already have ${factKey} = "${stored.fact_value}". Tell the member you already knew that.`,
     };
   }
-  if (stored && !input.confirm_replace) {
+  const replaceConfirmed =
+    input.confirm_replace === true && pendingConflicts.isPending(input.user_id, factKey, now);
+  if (stored && !replaceConfirmed) {
+    pendingConflicts.mark(input.user_id, factKey, now);
     return {
       ...base,
       status: 'conflict',
@@ -238,9 +297,10 @@ export async function runRememberFact(
     entity: input.about && input.about !== 'self' ? 'disclosed' : 'self',
     provenance_source: 'user_stated',
     provenance_confidence: 0.95,
-    thread_id: input.thread_id ?? null,
+    thread_id: uuidOrNull(input.thread_id),
     actor: 'orb-remember-fact-tool',
   });
+  if (written.ok) pendingConflicts.clear(input.user_id, factKey);
   if (!written.ok) {
     if (written.blocked === 'identity_lock') {
       return {
