@@ -78,7 +78,7 @@ export interface SafeFastGatherPlan {
   /** "Will rung 1 fire?" — the serial code's `!!overview && newdayHasContent(overview)`. */
   newdayWillFire: (overview: OverviewPayload | null) => boolean;
   /** Starts one bounded, fail-open gather (null on timeout/error). */
-  gather: (timeoutMs: number) => Promise<OverviewPayload | null>;
+  gather: (timeoutMs: number, kind: 'newday' | 'resume') => Promise<OverviewPayload | null>;
   /** Starts the ledger read (bounded by its own timeout from its own start). */
   startLedger: () => SpeculativeGreetingLedgerRead;
   emptyLedger: () => GreetingLedger;
@@ -104,12 +104,12 @@ export async function gatherSafeFastGreetingPayloads(plan: SafeFastGatherPlan): 
   const ledgerRead =
     plan.ledgerEligible && (plan.attemptNewday || plan.resumeGuard.attempt) ? plan.startLedger() : null;
 
-  const newdayOverview = plan.attemptNewday ? await plan.gather(plan.newdayTimeoutMs) : null;
+  const newdayOverview = plan.attemptNewday ? await plan.gather(plan.newdayTimeoutMs, 'newday') : null;
   const newdayWillFire = plan.newdayWillFire(newdayOverview);
 
   const resumeCheck = newdayWillFire ? { attempt: false as boolean } : plan.resumeGuard;
   const resumeOverview =
-    resumeCheck.attempt && plan.resumeGatherEligible ? await plan.gather(plan.resumeTimeoutMs) : null;
+    resumeCheck.attempt && plan.resumeGatherEligible ? await plan.gather(plan.resumeTimeoutMs, 'resume') : null;
 
   const ledgerUsed = plan.ledgerEligible && (newdayWillFire || resumeCheck.attempt);
   const ledger = ledgerUsed && ledgerRead ? await ledgerRead.consume() : plan.emptyLedger();
@@ -120,7 +120,7 @@ export async function gatherSafeFastGreetingPayloads(plan: SafeFastGatherPlan): 
 export interface NewdayGatherPlan {
   /** `tenant` present — the serial ledger read's extra conjunct (user/supabase are guaranteed on this path). */
   ledgerEligible: boolean;
-  gather: (timeoutMs: number) => Promise<OverviewPayload | null>;
+  gather: (timeoutMs: number, kind: 'newday') => Promise<OverviewPayload | null>;
   startLedger: () => SpeculativeGreetingLedgerRead;
   emptyLedger: () => GreetingLedger;
   newdayTimeoutMs: number;
@@ -135,7 +135,7 @@ export async function gatherNewdayGreetingPayload(
   plan: NewdayGatherPlan,
 ): Promise<{ overview: OverviewPayload | null; ledger: GreetingLedger }> {
   const ledgerRead = plan.ledgerEligible ? plan.startLedger() : null;
-  const overview = await plan.gather(plan.newdayTimeoutMs);
+  const overview = await plan.gather(plan.newdayTimeoutMs, 'newday');
   const ledger = overview && ledgerRead ? await ledgerRead.consume() : plan.emptyLedger();
   return { overview, ledger };
 }

@@ -93,6 +93,7 @@ import {
   fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
+import { SessionStartTimer, deriveLatencyEntry } from '../latency-context';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
 // VTID-03255 — write a Journey Foundation session summary at session end.
@@ -221,6 +222,13 @@ export interface LiveSessionControllerDeps {
    * so the controller never holds a stale snapshot.
    */
   getGoogleAuthReady: () => boolean;
+  /**
+   * VTID-04542: start the per-turn voice latency tracker (the same helper the
+   * WS audio path calls) on the first real mic chunk of an SSE user turn.
+   * Optional so a test that configures the controller without it keeps
+   * working; production always wires it. No-op when telemetry is off.
+   */
+  startVoiceTurnLatency?: (session: GeminiLiveSession) => void;
 }
 
 let configuredDeps: LiveSessionControllerDeps | null = null;
@@ -752,6 +760,9 @@ export async function handleLiveSessionStart(
 ): Promise<Response> {
   const deps = getDeps();
   console.log('[VTID-ORBC] POST /orb/live/session/start');
+  // VTID-04542: step timing of this handler (measurement only). Attached to
+  // the session below and carried onto the turn-0 latency event.
+  const sessionStartTimer = new SessionStartTimer();
 
   // Validate origin
   if (!deps.validateOrigin(req)) {
@@ -784,6 +795,7 @@ export async function handleLiveSessionStart(
   // rejection on the 402 path from surfacing as an unhandled rejection; the
   // awaits below still throw exactly what the serial calls would have thrown,
   // in the same order (identity first).
+  const _parallelStartReadsMs = Date.now();
   const orbIdentityPromise = deps.resolveOrbIdentity(req);
   const clientContextPromise = deps.buildClientContext(req);
   orbIdentityPromise.catch(() => undefined);
@@ -809,6 +821,7 @@ export async function handleLiveSessionStart(
       : undefined;
   let voiceQuotaReservation: Awaited<ReturnType<typeof reserveVoiceQuotaAtSessionStart>> | null = null;
   if (req.identity?.user_id && req.identity?.tenant_id) {
+    const _quotaStartMs = Date.now();
     try {
       voiceQuotaReservation = await reserveVoiceQuotaAtSessionStart(
         req.identity.user_id,
@@ -820,6 +833,7 @@ export async function handleLiveSessionStart(
         `[VTID-03107] voice quota reservation failed (failing open): ${err instanceof Error ? err.message : String(err)}`
       );
     }
+    sessionStartTimer.step('quota_gate', _quotaStartMs);
 
     if (
       voiceQuotaReservation &&
@@ -921,11 +935,15 @@ export async function handleLiveSessionStart(
 
   // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback)
   // VTID-04545: started before the quota gate (see orbIdentityPromise above).
+  // VTID-04542: the step measures kickoff → value available (they overlap the
+  // quota gate now, so this is wall time until the await returns).
   const orbIdentity = await orbIdentityPromise;
+  sessionStartTimer.step('resolve_identity', _parallelStartReadsMs);
   const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
 
   // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
   const clientContext = await clientContextPromise;
+  sessionStartTimer.step('build_client_context', _parallelStartReadsMs);
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
@@ -1058,6 +1076,9 @@ export async function handleLiveSessionStart(
   const isGuidedTopicSession =
     typeof (body as any).guided_topic_id === 'string' && !!(body as any).guided_topic_id;
 
+  // VTID-04542: the context branch below only KICKS OFF the heavy build (it
+  // lands on contextReadyPromise); what it awaits inline is measured here.
+  const _contextKickoffStartMs = Date.now();
   if (isAnonymousSession) {
     contextBootstrapSkippedReason = 'anonymous_session';
     console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
@@ -1586,6 +1607,7 @@ export async function handleLiveSessionStart(
     contextBootstrapSkippedReason = 'no_identity';
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
   }
+  sessionStartTimer.step('context_kickoff', _contextKickoffStartMs);
 
   // Create session object
   const session: GeminiLiveSession = {
@@ -2282,7 +2304,9 @@ export async function handleLiveSessionStart(
   } else if (!isAnonymousSession) {
     // Legacy inline path: assign the return value so TS control-flow analysis
     // sees wakeBriefDecision populated for the response meta below.
+    const _wakeInlineStartMs = Date.now();
     wakeBriefDecision = await assembleWakeBriefAndJourney();
+    sessionStartTimer.step('wake_brief_inline', _wakeInlineStartMs);
   }
   // ANON-WAKE-SKIP: anonymous (pre-login) sessions deliberately do NOT run the
   // authenticated wake-brief / journey / decision-context pipeline. Its result
@@ -2329,6 +2353,30 @@ export async function handleLiveSessionStart(
 
   // BOOTSTRAP-VOICE-DEMO: real heartbeat
   recordAgentHeartbeat('orb-live').catch(() => {});
+
+  // VTID-04542: latency context for the turn-0 event (measurement only —
+  // nothing reads these for behaviour). Both transports pass through here.
+  try {
+    const _hdr = (name: string): string | null => {
+      const v = req.headers[name];
+      return Array.isArray(v) ? (v[0] ?? null) : (typeof v === 'string' ? v : null);
+    };
+    session.latencyContext = {
+      entry: deriveLatencyEntry({
+        origin: _hdr('origin'),
+        referer: _hdr('referer'),
+        userAgent: _hdr('user-agent'),
+      }),
+      surface: resolveOrbSurface({
+        currentRoute: typeof (body as any).current_route === 'string' ? (body as any).current_route : '',
+        isMobile: !!clientContext.isMobile,
+      }),
+      authenticated: !isAnonymousSession,
+    };
+    session.sessionStartTiming = sessionStartTimer.finish();
+  } catch {
+    // Telemetry never blocks session start.
+  }
 
   return res.status(200).json({
     ok: true,
@@ -2706,6 +2754,15 @@ export async function handleLiveStreamSend(
       }
 
       session.audioInChunks++;
+      // VTID-04542: real user mic audio (passed every drop gate) — start the
+      // per-turn latency tracker, exactly as the WS path does. The marks and
+      // finalize already run through the shared upstream handlers, so this is
+      // the one call SSE was missing. Idempotent within a turn.
+      try {
+        deps.startVoiceTurnLatency?.(session);
+      } catch {
+        // Telemetry never breaks the audio path.
+      }
 
       // Telemetry: 10s window batching
       const now = Date.now();

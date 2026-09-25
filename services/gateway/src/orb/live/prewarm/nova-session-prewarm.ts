@@ -69,6 +69,34 @@ export interface PrewarmedNovaSessionEntry extends PrewarmedNovaSessionBase {
 
 const prewarmedByUserId = new Map<string, PrewarmedNovaSessionEntry>();
 
+/**
+ * VTID-04542 — why the LAST prewarm for a user is gone, so a claim that finds
+ * nothing can say whether one existed. Telemetry only: nothing here decides
+ * whether a session claims a prewarm. Cleared when a new prewarm registers or
+ * one is claimed. Bounded (oldest dropped) so it cannot grow without limit.
+ */
+export type PrewarmEndReason = 'expired' | 'dead_on_claim';
+const PREWARM_END_REASON_CAP = 5_000;
+const lastEndReasonByUserId = new Map<string, PrewarmEndReason>();
+
+function recordPrewarmEnd(userId: string, reason: PrewarmEndReason): void {
+  lastEndReasonByUserId.delete(userId);
+  lastEndReasonByUserId.set(userId, reason);
+  if (lastEndReasonByUserId.size > PREWARM_END_REASON_CAP) {
+    const oldest = lastEndReasonByUserId.keys().next().value;
+    if (oldest !== undefined) lastEndReasonByUserId.delete(oldest);
+  }
+}
+
+/**
+ * VTID-04542 — after a claim returned null: `'expired'` when this user's last
+ * prewarm hit its TTL, `'dead_on_claim'` when the claim found it closed, else
+ * `'none_available'` (never prewarmed on this task, or superseded). Read-only.
+ */
+export function describePrewarmMiss(userId: string): PrewarmEndReason | 'none_available' {
+  return lastEndReasonByUserId.get(userId) ?? 'none_available';
+}
+
 function stopTimers(entry: Pick<PrewarmedNovaSessionEntry, 'keepaliveTimer' | 'expiryTimer'>): void {
   clearInterval(entry.keepaliveTimer);
   clearTimeout(entry.expiryTimer);
@@ -94,6 +122,7 @@ export function discardPrewarmedNovaSession(userId: string, reason: string): voi
  */
 export function registerPrewarmedNovaSession(userId: string, base: PrewarmedNovaSessionBase): void {
   discardPrewarmedNovaSession(userId, 'superseded_by_new_prewarm');
+  lastEndReasonByUserId.delete(userId);
 
   const keepaliveTimer = setInterval(() => {
     if (base.client.getState() !== 'open') return;
@@ -113,6 +142,7 @@ export function registerPrewarmedNovaSession(userId: string, base: PrewarmedNova
     if (current && current.client === base.client) {
       prewarmedByUserId.delete(userId);
       stopTimers(current);
+      recordPrewarmEnd(userId, 'expired');
       void current.client.close('prewarm_ttl_expired').catch(() => { /* best-effort */ });
     }
   }, getPrewarmTtlMs());
@@ -134,9 +164,11 @@ export function consumePrewarmedNovaSession(userId: string): PrewarmedNovaSessio
   if (entry.client.getState() !== 'open') {
     // Died between prewarm and claim (an idle-kill despite the keepalive, a
     // transient network blip) — the caller does a normal cold connect.
+    recordPrewarmEnd(userId, 'dead_on_claim');
     void entry.client.close('prewarm_claim_found_dead').catch(() => { /* best-effort */ });
     return null;
   }
+  lastEndReasonByUserId.delete(userId);
   return entry;
 }
 
@@ -145,6 +177,7 @@ export function consumePrewarmedNovaSession(userId: string): PrewarmedNovaSessio
 export function __clearAllPrewarmedNovaSessionsForTest(): void {
   for (const entry of prewarmedByUserId.values()) stopTimers(entry);
   prewarmedByUserId.clear();
+  lastEndReasonByUserId.clear();
 }
 
 /** Test-only: current pool size. */

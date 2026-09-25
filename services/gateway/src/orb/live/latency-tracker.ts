@@ -40,7 +40,23 @@ export type LatencyPhase =
   | 'upstream_connected'
   | 'context_awaited'
   | 'setup_sent'
+  // `greeting_sent` means "greeting pipeline ENTERED" — it is marked by the
+  // route just before sendGreetingPromptToLiveAPI() is called, i.e. BEFORE
+  // that function's own bounded waits (greeting facts ≤700 ms + ≤1500 ms,
+  // new-day gather ≤3000 ms, resume gather ≤1800 ms, ledger ≤800 ms). The
+  // name is kept because dashboards chart it. VTID-04542 adds
+  // `greeting_dispatched` for the moment the prompt is really handed to the
+  // upstream, so greeting_sent → greeting_dispatched is our own wait and
+  // greeting_dispatched → audio_out_first_chunk is the model's.
   | 'greeting_sent'
+  // VTID-04542 — the greeting prompt handed to the upstream (the real
+  // ws.send / sendTextTurn). detail: { wake_opener, directive_chars, path }.
+  | 'greeting_dispatched'
+  // VTID-04542 — the bounded waits inside sendGreetingPromptToLiveAPI.
+  // detail: { ms, timed_out } (+ kind:'newday'|'resume' on the gather).
+  | 'greeting_facts_awaited'
+  | 'greeting_gather_awaited'
+  | 'greeting_ledger_awaited'
   // VTID-03764 — bisects the multi-second gap between greeting_sent and
   // audio_out_first_chunk. Nova-only diagnostic (see
   // NovaSonicLiveClientDeps.onFirstRawChunk/onEarlyNormalizedEvent).
@@ -79,11 +95,50 @@ export interface LatencyContext {
   transport?: 'sse' | 'websocket';
 }
 
+/**
+ * VTID-04542 — wall-clock timing of POST /live/session/start
+ * (handleLiveSessionStart), which runs BEFORE the turn-0 tracker exists.
+ * Both transports go through that handler (the WS `start` frame is replayed
+ * into it by ws-start-adapter.ts), so the block is recorded once on the
+ * session and attached to the turn-0 tracker when it is created.
+ *
+ * Representation on `voice.latency.measured` (turn 0 only): a separate
+ * `session_start` object rather than negative phase offsets, so the
+ * existing `phases` array keeps its meaning (offsets ≥ 0 from tracker
+ * start):
+ *
+ *   session_start: {
+ *     total_ms,                 // handler entry → response written
+ *     tracker_start_offset_ms,  // handler entry → turn-0 tracker created
+ *     steps: [{ step, offset_ms, ms }],  // offset_ms from handler entry
+ *   }
+ *
+ * `tracker_start_offset_ms - total_ms` is the gap between the start
+ * response and the stream/upstream open (client round trip, SSE GET).
+ */
+export interface SessionStartStep {
+  step: string;
+  /** ms from handler entry to the start of this step. */
+  offset_ms: number;
+  /** Duration of the step. */
+  ms: number;
+}
+
+export interface SessionStartTiming {
+  /** Wall-clock epoch ms at handler entry. */
+  started_at_ms: number;
+  total_ms: number;
+  steps: SessionStartStep[];
+}
+
 export class LatencyTracker {
   private readonly start_ms: number;
   private readonly marks: LatencyMark[] = [];
   private readonly enabled: boolean;
   private finalized = false;
+  // VTID-04542: extra top-level payload fields (entry, surface, rung, …).
+  private meta: Record<string, unknown> = {};
+  private sessionStart: SessionStartTiming | null = null;
 
   constructor(private readonly ctx: LatencyContext) {
     this.enabled = isFeatureLive(FEATURE_NAME);
@@ -111,6 +166,22 @@ export class LatencyTracker {
     this.marks.push({ phase, at_ms: Date.now(), detail });
   }
 
+  /**
+   * VTID-04542: merge extra fields into the emitted payload (top level).
+   * Core fields (session_id, phases, total_ms, …) always win on a clash.
+   * No-op when disabled or already finalized.
+   */
+  setMeta(meta: Record<string, unknown>): void {
+    if (!this.enabled || this.finalized) return;
+    this.meta = { ...this.meta, ...meta };
+  }
+
+  /** VTID-04542: attach the session-start block (see SessionStartTiming). */
+  setSessionStart(timing: SessionStartTiming | null | undefined): void {
+    if (!this.enabled || this.finalized || !timing) return;
+    this.sessionStart = timing;
+  }
+
   async finalize(status: 'success' | 'error' = 'success', error?: string): Promise<void> {
     if (!this.enabled || this.finalized) return;
     this.finalized = true;
@@ -136,6 +207,16 @@ export class LatencyTracker {
           : `latency ${total_ms}ms (${this.ctx.surface}, errored)`,
         actor_id: this.ctx.actor_id,
         payload: {
+          ...this.meta,
+          ...(this.sessionStart
+            ? {
+                session_start: {
+                  total_ms: this.sessionStart.total_ms,
+                  tracker_start_offset_ms: this.start_ms - this.sessionStart.started_at_ms,
+                  steps: this.sessionStart.steps,
+                },
+              }
+            : {}),
           session_id: this.ctx.session_id,
           surface: this.ctx.surface,
           turn: this.ctx.turn,

@@ -43,7 +43,7 @@
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
-import { Router, Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 // VTID-04543: in-process cache for lookupPrimaryTenant.
 import { createPrimaryTenantCache } from '../orb/live/session/primary-tenant-cache';
@@ -69,7 +69,27 @@ import {
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
 // LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
-import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
+import { withLatencyTracker, LatencyTracker, type LatencyPhase, type SessionStartTiming } from '../orb/live/latency-tracker';
+// VTID-04542 (ORB latency P0): measurement-only helpers — provider label,
+// turn-0 context/meta, greeting dispatch + wait marks, hand-off timing,
+// client beacon. None of them changes what the model receives.
+import {
+  resolveLatencyProviderLabel,
+  attachEstablishLatencyContext,
+  prepareEstablishLatencyFinalize,
+  markGreetingDispatched,
+  startWaitProbe,
+  timeBoundedGreetingRead,
+  withLedgerWaitMark,
+  type SessionLatencyContext,
+} from '../orb/live/latency-context';
+import {
+  notePersonaSwapRequested,
+  notePersonaSwapConnectStarted,
+  notePersonaSwapConnected,
+  notePersonaSwapFirstAudio,
+} from '../orb/live/persona-swap-latency';
+import { handleClientLatencyBeacon } from '../orb/live/client-latency-beacon';
 // BOOTSTRAP-VOICE-LATENCY-SPECULATION: speculative persona-voice resolution to
 // remove the registry round-trip from the turn-0 critical path. Flag-gated
 // (FEATURE_VOICE_SPECULATION), default OFF → no-op (see voice-speculation.ts).
@@ -1057,6 +1077,12 @@ export interface GeminiLiveSession {
   // Separate from latencyTracker so the greeting's audio-out — which has no
   // preceding user turn — doesn't collide with per-turn tracking.
   establishLatency?: LatencyTracker | null;
+  // VTID-04542 (ORB latency P0, measurement only): step timing of POST
+  // /live/session/start and the static latency context (entry / surface /
+  // authenticated, plus prewarm_claimed and the dispatched greeting rung set
+  // later). Read only by the turn-0 latency event — never by behaviour.
+  sessionStartTiming?: SessionStartTiming | null;
+  latencyContext?: SessionLatencyContext | null;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -1964,7 +1990,7 @@ import {
 } from '../orb/live/voice/nova-sonic-voice';
 import type { VoiceProviderName } from '../orb/live/upstream/provider-name';
 import { prewarmNovaSonicBedrock, NovaSonicLiveClient } from '../orb/live/upstream/nova-sonic-live-client';
-import { consumePrewarmedNovaSession, registerPrewarmedNovaSession } from '../orb/live/prewarm/nova-session-prewarm';
+import { consumePrewarmedNovaSession, registerPrewarmedNovaSession, describePrewarmMiss } from '../orb/live/prewarm/nova-session-prewarm';
 // VTID-04549 (ORB latency G): Devon pre-connect, behind ORB_DEVON_PRECONNECT_ENABLED.
 import {
   claimPersonaPreconnect,
@@ -4066,6 +4092,7 @@ async function executeLiveApiToolInner(
             // was filed during the specialist call. buildLiveSystemInstruction
             // call site reads (session as any).specialistContextSection.
             (session as any).pendingPersonaSwap = 'vitana';
+            notePersonaSwapRequested(session, 'vitana'); // VTID-04542 hand-off timing
             (session as any).activePersonaTarget = 'vitana';
             (session as any).personaSystemOverride = null;
             (session as any).personaVoiceOverride = null;
@@ -4120,6 +4147,7 @@ async function executeLiveApiToolInner(
               return { success: false, result: '', error: `No system_prompt found for ${target}` };
             }
             (session as any).pendingPersonaSwap = target;
+            notePersonaSwapRequested(session, target); // VTID-04542 hand-off timing
             // Reset FORCED FIRST UTTERANCE consumption flag for the new persona
             (session as any).personaFirstUtteranceDelivered = false;
             const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
@@ -4424,6 +4452,7 @@ async function executeLiveApiToolInner(
               const personaPrompt = (personaRow?.system_prompt as string | undefined) ?? '';
               if (personaPrompt) {
                 (session as any).pendingPersonaSwap = swapTo;
+                notePersonaSwapRequested(session, swapTo); // VTID-04542 hand-off timing
                 // Reset FORCED FIRST UTTERANCE consumption flag for new persona
                 (session as any).personaFirstUtteranceDelivered = false;
                 const userContextSection = await fetchSpecialistContextSection(session.identity?.user_id);
@@ -8869,6 +8898,8 @@ async function connectToLiveAPI(
           : null;
         if (session.identity?.user_id && isWorkSurface(sessionSurface)) emitDiag(session, 'nova_prewarm_skipped_work_surface', { provider: 'nova_sonic', surface: sessionSurface });
         const reusedWarmNova = !!prewarmedNova;
+        // VTID-04542: prewarm outcome diag (measurement only, see helper).
+        emitNovaPrewarmOutcome(session, { claimedAt: prewarmedNova?.createdAt ?? null, workSurface: isWorkSurface(sessionSurface), personaIsVitana: _prewarmPersonaIsVitana });
         // VTID-04549: true when a Devon hand-off claimed the stream that was
         // pre-connected while Vitana spoke the bridge (connect() already ran).
         let reusedPersonaPreconnect = false;
@@ -10343,6 +10374,8 @@ async function attemptTransparentReconnect(
   }
 
   try {
+    // VTID-04542: hand-off timing (no-op unless a swap drained).
+    if (isPersonaSwap) notePersonaSwapConnectStarted(session);
     const newWs = await connectToLiveAPI(
       session,
       onAudioResponse,
@@ -10353,6 +10386,7 @@ async function attemptTransparentReconnect(
     );
 
     session.upstreamWs = newWs;
+    if (isPersonaSwap) notePersonaSwapConnected(session);
     // Reset loop counter — fresh upstream connection starts clean
     session.consecutiveModelTurns = 0;
     // VTID-02637: clear the dedupe flag so a future genuine disconnect can
@@ -10680,6 +10714,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         _sm.markOpeningDelivered();
         void (async () => {
           try {
+            // VTID-04542: measure (never change) the facts wait below —
+            // both races, one mark. The probe does not touch the race.
+            const _factsProbeSF = startWaitProbe(_greetingFactsReady);
             await Promise.race([
               _greetingFactsReady ?? Promise.resolve(),
               new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
@@ -10721,6 +10758,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 if (ws.readyState !== WebSocket.OPEN) return;
               }
             }
+            session.establishLatency?.mark('greeting_facts_awaited', { ..._factsProbeSF(), path: 'safe_fast' });
 
             // BOOTSTRAP-ORB-GREETING-LANG: re-read the language AFTER the bounded
             // facts wait. `lang` was captured at function entry (above), before the
@@ -10878,30 +10916,38 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               newdayWillFire: (_newdayOverviewSF) => !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF),
               // Each gather reads the last-session anchor at its OWN start, as the
               // two serial gathers did (the heavy bootstrap may land in between).
-              gather: (timeoutMs) => {
+              gather: (timeoutMs, kind) => {
                 const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
                 const _lastSessDateSF =
                   typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
                     ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
                     : null;
-                return boundedRead(
-                  () =>
-                    gatherOverviewPayload({
-                      supabase: _supaSF!,
-                      userId: _uidSF!,
-                      now: _nowSF,
-                      timezone: _tzSF,
-                      lang: greetLang,
-                      lastSessionDateUserTz: _lastSessDateSF,
-                      lastSessionAtIso: _lastSessIsoSF,
-                    }),
-                  timeoutMs,
-                  () => null,
-                  () => null,
+                // VTID-04542: wait mark per gather (measurement only).
+                return timeBoundedGreetingRead(
+                  (onTimeout) =>
+                    boundedRead(
+                      () =>
+                        gatherOverviewPayload({
+                          supabase: _supaSF!,
+                          userId: _uidSF!,
+                          now: _nowSF,
+                          timezone: _tzSF,
+                          lang: greetLang,
+                          lastSessionDateUserTz: _lastSessDateSF,
+                          lastSessionAtIso: _lastSessIsoSF,
+                        }),
+                      timeoutMs,
+                      () => { onTimeout(); return null; },
+                      () => null,
+                    ),
+                  (w) => session.establishLatency?.mark('greeting_gather_awaited', { kind, ...w, path: 'safe_fast' }),
                 );
               },
               startLedger: () =>
-                startSpeculativeGreetingLedgerRead({ supabase: _supaSF!, tenantId: _tenantSF!, userId: _uidSF! }, 800),
+                withLedgerWaitMark(
+                  startSpeculativeGreetingLedgerRead({ supabase: _supaSF!, tenantId: _tenantSF!, userId: _uidSF! }, 800),
+                  (w) => session.establishLatency?.mark('greeting_ledger_awaited', { ...w, path: 'safe_fast' }),
+                ),
               emptyLedger: () => ({ ..._EMPTY_LEDGER_SF }),
               newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
               resumeTimeoutMs: Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800),
@@ -10925,6 +10971,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                   client_content: { turns: [{ role: 'user', parts: [{ text: _sfDecision.directive }] }], turn_complete: true },
                 }),
               );
+              // VTID-04542: the greeting prompt is now with the upstream.
+              markGreetingDispatched(session, {
+                wake_opener: _sfDecision.wakeOpener,
+                directive_chars: _sfDecision.directive.length,
+                path: 'safe_fast',
+              });
             }
             // Durable once-per-day briefing stamp (safe_fast_newday_overview) —
             // mirror onto the session so a same-process reopen also sees it delivered.
@@ -11246,6 +11298,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${decision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${decision.directive.length} preview=${JSON.stringify(decision.directive.slice(0, 200))}`,
         );
         ws.send(_greetingClientContentMsg);
+        // VTID-04542: the greeting prompt is now with the upstream (every
+        // normal-ladder path renders through here).
+        markGreetingDispatched(session, {
+          wake_opener: decision.wakeOpener,
+          directive_chars: decision.directive.length,
+          path: 'ladder',
+        });
       }
       console.log(
         `[VTID-VOICE-INIT] greeting via brain wake_opener=${decision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
@@ -11372,6 +11431,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
           // has too.
           const _factsReadyNS: Promise<void> | undefined = (session as any).greetingFactsReady;
           const _firstWaitMsNS = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+          // VTID-04542: measure (never change) both facts waits, one mark.
+          const _factsProbeNS = startWaitProbe(_factsReadyNS);
           await Promise.race([
             _factsReadyNS ?? Promise.resolve(),
             new Promise<void>((r) => setTimeout(r, _firstWaitMsNS)),
@@ -11399,6 +11460,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               if (ws.readyState !== WebSocket.OPEN) return;
             }
           }
+          session.establishLatency?.mark('greeting_facts_awaited', { ..._factsProbeNS(), path: 'ladder' });
 
           const {
             startSpeculativeGreetingLedgerRead,
@@ -11454,24 +11516,32 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             const _tenantNS = session.identity?.tenant_id || null;
             const { overview: _overviewNS, ledger: _ledgerNS } = await gatherNewdayGreetingPayload({
               ledgerEligible: !!_tenantNS,
-              gather: (timeoutMs) =>
-                boundedRead(
-                  () =>
-                    gatherOverviewPayload({
-                      supabase: _syncSupa!,
-                      userId: _syncUid!,
-                      now: _nowNS,
-                      timezone: _tzSync,
-                      lang,
-                      lastSessionDateUserTz: _lastSessDateNS,
-                      lastSessionAtIso: _lastSessIsoNS,
-                    }),
-                  timeoutMs,
-                  () => null,
-                  () => null,
+              // VTID-04542: wait marks (measurement only).
+              gather: (timeoutMs, kind) =>
+                timeBoundedGreetingRead(
+                  (onTimeout) =>
+                    boundedRead(
+                      () =>
+                        gatherOverviewPayload({
+                          supabase: _syncSupa!,
+                          userId: _syncUid!,
+                          now: _nowNS,
+                          timezone: _tzSync,
+                          lang,
+                          lastSessionDateUserTz: _lastSessDateNS,
+                          lastSessionAtIso: _lastSessIsoNS,
+                        }),
+                      timeoutMs,
+                      () => { onTimeout(); return null; },
+                      () => null,
+                    ),
+                  (w) => session.establishLatency?.mark('greeting_gather_awaited', { kind, ...w, path: 'ladder' }),
                 ),
               startLedger: () =>
-                startSpeculativeGreetingLedgerRead({ supabase: _syncSupa!, tenantId: _tenantNS!, userId: _syncUid! }, 800),
+                withLedgerWaitMark(
+                  startSpeculativeGreetingLedgerRead({ supabase: _syncSupa!, tenantId: _tenantNS!, userId: _syncUid! }, 800),
+                  (w) => session.establishLatency?.mark('greeting_ledger_awaited', { ...w, path: 'ladder' }),
+                ),
               emptyLedger: () => ({ ..._EMPTY_LEDGER_NS }),
               newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
             });
@@ -12278,9 +12348,10 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   // upstream selection has always resolved by the time a per-turn tracker
   // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
   // here at construction time — no setProvider() correction needed later.
-  const provider = session.upstreamProvider === 'nova_sonic'
-    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
-    : `vertex/${GEMINI_MODEL}`;
+  // VTID-04542: one label rule for every provider. The old ternary labelled
+  // every non-Nova turn `vertex/gemini-2.0-flash-exp` (a stale constant),
+  // cascade sessions included.
+  const provider = resolveLatencyProviderLabel(session);
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
@@ -12293,9 +12364,56 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
   tracker.mark('audio_in_first_byte');
 }
 
+/**
+ * VTID-04542 (ORB latency P0, measurement only): after the Nova connect
+ * decided whether to claim a login prewarm, emit `nova_prewarm_claimed` or
+ * `nova_prewarm_missed` with the reason (work_surface / persona / expired /
+ * dead_on_claim / none_available), and record `prewarm_claimed` for the
+ * turn-0 latency event. Reads the decision already made — never changes
+ * which path runs. Authenticated sessions only (anonymous ones cannot have a
+ * prewarm). Never throws.
+ */
+function emitNovaPrewarmOutcome(
+  session: GeminiLiveSession,
+  outcome: { claimedAt: number | null; workSurface: boolean; personaIsVitana: boolean },
+): void {
+  const userId = session.identity?.user_id;
+  if (!userId) return;
+  try {
+    const claimed = outcome.claimedAt !== null;
+    if (session.latencyContext) session.latencyContext.prewarm_claimed = claimed;
+    const transport = session.clientWs ? 'websocket' : 'sse';
+    if (claimed) {
+      emitDiag(session, 'nova_prewarm_claimed', {
+        provider: 'nova_sonic',
+        transport,
+        prewarm_age_ms: Date.now() - (outcome.claimedAt as number),
+      });
+    } else {
+      emitDiag(session, 'nova_prewarm_missed', {
+        provider: 'nova_sonic',
+        transport,
+        reason: outcome.workSurface
+          ? 'work_surface'
+          : !outcome.personaIsVitana
+            ? 'persona'
+            : describePrewarmMiss(userId),
+      });
+    }
+  } catch {
+    // Telemetry never breaks the connect path.
+  }
+}
+
 /** Record a phase mark on the active turn tracker (no-op if no turn in flight). */
 function markVoiceLatency(session: GeminiLiveSession, phase: LatencyPhase, detail?: Record<string, unknown>): void {
   session.latencyTracker?.mark(phase, detail);
+  // VTID-04542: 'audio_out_first_chunk' is marked by every provider's
+  // "model started speaking" path, so it is also where a persona hand-off's
+  // first audio lands. No-op unless a swap has drained; fire-and-forget.
+  if (phase === 'audio_out_first_chunk') {
+    notePersonaSwapFirstAudio(session, resolveLatencyProviderLabel(session));
+  }
 }
 
 /**
@@ -13067,6 +13185,8 @@ configureLiveSessionController({
   sendAudioToLiveAPI,
   startResponseWatchdog,
   emitDiag,
+  // VTID-04542: SSE audio starts the same per-turn latency tracker as WS.
+  startVoiceTurnLatency,
   getGoogleAuthReady: () => !!googleAuth,
 });
 
@@ -15872,6 +15992,28 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 });
 
 /**
+ * VTID-04542 — POST /live/client-latency (ORB latency P0, measurement only).
+ *
+ * The widget's latency beacon: ms since the member tapped the ORB for each
+ * client-side milestone. 204 immediately, then one `voice.latency.client`
+ * OASIS event (fire-and-forget); 400 on a bad body, 413 over 4 KB, never 5xx
+ * for a telemetry fault. `text/plain` is accepted for navigator.sendBeacon.
+ * Contract + validation: orb/live/client-latency-beacon.ts.
+ */
+router.post(
+  '/live/client-latency',
+  express.text({ type: 'text/plain', limit: '16kb' }),
+  optionalAuth,
+  (req: AuthenticatedRequest, res: Response) => {
+    try {
+      handleClientLatencyBeacon(req as any, res);
+    } catch {
+      if (!res.headersSent) res.status(204).end();
+    }
+  },
+);
+
+/**
  * VTID-03471 (L-04/L-05) — GET /live/transport
  *
  * Which client transport the gateway wants browsers to use for voice:
@@ -16371,6 +16513,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
       transport: 'sse',
     });
+    // VTID-04542: session-start step timing + entry/surface/authenticated.
+    attachEstablishLatencyContext(session);
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
@@ -16385,9 +16529,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
           // is only known once connectToLiveAPI resolves) — correct it now so
           // voice.latency.measured attributes the timeline to the provider that
           // actually generated this audio.
-          if (session.upstreamProvider === 'nova_sonic') {
-            session.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
-          }
+          // VTID-04542: for every provider (cascade was left as vertex/…),
+          // plus the fields only known by now (role, prewarm, rung).
+          prepareEstablishLatencyFinalize(session);
           session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void session.establishLatency.finalize('success');
           session.establishLatency = null;
@@ -17983,6 +18127,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
       transport: 'websocket',
     });
+    // VTID-04542: session-start step timing + entry/surface/authenticated.
+    attachEstablishLatencyContext(liveSession);
 
     const upstreamWs = await connectToLiveAPI(
       liveSession,
@@ -17993,9 +18139,8 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
           // comment — the tracker's Vertex default needs correcting once
           // upstream selection has actually resolved.
-          if (liveSession.upstreamProvider === 'nova_sonic') {
-            liveSession.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
-          }
+          // VTID-04542: same helper as the SSE handler, every provider.
+          prepareEstablishLatencyFinalize(liveSession);
           liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;

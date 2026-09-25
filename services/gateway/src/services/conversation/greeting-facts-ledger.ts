@@ -157,6 +157,8 @@ async function readGreetingLedgerOutcome(
 export interface SpeculativeGreetingLedgerRead {
   /** Marks the read as used (failure telemetry as `readGreetingLedger` would emit) and returns the bounded result. */
   consume(): Promise<GreetingLedger>;
+  /** VTID-04542 (measurement only): true once the underlying read has settled — false after consume() resolves means the bound fired. */
+  readSettled(): boolean;
 }
 
 export function startSpeculativeGreetingLedgerRead(
@@ -174,11 +176,14 @@ export function startSpeculativeGreetingLedgerRead(
       timer = setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), timeoutMs);
     }),
   ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+  let settled = false;
   void outcome.then(() => {
+    settled = true;
     if (timer !== undefined) clearTimeout(timer);
   });
   let consumed = false;
   return {
+    readSettled: () => settled,
     consume() {
       if (!consumed) {
         consumed = true;
