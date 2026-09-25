@@ -131,6 +131,7 @@ import {
   instructionBudgetDiagPayload,
   decomposeInstructionSections,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
+  resolveInstructionByteBudgetFor,
 } from '../orb/live/instruction/instruction-budget';
 // VTID-04026: the tool catalog's OWN byte budget, applied only to the Vertex
 // Serbian bridge envelope — the instruction guard above never covered the
@@ -8354,7 +8355,10 @@ async function connectToLiveAPI(
         if (typeof finalText === 'string' && finalText.length > 0) {
           const sections = decomposeInstructionSections(finalText);
 
-          const budgetResult = enforceInstructionBudget(sections);
+          // VTID-04555: the budget of the upstream actually serving this
+          // session (Vertex 30 KB; Nova / cascade 64 KB).
+          const instructionBudget = resolveInstructionByteBudgetFor(session.upstreamProvider);
+          const budgetResult = enforceInstructionBudget(sections, instructionBudget);
 
           // VTID-04534: a SHORTENED section (member context repacked, history
           // cut to its latest turns) changes the text too — apply it.
@@ -8375,10 +8379,10 @@ async function connectToLiveAPI(
                 isAnonymous: !!session.isAnonymous,
                 totalBytesBefore: budgetResult.totalBytesBefore,
                 totalBytesAfter: budgetResult.totalBytesAfter,
-                budget: INSTRUCTION_TOTAL_BYTE_BUDGET,
+                budget: instructionBudget,
                 // Whether the preserved-only assembly STILL exceeds budget
                 // (nothing left to trim → best-effort send / fail-open).
-                stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
+                stillOverBudget: budgetResult.totalBytesAfter > instructionBudget,
                 trimmedSections: budgetResult.trimmedSections,
                 shortenedSections: budgetResult.shortenedSections,
                 sectionBytes: budgetResult.sectionBytes,
@@ -8388,13 +8392,13 @@ async function connectToLiveAPI(
             // Under budget — emit a low-noise diagnostic so the aggregate size
             // is observable even on the happy path (helps tune the budget).
             console.log(
-              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
+              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${instructionBudget}`,
             );
           }
           // VTID-04525 (Conversation hub B2): the same accounting as a
           // queryable diag, trimmed or not, so the hub can show how often each
           // section is dropped. Sizes and section kinds only, never text.
-          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, INSTRUCTION_TOTAL_BYTE_BUDGET));
+          emitDiag(session, 'instruction_budget', instructionBudgetDiagPayload(budgetResult, instructionBudget));
         }
       } catch (e) {
         // Never let the guard break the handshake — fail open with a log.

@@ -1,0 +1,11 @@
+## Reproduction on staging (before the fix), test user, own rows only
+POST /api/v1/conversation/turn  (channel orb, text, new thread) -> ok, reply "Alles notiert!"
+memory_items: 1 row (source orb_text, the raw message)
+memory_facts: 0 rows
+gateway log: "[VITANA-BRAIN] Routing conversation turn ... through brain"; no VTID-01230 / VTID-01225 line
+llm.call.*: deepseek/deepseek-flash (operator stage); reply meta.model_used = "gemini-2.5-pro"
+
+## Local
+npx jest test/vtid-04540-typed-turn-fact-extraction.test.ts -> 8 passed
+npx jest test/services/vitana-brain.test.ts test/chat-vitana-reply.test.ts test/routes/conversation -> 70 passed
+npx tsc --noEmit -p services/gateway -> clean

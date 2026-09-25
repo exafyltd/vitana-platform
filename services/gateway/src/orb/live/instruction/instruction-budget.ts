@@ -45,6 +45,42 @@ import { packBootstrapContext } from './bootstrap-packer';
 export const INSTRUCTION_TOTAL_BYTE_BUDGET = 30_720; // 30 * 1024
 
 /**
+ * VTID-04555 — the budget for the upstream actually serving the session.
+ *
+ * The 30 KB default exists for the Vertex Live `setup` frame (~32 KB with the
+ * surrounding JSON). It was applied to every provider, and the static scaffold
+ * alone had grown to ~33 KB, so on Nova Sonic the whole brain bootstrap — the
+ * member's memory, goal and context — was dropped from every authenticated
+ * session (measured on staging 2026-09-25: scaffold 32,919 B + bootstrap
+ * 12,072 B → bootstrap dropped, still over budget). The new session then told
+ * the member it knew nothing about what they had said minutes earlier.
+ *
+ * Nova 2 Sonic has a 1M-token context and this gateway already chunks its
+ * instruction (`NOVA_SONIC_INSTRUCTION_CHUNK_BYTES`), so the Vertex frame limit
+ * does not apply to it; the cascade sends the instruction to Bedrock as text.
+ * Both get 64 KB (`NOVA_INSTRUCTION_BYTE_BUDGET` overrides for Nova). Vertex and
+ * any unknown provider keep the 30 KB default. Pure; reads only `env`.
+ */
+export const NOVA_INSTRUCTION_BYTE_BUDGET_ENV = 'NOVA_INSTRUCTION_BYTE_BUDGET';
+export const NOVA_INSTRUCTION_BYTE_BUDGET_DEFAULT = 65_536; // 64 * 1024
+export const CASCADE_INSTRUCTION_BYTE_BUDGET = 65_536;
+
+export function resolveInstructionByteBudgetFor(
+  provider: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  if (provider === 'nova_sonic') {
+    const raw = (env[NOVA_INSTRUCTION_BYTE_BUDGET_ENV] || '').trim();
+    const n = raw === '' ? NaN : Number(raw);
+    // A garbage or too-small value falls back to the default rather than
+    // silently re-creating the 30 KB drop this exists to end.
+    return Number.isFinite(n) && n >= INSTRUCTION_TOTAL_BYTE_BUDGET ? Math.floor(n) : NOVA_INSTRUCTION_BYTE_BUDGET_DEFAULT;
+  }
+  if (provider === 'cascaded') return CASCADE_INSTRUCTION_BYTE_BUDGET;
+  return INSTRUCTION_TOTAL_BYTE_BUDGET;
+}
+
+/**
  * Stable, model-ignored HTML-comment delimiter emitted by
  * `buildLiveSystemInstruction` at the START of the bootstrap-context region.
  *
