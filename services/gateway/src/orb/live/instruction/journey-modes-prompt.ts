@@ -60,3 +60,19 @@ WHEN THE USER ASKS WHAT THE DIFFERENCE IS ("what's the difference between the
 guided journey and the full app?"), EXPLAIN it in their language using the
 points above. NEVER say you don't know the difference.`;
 }
+
+/**
+ * VTID-04578 — remove every copy of the two-views block (either language) from
+ * a text. The voice brain context embeds the block (vitana-brain.ts) and the
+ * voice instruction builder appends it again to the scaffold; the builder
+ * strips the brain's copy so the block is sent once. Exact-string removal: any
+ * text around the block is left untouched.
+ */
+export function stripJourneyModesCopies(text: string): string {
+  let out = text;
+  for (const lang of ['de', 'en']) {
+    const block = buildJourneyModesSection(lang);
+    if (out.includes(block)) out = out.split(block).join('');
+  }
+  return out;
+}

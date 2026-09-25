@@ -45,7 +45,7 @@ import {
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
 import { buildNavigatorPolicySection, MESSAGING_CONTRACT } from '../../../routes/orb-live';
-import { buildJourneyModesSection } from './journey-modes-prompt';
+import { buildJourneyModesSection, stripJourneyModesCopies } from './journey-modes-prompt';
 import {
   BRAIN_OPENER_V2_START,
   BRAIN_OPENER_V2_END,
@@ -517,6 +517,9 @@ export function buildLiveSystemInstruction(
   // shortened, dropped; chars before/after) so the caller, which knows the
   // session, can record it. Never called when there is no bootstrap.
   onContextPacked?: (report: BootstrapPackResult) => void,
+  // VTID-04577: brain-context cap for the serving upstream
+  // (resolveBootstrapMaxCharsFor). Unset keeps the 12 KB Vertex-era cap.
+  bootstrapMaxChars?: number,
 ): string {
   // VTID-03681 — this map ends `|| 'English'` at its use site below, so a
   // language missing HERE does not fail: it emits "Respond ONLY in English"
@@ -800,7 +803,7 @@ TOOLS:
 ${voiceLiveConfig.tools_section || '- Use search_memory to recall information the user has shared before\n- Use search_knowledge for Vitana platform and health information\n- Use Google Search (google_search) for factual questions, health research, calories, sleep studies, current events, news, longevity science, or any question where real-world data improves the answer. Prefer grounding with Google Search over answering from memory alone for research and health questions.'}
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
-${buildToolAckIntentLine()}${!isMemberSurface ? '' : `- MEMORY (VTID-04581): when the member states, corrects or asks you to remember a fact, call remember_fact and answer from its STATUS; never claim "saved" unless it says saved. conflict: name both values, ask which is right. profile_owned (name, birthday, contact, address): say what the profile holds, or that it goes in the profile, and offer to open it.
+${buildToolAckIntentLine()}${!isMemberSurface ? '' : `- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -861,6 +864,15 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   ) {
     effectiveBootstrap = stripBrainOpenerSections(effectiveBootstrap);
   }
+  // VTID-04578: the brain context carries its own copy of the My Journey
+  // two-views block, and this builder appends the same block to the scaffold
+  // below under the same condition — so a session that kept it in the
+  // bootstrap sent it twice (~1.1 KB). Drop the bootstrap copy; the scaffold
+  // copy is the one that always survives the budget.
+  if (effectiveBootstrap && process.env.NAV_GUIDED_JOURNEY === 'true' && isMemberSurface) {
+    effectiveBootstrap = stripJourneyModesCopies(effectiveBootstrap);
+  }
+  const bootstrapCap = bootstrapMaxChars ?? BOOTSTRAP_CONTEXT_MAX_CHARS;
   if (effectiveBootstrap) {
     // Phase A safety net (BOOTSTRAP-orb-bootstrap-cap): hard-cap the bootstrap
     // contribution so heavy users can never overflow the ~32 KB Vertex setup
@@ -874,14 +886,14 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
     let cappedBootstrap: string;
     let trimmedChars: number;
     if (process.env.BRAIN_CONTEXT_PACKER !== 'false') {
-      const pack = packBootstrapContext(effectiveBootstrap, BOOTSTRAP_CONTEXT_MAX_CHARS);
+      const pack = packBootstrapContext(effectiveBootstrap, bootstrapCap);
       cappedBootstrap = pack.text;
       trimmedChars = pack.packed ? Math.max(0, pack.chars_before - pack.chars_after) : 0;
       if (onContextPacked) {
         try { onContextPacked(pack); } catch { /* telemetry must never break the prompt */ }
       }
     } else {
-      ({ text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap));
+      ({ text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap, bootstrapCap));
     }
     if (trimmedChars > 0) {
       // Fire-and-forget structured telemetry — never block instruction assembly.
@@ -892,7 +904,7 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
         JSON.stringify({
           vitana_id: vitanaId ?? null,
           chars_trimmed: trimmedChars,
-          cap: BOOTSTRAP_CONTEXT_MAX_CHARS,
+          cap: bootstrapCap,
         }),
       );
     }

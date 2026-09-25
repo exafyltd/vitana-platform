@@ -155,6 +155,8 @@ import {
   INSTRUCTION_TOTAL_BYTE_BUDGET,
   resolveInstructionByteBudgetFor,
 } from '../orb/live/instruction/instruction-budget';
+// VTID-04577: per-provider brain-context cap.
+import { resolveBootstrapMaxCharsFor } from '../orb/live/instruction/bootstrap-cap';
 // VTID-04026: the tool catalog's OWN byte budget, applied only to the Vertex
 // Serbian bridge envelope — the instruction guard above never covered the
 // 226 KB of function declarations an authenticated session declares, and
@@ -1839,6 +1841,19 @@ export function shouldFallbackToVertexOnGuidedTopicContentFilterBlock(args: {
  * client: the widget sat in listening mode with the mic feeding a dead stream
  * (`audio_no_ws`). Production, 2026-09-25 16:25 UTC, session live-ce128077.
  */
+/**
+ * VTID-04575: a session the client restarted with the conversation's earlier
+ * turns, on which nothing has been said yet, opens through the greeting ladder
+ * (resume_thread rung) instead of the reconnect recovery prompt.
+ */
+export function shouldOpenReopenThroughGreetingLadder(args: {
+  resumedFromHistory: boolean;
+  reconnectCount: number;
+  turnCount: number;
+}): boolean {
+  return args.resumedFromHistory && args.reconnectCount === 0 && args.turnCount === 0;
+}
+
 export function shouldRecoverNovaStall(args: {
   stallRecoveryPending: boolean;
   sessionActive: boolean;
@@ -7985,6 +8000,9 @@ export function assembleOrbSetupEnvelope(
                     // distinct build (a rebuilt identical envelope does
                     // not repeat it).
                     (pack) => recordBrainContextBuilt(session, pack),
+                    // VTID-04577: brain-context cap for the serving upstream
+                    // (Nova / cascade 24,000 chars, Vertex 12,000).
+                    resolveBootstrapMaxCharsFor(session.upstreamProvider),
                   ))) as string
         }]
       },
@@ -10814,6 +10832,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   const lang = session.lang;
 
+  // VTID-04575: a reopen that carries its earlier turns continues that thread
+  // (resume_thread rung). Sticky for the session so the zero-turn retry after
+  // a Nova block (which bumps _reconnectCount) still continues the thread.
+  // Both transports reach here: SSE via the dispatch in connect's .then, WS
+  // directly. Plus the one-shot the proven zero-turn retry uses, so a reopen
+  // the user has heard nothing on yet speaks instead of taking a silence rung.
+  if (shouldOpenReopenThroughGreetingLadder({
+    resumedFromHistory: (session as any).resumedFromHistory === true,
+    reconnectCount: (session as any)._reconnectCount || 0,
+    turnCount: session.turn_count || 0,
+  })) {
+    (session as any)._reopenedWithHistory = true;
+    (session as any)._freshOpenAfterZeroTurnRecovery = true;
+  }
+
   // VTID-03273 Pillar A — the SINGLE opening decision + the one
   // `[opening-decision]` log per conversation (§2 acceptance #6). The
   // wake-brief ranker and greeting policy are inputs; this is the authority the
@@ -11051,6 +11084,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // VTID-04395: only before the first turn — a transparent reconnect
               // later in the report must not re-open the intake.
               supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+              // VTID-04575: a reopen with its earlier turns continues that thread.
+              reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
               wakeBriefDecisionId: null,
               silenceOnSkipEnabled: false,
               wakeBriefHasSelectedContinuation: false,
@@ -11417,6 +11452,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       // VTID-04395: only before the first turn — a transparent reconnect
       // later in the report must not re-open the intake.
       supportReportOpen: (session as any).support_report === true && (session.turn_count || 0) === 0,
+      // VTID-04575: a reopen with its earlier turns continues that thread.
+      reopenedWithHistory: (session as any)._reopenedWithHistory === true && (session.turn_count || 0) === 0,
       // BOOTSTRAP-ORB-DAY-CLOSE: short opener (buildDayCloseOpenerLine) is now
       // the permanent default, not merely a Nova-validation-block retry
       // fallback. `_dayCloseReducedRetry` (cleared above) still exists to
@@ -16852,8 +16889,23 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       // The recovery prompt is the SINGLE voice the user hears post-reconnect — no
       // client MP3 plays, no generic greeting fires. Gemini speaks the acknowledgment
       // + either answers the in-flight question, asks user to repeat, or resumes mid-answer.
-      const isReconnectGreetingSkip = ((session as any).resumedFromHistory === true)
-        || (((session as any)._reconnectCount || 0) > 0);
+      //
+      // VTID-04575: a client-side restart that carries the conversation's
+      // earlier turns (resumedFromHistory) at zero turns no longer gets the
+      // recovery prompt. Nova's content filter rejected that prompt on 44 of
+      // 61 such starts in 14 days (and 3 of 3 mid-conversation ones); the
+      // retry through the greeting ladder then succeeded 43 of 44 times.
+      // The reopen now takes that ladder directly, where the resume_thread
+      // rung continues the earlier thread. A backend transparent reconnect
+      // (_reconnectCount > 0) keeps the recovery prompt.
+      const reopenOpensThroughLadder = shouldOpenReopenThroughGreetingLadder({
+        resumedFromHistory: (session as any).resumedFromHistory === true,
+        reconnectCount: (session as any)._reconnectCount || 0,
+        turnCount: session.turn_count || 0,
+      });
+      const isReconnectGreetingSkip = !reopenOpensThroughLadder && (
+        ((session as any).resumedFromHistory === true)
+        || (((session as any)._reconnectCount || 0) > 0));
       if (isReconnectGreetingSkip) {
         sendReconnectRecoveryPromptToLiveAPI(ws, session);
       } else {
