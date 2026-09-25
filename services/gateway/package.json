@@ -25,7 +25,8 @@
     "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs",
     "i18n:db:verify": "tsx src/scripts/seed-db-i18n.ts --verify",
     "reconcile:aurora-supabase": "tsx scripts/reconciliation/aurora-supabase-reconcile.ts",
-    "test:replay": "jest test/services/conversation/vtid-04443-conversation-replay.test.ts"
+    "test:replay": "jest test/services/conversation/vtid-04443-conversation-replay.test.ts",
+    "test:voice-identity": "jest test/orb/latency"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

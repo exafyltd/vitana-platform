@@ -250,6 +250,12 @@ jobs:
           fi
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
+      # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
+      # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
+      # (04550), mobile lead on the first burst only (04552), tool acknowledgement
+      # intent (04553). ORB_PREWARM_FULL_CONTEXT_ENABLED (04554) is deliberately NOT
+      # pinned: it would stop the blind prewarm claim, losing its latency gain. Rollback: one value to 'false'.
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -935,7 +941,7 @@ jobs:
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
-                                                "ORB_FULL_DUPLEX_ENABLED",
+                                                "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
                                                 "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -984,7 +990,7 @@ jobs:
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
-                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"}, {name:"ORB_DEVON_PRECONNECT_ENABLED", value:"true"}, {name:"ORB_CASCADE_STREAMING_ENABLED", value:"true"}, {name:"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED", value:"true"}, {name:"ORB_TOOL_ACK_INTENT_ENABLED", value:"true"},
                           {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
                           {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
