@@ -22,6 +22,7 @@ AC-6: Routes: role comes from `user_tenants.active_role`, never the body; commun
   TEST: services/gateway/test/routes/jev-decisions.test.ts
 AC-7: Staging wiring is optional (describe-secret, absent → inert), the key is a secret reference, `JEV_DECISIONS_ENABLED` is always written, community is never set, production is untouched.
   TEST: services/gateway/test/vtid-04473-jev-staging-wiring.test.ts
+  TEST: services/gateway/test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
 
 ## Route mount
 

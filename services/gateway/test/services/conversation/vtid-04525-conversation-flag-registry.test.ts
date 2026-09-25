@@ -100,4 +100,16 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
     const r = spawnSync(process.execPath, [join(ROOT, 'scripts/conversation/generate-flag-pins.mjs'), '--check'], { encoding: 'utf8' });
     expect({ status: r.status, stderr: r.stderr.trim() }).toEqual({ status: 0, stderr: '' });
   });
+
+  // VTID-04473: the Jev switch is a workflow pin, not a conversation flag. The
+  // generated pins must show both staging values (true with the TypeSafe key,
+  // false without) and no production pin — prod is deliberately not wired.
+  test('JEV_DECISIONS_ENABLED is pinned on staging only, and is not a conversation flag', () => {
+    const { GATEWAY_WORKFLOW_PINS } = require('../../../src/services/conversation/conversation-flag-pins.generated');
+    const pin = GATEWAY_WORKFLOW_PINS.JEV_DECISIONS_ENABLED;
+    expect(pin).toBeDefined();
+    expect(String(pin.staging).split(' | ').sort()).toEqual(['false', 'true']);
+    expect(pin.prod).toBeNull();
+    expect(CONVERSATION_FLAGS.some((f) => f.name === 'JEV_DECISIONS_ENABLED')).toBe(false);
+  });
 });
