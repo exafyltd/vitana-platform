@@ -78,6 +78,7 @@ import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
+import { notePersonaSwapDrained } from '../persona-swap-latency';
 import {
   detectBackendDataLeak,
   effectiveToolCallLimit,
@@ -422,6 +423,7 @@ export function createUpstreamLiveMessageHandler(
             // user-facing WS/SSE stays connected through the swap.
             const pendingSwap = (session as any).pendingPersonaSwap;
             if (pendingSwap && session.upstreamWs && session.active) {
+              notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
               (session as any).activePersona = pendingSwap;
               (session as any).pendingPersonaSwap = null;
               // Set unambiguous flag so close + reconnect handlers know this
@@ -2285,6 +2287,7 @@ export function handleTurnComplete(
   if (pendingSwap && session.active && supportsInProcessPersonaSwap(ctx.client)) {
     // VTID-04336: the cascade has no upstream stream to reconnect — swap the
     // persona in process (prompt + TTS voice role) on the same client.
+    notePersonaSwapDrained(session, 'in_process'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     const applied = ctx.client.applyPersona(buildInProcessPersonaSwap(session as any, pendingSwap));
@@ -2299,6 +2302,7 @@ export function handleTurnComplete(
       restored_base_instruction: applied.restoredBaseInstruction,
     });
   } else if (pendingSwap && session.active) {
+    notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     (session as any)._personaSwapInFlight = true;
