@@ -4666,6 +4666,10 @@ export async function processWithGemini(input: {
             model: vertexResponse.model ?? 'router',
             mode: `operator_${vertexResponse.provider ?? 'router'}`,
             tool_calls: vertexResponse.toolCalls.length,
+            // VTID-04540: the model that wrote the reply (the final call can
+            // land on a fallback different from the planning call).
+            reply_provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
+            reply_model: finalResponse.model ?? vertexResponse.model ?? 'router',
             vtid: 'VTID-01023',
             duration_ms: Date.now() - planStartedAt,
             ...turnCost,

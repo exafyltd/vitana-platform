@@ -62,6 +62,10 @@ describe('servedModelLabel', () => {
     expect(servedModelLabel({ provider: 'deepseek', model: 'deepseek-flash' })).toBe('deepseek/deepseek-flash');
     expect(servedModelLabel({ model: 'm' })).toBe('m');
   });
+  it('prefers the call that wrote the reply on a tool-assisted turn', () => {
+    expect(servedModelLabel({ provider: 'deepseek', model: 'deepseek-flash', reply_provider: 'bedrock', reply_model: 'eu.anthropic.claude-sonnet-4-6' }))
+      .toBe('bedrock/eu.anthropic.claude-sonnet-4-6');
+  });
   it('returns null without a model', () => {
     expect(servedModelLabel(undefined)).toBeNull();
     expect(servedModelLabel({ provider: 'x' })).toBeNull();
@@ -78,5 +82,16 @@ describe('processConversationTurn wiring', () => {
     const extract = SRC.indexOf('extractTypedTurnFacts({');
     expect(write).toBeGreaterThan(0);
     expect(extract).toBeGreaterThan(write);
+  });
+  it('runs typed-turn extraction for typed turns only, never for voice transcripts', () => {
+    expect(SRC).toMatch(/if \(input\.message_type !== 'voice_transcript'\) extractTypedTurnFacts\(\{/);
+  });
+});
+
+describe('the operator loop reports the model that wrote the reply', () => {
+  const OP = fs.readFileSync(path.join(__dirname, '../src/services/gemini-operator.ts'), 'utf8');
+  it('tool-assisted turns carry reply_provider / reply_model from the final call', () => {
+    expect(OP).toMatch(/reply_provider: finalResponse\.provider \?\? vertexResponse\.provider/);
+    expect(OP).toMatch(/reply_model: finalResponse\.model \?\? vertexResponse\.model/);
   });
 });
