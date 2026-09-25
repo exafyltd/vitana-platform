@@ -82,6 +82,31 @@ export function countVoiceSessions(rows: SnapshotEventRow[]): number {
   return rows.filter((r) => r.topic === 'vtid.live.session.start').length;
 }
 
+/**
+ * VTID-04565: which Vitana served the last hour's sessions, from
+ * `orb.session.profile.resolved` ("assistant profile: surface=X role=Y (resolution)").
+ */
+export function summarizeProfiles(rows: SnapshotEventRow[]): Array<{ surface: string; total: number; byResolution: Record<string, number> }> {
+  const by = new Map<string, { total: number; byResolution: Record<string, number> }>();
+  for (const r of rows) {
+    if (r.topic !== 'orb.session.profile.resolved' || !r.message) continue;
+    const m = r.message.match(/surface=([\w-]+).*\((\w+)\)/);
+    if (!m) continue;
+    const cur = by.get(m[1]) || { total: 0, byResolution: {} };
+    cur.total++;
+    cur.byResolution[m[2]] = (cur.byResolution[m[2]] || 0) + 1;
+    by.set(m[1], cur);
+  }
+  return [...by.entries()].map(([surface, v]) => ({ surface, ...v })).sort((a, b) => b.total - a.total);
+}
+
+export function summarizeDeepDives(rows: SnapshotEventRow[]): { completed: number; failed: number } {
+  return {
+    completed: rows.filter((r) => r.topic === 'orb.deep_dive.completed').length,
+    failed: rows.filter((r) => r.topic === 'orb.deep_dive.failed').length,
+  };
+}
+
 /** Pure assembly: facts in, rendered text + ordered highlights out. */
 export function assembleSnapshot(input: {
   nowMs: number;
@@ -135,6 +160,12 @@ export function assembleSnapshot(input: {
     const voice = countVoiceSessions(input.events.value);
     lines.push(`- Last hour: ${total} error event(s) across ${errs.length} topic(s); ${voice} voice session(s) started.`);
     for (const e of errs.slice(0, 5)) lines.push(`  • ${e.topic} ×${e.count}${e.last ? ` — "${e.last}"` : ''}`);
+    const profiles = summarizeProfiles(input.events.value);
+    if (profiles.length) {
+      lines.push(`- Assistant profiles served (last hour): ${profiles.map((p) => `${p.surface} ${p.total} (${Object.entries(p.byResolution).map(([k, v]) => `${k} ${v}`).join(', ')})`).join('; ')}.`);
+    }
+    const dives = summarizeDeepDives(input.events.value);
+    if (dives.completed + dives.failed > 0) lines.push(`- Deep dives (last hour): ${dives.completed} completed, ${dives.failed} failed.`);
     if (errs[0] && errs[0].count >= 10) critical.push(`${errs[0].topic} errored ${errs[0].count} times in the last hour`);
     else if (errs[0]) normal.push(`${total} error event(s) in the last hour, most from ${errs[0].topic}`);
   } else {
@@ -194,7 +225,8 @@ export function defaultSystemSnapshotDeps(): SystemSnapshotDeps {
       const key = process.env.SUPABASE_SERVICE_ROLE;
       if (!url || !key) throw new Error('Supabase not configured');
       const q = `${url}/rest/v1/oasis_events?created_at=gte.${encodeURIComponent(sinceIso)}`
-        + '&or=(status.eq.error,topic.eq.vtid.live.session.start)&select=topic,status,message,created_at'
+        + '&or=(status.eq.error,topic.in.(vtid.live.session.start,orb.session.profile.resolved,orb.deep_dive.completed,orb.deep_dive.failed))'
+        + '&select=topic,status,message,created_at'
         + '&order=created_at.desc&limit=1000';
       const res = await fetch(q, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
       if (!res.ok) throw new Error(`oasis_events ${res.status}`);

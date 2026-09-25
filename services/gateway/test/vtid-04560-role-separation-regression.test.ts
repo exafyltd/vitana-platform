@@ -816,3 +816,101 @@ describe('VTID-04563 deep dive — only developers, on the planner stage, with t
     expect(src).toMatch(/case 'dev_deep_dive': \{\s*const \{ runDeepDiveAsync \}/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-04564 — one brain, two channels (Operator Console ↔ Command Hub voice)
+// ---------------------------------------------------------------------------
+
+import { operatorDeveloperKnowledge } from '../src/services/gemini-operator';
+
+describe('VTID-04564 the Operator Console shares the developer knowledge and deep dive', () => {
+  const op = read('src/services/gemini-operator.ts');
+
+  test('the console declares the same three developer tools the voice assistant has', () => {
+    for (const name of ['dev_system_status', 'dev_domain_atlas', 'dev_deep_dive']) {
+      expect(op).toContain(`name: '${name}'`);
+      expect(op).toContain(`case '${name}':`);
+    }
+    expect(op).toContain("await import('../orb/developer/deep-dive')");
+    expect(op).toContain("await import('../orb/developer/system-snapshot')");
+  });
+
+  test('engineering callers get the atlas in the prompt; the snapshot stays one tool call away', async () => {
+    const k = await operatorDeveloperKnowledge();
+    expect(k).toContain('DOMAIN ATLAS');
+    expect(k).toContain('dev_system_status');
+    expect(k).toContain('dev_deep_dive');
+    expect(k).not.toContain('LIVE SYSTEM SNAPSHOT');
+    expect(op).toContain("const developerKnowledge = engineering ? await operatorDeveloperKnowledge() : '';");
+  });
+
+  test('the console deep dive requires the verified caller on the thread', () => {
+    const fn = op.slice(op.indexOf('async function executeDeveloperKnowledgeTool('), op.indexOf('export async function executeTool('));
+    expect(fn).toContain('getThreadAuth(threadId)');
+    expect(fn).toContain("if (!auth || !auth.user_id) return { ok: false, error: 'dev_deep_dive needs a signed-in developer session' };");
+    expect(fn).toContain("surface: 'command-hub'");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-04565 — evaluation set + telemetry
+// ---------------------------------------------------------------------------
+
+import { summarizeProfiles, summarizeDeepDives } from '../src/orb/developer/system-snapshot';
+
+describe('VTID-04565 developer-assistant evaluation set', () => {
+  const fixture = JSON.parse(read('test/fixtures/developer-assistant-evals.json')) as {
+    questions: Array<{ id: string; question: string; domain: string; first_tool: string }>;
+  };
+  const declared = new Set(['dev_system_status', 'dev_domain_atlas', 'dev_deep_dive']);
+
+  test('60+ questions, every domain covered, every expected tool declared', () => {
+    expect(fixture.questions.length).toBeGreaterThanOrEqual(60);
+    const domains = new Set(fixture.questions.map((q) => q.domain));
+    for (const d of DOMAIN_ATLAS) expect(domains.has(d.key)).toBe(true);
+    for (const q of fixture.questions) expect(declared.has(q.first_tool)).toBe(true);
+    expect(new Set(fixture.questions.map((q) => q.id)).size).toBe(fixture.questions.length);
+  });
+
+  test('the atlas routes at least 90% of the questions to the right domain', () => {
+    const hits = fixture.questions.filter((q) => findDomain(q.question)?.key === q.domain).length;
+    expect(hits / fixture.questions.length).toBeGreaterThanOrEqual(0.9);
+  });
+
+  test('the live eval script refuses any host but staging and uses the machine credential', () => {
+    const script = fs.readFileSync(path.join(ROOT, '..', '..', 'scripts', 'orb', 'eval-developer-assistant.mjs'), 'utf8');
+    expect(script).toContain("const STAGING = 'https://preview-aws-gateway.vitanaland.com';");
+    expect(script).toMatch(/refusing \$\{base\}: this eval runs against staging only/);
+    expect(script).toContain("'X-Operator-Machine-Token': token");
+  });
+});
+
+describe('VTID-04565 telemetry — which Vitana served, and how deep dives went', () => {
+  const rows = [
+    { topic: 'orb.session.profile.resolved', status: 'info', message: 'assistant profile: surface=command-hub role=developer (declared)', created_at: 'x' },
+    { topic: 'orb.session.profile.resolved', status: 'warning', message: 'assistant profile: surface=command-hub role=developer (unverified)', created_at: 'x' },
+    { topic: 'orb.session.profile.resolved', status: 'info', message: 'assistant profile: surface=vitanaland role=pending (declared)', created_at: 'x' },
+    { topic: 'orb.deep_dive.completed', status: 'success', message: 'deep dive completed: q', created_at: 'x' },
+    { topic: 'orb.deep_dive.failed', status: 'warning', message: 'deep dive failed: q', created_at: 'x' },
+  ];
+
+  test('profiles are counted per surface and resolution', () => {
+    expect(summarizeProfiles(rows)).toEqual([
+      { surface: 'command-hub', total: 2, byResolution: { declared: 1, unverified: 1 } },
+      { surface: 'vitanaland', total: 1, byResolution: { declared: 1 } },
+    ]);
+    expect(summarizeDeepDives(rows)).toEqual({ completed: 1, failed: 1 });
+  });
+
+  test('the snapshot reports them and reads them in its one events query', () => {
+    const s = assembleSnapshot({
+      nowMs: Date.parse('2026-09-25T10:00:00Z'),
+      autopilot: { ok: true, value: CLEAN_AUTOPILOT },
+      builds: { ok: true, value: [] },
+      events: { ok: true, value: rows },
+    });
+    expect(s.text).toContain('Assistant profiles served (last hour): command-hub 2 (declared 1, unverified 1); vitanaland 1 (declared 1).');
+    expect(s.text).toContain('Deep dives (last hour): 1 completed, 1 failed.');
+    expect(read('src/orb/developer/system-snapshot.ts')).toContain('orb.session.profile.resolved,orb.deep_dive.completed,orb.deep_dive.failed');
+  });
+});

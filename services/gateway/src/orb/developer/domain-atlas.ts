@@ -42,7 +42,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['oasis_events (orb.live.*, vtid.live.*)', 'ai_personality_config', 'agent_voice_configs', 'decision_policy', 'user_session_summaries'],
     flags: ['NOVA_SONIC_GLOBAL_ENABLED', 'ORB_FULL_DUPLEX_ENABLED', 'VERTEX_SERBIAN_BRIDGE_ENABLED', 'TTS_PROVIDER', 'TTS_FISH_FALLBACK_ENABLED', 'FEATURE_ORB_SAFE_FAST_GREETING_ENV'],
     docs: ['CLAUDE.md §2c/§2e', 'docs/HANDOFF-voice-quality.md', 'docs/CONVERSATION_FLOW_ARCHITECTURE.md'],
-    aliases: ['orb', 'voice', 'nova', 'nova sonic', 'polly', 'fish', 'cascade', 'greeting', 'barge-in', 'vertex bridge', 'serbian'],
+    aliases: ['orb', 'voice', 'nova', 'nova sonic', 'polly', 'fish', 'cascade', 'greeting', 'greet', 'greeting brain', 'barge-in', 'vertex bridge', 'serbian', 'assistant profile', 'community assistant', 'developer assistant', 'widget'],
   },
   {
     key: 'autopilot',
@@ -54,7 +54,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['autopilot_recommendations', 'dev_autopilot_plan_versions', 'dev_autopilot_executions', 'dev_autopilot_runs', 'dev_autopilot_config', 'dev_autopilot_outcomes', 'self_healing_log', 'architecture_reports'],
     flags: ['DEV_AUTOPILOT_EXECUTOR_ENABLED', 'DEV_AUTOPILOT_WATCHER_LIVE', 'DEV_AUTOPILOT_USE_JOB', 'DEV_AUTOPILOT_JOB_CLOUD', 'DEV_AUTOPILOT_PR_APPROVAL_REQUIRED', 'AGENT_MAX_TURNS'],
     docs: ['docs/OPERATOR-AGENT-BUILD-PLAN.md', 'docs/OPERATOR-CONSOLE-E2E-RECOVERY-2026-09-21.md', 'docs/AGENT-REGISTRY.md'],
-    aliases: ['autopilot', 'dev autopilot', 'executor', 'findings', 'self-healing', 'self heal', 'watcher', 'fix mode', 'planner'],
+    aliases: ['autopilot', 'dev autopilot', 'executor', 'executions', 'failure reason', 'findings', 'self-healing', 'self heal', 'watcher', 'fix mode', 'planner', 'scanners'],
   },
   {
     key: 'agents',
@@ -126,7 +126,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['profiles', 'user_tenants', 'automation_runs', 'chat_messages', 'chat_group_members', 'profile_posts', 'user_notifications', 'daily_matches', 'service_bot_accounts'],
     flags: [],
     docs: ['CLAUDE.md Part 1 rules 43-45'],
-    aliases: ['community', 'members', 'chat', 'groups', 'posts', 'matchmaking', 'notifications', 'intents'],
+    aliases: ['community', 'members', 'member directory', 'test accounts', 'welcome chat', 'chat', 'groups', 'posts', 'matchmaking', 'notifications', 'intents'],
   },
   {
     key: 'support',
@@ -162,7 +162,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['merchants', 'products', 'partner_organizations', 'partner_registry', 'affiliate_clicks'],
     flags: ['PARTNER_INVITE_EMAIL_ENABLED', 'PARTNER_TERMS_VERSION', 'ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED'],
     docs: ['CLAUDE.md §13c', 'docs/COMMERCE-SELF-SERVICE-PARTNER-ONBOARDING-SPEC.md', 'docs/MERCHANT_ONBOARDING_RUNBOOK.md'],
-    aliases: ['commerce', 'discover', 'shop', 'merchants', 'products', 'partners', 'affiliate', 'awin', 'shopify'],
+    aliases: ['commerce', 'discover', 'shop', 'merchants', 'merchant', 'products', 'partners', 'partner onboarding', 'onboarding', 'affiliate', 'awin', 'shopify'],
   },
   {
     key: 'payments',
@@ -185,7 +185,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['app_users', 'user_tenants', 'tenants', 'role_preferences', 'user_active_roles', 'nav_catalog', 'nav_catalog_i18n', 'supported_locales'],
     flags: [],
     docs: ['CLAUDE.md §13b', 'docs/DB-CONTENT-I18N.md'],
-    aliases: ['admin', 'tenants', 'roles', 'users', 'auth', 'signup', 'i18n', 'navigator'],
+    aliases: ['admin', 'tenants', 'roles', 'role switch', 'role preferences', 'users', 'auth', 'signup', 'i18n', 'navigator'],
   },
   {
     key: 'backoffice',
@@ -197,7 +197,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['erp_commands', 'erp_approvals', 'erp_audit', 'erp_capability_grants'],
     flags: [],
     docs: ['docs/backoffice/GOLDEN-WORKFLOWS.md'],
-    aliases: ['backoffice', 'erp', 'crm', 'erpclaw'],
+    aliases: ['backoffice', 'erp', 'erp bridge', 'crm', 'erpclaw'],
   },
   {
     key: 'infra',
@@ -209,7 +209,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     tables: ['(Supabase inmkhvwdcuyhnxkgfvsb)', '(Aurora vitana-aurora-prod)'],
     flags: ['AURORA_DATABASE_URL', 'DB_I18N_TARGET'],
     docs: ['CLAUDE.md §1b, §3', 'docs/AURORA-MIGRATION-STATUS-2026-09-10.md', 'docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md'],
-    aliases: ['infra', 'aws', 'ecs', 'aurora', 'supabase', 'database', 'redis', 'alb'],
+    aliases: ['infra', 'aws', 'ecs', 'ecs tasks', 'aurora', 'supabase', 'database', 'redis', 'alb', 'code index', 's3'],
   },
 ];
 
