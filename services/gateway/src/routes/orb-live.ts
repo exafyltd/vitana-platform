@@ -393,8 +393,15 @@ import {
   setNewdayOverviewRungEnabled,
   setDayCloseRungEnabled,
   tryDayCloseRung,
+  overviewIndependentOpenerWins,
   type GreetingDecisionContext,
 } from '../services/conversation/compute-greeting-decision';
+// VTID-04544: the greeting's bounded payload reads, run concurrently.
+import {
+  boundedRead,
+  gatherSafeFastGreetingPayloads,
+  gatherNewdayGreetingPayload,
+} from '../services/conversation/greeting-payload-gather';
 import { withGreetingMonitorFields } from '../services/conversation/greeting-monitor-fields';
 // VTID-04416 (WS-1.4): every opening decision goes through the brain entry point.
 import { decideOpeningFlow, resolveCandidateOutcome } from '../services/conversation/decide-conversation-flow';
@@ -10614,7 +10621,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // Ledger + overview providers (dynamic imports mirror the pre-strangle
             // rungs so the module graph / bundle split is unchanged).
             const {
-              readGreetingLedger,
+              startSpeculativeGreetingLedgerRead,
               extractSpokenFactsFromPayload,
               recordGreetingFacts,
               EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_SF,
@@ -10678,6 +10685,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               voiceWakeBriefReason: null,
             };
 
+            // VTID-04544 — the three bounded reads (rung-1 new-day overview,
+            // rung-3 resume overview, spoken-facts ledger) keep their guards,
+            // budgets and fail-open values; the ledger now runs CONCURRENTLY with
+            // the gathers instead of after them (gatherSafeFastGreetingPayloads).
+            //
             // Rung-1 gather: the rich new-day overview, only when its guard
             // passes AND day-close (which outranks it) would not win anyway —
             // VTID-03743 review fix (Codex P2): day-close is eligible during
@@ -10685,66 +10697,61 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // so without this pre-check every day-close-window session paid
             // for a ~3.8s gather+ledger-read whose payload
             // computeGreetingDecision was always going to discard.
-            let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)) {
-              const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
-              const _lastSessDateSF =
-                typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
-                  ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
-                  : null;
-              _newdayOverviewSF = await Promise.race([
-                gatherOverviewPayload({
-                  supabase: _supaSF,
-                  userId: _uidSF,
-                  now: _nowSF,
-                  timezone: _tzSF,
-                  lang: greetLang,
-                  lastSessionDateUserTz: _lastSessDateSF,
-                  lastSessionAtIso: _lastSessIsoSF,
-                }),
-                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
-              ]).catch(() => null);
-            }
-            // Will rung 1 fire? If so, skip the resume gather (hot-path latency) —
-            // single-sourced with the brain via newdayHasContent.
-            const _newdayWillFireSF = !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF);
-
-            // Rung-3 gather: the resume overview, only when rung 1 won't fire and the
-            // resume guard/register says so (the guard already excludes first-timers).
-            const _resumeCheckSF = _newdayWillFireSF
-              ? { attempt: false as boolean }
-              : shouldAttemptResumeOverview(_baseCtxSF);
-            let _resumeOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
-            if (_resumeCheckSF.attempt && _supaSF && _uidSF) {
-              const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
-              const _lastSessDateR =
-                typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
-                  ? todayInTimezone(new Date(_lastSessIsoR), _tzSF)
-                  : null;
-              _resumeOverviewSF = await Promise.race([
-                gatherOverviewPayload({
-                  supabase: _supaSF,
-                  userId: _uidSF,
-                  now: _nowSF,
-                  timezone: _tzSF,
-                  lang: greetLang,
-                  lastSessionDateUserTz: _lastSessDateR,
-                  lastSessionAtIso: _lastSessIsoR,
-                }),
-                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
-              ]).catch(() => null);
-            }
-
-            // Read the spoken-facts ledger ONCE, only on a payload-bearing path
-            // (rung 1 will fire, or rung 3 was attempted) — the same paths on which
-            // the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
-            const _ledgerSF =
-              _tenantSF && _uidSF && _supaSF && (_newdayWillFireSF || _resumeCheckSF.attempt)
-                ? await Promise.race([
-                    readGreetingLedger({ supabase: _supaSF, tenantId: _tenantSF, userId: _uidSF }),
-                    new Promise<typeof _EMPTY_LEDGER_SF>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_SF }), 800)),
-                  ]).catch(() => ({ ..._EMPTY_LEDGER_SF }))
-                : { ..._EMPTY_LEDGER_SF };
+            // VTID-04544 — same reasoning for the rungs that outrank every
+            // payload rung and never read a payload (support report, tapped
+            // guided topic): when one of them is certain to win, nothing is
+            // gathered at all.
+            const _explicitOpenSF = overviewIndependentOpenerWins(_baseCtxSF);
+            const {
+              newdayOverview: _newdayOverviewSF,
+              resumeOverview: _resumeOverviewSF,
+              ledger: _ledgerSF,
+            } = await gatherSafeFastGreetingPayloads({
+              attemptNewday:
+                !_explicitOpenSF &&
+                !!(shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF && !tryDayCloseRung(_baseCtxSF)),
+              // Rung-3 gather: the resume overview, only when rung 1 won't fire and
+              // the resume guard/register says so (the guard already excludes
+              // first-timers).
+              resumeGuard: _explicitOpenSF ? { attempt: false } : shouldAttemptResumeOverview(_baseCtxSF),
+              resumeGatherEligible: !!(_supaSF && _uidSF),
+              // The spoken-facts ledger is USED only on a payload-bearing path
+              // (rung 1 will fire, or rung 3 was attempted) — the same paths on
+              // which the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
+              ledgerEligible: !!(_tenantSF && _uidSF && _supaSF),
+              // Will rung 1 fire? If so, skip the resume gather (hot-path latency)
+              // — single-sourced with the brain via newdayHasContent.
+              newdayWillFire: (_newdayOverviewSF) => !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF),
+              // Each gather reads the last-session anchor at its OWN start, as the
+              // two serial gathers did (the heavy bootstrap may land in between).
+              gather: (timeoutMs) => {
+                const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
+                const _lastSessDateSF =
+                  typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
+                    ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
+                    : null;
+                return boundedRead(
+                  () =>
+                    gatherOverviewPayload({
+                      supabase: _supaSF!,
+                      userId: _uidSF!,
+                      now: _nowSF,
+                      timezone: _tzSF,
+                      lang: greetLang,
+                      lastSessionDateUserTz: _lastSessDateSF,
+                      lastSessionAtIso: _lastSessIsoSF,
+                    }),
+                  timeoutMs,
+                  () => null,
+                  () => null,
+                );
+              },
+              startLedger: () =>
+                startSpeculativeGreetingLedgerRead({ supabase: _supaSF!, tenantId: _tenantSF!, userId: _uidSF! }, 800),
+              emptyLedger: () => ({ ..._EMPTY_LEDGER_SF }),
+              newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
+              resumeTimeoutMs: Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800),
+            });
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
@@ -11174,6 +11181,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
         _openDecision.mode === 'silent' &&
         (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
       ),
+      // VTID-04544 — the same reasoning for the rungs that outrank the
+      // briefing and never read its payload: a support-report intake or a
+      // tapped guided topic wins regardless of what the gather returns, so the
+      // gather (and the facts wait before it) would only be discarded. Decided
+      // from synchronous facts only, via the brain's own rung functions.
+      no_explicit_open_rung: !overviewIndependentOpenerWins(_baseCtxSync),
     };
     const _newdaySyncPossible = Object.values(_ndGates).every(Boolean);
     if (!_newdaySyncPossible) {
@@ -11233,8 +11246,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             }
           }
 
-          const { readGreetingLedger, extractSpokenFactsFromPayload, recordGreetingFacts, EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS } =
-            await import('../services/conversation/greeting-facts-ledger');
+          const {
+            startSpeculativeGreetingLedgerRead,
+            extractSpokenFactsFromPayload,
+            recordGreetingFacts,
+            EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_NS,
+          } = await import('../services/conversation/greeting-facts-ledger');
           const { gatherOverviewPayload } = await import(
             '../services/assistant-continuation/providers/new-day-overview-payload'
           );
@@ -11277,29 +11294,33 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               typeof _lastSessIsoNS === 'string' && _lastSessIsoNS.length > 0
                 ? todayInTimezone(new Date(_lastSessIsoNS), _tzSync)
                 : null;
-            const _overviewNS = await Promise.race([
-              gatherOverviewPayload({
-                supabase: _syncSupa!,
-                userId: _syncUid!,
-                now: _nowNS,
-                timezone: _tzSync,
-                lang,
-                lastSessionDateUserTz: _lastSessDateNS,
-                lastSessionAtIso: _lastSessIsoNS,
-              }),
-              new Promise<null>((r) =>
-                setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000)),
-              ),
-            ]).catch(() => null);
-
+            // VTID-04544 — the ledger is started WITH the gather and used only
+            // when the gather returned a payload (as before); each keeps its
+            // own budget and fail-open value.
             const _tenantNS = session.identity?.tenant_id || null;
-            const _ledgerNS =
-              _overviewNS && _tenantNS
-                ? await Promise.race([
-                    readGreetingLedger({ supabase: _syncSupa!, tenantId: _tenantNS, userId: _syncUid! }),
-                    new Promise<typeof _EMPTY_LEDGER_NS>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_NS }), 800)),
-                  ]).catch(() => ({ ..._EMPTY_LEDGER_NS }))
-                : { ..._EMPTY_LEDGER_NS };
+            const { overview: _overviewNS, ledger: _ledgerNS } = await gatherNewdayGreetingPayload({
+              ledgerEligible: !!_tenantNS,
+              gather: (timeoutMs) =>
+                boundedRead(
+                  () =>
+                    gatherOverviewPayload({
+                      supabase: _syncSupa!,
+                      userId: _syncUid!,
+                      now: _nowNS,
+                      timezone: _tzSync,
+                      lang,
+                      lastSessionDateUserTz: _lastSessDateNS,
+                      lastSessionAtIso: _lastSessIsoNS,
+                    }),
+                  timeoutMs,
+                  () => null,
+                  () => null,
+                ),
+              startLedger: () =>
+                startSpeculativeGreetingLedgerRead({ supabase: _syncSupa!, tenantId: _tenantNS!, userId: _syncUid! }, 800),
+              emptyLedger: () => ({ ..._EMPTY_LEDGER_NS }),
+              newdayTimeoutMs: Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000),
+            });
 
             if (ws.readyState !== WebSocket.OPEN) return;
 
