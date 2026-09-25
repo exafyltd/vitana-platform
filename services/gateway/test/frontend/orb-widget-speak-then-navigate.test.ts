@@ -68,4 +68,16 @@ describe('speak-then-navigate', () => {
     expect(source).toMatch(/startPayload\.is_mobile = _s\.isMobileHost/);
     expect(source).toMatch(/_s\.isMobileHost = opts\.initialContext\.is_mobile/);
   });
+  it('cancels an announced navigation when the member closes or stops Vitana (VTID-04558)', () => {
+    const cancel = fnBody('_cancelPendingNav');
+    expect(cancel).toMatch(/_s\.pendingNavDirective = null/);
+    expect(cancel).toMatch(/clearTimeout\(_s\._pendingNavSafety\)/);
+    expect(cancel).toMatch(/_s\._navCancelGen = \(_s\._navCancelGen \|\| 0\) \+ 1/);
+    expect(fnBody('_hide')).toMatch(/_cancelPendingNav\(\)/);
+    expect(fnBody('_sessionStop')).toMatch(/_cancelPendingNav\(\)/);
+    // both the drain wait and the final hop re-check the cancel counter
+    const run = fnBody('_runNavDirective');
+    expect(run).toMatch(/var myNavGen = _s\._navCancelGen \|\| 0/);
+    expect(run.match(/\(_s\._navCancelGen \|\| 0\) !== myNavGen/g)).toHaveLength(2);
+  });
 });

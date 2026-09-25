@@ -2654,6 +2654,7 @@
 
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
+    _cancelPendingNav(); // VTID-04558
     // VTID-03098: mark this as a user-initiated stop BEFORE any teardown.
     // Anything that fires synchronously as a result of the teardown (SSE
     // onerror on Android WebView, residual disconnect-recovery probes,
@@ -4951,6 +4952,7 @@
   }
 
   function _hide() {
+    _cancelPendingNav(); // VTID-04558
     // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
     // silently re-open. Cleared only on an explicit re-open in _show().
@@ -5078,19 +5080,29 @@
   // result goes back to the gateway before the session closes, so the server
   // learns the outcome instead of assuming it. A host that returns nothing
   // reports "unknown"; one that returns a Promise gets up to 1.5 s.
+  // VTID-04558: closing or stopping Vitana cancels a navigation she announced
+  // but has not run yet. The session generation only moves on start, so it
+  // cannot tell a closed orb apart; this counter can.
+  function _cancelPendingNav() {
+    _s.pendingNavDirective = null;
+    clearTimeout(_s._pendingNavSafety);
+    _s._navCancelGen = (_s._navCancelGen || 0) + 1;
+  }
+
   function _runNavDirective(msg, myGen) {
+    var myNavGen = _s._navCancelGen || 0;
     var stays = msg.keep_orb_open === true || msg.entry_kind === 'overlay';
     if (!stays) _s.navigationPending = true;
     var attempts = 0;
     (function _waitDrain() {
       setTimeout(function () {
-        if (_s._sessionGeneration !== myGen) return;
+        if (_s._sessionGeneration !== myGen || (_s._navCancelGen || 0) !== myNavGen) return;
         var stillPlaying = _s.audioPlaying ||
           (_s.scheduledSources && _s.scheduledSources.length > 0) ||
           (_s.audioQueue && _s.audioQueue.length > 0);
         if (stillPlaying && attempts++ < 100) { _waitDrain(); return; }
         setTimeout(function () {
-          if (_s._sessionGeneration !== myGen) return;
+          if (_s._sessionGeneration !== myGen || (_s._navCancelGen || 0) !== myNavGen) return;
           if (!stays) {
             _s.audioQueue = [];
             if (_s.scheduledSources && _s.scheduledSources.length > 0) {
