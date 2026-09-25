@@ -478,7 +478,9 @@ export async function processConversationTurn(
     // has no session end to catch up at, so every turn is extracted (force
     // skips the voice-oriented "3 new turns / 60 s" throttle, which dropped the
     // first two turns of every thread). write_fact skips unchanged values.
-    extractTypedTurnFacts({
+    // Typed turns only: a voice transcript routed here keeps the voice
+    // pipeline's own extraction cadence (session-end commit + throttle).
+    if (input.message_type !== 'voice_transcript') extractTypedTurnFacts({
       message: input.message,
       reply,
       tenant_id: input.tenant_id,
@@ -618,10 +620,16 @@ export { isUnifiedConversationEnabled } from './system-controls-service';
 // VTID-04540: fact extraction + served-model label for typed turns
 // =============================================================================
 
-/** "provider/model" from the operator loop's meta, or null when it has none. */
+/**
+ * "provider/model" of the call that wrote the reply, or null when the meta has
+ * none. A tool-assisted turn reports its final call in reply_provider /
+ * reply_model; a direct turn only has provider / model.
+ */
 export function servedModelLabel(meta: Record<string, unknown> | undefined): string | null {
-  const model = typeof meta?.model === 'string' && meta.model ? meta.model : null;
-  const provider = typeof meta?.provider === 'string' && meta.provider ? meta.provider : null;
+  const pick = (a: unknown, b: unknown) =>
+    (typeof a === 'string' && a ? a : null) ?? (typeof b === 'string' && b ? b : null);
+  const model = pick(meta?.reply_model, meta?.model);
+  const provider = pick(meta?.reply_provider, meta?.provider);
   if (!model) return null;
   return provider ? `${provider}/${model}` : model;
 }
