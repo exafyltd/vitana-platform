@@ -33,3 +33,13 @@ TEST: services/gateway/test/command-hub (whole directory) and `node --check app.
 
 AC-4 — Deployed to staging, the four run routes reject an unauthenticated POST and the served app.js carries the corrected tabs.
 TEST: docs/validation/VTID-04635/staging-tests.json — run by STAGING-VERIFY after the staging deploy.
+
+## Route mount evidence
+
+No new route. The existing `/api/v1/testing` router keeps its four POST
+registrations; only their middleware chain gains `requireAuth,
+requireExafyAdmin`, which the route-registration trigger reads as changed lines.
+
+ROUTE_MOUNT: `services/gateway/src/index.ts` — `mountRouterSync(app, '/api/v1/testing', testingRouter, { owner: 'testing-qa' })` (unchanged)
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/testing/run (also /cycles, /cycles/:id/run, /orb-monitor/trigger)
+CURL_PROOF: `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/testing/suites` → `200 application/json; charset=utf-8` (router mounted on staging before this PR; the read route was used on purpose, since an unauthenticated POST to the run route would dispatch a real workflow)
