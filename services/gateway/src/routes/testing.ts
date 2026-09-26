@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import githubService from '../services/github-service';
 import * as repo from '../services/testing/testing-repository';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
@@ -18,6 +19,38 @@ const GATEWAY_UNIT_WORKFLOW = 'TEST-SUITE.yml';
 const GATEWAY_UNIT_PROJECT = 'gateway-jest';
 
 const router = Router();
+
+// VTID-04635: every route that starts work (a GitHub workflow dispatch, a
+// local Playwright run, a new cycle) requires an authenticated exafy_admin.
+// These were mounted with no auth at all, so an anonymous request could
+// dispatch TEST-SUITE.yml / E2E-TEST-RUN.yml / E2E-ORB-MONITOR.yml. Reads
+// (suites, runs, cycles, orb-monitor status) stay open for now; the rebuilt
+// screens (plan: Testing & QA rebuild) move them behind the same gate. The
+// middleware is written out on each route (not spread from an array) so the
+// Impact Scan's auth rule can see it.
+
+// VTID-04635: E2E runs target staging only. The owner rule (CLAUDE.md 48,
+// vitana-v1 absolute rule) forbids automated suites against production, and
+// E2E-TEST-RUN.yml already refuses production hosts; the gateway now refuses
+// anything but the staging community app before dispatching, instead of
+// forwarding whatever URL the caller sent.
+export const E2E_STAGING_COMMUNITY_URL = 'https://preview-aws.vitanaland.com';
+const E2E_ALLOWED_COMMUNITY_HOSTS = new Set(['preview-aws.vitanaland.com']);
+
+/** Returns the staging URL to test, or null when the caller asked for any other host. */
+export function resolveE2eCommunityUrl(requested: unknown): string | null {
+  if (requested === undefined || requested === null || requested === '') return E2E_STAGING_COMMUNITY_URL;
+  if (typeof requested !== 'string') return null;
+  let host: string;
+  try {
+    const u = new URL(requested);
+    if (u.protocol !== 'https:') return null;
+    host = u.hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return null;
+  }
+  return E2E_ALLOWED_COMMUNITY_HOSTS.has(host) ? E2E_STAGING_COMMUNITY_URL : null;
+}
 
 // ─── Available E2E test suites (from Playwright config) ───────────────────
 const E2E_SUITES = [
@@ -86,8 +119,9 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
 });
 
 // ─── POST /run — Trigger a test run ──────────────────────────────────────
-router.post('/run', async (req: Request, res: Response) => {
-  const { projects = [], type = 'e2e', community_url } = req.body;
+router.post('/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
+  const { projects = [], type = 'e2e' } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
   }
@@ -119,6 +153,11 @@ router.post('/run', async (req: Request, res: Response) => {
       console.error('[Testing] gateway-jest poll failed:', err);
     });
     return;
+  }
+
+  const community_url = resolveE2eCommunityUrl(req.body?.community_url);
+  if (!community_url) {
+    return res.status(400).json({ ok: false, error: `E2E runs target staging only (${E2E_STAGING_COMMUNITY_URL})` });
   }
 
   // Validate projects exist
@@ -156,9 +195,9 @@ router.post('/run', async (req: Request, res: Response) => {
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
       projects: validProjects.join(','),
-      ...(community_url ? { community_url } : {}),
+      community_url,
     });
-    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects, community_url: community_url || 'default' });
+    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects, community_url });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
   }
@@ -176,7 +215,8 @@ router.get('/cycles', async (_req: Request, res: Response) => {
 });
 
 // ─── POST /cycles — Create a test cycle ──────────────────────────────────
-router.post('/cycles', async (req: Request, res: Response) => {
+router.post('/cycles', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
@@ -192,7 +232,12 @@ router.post('/cycles', async (req: Request, res: Response) => {
 });
 
 // ─── POST /cycles/:id/run — Execute a test cycle ────────────────────────
-router.post('/cycles/:id/run', async (req: Request, res: Response) => {
+router.post('/cycles/:id/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
+  const community_url = resolveE2eCommunityUrl(req.body?.community_url);
+  if (!community_url) {
+    return res.status(400).json({ ok: false, error: `E2E runs target staging only (${E2E_STAGING_COMMUNITY_URL})` });
+  }
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
@@ -219,7 +264,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
     await repo.updateCycle(supabase, cycle.id, { last_run_id: run.id, last_run_at: new Date().toISOString() });
 
     res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name, via: 'local' });
-    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, req.body?.community_url).catch(err => {
+    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, community_url).catch(err => {
       console.error('[Testing] Cycle run failed:', err);
     });
     return;
@@ -230,6 +275,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
     const projects = Array.isArray(cycle.projects) ? cycle.projects : [];
     await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
       projects: projects.join(','),
+      community_url,
     });
 
     await repo.updateCycle(supabase, cycle.id, { last_run_at: new Date().toISOString() });
@@ -484,7 +530,8 @@ router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/orb-monitor/trigger', async (_req: Request, res: Response) => {
+router.post('/orb-monitor/trigger', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, ORB_MONITOR_WORKFLOW, 'main');
     res.json({ ok: true, message: 'ORB Monitor workflow triggered' });

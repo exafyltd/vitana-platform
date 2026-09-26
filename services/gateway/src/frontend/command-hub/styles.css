@@ -17942,3 +17942,8 @@ button.fb-chip:focus-visible,
     font-size: 13px;
     margin: 6px 0;
 }
+
+/* VTID-04635: Testing & QA tabs (CSP: classes, never inline styles). */
+.testing-info-spaced { margin-bottom: 1rem; }
+.testing-e2e-title { margin: 0; }
+.testing-e2e-badge { font-size: 0.75rem; }
