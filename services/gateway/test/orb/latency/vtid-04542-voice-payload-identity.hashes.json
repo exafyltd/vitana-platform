@@ -2,8 +2,8 @@
   "connect:admin-surface-en": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "d75648c4936c2498ac61608d1ed9f3e69216c2d5241112ca47b46b4a757744df",
-    "instruction_bytes": 10629,
+    "instruction_sha256": "0803ee43d11d8a353b746ace7b2034bff22826fdb0bebe1dc096e726c8f68daa",
+    "instruction_bytes": 10814,
     "tools_sha256": "ed74c4150734f6999c93c5d9573ab47b2ef6bec1ffb3efb64cfe97aca0bc4495",
     "tools_bytes": 45542,
     "tool_count": 135,

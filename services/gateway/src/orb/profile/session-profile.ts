@@ -104,10 +104,39 @@ export function workSurfaceGreetingFields(
   return { surface: profile.surface, workSurfaceRole: profile.role, workSurfaceHighlights: highlights };
 }
 
-/** Pull up to 5 fact lines out of a rendered admin briefing block. */
+/**
+ * Pull up to 5 facts out of a rendered admin briefing block.
+ *
+ * VTID-04654: the briefing is a numbered list of insights ("1. 🟠 **[area]**
+ * headline" + an indented detail line) wrapped in instructions to the model
+ * ("The supervisor just opened the orb… Do NOT do a generic greeting…").
+ * Taking the first five non-empty lines served that instruction to the
+ * opener as a "fact" and dropped the third insight. Each numbered insight
+ * becomes one fact (headline — first detail line); a block without numbered
+ * items falls back to plain lines, minus headings.
+ */
 export function briefingHighlights(block: string): string[] {
-  return block
-    .split('\n')
+  const clean = (l: string) => l.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  const lines = block.split('\n');
+  const items: string[] = [];
+  let detailTaken = true;
+  for (const line of lines) {
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (numbered) {
+      items.push(clean(numbered[1].replace(/^[^\p{L}\p{N}[]+/u, '')));
+      detailTaken = false;
+      continue;
+    }
+    if (items.length > 0 && !detailTaken && /^\s{2,}\S/.test(line)) {
+      items[items.length - 1] = `${items[items.length - 1]} — ${clean(line)}`;
+      detailTaken = true;
+      continue;
+    }
+    if (line.trim() === '') continue;
+    detailTaken = true;
+  }
+  if (items.length > 0) return items.filter((i) => i.length > 8).slice(0, 5);
+  return lines
     .map((l) => l.replace(/^[\s>*•\-\d.)]+/, '').trim())
     .filter((l) => l.length > 8 && !/^=+|^#+|^\[|^(admin|briefing)\b.*:$/i.test(l))
     .slice(0, 5);
