@@ -208,6 +208,16 @@ describe('VTID-04644 wiring', () => {
     expect(call).toBeGreaterThan(inc);
   });
 
+  it('runs only when the VTID-04619 announced-navigation backstop did not take the turn', () => {
+    const body = handler.slice(handler.indexOf('export function handleTurnComplete('));
+    const theirs = body.indexOf('const announcedNavigation = maybeRunNavigateBackstop(');
+    const guard = body.indexOf('if (!announcedNavigation) {');
+    const call = body.indexOf('maybeRunExplicitOpenBackstop(ctx.deps, session, userText, navigatedDuringTurn);');
+    expect(theirs).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(theirs);
+    expect(call).toBeGreaterThan(guard);
+  });
+
   it('the widget runs an after_turn directive at once instead of holding it for a turn_complete that already passed', () => {
     const i = widget.indexOf('if (msg.after_turn === true) {');
     expect(i).toBeGreaterThan(-1);

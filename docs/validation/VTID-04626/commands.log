@@ -15,3 +15,17 @@ node --check src/frontend/command-hub/app.js && node --check src/frontend/comman
 
 # Visual verification: local harness (command-hub statics + fixture built from the live report rows), Playwright chromium
 # 1400x900 and 390x844; horizontal overflow 0 px; tab switch, drawer, stale-accept confirm exercised.
+
+# 2026-09-26 post-merge (80bc79a on staging)
+# Unversioned /command-hub/app.js is served from Cloudflare cache (cf-cache-status: HIT, age: 8716)
+# and still holds the pre-merge file; the versioned URL index.html references
+# (/command-hub/app.js?v=20261014-vtid-04626) serves the new code. The staging check now
+# fetches the versioned URL - the one a browser actually loads.
+
+# 2026-09-26 staging check of 80bc79a (read-only, test user sign-in only, all non-GET requests blocked)
+# - 7/7 staging-tests.json http checks PASS against preview-aws-gateway
+# - GET /healing/overview as test user: 200, mode=shadow, fetch_errors=[], all sections populated
+# - Screen rendered with live data at 1400x900; found the Quarantine card showing IDLE while 3
+#   patterns were quarantined (client inverted the count) -> now reads pipeline.sentinel.status
+# - oasis_events llm.call.* stage=triage, last 3 days: 42/42 completed on bedrock
+#   eu.anthropic.claude-sonnet-4-6, fallback_used=false -> the investigator's new route is healthy

@@ -2,23 +2,76 @@
   "vtid": "VTID-04626",
   "service": "gateway",
   "tests": [
-    { "kind": "http", "name": "overview route exists and requires a login", "path": "/api/v1/voice-lab/healing/overview",
-      "expect_status": 401 },
-    { "kind": "http", "name": "accept refuses an unauthenticated caller", "method": "POST",
-      "path": "/api/v1/voice-lab/healing/reports/00000000-0000-0000-0000-000000000000/execute", "rejected_probe": true, "expect_status": 401 },
-    { "kind": "http", "name": "retry refuses an unauthenticated caller", "method": "POST",
-      "path": "/api/v1/voice-lab/healing/reports/00000000-0000-0000-0000-000000000000/retry", "rejected_probe": true, "expect_status": 401 },
-    { "kind": "http", "name": "dismiss refuses an unauthenticated caller", "method": "POST",
-      "path": "/api/v1/voice-lab/healing/reports/dismiss", "rejected_probe": true, "expect_status": 401 },
-    { "kind": "http", "name": "mode change refuses an unauthenticated caller", "method": "POST",
-      "path": "/api/v1/voice-lab/healing/mode", "rejected_probe": true, "expect_status": 401 },
-    { "kind": "http", "name": "served screen script is the rebuilt one", "target": "gateway",
-      "path": "/command-hub/voice-self-healing.js", "expect_status": 200, "expect_content_type": "application/javascript",
-      "expect_body_contains": "renderVoiceSelfHealingScreen" },
-    { "kind": "http", "name": "served app.js routes the tab to the rebuilt screen", "target": "gateway",
-      "path": "/command-hub/app.js", "expect_status": 200, "expect_content_type": "application/javascript",
-      "expect_body_contains": "window.renderVoiceSelfHealingScreen()" },
-    { "kind": "existing", "ref": "npx jest test/vtid-04626-voice-self-healing.test.ts test/voice-failure-taxonomy.test.ts", "cwd": "services/gateway",
-      "reason": "the investigator, accept and dismiss paths write to shared data or call an LLM, which a read-only staging suite cannot do; the unit suite pins them" }
+    {
+      "kind": "http",
+      "name": "overview route exists and requires a login",
+      "path": "/api/v1/voice-lab/healing/overview",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "accept refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/voice-lab/healing/reports/00000000-0000-0000-0000-000000000000/execute",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "retry refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/voice-lab/healing/reports/00000000-0000-0000-0000-000000000000/retry",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "dismiss refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/voice-lab/healing/reports/dismiss",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "mode change refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/voice-lab/healing/mode",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "served screen script is the rebuilt one",
+      "target": "gateway",
+      "path": "/command-hub/voice-self-healing.js",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "renderVoiceSelfHealingScreen"
+    },
+    {
+      "kind": "http",
+      "name": "served screen script (versioned URL) reads the quarantine status from the overview",
+      "target": "gateway",
+      "path": "/command-hub/voice-self-healing.js?v=20261014-vtid-04626-2",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "'Quarantine', p.sentinel.status"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js (the versioned URL index.html loads) routes the tab to the rebuilt screen",
+      "target": "gateway",
+      "path": "/command-hub/app.js?v=20261014-vtid-04626",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "window.renderVoiceSelfHealingScreen()"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04626-voice-self-healing.test.ts test/voice-failure-taxonomy.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the investigator, accept and dismiss paths write to shared data or call an LLM, which a read-only staging suite cannot do; the unit suite pins them"
+    }
   ]
 }

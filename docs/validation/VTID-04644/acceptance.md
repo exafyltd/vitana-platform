@@ -20,7 +20,8 @@ clearly asks to open or see a screen and the model opened nothing, the gateway o
   Registry dispatcher only (NAV_V2_ENABLED), not on /admin-style role surfaces.
   `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
 - `upstream-message-handler.ts`: reads the per-turn navigation marker before `turn_count` advances
-  and calls the backstop next to the remember backstop.
+  and calls the backstop right after the VTID-04619 backstop (Vitana announced a page but did not
+  navigate), only when that one did not take the turn — the two never both navigate.
 - `orb-widget.js`: a directive marked `after_turn` runs as soon as the reply audio has drained. The
   held speak-then-navigate path waits for a turn_complete that, for this directive, already passed
   (measured: 15.5 s via the safety timer).

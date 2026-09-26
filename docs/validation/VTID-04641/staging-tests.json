@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04641",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "results summary requires an admin", "path": "/api/v1/testing/results/summary", "expect_status": 401 },
+    { "kind": "http", "name": "results run list requires an admin", "path": "/api/v1/testing/results/runs", "expect_status": 401 },
+    { "kind": "http", "name": "results sync refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/results/sync", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/services/testing/test-results.test.ts test/routes/testing-results.test.ts", "cwd": "services/gateway",
+      "reason": "pins what is stored, the sync cursor and re-run handling, the summaries and the admin gate" }
+  ]
+}
