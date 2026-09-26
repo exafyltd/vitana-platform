@@ -30,7 +30,7 @@
  * Claude session as additional context.
  */
 
-import { bridgeActivationToExecution } from './dev-autopilot-execute';
+import { bridgeActivationToExecution, isUuidString } from './dev-autopilot-execute';
 import { allocateAndRegisterFindingVtid } from './dev-autopilot-vtid-allocate';
 
 const VTID = 'VTID-02665';
@@ -325,6 +325,20 @@ async function emitTicketDispatched(
 export const AUTO_DISPATCH_ACTOR = 'auto-dispatch';
 
 /**
+ * VTID-04649: the approver handed to the Dev Autopilot bridge.
+ *
+ * `dev_autopilot_executions.approved_by` is a uuid column and
+ * approveAutoExecute refuses any non-UUID approver (VTID-03839). The actor
+ * label ('auto-dispatch', or any other non-user label) stays on the OASIS
+ * events and the ticket; only a real user id is passed on as the approver.
+ * Before this, every auto-dispatch was refused with "approved_by must be a
+ * user UUID — got \"auto-dispatch\"" (live on staging 2026-09-24).
+ */
+export function bridgeApprover(approvedBy: string | null | undefined): string | null {
+  return typeof approvedBy === 'string' && isUuidString(approvedBy) ? approvedBy : null;
+}
+
+/**
  * Dispatch a feedback ticket through the dev autopilot pipeline.
  *
  * Idempotent: if linked_finding_id is already set, the existing
@@ -411,7 +425,7 @@ export async function dispatchFeedbackTicket(
       return { ok: false, recommendation_id: existingFindingId, error: vtidR.error,
         violations: [{ code: 'vtid_allocation_failed', message: vtidR.error }] };
     }
-    const bridgeR = await bridgeActivationToExecution(existingFindingId, approvedBy ?? null);
+    const bridgeR = await bridgeActivationToExecution(existingFindingId, bridgeApprover(approvedBy));
     if (!bridgeR.ok) {
       const decision = (bridgeR.decision ?? null) as { violations?: BridgeViolation[] } | null;
       const violations: BridgeViolation[] = decision?.violations
@@ -631,7 +645,7 @@ export async function dispatchFeedbackTicket(
     return { ok: false, recommendation_id: findingId, error: vtidR.error,
       violations: [{ code: 'vtid_allocation_failed', message: vtidR.error }] };
   }
-  const bridge = await bridgeActivationToExecution(findingId, approvedBy ?? null);
+  const bridge = await bridgeActivationToExecution(findingId, bridgeApprover(approvedBy));
   if (!bridge.ok) {
     // VTID-02669: surface decision.violations[] from the safety gate so the
     // UI can show exactly which rule rejected the recommendation. Common
