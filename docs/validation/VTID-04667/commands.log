@@ -1,0 +1,16 @@
+# VTID-04667 — commands run (cwd services/gateway unless noted)
+
+npx tsc --noEmit -p .                                   # clean
+node --check src/frontend/command-hub/app.js            # ok
+node scripts/generate-command-hub-symbol-index.mjs      # regenerated specs/command-hub-symbol-index.json (869 functions, 11 files)
+
+node node_modules/.bin/jest test/vtid-04667             # 4 suites, 48 tests passed (outputs/vtid-04667-suites.txt)
+node node_modules/.bin/jest test/command-hub test/vtid-04281-dev-autopilot-supervisor.test.ts
+                                                        # 27 suites, 369 tests passed
+node node_modules/.bin/jest test/vtid-04368-retry-storm-outage-gate.test.ts test/vtid-04243-turn-cap-breaker.test.ts \
+  test/vtid-04246-auto-approve-vtid-allocation.test.ts test/vtid-04280-pipeline-unstick.test.ts \
+  test/lazy-plan-retry-backoff.test.ts test/dev-autopilot-synthesis.test.ts test/vtid-04657-activate-reaches-execution.test.ts
+                                                        # 7 suites, 89 tests passed
+npm run test:operator                                   # 1 suite, 30 tests passed (rules 42e/42f)
+npm run test:support                                    # 4 suites, 82 tests passed (rules 42c/42d)
+node node_modules/.bin/jest                             # 1343 passed / 1 skipped suites; 21602 passed, 29 skipped, 6 todo; exit 0

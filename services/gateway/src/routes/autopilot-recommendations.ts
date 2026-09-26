@@ -449,7 +449,9 @@ export async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector,action';
+  // VTID-04667: source_type lets the Command Hub show "Create task" instead of
+  // "Activate" for recommendation types that have no executor.
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,economic_axis,autonomy_level,contribution_vector,action';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);

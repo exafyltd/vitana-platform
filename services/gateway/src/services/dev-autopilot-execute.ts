@@ -68,6 +68,19 @@ import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-
 import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
 import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-autopilot-vtid-allocate';
 import { decideRetryBreaker, detectProviderOutage, slotsUnderOutage, type OutageState } from './dev-autopilot-retry-breaker';
+// VTID-04667: P4 — stop spending tokens on work that does not land.
+import { loadScannerBreakers, isFindingBreakerOpen, type LoadedBreakers } from './dev-autopilot-scanner-breaker';
+import {
+  isNeverAutoExecuteSignal,
+  summarizeFindingSpend,
+  isOverFindingBudget,
+  resolveFindingBudget,
+  inOutageRequeueCooldown,
+  resolveOutageRequeueCooldownMs,
+  planFilesMissingFromIndex,
+  isPlanFileCheckEnabled,
+} from './dev-autopilot-approval-gates';
+import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
 // VTID-04467: agent runs are requeued, never run in-process without a toolchain.
 import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
 
@@ -3436,6 +3449,108 @@ async function ensureFindingVtid(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// VTID-04667: P4 gates for AUTONOMOUS approvals (never a human Activate).
+// ---------------------------------------------------------------------------
+
+/** Scanner / rule circuit breaker, with one OASIS event per transition. */
+export async function loadTickBreakers(s: SupaConfig): Promise<LoadedBreakers> {
+  return loadScannerBreakers(<T>(p: string) => supa<T>(s, p), { emitTransitions: true });
+}
+
+/**
+ * VTID-04667: an outage-class failure never re-queues the same finding more
+ * than once an hour. Fails open on a read error.
+ */
+async function outageRequeueAdmits(s: SupaConfig, findingId: string): Promise<boolean> {
+  const r = await supa<Array<{ status: string; updated_at: string; metadata: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}&order=updated_at.desc&limit=1&select=status,updated_at,metadata`,
+  );
+  if (!r.ok || !Array.isArray(r.data)) return true;
+  if (!inOutageRequeueCooldown(r.data[0])) return true;
+  console.log(`${LOG_PREFIX} auto-approve skipped ${findingId.slice(0, 8)}: last execution died on a provider outage < ${Math.round(resolveOutageRequeueCooldownMs() / 60000)} min ago (VTID-04667)`);
+  return false;
+}
+
+/**
+ * VTID-04667: per-finding token budget across every recorded agent run.
+ * Over budget → snooze 7 d with dev_autopilot.finding.snoozed. Fails open.
+ */
+async function findingBudgetAdmits(s: SupaConfig, findingId: string, pass: 'baseline' | 'impact'): Promise<boolean> {
+  const r = await supa<Array<{ metadata: unknown }>>(
+    s,
+    `/rest/v1/dev_autopilot_outcomes?finding_id=eq.${findingId}&select=metadata&limit=50`,
+  );
+  if (!r.ok || !Array.isArray(r.data)) return true;
+  const spend = summarizeFindingSpend(r.data);
+  const budget = resolveFindingBudget();
+  if (!isOverFindingBudget(spend, budget)) return true;
+  const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+  await supa(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&status=eq.new`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'snoozed', snoozed_until: snoozedUntil, updated_at: new Date().toISOString() }),
+    },
+  );
+  const why = `agent spend $${spend.cost_usd.toFixed(2)} / ${spend.input_tokens} input tokens over ${spend.runs} run(s) reached the per-finding budget`;
+  console.log(`${LOG_PREFIX} auto-approve (${pass}) refused ${findingId.slice(0, 8)}: ${why} — snoozed 7d (VTID-04667)`);
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.finding.snoozed',
+    source: 'dev-autopilot',
+    status: 'warning',
+    message: `Finding ${findingId.slice(0, 8)} snoozed 7d (${pass} pass): ${why}`,
+    payload: { finding_id: findingId, pass, reason: 'token_budget', spend, budget, snoozed_until: snoozedUntil },
+  });
+  return false;
+}
+
+// VTID-04667: the codebase index for the plan-file check — loaded at most
+// once per TTL, never retried for PLAN_INDEX_RETRY_MS after a failure, and
+// bounded in time so a slow S3 never stalls the tick.
+const PLAN_INDEX_TIMEOUT_MS = 3000;
+const PLAN_INDEX_RETRY_MS = 10 * 60 * 1000;
+let planIndexUnavailableUntil = 0;
+async function loadPlanIndex(): Promise<CodeIndexBundle | null> {
+  if (!isPlanFileCheckEnabled() || Date.now() < planIndexUnavailableUntil) return null;
+  try {
+    const loaded = await Promise.race([
+      loadCodeIndex('exafyltd/vitana-platform'),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('code index load timed out')), PLAN_INDEX_TIMEOUT_MS).unref?.()),
+    ]);
+    return loaded.bundle;
+  } catch (err) {
+    planIndexUnavailableUntil = Date.now() + PLAN_INDEX_RETRY_MS;
+    console.log(`${LOG_PREFIX} plan-file check skipped: code index unavailable (${err instanceof Error ? err.message : String(err)})`);
+    return null;
+  }
+}
+
+/**
+ * VTID-04667: the plan's non-test code files must exist in the codebase
+ * index. No index → no block. Skips (no snooze) so a plan fixed later, or an
+ * index that catches up with a recent merge, is picked up on a later tick.
+ */
+async function planFilesExistAdmits(s: SupaConfig, findingId: string, index: CodeIndexBundle | null): Promise<boolean> {
+  if (!index) return true;
+  const planR = await supa<Array<{ plan_markdown: string | null; files_referenced: string[] | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&order=version.desc&limit=1&select=plan_markdown,files_referenced`,
+  );
+  if (!planR.ok || !Array.isArray(planR.data) || !planR.data[0]) return true;
+  const plan = planR.data[0];
+  const fresh = extractFilePaths(plan.plan_markdown || '');
+  const files = fresh.length > 0 ? fresh : (plan.files_referenced || []).map(String);
+  const missing = planFilesMissingFromIndex(files, index);
+  if (missing.length === 0) return true;
+  console.log(`${LOG_PREFIX} auto-approve skipped ${findingId.slice(0, 8)}: plan names file(s) not in the codebase index @${index.sha.slice(0, 7)}: ${missing.slice(0, 5).join(', ')} (VTID-04667)`);
+  return false;
+}
+
 // VTID-04368: global LLM-provider outage state (see dev-autopilot-retry-breaker.ts).
 // Latched per process so the OASIS event fires on the transition, not every tick.
 let lastOutageState: OutageState = 'clear';
@@ -3571,9 +3686,20 @@ export async function autoApproveTick(): Promise<void> {
   if (plannedIds === null) return;
   const plannedFindings = selectPlannedCandidates(findingsR.data, plannedIds);
 
+  // VTID-04667: one breaker read per tick (cached 60 s), shared by both
+  // passes. The plan index is loaded lazily, only if a finding gets that far.
+  const breakers = await loadTickBreakers(s);
+  let planIndex: Promise<CodeIndexBundle | null> | null = null;
+  const tickPlanIndex = () => (planIndex ??= loadPlanIndex());
+
   let approved = 0;
   for (const f of plannedFindings) {
     if (approved >= slots) break;
+
+    // VTID-04667: scanner breaker open → this scanner's work does not land.
+    if (isFindingBreakerOpen(breakers, f)) continue;
+    // VTID-04667: large_file refactors are never auto-executed.
+    if (isNeverAutoExecuteSignal(f.spec_snapshot as { signal_type?: unknown } | null)) continue;
 
     // Dedup: skip findings that already have a non-terminal execution.
     // Without this, every tick approves a NEW execution row even though
@@ -3607,6 +3733,10 @@ export async function autoApproveTick(): Promise<void> {
     // drain (452 execs on 6 findings) and the 2026-09-21 npm-audit chain are
     // the history; outage failures no longer count toward the cap.
     if (!(await retryBreakerAdmits(s, f.id, 'baseline'))) continue;
+    // VTID-04667: outage requeue cap, per-finding token budget, plan files exist.
+    if (!(await outageRequeueAdmits(s, f.id))) continue;
+    if (!(await findingBudgetAdmits(s, f.id, 'baseline'))) continue;
+    if (!(await planFilesExistAdmits(s, f.id, await tickPlanIndex()))) continue;
 
     // Pass undefined so the INSERT writes approved_by=NULL.
     // Earlier code passed the string literal 'auto', but approved_by is a
@@ -3677,8 +3807,15 @@ export async function autoApproveTick(): Promise<void> {
         for (const f of impactR.data) {
           if (approved >= slots) break;
 
+          // VTID-04667: rule breaker (key impact:<rule>) and large_file skip.
+          if (isFindingBreakerOpen(breakers, f)) continue;
+          if (isNeverAutoExecuteSignal(f.spec_snapshot as { signal_type?: unknown } | null)) continue;
+
           // VTID-04368: the same retry breaker as the baseline pass.
           if (!(await retryBreakerAdmits(s, f.id, 'impact'))) continue;
+          // VTID-04667: outage requeue cap + per-finding token budget.
+          if (!(await outageRequeueAdmits(s, f.id))) continue;
+          if (!(await findingBudgetAdmits(s, f.id, 'impact'))) continue;
 
           // Plan must exist — approveAutoExecute requires it. Impact
           // findings don't get eager plans by default, so we generate one
@@ -3692,6 +3829,8 @@ export async function autoApproveTick(): Promise<void> {
             console.log(`${LOG_PREFIX} auto-approve (impact) skipping ${f.id.slice(0, 8)}: no plan yet — will retry after eager-plan runs`);
             continue;
           }
+          // VTID-04667: the plan's files must exist (skipped when the index is unavailable).
+          if (!(await planFilesExistAdmits(s, f.id, await tickPlanIndex()))) continue;
 
           // Pass undefined so the INSERT writes approved_by=NULL.
     // Earlier code passed the string literal 'auto', but approved_by is a
@@ -3872,7 +4011,7 @@ export async function lazyPlanTick(): Promise<void> {
   // also receive lazy plans. Without this, autoApproveTick can never approve
   // them — they sit at status='new' with no plan forever.
   const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
-  const candidatesR = await supa<Array<{ id: string }>>(
+  const candidatesR = await supa<Array<{ id: string; source_type?: string | null; spec_snapshot?: { scanner?: string; rule?: string } | null }>>(
     s,
     `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})`
     + `&status=eq.new&risk_class=in.${riskFilter}`
@@ -3880,9 +4019,16 @@ export async function lazyPlanTick(): Promise<void> {
     // skipped inside it, so once 12 higher-impact rows were planned the
     // planless ones below were never reached. Wide window + one batch
     // plan lookup; nullslast so an unscored finding is still planned.
-    + `&order=impact_score.desc.nullslast,created_at.asc&limit=${LAZY_PLAN_CANDIDATE_WINDOW}&select=id`,
+    + `&order=impact_score.desc.nullslast,created_at.asc&limit=${LAZY_PLAN_CANDIDATE_WINDOW}&select=id,source_type,spec_snapshot`,
   );
   if (!candidatesR.ok || !candidatesR.data) return;
+  // VTID-04667: no planner LLM spend on a scanner whose breaker is open.
+  const breakers = await loadTickBreakers(s);
+  const breakerSkipped = candidatesR.data.filter((f) => isFindingBreakerOpen(breakers, f)).length;
+  if (breakerSkipped > 0) {
+    console.log(`${LOG_PREFIX} lazy-plan skipped ${breakerSkipped} finding(s) whose scanner breaker is open (VTID-04667)`);
+    candidatesR.data = candidatesR.data.filter((f) => !isFindingBreakerOpen(breakers, f));
+  }
   const alreadyPlanned = await fetchPlannedFindingIds(s, candidatesR.data.map(f => f.id));
   if (alreadyPlanned === null) return;
   const findingsR = { data: selectPlanlessCandidates(candidatesR.data, alreadyPlanned) };
