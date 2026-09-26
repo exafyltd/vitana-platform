@@ -62,8 +62,18 @@ jest.mock('../src/services/persona-registry', () => ({
   pickPersonaForKindForTenant: jest.fn(async (kind: string) => (kind === 'bug' || kind === 'ux_issue' ? 'devon' : null)),
 }));
 
-jest.mock('../src/services/dev-autopilot-execute', () => ({
-  bridgeActivationToExecution: jest.fn(async (findingId: string) => {
+jest.mock('../src/services/dev-autopilot-execute', () => {
+  const { isUuidString } = jest.requireActual('../src/services/dev-autopilot-execute');
+  return {
+  isUuidString,
+  bridgeActivationToExecution: jest.fn(async (findingId: string, approvedBy: string | null = null) => {
+    // VTID-04649: the real approveAutoExecute refuses a non-UUID approver
+    // (dev_autopilot_executions.approved_by is uuid, VTID-03839). The stub
+    // enforces the same rule so a label such as 'auto-dispatch' fails here
+    // exactly as it failed live on staging.
+    if (approvedBy && !isUuidString(approvedBy)) {
+      return { ok: false, error: `approved_by must be a user UUID (dev_autopilot_executions.approved_by is uuid) — got "${approvedBy}". ` };
+    }
     const ex = mockPlatform.insert('dev_autopilot_executions', {
       finding_id: findingId,
       status: 'cooling',
@@ -73,7 +83,8 @@ jest.mock('../src/services/dev-autopilot-execute', () => ({
     });
     return { ok: true, execution_id: ex.id };
   }),
-}));
+  };
+});
 
 jest.mock('../src/services/dev-autopilot-vtid-allocate', () => ({
   allocateAndRegisterFindingVtid: jest.fn(async (_s: unknown, input: { findingId: string }) => {
