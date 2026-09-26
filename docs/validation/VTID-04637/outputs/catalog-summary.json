@@ -1,0 +1,1656 @@
+{
+ "sources": {
+  "platform": {
+   "repo": "exafyltd/vitana-platform",
+   "sha": "31e6967d570152126aa4067c4cba52aa41a1af89",
+   "missing": false
+  },
+  "frontend": {
+   "repo": "exafyltd/vitana-v1",
+   "sha": "69d5465b0011889a9b0c52097e9c8b1fde7d5a83",
+   "missing": false
+  }
+ },
+ "summary": {
+  "files": 1644,
+  "cases": 19444,
+  "suites": 116,
+  "never_run_suites": [
+   "frontend:node-regressions",
+   "frontend:src:tests-excluded",
+   "platform:e2e:ios-suites",
+   "platform:gateway:uncollected",
+   "platform:py:agents/memory-indexer",
+   "platform:py:agents/orb-agent",
+   "platform:py:agents/vitana-orchestrator",
+   "platform:svc:agents/workforce",
+   "platform:svc:vcaop-mcp"
+  ],
+  "workflows": 60,
+  "scheduled_workflows": 19,
+  "scheduled_runs_per_day": 373,
+  "flagged_workflows": [
+   {
+    "file": "ANDROID-DEVICE-E2E.yml",
+    "flags": [
+     "dead_host"
+    ]
+   },
+   {
+    "file": "MOBILE-DEVICE-E2E.yml",
+    "flags": [
+     "dead_host"
+    ]
+   },
+   {
+    "file": "MORNING-SYSTEM-HEALTH-CHECK.yml",
+    "flags": [
+     "ui_test_touches_production"
+    ]
+   },
+   {
+    "file": "SCREEN-LOAD-TIMING.yml",
+    "flags": [
+     "ui_test_touches_production"
+    ]
+   },
+   {
+    "file": "E2E-PREVIEW-ORB.yml",
+    "flags": [
+     "dead_host"
+    ]
+   },
+   {
+    "file": "STAGE-DEPLOY-FRONTEND.yml",
+    "flags": [
+     "dead_host"
+    ]
+   }
+  ],
+  "by_environment": {
+   "dev_pr": {
+    "suites": 102,
+    "workflows": 23
+   },
+   "nightly": {
+    "suites": 102,
+    "workflows": 7
+   },
+   "staging": {
+    "suites": 4,
+    "workflows": 16
+   },
+   "production": {
+    "suites": 3,
+    "workflows": 18
+   }
+  },
+  "by_runner": {
+   "playwright": {
+    "files": 35,
+    "cases": 57
+   },
+   "node-test": {
+    "files": 1,
+    "cases": 16
+   },
+   "pytest": {
+    "files": 26,
+    "cases": 209
+   },
+   "jest": {
+    "files": 1380,
+    "cases": 18078
+   },
+   "vitest": {
+    "files": 192,
+    "cases": 1083
+   },
+   "node-script": {
+    "files": 10,
+    "cases": 1
+   }
+  },
+  "by_domain": {
+   "deploy": {
+    "files": 49,
+    "cases": 368
+   },
+   "community": {
+    "files": 104,
+    "cases": 657
+   },
+   "voice": {
+    "files": 325,
+    "cases": 4186
+   },
+   "memory": {
+    "files": 181,
+    "cases": 3263
+   },
+   "other": {
+    "files": 155,
+    "cases": 1901
+   },
+   "agents": {
+    "files": 109,
+    "cases": 1147
+   },
+   "support": {
+    "files": 46,
+    "cases": 457
+   },
+   "backoffice": {
+    "files": 18,
+    "cases": 175
+   },
+   "autopilot": {
+    "files": 109,
+    "cases": 1830
+   },
+   "admin": {
+    "files": 95,
+    "cases": 953
+   },
+   "commerce": {
+    "files": 128,
+    "cases": 1380
+   },
+   "infra": {
+    "files": 17,
+    "cases": 197
+   },
+   "health": {
+    "files": 78,
+    "cases": 825
+   },
+   "llm": {
+    "files": 23,
+    "cases": 241
+   },
+   "oasis": {
+    "files": 146,
+    "cases": 1512
+   },
+   "payments": {
+    "files": 17,
+    "cases": 134
+   },
+   "frontend": {
+    "files": 44,
+    "cases": 218
+   }
+  }
+ },
+ "suites": [
+  {
+   "id": "frontend:calendar-golden",
+   "files": 4,
+   "cases": 46,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml",
+    "CALENDAR-REGRESSION.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components",
+   "files": 3,
+   "cases": 13,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/autopilot",
+   "files": 1,
+   "cases": 3,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/calendar",
+   "files": 5,
+   "cases": 62,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/capture",
+   "files": 1,
+   "cases": 5,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/commerce",
+   "files": 4,
+   "cases": 35,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/community",
+   "files": 1,
+   "cases": 3,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/contacts",
+   "files": 1,
+   "cases": 10,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/discover",
+   "files": 1,
+   "cases": 5,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/health",
+   "files": 2,
+   "cases": 6,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/home",
+   "files": 2,
+   "cases": 22,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/journey",
+   "files": 2,
+   "cases": 10,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/meetups",
+   "files": 2,
+   "cases": 4,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/memory",
+   "files": 1,
+   "cases": 8,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/mobile",
+   "files": 4,
+   "cases": 27,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/profile",
+   "files": 10,
+   "cases": 59,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/settings",
+   "files": 2,
+   "cases": 16,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/support",
+   "files": 2,
+   "cases": 10,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/tickets",
+   "files": 2,
+   "cases": 6,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:components/ui",
+   "files": 2,
+   "cases": 14,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:config",
+   "files": 2,
+   "cases": 14,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:context",
+   "files": 1,
+   "cases": 4,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:contexts",
+   "files": 5,
+   "cases": 15,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:e2e-scripts",
+   "files": 6,
+   "cases": 2,
+   "environments": [],
+   "runs_in": [
+    "E2E-PREVIEW-ORB.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:hooks",
+   "files": 51,
+   "cases": 225,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:i18n",
+   "files": 2,
+   "cases": 10,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:lib",
+   "files": 43,
+   "cases": 306,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:navigation",
+   "files": 5,
+   "cases": 31,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:node-regressions",
+   "files": 10,
+   "cases": 1,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "frontend:pages",
+   "files": 13,
+   "cases": 59,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:pages/admin",
+   "files": 10,
+   "cases": 33,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:pages/backoffice",
+   "files": 1,
+   "cases": 1,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:pages/community",
+   "files": 2,
+   "cases": 5,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:pages/health",
+   "files": 1,
+   "cases": 4,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:pages/staff",
+   "files": 1,
+   "cases": 3,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "UNIT-TESTS.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "frontend:src:tests-excluded",
+   "files": 2,
+   "cases": 1,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:e2e:command-hub",
+   "files": 5,
+   "cases": 13,
+   "environments": [
+    "staging",
+    "production"
+   ],
+   "runs_in": [
+    "E2E-TEST-RUN.yml",
+    "E2E-ORB-MONITOR.yml",
+    "SCREEN-LOAD-TIMING.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:e2e:community-desktop",
+   "files": 10,
+   "cases": 13,
+   "environments": [
+    "staging",
+    "production"
+   ],
+   "runs_in": [
+    "E2E-TEST-RUN.yml",
+    "E2E-ORB-MONITOR.yml",
+    "SCREEN-LOAD-TIMING.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:e2e:community-mobile",
+   "files": 11,
+   "cases": 23,
+   "environments": [
+    "staging",
+    "production"
+   ],
+   "runs_in": [
+    "E2E-TEST-RUN.yml",
+    "E2E-ORB-MONITOR.yml",
+    "SCREEN-LOAD-TIMING.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:e2e:ios-suites",
+   "files": 3,
+   "cases": 6,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:gateway:architecture",
+   "files": 1,
+   "cases": 4,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:calendar",
+   "files": 3,
+   "cases": 52,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:chat",
+   "files": 1,
+   "cases": 9,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:command-hub",
+   "files": 22,
+   "cases": 192,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:connectors",
+   "files": 1,
+   "cases": 11,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:data",
+   "files": 1,
+   "cases": 2,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:db-i18n",
+   "files": 4,
+   "cases": 96,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:frontend",
+   "files": 38,
+   "cases": 323,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:i18n",
+   "files": 2,
+   "cases": 24,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:lib",
+   "files": 2,
+   "cases": 14,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:middleware",
+   "files": 6,
+   "cases": 82,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:nav-golden",
+   "files": 4,
+   "cases": 16,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:nav-redirect",
+   "files": 1,
+   "cases": 8,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:navigation",
+   "files": 4,
+   "cases": 63,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb",
+   "files": 13,
+   "cases": 145,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb-tools",
+   "files": 47,
+   "cases": 847,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/acceptance",
+   "files": 3,
+   "cases": 26,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/context",
+   "files": 16,
+   "cases": 178,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/instruction",
+   "files": 1,
+   "cases": 4,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/latency",
+   "files": 1,
+   "cases": 6,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/live",
+   "files": 166,
+   "cases": 1919,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/routes",
+   "files": 5,
+   "cases": 55,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/teacher",
+   "files": 1,
+   "cases": 11,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/tools",
+   "files": 1,
+   "cases": 17,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:orb/upstream",
+   "files": 2,
+   "cases": 28,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:partner-health",
+   "files": 2,
+   "cases": 16,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:providers",
+   "files": 3,
+   "cases": 54,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:regression",
+   "files": 247,
+   "cases": 2477,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:root",
+   "files": 237,
+   "cases": 3682,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:routes",
+   "files": 127,
+   "cases": 1846,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:scripts",
+   "files": 16,
+   "cases": 194,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:security",
+   "files": 1,
+   "cases": 14,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services",
+   "files": 141,
+   "cases": 2298,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/admin-scanners",
+   "files": 1,
+   "cases": 21,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/assistant-continuation",
+   "files": 34,
+   "cases": 623,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/capability-awareness",
+   "files": 7,
+   "cases": 82,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/concept-mastery",
+   "files": 4,
+   "cases": 51,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/continuity",
+   "files": 6,
+   "cases": 87,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/conversation",
+   "files": 31,
+   "cases": 470,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/decision-contract",
+   "files": 19,
+   "cases": 239,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/dev-autopilot",
+   "files": 1,
+   "cases": 12,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/dev-memory",
+   "files": 2,
+   "cases": 13,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/greeting-decay",
+   "files": 1,
+   "cases": 10,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/guide",
+   "files": 18,
+   "cases": 123,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/guided-journey",
+   "files": 2,
+   "cases": 16,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/intelligence",
+   "files": 1,
+   "cases": 13,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/interaction-style",
+   "files": 1,
+   "cases": 1,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/journey",
+   "files": 4,
+   "cases": 27,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/journey-stage",
+   "files": 4,
+   "cases": 61,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/memory",
+   "files": 10,
+   "cases": 94,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/orb",
+   "files": 1,
+   "cases": 3,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/orb-tools",
+   "files": 2,
+   "cases": 33,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/orchestrator",
+   "files": 9,
+   "cases": 132,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/pillar-momentum",
+   "files": 2,
+   "cases": 13,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/realtime",
+   "files": 3,
+   "cases": 25,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/recommendation-engine",
+   "files": 4,
+   "cases": 43,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/social-memory",
+   "files": 8,
+   "cases": 234,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/tts",
+   "files": 4,
+   "cases": 47,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/voice-lab",
+   "files": 5,
+   "cases": 113,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/voice-tools",
+   "files": 3,
+   "cases": 88,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:services/wake-timeline",
+   "files": 7,
+   "cases": 72,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:tts",
+   "files": 3,
+   "cases": 41,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:uncollected",
+   "files": 6,
+   "cases": 153,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:gateway:unit",
+   "files": 1,
+   "cases": 3,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:validator-core",
+   "files": 1,
+   "cases": 1,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:gateway:voice-lab",
+   "files": 1,
+   "cases": 28,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:py:agents/memory-indexer",
+   "files": 1,
+   "cases": 17,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:py:agents/orb-agent",
+   "files": 17,
+   "cases": 107,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:py:agents/vitana-orchestrator",
+   "files": 3,
+   "cases": 50,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:py:erp-bridge",
+   "files": 5,
+   "cases": 35,
+   "environments": [
+    "staging"
+   ],
+   "runs_in": [
+    "AWS-STAGE-DEPLOY-ERP-BRIDGE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:scripts:ci",
+   "files": 1,
+   "cases": 16,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:svc:agents/workforce",
+   "files": 1,
+   "cases": 21,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  },
+  {
+   "id": "platform:svc:oasis-projector",
+   "files": 1,
+   "cases": 21,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:svc:openclaw-bridge",
+   "files": 1,
+   "cases": 8,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:svc:vcaop",
+   "files": 45,
+   "cases": 293,
+   "environments": [
+    "dev_pr",
+    "nightly"
+   ],
+   "runs_in": [
+    "TEST-SUITE.yml",
+    "VCAOP-CICD.yml",
+    "VCAOP-GUARDRAILS-CI.yml",
+    "VCAOP-HEALTH.yml"
+   ],
+   "never_run": false
+  },
+  {
+   "id": "platform:svc:vcaop-mcp",
+   "files": 7,
+   "cases": 58,
+   "environments": [],
+   "runs_in": [],
+   "never_run": true
+  }
+ ]
+}
