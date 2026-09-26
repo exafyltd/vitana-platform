@@ -43,6 +43,7 @@ const DEFAULT_MIN_WRITE_INTERVAL_MS = 10 * 60_000;
 const DEFAULT_STALE_REWRITE_MS = 6 * 3_600_000;
 const DEFAULT_READ_TIMEOUT_MS = 1_500;
 const DEFAULT_REFRESH_DELAY_MS = 90_000;
+const DEFAULT_EDIT_REFRESH_DELAY_MS = 3_000;
 
 export type SnapshotRole = 'community';
 
@@ -320,13 +321,19 @@ async function defaultBuildCore(input: Parameters<BuildCoreFn>[0]) {
 
 export function scheduleSnapshotRefresh(
   input: { tenantId: string; userId: string; role?: string | null; lang?: string | null; timezone?: string | null },
-  deps: SnapshotDeps & { delayMs?: number; buildCore?: BuildCoreFn; onDone?: (r: { written: boolean; reason: string }) => void } = {},
+  deps: SnapshotDeps & {
+    delayMs?: number;
+    buildCore?: BuildCoreFn;
+    onDone?: (r: { written: boolean; reason: string }) => void;
+    /** Debounce lane. Lanes never cancel each other (VTID-04627). */
+    lane?: 'finalize' | 'edit';
+  } = {},
 ): { scheduled: boolean; reason: string } {
   if (!isBrainCoreSnapshotEnabled()) return { scheduled: false, reason: 'disabled' };
   if (!input.tenantId || !input.userId) return { scheduled: false, reason: 'no_identity' };
   const role = (input.role || 'community').toLowerCase();
   if (role !== 'community') return { scheduled: false, reason: 'non_community_role' };
-  const key = `${input.tenantId}|${input.userId}`;
+  const key = `${input.tenantId}|${input.userId}${deps.lane === 'edit' ? '|edit' : ''}`;
   const prior = pendingRefresh.get(key);
   if (prior) clearTimeout(prior);
   const delayMs = deps.delayMs ?? envMs(process.env.BRAIN_CORE_SNAPSHOT_REFRESH_DELAY_MS, DEFAULT_REFRESH_DELAY_MS);
@@ -365,6 +372,39 @@ export function scheduleSnapshotRefresh(
   timer.unref?.();
   pendingRefresh.set(key, timer);
   return { scheduled: true, reason: prior ? 'rescheduled' : 'scheduled' };
+}
+
+/**
+ * VTID-04627 — the member changed their memory (Memory Garden add / edit /
+ * delete, or a fact saved by remember_fact). Rebuild the snapshot within
+ * seconds instead of waiting for the next session to end.
+ *
+ * WHY: a session whose fresh build misses the stream-open gate runs on the
+ * snapshot for its whole length. Before this, a fact added in the Garden was
+ * missing from the next conversation (measured on staging: "Wie heißt mein
+ * Hund?" answered "not stored" with the fact present), and a fact DELETED in
+ * the Garden stayed in the snapshot and could still be spoken.
+ *
+ * Runs in its own debounce lane so it never cancels the delayed post-session
+ * refresh, which waits for the session's memory commit. Fire-and-forget.
+ */
+export function refreshSnapshotAfterMemoryEdit(
+  input: { tenantId: string; userId: string },
+  deps: SnapshotDeps & { delayMs?: number; buildCore?: BuildCoreFn; onDone?: (r: { written: boolean; reason: string }) => void } = {},
+): { scheduled: boolean; reason: string } {
+  try {
+    return scheduleSnapshotRefresh(
+      { tenantId: input.tenantId, userId: input.userId, role: 'community' },
+      {
+        ...deps,
+        lane: 'edit',
+        delayMs: deps.delayMs ?? envMs(process.env.BRAIN_CORE_SNAPSHOT_EDIT_REFRESH_DELAY_MS, DEFAULT_EDIT_REFRESH_DELAY_MS),
+      },
+    );
+  } catch (err) {
+    console.warn(`[VTID-04627] snapshot edit refresh not scheduled: ${err instanceof Error ? err.message : String(err)}`);
+    return { scheduled: false, reason: 'schedule_failed' };
+  }
 }
 
 // ----------------------------------------------------------------------------

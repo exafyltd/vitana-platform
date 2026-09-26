@@ -1,0 +1,9 @@
+# live diagnosis (read-only)
+select topic, metadata from oasis_events where metadata->>'session_id'='live-65523b9d-5a1d-428f-a290-d51bdd12271c'
+  -> core_snapshot_used chars=12418; no tool events
+select value->>'built_at', position('Bello' in value->>'instruction') from user_assistant_state
+  where user_id=<test user> and signal_name='brain_core_snapshot_v1'   -> no Bello
+# local
+npx tsc --noEmit -p services/gateway                                 -> clean
+npx jest test/services/conversation/ test/memory-verification-conformance.test.ts <garden/remember/forget suites>
+  -> 42 suites, 978 tests passed

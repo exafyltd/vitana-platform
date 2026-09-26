@@ -37,6 +37,7 @@ import {
 } from '../services/memory/garden';
 import { normalizeDiaryInput, saveDiaryEntry, deleteDiaryEntry } from '../services/memory/diary';
 import { listDailyLearnings } from '../services/memory/daily-learning';
+import { refreshSnapshotAfterMemoryEdit } from '../services/conversation/brain-core-snapshot';
 
 const router = Router();
 const VTID = 'VTID-04388';
@@ -53,6 +54,8 @@ function kindOf(v: string): 'fact' | 'episode' | null {
 }
 
 function emitWrite(identity: GardenIdentity, action: string, kind: string, id: string | null): void {
+  // VTID-04627: the next voice session must see this change, not a snapshot from before it.
+  refreshSnapshotAfterMemoryEdit({ tenantId: identity.tenant_id, userId: identity.user_id });
   emitOasisEvent({
     vtid: VTID,
     type: 'memory.garden.edited' as any,
