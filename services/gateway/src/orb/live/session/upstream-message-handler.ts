@@ -33,6 +33,7 @@
  */
 
 import { shouldEndConversationAfterTurn } from './end-conversation-intent';
+import { maybeRunNavigateBackstop, noteNavigateToolCall } from './navigate-backstop-hook';
 import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
@@ -1472,6 +1473,7 @@ export function createUpstreamLiveMessageHandler(
           } else {
             for (const fc of functionCalls) {
             const toolName = fc.name;
+            noteNavigateToolCall(session, toolName);
             const toolArgs = fc.args || {};
             const callId = fc.id || randomUUID();
 
@@ -2078,6 +2080,7 @@ export function handleToolCall(
 
   for (const fc of event.calls) {
     const toolName = fc.name;
+    noteNavigateToolCall(session, toolName);
     const toolArgs = fc.args || {};
     const callId = fc.id || randomUUID();
 
@@ -2471,6 +2474,11 @@ export function handleTurnComplete(
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
     maybeRunRememberBackstop(ctx, session, userText);
+
+    // VTID-04619: Vitana said she is opening a page but never called navigate
+    // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no
+    // tool call, the repeats muted as duplicates). The gateway navigates.
+    maybeRunNavigateBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {

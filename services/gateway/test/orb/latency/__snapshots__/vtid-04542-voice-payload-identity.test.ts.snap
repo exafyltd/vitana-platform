@@ -3841,7 +3841,7 @@ exports[`VTID-04542 C2 — session-start persistence identity (handleLiveSession
   ],
   "session": {
     "active_role": "community",
-    "context_instruction_sha256": "70281a4bd22b5ecb5f93a5684b2304369580da6fa2def658332967dad491ec53",
+    "context_instruction_sha256": "500f6adcc01464a78c5371c2303fa109fb54525cdc4ec38754108aec7a9c31b5",
     "had_context_ready_promise": true,
     "has_identity": true,
     "is_anonymous": false,
