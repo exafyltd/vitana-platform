@@ -11,7 +11,9 @@
 # pretending (verified live 2026-09-17 for logs:FilterLogEvents, VTID-04020):
 #
 #   dev_cloudwatch_logs   (VTID-04020)  logs:FilterLogEvents + logs:DescribeLogGroups
-#                                        on /ecs/vitana-* log groups
+#                                        on /vitana/* log groups (the real
+#                                        awslogs-group of every task def,
+#                                        VTID-04672) and legacy /ecs/vitana-*
 #   dev_ecs_tasks         (VTID-04035)  ecs:ListTasks + ecs:DescribeTasks on
 #                                        cluster Vitana-ECS-Cluster
 #   cancel a running run  (VTID-04032)  ecs:StopTask on tasks in that cluster
@@ -77,7 +79,9 @@ POLICY_DOC=$(cat <<JSON
       "Action": ["logs:FilterLogEvents", "logs:DescribeLogGroups", "logs:DescribeLogStreams"],
       "Resource": [
         "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/ecs/vitana-*",
-        "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/ecs/vitana-*:*"
+        "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/ecs/vitana-*:*",
+        "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/vitana/*",
+        "arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/vitana/*:*"
       ]
     },
     {
