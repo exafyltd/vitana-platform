@@ -35494,8 +35494,18 @@ function tqHeader(title, subtitle) {
     return box;
 }
 
+// Full class names, spelled out: find-dead-css-classes.mjs only sees literal
+// class strings, so a concatenated 'tq-pill-' + kind reads as dead CSS.
+var TQ_PILL_CLASS = {
+    ok: 'tq-pill tq-pill-ok',
+    bad: 'tq-pill tq-pill-bad',
+    warn: 'tq-pill tq-pill-warn',
+    neutral: 'tq-pill tq-pill-neutral',
+    env: 'tq-pill tq-pill-env'
+};
+
 function tqPill(text, kind) {
-    return tqEl('span', 'tq-pill tq-pill-' + (kind || 'neutral'), text);
+    return tqEl('span', TQ_PILL_CLASS[kind] || TQ_PILL_CLASS.neutral, text);
 }
 
 function tqConclusionKind(conclusion) {
