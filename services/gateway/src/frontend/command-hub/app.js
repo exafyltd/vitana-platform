@@ -6565,9 +6565,10 @@ function renderHeader() {
         var hmHeader = document.createElement('div');
         hmHeader.className = 'modal-header';
         hmHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
-        var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
+        // VTID-04661: colour via class, not an inline style (CSP gate).
+        var titleClass = capsFailing > 0 ? 'health-modal__title health-modal__title--bad' : 'health-modal__title health-modal__title--ok';
         hmHeader.innerHTML =
-            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
+            '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
             (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
             (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' no access</span>' : '') +
             '</span>' +
