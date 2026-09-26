@@ -165,8 +165,11 @@ function countCases(text, runner) {
 function extractHosts(text) {
   const hosts = new Set();
   const re = /https?:\/\/((?:[a-z0-9-]+\.)*vitanaland\.com|[a-z0-9.-]+\.run\.app)/gi;
+  // A shell glob (`https://host*`, e.g. a `case` refusing production) is a
+  // matcher, not a target.
+  const src = String(text || '').replace(/https?:\/\/[^\s'"|)]*\*/g, '');
   let m;
-  while ((m = re.exec(String(text || '')))) hosts.add(m[1].toLowerCase().replace(/\.$/, ''));
+  while ((m = re.exec(src))) hosts.add(m[1].toLowerCase().replace(/\.$/, ''));
   return [...hosts].sort();
 }
 
@@ -285,6 +288,28 @@ function environmentsForWorkflow(triggers, hosts, kind, file = '', runners = [])
   return ENVIRONMENTS.filter((e) => env.has(e));
 }
 
+// Hosts a Playwright run actually targets. A workflow can curl production for a
+// read-only health check and run its browser suite on staging; judging the
+// whole file would call that a browser test on production. So only the steps
+// that run `playwright test` count, `${{ env.X }}` is resolved against the
+// workflow's own env block, and shell glob patterns (`https://host*`, as in a
+// `case` that refuses production) are matchers, not targets. A workflow whose
+// playwright step cannot be found falls back to every host in the file.
+function playwrightTargetHosts(text) {
+  const t = stripYamlComments(text);
+  const envMap = {};
+  const envRe = /^\s*([A-Z][A-Z0-9_]*):\s*['"]?(https?:\/\/[^\s'"]+)['"]?\s*$/gm;
+  let m;
+  while ((m = envRe.exec(t))) if (!(m[1] in envMap)) envMap[m[1]] = m[2];
+  const steps = t.split(/^\s*-\s+(?=(?:name|uses|run|id|if|with|env|working-directory):)/m);
+  const runs = steps.filter((s) => /playwright\s+test|npm\s+run\s+(test:)?e2e\b/.test(s));
+  if (!runs.length) return extractHosts(t);
+  const resolved = runs
+    .join('\n')
+    .replace(/\$\{\{\s*env\.([A-Z][A-Z0-9_]*)\s*\}\}/g, (_, k) => envMap[k] || '');
+  return extractHosts(resolved);
+}
+
 function parseWorkflow(repo, file, text) {
   const t = String(text || '');
   const nameMatch = t.match(/^name:\s*['"]?(.+?)['"]?\s*$/m);
@@ -295,7 +320,7 @@ function parseWorkflow(repo, file, text) {
   const deadHosts = hosts.filter((h) => hostClass(h) === 'dead');
   const flags = [];
   if (deadHosts.length) flags.push('dead_host');
-  if (runners.includes('playwright') && hosts.some((h) => hostClass(h) === 'production')) flags.push('ui_test_touches_production');
+  if (runners.includes('playwright') && playwrightTargetHosts(t).some((h) => hostClass(h) === 'production')) flags.push('ui_test_touches_production');
   if (kind === 'placeholder') flags.push('placeholder_no_tests');
   return {
     id: `${repo}:${file}`,
