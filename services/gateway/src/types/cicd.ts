@@ -961,6 +961,8 @@ export type CicdEventType =
   | 'architecture.investigation.failed'
   // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
   // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  // VTID-04643: an exafy admin started a test workflow from the Command Hub Run Tests tab.
+  | 'testing.run.launched'
   | 'staging.deploy.completed'
   | 'staging.deploy.failed'
   | 'staging.metrics.snapshot'

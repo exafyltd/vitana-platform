@@ -12,6 +12,8 @@ import {
   ensureFreshResults, summarizeWorkflows, summarizeEnvironments,
   type SyncDeps, type GitHubRun, type CiTestRunRow,
 } from '../services/testing/test-results';
+import { listLaunchable, validateLaunch, dispatchInputs } from '../services/testing/test-launcher';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
@@ -255,6 +257,118 @@ router.post('/results/sync', requireAuth, requireExafyAdmin, async (_req: Reques
   const sync = await freshen(true);
   if (sync.sync_error) return res.status(503).json({ ok: false, error: sync.sync_error });
   res.json({ ok: true, ...sync });
+});
+
+// ─── Run Tests launcher (VTID-04643) ──────────────────────────────────────
+// Starts a reviewed test workflow on GitHub Actions. Only the workflows on the
+// launch list (services/testing/test-launcher.ts) can be started: staging and
+// development tests, and read-only production health checks. Every launch is
+// recorded in OASIS with who started it and why. exafy_admin only.
+
+const STAGING_GATEWAY_URL = process.env.STAGING_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com';
+
+/** The full commit staging serves now (build-info), or null. */
+async function stagingGatewayCommit(): Promise<string | null> {
+  try {
+    const r = await fetch(`${STAGING_GATEWAY_URL}/api/v1/admin/build-info`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const body = (await r.json()) as { git_commit?: unknown };
+    return typeof body.git_commit === 'string' && /^[0-9a-f]{40}$/.test(body.git_commit) ? body.git_commit : null;
+  } catch {
+    return null;
+  }
+}
+
+router.get('/launchable', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  let catalog = null;
+  let catalog_error: string | null = null;
+  try {
+    catalog = (await loadTestCatalog()).catalog;
+  } catch (err: any) {
+    catalog_error = String(err?.message || err);
+  }
+  res.json({ ok: true, ...listLaunchable(catalog), e2e_projects: E2E_SUITES, catalog_error });
+});
+
+router.post('/launch', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const v = validateLaunch(req.body || {}, E2E_SUITES.map((s) => s.project));
+  if (!v.ok) return res.status(v.status).json({ ok: false, error: v.error });
+  const identity = (req as any).identity as { user_id: string; email: string | null } | undefined;
+
+  let inputs: Record<string, string>;
+  try {
+    const commit = v.policy.inputs === 'staging_verify_gateway' ? await stagingGatewayCommit() : null;
+    inputs = dispatchInputs(v.policy, v.projects, commit, E2E_STAGING_COMMUNITY_URL);
+  } catch (err: any) {
+    return res.status(503).json({ ok: false, error: String(err?.message || err) });
+  }
+
+  const token = v.policy.repo === 'exafyltd/vitana-v1' ? process.env.FRONTEND_DEPLOY_TOKEN : undefined;
+  if (v.policy.repo === 'exafyltd/vitana-v1' && !token) {
+    return res.status(503).json({ ok: false, error: 'FRONTEND_DEPLOY_TOKEN is not set on this gateway, so it cannot start vitana-v1 workflows' });
+  }
+  try {
+    await githubService.triggerWorkflow(v.policy.repo, v.policy.file, 'main', inputs, token);
+  } catch (err: any) {
+    return res.status(502).json({ ok: false, error: 'GitHub dispatch failed: ' + (err?.message || 'unknown') });
+  }
+
+  const launchedAt = new Date().toISOString();
+  await emitOasisEvent({
+    vtid: 'VTID-04643',
+    type: 'testing.run.launched',
+    source: 'command-hub-testing',
+    status: 'info',
+    message: `${identity?.email || identity?.user_id || 'unknown'} started ${v.policy.file} (${v.policy.environment}): ${v.reason}`,
+    payload: {
+      repo: v.policy.repo,
+      workflow: v.policy.file,
+      label: v.policy.label,
+      environment: v.policy.environment,
+      reason: v.reason,
+      inputs,
+      launched_at: launchedAt,
+    },
+    actor_id: identity?.user_id,
+    actor_email: identity?.email || undefined,
+    actor_role: 'admin',
+    surface: 'command-hub',
+  }).catch((err) => console.warn('[Testing] launch event not recorded:', err));
+
+  res.json({
+    ok: true,
+    status: 'dispatched',
+    repo: v.policy.repo,
+    workflow: v.policy.file,
+    environment: v.policy.environment,
+    inputs,
+    launched_at: launchedAt,
+    actions_url: `https://github.com/${v.policy.repo}/actions/workflows/${v.policy.file}`,
+  });
+});
+
+router.get('/launches', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  const { data, error } = await supabase
+    .from('oasis_events')
+    .select('created_at, message, metadata, actor_email')
+    .eq('topic', 'testing.run.launched')
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  res.json({
+    ok: true,
+    launches: (data || []).map((e: any) => ({
+      at: e.created_at,
+      by: e.actor_email || null,
+      repo: e.metadata?.repo || null,
+      workflow: e.metadata?.workflow || null,
+      label: e.metadata?.label || null,
+      environment: e.metadata?.environment || null,
+      reason: e.metadata?.reason || null,
+    })),
+  });
 });
 
 router.get('/runs', async (req: Request, res: Response) => {

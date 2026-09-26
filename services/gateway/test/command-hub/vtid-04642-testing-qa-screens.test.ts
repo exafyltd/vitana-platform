@@ -26,14 +26,14 @@ function between(src: string, start: string, end: string): string {
 const TQ_CODE = between(APP, '// ─── Testing & QA: Overview / Catalog / Runs (VTID-04642)', 'function renderTestingE2eView() {');
 
 describe('VTID-04642 Testing & QA screens', () => {
-  it('declares overview, catalog, runs and e2e in app.js, navigation-config.js and the screen inventory', () => {
+  it('declares overview, catalog, runs, run-tests (VTID-04643) and e2e in app.js, navigation-config.js and the screen inventory', () => {
     const section = between(APP, '"section": "testing-qa"', ']');
-    expect([...section.matchAll(/"key": "([a-z0-9-]+)"/g)].map((m) => m[1])).toEqual(['overview', 'catalog', 'runs', 'e2e']);
+    expect([...section.matchAll(/"key": "([a-z0-9-]+)"/g)].map((m) => m[1])).toEqual(['overview', 'catalog', 'runs', 'run-tests', 'e2e']);
     const nav = between(NAV, 'module: "testing-qa"', ']');
-    expect([...nav.matchAll(/key: "([a-z0-9-]+)"/g)].map((m) => m[1])).toEqual(['overview', 'catalog', 'runs', 'e2e']);
-    expect(INVENTORY.module_catalog['testing-qa']).toEqual(['overview', 'catalog', 'runs', 'e2e']);
+    expect([...nav.matchAll(/key: "([a-z0-9-]+)"/g)].map((m) => m[1])).toEqual(['overview', 'catalog', 'runs', 'run-tests', 'e2e']);
+    expect(INVENTORY.module_catalog['testing-qa']).toEqual(['overview', 'catalog', 'runs', 'run-tests', 'e2e']);
     const paths = INVENTORY.screen_inventory.screens.filter((s: any) => s.module === 'Testing & QA').map((s: any) => s.url_path);
-    expect(paths).toEqual(['overview', 'catalog', 'runs', 'e2e'].map((k) => `/command-hub/testing-qa/${k}/`));
+    expect(paths).toEqual(['overview', 'catalog', 'runs', 'run-tests', 'e2e'].map((k) => `/command-hub/testing-qa/${k}/`));
   });
 
   it('sends the old tab URLs to the new tabs', () => {
