@@ -350,7 +350,7 @@ export const NAVIGATE_V2_DECLARATION = {
     properties: {
       question: {
         type: 'string',
-        description: 'What the member is looking for, in their own words and language.',
+        description: 'The member\'s whole request, word for word, in their language ("pop up my wallet for a quick look", not "wallet"). The wording picks between a page, a tab and a popup.',
       },
       intent: {
         type: 'string',

@@ -3,7 +3,7 @@
  *
  * Run after refreshing the bundled registry snapshot
  * (src/navigation/data/nav-registry.snapshot.json, copied from a vitana-v1
- * build's public/nav-registry.json) or after adding golden cases:
+ * build's public/nav-registry.json) or after adding golden or redirect cases:
  *
  *   BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts
  *
@@ -27,6 +27,7 @@ import {
 import { loadSnapshotRegistry } from '../../src/navigation/nav-registry';
 import { registryDocTexts } from '../../src/navigation/nav-resolver';
 import { GOLDEN_SET } from './golden-set';
+import { PARAPHRASE_CASES, REDIRECT_CASES } from '../nav-redirect/redirect-cases';
 
 (async () => {
   const seed = new Map(loadBundledEmbeddings());
@@ -37,6 +38,8 @@ import { GOLDEN_SET } from './golden-set';
   const texts = [...new Set([
     ...registryDocTexts(loadSnapshotRegistry()).map((d) => d.text),
     ...GOLDEN_SET.map((g) => g.utterance.trim()),
+    ...REDIRECT_CASES.map((c) => c.say.trim()),
+    ...PARAPHRASE_CASES.flatMap((p) => [p.say.trim(), p.modelQuestion.trim()]),
   ])];
   const missing = texts.filter((t) => !seed.has(t)).length;
   console.log(`${texts.length} texts, ${missing} to embed`);
