@@ -2,7 +2,7 @@
   "vtid": "VTID-04644",
   "service": "gateway",
   "tests": [
-    { "kind": "http", "target": "gateway", "method": "GET", "path": "/command-hub/orb-widget.js",
+    { "kind": "http", "target": "gateway", "method": "GET", "path": "/command-hub/orb-widget.js?v=20260926-vtid-04659-after-turn",
       "expect_status": 200, "expect_body_contains": "msg.after_turn === true",
       "reason": "the served voice widget runs a directive the gateway sends after the turn ended at once, instead of holding it 15 s" },
     { "kind": "existing", "ref": "npx jest test/nav-redirect/explicit-open-backstop.test.ts", "cwd": "services/gateway",
