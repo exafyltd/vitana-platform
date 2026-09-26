@@ -17609,6 +17609,13 @@ border-bottom: 1px solid var(--color-border, #333);
   padding: 2px 0;
   overflow-wrap: anywhere;
 }
+.ap-live-reason-meta {
+  display: block;
+  color: #666;
+  font-size: 0.70rem;
+  font-family: monospace;
+  margin-top: 1px;
+}
 .ap-live-exec {
   display: flex;
   gap: 0.75rem;

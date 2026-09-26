@@ -49657,7 +49657,15 @@ function renderAutopilotLiveView() {
             reasons.slice(0, 5).forEach(function (r) {
                 var line = document.createElement('div');
                 line.className = 'ap-live-reason';
-                line.textContent = r.count + '\u00D7  ' + r.reason;
+                var main = document.createElement('span');
+                main.textContent = r.count + '\u00D7  ' + r.reason;
+                line.appendChild(main);
+                if (r.count_24h != null && r.last_seen_at != null) {
+                    var meta = document.createElement('span');
+                    meta.className = 'ap-live-reason-meta';
+                    meta.textContent = r.count_24h + ' in last 24h \u00B7 last seen ' + autopilotSupervisorAgo(r.last_seen_at);
+                    line.appendChild(meta);
+                }
                 pipe.appendChild(line);
             });
         }
