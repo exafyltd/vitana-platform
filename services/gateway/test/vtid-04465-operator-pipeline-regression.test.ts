@@ -1011,6 +1011,48 @@ describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
   });
 });
 
+describe('Console turn: several rounds of tools until the model answers (VTID-04628)', () => {
+  const THREAD = 'c4c4c4c4-0000-4000-8000-000000004628';
+  afterEach(() => { delete process.env.OPERATOR_MAX_TOOL_ROUNDS; });
+
+  it('a failed tool call is corrected in the next round and the answer comes from the second result', async () => {
+    model.operatorPlan.push(tools(['run_code', { code: 'this is not javascript (' }]));
+    model.operatorContinue.push(tools(['run_code', { code: 'return 6 * 7' }]));
+    model.operatorContinue.push(text('6 × 7 is 42.'));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 6 times 7?', THREAD);
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toBe('6 × 7 is 42.');
+    const results = res.body.toolResults as Array<{ name: string; response: { ok: boolean } }>;
+    expect(results.map((r) => [r.name, r.response.ok])).toEqual([['run_code', false], ['run_code', true]]);
+    // Two continuation calls, each carrying the tool transcript back WITH the tools.
+    const cont = model.calls.filter((c) => c.stage === 'operator' && c.service === 'gemini-operator-continue');
+    expect(cont).toHaveLength(2);
+    expect(cont[0].historyLength).toBeLessThan(cont[1].historyLength);
+    // The single-round final call is not used when the model answered itself.
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(0);
+  });
+
+  it('OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '1';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1 + 1' }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 1 + 1?', THREAD);
+    expect(res.status).toBe(200);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(0);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
+  });
+
+  it('the round budget ends a model that keeps calling tools: the tool-less final call answers', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '3';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1' }]));
+    for (let i = 0; i < 5; i++) model.operatorContinue.push(tools(['run_code', { code: `return ${i + 2}` }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'keep going', THREAD);
+    expect(res.status).toBe(200);
+    expect((res.body.toolResults as unknown[]).length).toBe(3);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(2);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
+  });
+});
+
 describe('Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)', () => {
   async function toVerifying(): Promise<string> {
     const { execId, prNumber } = seedForeignCiExecution(null);

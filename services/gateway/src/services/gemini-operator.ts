@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
-import { callViaRouter, type LLMRouterTool, type LLMUsage } from './llm-router';
+import { callViaRouter, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
 // VTID-04031: token usage + estimated cost per model call, folded into the reply meta.
 import { turnUsageFields, summarizeTurnCost, type ModelTurnCost } from './operator-turn-cost';
 // VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
@@ -131,6 +131,8 @@ const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-2.5-pro';
 export interface GeminiToolCall {
   name: string;
   args: Record<string, unknown>;
+  /** VTID-04628: provider-assigned id, echoed on the matching tool result in the next round. */
+  id?: string;
 }
 
 /**
@@ -4316,6 +4318,32 @@ function getRouterToolDefinitions(userRole?: string): LLMRouterTool[] {
  * VTID-01106: Added optional custom system instruction for ORB memory context
  * Returns the model response with optional tool calls
  */
+/**
+ * VTID-04628: how many rounds of tools one console turn may run (default 4,
+ * 1 = the pre-VTID-04628 single round). Each round is one model call plus the
+ * tools it asked for.
+ */
+export function operatorMaxToolRounds(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.OPERATOR_MAX_TOOL_ROUNDS || '', 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 10) : 4;
+}
+
+/** VTID-04628: the user turn for a continuation round. English intent, not spoken text. */
+export const OPERATOR_CONTINUE_PROMPT =
+  'The tool results for your calls are above. If a call failed or the result does not answer the request yet, ' +
+  'call the tools again with corrected arguments (for SQL: check the table and column names, e.g. with a query on ' +
+  'information_schema.columns). When you have what you need, answer the original request directly. ' +
+  'Never claim a tool ran unless its result is above.';
+
+const OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS = 12_000;
+
+/** VTID-04628: a tool result as the model sees it in the next round — JSON, bounded. */
+export function clipToolResultForTranscript(response: unknown): string {
+  let s: string;
+  try { s = JSON.stringify(response); } catch { s = String(response); }
+  return s.length > OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS ? `${s.slice(0, OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS)}…[truncated]` : s;
+}
+
 async function callVertexWithTools(
   text: string,
   threadId: string,
@@ -4325,7 +4353,12 @@ async function callVertexWithTools(
   userRole?: string,
   // VTID-03892: dev_agent_memory recall, rendered by the caller (processWithGemini)
   // and appended here regardless of which base prompt applies above.
-  memoryContextBlock?: string
+  memoryContextBlock?: string,
+  // VTID-04628: the tool rounds of THIS turn (assistant tool calls + user tool
+  // results), appended after the prior conversation so the model sees what its
+  // tools returned and can call more.
+  toolTranscript: LLMRouterMessage[] = [],
+  service = 'gemini-operator',
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -4393,7 +4426,7 @@ async function callVertexWithTools(
   // used to wrap this would double-count every operator turn.
   const r = await callViaRouter('operator', text, {
     vtid: vtid || null,
-    service: 'gemini-operator',
+    service,
     systemPrompt,
     // VTID-04102: was 4096 — half the deepseekAdapter's own default (8000).
     // This call carries the full bootstrap pack + codebase-overview block +
@@ -4403,7 +4436,10 @@ async function callVertexWithTools(
     // text). Matches the router-wide default instead of a narrower one.
     maxTokens: 8000,
     tools: routerTools,
-    history: conversationHistory.map((m) => ({ role: m.role, content: m.content })),
+    history: [
+      ...conversationHistory.map((m) => ({ role: m.role, content: m.content }) as LLMRouterMessage),
+      ...toolTranscript,
+    ],
   });
 
   if (!r.ok) {
@@ -4415,7 +4451,7 @@ async function callVertexWithTools(
 
   const toolCalls: GeminiToolCall[] | undefined =
     r.toolCalls && r.toolCalls.length > 0
-      ? r.toolCalls.map((tc) => ({ name: tc.name, args: tc.arguments || {} }))
+      ? r.toolCalls.map((tc) => ({ name: tc.name, args: tc.arguments || {}, ...(tc.id ? { id: tc.id } : {}) }))
       : undefined;
 
   if (toolCalls) {
@@ -4704,52 +4740,112 @@ export async function processWithGemini(input: {
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
         const toolResults: GeminiToolResult[] = [];
+        // VTID-04628: the turn is a bounded loop, not one round. Each round's
+        // tool calls and results go back to the model WITH the tools, so it can
+        // correct a failed query or take a second step (look up a schema, then
+        // count). It ends when the model answers in text; when the round budget
+        // runs out, the tool-less final call below answers from what it has.
+        const maxRounds = operatorMaxToolRounds();
+        const transcript: LLMRouterMessage[] = [{ role: 'user', content: text }];
+        const modelCalls: Array<{ model?: string; usage?: LLMUsage }> = [{ model: vertexResponse.model, usage: vertexResponse.usage }];
+        let pending: GeminiToolCall[] = vertexResponse.toolCalls;
+        let pendingText = vertexResponse.reply || '';
+        let rounds = 0;
+        let loopReply: { reply: string; provider?: string; model?: string } | null = null;
+        let toolIndex = 0;
 
-        for (const [index, toolCall] of vertexResponse.toolCalls.entries()) {
-          // VTID-04028: announce the call before it runs, report it after —
-          // the transcript the Command Hub renders live.
-          emitTurnEvent(onEvent, { type: 'tool.call', index, name: toolCall.name, args: boundTurnEventArgs(toolCall.args) });
-          const toolStartedAt = Date.now();
-          const result = await executeTool(toolCall.name, toolCall.args, threadId);
-          emitTurnEvent(onEvent, {
-            type: 'tool.result',
-            index,
-            name: toolCall.name,
-            ok: result.ok,
-            duration_ms: Date.now() - toolStartedAt,
-            ...(result.error ? { error: clipForTurnEvent(result.error, TURN_EVENT_EXCERPT_MAX_CHARS) } : {}),
-            ...(result.governanceBlocked ? { governance_blocked: true } : {}),
-            excerpt: clipForTurnEvent(result.data ?? {}, TURN_EVENT_EXCERPT_MAX_CHARS),
+        while (pending.length > 0) {
+          rounds += 1;
+          transcript.push({
+            role: 'assistant',
+            toolCalls: pending.map((c) => ({ name: c.name, arguments: c.args, ...(c.id ? { id: c.id } : {}) })),
+            ...(pendingText ? { content: pendingText } : {}),
           });
-          toolResults.push({
-            name: toolCall.name,
-            response: {
+          const roundResults: Array<{ id?: string; name: string; result: string; isError?: boolean }> = [];
+          for (const toolCall of pending) {
+            const index = toolIndex++;
+            // VTID-04028: announce the call before it runs, report it after —
+            // the transcript the Command Hub renders live.
+            emitTurnEvent(onEvent, { type: 'tool.call', index, name: toolCall.name, args: boundTurnEventArgs(toolCall.args) });
+            const toolStartedAt = Date.now();
+            const result = await executeTool(toolCall.name, toolCall.args, threadId);
+            emitTurnEvent(onEvent, {
+              type: 'tool.result',
+              index,
+              name: toolCall.name,
+              ok: result.ok,
+              duration_ms: Date.now() - toolStartedAt,
+              ...(result.error ? { error: clipForTurnEvent(result.error, TURN_EVENT_EXCERPT_MAX_CHARS) } : {}),
+              ...(result.governanceBlocked ? { governance_blocked: true } : {}),
+              excerpt: clipForTurnEvent(result.data ?? {}, TURN_EVENT_EXCERPT_MAX_CHARS),
+            });
+            const response = {
               ok: result.ok,
               ...result.data,
               error: result.error,
               governanceBlocked: result.governanceBlocked
-            }
+            };
+            toolResults.push({ name: toolCall.name, response });
+            roundResults.push({
+              ...(toolCall.id ? { id: toolCall.id } : {}),
+              name: toolCall.name,
+              result: clipToolResultForTranscript(response),
+              ...(result.ok ? {} : { isError: true }),
+            });
+          }
+          transcript.push({ role: 'user', toolResults: roundResults });
+          pending = [];
+          if (rounds >= maxRounds) break;
+
+          const nextStartedAt = Date.now();
+          let next: Awaited<ReturnType<typeof callVertexWithTools>>;
+          try {
+            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue');
+          } catch (contErr: any) {
+            console.warn(`[VTID-04628] operator continuation round ${rounds + 1} failed, answering from the tool results: ${contErr?.message}`);
+            break;
+          }
+          modelCalls.push({ model: next.model, usage: next.usage });
+          const moreTools = next.toolCalls && next.toolCalls.length > 0 ? next.toolCalls : [];
+          emitTurnEvent(onEvent, {
+            type: 'model.turn',
+            stage: moreTools.length > 0 ? 'plan' : 'final',
+            provider: next.provider ?? vertexResponse.provider ?? 'router',
+            model: next.model ?? vertexResponse.model ?? 'router',
+            tool_calls: moreTools.length,
+            duration_ms: Date.now() - nextStartedAt,
+            ...turnUsageFields(next.model ?? vertexResponse.model, next.usage),
+          });
+          if (moreTools.length > 0) {
+            pending = moreTools;
+            pendingText = next.reply || '';
+          } else {
+            loopReply = { reply: next.reply, provider: next.provider, model: next.model };
+          }
+        }
+
+        let finalResponse: { reply: string; usage?: LLMUsage; provider?: string; model?: string };
+        if (loopReply) {
+          finalResponse = loopReply;
+        } else {
+          // Round budget spent (or a continuation failed): one tool-less call
+          // answers from every result gathered so far.
+          const finalStartedAt = Date.now();
+          finalResponse = await sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole));
+          modelCalls.push({ model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage });
+          emitTurnEvent(onEvent, {
+            type: 'model.turn',
+            stage: 'final',
+            provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
+            model: finalResponse.model ?? vertexResponse.model ?? 'router',
+            tool_calls: 0,
+            duration_ms: Date.now() - finalStartedAt,
+            ...turnUsageFields(finalResponse.model ?? vertexResponse.model, finalResponse.usage),
           });
         }
 
-        // Send tool results back to Vertex for final response
-        const finalStartedAt = Date.now();
-        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole));
-        emitTurnEvent(onEvent, {
-          type: 'model.turn',
-          stage: 'final',
-          provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
-          model: finalResponse.model ?? vertexResponse.model ?? 'router',
-          tool_calls: 0,
-          duration_ms: Date.now() - finalStartedAt,
-          ...turnUsageFields(finalResponse.model ?? vertexResponse.model, finalResponse.usage),
-        });
-
-        // VTID-04031: both model calls of the turn folded into one cost line.
-        const turnCost = summarizeTurnCost([
-          { model: vertexResponse.model, usage: vertexResponse.usage },
-          { model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage },
-        ]);
+        // VTID-04031: every model call of the turn folded into one cost line.
+        const turnCost = summarizeTurnCost(modelCalls);
         return {
           reply: guardReplyAgainstFabricatedToolCalls(finalResponse.reply, toolResults.map((r) => r.name), threadId),
           toolResults,
@@ -4757,7 +4853,8 @@ export async function processWithGemini(input: {
             provider: vertexResponse.provider ?? 'router',
             model: vertexResponse.model ?? 'router',
             mode: `operator_${vertexResponse.provider ?? 'router'}`,
-            tool_calls: vertexResponse.toolCalls.length,
+            tool_calls: toolResults.length,
+            tool_rounds: rounds,
             // VTID-04540: the model that wrote the reply (the final call can
             // land on a fallback different from the planning call).
             reply_provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
