@@ -61,12 +61,12 @@ describe('VTID-04614 — Autopilot Live failure-reason meta display', () => {
     expect(appJs).toContain("main.textContent = r.count + '\\u00D7  ' + r.reason");
   });
 
-  it('index.html styles.css link has bumped ?v=20260926-vtid-04614', () => {
-    expect(indexHtml).toContain('styles.css?v=20260926-vtid-04614');
+  it('index.html styles.css link has bumped ?v=20261013-vtid-04614', () => {
+    expect(indexHtml).toContain('styles.css?v=20261013-vtid-04614');
   });
 
-  it('index.html app.js script has bumped ?v=20260926-vtid-04614', () => {
-    expect(indexHtml).toContain('app.js?v=20260926-vtid-04614');
+  it('index.html app.js script has bumped ?v=20261013-vtid-04614', () => {
+    expect(indexHtml).toContain('app.js?v=20261013-vtid-04614');
   });
 
   it('index.html does not still carry the old vtid-04560 version on styles.css or app.js', () => {
