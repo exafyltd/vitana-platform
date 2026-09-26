@@ -95,6 +95,7 @@ import { evaluateCascadeEligibility } from './cascaded-config';
 import {
   callViaRouter,
   type LLMRouterMessage,
+  type LLMRouterResult,
   type LLMRouterTool,
   type LLMRouterToolCall,
 } from '../../../services/llm-router';
@@ -183,6 +184,73 @@ const CASCADE_HISTORY_MAX_CHARS_PER_MESSAGE = 2_000;
  */
 export const CASCADE_TOOL_CONTINUE_PROMPT =
   '(Stage direction, not the user speaking: the tool results are above. Now say what you say to the user, following the tool result guidance, in your own words and in the language of the conversation. Do not mention tools or this direction.)';
+
+/**
+ * VTID-04611 — at most this many tool rounds per spoken turn. A navigation
+ * request the registry cannot settle alone comes back as a short list, and
+ * the tool result tells the model to open its pick with navigate_to_screen;
+ * with a single round that second call was impossible (the continuation had
+ * no tools), so an ambiguous "open …" never opened anything on the cascade.
+ */
+export const CASCADE_MAX_TOOL_ROUNDS = 2;
+
+export interface CascadeTurnOptions {
+  userText: string;
+  systemPrompt: string;
+  priorHistory: LLMRouterMessage[];
+  tools: LLMRouterTool[];
+  service?: string;
+  maxTokens?: number;
+  runToolCalls: (calls: LLMRouterToolCall[]) => Promise<{
+    withIds: LLMRouterToolCall[];
+    results: Array<{ id?: string; name: string; result: string; isError?: boolean }>;
+  }>;
+}
+
+/**
+ * One cascaded turn's model side: the first call, up to
+ * CASCADE_MAX_TOOL_ROUNDS tool rounds, and the continuation that produces
+ * the spoken reply. A further round is offered only after a round that ran a
+ * navigation tool; hand-off tools keep their single round (VTID-04336), and
+ * the last call of a turn never carries tools, so a turn always ends in words.
+ * Exported so the voice redirect suite drives exactly this code (VTID-04607).
+ */
+export async function runCascadeModelTurn(o: CascadeTurnOptions): Promise<{
+  completion: LLMRouterResult;
+  toolRound: LLMRouterMessage[];
+  rounds: number;
+}> {
+  const service = o.service ?? 'orb-cascaded-voice';
+  const maxTokens = o.maxTokens ?? 400;
+  let completion = await callViaRouter('operator', o.userText, {
+    service,
+    systemPrompt: o.systemPrompt,
+    maxTokens,
+    ...(o.priorHistory.length > 0 ? { history: o.priorHistory } : {}),
+    ...(o.tools.length > 0 ? { tools: o.tools } : {}),
+  });
+  const toolRound: LLMRouterMessage[] = [];
+  let rounds = 0;
+  while (completion.ok && completion.toolCalls && completion.toolCalls.length > 0 && rounds < CASCADE_MAX_TOOL_ROUNDS) {
+    if (rounds > 0) toolRound.push({ role: 'user', content: CASCADE_TOOL_CONTINUE_PROMPT });
+    rounds++;
+    const { withIds, results } = await o.runToolCalls(completion.toolCalls);
+    toolRound.push(
+      { role: 'assistant', toolCalls: withIds, content: completion.text || undefined },
+      { role: 'user', toolResults: results },
+    );
+    const offerTools =
+      rounds < CASCADE_MAX_TOOL_ROUNDS && o.tools.length > 0 && withIds.some((c) => CASCADE_NAV_TOOLS.has(c.name));
+    completion = await callViaRouter('operator', CASCADE_TOOL_CONTINUE_PROMPT, {
+      service,
+      systemPrompt: o.systemPrompt,
+      maxTokens,
+      history: [...o.priorHistory, { role: 'user', content: o.userText }, ...toolRound],
+      ...(offerTools ? { tools: o.tools } : {}),
+    });
+  }
+  return { completion, toolRound, rounds };
+}
 
 /**
  * VTID-04336 — the specialist's first turn after an in-process swap. The Nova
@@ -629,35 +697,19 @@ export class CascadedLiveClient implements UpstreamLiveClient {
       // sounded fine and knew nothing. That cast is gone; this call is fully
       // typed so the compiler owns the contract.
       const priorHistory = [...this.history];
-      let completion = await callViaRouter('operator', userText, {
-        service: 'orb-cascaded-voice',
+      // VTID-04336: bounded rolling history + the allowlisted tools, each
+      // only when present. VTID-04611: up to CASCADE_MAX_TOOL_ROUNDS tool
+      // rounds (a second only after a navigation tool), then a tool-less
+      // continuation that produces the spoken reply.
+      const turn = await runCascadeModelTurn({
+        userText,
         systemPrompt: this.systemInstruction,
-        maxTokens: 400,
-        // VTID-04336: bounded rolling history + the allowlisted hand-off
-        // tools, each only when present — a first turn with no tools is the
-        // exact pre-VTID-04336 request.
-        ...(priorHistory.length > 0 ? { history: priorHistory } : {}),
-        ...(this.tools.length > 0 ? { tools: this.tools } : {}),
+        priorHistory,
+        tools: this.tools,
+        runToolCalls: (calls) => this.runToolCalls(calls),
       });
-
-      // VTID-04336: one bounded tool round (hand-off tools only), then one
-      // tool-less continuation that produces the spoken bridge.
-      let toolRound: LLMRouterMessage[] = [];
-      const requested =
-        completion.ok && completion.toolCalls && completion.toolCalls.length > 0 ? completion.toolCalls : [];
-      if (requested.length > 0) {
-        const { withIds, results } = await this.runToolCalls(requested);
-        toolRound = [
-          { role: 'assistant', toolCalls: withIds, content: completion.text || undefined },
-          { role: 'user', toolResults: results },
-        ];
-        completion = await callViaRouter('operator', CASCADE_TOOL_CONTINUE_PROMPT, {
-          service: 'orb-cascaded-voice',
-          systemPrompt: this.systemInstruction,
-          maxTokens: 400,
-          history: [...priorHistory, { role: 'user', content: userText }, ...toolRound],
-        });
-      }
+      let completion = turn.completion;
+      const toolRound = turn.toolRound;
 
       if (!completion.ok) {
         this.errorHandler?.({

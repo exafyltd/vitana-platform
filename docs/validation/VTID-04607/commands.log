@@ -1,0 +1,29 @@
+# VTID-04607 / VTID-04611 — commands run (2026-09-26)
+
+# Registry snapshot = the app registry with the vitana-v1 #1173 phrasings; vectors rebuilt with real Titan
+node scripts/nav/build-nav-registry.mjs                                   # vitana-v1: 185 screens
+BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts        # 9270 vectors, 55 new texts embedded
+
+# CI layer
+npx jest test/nav-redirect                                               # 72 passed (50 cases + 4 paraphrase + integrity + ratchet)
+#   redirect suite: 35 open, 15 handed to the voice model, 0 wrong, 0 none of 50
+# Mutation check: memberWords disconnected in orb-tools-shared -> P01, P02 fail; restored -> pass
+
+# Live resolver, real Titan
+LAYER=resolver REGISTRY_URL=https://preview-aws.vitanaland.com/nav-registry.json npx tsx test/nav-redirect/run-live.ts
+#   {"total":50,"open":34,"handoff":14,"wrong":2,"none":0}   (outputs/live-resolver-staging.json)
+LAYER=resolver REGISTRY_URL=<local build of vitana-v1 with #1173> npx tsx test/nav-redirect/run-live.ts
+#   {"total":50,"open":35,"handoff":15,"wrong":0,"none":0}   (outputs/live-resolver-fixed-registry.json)
+
+# Live voice, Polly -> Nova Sonic (en, de), cascade model turn (es, fr, pt, ar)
+LAYER=voice npx tsx test/nav-redirect/run-live.ts   # before the fixes
+#   {"total":50,"open":36,"wrong":2,"no_open":10,"not_covered":1,"error":1}   (outputs/voice-before.json)
+LAYER=voice npx tsx test/nav-redirect/run-live.ts   # after the fixes
+#   {"total":50,"open":39,"wrong":0,"no_open":9,"not_covered":1,"error":1}    (outputs/voice-after.json)
+#   The live runner writes nothing: Supabase/OASIS point at 127.0.0.1:9; only navigation tools execute.
+
+# Regression
+npx jest test/nav-redirect test/nav-golden test/navigation test/orb/live test/frontend/orb-widget-speak-then-navigate.test.ts
+#   175 suites, 2576 tests passed
+npx jest --silent                                    # full gateway: 1301 suites passed (1 skipped), 20890 tests passed
+npx tsc --noEmit -p tsconfig.json                    # clean

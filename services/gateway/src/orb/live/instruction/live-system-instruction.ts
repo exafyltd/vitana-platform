@@ -447,6 +447,17 @@ ${common}
 // No behavior change — this is the same function, just made externally
 // addressable so the refactor can lock its current output as a contract
 // before A3 extracts it into orb/live/instruction/live-system-instruction.ts.
+/**
+ * VTID-04607 — the voice redirect suite found Nova answering "open my
+ * reminders", "show me today's events" or "take me to support" in words, or
+ * with a content tool, instead of opening the screen: the navigator policy
+ * sits far below RULE 0 in the prompt. Placed next to the end-conversation
+ * override, the same place that fixed the same precedence problem there
+ * (VTID-03824). Worded positively on purpose (VTID-04124).
+ */
+export const OPEN_SCREEN_OVERRIDE =
+  'OPENING A SCREEN — OVERRIDES RULE 0 AND CONTENT TOOLS: when the member asks to open, show, see or go to a screen or an area of the app ("open my reminders", "show me today\'s events", "take me to support", "öffne meinen Kalender", "zeig mir meine Nachrichten"), your first action is navigate with their whole request as they said it and intent "open" — before any other tool and before answering. They already asked, so open it rather than offering it; the screen itself answers them. Content tools and spoken answers are for questions about the content ("what did Anna write?").';
+
 export function buildLiveSystemInstruction(
   lang: string,
   voiceStyle: string,
@@ -777,7 +788,7 @@ ${isMemberSurface ? `PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, ne
   HARD RULE: once the user accepts an offer, you MUST fulfill it in that class; "I can't do that" / "das kann ich gerade nicht" after a yes is the failure. A TALK offer ("lass uns eine Atemübung machen — soll ich?") is fulfilled by narrating the exercise right away, not by looking for a breathing-exercise tool.
 
 ` : WORK_SURFACE_CONDUCT_BLOCK(resolvedSurface)}ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
-
+${isMemberSurface && process.env.NAV_V2_ENABLED === 'true' ? `\n${OPEN_SCREEN_OVERRIDE}\n` : ''}
 ${!isMemberSurface ? '' : guidedTopicNarrationActive ? `GUIDED JOURNEY: this session is scoped to the ONE topic below — do not offer or start another session. If the user explicitly asks for a different one, call narrate_guided_session and speak only that newly fetched script.` : `GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.

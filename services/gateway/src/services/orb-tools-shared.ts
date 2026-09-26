@@ -3752,6 +3752,7 @@ export async function tool_navigate(
         : undefined;
       const r = await nav.navigateByRequest(question, intent, {
         lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+        memberWords: transcriptExcerpt,
       });
       if (r) return r;
     }
