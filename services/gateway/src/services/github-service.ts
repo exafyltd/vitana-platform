@@ -497,6 +497,32 @@ export async function getBehindBy(repo: string, base: string, headSha: string): 
 }
 
 /**
+ * VTID-04612: the commits `base` gained since `headSha` branched off, and the
+ * files they touched. `compare/{head}...{base}` diffs the merge base against
+ * base, so `files` is exactly what a branch update would bring in. GitHub caps
+ * `files` at 300 — `truncated` tells the caller the list is incomplete.
+ */
+export async function getBaseChangesSince(
+  repo: string,
+  base: string,
+  headSha: string,
+): Promise<{ behindBy: number; files: string[]; truncated: boolean }> {
+  const r = await githubRequest<{ ahead_by?: number; files?: Array<{ filename: string; previous_filename?: string }> }>(
+    `/repos/${repo}/compare/${encodeURIComponent(headSha)}...${encodeURIComponent(base)}`,
+  );
+  const files: string[] = [];
+  for (const f of r.files || []) {
+    files.push(f.filename);
+    if (f.previous_filename) files.push(f.previous_filename);
+  }
+  return {
+    behindBy: typeof r.ahead_by === 'number' ? r.ahead_by : 0,
+    files,
+    truncated: !Array.isArray(r.files) || r.files.length >= 300,
+  };
+}
+
+/**
  * VTID-04379: merge the base branch into the PR head (GitHub "Update branch",
  * a merge commit — never a rebase, so no history is rewritten). expected_head_sha
  * makes GitHub refuse if the head moved since we looked.
@@ -876,6 +902,7 @@ export function detectServiceFromFiles(files: string[]): string | null {
 
 export const githubService = {
   getBehindBy,
+  getBaseChangesSince,
   updatePullRequestBranch,
   branchExists,
   findPrForBranch,
