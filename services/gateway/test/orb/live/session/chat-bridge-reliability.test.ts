@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 /**
  * BOOTSTRAP-CHAT-BRIDGE-RELIABILITY
  *
@@ -13,7 +15,7 @@
  * out of scope).
  */
 
-import { bridgeVoiceTranscript, notifyOrbVoiceBridgeWrite } from '../../../../src/orb/live/session/upstream-message-handler';
+import { bridgeVoiceTranscript } from '../../../../src/orb/live/session/upstream-message-handler';
 import { emitOasisEvent } from '../../../../src/services/oasis-event-service';
 import { notifyUserAsync } from '../../../../src/services/notification-service';
 
@@ -109,53 +111,37 @@ describe('bridgeVoiceTranscript', () => {
 });
 
 /**
- * VTID-03520
+ * VTID-04601
  *
- * Before this fix, a successful `bridgeVoiceTranscript()` write was the end
- * of the line — nothing told the client a new message existed, so an ORB
- * voice reply only showed up in the Messenger whenever the user happened to
- * reopen it (reported live as "nothing shown in 24 hours"). This pins the
- * gating logic in isolation: notify only on a confirmed write, and only for
- * the Vitana→user leg.
+ * VTID-03520 fired a `new_chat_message` push for every Vitana voice turn on
+ * the legacy (Vertex / Serbian bridge) turn_complete path — so a member in a
+ * live Serbian conversation got each spoken reply on their lock screen while
+ * hearing it. The shared Nova/cascade path never did. No turn_complete path
+ * may notify: the user is in the conversation, and the bridged row already
+ * carries read_at.
  */
-describe('notifyOrbVoiceBridgeWrite', () => {
-  beforeEach(() => {
-    mockNotifyUserAsync.mockClear();
+describe('voice transcript bridge never notifies (VTID-04601)', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, '../../../../src/orb/live/session/upstream-message-handler.ts'),
+    'utf8',
+  );
+
+  it('does not import or call the notification service', () => {
+    expect(src).not.toMatch(/notification-service/);
+    expect(src).not.toMatch(/notifyUserAsync\s*\(/);
+    expect(src).not.toMatch(/notifyOrbVoiceBridgeWrite/);
   });
 
-  it('fires a new_chat_message notification when the write succeeded', () => {
-    const supabase = {} as any;
-    notifyOrbVoiceBridgeWrite(true, 'user-1', 'tenant-1', 'Dein aktueller Vitana-Index liegt bei 200 Punkten.', supabase);
-
-    expect(mockNotifyUserAsync).toHaveBeenCalledTimes(1);
-    const [userId, tenantId, type, payload, passedSupabase] = mockNotifyUserAsync.mock.calls[0];
-    expect(userId).toBe('user-1');
-    expect(tenantId).toBe('tenant-1');
-    expect(type).toBe('new_chat_message');
-    expect(payload).toMatchObject({
-      title: 'Vitana',
-      body: 'Dein aktueller Vitana-Index liegt bei 200 Punkten.',
-      data: expect.objectContaining({
-        type: 'new_chat_message',
-        thread_id: '00000000-0000-0000-0000-000000000001',
-        url: '/inbox/u/00000000-0000-0000-0000-000000000001',
-      }),
-    });
-    expect(passedSupabase).toBe(supabase);
+  it('still bridges the Vitana leg into chat_messages on both paths, marked read', () => {
+    const vitanaLegs = src.match(/'vitana_to_user', session\.sessionId\)/g) || [];
+    expect(vitanaLegs.length).toBe(2);
+    const readAt = src.match(/read_at: assistantMsgTime\.toISOString\(\)/g) || [];
+    expect(readAt.length).toBe(2);
   });
 
-  it('does not fire a notification when the write failed', () => {
-    notifyOrbVoiceBridgeWrite(false, 'user-1', 'tenant-1', 'some reply', {} as any);
-
+  it('bridgeVoiceTranscript itself never calls notifyUserAsync', async () => {
+    const insert = jest.fn().mockResolvedValue({ error: null });
+    await bridgeVoiceTranscript(makeSupabase(insert), makeRow(), 'vitana_to_user', 'sess-n');
     expect(mockNotifyUserAsync).not.toHaveBeenCalled();
-  });
-
-  it('truncates a long reply to a 100-char preview with an ellipsis', () => {
-    const longText = 'a'.repeat(150);
-    notifyOrbVoiceBridgeWrite(true, 'user-1', 'tenant-1', longText, {} as any);
-
-    const [, , , payload] = mockNotifyUserAsync.mock.calls[0];
-    expect((payload as any).body).toBe('a'.repeat(97) + '...');
-    expect((payload as any).body.length).toBe(100);
   });
 });
