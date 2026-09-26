@@ -135,6 +135,7 @@ export type DispatchAction =
   | 'sentinel_quarantined'
   | 'sentinel_probation_capped'
   | 'quality_failure_classified'
+  | 'duplicate_session_report'
   | 'error';
 
 export interface DispatchResult {
@@ -362,6 +363,50 @@ async function handleQualityFailure(
   };
 }
 
+/**
+ * VTID-04626: one voice conversation stops through TWO hooks — the WS
+ * transport (`ws-…` id) and the live session it wraps (`live-…` id) — and
+ * both report the same metrics. Every quality failure was therefore counted
+ * twice, written twice to voice_healing_history and spawned two
+ * investigators (live pairs on 2026-09-16 and 2026-09-22). The ids differ,
+ * so the pair is recognised by its metrics fingerprint within a short window.
+ */
+const QUALITY_FINGERPRINT_TTL_MS = 2 * 60_000;
+const recentQualityFingerprints = new Map<string, number>();
+
+export function qualityMetricsFingerprint(opts: DispatchOptions): string | null {
+  const m = opts.sessionMetrics;
+  if (!m) return null;
+  const ai = m.audio_in_chunks ?? 0;
+  const ao = m.audio_out_chunks ?? 0;
+  if (ai === 0 && ao === 0) return null;
+  return [
+    opts.tenantScope || 'global',
+    ai,
+    m.audio_in_forwarded ?? '',
+    ao,
+    m.turn_count ?? 0,
+  ].join('|');
+}
+
+/** True when the same conversation was already reported in the last 2 min. */
+export function isDuplicateQualityReport(opts: DispatchOptions, now = Date.now()): boolean {
+  const fp = qualityMetricsFingerprint(opts);
+  if (!fp) return false;
+  for (const [k, at] of recentQualityFingerprints) {
+    if (now - at > QUALITY_FINGERPRINT_TTL_MS) recentQualityFingerprints.delete(k);
+  }
+  const seen = recentQualityFingerprints.get(fp);
+  if (seen !== undefined && now - seen <= QUALITY_FINGERPRINT_TTL_MS) return true;
+  recentQualityFingerprints.set(fp, now);
+  return false;
+}
+
+/** Test helper. */
+export function _resetQualityFingerprintsForTests(): void {
+  recentQualityFingerprints.clear();
+}
+
 async function _dispatchVoiceFailureCore(
   opts: DispatchOptions,
 ): Promise<DispatchResult> {
@@ -376,6 +421,9 @@ async function _dispatchVoiceFailureCore(
   // investigator output is read-only and always allowed because the user
   // explicitly asked for visibility on every broken session.
   let qualityResult: DispatchResult | null = null;
+  if (opts.sessionMetrics && isDuplicateQualityReport(opts)) {
+    return { action: 'duplicate_session_report' };
+  }
   if (opts.sessionMetrics) {
     const qc = classifyQualityFromSessionStop({
       audio_in_chunks: opts.sessionMetrics.audio_in_chunks ?? 0,
@@ -410,6 +458,9 @@ async function _dispatchVoiceFailureCore(
   // because that means we observed errors we couldn't classify — investigator
   // needs that signal.
   if (classification.class === 'voice.unknown' && classification.severity !== 'error') {
+    // VTID-04626: a quality failure on an otherwise error-free session is
+    // what happened — log that, not 'classifier_no_error'.
+    if (qualityResult) return qualityResult;
     return {
       action: 'classifier_no_error',
       class: classification.class,
@@ -577,7 +628,7 @@ export async function dispatchVoiceFailure(
 
   // Skip shadow log for synthetic probe sessions — they're not real voice
   // traffic and would pollute the comparison view.
-  if (result.action === 'synthetic_skipped') {
+  if (result.action === 'synthetic_skipped' || result.action === 'duplicate_session_report') {
     return result;
   }
 

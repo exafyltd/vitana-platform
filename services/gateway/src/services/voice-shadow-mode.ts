@@ -155,7 +155,9 @@ export async function setMode(
   try {
     await emitOasisEvent({
       vtid: actorVtid,
-      type: 'voice.healing.dispatched',
+      // VTID-04626: its own topic — this used to be 'voice.healing.dispatched',
+      // which made every mode flip look like a detected voice failure.
+      type: 'voice.healing.mode.changed',
       source: 'voice-shadow-mode',
       status: 'info',
       message: `Voice self-healing mode flipped: ${previous ?? '(unset)'} → ${next}`,
