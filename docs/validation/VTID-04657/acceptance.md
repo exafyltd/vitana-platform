@@ -55,3 +55,13 @@ TEST: services/gateway/test/vtid-04657-activate-reaches-execution.test.ts
   database and an activation creates a VTID and a real agent run.
 - The migration ships as a file; it takes effect after
   `RUN-MIGRATION.yml` is dispatched for it.
+
+## OASIS
+
+OASIS_PROOF: new event type `autopilot.recommendation.activation_bridge_failed`
+(status `error`, vtid = the activated VTID, payload: recommendation_id,
+source_type, error, violations), registered in `CicdEventType`. Emission on a
+safety-gate refusal is asserted in
+`services/gateway/test/vtid-04657-activate-reaches-execution.test.ts`
+("safety gate refusal → state failed … and an OASIS error event").
+`autopilot.recommendation.activated` is unchanged.
