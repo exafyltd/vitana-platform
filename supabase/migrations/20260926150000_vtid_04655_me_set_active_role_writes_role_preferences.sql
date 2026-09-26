@@ -91,14 +91,18 @@ BEGIN
 END;
 $function$;
 
--- Re-align the rows this defect left behind: where the primary tenant's
--- role_preferences row disagrees with a NEWER user_active_roles row, the
--- switch that wrote user_active_roles is the user's latest choice.
+-- Re-align the rows this defect left behind: where a role_preferences row
+-- disagrees with a NEWER user_active_roles row, the switch that wrote
+-- user_active_roles is the user's latest choice. user_active_roles carries no
+-- tenant, so the repair is limited to users with exactly ONE membership —
+-- there the tenant the switch was made for is certain. A multi-tenant user is
+-- left untouched (their next switch writes the right row).
 UPDATE public.role_preferences rp
    SET role = uar.active_role, updated_at = now()
   FROM public.user_active_roles uar
-  JOIN public.user_tenants ut ON ut.user_id = uar.user_id AND ut.is_primary
+  JOIN public.user_tenants ut ON ut.user_id = uar.user_id
  WHERE rp.user_id = uar.user_id
    AND rp.tenant_id = ut.tenant_id
    AND rp.role IS DISTINCT FROM uar.active_role
-   AND uar.updated_at > rp.updated_at;
+   AND uar.updated_at > rp.updated_at
+   AND (SELECT count(*) FROM public.user_tenants m WHERE m.user_id = uar.user_id) = 1;

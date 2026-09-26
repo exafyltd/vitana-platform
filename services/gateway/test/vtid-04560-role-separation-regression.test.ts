@@ -1023,6 +1023,12 @@ describe('VTID-04655 me_set_active_role writes role_preferences for a real Supab
     expect(sql).toMatch(/IF v_pref_tenant IS NOT NULL THEN\s+INSERT INTO public\.role_preferences/);
   });
 
+  test('the backfill only repairs single-membership users (user_active_roles carries no tenant)', () => {
+    const backfill = sql.slice(sql.indexOf('UPDATE public.role_preferences rp'));
+    expect(backfill).toContain('(SELECT count(*) FROM public.user_tenants m WHERE m.user_id = uar.user_id) = 1');
+    expect(backfill).not.toContain('ut.is_primary');
+  });
+
   test('authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise', () => {
     expect(sql).toContain('v_tenant_id := public.current_tenant_id();');
     expect(sql).toContain('public.check_role_permitted(v_user_id, v_tenant_id, p_role)');
