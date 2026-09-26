@@ -12,3 +12,11 @@ $ npx tsc --noEmit
 
 $ node -e 'validateManifest(staging-tests.json)'
 {"ok":true,"errors":[]}
+
+# Fix-forward (landed with VTID-04637): STAGING-VERIFY runs 8 and 9 failed only on
+# "served app.js carries the corrected Testing & QA tabs". The code was live
+# (app.js?v=20261013-vtid-04635, which index.html loads, contains it). The check
+# was wrong twice: Cloudflare returns a 44-minute-old HIT for the unversioned
+# /command-hub/app.js, and run.mjs keeps only the first 1,000,000 bytes while
+# renderTestingRebuildNotice sits at byte 1,560,133. Replaced by
+# test/command-hub/vtid-04635-testing-qa-tabs-honest.test.ts (3 tests, passing).
