@@ -299,8 +299,9 @@ for (const sc of scenarios) {
   }
   results.push({ id: sc.id, category: sc.category, title: sc.title, gap: sc.gap ?? null, pass: runs.every((x) => x.pass), confounded: runs.find((x) => x.confounded)?.confounded ?? null, runs });
 }
-// Leave the account as it was.
-await cleanupSuiteFacts(baselineIds);
+// Leave the account as it was (MEMORY_VERIFY_KEEP_ROWS=1 keeps the last
+// scenario's rows for inspection; the printed cleanup SQL still removes them).
+if (process.env.MEMORY_VERIFY_KEEP_ROWS !== '1') await cleanupSuiteFacts(baselineIds);
 
 const lines = [`# Memory verification — layer B (live, staging)`, '', `Staging commit: \`${env.commit}\` · run started ${runStarted} · ${RUNS} runs per scenario`, ''];
 const byCat = {};

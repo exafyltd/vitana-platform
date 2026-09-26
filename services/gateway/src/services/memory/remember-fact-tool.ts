@@ -56,6 +56,14 @@ export interface RememberFactDeps {
    * says "bruder_paul_geburtstag"). Optional; without it only the exact key is checked.
    */
   listCurrentFacts?(tenantId: string, userId: string): Promise<StoredKeyedFact[]>;
+  /**
+   * VTID-04638: after a confirmed replace, retire every other current row of
+   * the key. write_fact supersedes only rows with the same (key, entity), so a
+   * value added in the Memory Garden (entity self) survived a correction
+   * spoken about another person (entity disclosed) and both stayed current.
+   * Optional; returns how many rows it retired.
+   */
+  supersedeOthers?(tenantId: string, userId: string, factKey: string, keepId: string): Promise<number>;
   /** Conflicts this tool reported and the member has not resolved yet. Defaults to a process-wide store. */
   pendingConflicts?: PendingConflictStore;
   now?: () => number;
@@ -373,6 +381,11 @@ export async function runRememberFact(
     actor: 'orb-remember-fact-tool',
   });
   if (written.ok) pendingConflicts.clear(input.user_id, factKey);
+  if (written.ok && stored && written.fact_id && deps.supersedeOthers) {
+    await deps
+      .supersedeOthers(input.tenant_id, input.user_id, factKey, written.fact_id)
+      .catch((err) => console.warn(`[VTID-04638] supersede ${factKey} failed: ${err instanceof Error ? err.message : String(err)}`));
+  }
   if (!written.ok) {
     if (written.blocked === 'identity_lock') {
       return {
