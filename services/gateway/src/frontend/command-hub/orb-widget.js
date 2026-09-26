@@ -305,6 +305,12 @@
     thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
     thinkingProgressTimer: null, // Progress updates during long thinking
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
+    // VTID-04587: a 'thinking' signal that arrived while the previous reply
+    // was still playing. The playback-end transition shows Thinking instead
+    // of Listening while this is set. Cleared by answer audio and by the
+    // next turn_complete.
+    thinkingPendingAfterPlayback: false,
+    thinkingPendingFallbackTimer: null,
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
     // VTID-03727 (Codex review fix): greetingComplete is deliberately reset to
@@ -1620,6 +1626,7 @@
     _s._audioSendErrorLogged = true; // suppress fetch-error spam during outage
     clearTimeout(_s._listeningIdleTimer);
     clearTimeout(_s.thinkingDelayTimer);
+    _clearPendingThinking(); // VTID-04587
 
     // Tone first — guaranteed <50ms even if the clip buffer is missing
     _playErrorTone();
@@ -3116,6 +3123,7 @@
     clearTimeout(_s.audioEndGraceTimer);
     clearTimeout(_s.thinkingDelayTimer);
     clearInterval(_s.thinkingProgressTimer);
+    _clearPendingThinking(); // VTID-04587
     // Stop scheduled audio
     if (_s.scheduledSources) {
       for (var i = 0; i < _s.scheduledSources.length; i++) {
@@ -3207,6 +3215,15 @@
               _s.preMuteState = 'THINKING';
             }
           }, 300);
+        } else if (_s.voiceState === 'SPEAKING') {
+          // VTID-04587: the user answered while the end of the previous reply
+          // was still playing (the server finishes a turn before the client
+          // finishes playing it). Vitana is audibly still talking, so the
+          // display stays on Speaking — but remember the signal, so that when
+          // playback ends the display goes to Thinking instead of Listening.
+          // Dropping it here showed Listening (ready beep, mic) while Vitana
+          // was preparing her answer.
+          _s.thinkingPendingAfterPlayback = true;
         }
         break;
 
@@ -3236,6 +3253,8 @@
         clearTimeout(_s.thinkingDelayTimer);
         clearInterval(_s.thinkingProgressTimer);
         _s.thinkingProgressTimer = null;
+        // VTID-04587: the answer is here — nothing is pending any more.
+        if (msg.data_b64) _clearPendingThinking();
         if (msg.data_b64) {
           // Clear stuck guard on first audio
           if (!_s.greetingAudioReceived) {
@@ -3285,6 +3304,10 @@
         // Clear thinking progress if running
         clearInterval(_s.thinkingProgressTimer);
         _s.thinkingProgressTimer = null;
+        // VTID-04587: a 'thinking' remembered before THIS turn_complete was
+        // answered (or closed) by this turn — only one that arrives after it
+        // belongs to the next reply.
+        _clearPendingThinking();
 
         // VTID-TRANSCRIPT-FIX: Flush buffered transcripts as single entries
         if (_s._inputTranscriptBuffer.trim()) {
@@ -3451,6 +3474,12 @@
             if (_s.voiceState === 'MUTED') {
               // Muted — don't change visual state, but update what unmute restores to
               _s.preMuteState = 'LISTENING';
+              _afterBeepStartMic();
+            } else if (_enterPendingThinking()) {
+              // VTID-04587: the user already answered during this reply's
+              // playback and Vitana is preparing the next one — show
+              // Thinking, no ready beep. The mic is still armed on the first
+              // turn so the conversation keeps working.
               _afterBeepStartMic();
             } else {
               _s.voiceState = 'LISTENING';
@@ -4568,6 +4597,56 @@
     return queue;
   }
 
+  // VTID-04587: forget a remembered 'thinking' (answer arrived, turn ended,
+  // session reset).
+  function _clearPendingThinking() {
+    _s.thinkingPendingAfterPlayback = false;
+    clearTimeout(_s.thinkingPendingFallbackTimer);
+    _s.thinkingPendingFallbackTimer = null;
+  }
+
+  // VTID-04587: called where playback of a reply has ended and the widget
+  // would switch to Listening. If a 'thinking' arrived during that playback
+  // (the user already answered), switch to Thinking instead and return true.
+  // Returns false — caller does its normal Listening transition — when
+  // nothing is pending or the tap-to-hear prompt must stay on screen.
+  //
+  // Two paths notice the end of playback (the turn_complete drain poll and
+  // the speaking-state watchdog) and either can run first, so the flag stays
+  // set until the answer arrives: the second caller finds Thinking already
+  // on screen and leaves it there.
+  var PENDING_THINKING_FALLBACK_MS = 15000;
+  function _enterPendingThinking() {
+    if (!_s.thinkingPendingAfterPlayback) return false;
+    if (_s._audioBlocked) return false;
+    if (_s.voiceState === 'THINKING') return true; // already shown by the other path
+    _s.voiceState = 'THINKING';
+    _setOrbState('thinking');
+    _startThinkingProgress(); // also sets the first status line immediately
+    _updateUI();
+    // Safety net: if no answer audio comes, don't sit on Thinking forever —
+    // fall back to the normal Listening state (what the widget showed here
+    // before this change).
+    clearTimeout(_s.thinkingPendingFallbackTimer);
+    var gen = _s._sessionGeneration;
+    _s.thinkingPendingFallbackTimer = setTimeout(function () {
+      _s.thinkingPendingFallbackTimer = null;
+      if (_s._sessionGeneration !== gen || !_s.active) return;
+      if (_s.voiceState !== 'THINKING' || _isClosingForNav()) return;
+      _s.thinkingPendingAfterPlayback = false;
+      clearInterval(_s.thinkingProgressTimer);
+      _s.thinkingProgressTimer = null;
+      _s.voiceState = 'LISTENING';
+      if (!_s._audioBlocked) {
+        _setOrbState('listening');
+        _setStatus(_caption('listening'));
+        _playReadyBeep();
+      }
+      _updateUI();
+    }, PENDING_THINKING_FALLBACK_MS);
+    return true;
+  }
+
   function _startThinkingProgress() {
     clearInterval(_s.thinkingProgressTimer);
     var queue = _buildThinkingQueue();
@@ -4735,12 +4814,16 @@
       // for a lesson that was never actually delivered.
       if (_s.voiceState === 'SPEAKING' && _s.active && !_isClosingForNav() &&
           !_s._userRequestedClose && _s.overlayVisible) {
-        _s.voiceState = 'LISTENING';
-        // VTID-03469: while audio is blocked the overlay shows the
-        // tap-to-hear prompt — don't overwrite it with "Listening...".
-        if (!_s._audioBlocked) {
-          _setOrbState('listening');
-          _setStatus(_caption('listening'));
+        // VTID-04587: same rule as the turn_complete path — if the user
+        // already answered during this playback, Vitana is thinking.
+        if (!_enterPendingThinking()) {
+          _s.voiceState = 'LISTENING';
+          // VTID-03469: while audio is blocked the overlay shows the
+          // tap-to-hear prompt — don't overwrite it with "Listening...".
+          if (!_s._audioBlocked) {
+            _setOrbState('listening');
+            _setStatus(_caption('listening'));
+          }
         }
         if (!_s.greetingComplete) {
           _s.greetingComplete = true;
