@@ -17,7 +17,8 @@ const ts = require('/home/user/vitana-platform/services/gateway/node_modules/typ
 const express = require('/home/user/vitana-platform/services/gateway/node_modules/express');
 const ROOT = process.env.WORKTREE || '/home/user/vp-p3';
 const STATIC = path.join(ROOT, 'services/gateway/src/frontend/command-hub');
-const CATALOG = JSON.parse(fs.readFileSync(process.env.CATALOG_JSON, 'utf8'));
+// Catalog JSON from: node scripts/test-catalog/build.mjs --out /tmp/test-catalog.json
+const CATALOG = JSON.parse(fs.readFileSync(process.env.CATALOG_JSON ?? '/tmp/test-catalog.json', 'utf8'));
 
 const src = fs.readFileSync(path.join(ROOT, 'services/gateway/src/services/testing/test-results.ts'), 'utf8');
 const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2019 } }).outputText;
