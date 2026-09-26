@@ -5,6 +5,7 @@
  * of fix rounds.
  */
 
+import fs from 'fs';
 import path from 'path';
 import { defaultExec, type ExecFn } from './agent-workspace';
 import type { CheckKind, CheckResult } from './agent-tools';
@@ -84,6 +85,68 @@ export function selectJestTargets(changed: string[]): { project: string; pattern
     byProject.set(project, set);
   }
   return [...byProject.entries()].map(([project, set]) => ({ project, patterns: [...set] }));
+}
+
+/**
+ * VTID-04617: a changed frontend asset (`src/frontend/**`, not TypeScript) has
+ * no paired `<name>.test.ts`, but many suites read it as a file — the Command
+ * Hub cache-bust pins, CSP and ownership checks read app.js, styles.css and
+ * index.html. selectJestTargets finds none of them, so CI was the first to run
+ * them (VTID-04614 / PR #3736). This returns, per project, the test files
+ * whose source names a changed asset's basename.
+ */
+export function selectAssetReferencingTests(
+  repoDir: string,
+  changed: string[],
+): { project: string; patterns: string[] }[] {
+  const byProject = new Map<string, Set<string>>();
+  for (const rel of changed) {
+    const project = projectDirFor(rel);
+    if (!project) continue;
+    const inProject = rel.slice(project.length + 1);
+    if (!/^src\/frontend\//.test(inProject)) continue;
+    if (/\.[cm]?tsx?$/.test(inProject)) continue;
+    const set = byProject.get(project) ?? new Set<string>();
+    set.add(path.basename(inProject));
+    byProject.set(project, set);
+  }
+  const out: { project: string; patterns: string[] }[] = [];
+  for (const [project, basenames] of byProject) {
+    const testDir = path.join(repoDir, project, 'test');
+    const matches = new Set<string>();
+    for (const file of listTestFiles(testDir)) {
+      let src: string;
+      try { src = fs.readFileSync(file, 'utf8'); } catch { continue; }
+      for (const b of basenames) {
+        if (src.includes(b)) { matches.add(path.relative(path.join(repoDir, project), file)); break; }
+      }
+    }
+    if (matches.size) out.push({ project, patterns: [...matches].sort() });
+  }
+  return out;
+}
+
+function listTestFiles(dir: string): string[] {
+  const out: string[] = [];
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { if (e.name !== 'node_modules') out.push(...listTestFiles(p)); }
+    else if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+
+/** Paired suites plus the suites that read a changed frontend asset, merged per project. */
+export function selectRunnerJestTargets(repoDir: string, changed: string[]): { project: string; patterns: string[] }[] {
+  const merged = new Map<string, Set<string>>();
+  for (const t of [...selectJestTargets(changed), ...selectAssetReferencingTests(repoDir, changed)]) {
+    const set = merged.get(t.project) ?? new Set<string>();
+    t.patterns.forEach((p) => set.add(p));
+    merged.set(t.project, set);
+  }
+  return [...merged.entries()].map(([project, set]) => ({ project, patterns: [...set] }));
 }
 
 export async function runTsc(repoDir: string, projectRel = 'services/gateway', exec: ExecFn = defaultExec): Promise<CheckResult> {

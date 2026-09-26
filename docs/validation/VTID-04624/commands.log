@@ -1,0 +1,5 @@
+apply_migration vtid_04624_operator_readonly_query -> success
+npx jest test/vtid-04624-operator-sql-live-db.test.ts + 44 suites reading the staging workflow -> 45 suites / 464 tests passed
+npx jest (every suite touching dev_run_sql_readonly / gemini-operator / operator-sql-readonly) -> 38 suites / 547 tests passed
+npx tsc --noEmit -> clean
+staging run step: 20,202 -> 19,571 chars after moving 9 comment lines above the step

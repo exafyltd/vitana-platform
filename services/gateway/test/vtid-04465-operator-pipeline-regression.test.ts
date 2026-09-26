@@ -1011,6 +1011,80 @@ describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
   });
 });
 
+describe('Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)', () => {
+  async function toVerifying(): Promise<string> {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    await ciTick();
+    expect(platform.execution(execId).status).toBe('deploying');
+    stagingDeployCompleted(platform.github.prs.get(prNumber)!.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('verifying');
+    return execId;
+  }
+  const errorEvent = (topic: string, vtid: string) => platform.insert('oasis_events', {
+    topic, vtid, status: 'error', service: 'gateway', message: topic, metadata: {}, created_at: new Date().toISOString(),
+  });
+
+  it('the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted', async () => {
+    const execId = await toVerifying();
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('assistant.turn', 'VTID-0536');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toEqual([]);
+  });
+
+  it('a new error type firing 3 times after the deploy still fails verification', async () => {
+    const execId = await toVerifying();
+    for (let i = 0; i < 3; i++) errorEvent('memory.write.failed', 'VTID-02000');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).not.toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toHaveLength(1);
+  });
+});
+
+describe('Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)', () => {
+  const APP = 'services/gateway/src/frontend/command-hub/app.js';
+  const PIN_TEST = 'services/gateway/test/command-hub/cache-bust-pin.test.ts';
+  const OTHER_TEST = 'services/gateway/test/unrelated.test.ts';
+  const NEW_TEST = 'services/gateway/test/ch-reason-meta.test.ts';
+
+  it('the runner jest targets include every suite that names app.js, not only the paired ones', async () => {
+    const gh = platform.github;
+    gh.branches.set('main', gh.commit({
+      ...gh.filesAt('main'),
+      [APP]: "function renderReasons() { return 'x'; }\n",
+      [PIN_TEST]: "import * as fs from 'fs';\ntest('pin', () => { expect(fs.readFileSync('src/frontend/command-hub/app.js', 'utf8')).toBeTruthy(); });\n",
+      [OTHER_TEST]: "test('other', () => { expect(1).toBe(1); });\n",
+    }));
+    model.operatorPlan.push(tools(['autopilot_run_task', { request: 'Show recency on the Command Hub failure reasons.', title: 'Failure reason recency' }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'Please do this: show recency on the Command Hub failure reasons.', 'c4c4c4c4-0000-4000-8000-000000004617');
+    expect(res.status).toBe(200);
+    model.workerRuns.push([
+      tools(
+        ['edit_file', { path: APP, old_string: "return 'x';", new_string: "return 'x (recent)';" }],
+        ['write_file', { path: NEW_TEST, content: "test('meta', () => { expect(true).toBe(true); });\n" }],
+      ),
+      tools(['finish', { summary: 'Recency on the failure reasons.', pr_title: 'feat(command-hub): failure reason recency', pr_body: 'Shows recency.' }]),
+    ]);
+    await executorTick();
+
+    const runnerJest = checks.log.filter((c) => c.kind === 'runner:jest').map((c) => String(c.target));
+    expect(runnerJest).toHaveLength(1);
+    expect(runnerJest[0]).toContain('test/command-hub/cache-bust-pin.test.ts');
+    expect(runnerJest[0]).toContain('test/ch-reason-meta.test.ts');
+    expect(runnerJest[0]).not.toContain('unrelated.test.ts');
+  });
+});
+
 describe('Contract: the emulated one-in-flight-execution index matches the migration', () => {
   it('the fake refuses a second in-flight execution for a finding with the same statuses the real index covers', () => {
     const dir = path.join(__dirname, '../../../supabase/migrations');
