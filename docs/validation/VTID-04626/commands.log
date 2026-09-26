@@ -15,3 +15,9 @@ node --check src/frontend/command-hub/app.js && node --check src/frontend/comman
 
 # Visual verification: local harness (command-hub statics + fixture built from the live report rows), Playwright chromium
 # 1400x900 and 390x844; horizontal overflow 0 px; tab switch, drawer, stale-accept confirm exercised.
+
+# 2026-09-26 post-merge (80bc79a on staging)
+# Unversioned /command-hub/app.js is served from Cloudflare cache (cf-cache-status: HIT, age: 8716)
+# and still holds the pre-merge file; the versioned URL index.html references
+# (/command-hub/app.js?v=20261014-vtid-04626) serves the new code. The staging check now
+# fetches the versioned URL - the one a browser actually loads.
