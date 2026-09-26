@@ -390,6 +390,19 @@ export async function buildRememberFactDeps(sb: SupabaseClient) {
       const row = Array.isArray(data) ? data[0] : null;
       return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
     },
+    async supersedeOthers(tenantId: string, userId: string, factKey: string, keepId: string) {
+      const { data, error } = await sb
+        .from('memory_facts')
+        .update({ superseded_at: new Date().toISOString(), superseded_by: keepId })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .neq('id', keepId)
+        .select('id');
+      if (error) throw new Error(error.message);
+      return Array.isArray(data) ? data.length : 0;
+    },
     async listCurrentFacts(tenantId: string, userId: string) {
       const { data } = await sb
         .from('memory_facts')
