@@ -23,8 +23,11 @@ describe('VTID-04474 staging orchestrator flags', () => {
     expect(stage).toContain(`{name:"${flag}", value:"true"}`);
   });
 
-  it.each(FLAGS)('%s is not declared on the prod workflow', (flag) => {
-    expect(prod).not.toContain(flag);
+  // VTID-04605: the owner approved the specialists for production — prod now
+  // pins the same three flags (and the same values) as staging.
+  it.each(FLAGS)('%s is declared "true" on the prod workflow too (VTID-04605)', (flag) => {
+    expect(prod).toContain(`{name:"${flag}", value:"true"}`);
+    expect(prod).toMatch(new RegExp(`IN\\([^)]*"${flag}"`));
   });
 
   it('does not enable run leases (their migration is not applied)', () => {
