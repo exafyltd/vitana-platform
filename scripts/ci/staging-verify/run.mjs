@@ -187,7 +187,7 @@ function runPlaywright(service, repoRoot, t, outDir) {
   // can carry a stale or weakened copy.
   copyFileSync(join(HERE, 'staging-guard.ts'), join(dirname(specAbs), 'staging-guard.ts'));
   ensureDeps(cwdAbs);
-  if (!browsersInstalled && !process.env.STAGING_VERIFY_SKIP_BROWSER_INSTALL) {
+  if (!browsersInstalled && !(process.env.STAGING_VERIFY_SKIP_BROWSER_INSTALL ?? '')) {
     execFileSync('npx', ['playwright', 'install', 'chromium', '--with-deps'], { cwd: cwdAbs, stdio: 'inherit' });
     browsersInstalled = true;
   }
@@ -198,11 +198,11 @@ function runPlaywright(service, repoRoot, t, outDir) {
 export default defineConfig({
   testDir: '.', timeout: 90_000, retries: 0, workers: 1, reporter: [['list']],
   use: {
-    baseURL: process.env.STAGING_BASE_URL, ...devices['Desktop Chrome'], screenshot: 'only-on-failure',
+    baseURL: process.env.STAGING_BASE_URL ?? '', ...devices['Desktop Chrome'], screenshot: 'only-on-failure',
     // Local-sandbox escape hatches only (a pinned browser binary, a
     // TLS-intercepting proxy). CI sets neither.
-    ...(process.env.STAGING_VERIFY_CHROMIUM_PATH ? { launchOptions: { executablePath: process.env.STAGING_VERIFY_CHROMIUM_PATH } } : {}),
-    ...(process.env.STAGING_VERIFY_IGNORE_HTTPS_ERRORS === '1' ? { ignoreHTTPSErrors: true } : {}),
+    ...((process.env.STAGING_VERIFY_CHROMIUM_PATH ?? '') ? { launchOptions: { executablePath: process.env.STAGING_VERIFY_CHROMIUM_PATH ?? '' } } : {}),
+    ...((process.env.STAGING_VERIFY_IGNORE_HTTPS_ERRORS ?? '') === '1' ? { ignoreHTTPSErrors: true } : {}),
   },
   outputDir: ${JSON.stringify(join(outDir, 'playwright'))},
 });
@@ -217,7 +217,7 @@ export default defineConfig({
       PATH: process.env.PATH,
       HOME: process.env.HOME,
       CI: '1',
-      ...(process.env.PLAYWRIGHT_BROWSERS_PATH ? { PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH } : {}),
+      ...((process.env.PLAYWRIGHT_BROWSERS_PATH ?? '') ? { PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? '' } : {}),
       ...passthrough(['STAGING_VERIFY_CHROMIUM_PATH', 'STAGING_VERIFY_IGNORE_HTTPS_ERRORS', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS']),
       STAGING_BASE_URL: base,
       STAGING_GATEWAY_URL: lib.STAGING_TARGETS.gateway,
@@ -318,8 +318,9 @@ async function verify(args) {
   }
 
   const outcome = lib.decideOutcome({ superseded, results, plan });
-  const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_RUN_ID
-    ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  const serverUrl = process.env.GITHUB_SERVER_URL ?? '';
+  const runUrl = serverUrl && process.env.GITHUB_RUN_ID
+    ? `${serverUrl}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
   const message = lib.buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl });
   const headSubject = git(repoRoot, ['log', '-1', '--format=%s', sha], { allowFail: true }) || '';
