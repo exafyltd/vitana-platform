@@ -401,7 +401,7 @@
       inv.status === 'failing' ? inv.consecutive_failures + ' failures in a row' : (inv.failures_30d ? inv.failures_30d + ' failures in 30 days' : 'No failures in 30 days'),
       'Model: routing stage "' + inv.stage + '"',
     ]));
-    g.appendChild(stageCard('3', 'Quarantine', p.sentinel.quarantined > 0 ? 'idle' : 'ok', p.sentinel.quarantined, 'patterns quarantined', [
+    g.appendChild(stageCard('3', 'Quarantine', p.sentinel.status, p.sentinel.quarantined, 'patterns quarantined', [
       p.sentinel.probation + ' in probation',
       'Stops repeated investigations of the same pattern',
     ]));
