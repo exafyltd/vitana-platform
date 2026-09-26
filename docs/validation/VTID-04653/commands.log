@@ -1,0 +1,6 @@
+# VTID-04653
+cd services/gateway
+npx tsc --noEmit -p .
+npx jest test/orb/latency test/orb/live/characterization -u   # deliberate prompt change
+npx jest                                                    # full suite
+# bytes: payload identity harness copy with NAV_V2_ENABLED=true (production value)
