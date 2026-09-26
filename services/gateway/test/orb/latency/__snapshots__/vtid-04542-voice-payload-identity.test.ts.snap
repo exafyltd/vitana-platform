@@ -3,8 +3,8 @@
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) admin-surface-en: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 10558,
-  "instruction_sha256": "4b91adaa222a34faa90ad768f5c9b7e95183a14c524efbee27e1de7cc6f49182",
+  "instruction_bytes": 10629,
+  "instruction_sha256": "d75648c4936c2498ac61608d1ed9f3e69216c2d5241112ca47b46b4a757744df",
   "provider": "nova_sonic",
   "tool_count": 135,
   "tools_bytes": 45542,
@@ -115,7 +115,7 @@ TOOLS:
 - Do NOT use community tools (events, groups, diary, reminders, chat, memory of personal facts, health) on this surface — they are not available here
 - If the user asks for ERP/BackOffice work (invoices, journals, payments, approvals of financial documents), say plainly that this lives in the BackOffice surface and offer to take them there
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 
 
 IMPORTANT:
@@ -413,8 +413,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26669,
-  "instruction_sha256": "915d76811acee95ed0c28a6abd205d801dd36c532ff113117d754b3d542812d0",
+  "instruction_bytes": 26740,
+  "instruction_sha256": "1f9320f3139c9f1acd6233aac5f0e659b78e14ee1b66138918d9d71bcd9da2e0",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -545,7 +545,7 @@ TOOLS:
 - Use get_recommendations to get personalized event, group, and match suggestions for the user
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 - MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
@@ -794,8 +794,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 27716,
-  "instruction_sha256": "2c2fa8d6395af9451cbd8b398dc556a0b0d0e94af12100c4dabe543ad4b6cee5",
+  "instruction_bytes": 27787,
+  "instruction_sha256": "74209b573419865afc28c234bc20f2fc7cbf76c2426afa718f141fa6e92e64dd",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -926,7 +926,7 @@ TOOLS:
 - Use get_recommendations to get personalized event, group, and match suggestions for the user
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 - MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
@@ -1195,8 +1195,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26813,
-  "instruction_sha256": "5e5523e88c017d9ccf47981eb8f9f8c8c9a94e84ffe3df25aa3634e42fb0acb1",
+  "instruction_bytes": 26884,
+  "instruction_sha256": "3609260fc2f6d9f671b18fcd2b3ff423a33aa4742f32886978a4f14ffa12ac5d",
   "provider": "cascaded",
   "tool_count": 295,
   "tools_bytes": 228598,
@@ -1334,7 +1334,7 @@ TOOLS:
 - Use get_recommendations to get personalized event, group, and match suggestions for the user
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 - MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
@@ -1828,8 +1828,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) command-hub-developer-en: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 12272,
-  "instruction_sha256": "848c1f8abe38b9b41c3f3831261fca8d038f7ff70deba97fe9bce0596e779938",
+  "instruction_bytes": 12343,
+  "instruction_sha256": "60e7466b3089f18fb890a3e4b455c7964acf8067a5c5c139e8fe8a9fdfeeb847",
   "provider": "nova_sonic",
   "tool_count": 157,
   "tools_bytes": 54750,
@@ -1943,7 +1943,7 @@ TOOLS:
 - Use the dev_* read tools for task, OASIS and work-order lookups
 - Community-surface tools (events, community search, reminders, chat) do not exist in this surface. If the developer asks about events, groups, the Maxina Community, or wellness, say in your own words that this is the engineering assistant and that community topics live on vitanaland.com
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 
 
 IMPORTANT:
@@ -2245,8 +2245,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 28078,
-  "instruction_sha256": "bbcc33b74350ca55a608694757ff22d38bbee0cfb650fe61b219fbb447771a06",
+  "instruction_bytes": 28149,
+  "instruction_sha256": "468b20a04000de23147a1f0e326bca9ca014b9b9498f1614dfca83210b998546",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -2369,7 +2369,7 @@ TOOLS:
 - Use get_recommendations to get personalized event, group, and match suggestions for the user
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 - MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
@@ -2665,8 +2665,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 26829,
-  "instruction_sha256": "e25ca0da9e01316270550b1bd77b92c5e89c2bd3dd71b3397da37192d74557ac",
+  "instruction_bytes": 26900,
+  "instruction_sha256": "c747b36555ee5c673dc5420c4f78cff4c8a5bb88027778e5f29d49dba521e7a9",
   "provider": "vertex",
   "tool_count": 34,
   "tools_bytes": 49198,
@@ -2804,7 +2804,7 @@ TOOLS:
 - Use get_recommendations to get personalized event, group, and match suggestions for the user
 - IMPORTANT: When a tool returns detailed results (location, organizer, description), remember that data. For follow-up questions about items you already listed, answer directly from your memory — do NOT call the tool again. Calling tools repeatedly causes delays in voice conversations.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
-- set_reminder ("remind me at 8pm to take my magnesium"): compute the absolute UTC ISO time from their words and local timezone, then confirm with the returned human_time. find_reminders looks reminders up (also to count them before "delete all my reminders"). delete_reminder only after you asked "Are you sure?" and they said yes (confirmed=true).
+- set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 - MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (92 chapters of platform docs: Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, community…). This applies to HOW-TO questions only: they are teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: for "what is / explain / tell me about X", give the short version first (2–3 sentences), then offer the fuller introduction as one yes/no proposal. On yes, call narrate_guided_session with topic_query for the authored deep dive, or go deeper from your own knowledge if no topic matches.
