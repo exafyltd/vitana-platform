@@ -676,6 +676,10 @@ export type CicdEventType =
   | 'voice.healing.rollback.triggered'
   | 'voice.healing.rollback.failed'
   | 'voice.healing.investigation.completed'
+  // VTID-04626: operator decisions on the Voice Self-Healing screen
+  | 'voice.healing.mode.changed'
+  | 'voice.healing.report.accepted'
+  | 'voice.healing.report.dismissed'
   // VTID-NAV-01: Vitana Navigator — voice-driven navigation guide events
   | 'orb.navigator.consulted'
   | 'orb.navigator.requested'

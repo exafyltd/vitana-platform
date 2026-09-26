@@ -12,7 +12,7 @@
 import { gatewayBaseUrl } from '../env';
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAuth, optionalAuth, requireExafyAdmin, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
 import {
@@ -23,6 +23,14 @@ import { spawnInvestigator } from '../services/voice-architecture-investigator';
 import { notifyGChat } from '../services/self-healing-snapshot-service';
 import { setMode } from '../services/voice-shadow-mode';
 import { getVoiceSelfHealingMode } from '../services/voice-self-healing-adapter';
+// VTID-04626: Voice Self-Healing screen rebuild — one overview read + actions.
+import { buildHealingOverview } from '../services/voice-healing-overview';
+import {
+  acceptReport,
+  retryReport,
+  dismissReports,
+  reportExecution,
+} from '../services/voice-healing-actions';
 // VTID-02868: per-session quality classification from session-stop metadata.
 // Pure function — runs inline on session-list responses without extra I/O.
 import { classifyQualityFromSessionStop } from '../services/voice-failure-taxonomy';
@@ -1112,7 +1120,7 @@ router.get('/healing/quarantine', async (req: Request, res: Response) => {
  *
  * Body: { class: string, signature: string, reason?: string }
  */
-router.post('/healing/quarantine/release', async (req: Request, res: Response) => {
+router.post('/healing/quarantine/release', requireExafyAdmin as any, async (req: Request, res: Response) => {
   const body = (req.body || {}) as Record<string, unknown>;
   const klass = typeof body.class === 'string' ? body.class : '';
   const signature = typeof body.signature === 'string' ? body.signature : '';
@@ -1146,7 +1154,7 @@ router.post('/healing/quarantine/release', async (req: Request, res: Response) =
  *
  * Body: { class: string, signature?: string, notes?: string, related_vtid?: string }
  */
-router.post('/healing/investigate', async (req: Request, res: Response) => {
+router.post('/healing/investigate', requireExafyAdmin as any, async (req: Request, res: Response) => {
   const body = (req.body || {}) as Record<string, unknown>;
   const klass = typeof body.class === 'string' ? body.class : '';
   const signature = typeof body.signature === 'string' ? body.signature : null;
@@ -1237,7 +1245,7 @@ router.get('/healing/reports/:id', async (req: Request, res: Response) => {
  *
  * Body: { status: 'acknowledged'|'accepted'|'rejected', decision_notes?: string, acknowledged_by?: string }
  */
-router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
+router.patch('/healing/reports/:id', requireExafyAdmin as any, async (req: Request, res: Response) => {
   const config = getSupabaseConfig();
   if (!config) {
     return res.status(500).json({ ok: false, error: 'Supabase not configured' });
@@ -1251,7 +1259,8 @@ router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
     });
   }
   const decision_notes = typeof body.decision_notes === 'string' ? body.decision_notes : null;
-  const acknowledged_by = typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
+  const actor = healingActor(req);
+  const acknowledged_by = actor.email || actor.user_id;
 
   const id = req.params.id;
   const patch: Record<string, unknown> = {
@@ -1294,310 +1303,88 @@ router.patch('/healing/reports/:id', async (req: Request, res: Response) => {
   }
 });
 
+function healingActor(req: Request): { user_id: string; email: string | null } {
+  const id = (req as AuthenticatedRequest).identity;
+  return { user_id: id?.user_id || 'unknown', email: (id as any)?.email ?? null };
+}
+
 /**
- * POST /api/v1/voice-lab/healing/reports/:id/execute (VTID-02021)
+ * GET /api/v1/voice-lab/healing/overview (VTID-04626)
  *
- * Materialize the report's recommendation into actual work items. For each
- * proposed_next_step, allocates a VTID via the canonical RPC, populates the
- * vtid_ledger row (status=scheduled, spec_status=approved, layer=INFRA,
- * module=GATEWAY) with the step text as title/summary, and stamps
- * metadata.source_report_id so we can join back later.
- *
- * The caller's intent: "I read the plan, I approve it, execute it." Sets
- * voice_architecture_reports.status = accepted and emits a
- * voice.healing.report.executed OASIS event.
- *
- * Body: { acknowledged_by?: string, decision_notes?: string }
- *
- * Returns: { ok, executed_vtids, report_id, step_count }
+ * Everything the Voice Self-Healing screen shows, in one read: mode, the
+ * health of each loop stage with its real last error, alerts, reports split
+ * into open / failed investigations / decided, quarantine, recent detections,
+ * the per-class table and the live session monitor.
  */
-router.post('/healing/reports/:id/execute', async (req: Request, res: Response) => {
-  const config = getSupabaseConfig();
-  if (!config) {
-    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
-  }
-  const reportId = req.params.id;
-  const body = (req.body || {}) as Record<string, unknown>;
-  const acknowledgedBy =
-    typeof body.acknowledged_by === 'string' ? body.acknowledged_by : 'command-hub';
-  const decisionNotes =
-    typeof body.decision_notes === 'string' ? body.decision_notes : null;
-
-  // 1. Fetch report
-  let report: any = null;
+router.get('/healing/overview', async (_req: Request, res: Response) => {
   try {
-    const r = await fetch(
-      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}&limit=1`,
-      { headers: { apikey: config.key, Authorization: `Bearer ${config.key}` } },
-    );
-    if (!r.ok) {
-      return res.status(r.status).json({ ok: false, error: await r.text() });
-    }
-    const rows = (await r.json()) as any[];
-    if (rows.length === 0) return res.status(404).json({ ok: false, error: 'report not found' });
-    report = rows[0];
+    const overview = await buildHealingOverview();
+    return res.json({ ok: true, ...overview });
   } catch (err: any) {
-    return res.status(500).json({ ok: false, error: err.message });
+    console.error('[VTID-04626] /healing/overview error:', err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'overview failed' });
   }
-
-  // VTID-02032: idempotency. Once a report has been accepted (or rejected),
-  // a second click on Accept & Execute must NOT create a duplicate batch.
-  // Return 409 with a clear message + a hint to the /execution endpoint
-  // so the frontend can route the operator to the existing in-progress
-  // tasks instead.
-  if (report.status && report.status !== 'open') {
-    return res.status(409).json({
-      ok: false,
-      error: `report already ${report.status}`,
-      status: report.status,
-      acknowledged_by: report.acknowledged_by ?? null,
-      acknowledged_at: report.acknowledged_at ?? null,
-      execution_endpoint: `/api/v1/voice-lab/healing/reports/${reportId}/execution`,
-    });
-  }
-
-  // 2. Extract proposed steps
-  const steps = (report.report?.recommendation?.proposed_next_steps || []) as string[];
-  if (!Array.isArray(steps) || steps.length === 0) {
-    return res.status(400).json({
-      ok: false,
-      error: 'report has no recommendation.proposed_next_steps to execute',
-    });
-  }
-
-  const reportClass = String(report.class || 'voice.unknown');
-  const reportSig = report.normalized_signature ?? null;
-
-  // 3. For each step: allocate VTID + populate ledger row
-  const executedVtids: string[] = [];
-  const failures: Array<{ step: string; error: string }> = [];
-  for (let i = 0; i < steps.length; i++) {
-    const step = String(steps[i] || '').trim();
-    if (!step) continue;
-    try {
-      // 3a. Allocate VTID via RPC
-      const allocResp = await fetch(`${config.url}/rest/v1/rpc/allocate_global_vtid`, {
-        method: 'POST',
-        headers: {
-          apikey: config.key,
-          Authorization: `Bearer ${config.key}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          p_source: 'voice-investigator-execute',
-          p_layer: 'INFRA',
-          p_module: 'GATEWAY',
-        }),
-      });
-      if (!allocResp.ok) {
-        failures.push({ step: step.slice(0, 80), error: `alloc_${allocResp.status}` });
-        continue;
-      }
-      const allocRows = (await allocResp.json()) as Array<{ vtid: string }>;
-      const newVtid = allocRows[0]?.vtid;
-      if (!newVtid) {
-        failures.push({ step: step.slice(0, 80), error: 'alloc_no_vtid_returned' });
-        continue;
-      }
-
-      // 3b. Populate the ledger row (the RPC creates an allocated stub)
-      const title = `INVESTIGATOR: ${step.slice(0, 180)}`;
-      const summary =
-        `${step}\n\n---\n` +
-        `Source: voice-architecture-investigator report ${reportId}\n` +
-        `Class: ${reportClass}\n` +
-        `Signature: ${reportSig ?? '(none)'}\n` +
-        `Step ${i + 1} of ${steps.length}`;
-      const patchResp = await fetch(
-        `${config.url}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(newVtid)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            apikey: config.key,
-            Authorization: `Bearer ${config.key}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({
-            title,
-            summary,
-            layer: 'INFRA',
-            module: 'GATEWAY',
-            status: 'scheduled',
-            spec_status: 'approved',
-            assigned_to: 'autopilot',
-            metadata: {
-              source: 'voice-investigator-execute',
-              source_report_id: reportId,
-              source_report_class: reportClass,
-              source_report_signature: reportSig,
-              step_index: i,
-              step_total: steps.length,
-            },
-            updated_at: new Date().toISOString(),
-          }),
-        },
-      );
-      if (!patchResp.ok) {
-        failures.push({ step: step.slice(0, 80), error: `patch_${patchResp.status}` });
-        continue;
-      }
-      executedVtids.push(newVtid);
-
-      // VTID-02029: cross-cutting visibility. Insert into self_healing_log
-      // and emit self-healing.task.injected so this VTID appears in the
-      // existing Self-Healing History list and Autonomy Trace timeline
-      // alongside dev-autopilot self-heals — operator doesn't have to
-      // know about a separate voice silo.
-      const recommendation = report.report?.recommendation || {};
-      const recConfidence =
-        typeof recommendation.confidence === 'number' ? recommendation.confidence : 0.5;
-      const shlogEndpoint = `voice-error://${reportClass}`;
-      fetch(`${config.url}/rest/v1/self_healing_log`, {
-        method: 'POST',
-        headers: {
-          apikey: config.key,
-          Authorization: `Bearer ${config.key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          vtid: newVtid,
-          endpoint: shlogEndpoint,
-          failure_class: reportClass,
-          confidence: recConfidence,
-          diagnosis: {
-            source: 'voice-investigator-execute',
-            source_report_id: reportId,
-            normalized_signature: reportSig,
-            recommendation_track: recommendation.track || null,
-            step_index: i,
-            step_total: steps.length,
-            step_text: step.slice(0, 500),
-            },
-          outcome: 'pending',
-          blast_radius: 'none',
-          attempt_number: 1,
-        }),
-      }).catch(() => { /* best-effort */ });
-
-      // Emit self-healing.task.injected so Autonomy Trace + downstream
-      // listeners see the same event the canonical injector emits.
-      try {
-        const { emitOasisEvent } = await import('../services/oasis-event-service');
-        await emitOasisEvent({
-          vtid: newVtid,
-          type: 'self-healing.task.injected',
-          source: 'voice-investigator-execute',
-          status: 'info',
-          message: `Voice investigator step ${i + 1}/${steps.length} injected: ${title.slice(0, 100)}`,
-          payload: {
-            service: 'orb-voice',
-            endpoint: shlogEndpoint,
-            failure_class: reportClass,
-            confidence: recConfidence,
-            source_report_id: reportId,
-            normalized_signature: reportSig,
-            step_index: i,
-            step_total: steps.length,
-            recommendation_track: recommendation.track || null,
-            auto_approved: true,
-          },
-        });
-      } catch { /* best-effort */ }
-    } catch (err: any) {
-      failures.push({ step: step.slice(0, 80), error: err?.message ?? 'unknown' });
-    }
-  }
-
-  // 4. Update the report row to accepted
-  try {
-    await fetch(
-      `${config.url}/rest/v1/voice_architecture_reports?id=eq.${encodeURIComponent(reportId)}`,
-      {
-        method: 'PATCH',
-        headers: {
-          apikey: config.key,
-          Authorization: `Bearer ${config.key}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({
-          status: 'accepted',
-          acknowledged_by: acknowledgedBy,
-          acknowledged_at: new Date().toISOString(),
-          decision_notes: decisionNotes,
-        }),
-      },
-    );
-  } catch {
-    /* best-effort — VTIDs are already created so the user has visible work */
-  }
-
-  // 5. Emit OASIS event for audit
-  try {
-    const { emitOasisEvent } = await import('../services/oasis-event-service');
-    await emitOasisEvent({
-      vtid: 'VTID-VOICE-HEALING',
-      type: 'voice.healing.investigation.completed',
-      source: 'voice-lab',
-      status: 'success',
-      message: `Investigator report accepted and executed (${executedVtids.length} VTIDs scheduled${failures.length ? `, ${failures.length} failed` : ''})`,
-      payload: {
-        report_id: reportId,
-        class: reportClass,
-        normalized_signature: reportSig,
-        executed_vtids: executedVtids,
-        failures,
-        acknowledged_by: acknowledgedBy,
-      },
-    });
-  } catch {
-    /* best-effort */
-  }
-
-  return res.json({
-    ok: true,
-    report_id: reportId,
-    step_count: steps.length,
-    executed_vtids: executedVtids,
-    failures: failures.length > 0 ? failures : undefined,
-  });
 });
 
 /**
- * GET /api/v1/voice-lab/healing/reports/:id/execution (VTID-02021)
+ * POST /api/v1/voice-lab/healing/reports/:id/execute (VTID-02021, rebuilt VTID-04626)
  *
- * Returns the live status of every VTID created from this report's
- * Accept-and-Execute action. Drives the drawer's "Execution Progress"
- * polling — operator sees scheduled → in_progress → completed/failed
- * without leaving the Self-Healing screen.
+ * Accept a report and hand it to the Dev Autopilot on-ramp as ONE open-ended
+ * agent execution. Held for human approval before any PR opens wherever
+ * OPERATOR_PR_APPROVAL_REQUIRED is on (staging and prod). exafy_admin only.
+ *
+ * Body: { decision_notes?: string }
+ */
+router.post('/healing/reports/:id/execute', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const notes = typeof body.decision_notes === 'string' ? body.decision_notes.slice(0, 2000) : null;
+  const r = await acceptReport(req.params.id, healingActor(req), notes);
+  const { status, ...rest } = r;
+  return res.status(status).json(rest);
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/reports/:id/retry (VTID-04626)
+ *
+ * Re-run the investigator for a failed investigation. The failed row is
+ * closed only when the retry produced a real report. exafy_admin only.
+ */
+router.post('/healing/reports/:id/retry', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  const r = await retryReport(req.params.id, healingActor(req));
+  const { status, ...rest } = r;
+  return res.status(status).json(rest);
+});
+
+/**
+ * POST /api/v1/voice-lab/healing/reports/dismiss (VTID-04626)
+ *
+ * Close open reports without acting on them. Body:
+ *   { ids: string[] } or { all_failed: true }, plus optional { reason }.
+ * exafy_admin only.
+ */
+router.post('/healing/reports/dismiss', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'dismissed from Command Hub';
+  let target: string[] | 'all_failed';
+  if (body.all_failed === true) target = 'all_failed';
+  else if (Array.isArray(body.ids)) target = body.ids.map(String);
+  else return res.status(400).json({ ok: false, error: 'ids[] or all_failed:true required' });
+  const r = await dismissReports(target, healingActor(req), reason);
+  const { status, ...rest } = r;
+  return res.status(status).json(rest);
+});
+
+/**
+ * GET /api/v1/voice-lab/healing/reports/:id/execution (VTID-02021, rebuilt VTID-04626)
+ *
+ * Live status of the work an accepted report started: the Dev Autopilot
+ * execution for reports accepted after VTID-04626, the per-step ledger rows
+ * for older ones.
  */
 router.get('/healing/reports/:id/execution', async (req: Request, res: Response) => {
-  const config = getSupabaseConfig();
-  if (!config) {
-    return res.status(500).json({ ok: false, error: 'Supabase not configured' });
-  }
-  const reportId = req.params.id;
-  // PostgREST: filter on JSONB key value via metadata->>source_report_id=eq.<id>
-  const url =
-    `${config.url}/rest/v1/vtid_ledger?` +
-    `metadata->>source_report_id=eq.${encodeURIComponent(reportId)}&` +
-    `select=vtid,title,status,spec_status,is_terminal,terminal_outcome,claimed_by,updated_at,metadata&` +
-    `order=metadata->step_index.asc.nullslast,vtid.asc&limit=50`;
-  try {
-    const resp = await fetch(url, {
-      headers: { apikey: config.key, Authorization: `Bearer ${config.key}` },
-    });
-    if (!resp.ok) {
-      const text = await resp.text();
-      return res.status(resp.status).json({ ok: false, error: text });
-    }
-    const rows = (await resp.json()) as any[];
-    return res.json({ ok: true, report_id: reportId, vtids: rows });
-  } catch (err: any) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
+  const r = await reportExecution(req.params.id);
+  const { status, ...rest } = r;
+  return res.status(status).json(rest);
 });
 
 /**
@@ -1656,10 +1443,14 @@ router.post('/healing/gchat-ping-test', async (req: Request, res: Response) => {
  * Flip system_config.voice_self_healing_mode. Body: { mode: 'off' | 'shadow' | 'live', vtid?: string }.
  * Idempotent. Emits voice.healing.dispatched (mode flip event) for audit.
  */
-router.post('/healing/mode', async (req: Request, res: Response) => {
+router.post('/healing/mode', requireExafyAdmin as any, async (req: Request, res: Response) => {
   const body = (req.body || {}) as Record<string, unknown>;
   const next = body.mode;
-  const actorVtid = typeof body.vtid === 'string' ? body.vtid : 'VTID-VOICE-HEALING';
+  // VTID-04626: the actor is the signed-in admin, not a VTID typed into a
+  // browser prompt; a real VTID can still be passed for the audit event.
+  const actorVtid =
+    typeof body.vtid === 'string' && /^VTID-\d{4,5}$/.test(body.vtid) ? body.vtid : 'VTID-VOICE-HEALING';
+  console.log(`[VTID-04626] voice self-healing mode -> ${String(next)} by ${healingActor(req).email || healingActor(req).user_id}`);
   if (next !== 'off' && next !== 'shadow' && next !== 'live') {
     return res.status(400).json({ ok: false, error: 'mode must be one of off|shadow|live' });
   }
