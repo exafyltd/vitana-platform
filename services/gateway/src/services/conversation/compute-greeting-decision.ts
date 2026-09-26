@@ -547,8 +547,24 @@ function firstTimeWelcomeFires(ctx: GreetingDecisionContext): boolean {
 /** The once-per-real-day briefing is due unless we already stamped today (or a
  *  future date). Mirrors `_briefingDueNd` (orb-live L7711). */
 function briefingDue(ctx: GreetingDecisionContext): boolean {
+  // VTID-04595 — the new day starts at 05:00 local (owner rule 2026-09-26).
+  // Between 00:00 and 04:59 the member is still in the previous day: the
+  // briefing never fires then, so it can never stamp the new calendar date
+  // and swallow the real first conversation of the morning (a 00:39 session
+  // did exactly that). From 05:00 on `todayTz` is the day the stamp records.
+  // An unknown hour (the -1 placeholder) keeps the date-only rule.
+  if (isBeforeNewDayStartHour(ctx.localHour)) return false;
   const d = ctx.lastFullBriefingDate;
   return !(typeof d === 'string' && d >= ctx.todayTz);
+}
+
+/** VTID-04595 — local hours 00:00–04:59 still belong to the previous day.
+ *  Mirrors `isBeforeNewDayStart` in new-day-return.ts; inlined so this pure
+ *  brain keeps no import of a provider module. The two are pinned equal by
+ *  test/vtid-04595-new-day-starts-at-5am.test.ts. */
+export const BRIEFING_DAY_START_HOUR = 5;
+export function isBeforeNewDayStartHour(localHour: number): boolean {
+  return Number.isInteger(localHour) && localHour >= 0 && localHour < BRIEFING_DAY_START_HOUR;
 }
 
 /** The substantive-content gate for the rich new-day overview (orb-live L7771).
