@@ -771,6 +771,40 @@ describe('CI failure on an agent PR: the fix continues on the same PR', () => {
   });
 });
 
+describe('VTID-04636 — the self-healing reconciler judges a fix-mode VTID by its lineage', () => {
+  it('leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed)', async () => {
+    const { reconcileAutopilotLinkedSelfHealingVtids } = await import('../src/services/self-healing-reconciler');
+    const { vtid, execId, prNumber } = await openAgentPr('a0000000-0000-4000-8000-000000004636');
+    expect(platform.ledger(vtid).metadata?.autopilot_execution_id).toBe(execId);
+    const pr = platform.github.prs.get(prNumber)!;
+    platform.github.setChecks(pr.head.sha, CI_CHECKS, ['Gateway (Jest, ~7.5k tests)']);
+    await ciTick();
+    const child = platform.rows('dev_autopilot_executions').find((e) => e.parent_execution_id === execId)!;
+    expect(platform.execution(execId).status).toBe('reverted');
+    // The reconciler runs every cycle; here the parent is reverted and the child has not run yet.
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    model.workerRuns.push([
+      tools(['edit_file', { path: GREETING, old_string: 'return `Hello ${name}`;', new_string: 'return `Hello, ${name}`;' }]),
+      tools(['finish', { summary: 'comma', pr_title: 'fix: comma', pr_body: 'comma' }]),
+    ]);
+    await executorTick();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    platform.github.setChecks(pr.head.sha, CI_CHECKS);
+    await ciTick();
+    stagingDeployCompleted(pr.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    elapseVerificationWindow(child.id);
+    await verificationWatcherTick();
+    await platform.settle();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.execution(child.id).status).toBe('completed');
+    expect(platform.ledger(vtid)).toEqual(expect.objectContaining({ is_terminal: true, terminal_outcome: 'success', status: 'completed' }));
+  });
+});
+
 // ===========================================================================
 // 5. Environment ownership (one table, two gateways)
 // ===========================================================================
@@ -1008,6 +1042,48 @@ describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
     expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
     expect(platform.execution(execId).status).toBe('ci');
     expect(execEvents('dev_autopilot.execution.branch_updated', execId)).toHaveLength(1);
+  });
+});
+
+describe('Console turn: several rounds of tools until the model answers (VTID-04628)', () => {
+  const THREAD = 'c4c4c4c4-0000-4000-8000-000000004628';
+  afterEach(() => { delete process.env.OPERATOR_MAX_TOOL_ROUNDS; });
+
+  it('a failed tool call is corrected in the next round and the answer comes from the second result', async () => {
+    model.operatorPlan.push(tools(['run_code', { code: 'this is not javascript (' }]));
+    model.operatorContinue.push(tools(['run_code', { code: 'return 6 * 7' }]));
+    model.operatorContinue.push(text('6 × 7 is 42.'));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 6 times 7?', THREAD);
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toBe('6 × 7 is 42.');
+    const results = res.body.toolResults as Array<{ name: string; response: { ok: boolean } }>;
+    expect(results.map((r) => [r.name, r.response.ok])).toEqual([['run_code', false], ['run_code', true]]);
+    // Two continuation calls, each carrying the tool transcript back WITH the tools.
+    const cont = model.calls.filter((c) => c.stage === 'operator' && c.service === 'gemini-operator-continue');
+    expect(cont).toHaveLength(2);
+    expect(cont[0].historyLength).toBeLessThan(cont[1].historyLength);
+    // The single-round final call is not used when the model answered itself.
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(0);
+  });
+
+  it('OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '1';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1 + 1' }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 1 + 1?', THREAD);
+    expect(res.status).toBe(200);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(0);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
+  });
+
+  it('the round budget ends a model that keeps calling tools: the tool-less final call answers', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '3';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1' }]));
+    for (let i = 0; i < 5; i++) model.operatorContinue.push(tools(['run_code', { code: `return ${i + 2}` }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'keep going', THREAD);
+    expect(res.status).toBe(200);
+    expect((res.body.toolResults as unknown[]).length).toBe(3);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(2);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
   });
 });
 

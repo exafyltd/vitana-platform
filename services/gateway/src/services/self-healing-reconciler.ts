@@ -394,6 +394,49 @@ async function reconcileVoiceRow(
   }
 }
 
+interface LinkedExecutionRow {
+  id: string;
+  status: string;
+  pr_url: string | null;
+  pr_number: number | null;
+  branch: string | null;
+  metadata: Record<string, unknown> | null;
+  completed_at: string | null;
+}
+
+// VTID-04636: statuses after which the self-heal bridge may have spawned a
+// child that carries the work on. 'self_healed' is what the bridge writes on
+// the parent once the child succeeds.
+const LINEAGE_HANDOFF_STATUSES = new Set(['failed', 'failed_escalated', 'reverted', 'self_healed']);
+const LINEAGE_MAX_DEPTH = 5;
+
+/**
+ * VTID-04636: follow parent_execution_id from the linked execution to the
+ * newest descendant. Returns the row the VTID should be judged by: the
+ * linked row itself when it has no child, else the newest child (walked
+ * down, bounded). Returns null when a child lookup fails, so the caller
+ * never terminalizes on a partial view.
+ */
+export async function resolveExecutionLineageTail(
+  root: LinkedExecutionRow,
+): Promise<LinkedExecutionRow | null> {
+  let current = root;
+  for (let depth = 0; depth < LINEAGE_MAX_DEPTH; depth++) {
+    if (!LINEAGE_HANDOFF_STATUSES.has(current.status)) return current;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/dev_autopilot_executions?parent_execution_id=eq.${encodeURIComponent(current.id)}` +
+        `&select=id,status,pr_url,pr_number,branch,metadata,completed_at&order=created_at.desc&limit=1`,
+      { headers: supabaseHeaders() },
+    ).catch(() => null);
+    if (!res || !res.ok) return null;
+    const rows = (await res.json().catch(() => null)) as LinkedExecutionRow[] | null;
+    if (!Array.isArray(rows)) return null;
+    if (rows.length === 0) return current;
+    current = rows[0];
+  }
+  return current;
+}
+
 // PR-A (VTID-02922): owner of final terminal_outcome for any VTID that was
 // bridged into the Dev Autopilot execution pipeline — originally the
 // self-healing plane only, widened by VTID-03877 to also cover the operator
@@ -458,7 +501,20 @@ export async function reconcileAutopilotLinkedSelfHealingVtids(): Promise<void> 
         completed_at: string | null;
       }>;
       if (execRows.length === 0) continue;
-      const exec = execRows[0];
+      // VTID-04636: judge the VTID by its self-heal lineage, not the linked
+      // row alone. In fix mode the parent turns 'reverted' at the first red
+      // CI and later 'self_healed', while a child continues on the SAME PR
+      // (VTID-04017). Reading the parent alone closed VTID-04608/04614 as
+      // failed ~25 min before their fix-mode children merged and completed.
+      const linked = execRows[0];
+      const exec = await resolveExecutionLineageTail(linked);
+      if (!exec) continue; // child lookup failed — decide on the next cycle
+      if (exec.id !== linked.id) {
+        console.log(
+          `${LOG_PREFIX} ${lrow.vtid}: execution ${linked.id.slice(0, 8)} (${linked.status}) continued as ` +
+            `${exec.id.slice(0, 8)} (${exec.status})`,
+        );
+      }
 
       // Final success: autopilot says CI green + deploy verified + live probe.
       if (exec.status === 'completed') {
