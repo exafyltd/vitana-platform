@@ -1,0 +1,3 @@
+Test Suites: 6 passed, 6 total
+Tests:       198 passed, 198 total
+tsc-clean
