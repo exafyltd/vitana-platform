@@ -19,7 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export async function fetchActiveNotificationCategories(sb: SupabaseClient, tenantId: string | null) {
   return sb
     .from('notification_categories')
-    .select('id, type, slug, display_name, description, icon, sort_order, default_enabled')
+    .select('id, type, slug, display_name, description, icon, sort_order, default_enabled, mapped_types, member_can_disable')
     .eq('is_active', true)
     .or(`tenant_id.eq.${tenantId},tenant_id.is.null`)
     .order('type')
@@ -35,7 +35,7 @@ export async function fetchUserCategoryPreferences(sb: SupabaseClient, userId: s
 }
 
 export async function fetchActiveNotificationCategoryById(sb: SupabaseClient, categoryId: string) {
-  return sb.from('notification_categories').select('id').eq('id', categoryId).eq('is_active', true).single();
+  return sb.from('notification_categories').select('id, member_can_disable').eq('id', categoryId).eq('is_active', true).single();
 }
 
 export async function upsertUserCategoryPreference(
@@ -47,4 +47,14 @@ export async function upsertUserCategoryPreference(
     .upsert(row, { onConflict: 'user_id,category_id' })
     .select()
     .single();
+}
+
+/** VTID-04674: the types the admin has switched on for this tenant. */
+export async function fetchEnabledNotificationTypes(sb: SupabaseClient, tenantId: string | null) {
+  return sb
+    .from('notification_type_controls')
+    .select('type')
+    .eq('tenant_id', tenantId)
+    .eq('source_key', '')
+    .eq('enabled', true);
 }

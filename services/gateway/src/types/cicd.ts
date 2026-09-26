@@ -939,6 +939,9 @@ export type CicdEventType =
   | 'voice.chat_message.missing_session_fallback'
   | 'vitana_id.confirmed'
   // VTID-02047: Unified Feedback Pipeline events
+  // VTID-04674: an admin switched a notification type (or one automation's
+  // sends of it) on or off.
+  | 'notification.control.changed'
   | 'feedback.ticket.created'
   | 'feedback.ticket.status_changed'
   | 'feedback.ticket.triaged'

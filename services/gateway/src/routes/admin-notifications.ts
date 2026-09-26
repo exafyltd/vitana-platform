@@ -13,13 +13,15 @@
 import { Router, Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { notifyUser, notifyUsersAsync, NotificationPayload } from '../services/notification-service';
-import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from './admin-notifications-repository';
 
 const router = Router();
 const VTID = 'ADMIN-NOTIFICATIONS';
 
-router.use(requireExafyAdmin);
+// VTID-04674: requireAuth first — requireExafyAdmin only reads req.identity,
+// which nothing set on this router, so every call answered 401.
+router.use(requireAuth, requireExafyAdmin);
 
 // ── POST /compose — Send notification to user(s) ────────────
 

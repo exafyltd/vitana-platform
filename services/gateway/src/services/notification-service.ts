@@ -16,6 +16,13 @@
 import * as admin from 'firebase-admin';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './notification-service-repository';
+import {
+  isNotificationTypeAllowed,
+  isMemberCategoryAllowed,
+  recordNotificationBlock,
+  normalizeSourceKey,
+  isInQuietHours,
+} from './notification-controls/notification-controls-service';
 
 // Initialize Firebase Admin (once)
 if (!admin.apps.length) {
@@ -219,24 +226,6 @@ export const TYPE_META: Record<string, TypeMeta> = {
   intent_proactive_prompt_summary:    { channel: 'inapp',          priority: 'p3', category: 'system' },
 };
 
-// Category → preference column in user_notification_preferences
-const CATEGORY_PREF: Record<Category, string> = {
-  match:          'match_notifications',
-  community:      'community_notifications',
-  meetup:         'community_notifications',
-  live_room:      'live_room_notifications',
-  chat:           'push_enabled',           // chat inherits global toggle
-  calendar:       'push_enabled',
-  recommendation: 'recommendation_notifications',
-  health:         'health_notifications',
-  signal:         'health_notifications',
-  opportunity:    'recommendation_notifications',
-  diary:          'memory_notifications',
-  social:         'social_notifications',
-  offer:          'recommendation_notifications',
-  growth:         'social_notifications',
-  system:         'system_notifications',
-};
 
 // ── Low-level FCM Send ───────────────────────────────────────
 
@@ -652,20 +641,6 @@ async function getUserPrefs(
   return data as UserPrefs | null;
 }
 
-function isInDndWindow(prefs: UserPrefs): boolean {
-  if (!prefs.dnd_enabled || !prefs.dnd_start_time || !prefs.dnd_end_time) return false;
-
-  const now = new Date();
-  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const start = prefs.dnd_start_time; // e.g. "22:00"
-  const end = prefs.dnd_end_time;     // e.g. "07:00"
-
-  // Handle overnight spans (e.g. 22:00–07:00)
-  if (start > end) {
-    return hhmm >= start || hhmm < end;
-  }
-  return hhmm >= start && hhmm < end;
-}
 
 // ── Public API ───────────────────────────────────────────────
 
@@ -683,39 +658,49 @@ export async function notifyUser(
   supabase: SupabaseClient<any, any, any>
 ): Promise<{ pushed: number; inapp: boolean; suppressed?: string }> {
   const meta = TYPE_META[type] || { channel: 'push_and_inapp' as Channel, priority: 'p2' as Priority, category: 'system' as Category };
+  const sourceKey = normalizeSourceKey(payload.data?.automation_id);
+
+  // ── 0. Admin switch (VTID-04674) ─────────────────────────
+  // Checked before anything is written or pushed. A push-only type never
+  // writes a row, so the database guard alone could not stop it.
+  if (!(await isNotificationTypeAllowed(supabase, tenantId, type, sourceKey))) {
+    recordNotificationBlock(supabase, tenantId, type, sourceKey, 'admin_off');
+    console.log(`[Notifications] ${type} → user=${userId.slice(0, 8)}… suppressed: admin_disabled${sourceKey ? ` (${sourceKey})` : ''}`);
+    return { pushed: 0, inapp: false, suppressed: 'admin_disabled' };
+  }
 
   // ── 1. Check user preferences ────────────────────────────
   const prefs = await getUserPrefs(userId, tenantId, supabase);
 
-  // If the user has prefs, check the category toggle
-  if (prefs) {
-    // Global push gate
-    if (!prefs.push_enabled && meta.channel !== 'silent') {
-      // Push is off globally — downgrade channel to inapp-only
-      if (meta.channel === 'push') {
-        // push-only notification with push disabled → suppress entirely
-        return { pushed: 0, inapp: false, suppressed: 'push_disabled' };
-      }
-      // push_and_inapp → inapp only (handled below by not sending push)
-    }
-
-    // Category-specific gate (legacy boolean columns)
-    const prefCol = CATEGORY_PREF[meta.category];
-    if (prefCol && prefCol !== 'push_enabled' && prefs[prefCol] === false) {
-      return { pushed: 0, inapp: false, suppressed: `pref_${prefCol}_off` };
-    }
+  // Global push gate
+  if (prefs && !prefs.push_enabled && meta.channel === 'push') {
+    // push-only notification with push disabled → suppress entirely
+    // (push_and_inapp → inapp only, handled below by not sending push)
+    return { pushed: 0, inapp: false, suppressed: 'push_disabled' };
   }
+  // VTID-04674: the legacy per-area columns (community_notifications, …) are
+  // no longer read. Members choose by category (step 1b) — the same rule the
+  // database guard applies. On 2026-09-26 no member had switched a legacy
+  // column off; memory_notifications=false on 13 rows was the column default.
 
-  // ── 1b. Check dynamic category preferences (new system) ──
-  const categoryCheckResult = await checkDynamicCategoryPreference(
-    userId, tenantId, type, supabase
-  );
-  if (categoryCheckResult.suppressed) {
-    return { pushed: 0, inapp: false, suppressed: categoryCheckResult.reason };
+  // ── 1b. Member's category switch ─────────────────────────
+  const memberAllows = await isMemberCategoryAllowed(supabase, userId, tenantId, type);
+  if (memberAllows === false) {
+    recordNotificationBlock(supabase, tenantId, type, '', 'member_off');
+    return { pushed: 0, inapp: false, suppressed: `category_${type}_disabled` };
+  }
+  if (memberAllows === null) {
+    // Could not read the decision function — use the cached category map.
+    const categoryCheckResult = await checkDynamicCategoryPreference(
+      userId, tenantId, type, supabase
+    );
+    if (categoryCheckResult.suppressed) {
+      return { pushed: 0, inapp: false, suppressed: categoryCheckResult.reason };
+    }
   }
 
   // ── 2. DND check (only blocks push, not inapp) ──────────
-  const isDnd = prefs ? isInDndWindow(prefs) : false;
+  const isDnd = isInQuietHours(prefs);
   // P0 (critical) notifications bypass DND
   const pushBlockedByDnd = isDnd && meta.priority !== 'p0';
 
@@ -753,7 +738,12 @@ export async function notifyUser(
       insertData.push_sent_at = new Date().toISOString();
     }
     const { data: inserted, error } = await repo.insertUserNotification(supabase, insertData);
-    if (error) {
+    if (error && error.code === 'PGRST116') {
+      // VTID-04674: the database guard dropped the row (the switch changed
+      // after the check above). No row means no notification — no push either.
+      console.log(`[Notifications] ${type} → user=${userId.slice(0, 8)}… dropped by the notification guard`);
+      return { pushed: 0, inapp: false, suppressed: 'dropped_by_guard' };
+    } else if (error) {
       console.error(`[Notifications] inapp write failed for ${type}:`, error.message);
     } else {
       inappWritten = true;

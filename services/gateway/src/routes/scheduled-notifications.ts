@@ -31,6 +31,7 @@ import {
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
 import * as repo from './scheduled-notifications-repository';
+import { isNotificationTypeAllowed, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
@@ -1158,6 +1159,18 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
   for (const notif of pending) {
     try {
+      // VTID-04674: the admin switch. The row exists (it passed the database
+      // guard when it was written), but a type switched off since must not
+      // push. Marked handled so it is not picked up again.
+      const sourceKey = normalizeSourceKey(
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).automation_id : '',
+      );
+      if (!(await isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey))) {
+        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        skipped++;
+        continue;
+      }
+
       // Check user preferences (DND, category toggles, push_enabled)
       const { data: prefs } = await repo.fetchUserNotificationPreferences(supa, {
         userId: notif.user_id,
