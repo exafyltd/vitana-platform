@@ -15,9 +15,14 @@
 //   - aborts EVERY request to a production host — a staging build must never
 //     talk to production (VTID-04616 was exactly that);
 // and fails the test if it had to abort anything the test did not declare as
-// expected (a telemetry beacon, say) via
+// expected (a telemetry beacon, say) via ONE RegExp — alternate with | for
+// several:
 //
-//   test.use({ allowAbortedWrites: [/\/rest\/v1\/rpc\/touch_presence/] });
+//   test.use({ allowAbortedWrites: /\/api\/v1\/rum\/beacon|\/api\/v1\/diag\/notif-tap/ });
+//
+// Never pass an array of two or more RegExps: Playwright reads any array whose
+// second element is an object as a [value, options] fixture tuple, so
+// [a, b] would silently become just `a` (VTID-04613, first live run).
 
 import { test as base, expect } from '@playwright/test';
 
@@ -28,11 +33,11 @@ const GUARDED_HOST = /(^|\.)supabase\.co$|gateway\.vitanaland\.com$/;
 const PRODUCTION_HOST = /^(vitanaland\.com|www\.vitanaland\.com|gateway\.vitanaland\.com|dr-app\.vitanaland\.com|dr-gateway\.vitanaland\.com)$/;
 const ALWAYS_ALLOWED_WRITES = [/\/auth\/v1\/token(\?|$)/];
 
-type GuardOptions = { allowAbortedWrites: RegExp[] };
+type GuardOptions = { allowAbortedWrites: RegExp | RegExp[] | null };
 type GuardFixtures = { stagingGuard: void };
 
 export const test = base.extend<GuardOptions & GuardFixtures>({
-  allowAbortedWrites: [[], { option: true }],
+  allowAbortedWrites: [null, { option: true }],
   stagingGuard: [
     async ({ page, allowAbortedWrites }, use, testInfo) => {
       const blocked: string[] = [];
@@ -59,7 +64,9 @@ export const test = base.extend<GuardOptions & GuardFixtures>({
       if (blocked.length) {
         await testInfo.attach('staging-guard-blocked', { body: blocked.join('\n'), contentType: 'text/plain' });
       }
-      const unexpected = blocked.filter((b) => !allowAbortedWrites.some((r) => r.test(b)));
+      const allow: RegExp[] =
+        allowAbortedWrites == null ? [] : Array.isArray(allowAbortedWrites) ? allowAbortedWrites : [allowAbortedWrites];
+      const unexpected = blocked.filter((b) => !allow.some((r) => r.test(b)));
       if (unexpected.length) {
         throw new Error(
           `staging-guard aborted ${unexpected.length} request(s) — staging writes reach production data, and a staging build must not call production:\n  ${unexpected.join('\n  ')}`,
