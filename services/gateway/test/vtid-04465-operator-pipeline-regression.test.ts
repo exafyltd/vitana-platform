@@ -771,6 +771,40 @@ describe('CI failure on an agent PR: the fix continues on the same PR', () => {
   });
 });
 
+describe('VTID-04636 — the self-healing reconciler judges a fix-mode VTID by its lineage', () => {
+  it('leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed)', async () => {
+    const { reconcileAutopilotLinkedSelfHealingVtids } = await import('../src/services/self-healing-reconciler');
+    const { vtid, execId, prNumber } = await openAgentPr('a0000000-0000-4000-8000-000000004636');
+    expect(platform.ledger(vtid).metadata?.autopilot_execution_id).toBe(execId);
+    const pr = platform.github.prs.get(prNumber)!;
+    platform.github.setChecks(pr.head.sha, CI_CHECKS, ['Gateway (Jest, ~7.5k tests)']);
+    await ciTick();
+    const child = platform.rows('dev_autopilot_executions').find((e) => e.parent_execution_id === execId)!;
+    expect(platform.execution(execId).status).toBe('reverted');
+    // The reconciler runs every cycle; here the parent is reverted and the child has not run yet.
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    model.workerRuns.push([
+      tools(['edit_file', { path: GREETING, old_string: 'return `Hello ${name}`;', new_string: 'return `Hello, ${name}`;' }]),
+      tools(['finish', { summary: 'comma', pr_title: 'fix: comma', pr_body: 'comma' }]),
+    ]);
+    await executorTick();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    platform.github.setChecks(pr.head.sha, CI_CHECKS);
+    await ciTick();
+    stagingDeployCompleted(pr.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    elapseVerificationWindow(child.id);
+    await verificationWatcherTick();
+    await platform.settle();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.execution(child.id).status).toBe('completed');
+    expect(platform.ledger(vtid)).toEqual(expect.objectContaining({ is_terminal: true, terminal_outcome: 'success', status: 'completed' }));
+  });
+});
+
 // ===========================================================================
 // 5. Environment ownership (one table, two gateways)
 // ===========================================================================
