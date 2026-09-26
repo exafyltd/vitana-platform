@@ -25880,6 +25880,26 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-04657: what Activate actually did to the execution ---
+function describeActivationOutcome(data) {
+    var vtid = data.vtid || '';
+    var ex = data.execution;
+    if (!ex) return 'Activated. VTID: ' + vtid;
+    if (ex.state === 'queued') return 'Activated ' + vtid + ' — execution ' + String(ex.execution_id || '').slice(0, 8) + ' queued.';
+    if (ex.state === 'pending') return 'Activated ' + vtid + ' — plan still being prepared; execution follows.';
+    if (ex.state === 'not_executable') return 'Activated ' + vtid + ' — no automated executor for this type; spec draft created for a person.';
+    var why = ex.error || 'unknown reason';
+    if (ex.violations && ex.violations.length) why += ' (' + ex.violations.join(', ') + ')';
+    return 'Activated ' + vtid + ' but execution did NOT start: ' + why;
+}
+
+function activationToastLevel(data) {
+    var ex = data.execution;
+    if (!ex || ex.state === 'queued') return 'success';
+    if (ex.state === 'failed') return 'error';
+    return 'info';
+}
+
 // --- VTID-01180: Autopilot Recommendations Modal ---
 
 /**
@@ -26208,13 +26228,18 @@ function createRecommendationCard(rec) {
                 card.remove();
                 updateRecommendationModalFooter();
                 await fetchTasks();
-                showToast('Activated! VTID: ' + data.vtid, 'success');
+                // VTID-04657: report what happened to the execution, not just the VTID.
+                showToast(describeActivationOutcome(data), activationToastLevel(data));
             } else {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
+                activateBtn.disabled = false;
+                activateBtn.textContent = 'Activate';
                 try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
+            activateBtn.disabled = false;
+            activateBtn.textContent = 'Activate';
             state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
             try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
@@ -30151,7 +30176,7 @@ function renderOverviewSystemView() {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
                         await fetchTasks();
-                        showToast('Recommendation activated!', 'success');
+                        showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
                         activateBtn.disabled = false;
                         activateBtn.textContent = 'Activate';

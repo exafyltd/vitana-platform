@@ -719,6 +719,7 @@ export type CicdEventType =
   | 'dev.fallback.tool_used'
   // VTID-02934: Autopilot recommendation activation
   | 'autopilot.recommendation.activated'
+  | 'autopilot.recommendation.activation_bridge_failed' // VTID-04657
   // VTID-02935: Mission Alignment warnings — fired when a recommendation
   // graduates to a VTID without declaring how it serves the Ultimate Goal.
   // See docs/GOVERNANCE/ULTIMATE-GOAL.md. NOT a hard block — visibility only.

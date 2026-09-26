@@ -73,6 +73,8 @@ So every automated staging test is read-only by construction:
   onboarding steps, wallet, ticket creation — is verified by unit/integration
   tests in CI (in-memory or local Supabase), never on staging.
 - No suite ever points at production (`vitanaland.com`, `gateway.vitanaland.com`).
+  Browser suites (Playwright) run on staging with `E2E_READONLY=1`, including
+  the scheduled screen-load check (VTID-04648).
 
 If a change cannot be verified read-only and has no CI-level test that covers
 it, that is a **blocker to raise**, not a reason to skip verification.
@@ -247,7 +249,9 @@ Guards, both channels:
 Production gets the **deploy check only** (§15 in platform CLAUDE.md,
 "Verifying a frontend deploy actually shipped" in vitana-v1 CLAUDE.md):
 build-info / served chunk equals the promoted commit on every sample, `/alive`
-answers. **No test suite runs against production** — the absolute rule in
+answers, and the gateway workflow's own read-only post-deploy check passes or
+rolls the service back to the previous task definition (VTID-04647). **No
+test suite runs against production** — the absolute rule in
 vitana-v1 CLAUDE.md applies unchanged. The outcome is reported back on the
 same two channels.
 
