@@ -9,7 +9,7 @@ TEST: services/gateway/test/vtid-04474-staging-orchestrator-flags.test.ts
 AC-2: No workflow run: step exceeds 20,000 characters (the block lives in step 2/2).
 TEST: services/gateway/test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
 
-AC-3: The generated conversation-flag pins record prod "true" for the three flags.
+AC-3: The generated conversation-flag pins record staging AND prod "true" for the three flags (run leases stay unpinned).
 TEST: services/gateway/test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
 
 AC-4: Nothing changes on production until the owner presses PUBLISH / dispatches the prod workflow (workflow_dispatch only).
