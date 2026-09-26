@@ -1,4 +1,60 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * VTID-04515: the app is a client-rendered SPA. At `domcontentloaded` the
+ * body is still an empty shell, so reading `innerText()` right after
+ * `page.goto` measured nothing and ~730 smoke tests failed with "received 0"
+ * on every run (staging 2026-09-24, and production back to 2026-07-03).
+ * These waits poll the real condition with a bounded timeout instead of
+ * reading once or sleeping a fixed 2-3 s.
+ */
+const RENDER_TIMEOUT_MS = 20_000;
+const NAVIGATION_TIMEOUT_MS = 15_000;
+
+/** Waits until the page has rendered visible text, then returns it. */
+async function renderedBodyText(page: Page, minLength = 10): Promise<string> {
+  let text = '';
+  await expect
+    .poll(async () => {
+      text = await page.locator('body').innerText().catch(() => '');
+      return text.length;
+    }, { timeout: RENDER_TIMEOUT_MS, message: 'page rendered no visible text' })
+    .toBeGreaterThan(minLength);
+  return text;
+}
+
+/**
+ * Console noise that is not the app's own failure. `cloudflareinsights`:
+ * Cloudflare injects its analytics beacon at the edge, outside the app's
+ * code, and the app's own CSP (script-src 'self') blocks it.
+ */
+function isFatalError(e: string): boolean {
+  return !e.includes('favicon') &&
+    !e.includes('analytics') &&
+    !e.includes('cloudflareinsights') &&
+    !e.includes('GTM') &&
+    !e.includes('hotjar') &&
+    !e.includes('ResizeObserver') &&
+    !e.includes('hydration') &&
+    !e.includes('Warning:') &&
+    !e.includes('ERR_BLOCKED_BY_CLIENT') &&
+    !e.includes('net::ERR_');
+}
+
+/**
+ * Chrome logs a failed request only as "Failed to load resource: the server
+ * responded with a status of 400 ()", without the URL, which made the 400s in
+ * the 2026-09-25 staging run untraceable. Record the response itself instead.
+ */
+function httpErrorEntry(status: number, method: string, url: string): string {
+  const u = new URL(url);
+  const query = u.search.length > 160 ? `${u.search.slice(0, 160)}…` : u.search;
+  return `HTTP ${status} ${method} ${u.origin}${u.pathname}${query}`;
+}
+
+function isAppHttpError(entry: string): boolean {
+  return !entry.includes('favicon') && !entry.includes('cloudflareinsights');
+}
 
 /**
  * Creates smoke tests for a set of routes.
@@ -9,36 +65,39 @@ export function createSmokeTests(suiteName: string, routes: string[]) {
     for (const route of routes) {
       test(`loads ${route} without errors`, async ({ page }) => {
         const errors: string[] = [];
+        const httpErrors: string[] = [];
         page.on('console', msg => {
           if (msg.type() === 'error') errors.push(msg.text());
         });
         page.on('pageerror', err => errors.push(err.message));
+        page.on('response', res => {
+          if (res.status() >= 400) httpErrors.push(httpErrorEntry(res.status(), res.request().method(), res.url()));
+        });
+        const fatal = () => [
+          // The URL-less console line is replaced by the httpErrors entry.
+          ...errors.filter(e => !e.startsWith('Failed to load resource')).filter(isFatalError),
+          ...httpErrors.filter(isAppHttpError),
+        ];
 
         const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
 
         // HTTP status < 500
         expect(response?.status()).toBeLessThan(500);
 
-        // Not blank
-        const bodyText = await page.locator('body').innerText();
-        expect(bodyText.length).toBeGreaterThan(10);
+        // Not blank (waits for the SPA to render). On failure, say where the
+        // page ended up and what failed, so a blank screen is diagnosable.
+        let bodyText: string;
+        try {
+          bodyText = await renderedBodyText(page);
+        } catch (e) {
+          throw new Error(`${(e as Error).message}\nlanded on: ${page.url()}\nerrors: ${JSON.stringify(fatal(), null, 1)}`);
+        }
 
         // No 404 text
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
-        // No fatal JS errors (ignore common noise)
-        const fatalErrors = errors.filter(e =>
-          !e.includes('favicon') &&
-          !e.includes('analytics') &&
-          !e.includes('GTM') &&
-          !e.includes('hotjar') &&
-          !e.includes('ResizeObserver') &&
-          !e.includes('hydration') &&
-          !e.includes('Warning:') &&
-          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
-          !e.includes('net::ERR_')
-        );
-        expect(fatalErrors).toHaveLength(0);
+        // No fatal JS errors or failed app requests (ignore common noise)
+        expect(fatal()).toHaveLength(0);
       });
     }
   });
@@ -58,8 +117,7 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
         const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
         expect(response?.status()).toBeLessThan(500);
 
-        const bodyText = await page.locator('body').innerText();
-        expect(bodyText.length).toBeGreaterThan(10);
+        const bodyText = await renderedBodyText(page);
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
         // Check for horizontal overflow (common mobile bug)
@@ -68,17 +126,7 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
         });
         expect(hasOverflow).toBe(false);
 
-        const fatalErrors = errors.filter(e =>
-          !e.includes('favicon') &&
-          !e.includes('analytics') &&
-          !e.includes('GTM') &&
-          !e.includes('hotjar') &&
-          !e.includes('ResizeObserver') &&
-          !e.includes('hydration') &&
-          !e.includes('Warning:') &&
-          !e.includes('ERR_BLOCKED_BY_CLIENT') &&
-          !e.includes('net::ERR_')
-        );
+        const fatalErrors = errors.filter(isFatalError);
         expect(fatalErrors).toHaveLength(0);
       });
     }
@@ -150,30 +198,47 @@ export function createMobilePerfTests(suiteName: string, targets: MobilePerfTarg
   });
 }
 
+/** The path a navigation ended on, or the ?redirectTo= target of a sign-in page. */
+function landedPath(url: string): string {
+  const u = new URL(url);
+  const redirectTo = u.searchParams.get('redirectTo');
+  return redirectTo ? redirectTo.split('?')[0] : u.pathname;
+}
+
 /**
  * Creates redirect tests — verifies legacy routes resolve to new paths.
- * Each redirect is tested: navigate to old path, assert URL contains new path.
+ * Each redirect is tested: navigate to old path, assert the page lands on the
+ * new path. `signedOut` runs the suite in a fresh context with no session.
  */
-export function createRedirectTests(suiteName: string, redirectMap: Record<string, string>) {
+export function createRedirectTests(
+  suiteName: string,
+  redirectMap: Record<string, string>,
+  options: { signedOut?: boolean } = {},
+) {
   test.describe(suiteName, () => {
+    if (options.signedOut) test.use({ storageState: { cookies: [], origins: [] } });
     for (const [oldPath, newPath] of Object.entries(redirectMap)) {
       test(`redirects ${oldPath} → ${newPath}`, async ({ page }) => {
         await page.goto(oldPath, { waitUntil: 'domcontentloaded' });
 
-        // Wait for redirect to settle
-        await page.waitForTimeout(2000);
-
-        const currentUrl = page.url();
-        // Strip query params from expected path for matching
+        // Compare the landed pathname exactly (a substring match on the whole
+        // URL passed trivially for '/'). A route the test user may not open
+        // lands on a sign-in page that carries the target as ?redirectTo=,
+        // which still proves the redirect resolved to the right place.
         const expectedBase = newPath.split('?')[0];
-        expect(currentUrl).toContain(expectedBase);
+        await expect
+          .poll(() => landedPath(page.url()), { timeout: NAVIGATION_TIMEOUT_MS })
+          .toBe(expectedBase);
       });
     }
   });
 }
 
+const SIGNED_OUT_LANDING = /^\/($|auth\b|maxina\b|alkalma\b|earthlinks\b|exafy-admin\b|dev\/login\b)/;
+
 /**
- * Creates auth guard tests — verifies unauthenticated users are redirected to /auth.
+ * Creates auth guard tests — verifies unauthenticated users are redirected to
+ * the landing page or a sign-in page.
  * Uses a fresh browser context with no stored session.
  */
 export function createAuthGuardTests(suiteName: string, protectedRoutes: string[]) {
@@ -184,18 +249,13 @@ export function createAuthGuardTests(suiteName: string, protectedRoutes: string[
       test(`${route} redirects to auth when not logged in`, async ({ page }) => {
         await page.goto(route, { waitUntil: 'domcontentloaded' });
 
-        // Wait for auth guard redirect
-        await page.waitForTimeout(3000);
-
-        const currentUrl = page.url();
-        // Should redirect to /auth or a tenant portal login
-        const isAuthPage = currentUrl.includes('/auth') ||
-          currentUrl.includes('/maxina') ||
-          currentUrl.includes('/alkalma') ||
-          currentUrl.includes('/earthlinks') ||
-          currentUrl.includes('/dev/login');
-
-        expect(isAuthPage).toBe(true);
+        // Wait for the auth guard redirect instead of sleeping a fixed 3 s.
+        // A signed-out user is sent to the landing page '/' (the portal
+        // selector, useSmartRouting) or to a tenant portal / sign-in page.
+        // Poll the pathname so a failure prints where the page really landed.
+        await expect
+          .poll(() => new URL(page.url()).pathname, { timeout: NAVIGATION_TIMEOUT_MS })
+          .toMatch(SIGNED_OUT_LANDING);
       });
     }
   });
@@ -217,20 +277,17 @@ export function createRoleGuardTests(
           const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
           expect(response?.status()).toBeLessThan(500);
 
-          // Wait for role check to complete
-          await page.waitForTimeout(2000);
-
-          const bodyText = await page.locator('body').innerText();
-          const currentUrl = page.url();
-
-          // Either shows "Not Authorized" text or redirects away from the route
-          const isBlocked =
-            bodyText.toLowerCase().includes('not authorized') ||
-            bodyText.toLowerCase().includes('unauthorized') ||
-            bodyText.toLowerCase().includes('access denied') ||
-            !currentUrl.includes(route);
-
-          expect(isBlocked).toBe(true);
+          // Wait for the role check: either "Not Authorized" text or a redirect
+          // away from the route, polled instead of a fixed 2 s sleep.
+          await expect
+            .poll(async () => {
+              const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();
+              return bodyText.includes('not authorized') ||
+                bodyText.includes('unauthorized') ||
+                bodyText.includes('access denied') ||
+                !page.url().includes(route);
+            }, { timeout: NAVIGATION_TIMEOUT_MS })
+            .toBe(true);
         });
       }
     }
