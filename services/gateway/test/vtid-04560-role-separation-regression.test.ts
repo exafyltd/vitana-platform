@@ -953,3 +953,96 @@ describe('VTID-04565 telemetry — which Vitana served, and how deep dives went'
     expect(read('src/orb/developer/system-snapshot.ts')).toContain('orb.session.profile.resolved,orb.deep_dive.completed,orb.deep_dive.failed');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Staging verification fixes (2026-09-26): VTID-04654 / VTID-04655 / VTID-04656
+// ---------------------------------------------------------------------------
+
+import { briefingHighlights } from '../src/orb/profile/session-profile';
+
+const LIVE_ADMIN_BRIEFING = [
+  '## ADMIN BRIEFING (active tenant signals — speak these on open)',
+  '',
+  'The supervisor just opened the orb. These are the top 3 open insights right now, ranked by severity × confidence. OPEN by briefly naming what needs attention — two short sentences each, ask which to tackle first. Do NOT do a generic greeting. Be direct, numeric, action-oriented.',
+  '',
+  '1. 🟠 **[marketplace]** 100% of active products not refreshed in 14 days',
+  "   509/511 active products haven't been re-scraped in two weeks. Stale rows mean prices, availability, and delivery windows may be wrong in the feed.",
+  '2. 🟠 **[system_health]** Error spike: 89 OASIS errors in last hour',
+  '   89 error-status events emitted in the last 60 min (baseline threshold 20).',
+  '3. 🟠 **[users]** Signups dropped 89% week over week',
+  '   2 new members in last 7 days vs 19 the prior 7.',
+  '',
+  'After the user picks one, stay on that insight until it is approved, rejected, snoozed, or handed off.',
+].join('\n');
+
+describe('VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice', () => {
+  test('each numbered insight becomes one fact with its detail; the instruction text is never a fact', () => {
+    const facts = briefingHighlights(LIVE_ADMIN_BRIEFING);
+    expect(facts).toHaveLength(3);
+    expect(facts[0]).toBe("[marketplace] 100% of active products not refreshed in 14 days — 509/511 active products haven't been re-scraped in two weeks. Stale rows mean prices, availability, and delivery windows may be wrong in the feed.");
+    expect(facts[2]).toContain('[users] Signups dropped 89% week over week — 2 new members');
+    for (const f of facts) {
+      expect(f).not.toMatch(/supervisor just opened|Do NOT|After the user picks|\*\*|🟠/);
+    }
+  });
+
+  test('a block without numbered items still yields plain lines, minus headings', () => {
+    expect(briefingHighlights('## ADMIN BRIEFING\nThree approvals are waiting in moderation.\n')).toEqual([
+      'Three approvals are waiting in moderation.',
+    ]);
+  });
+
+  test('the admin opener carries the insights as its facts', () => {
+    const fields = workSurfaceGreetingFields({
+      assistantProfile: resolveAssistantProfile({ isAnonymous: false, isExafyAdmin: true, declaredSurface: 'admin', declaredViewRole: 'admin' }),
+      workSurfaceBriefing: LIVE_ADMIN_BRIEFING,
+      workSurfaceKnowledge: null,
+    } as any);
+    expect(fields.workSurfaceHighlights).toHaveLength(3);
+    expect(fields.workSurfaceHighlights!.join(' ')).not.toContain('supervisor just opened');
+  });
+
+  test('the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict', () => {
+    const text = buildFor('admin', 'admin', '');
+    expect(text).toContain('The admin briefing is already loaded into this instruction');
+    expect(text).toContain('call admin_briefing only when the user asks for a refresh');
+    expect(text).not.toContain('Use the admin_* tools for briefings');
+  });
+});
+
+describe('VTID-04655 me_set_active_role writes role_preferences for a real Supabase token', () => {
+  const sql = fs.readFileSync(
+    path.join(ROOT, '..', '..', 'supabase', 'migrations', '20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql'),
+    'utf8',
+  );
+
+  test('the preference tenant falls back to the token claim, then the primary membership, members only', () => {
+    expect(sql).toContain("auth.jwt() -> 'app_metadata' ->> 'active_tenant_id'");
+    expect(sql).toMatch(/FROM public\.user_tenants ut\s+WHERE ut\.user_id = v_user_id AND ut\.tenant_id = v_claim_tenant::uuid/);
+    expect(sql).toMatch(/WHERE ut\.user_id = v_user_id AND ut\.is_primary/);
+    expect(sql).toMatch(/IF v_pref_tenant IS NOT NULL THEN\s+INSERT INTO public\.role_preferences/);
+  });
+
+  test('the backfill only repairs single-membership users (user_active_roles carries no tenant)', () => {
+    const backfill = sql.slice(sql.indexOf('UPDATE public.role_preferences rp'));
+    expect(backfill).toContain('(SELECT count(*) FROM public.user_tenants m WHERE m.user_id = uar.user_id) = 1');
+    expect(backfill).not.toContain('ut.is_primary');
+  });
+
+  test('authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise', () => {
+    expect(sql).toContain('v_tenant_id := public.current_tenant_id();');
+    expect(sql).toContain('public.check_role_permitted(v_user_id, v_tenant_id, p_role)');
+    expect(sql).toContain("IF NOT v_is_exafy_admin AND p_role != 'community' THEN");
+    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.current_tenant_id/);
+  });
+});
+
+describe('VTID-04656 the live eval sends thread ids the chat route accepts', () => {
+  test('the eval script sends a UUID, which is what the route validates', () => {
+    const script = fs.readFileSync(path.join(ROOT, '..', '..', 'scripts', 'orb', 'eval-developer-assistant.mjs'), 'utf8');
+    expect(script).toContain("import { randomUUID } from 'node:crypto';");
+    expect(script).toContain('threadId: randomUUID()');
+    expect(script).not.toContain('eval-${q.id}');
+    expect(read('src/types/operator-chat.ts')).toContain('threadId: z.string().uuid().optional()');
+  });
+});

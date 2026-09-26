@@ -21,6 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE = path.join(HERE, '../../services/gateway/test/fixtures/developer-assistant-evals.json');
@@ -50,7 +51,9 @@ for (const q of questions.slice(0, limit)) {
     const res = await fetch(`${base}/api/v1/operator/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Operator-Machine-Token': token },
-      body: JSON.stringify({ message: q.question, threadId: `eval-${q.id}-${Date.now()}` }),
+      // VTID-04656: /api/v1/operator/chat validates threadId as a UUID; the
+      // old `eval-<id>-<ts>` value was rejected with 400 on every question.
+      body: JSON.stringify({ message: q.question, threadId: randomUUID() }),
     });
     const body = await res.json().catch(() => ({}));
     const tools = Array.isArray(body.toolResults) ? body.toolResults.map((t) => t.name || t.tool || '?') : [];
