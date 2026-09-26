@@ -794,7 +794,6 @@
      "source": "user_stated"
     }
    ],
-   "gap": "the background extractor matches the exact key only and writes brother_paul_birthday as a second row",
    "steps": [
     {
      "op": "turn",
@@ -939,6 +938,90 @@
        "key": "user_pet_name",
        "count": 1
       }
+     }
+    }
+   ]
+  },
+  {
+   "id": "A-DUP-07",
+   "category": "duplicate",
+   "title": "Voice model uses a German key for a fact stored in English: already known, no second row (VTID-04639)",
+   "facts": [
+    {
+     "key": "user_favorite_food",
+     "value": "Lasagne",
+     "entity": "self",
+     "source": "user_stated"
+    }
+   ],
+   "steps": [
+    {
+     "op": "tool",
+     "args": {
+      "fact_key": "lieblingsessen",
+      "fact_value": "Lasagne",
+      "about": "self"
+     },
+     "expect": {
+      "status": "already_known"
+     },
+     "db": {
+      "facts": [
+       {
+        "key": "user_favorite_food",
+        "value": "Lasagne",
+        "count": 1
+       }
+      ],
+      "absent": [
+       {
+        "key": "lieblingsessen",
+        "exact": true
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "A-DUP-08",
+   "category": "duplicate",
+   "title": "Extractor sees a fact the voice model stored under a German key: no English second row (VTID-04639)",
+   "facts": [
+    {
+     "key": "allergie",
+     "value": "Penicillin",
+     "entity": "self",
+     "source": "user_stated"
+    }
+   ],
+   "steps": [
+    {
+     "op": "extract",
+     "say": "Ich bin allergisch gegen Penicillin.",
+     "extracted": [
+      {
+       "fact_key": "user_allergy",
+       "fact_value": "Penicillin",
+       "entity": "self",
+       "fact_value_type": "text",
+       "stated": true
+      }
+     ],
+     "db": {
+      "facts": [
+       {
+        "key": "allergie",
+        "value": "Penicillin",
+        "count": 1
+       }
+      ],
+      "absent": [
+       {
+        "key": "user_allergy",
+        "exact": true
+       }
+      ]
      }
     }
    ]
@@ -1405,7 +1488,6 @@
      "source": "user_stated"
     }
    ],
-   "gap": "the background extractor's conflict guard matches the exact key only",
    "steps": [
     {
      "op": "extract",

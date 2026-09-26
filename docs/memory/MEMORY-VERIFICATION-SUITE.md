@@ -176,8 +176,8 @@ In layer A these cases check the pipeline around the extractor (no gateway note,
 |---|---|
 | A-PROF-08 | Recall reads the member's birthday from `app_users.profile`, which is empty for every member on the live database (0 of 14 checked 2026-09-26). The profile screen writes `profiles.date_of_birth`. So "When is my birthday?" has no answer in the recall pack. |
 | A-DUP-02 | A day-month date with no year ("05.05.") is not recognised as a date, so it counts as a different value from "May 5". |
-| A-DUP-03 | The background extractor matches the exact key only. Said as "brother Paul's birthday" while stored as `paul_birthday`, it writes a second row for the same thing. |
-| A-CONF-09 | Same root cause: a *different* value under a related key is written, not kept for review. |
+| ~~A-DUP-03~~ | **Closed by VTID-04639.** The background extractor matched the exact key only. Said as "brother Paul's birthday" while stored as `paul_birthday`, it wrote a second row for the same thing. |
+| ~~A-CONF-09~~ | **Closed by VTID-04639.** Same root cause: a *different* value under a related key was written, not kept for review. |
 | A-FORG-01 | Voice "forget" (`forget_memory`) deletes the conversation note (`memory_items`) but not the stored fact (`memory_facts`). The fact is still recalled afterwards. |
 
 **The suite was checked against deliberate breakage.** Five changes were made to the memory code one at a time, and each turned the suite red:
@@ -208,3 +208,20 @@ After each check the code was restored.
 - `scripts/memory-verification/scenarios.live.json` — layer B scenarios
 - `scripts/memory-verification/run-live.mjs` — layer B runner. It synthesizes each utterance with Polly (cached), runs the voice sessions on staging, checks the results, cleans up, and writes `report.md` + `report.json`.
 - `npm run test:memory` (in `services/gateway`) runs layer A; `node scripts/memory-verification/run-live.mjs` runs layer B.
+
+## Layer B — pass 1 on staging (2026-09-26, build `1335b48`)
+
+The live run found defects that layer A could not, because they depend on
+which key the voice model picks and on how the Memory Garden stores a fact.
+Each was reproduced, fixed and pinned by a new layer-A scenario:
+
+| Found live | Cause | Fix | Pinned by |
+|---|---|---|---|
+| B-REC-01: a Garden-added fact missing from the next session | the voice snapshot refreshed only after a session ended | VTID-04627 | runner re-run on staging passes |
+| B-CONF-03: after "der siebte Mai ist richtig", both dates stayed current | `write_fact` supersedes per `(key, entity)`; Garden writes `self`, a fact about Paul is `disclosed` | VTID-04638 | A-CONF-11 |
+| B-SELF/B-OTHER/B-TIME: one fact stored under an English and a German key | German key words not related to English ones; the extractor matched exact keys only | VTID-04639 | A-DUP-07, A-DUP-08; closes A-DUP-03, A-CONF-09 |
+
+Open, not fixed yet: Vitana sometimes says "gespeichert" / "aktualisiert" /
+"nachgeschaut" before (or without) the tool result (B-PROF-01/02, B-CONF-02);
+a hypothetical ("wenn ich einen Hund hätte, würde er Max heißen") is stored as
+a fact (B-NOISE-01); voice "forget" leaves the stored fact (B-FORG-01, = A-FORG-01).

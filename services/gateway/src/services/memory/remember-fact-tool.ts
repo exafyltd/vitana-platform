@@ -249,7 +249,11 @@ const KEY_SYNONYMS: Record<string, string> = {
   mutter: 'mother', mama: 'mother', mom: 'mother', vater: 'father', papa: 'father', dad: 'father',
   sohn: 'son', tochter: 'daughter', kind: 'child', kids: 'child', children: 'child',
   hund: 'dog', katze: 'cat', haustier: 'pet',
-  lieblingsessen: 'favorite_food', lieblings: 'favorite', favourite: 'favorite',
+  lieblingsessen: 'favorite_food', lieblingsfarbe: 'favorite_color', lieblings: 'favorite', favourite: 'favorite',
+  // VTID-04639: German key words the voice model used live for facts the
+  // extractor stored under English keys.
+  allergie: 'allergy', allergien: 'allergy', allergisch: 'allergy', allergies: 'allergy', allergic: 'allergy',
+  zahnarzt: 'dentist', termin: 'appointment', zahnarzttermin: 'dentist_appointment',
   arbeit: 'job', beruf: 'job', work: 'job', occupation: 'job',
   wohnort: 'city', stadt: 'city',
 };
@@ -258,26 +262,31 @@ export function keyTokens(factKey: string): Set<string> {
   const out = new Set<string>();
   for (const raw of normalizeFactKey(factKey).split('_')) {
     if (!raw || KEY_STOPWORDS.has(raw)) continue;
-    out.add(KEY_SYNONYMS[raw] ?? raw);
+    // A synonym can name two words ("lieblingsessen" → favorite + food).
+    for (const t of (KEY_SYNONYMS[raw] ?? raw).split('_')) if (t) out.add(t);
   }
   return out;
 }
 
 /**
- * The stored fact that names the same thing under another key: one key's
- * words contain the other's, and they share at least two words (so
- * "birthday" alone never matches "paul_birthday").
+ * The stored fact that names the same thing under another key: both keys
+ * name the same words, or one key's words contain the other's and they share
+ * at least two (so "birthday" alone never matches "paul_birthday").
  */
 export function findRelatedFact(factKey: string, facts: StoredKeyedFact[]): StoredKeyedFact | null {
   const want = keyTokens(factKey);
-  if (want.size < 2) return null;
+  if (want.size === 0) return null;
   let best: { fact: StoredKeyedFact; shared: number } | null = null;
   for (const f of facts) {
     const have = keyTokens(f.fact_key);
     let shared = 0;
     for (const t of have) if (want.has(t)) shared++;
     const nested = shared === have.size || shared === want.size;
-    if (shared < 2 || !nested) continue;
+    // VTID-04639: keys naming exactly the same words match even when that is
+    // one word ("allergie" and "user_allergy" are both {allergy}); a single
+    // shared word inside a longer key still never does.
+    const same = shared === have.size && shared === want.size;
+    if (!same && (shared < 2 || !nested)) continue;
     const newer = best && shared === best.shared && String(f.extracted_at ?? '') > String(best.fact.extracted_at ?? '');
     if (!best || shared > best.shared || newer) best = { fact: f, shared };
   }
