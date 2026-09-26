@@ -301,7 +301,7 @@ for (const sc of scenarios) {
 }
 // Leave the account as it was (MEMORY_VERIFY_KEEP_ROWS=1 keeps the last
 // scenario's rows for inspection; the printed cleanup SQL still removes them).
-if (process.env.MEMORY_VERIFY_KEEP_ROWS !== '1') await cleanupSuiteFacts(baselineIds);
+if ((process.env.MEMORY_VERIFY_KEEP_ROWS ?? '0') !== '1') await cleanupSuiteFacts(baselineIds);
 
 const lines = [`# Memory verification — layer B (live, staging)`, '', `Staging commit: \`${env.commit}\` · run started ${runStarted} · ${RUNS} runs per scenario`, ''];
 const byCat = {};
