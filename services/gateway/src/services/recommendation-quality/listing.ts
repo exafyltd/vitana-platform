@@ -1,4 +1,11 @@
 /**
+ * VTID-04669: while the quality review is on (review-config.ts), an open
+ * row is shown only once the review kept it (quality.review.verdict ===
+ * 'keep'). Open rows that pass the floor but are not reviewed yet — and
+ * unscored rows, which cannot be reviewed before they are scored — are
+ * counted in awaiting_review_count instead of being shown. Rows below the
+ * floor are never reviewed; ?include_below_floor=1 still shows them.
+ *
  * VTID-04668: how the developer listings (the developer/admin/infra lineup
  * and GET /dev-autopilot/pending-approvals) use the P2 score.
  *
@@ -9,8 +16,10 @@
  *    are left out and counted in below_floor_count, unless the caller asks
  *    for them (?include_below_floor=1).
  *  - Unscored rows (quality NULL — written before this VTID, or not yet
- *    rescored) are kept: "unknown" is not "below the floor".
+ *    rescored) are not "below the floor"; with the review off they are
+ *    kept, with it on they wait for scoring + review (above).
  */
+import { isQualityReviewEnabled } from './review-config';
 import { passesQualityFloor, resolveQualityFloor, type QualityComponents, type QualityFloor } from './priority';
 
 export interface QualityListingRow {
@@ -21,6 +30,8 @@ export interface QualityListingRow {
 
 export interface QualityListingOptions {
   includeBelowFloor?: boolean;
+  /** VTID-04669: default = the review kill switch. */
+  reviewEnabled?: boolean;
   floor?: QualityFloor;
   tiebreak?: (a: Record<string, unknown>, b: Record<string, unknown>) => number;
 }
@@ -28,6 +39,7 @@ export interface QualityListingOptions {
 export interface QualityListingResult<T> {
   rows: T[];
   below_floor_count: number;
+  awaiting_review_count: number;
 }
 
 const OPEN_STATUSES = new Set(['new', 'snoozed']);
@@ -51,6 +63,12 @@ export function isBelowFloor(row: QualityListingRow, floor: QualityFloor = resol
 function priorityOf(row: QualityListingRow): number | null {
   const n = Number(row.priority_score);
   return row.priority_score !== null && row.priority_score !== undefined && Number.isFinite(n) ? n : null;
+}
+
+/** VTID-04669: the review kept this row. */
+export function isReviewedKeep(row: QualityListingRow): boolean {
+  const review = qualityOf(row)?.review;
+  return !!review && typeof review === 'object' && (review as { verdict?: unknown }).verdict === 'keep';
 }
 
 /** Stable sort: priority desc (nulls last), then tie-break, then input order. */
@@ -77,14 +95,22 @@ export function applyDeveloperQualityListing<T extends QualityListingRow>(
   opts: QualityListingOptions = {},
 ): QualityListingResult<T> {
   const floor = opts.floor || resolveQualityFloor();
+  const reviewOn = opts.reviewEnabled ?? isQualityReviewEnabled();
   let below = 0;
+  let awaiting = 0;
   const kept: T[] = [];
   for (const r of rows || []) {
     if (isBelowFloor(r, floor)) {
       below++;
       if (!opts.includeBelowFloor) continue;
+      kept.push(r);
+      continue;
+    }
+    if (reviewOn && isOpenRow(r) && !isReviewedKeep(r)) {
+      awaiting++;
+      continue;
     }
     kept.push(r);
   }
-  return { rows: sortByPriority(kept, opts.tiebreak), below_floor_count: below };
+  return { rows: sortByPriority(kept, opts.tiebreak), below_floor_count: below, awaiting_review_count: awaiting };
 }

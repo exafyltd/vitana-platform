@@ -449,7 +449,7 @@ export async function queryRecommendationsByRole(
   limit: number,
   offset: number,
   opts: RoleQueryOptions = {},
-): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number }> {
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number; awaiting_review_count?: number }> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !supabaseKey) {
@@ -531,6 +531,7 @@ export async function queryRecommendationsByRole(
         data: listed.rows.slice(offset, offset + Math.max(0, limit)),
         count: listed.rows.length,
         below_floor_count: listed.below_floor_count,
+        awaiting_review_count: listed.awaiting_review_count,
       };
     }
     const contentRange = response.headers.get('content-range');
@@ -855,6 +856,8 @@ router.get('/', async (req: Request, res: Response) => {
         ...(waves ? { waves } : {}),
         // VTID-04668: open developer rows left out because they are below the quality floor.
         ...(typeof result.below_floor_count === 'number' ? { below_floor_count: result.below_floor_count } : {}),
+        // VTID-04669: open developer rows waiting for their quality review.
+        ...(typeof result.awaiting_review_count === 'number' ? { awaiting_review_count: result.awaiting_review_count } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
         _debug: {
