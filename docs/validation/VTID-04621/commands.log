@@ -1,0 +1,5 @@
+curl -H 'Accept: text/plain' https://api.github.com/repos/exafyltd/vitana-platform/actions/jobs/108377095916/logs -> 415
+curl -H 'Accept: application/vnd.github+json' (same URL) -> 302
+npx jest test/vtid-04621-ci-log-accept.test.ts test/dev-autopilot-ci-logs.test.ts -> 18 passed
+mutation (text/plain for logs) -> 1 failed
+npx tsc --noEmit -> clean
