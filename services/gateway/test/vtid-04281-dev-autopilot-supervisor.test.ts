@@ -186,6 +186,27 @@ describe('VTID-04281 execution funnel', () => {
     expect(second.last_seen_at).toBe(stale);
   });
 
+  it('uses updated_at (failure time) not created_at for last_seen_at and count_24h (VTID-04622)', () => {
+    // NOW = 2026-09-22T20:00:00Z
+    // Execution created 3 days ago but updated (failed) 1 hour ago — should be
+    // counted in count_24h and last_seen_at should equal updated_at.
+    const createdAt  = '2026-09-19T20:00:00Z';  // 3 days before NOW — outside 24 h
+    const updatedAt  = '2026-09-22T19:00:00Z';  // 1 hour before NOW — inside 24 h
+    const s = summarizeExecutions([
+      {
+        id: 'e1', finding_id: 'f', status: 'failed', approved_by: null,
+        created_at: createdAt, updated_at: updatedAt,
+        pr_number: null, error: 'timeout after 30s',
+      },
+    ], NOW);
+    expect(s.top_failure_reasons).toHaveLength(1);
+    const top = s.top_failure_reasons[0];
+    expect(top.reason).toBe('timeout after 30s');
+    expect(top.count).toBe(1);
+    expect(top.count_24h).toBe(1);          // counted because updated_at is within 24 h
+    expect(top.last_seen_at).toBe(updatedAt); // updated_at, not created_at
+  });
+
   it('normalizeFailureReason collapses ids, urls and PR numbers', () => {
     expect(normalizeFailureReason(null)).toBe('(no error recorded)');
     expect(normalizeFailureReason('PR #3547 blocked for 1a2b3c4d')).toBe('PR #<n> blocked for <id>');
