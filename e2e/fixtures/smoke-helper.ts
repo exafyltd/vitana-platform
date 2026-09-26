@@ -113,11 +113,32 @@ export function createMobileSmokeTests(suiteName: string, routes: string[]) {
       test(`loads ${route} without errors (mobile)`, async ({ page }) => {
         const errors: string[] = [];
         page.on('pageerror', err => errors.push(err.message));
+        // VTID-04620: report-only (not asserted), so a blank page says why.
+        const consoleErrors: string[] = [];
+        const httpErrors: string[] = [];
+        page.on('console', msg => {
+          if (msg.type() === 'error' && !msg.text().startsWith('Failed to load resource')) consoleErrors.push(msg.text());
+        });
+        page.on('response', res => {
+          if (res.status() >= 400) httpErrors.push(httpErrorEntry(res.status(), res.request().method(), res.url()));
+        });
 
         const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
         expect(response?.status()).toBeLessThan(500);
 
-        const bodyText = await renderedBodyText(page);
+        let bodyText: string;
+        try {
+          bodyText = await renderedBodyText(page);
+        } catch (e) {
+          const rootHtml = await page.locator('#root').innerHTML().catch(() => '(no #root)');
+          throw new Error(
+            `${(e as Error).message}\nlanded on: ${page.url()}` +
+            `\npage errors: ${JSON.stringify(errors)}` +
+            `\nconsole errors: ${JSON.stringify(consoleErrors.slice(0, 5))}` +
+            `\nfailed requests: ${JSON.stringify(httpErrors.slice(0, 10))}` +
+            `\n#root (first 400 chars): ${rootHtml.slice(0, 400)}`,
+          );
+        }
         expect(bodyText.toLowerCase()).not.toContain('page not found');
 
         // Check for horizontal overflow (common mobile bug)

@@ -1,5 +1,7 @@
 # Vitana Staging Environment
 
+> **Process note (VTID-04610):** what happens *after* a staging deploy — the automatic STAGING-VERIFY test run, the ready-for-production message and PUBLISH — is defined in [`DEPLOYMENT-PIPELINE.md`](DEPLOYMENT-PIPELINE.md). This file describes the staging stack itself.
+
 **Phase 0 staging build — handoff brief P0.9.**
 
 This file is the canonical reference for the Vitana staging stack. It exists
