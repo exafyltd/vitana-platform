@@ -1,5 +1,7 @@
 # AWS Staging Validation Plan
 
+> **Historical — GCP is decommissioned, there is no GCP staging to compare against.** Staging verification today is [`DEPLOYMENT-PIPELINE.md`](DEPLOYMENT-PIPELINE.md) (VTID-04610).
+
 **Goal:** prove the new AWS staging environment is functionally equivalent to
 the existing GCP staging environment (`gateway-staging` +
 `community-app-staging`, i.e. `preview-gateway.vitanaland.com` +
