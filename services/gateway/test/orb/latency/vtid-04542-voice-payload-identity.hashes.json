@@ -153,7 +153,7 @@
     "sha256": "e366bd226d91315d79f295a36f342766785465c7ab0ed4958343b1ef1cd347f7"
   },
   "session_start:authenticated community de": {
-    "sha256": "65bee51870e747392cb51f232759e32fa68ba71b1970e1f24d73a6551bd64337"
+    "sha256": "2e1fe07fa6afe748c2fcfce0599fe79095f612cb9bda959071b666c0ab085453"
   },
   "turn:greeting turn (first assistant turn, no user speech)": {
     "sha256": "6f39ef99ca7a3c297926c7a0224fc47c8b83857e0b66394b0c36db6ba4615a9c"
