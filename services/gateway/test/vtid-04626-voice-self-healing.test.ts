@@ -386,6 +386,13 @@ describe('routes and screen', () => {
     expect((screen.match(/fetch\(/g) || []).length).toBe(1);
   });
 
+  test('each stage card shows the status the overview reports, never one recomputed on the client', () => {
+    // Staging showed Quarantine as IDLE while 3 patterns were quarantined: the card
+    // inverted the count instead of reading pipeline.sentinel.status.
+    expect(screen).toContain("stageCard('3', 'Quarantine', p.sentinel.status,");
+    expect(screen).not.toMatch(/sentinel\.quarantined > 0 \? 'idle'/);
+  });
+
   test('the screen has no inline styles (CSP)', () => {
     expect(screen).not.toMatch(/style\.cssText|\.style\.|style="/);
   });
