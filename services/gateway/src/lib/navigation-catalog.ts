@@ -2846,6 +2846,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: { en: { title: 'Test Catalog', description: 'Every test suite and workflow, where and how often it runs, and suites nothing runs.', when_to_visit: 'When asking about the test catalog, which tests exist, unit tests, integration tests, missing tests, or how often tests run.' } } },
   { screen_id: 'DEVHUB.TESTING.CI_REPORTS', route: '/command-hub/testing-qa/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'Test Runs', description: 'Every CI run of test, gate, monitor and end-to-end workflows in both repositories.', when_to_visit: 'When asking about CI, build status, pipeline, CI reports, test runs, test results, or build failures.' } } },
+  { screen_id: 'DEVHUB.TESTING.RUN_TESTS', route: '/command-hub/testing-qa/run-tests/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Run Tests', description: 'Start a reviewed test workflow: development and staging tests, read-only production health checks.', when_to_visit: 'When asking to run tests, start a test, trigger a test suite, run a health check, or re-run staging verification.' } } },
   { screen_id: 'DEVHUB.TESTING.E2E', route: '/command-hub/testing-qa/e2e/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'E2E Tests', description: 'End-to-end test results and playwright tests.', when_to_visit: 'When asking about E2E tests, end-to-end tests, playwright, or integration testing.' } } },
 

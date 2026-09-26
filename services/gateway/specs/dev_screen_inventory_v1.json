@@ -147,6 +147,7 @@
       "overview",
       "catalog",
       "runs",
+      "run-tests",
       "e2e"
     ],
     "intelligence-memory-dev": [
@@ -165,6 +166,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 88
+    "total_screens": 89
   }
 }

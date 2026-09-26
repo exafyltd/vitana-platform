@@ -155,6 +155,7 @@
       "overview",
       "catalog",
       "runs",
+      "run-tests",
       "e2e"
     ],
     "intelligence-memory-dev": [
@@ -181,12 +182,12 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 115,
-    "total_entries": 289,
+    "total_screens": 116,
+    "total_entries": 290,
     "last_synced": "2026-04-27",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
-      "DEVELOPER": 110,
+      "DEVELOPER": 111,
       "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
@@ -878,6 +879,13 @@
         "module": "Testing & QA",
         "tab": "Runs",
         "url_path": "/command-hub/testing-qa/runs/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-TESTING_RUN_TESTS",
+        "module": "Testing & QA",
+        "tab": "Run Tests",
+        "url_path": "/command-hub/testing-qa/run-tests/",
         "role": "DEVELOPER"
       },
       {
