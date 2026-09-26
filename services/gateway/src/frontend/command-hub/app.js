@@ -25880,6 +25880,29 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-04667: recommendation types with an executor ---
+// Mirrors MANUALLY_BRIDGEABLE_SOURCE_TYPES in
+// services/gateway/src/services/autopilot-executable-source-types.ts
+// (EXECUTABLE_RECOMMENDATION_SOURCE_TYPES + community + health). Keep in step —
+// test/vtid-04667-executable-source-types-drift.test.ts fails on drift.
+var EXECUTABLE_REC_SOURCE_TYPES = [
+    'missing-test-scanner',
+    'test-contract-failure-scanner',
+    'dev_autopilot',
+    'dev_autopilot_impact',
+    'operator_onramp',
+    'community',
+    'health'
+];
+
+// "Create task" for a type nothing executes yet (oasis, roadmap, behavior, …);
+// "Activate" otherwise, and when the listing did not say (older gateway).
+function recActivateLabel(rec) {
+    var t = rec && rec.source_type;
+    if (!t) return 'Activate';
+    return EXECUTABLE_REC_SOURCE_TYPES.indexOf(t) === -1 ? 'Create task' : 'Activate';
+}
+
 // --- VTID-04657: what Activate actually did to the execution ---
 function describeActivationOutcome(data) {
     var vtid = data.vtid || '';
@@ -26209,7 +26232,9 @@ function createRecommendationCard(rec) {
     // Activate button
     var activateBtn = document.createElement('button');
     activateBtn.className = 'btn btn-primary';
-    activateBtn.textContent = 'Activate';
+    // VTID-04667: "Create task" when this type has no executor.
+    var activateIdleLabel = recActivateLabel(rec);
+    activateBtn.textContent = activateIdleLabel;
     activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
     activateBtn.onclick = async function () {
         activateBtn.disabled = true;
@@ -26234,12 +26259,12 @@ function createRecommendationCard(rec) {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
                 activateBtn.disabled = false;
-                activateBtn.textContent = 'Activate';
+                activateBtn.textContent = activateIdleLabel;
                 try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
             activateBtn.disabled = false;
-            activateBtn.textContent = 'Activate';
+            activateBtn.textContent = activateIdleLabel;
             state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
             try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
@@ -30162,7 +30187,9 @@ function renderOverviewSystemView() {
             cardActions.className = 'rec-actions';
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-sm btn-primary';
-            activateBtn.textContent = 'Activate';
+            // VTID-04667: "Create task" when this type has no executor.
+            var activateIdleLabel = recActivateLabel(rec);
+            activateBtn.textContent = activateIdleLabel;
             activateBtn.onclick = async function (e) {
                 e.stopPropagation();
                 activateBtn.disabled = true;
@@ -30179,12 +30206,12 @@ function renderOverviewSystemView() {
                         showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
                         activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
+                        activateBtn.textContent = activateIdleLabel;
                         showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (err) {
                     activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
+                    activateBtn.textContent = activateIdleLabel;
                     showToast('Activation error: ' + err.message, 'error');
                 }
             };
