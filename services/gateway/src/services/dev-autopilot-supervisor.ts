@@ -276,11 +276,15 @@ export function summarizeExecutions(execs: ExecRow[], nowMs: number) {
   for (const e of week) {
     if (!TERMINAL_FAIL.includes(e.status)) continue;
     const k = normalizeFailureReason(e.error);
-    const prev = reasons.get(k) ?? { count: 0, last_seen_at: e.created_at, count_24h: 0 };
-    const isRecent = Date.parse(e.created_at) >= dayAgo;
+    // Use updated_at (the row's last transition = when it actually failed) so an
+    // execution created days ago but that failed recently is counted correctly.
+    // Fall back to created_at when updated_at is absent (VTID-04622).
+    const failedAt = e.updated_at ?? e.created_at;
+    const prev = reasons.get(k) ?? { count: 0, last_seen_at: failedAt, count_24h: 0 };
+    const isRecent = Date.parse(failedAt) >= dayAgo;
     reasons.set(k, {
       count: prev.count + 1,
-      last_seen_at: e.created_at > prev.last_seen_at ? e.created_at : prev.last_seen_at,
+      last_seen_at: failedAt > prev.last_seen_at ? failedAt : prev.last_seen_at,
       count_24h: prev.count_24h + (isRecent ? 1 : 0),
     });
   }
