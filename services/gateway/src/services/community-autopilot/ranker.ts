@@ -7,6 +7,7 @@
  *   - a template the member rejected twice in 30 days is suppressed;
  *   - a fingerprint that is already open, or was acted on / dismissed in the
  *     last 14 days, is not proposed again;
+ *   - a template the whole community stopped accepting is retired (VTID-04650);
  *   - every row expires (by the next scan pass it is replaced, not stacked).
  */
 import type { ScanCandidate, ScanCategory } from './scanners';
@@ -35,6 +36,8 @@ export interface RankInput {
   history: HistoryRow[];
   usedFeatures: Set<string>;
   now: Date;
+  /** VTID-04650: templates the whole community stopped accepting. */
+  retiredTemplates?: Set<string>;
 }
 
 export interface RankedCandidate extends ScanCandidate {
@@ -76,6 +79,10 @@ export function rankCandidates(input: RankInput): RankResult {
 
   const eligible: RankedCandidate[] = [];
   for (const c of candidates) {
+    if (input.retiredTemplates?.has(c.template)) {
+      dropped.push({ fingerprint: c.fingerprint, reason: 'template_retired' });
+      continue;
+    }
     if ((rejectsByTemplate.get(c.template) ?? 0) >= REJECT_SUPPRESS_COUNT) {
       dropped.push({ fingerprint: c.fingerprint, reason: 'template_rejected_twice' });
       continue;

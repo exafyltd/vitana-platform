@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04650",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "the scan tick that applies retirement is deployed and refuses a caller without the internal token", "method": "POST", "path": "/api/v1/autopilot/recommendations/community-scan", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04650-community-autopilot-template-retirement.test.ts test/vtid-04505-community-autopilot-scan.test.ts", "cwd": "services/gateway", "reason": "retirement runs inside the scan, which writes suggestion rows; the unit suites pin the counting, the threshold, the ranker drop, fail-open and the kill switch" }
+  ]
+}

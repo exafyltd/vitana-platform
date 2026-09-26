@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { runScanners, type MemberSnapshot, type PillarKey, type ScanCandidate, type ScanCategory } from './scanners';
 import { rankCandidates, SCAN_ROW_TTL_HOURS, type HistoryRow, type RankResult } from './ranker';
 import { selectExcessOpenRows, type OpenRow } from './lineup-cap';
+import { loadRetiredTemplates } from './template-stats';
 
 export const SCAN_LOCAL_HOURS = new Set([7, 17]);
 export const SCAN_SOURCE_PREFIX = 'scan_';
@@ -213,7 +214,7 @@ export function buildRow(userId: string, c: ScanCandidate & { score: number; nov
 export async function scanMember(
   sb: SupabaseClient,
   userId: string,
-  opts: { excluded: Set<string>; locale: string; now: Date; dryRun: boolean },
+  opts: { excluded: Set<string>; locale: string; now: Date; dryRun: boolean; retiredTemplates?: Set<string> },
 ): Promise<ScanMemberResult> {
   const retiredIds = await retireExcessOpenRows(sb, userId, opts.now, opts.dryRun);
   // In a dry run this is what WOULD be retired (the summary carries dry_run).
@@ -222,7 +223,7 @@ export async function scanMember(
     loadSnapshot(sb, userId, opts.excluded, opts.now),
     loadHistory(sb, userId, opts.now),
   ]);
-  const rank = rankCandidates({ candidates: runScanners(snapshot), history, usedFeatures: snapshot.usedFeatures, now: opts.now });
+  const rank = rankCandidates({ candidates: runScanners(snapshot), history, usedFeatures: snapshot.usedFeatures, now: opts.now, retiredTemplates: opts.retiredTemplates });
   if (opts.dryRun || rank.picks.length === 0) return { userId, inserted: 0, retired, rank };
   const { tt } = await import('../../i18n/catalog');
   const payload = rank.picks.map((p) => buildRow(userId, p, opts.locale, opts.now, tt as any));
@@ -242,6 +243,8 @@ export interface ScanRunSummary {
   members_scanned: number;
   rows_inserted: number;
   rows_retired: number;
+  /** VTID-04650: scan templates retired for everyone this run. */
+  retired_templates: string[];
   results: Array<{ user_id: string; inserted: number; retired: number; picks: string[]; dropped: number }>;
 }
 
@@ -289,12 +292,14 @@ export async function runCommunityScan(
   const { bulkGetUserLocales } = await import('../../i18n/server-locale');
   const locales = await bulkGetUserLocales(sb, batch).catch(() => new Map<string, string>());
 
+  const { retired: retiredTemplates } = await loadRetiredTemplates(sb, now);
+
   const results: ScanRunSummary['results'] = [];
   let inserted = 0;
   let retired = 0;
   for (const userId of batch) {
     try {
-      const r = await scanMember(sb, userId, { excluded, locale: String(locales.get(userId) ?? 'de'), now, dryRun });
+      const r = await scanMember(sb, userId, { excluded, locale: String(locales.get(userId) ?? 'de'), now, dryRun, retiredTemplates });
       inserted += r.inserted;
       retired += r.retired;
       results.push({ user_id: userId, inserted: r.inserted, retired: r.retired, picks: r.rank.picks.map((p) => p.fingerprint), dropped: r.rank.dropped.length });
@@ -310,6 +315,7 @@ export async function runCommunityScan(
     members_scanned: results.length,
     rows_inserted: inserted,
     rows_retired: retired,
+    retired_templates: [...retiredTemplates].sort(),
     results,
   };
 }
