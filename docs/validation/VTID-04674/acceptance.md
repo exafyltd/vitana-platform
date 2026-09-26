@@ -79,3 +79,11 @@ row carries an `automation_id`.
   - `memory_notifications=false` on 13 rows was the column default. For those 13, the in-app-only `memory_garden_grew` now appears.
 - A switch change reaches other gateway tasks within 30 seconds (cache window).
 - If a switch cannot be read, the notification is allowed and the error is logged loudly. The database guard does the same. A read failure must not silence account messages.
+
+## Route evidence
+ROUTE_MOUNT: services/gateway/src/index.ts — mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/notification-controls', adminNotificationControlsRouter) (router: routes/admin-notification-controls.ts, Router({ mergeParams: true }), router.use(requireTenantAdmin))
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/admin/tenants/<tenantId>/notification-controls (GET /, GET /activity, GET /:type/audit, PATCH /:type)
+CURL_PROOF: before this change, staging `GET /api/v1/admin/tenants/0000…/notification-controls` → `404 text/html` (route absent, curled 2026-09-26); the member route `/api/v1/notifications/category-preferences` → `401 application/json`. After deploy the new route must answer `401 application/json` anonymously — pinned by staging-tests.json and run by STAGING-VERIFY; in-process proof in test/routes/admin-notification-controls.test.ts (401/403/200 through the real requireTenantAdmin).
+
+## OASIS
+OASIS_PROOF: every switch emits `notification.control.changed` (vtid VTID-04674, payload tenant_id/type/source_key/old_enabled/new_enabled/reason, actor id + email) — asserted in test/vtid-04674-notification-controls.test.ts ("switching on writes the row, the audit entry and the OASIS event"). The block counters are not OASIS events on purpose (a per-notification count is telemetry, CLAUDE.md §6).
