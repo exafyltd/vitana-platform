@@ -1,7 +1,8 @@
 {
-  "total": 50,
-  "open": 35,
-  "handoff": 15,
+  "total": 57,
+  "open": 38,
+  "handoff": 19,
+  "offer": 0,
   "wrong": 0,
   "none": 0,
   "outcomes": {
@@ -54,6 +55,13 @@
     "R47": "handoff",
     "R48": "open",
     "R49": "open",
-    "R50": "open"
+    "R50": "open",
+    "R51": "handoff",
+    "R52": "handoff",
+    "R53": "open",
+    "R54": "handoff",
+    "R55": "open",
+    "R56": "handoff",
+    "R57": "open"
   }
 }

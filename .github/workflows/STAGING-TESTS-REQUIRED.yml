@@ -1,0 +1,42 @@
+# STAGING-TESTS-REQUIRED — "no suite, no merge" (VTID-04613; CLAUDE.md
+# Part 1 rule 47, docs/DEPLOYMENT-PIPELINE.md §3.2).
+#
+# A PR that changes what the gateway deploys must carry the test that proves
+# it on staging: docs/validation/<VTID>/staging-tests.json, for a VTID named
+# in the PR title. STAGING-VERIFY runs that suite after the staging deploy;
+# this check makes sure it exists — and is valid, read-only — BEFORE merge.
+# It also runs the STAGING-VERIFY runner's own unit tests.
+
+name: STAGING-TESTS-REQUIRED
+
+run-name: 'STAGING-TESTS-REQUIRED #${{ github.event.pull_request.number }} (VTID-04613)'
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  change-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Runner unit tests
+        run: node --test scripts/ci/staging-verify/lib.test.cjs
+      - name: Change suite present and valid
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node scripts/ci/staging-verify/run.mjs check-pr \
+            --service gateway --repo-root . \
+            --base "$BASE" --head "$HEAD" --title "$TITLE"

@@ -137,7 +137,7 @@ describe('VTID-04281 execution funnel', () => {
     expect(s.success_rate_7d).toBe(25);
     expect(s.auto_approved_7d).toBe(4);
     expect(s.active).toBe(1);
-    expect(s.top_failure_reasons[0]).toEqual({ reason: 'agent hit the 120-turn cap without calling finish', count: 2 });
+    expect(s.top_failure_reasons[0]).toMatchObject({ reason: 'agent hit the 120-turn cap without calling finish', count: 2 });
     expect(s.top_failure_reasons[1].reason).toBe('finding <id> already has an unmerged PR <url> from execution <id>');
   });
 
@@ -155,6 +155,56 @@ describe('VTID-04281 execution funnel', () => {
     expect(s.by_origin_7d.operator).toEqual({ total: 2, succeeded: 1, failed: 1 });
     const alerts = buildAlerts({ cfg, scan: summarizeScanCadence([], NOW), exec: s, blockers: {}, communityEngineLastRunAt: null, nowMs: NOW });
     expect(alerts.map((a) => a.text)).toContain('Self-healing: 0 of 3 executions started from scanner/impact findings succeeded in 7 days.');
+  });
+
+  it('top_failure_reasons carries last_seen_at and count_24h (VTID-04597)', () => {
+    // NOW = 2026-09-22T20:00:00Z
+    // dayAgo = 2026-09-21T20:00:00Z
+    const recent = '2026-09-22T10:00:00Z';   // within 24 h
+    const stale  = '2026-09-20T10:00:00Z';   // outside 24 h, within 7 d
+    const mk = (status: string, error: string | null, created_at: string) => ({
+      id: Math.random().toString(36), finding_id: 'f', status, approved_by: null,
+      created_at, updated_at: created_at, pr_number: null, error,
+    });
+    const s = summarizeExecutions([
+      mk('failed', 'timeout after 30s', recent),
+      mk('failed', 'timeout after 30s', recent),
+      mk('failed', 'timeout after 30s', stale),   // same reason, outside 24 h
+      mk('failed', 'out of memory',     stale),   // different reason, outside 24 h
+    ], NOW);
+
+    const top = s.top_failure_reasons[0];
+    expect(top.reason).toBe('timeout after 30s');
+    expect(top.count).toBe(3);
+    expect(top.count_24h).toBe(2);
+    expect(top.last_seen_at).toBe(recent);
+
+    const second = s.top_failure_reasons[1];
+    expect(second.reason).toBe('out of memory');
+    expect(second.count).toBe(1);
+    expect(second.count_24h).toBe(0);
+    expect(second.last_seen_at).toBe(stale);
+  });
+
+  it('uses updated_at (failure time) not created_at for last_seen_at and count_24h (VTID-04622)', () => {
+    // NOW = 2026-09-22T20:00:00Z
+    // Execution created 3 days ago but updated (failed) 1 hour ago — should be
+    // counted in count_24h and last_seen_at should equal updated_at.
+    const createdAt  = '2026-09-19T20:00:00Z';  // 3 days before NOW — outside 24 h
+    const updatedAt  = '2026-09-22T19:00:00Z';  // 1 hour before NOW — inside 24 h
+    const s = summarizeExecutions([
+      {
+        id: 'e1', finding_id: 'f', status: 'failed', approved_by: null,
+        created_at: createdAt, updated_at: updatedAt,
+        pr_number: null, error: 'timeout after 30s',
+      },
+    ], NOW);
+    expect(s.top_failure_reasons).toHaveLength(1);
+    const top = s.top_failure_reasons[0];
+    expect(top.reason).toBe('timeout after 30s');
+    expect(top.count).toBe(1);
+    expect(top.count_24h).toBe(1);          // counted because updated_at is within 24 h
+    expect(top.last_seen_at).toBe(updatedAt); // updated_at, not created_at
   });
 
   it('normalizeFailureReason collapses ids, urls and PR numbers', () => {

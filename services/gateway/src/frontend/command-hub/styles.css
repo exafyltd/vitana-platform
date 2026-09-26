@@ -17609,6 +17609,13 @@ border-bottom: 1px solid var(--color-border, #333);
   padding: 2px 0;
   overflow-wrap: anywhere;
 }
+.ap-live-reason-meta {
+  display: block;
+  color: #666;
+  font-size: 0.70rem;
+  font-family: monospace;
+  margin-top: 1px;
+}
 .ap-live-exec {
   display: flex;
   gap: 0.75rem;
@@ -17935,3 +17942,8 @@ button.fb-chip:focus-visible,
     font-size: 13px;
     margin: 6px 0;
 }
+
+/* VTID-04635: Testing & QA tabs (CSP: classes, never inline styles). */
+.testing-info-spaced { margin-bottom: 1rem; }
+.testing-e2e-title { margin: 0; }
+.testing-e2e-badge { font-size: 0.75rem; }

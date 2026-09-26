@@ -1,5 +1,7 @@
 # STAGING-ACCEPTANCE.md — Phase 0 acceptance evidence
 
+> **Historical (Phase 0).** The standing staging verification process is now [`DEPLOYMENT-PIPELINE.md`](DEPLOYMENT-PIPELINE.md) (VTID-04610).
+
 Status table for the 11 acceptance criteria in the Phase 0 handoff brief.
 The parent session unblocks when criteria 1, 3, 4, 5, 6, 7, 8, 11 are green
 and the publish/revert flow (9, 10) has been exercised manually by the

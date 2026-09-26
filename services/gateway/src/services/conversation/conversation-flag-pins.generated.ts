@@ -2,6 +2,10 @@
 // Source: the `{name:"X", value:"Y"}` entries in AWS-STAGE-DEPLOY-GATEWAY.yml and
 // AWS-PROD-DEPLOY-GATEWAY.yml. `dynamic` = set from a shell variable at deploy time.
 // null = the workflow does not pin it (the task definition keeps whatever it had).
+// flow-test-exempt: a data mirror of the deploy workflows, regenerated whenever any
+// pinned env changes (most are not conversation flags); it holds no flow logic, and
+// test/services/conversation/vtid-04525-conversation-flag-registry.test.ts checks it
+// is current. The flags that DO change conversation behaviour are tested where used.
 
 export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; prod: string | null }> = {
   APP_URL: { staging: "https://preview-aws.vitanaland.com", prod: null },
@@ -69,6 +73,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   OPERATOR_ONRAMP_EXECUTOR: { staging: "agent", prod: "agent" },
   OPERATOR_PLANNER_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_PR_APPROVAL_REQUIRED: { staging: "true", prod: "true" },
+  OPERATOR_SQL_READONLY_BACKEND: { staging: "supabase", prod: null },
   OPERATOR_SQL_READONLY_ENABLED: { staging: "true", prod: null },
   OPERATOR_THREADS_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_TURN_MEMORY_ENABLED: { staging: "true", prod: "true" },

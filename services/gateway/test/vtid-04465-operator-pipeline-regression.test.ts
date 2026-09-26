@@ -771,6 +771,40 @@ describe('CI failure on an agent PR: the fix continues on the same PR', () => {
   });
 });
 
+describe('VTID-04636 — the self-healing reconciler judges a fix-mode VTID by its lineage', () => {
+  it('leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed)', async () => {
+    const { reconcileAutopilotLinkedSelfHealingVtids } = await import('../src/services/self-healing-reconciler');
+    const { vtid, execId, prNumber } = await openAgentPr('a0000000-0000-4000-8000-000000004636');
+    expect(platform.ledger(vtid).metadata?.autopilot_execution_id).toBe(execId);
+    const pr = platform.github.prs.get(prNumber)!;
+    platform.github.setChecks(pr.head.sha, CI_CHECKS, ['Gateway (Jest, ~7.5k tests)']);
+    await ciTick();
+    const child = platform.rows('dev_autopilot_executions').find((e) => e.parent_execution_id === execId)!;
+    expect(platform.execution(execId).status).toBe('reverted');
+    // The reconciler runs every cycle; here the parent is reverted and the child has not run yet.
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    model.workerRuns.push([
+      tools(['edit_file', { path: GREETING, old_string: 'return `Hello ${name}`;', new_string: 'return `Hello, ${name}`;' }]),
+      tools(['finish', { summary: 'comma', pr_title: 'fix: comma', pr_body: 'comma' }]),
+    ]);
+    await executorTick();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.ledger(vtid).is_terminal).toBe(false);
+    platform.github.setChecks(pr.head.sha, CI_CHECKS);
+    await ciTick();
+    stagingDeployCompleted(pr.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    elapseVerificationWindow(child.id);
+    await verificationWatcherTick();
+    await platform.settle();
+    await reconcileAutopilotLinkedSelfHealingVtids();
+    expect(platform.execution(child.id).status).toBe('completed');
+    expect(platform.ledger(vtid)).toEqual(expect.objectContaining({ is_terminal: true, terminal_outcome: 'success', status: 'completed' }));
+  });
+});
+
 // ===========================================================================
 // 5. Environment ownership (one table, two gateways)
 // ===========================================================================
@@ -1008,6 +1042,122 @@ describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
     expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
     expect(platform.execution(execId).status).toBe('ci');
     expect(execEvents('dev_autopilot.execution.branch_updated', execId)).toHaveLength(1);
+  });
+});
+
+describe('Console turn: several rounds of tools until the model answers (VTID-04628)', () => {
+  const THREAD = 'c4c4c4c4-0000-4000-8000-000000004628';
+  afterEach(() => { delete process.env.OPERATOR_MAX_TOOL_ROUNDS; });
+
+  it('a failed tool call is corrected in the next round and the answer comes from the second result', async () => {
+    model.operatorPlan.push(tools(['run_code', { code: 'this is not javascript (' }]));
+    model.operatorContinue.push(tools(['run_code', { code: 'return 6 * 7' }]));
+    model.operatorContinue.push(text('6 × 7 is 42.'));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 6 times 7?', THREAD);
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toBe('6 × 7 is 42.');
+    const results = res.body.toolResults as Array<{ name: string; response: { ok: boolean } }>;
+    expect(results.map((r) => [r.name, r.response.ok])).toEqual([['run_code', false], ['run_code', true]]);
+    // Two continuation calls, each carrying the tool transcript back WITH the tools.
+    const cont = model.calls.filter((c) => c.stage === 'operator' && c.service === 'gemini-operator-continue');
+    expect(cont).toHaveLength(2);
+    expect(cont[0].historyLength).toBeLessThan(cont[1].historyLength);
+    // The single-round final call is not used when the model answered itself.
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(0);
+  });
+
+  it('OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '1';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1 + 1' }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'what is 1 + 1?', THREAD);
+    expect(res.status).toBe(200);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(0);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
+  });
+
+  it('the round budget ends a model that keeps calling tools: the tool-less final call answers', async () => {
+    process.env.OPERATOR_MAX_TOOL_ROUNDS = '3';
+    model.operatorPlan.push(tools(['run_code', { code: 'return 1' }]));
+    for (let i = 0; i < 5; i++) model.operatorContinue.push(tools(['run_code', { code: `return ${i + 2}` }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'keep going', THREAD);
+    expect(res.status).toBe(200);
+    expect((res.body.toolResults as unknown[]).length).toBe(3);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-continue')).toHaveLength(2);
+    expect(model.calls.filter((c) => c.service === 'gemini-operator-tool-results')).toHaveLength(1);
+  });
+});
+
+describe('Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)', () => {
+  async function toVerifying(): Promise<string> {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    await ciTick();
+    expect(platform.execution(execId).status).toBe('deploying');
+    stagingDeployCompleted(platform.github.prs.get(prNumber)!.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('verifying');
+    return execId;
+  }
+  const errorEvent = (topic: string, vtid: string) => platform.insert('oasis_events', {
+    topic, vtid, status: 'error', service: 'gateway', message: topic, metadata: {}, created_at: new Date().toISOString(),
+  });
+
+  it('the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted', async () => {
+    const execId = await toVerifying();
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('assistant.turn', 'VTID-0536');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toEqual([]);
+  });
+
+  it('a new error type firing 3 times after the deploy still fails verification', async () => {
+    const execId = await toVerifying();
+    for (let i = 0; i < 3; i++) errorEvent('memory.write.failed', 'VTID-02000');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).not.toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toHaveLength(1);
+  });
+});
+
+describe('Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)', () => {
+  const APP = 'services/gateway/src/frontend/command-hub/app.js';
+  const PIN_TEST = 'services/gateway/test/command-hub/cache-bust-pin.test.ts';
+  const OTHER_TEST = 'services/gateway/test/unrelated.test.ts';
+  const NEW_TEST = 'services/gateway/test/ch-reason-meta.test.ts';
+
+  it('the runner jest targets include every suite that names app.js, not only the paired ones', async () => {
+    const gh = platform.github;
+    gh.branches.set('main', gh.commit({
+      ...gh.filesAt('main'),
+      [APP]: "function renderReasons() { return 'x'; }\n",
+      [PIN_TEST]: "import * as fs from 'fs';\ntest('pin', () => { expect(fs.readFileSync('src/frontend/command-hub/app.js', 'utf8')).toBeTruthy(); });\n",
+      [OTHER_TEST]: "test('other', () => { expect(1).toBe(1); });\n",
+    }));
+    model.operatorPlan.push(tools(['autopilot_run_task', { request: 'Show recency on the Command Hub failure reasons.', title: 'Failure reason recency' }]));
+    const res = await consoleTurn({ kind: 'machine' }, 'Please do this: show recency on the Command Hub failure reasons.', 'c4c4c4c4-0000-4000-8000-000000004617');
+    expect(res.status).toBe(200);
+    model.workerRuns.push([
+      tools(
+        ['edit_file', { path: APP, old_string: "return 'x';", new_string: "return 'x (recent)';" }],
+        ['write_file', { path: NEW_TEST, content: "test('meta', () => { expect(true).toBe(true); });\n" }],
+      ),
+      tools(['finish', { summary: 'Recency on the failure reasons.', pr_title: 'feat(command-hub): failure reason recency', pr_body: 'Shows recency.' }]),
+    ]);
+    await executorTick();
+
+    const runnerJest = checks.log.filter((c) => c.kind === 'runner:jest').map((c) => String(c.target));
+    expect(runnerJest).toHaveLength(1);
+    expect(runnerJest[0]).toContain('test/command-hub/cache-bust-pin.test.ts');
+    expect(runnerJest[0]).toContain('test/ch-reason-meta.test.ts');
+    expect(runnerJest[0]).not.toContain('unrelated.test.ts');
   });
 });
 

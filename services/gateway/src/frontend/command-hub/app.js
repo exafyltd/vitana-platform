@@ -4898,7 +4898,6 @@ const state = {
         error: null,
         fetched: false,
     },
-    cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -35405,83 +35404,34 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
-// BOOTSTRAP-TEST-COVERAGE: static phase summary, see docs/TEST_COVERAGE_PLAN.md
-// for the full narrative (bugs found, follow-ups surfaced per phase). Update
-// this array when a new phase completes.
-var GATEWAY_COVERAGE_PHASES = [
-    { phase: '1', name: 'Un-quarantine sweep', suites: 11, tests: null, bugs: 1, status: 'done' },
-    { phase: '2', name: 'Tenancy & RBAC', suites: 24, tests: 381, bugs: 0, status: 'done' },
-    { phase: '3', name: 'Memory & intelligence stack', suites: 22, tests: 625, bugs: 2, status: 'done' },
-    { phase: '5', name: 'Autopilot subsystem', suites: 16, tests: 676, bugs: 1, status: 'done' },
-    { phase: '6', name: 'Vitana Brain + awareness engines', suites: 15, tests: 689, bugs: 3, status: 'done' },
-    { phase: '7', name: 'Voice/ORB tools (Nova-prioritized)', suites: 26, tests: 765, bugs: 2, status: 'done' },
-    { phase: '8', name: 'Frontend domain logic (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '9', name: 'Sibling services & packages', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '10', name: 'Edge functions (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '11', name: 'Coverage ratchet (make CI checks required)', suites: null, tests: null, bugs: 0, status: 'pending' },
-];
-
-function renderGatewayCoveragePhasesTable() {
-    var wrap = document.createElement('div');
-    wrap.style.marginBottom = '1.5rem';
-
-    var titleRow = document.createElement('div');
-    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">Coverage Bootstrap — Phase Structure</h3>' +
-        '<span class="status-badge status-active" style="font-size:0.75rem;">593 suites / 11,716 tests (gateway)</span>';
-    wrap.appendChild(titleRow);
-
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.style.marginTop = 0;
-    subtitle.textContent = 'BOOTSTRAP-TEST-COVERAGE — full narrative (bugs found, findings surfaced per phase) in docs/TEST_COVERAGE_PLAN.md.';
-    wrap.appendChild(subtitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Phase</th><th>Scope</th><th>Suites</th><th>Tests</th><th>Bugs Found</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    GATEWAY_COVERAGE_PHASES.forEach(function (p) {
-        var row = document.createElement('tr');
-        row.innerHTML =
-            '<td style="font-weight:600;">' + escapeHtml(p.phase) + '</td>' +
-            '<td>' + escapeHtml(p.name) + '</td>' +
-            '<td style="text-align:center;">' + (p.suites == null ? '—' : p.suites) + '</td>' +
-            '<td style="text-align:center;">' + (p.tests == null ? '—' : p.tests) + '</td>' +
-            '<td style="text-align:center;' + (p.bugs > 0 ? 'color:#f59e0b;font-weight:600;' : '') + '">' + p.bugs + '</td>' +
-            '<td><span class="status-badge status-' + (p.status === 'done' ? 'active' : 'pending') + '">' + (p.status === 'done' ? 'Done' : 'Pending') + '</span></td>';
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    return wrap;
+// VTID-04635: the Testing & QA module is being rebuilt (generated test
+// catalog, run history across environments, manual runs). Until the new
+// screens land, each tab states what really runs and where, instead of the
+// hand-typed tables and dead run buttons it used to show.
+function renderTestingRebuildNotice() {
+    var note = document.createElement('div');
+    note.className = 'databases-arch-note';
+    note.innerHTML = '<h3>Being rebuilt</h3><p>This module is being rebuilt into a test control center: a catalog of every test generated from the code, run history for development, staging and production, coverage gaps, and manual runs. Until then this tab shows what runs today.</p>';
+    return note;
 }
 
 function renderTestingUnitView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Vitest (frontend) / Jest (gateway).</p>';
+    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Jest (gateway) and Vitest (frontend), run by GitHub Actions.</p>';
+    container.appendChild(renderTestingRebuildNotice());
 
-    // Info card
     var info = document.createElement('div');
     info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Test Framework</h3><ul>' +
-        '<li><strong>Frontend:</strong> Vitest — <code>temp_vitana_v1/src/__tests__/</code></li>' +
-        '<li><strong>Gateway:</strong> Jest — <code>services/gateway/tests/</code></li>' +
-        '<li><strong>Coverage:</strong> c8/istanbul</li>' +
-        '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
+    info.innerHTML = '<h3>What runs today</h3><ul>' +
+        '<li><strong>Gateway:</strong> Jest, <code>services/gateway/test/</code> (about 1,300 files), via <code>TEST-SUITE.yml</code> on every PR, every push to main and nightly at 03:17 UTC.</li>' +
+        '<li><strong>Frontend:</strong> Vitest, <code>exafyltd/vitana-v1</code> <code>src/**/*.test.ts(x)</code> (about 190 files), via <code>UNIT-TESTS.yml</code> on every PR, push and nightly at 03:47 UTC. It cannot be started from here yet.</li>' +
+        '<li><strong>Coverage:</strong> not published yet.</li></ul>';
+    info.classList.add('testing-info-spaced');
     container.appendChild(info);
 
-    // BOOTSTRAP-TEST-COVERAGE: phase-by-phase breakdown of the gateway unit
-    // test coverage bootstrap project (docs/TEST_COVERAGE_PLAN.md). Static
-    // summary — updated as new phases land — so testers/reviewers can see
-    // what's covered without reading the full plan doc.
-    container.appendChild(renderGatewayCoveragePhasesTable());
-
-    // Quick run buttons
     container.appendChild(renderTestingQuickRunButtons('unit', [
         { label: 'Gateway Tests (Jest)', projects: ['gateway-jest'] },
-        { label: 'Frontend Tests (Vitest)', projects: ['frontend-vitest'] },
     ]));
 
     // Runs history
@@ -35504,23 +35454,19 @@ function renderTestingUnitView() {
 function renderTestingIntegrationView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Cross-service integration test results.</p>';
+    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Pipeline regression suites that run the real code of several stages together.</p>';
+    container.appendChild(renderTestingRebuildNotice());
 
-    // Scope info
     var info = document.createElement('div');
     info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Integration Test Scope</h3><ul>' +
-        '<li><strong>Gateway \u2192 OASIS Operator:</strong> Event emission, projection sync</li>' +
-        '<li><strong>Gateway \u2192 Worker Runner:</strong> Task claiming, execution callbacks</li>' +
-        '<li><strong>Gateway \u2192 Verification Engine:</strong> Governance evaluation flow</li>' +
-        '<li><strong>Gateway \u2192 Supabase:</strong> RLS enforcement, data persistence</li>' +
-        '<li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>';
+    info.innerHTML = '<h3>What runs today</h3><ul>' +
+        '<li><code>npm run test:operator</code>: Operator Console to Dev Autopilot pipeline</li>' +
+        '<li><code>npm run test:support</code>: customer support pipeline</li>' +
+        '<li><code>npm run test:roles</code>: role separation of the ORB assistant</li>' +
+        '<li><code>npm run test:calendar</code>, <code>test:replay</code>, <code>test:flow</code>, <code>test:nav-redirect</code>, <code>test:voice-identity</code></li>' +
+        '<li><code>AURORA-I18N-INTEGRATION.yml</code>: DB i18n against a Postgres container</li></ul>' +
+        '<p>These run inside the full gateway Jest run on every PR. Start that run from Unit Tests.</p>';
     container.appendChild(info);
-
-    // Quick run buttons
-    container.appendChild(renderTestingQuickRunButtons('integration', [
-        { label: 'Full Integration Suite', projects: ['integration-full'] },
-    ]));
 
     // Runs history
     fetchTestingRuns('integration', 'testingIntegration');
@@ -35542,40 +35488,17 @@ function renderTestingIntegrationView() {
 function renderTestingValidatorView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance validator agent test scenarios.</p>';
+    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance gates every pull request passes before merge.</p>';
+    container.appendChild(renderTestingRebuildNotice());
 
-    // Quick run button
-    container.appendChild(renderTestingQuickRunButtons('validator', [
-        { label: 'Run All Validator Tests', projects: ['validator-governance'] },
-    ]));
-
-    // Scenarios table
-    var scenarios = [
-        { name: 'Deploy Gate - Clean Build', expected: 'ALLOW', rule: 'GOV-001' },
-        { name: 'Deploy Gate - Failing Tests', expected: 'BLOCK', rule: 'GOV-001' },
-        { name: 'Spec Validation - Complete Spec', expected: 'APPROVE', rule: 'GOV-003' },
-        { name: 'Spec Validation - Missing Criteria', expected: 'REJECT', rule: 'GOV-003' },
-        { name: 'Resource Limit - Within Budget', expected: 'ALLOW', rule: 'GOV-005' },
-        { name: 'Resource Limit - Over Budget', expected: 'BLOCK', rule: 'GOV-005' }
-    ];
-    var scenariosTitle = document.createElement('h3');
-    scenariosTitle.textContent = 'Test Scenarios';
-    container.appendChild(scenariosTitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Scenario</th><th>Expected</th><th>Rule</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    scenarios.forEach(function (s) {
-        var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + s.name + '</td>' +
-            '<td><span class="status-badge status-' + (s.expected === 'ALLOW' || s.expected === 'APPROVE' ? 'active' : 'blocked') + '">' + s.expected + '</span></td>' +
-            '<td style="font-family:monospace;">' + s.rule + '</td>' +
-            '<td><span class="status-badge status-pending">Not Run</span></td>';
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.innerHTML = '<h3>What runs today</h3><ul>' +
+        '<li><code>VALIDATOR-CHECK.yml</code>: VTID, validation profile, path ownership, evidence pack, acceptance mapping, CSP, build, route mount, OASIS traceability</li>' +
+        '<li><code>STAGING-TESTS-REQUIRED.yml</code>: a deploying PR carries its staging test suite</li>' +
+        '<li><code>COMMAND-HUB-GUARDRAILS.yml</code>, <code>MIGRATION-DRIFT-CHECK.yml</code>, <code>CALENDAR-REGRESSION.yml</code>, i18n gates</li></ul>' +
+        '<p>These run on pull requests in GitHub and are not started from here.</p>';
+    container.appendChild(info);
 
     // Runs history
     fetchTestingRuns('validator', 'testingValidator');
@@ -35601,73 +35524,27 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">272+ routes</span>';
+    var e2eTitle = document.createElement('h2');
+    e2eTitle.className = 'testing-e2e-title';
+    e2eTitle.textContent = 'E2E Tests';
+    var e2eBadge = document.createElement('span');
+    e2eBadge.className = 'status-badge status-active testing-e2e-badge';
+    e2eBadge.textContent = 'staging';
+    titleRow.appendChild(e2eTitle);
+    titleRow.appendChild(e2eBadge);
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) \u00d7 6 roles.';
+    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) and 5 roles, on staging.';
     container.appendChild(subtitle);
 
-    // ─── Cloud Run Migration Testing Banner ─────────────────────────
-    var cloudRunBanner = document.createElement('div');
-    cloudRunBanner.style.cssText = 'background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(168,85,247,0.08));border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;';
-
-    var bannerTitle = document.createElement('div');
-    bannerTitle.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
-    bannerTitle.innerHTML = '<span style="font-size:1.1rem;">&#9729;</span><strong style="font-size:0.95rem;">Cloud Run Migration Testing</strong>';
-    cloudRunBanner.appendChild(bannerTitle);
-
-    var bannerDesc = document.createElement('div');
-    bannerDesc.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
-    bannerDesc.textContent = 'Run smoke tests against the Cloud Run community-app deployment to verify all 272 routes work before decommissioning Lovable CDN.';
-    cloudRunBanner.appendChild(bannerDesc);
-
-    var bannerBtnRow = document.createElement('div');
-    bannerBtnRow.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;';
-
-    var critBtn = document.createElement('button');
-    critBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    critBtn.style.fontSize = '0.8rem';
-    critBtn.textContent = 'Cloud Run \u2014 Critical Path';
-    critBtn.title = 'Runs desktop-community + mobile-community against Cloud Run URL';
-    critBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], critBtn, state.cloudRunUrl || '');
-    };
-    bannerBtnRow.appendChild(critBtn);
-
-    var fullBtn = document.createElement('button');
-    fullBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    fullBtn.style.fontSize = '0.8rem';
-    fullBtn.textContent = 'Cloud Run \u2014 Full Suite';
-    fullBtn.title = 'Runs all desktop + mobile projects against Cloud Run URL';
-    fullBtn.onclick = function () {
-        triggerTestRun('e2e',
-            ['desktop-community', 'desktop-patient', 'desktop-professional', 'desktop-staff', 'desktop-admin', 'desktop-shared',
-             'mobile-community', 'mobile-patient', 'mobile-professional', 'mobile-staff', 'mobile-admin', 'mobile-shared'],
-            fullBtn, state.cloudRunUrl || ''
-        );
-    };
-    bannerBtnRow.appendChild(fullBtn);
-
-    var lovableBtn = document.createElement('button');
-    lovableBtn.className = 'task-spec-pipeline-btn';
-    lovableBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
-    lovableBtn.textContent = 'Lovable CDN \u2014 Critical Path';
-    lovableBtn.title = 'Runs desktop-community + mobile-community against Lovable (baseline)';
-    lovableBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], lovableBtn);
-    };
-    bannerBtnRow.appendChild(lovableBtn);
-    cloudRunBanner.appendChild(bannerBtnRow);
-
-    // Cloud Run URL display
-    var urlRow = document.createElement('div');
-    urlRow.style.cssText = 'margin-top:0.6rem;font-size:0.75rem;color:var(--color-text-secondary);';
-    urlRow.innerHTML = '<strong>Cloud Run URL:</strong> <code style="background:var(--color-bg-primary);padding:0.15rem 0.4rem;border-radius:3px;">' +
-        (state.cloudRunUrl || 'Not configured \u2014 set in state after first deploy') + '</code>';
-    cloudRunBanner.appendChild(urlRow);
-
-    container.appendChild(cloudRunBanner);
+    // VTID-04635: E2E runs target staging only. The gateway sends the staging
+    // community app URL itself and refuses any other host; production is
+    // never tested (CLAUDE.md rule 48).
+    var stagingNote = document.createElement('div');
+    stagingNote.className = 'databases-arch-note';
+    stagingNote.innerHTML = '<h3>Runs against staging</h3><p>Every E2E run here targets <code>https://preview-aws.vitanaland.com</code> (community app) and <code>https://preview-aws-gateway.vitanaland.com</code> (Command Hub). Production is never tested. Runs are dispatched to <code>E2E-TEST-RUN.yml</code>; results appear in GitHub Actions until the rebuilt Runs tab records them.</p>';
+    container.appendChild(stagingNote);
 
     // Fetch suites + runs
     fetchTestingSuites();
@@ -38374,49 +38251,19 @@ function renderTestingCiReportsView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Cloud Build CI/CD pipeline execution reports.';
+    subtitle.textContent = 'Test and gate runs in GitHub Actions.';
     container.appendChild(subtitle);
+    container.appendChild(renderTestingRebuildNotice());
 
-    if (!state.testingCi.fetched && !state.testingCi.loading) {
-        state.testingCi.loading = true;
-        renderApp();
-        fetch('/api/v1/cicd/health', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.testingCi.runs = data.builds || data.data || (Array.isArray(data) ? data : [data]);
-                state.testingCi.fetched = true;
-                state.testingCi.loading = false;
-                renderApp();
-            }).catch(function (err) { state.testingCi.error = err.message; state.testingCi.loading = false; renderApp(); });
-    }
-    if (state.testingCi.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
-    if (state.testingCi.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingCi.error; container.appendChild(e); return container; }
-
-    var items = state.testingCi.runs;
-    if (!Array.isArray(items) || items.length === 0) {
-        var info = document.createElement('div');
-        info.className = 'databases-arch-note';
-        info.innerHTML = '<h3>CI/CD Pipeline</h3><p>' + (typeof items === 'object' ? '<pre>' + escapeHtml(JSON.stringify(items, null, 2)) + '</pre>' : 'No CI reports available.') + '</p>';
-        container.appendChild(info);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'list-table';
-        table.innerHTML = '<thead><tr><th>Build ID</th><th>Status</th><th>Branch</th><th>Started</th><th>Duration</th></tr></thead>';
-        var tbody = document.createElement('tbody');
-        items.forEach(function (b) {
-            var row = document.createElement('tr');
-            var st = (b.status || 'unknown').toLowerCase();
-            row.innerHTML = '<td style="font-family:monospace;">' + (b.id || b.build_id || '-') + '</td>' +
-                '<td><span class="status-badge status-' + st + '">' + st + '</span></td>' +
-                '<td>' + (b.branch || b.source || '-') + '</td>' +
-                '<td>' + formatEventTimestamp(b.started_at || b.created_at) + '</td>' +
-                '<td>' + (b.duration || '-') + '</td>';
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        container.appendChild(table);
-    }
-    autoAddLoadMore(container, 'testingCi');
+    // VTID-04635: this tab used to read /api/v1/cicd/health, a capability
+    // health object, and render it as a one-row "build" table. There is no
+    // build feed yet; say where the reports are instead.
+    var info = document.createElement('div');
+    info.className = 'databases-arch-note';
+    info.innerHTML = '<h3>Where the reports are today</h3><ul>' +
+        '<li><a href="https://github.com/exafyltd/vitana-platform/actions" target="_blank" rel="noopener">vitana-platform Actions</a>: TEST-SUITE, VALIDATOR-CHECK, STAGING-VERIFY, E2E-TEST-RUN, monitors</li>' +
+        '<li><a href="https://github.com/exafyltd/vitana-v1/actions" target="_blank" rel="noopener">vitana-v1 Actions</a>: UNIT-TESTS, CALENDAR-REGRESSION, i18n checks</li></ul>';
+    container.appendChild(info);
     return container;
 }
 
@@ -48822,7 +48669,15 @@ function renderAutopilotLiveView() {
             reasons.slice(0, 5).forEach(function (r) {
                 var line = document.createElement('div');
                 line.className = 'ap-live-reason';
-                line.textContent = r.count + '\u00D7  ' + r.reason;
+                var main = document.createElement('span');
+                main.textContent = r.count + '\u00D7  ' + r.reason;
+                line.appendChild(main);
+                if (r.count_24h != null && r.last_seen_at != null) {
+                    var meta = document.createElement('span');
+                    meta.className = 'ap-live-reason-meta';
+                    meta.textContent = r.count_24h + ' in last 24h \u00B7 last seen ' + autopilotSupervisorAgo(r.last_seen_at);
+                    line.appendChild(meta);
+                }
                 pipe.appendChild(line);
             });
         }

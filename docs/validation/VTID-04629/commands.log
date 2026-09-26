@@ -1,0 +1,9 @@
+# local, no production writes (Supabase pointed at 127.0.0.1:9 in the live runner)
+node scripts/nav/build-nav-registry.mjs                       # vitana-v1: 186 screens, HOME.CREATE_POST present
+BEDROCK_ROLE_ARN=local AWS_REGION=eu-central-1 npx tsx test/nav-golden/build-embeddings.ts
+NAV_REDIRECT_WRITE_BASELINE=1 npx jest test/nav-redirect      # baseline: 57 cases, 38 open, 19 handoff
+npx jest test/nav-redirect test/navigation test/nav-golden    # 11 suites, 412 tests passed
+npx tsc --noEmit -p tsconfig.json                             # clean
+BEDROCK_ROLE_ARN=local LAYER=voice REGISTRY_URL=http://127.0.0.1:8765/nav-registry.json \
+  CASES=R51,R52,R53,R54,R55,R56,R57,R01,R04,R12 npx tsx test/nav-redirect/run-live.ts
+# VOICE {"total":10,"open":9,"wrong":0,"no_open":1,"not_covered":0,"error":0}

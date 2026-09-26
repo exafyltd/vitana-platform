@@ -412,7 +412,15 @@ export async function buildRememberFactDeps(sb: SupabaseClient) {
       const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
       return typeof value === 'string' && value.trim() ? value.trim() : null;
     },
-    write: rememberFact,
+    async write(...args: Parameters<typeof rememberFact>) {
+      const result = await rememberFact(...args);
+      if (result.ok) {
+        // VTID-04627: a fact saved now must be in the next session's snapshot.
+        const { refreshSnapshotAfterMemoryEdit } = await import('./conversation/brain-core-snapshot');
+        refreshSnapshotAfterMemoryEdit({ tenantId: args[0].tenant_id, userId: args[0].user_id });
+      }
+      return result;
+    },
   };
 }
 
@@ -3286,7 +3294,9 @@ export async function tool_navigate_to_screen(
         // the model said it wanted instead of fuzzy-matching the id string.
         const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
         const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-        const r = await nav.navigateByRequest(query, 'open', navCtx);
+        // VTID-04629: the member's own words first, as navigate does.
+        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
         if (r) return r;
       }
     }

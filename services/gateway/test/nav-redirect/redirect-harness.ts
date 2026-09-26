@@ -15,10 +15,11 @@ import type { ParaphraseCase, RedirectCase } from './redirect-cases';
  *             handed the voice model a short list with an expected screen
  *             first and told it to open that one. The voice layer checks
  *             that the model then does.
+ * `offer`   — a "where" question: the expected screen was offered, not opened.
  * `wrong`   — a different screen opened, or was put first.
  * `none`    — nothing useful came back.
  */
-export type RedirectOutcome = 'open' | 'handoff' | 'wrong' | 'none';
+export type RedirectOutcome = 'open' | 'handoff' | 'offer' | 'wrong' | 'none';
 
 export interface RedirectResult {
   id: string;
@@ -84,8 +85,8 @@ export async function runRedirectCase(c: RedirectCase, modelQuestion?: string): 
     'navigate',
     {
       question: modelQuestion ?? c.say,
-      intent: 'open',
-      current_route: REDIRECT_CURRENT_ROUTE,
+      intent: c.intent ?? 'open',
+      current_route: c.from ?? REDIRECT_CURRENT_ROUTE,
       is_mobile: viewport === 'mobile',
       transcript_excerpt: c.say,
     },
@@ -120,6 +121,19 @@ export async function runRedirectCase(c: RedirectCase, modelQuestion?: string): 
     return { ...base, outcome: 'wrong', decision: 'already_there', screen_id: res.screen_id, route: res.route, entry_kind: null, problems: ['answered "already there"'] };
   }
   const decision = String(res.decision ?? 'none');
+  if (decision === 'offer' && res.offer?.screen_id) {
+    const offered = String(res.offer.screen_id);
+    const right = c.expect.includes(offered) && (c.intent ?? 'open') === 'where';
+    return {
+      ...base,
+      outcome: right ? 'offer' : 'wrong',
+      decision,
+      screen_id: offered,
+      route: null,
+      entry_kind: null,
+      problems: right ? [] : [`offered ${offered}${(c.intent ?? 'open') === 'open' ? ' instead of opening' : ''}, expected ${c.expect.join(' or ')}`],
+    };
+  }
   if (decision === 'ambiguous' && candidates.length) {
     const first = candidates[0];
     const right = c.expect.includes(first);
@@ -138,7 +152,7 @@ export async function runRedirectCase(c: RedirectCase, modelQuestion?: string): 
 
 export function summarizeRedirect(results: RedirectResult[]) {
   const count = (o: RedirectOutcome) => results.filter((r) => r.outcome === o).length;
-  return { total: results.length, open: count('open'), handoff: count('handoff'), wrong: count('wrong'), none: count('none') };
+  return { total: results.length, open: count('open'), handoff: count('handoff'), offer: count('offer'), wrong: count('wrong'), none: count('none') };
 }
 
 export function formatRedirectTable(results: RedirectResult[]): string {
@@ -149,4 +163,21 @@ export function formatRedirectTable(results: RedirectResult[]): string {
 
 export function runParaphraseCase(p: ParaphraseCase): Promise<RedirectResult> {
   return runRedirectCase({ id: p.id, lang: p.lang, say: p.say, expect: p.expect }, p.modelQuestion);
+}
+
+/** A navigate_to_screen call with a screen id nobody gave the model. */
+export async function runInventedIdCase(screenId: string): Promise<{ screen_id: string | null; route: string | null; ok: boolean; text: string }> {
+  const identity = {
+    user_id: 'redirect-suite-user', tenant_id: 'redirect-suite-tenant', role: 'community', lang: 'de',
+    session_id: 'redirect-suite-invented', is_anonymous: false, is_mobile: false,
+  };
+  const r: any = await dispatchOrbTool(
+    'navigate_to_screen',
+    // Started from Events, where the production session was.
+    { screen_id: screenId, current_route: '/comm/events-meetups', transcript_excerpt: 'ja bitte' },
+    identity as any,
+    null as any,
+  );
+  const d = r?.result?.directive;
+  return { screen_id: d?.screen_id ?? null, route: d?.route ?? null, ok: r?.ok !== false, text: String(r?.text ?? r?.error ?? '') };
 }

@@ -33,7 +33,7 @@ import { buildStartingMap, explorationThresholds } from './agent-exploration';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
-import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
+import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
@@ -379,7 +379,7 @@ export async function runAgentExecutionSession(
         }
       }
       let jestFailed = '';
-      for (const target of selectJestTargets(changedPaths)) {
+      for (const target of selectRunnerJestTargets(repoDir, changedPaths)) {
         if (cancelRequested) return cancelledResult();
         const r = await runJest(repoDir, target.project, target.patterns);
         onStep({ turn: totalTurns, kind: 'tool', name: 'runner:jest', detail: `${target.project} ${target.patterns.join(' ')} → ${r.ok ? 'pass' : 'FAIL'}`, isError: !r.ok });

@@ -272,11 +272,21 @@ export function summarizeExecutions(execs: ExecRow[], nowMs: number) {
     if (e.status === 'completed' || e.status === 'self_healed') b.succeeded++;
     if (TERMINAL_FAIL.includes(e.status)) b.failed++;
   }
-  const reasons = new Map<string, number>();
+  const reasons = new Map<string, { count: number; last_seen_at: string; count_24h: number }>();
   for (const e of week) {
     if (!TERMINAL_FAIL.includes(e.status)) continue;
     const k = normalizeFailureReason(e.error);
-    reasons.set(k, (reasons.get(k) || 0) + 1);
+    // Use updated_at (the row's last transition = when it actually failed) so an
+    // execution created days ago but that failed recently is counted correctly.
+    // Fall back to created_at when updated_at is absent (VTID-04622).
+    const failedAt = e.updated_at ?? e.created_at;
+    const prev = reasons.get(k) ?? { count: 0, last_seen_at: failedAt, count_24h: 0 };
+    const isRecent = Date.parse(failedAt) >= dayAgo;
+    reasons.set(k, {
+      count: prev.count + 1,
+      last_seen_at: failedAt > prev.last_seen_at ? failedAt : prev.last_seen_at,
+      count_24h: prev.count_24h + (isRecent ? 1 : 0),
+    });
   }
   const active = execs.filter((e) => IN_FLIGHT_STATUSES.includes(e.status));
   const activeByStatus: Record<string, number> = {};
@@ -297,8 +307,8 @@ export function summarizeExecutions(execs: ExecRow[], nowMs: number) {
     active_by_status: activeByStatus,
     awaiting_approval: activeByStatus['awaiting_approval'] || 0,
     last_execution_at: execs.reduce<string | null>((m, e) => (!m || e.created_at > m ? e.created_at : m), null),
-    top_failure_reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
-      .map(([reason, count]) => ({ reason, count })),
+    top_failure_reasons: [...reasons.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8)
+      .map(([reason, v]) => ({ reason, count: v.count, last_seen_at: v.last_seen_at, count_24h: v.count_24h })),
   };
 }
 
