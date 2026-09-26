@@ -3776,6 +3776,15 @@
           // complete and its audio has drained. A turn that never completes
           // still navigates after 15 s.
           if (!msg.route && !msg.screen_id) break;
+          if (msg.after_turn === true) {
+            // VTID-04644: sent after the turn already completed (the gateway
+            // opened the screen the member asked for). Nothing more is coming
+            // for this turn — run once the audio has drained.
+            _s.pendingNavDirective = null;
+            clearTimeout(_s._pendingNavSafety);
+            _runNavDirective(msg, _s._sessionGeneration);
+            break;
+          }
           _s.pendingNavDirective = msg;
           clearTimeout(_s._pendingNavSafety);
           (function (myGen) {

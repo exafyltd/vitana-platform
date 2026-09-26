@@ -66,6 +66,7 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
 import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop } from './remember-backstop-hook';
+import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -2334,6 +2335,9 @@ export function handleTurnComplete(
     }
   }
 
+  // VTID-04644: read before turn_count moves — the per-turn marker stops
+  // matching the moment it does.
+  const navigatedDuringTurn = navigationDispatchedThisTurn(session);
   session.turn_count++;
   session.consecutiveModelTurns++;
   const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
@@ -2471,6 +2475,10 @@ export function handleTurnComplete(
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
     maybeRunRememberBackstop(ctx, session, userText);
+
+    // VTID-04644: an explicit "open …" / "show me …" the model answered
+    // without opening anything opens the one screen that clearly fits.
+    maybeRunExplicitOpenBackstop(ctx.deps, session, userText, navigatedDuringTurn);
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {
