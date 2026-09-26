@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runFullQualityCheck } from '../services/spec-quality-agent';
 import { runStageToolLoop } from '../services/llm-stage-tool-loop';
+import { devPlannerModel } from '../services/dev-pipeline-models';
 import { codeIndexRouterTools, isCodeIndexToolName, loadCodeIndex, runCodeIndexTool, type CodeIndexBundle } from '../services/codeintel-index';
 
 const router = Router();
@@ -75,6 +76,7 @@ export async function callSpecGenerator(
     }
   }
   const b = bundle;
+  const specPlanner = devPlannerModel(env);
   const loop = await (deps.runLoop || runStageToolLoop)({
     stage: SPEC_GEN_STAGE,
     service: SPEC_GEN_SERVICE,
@@ -93,6 +95,9 @@ export async function callSpecGenerator(
     deadlineMs: SPEC_GEN_DEADLINE_MS,
     maxTokens: SPEC_GEN_MAX_TOKENS,
     allowFallback: true,
+    // VTID-04593: spec generation is the planner — DeepSeek Flash primary.
+    providerOverride: specPlanner.provider,
+    modelOverride: specPlanner.model,
   });
   return {
     text: loop.ok ? (loop.text || null) : null,

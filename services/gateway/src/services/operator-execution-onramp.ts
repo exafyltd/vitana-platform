@@ -46,12 +46,15 @@ import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import type { CicdEventType } from '../types/cicd';
 import { approveAutoExecute, getSupabase, supa, type SupaConfig } from './dev-autopilot-execute';
+import { devWorkerModel } from './dev-pipeline-models';
 // VTID-04164: per-thread flood guard on the operator execution on-ramp.
 import { checkOnRampRateLimit, describeOnRampRateLimit } from './operator-onramp-rate-limit';
 
 const VTID = 'VTID-03820';
 const ONRAMP_SOURCE_TYPE = 'operator_onramp';
-const DEEPSEEK_MODEL = 'deepseek-flash';
+// VTID-04593: the coding agent's model, stamped on the row so the executor
+// (and any self-heal child, VTID-03843) runs on it.
+const WORKER = devWorkerModel();
 
 export interface TriggerOperatorExecutionInput {
   /** The already-allocated, already-approved VTID to execute.
@@ -426,8 +429,8 @@ export async function triggerOperatorExecution(
     body: JSON.stringify({
       execute_after: new Date().toISOString(),
       metadata: {
-        llm_on_ramp: 'deepseek',
-        llm_on_ramp_override: { provider: 'deepseek', model: DEEPSEEK_MODEL },
+        llm_on_ramp: WORKER.provider,
+        llm_on_ramp_override: { provider: WORKER.provider, model: WORKER.model },
         triggered_by: input.requestedBy,
         source: 'operator-onramp',
         // VTID-04006: OPERATOR_ONRAMP_EXECUTOR=agent routes operator-instructed
@@ -456,7 +459,7 @@ export async function triggerOperatorExecution(
     type: 'operator.execution_onramp.triggered' as CicdEventType,
     source: 'operator-execution-onramp',
     status: 'success',
-    message: `Operator on-ramp queued DeepSeek-powered execution ${executionId.slice(0, 8)} for ${vtid}${openEnded ? ' (open-ended request, agent executor)' : ''}`,
+    message: `Operator on-ramp queued ${WORKER.provider}/${WORKER.model} execution ${executionId.slice(0, 8)} for ${vtid}${openEnded ? ' (open-ended request, agent executor)' : ''}`,
     payload: {
       execution_id: executionId,
       finding_id: findingId,
@@ -464,8 +467,8 @@ export async function triggerOperatorExecution(
       intake: openEnded ? 'open_ended' : 'plan',
       vtid_allocated: vtidAllocated,
       requested_by: input.requestedBy,
-      provider: 'deepseek',
-      model: DEEPSEEK_MODEL,
+      provider: WORKER.provider,
+      model: WORKER.model,
       correlation_id: randomUUID(),
     },
   }).catch((err: any) => console.warn(`[${VTID}] Failed to log execution_onramp.triggered:`, err.message));
