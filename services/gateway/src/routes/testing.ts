@@ -25,8 +25,9 @@ const router = Router();
 // These were mounted with no auth at all, so an anonymous request could
 // dispatch TEST-SUITE.yml / E2E-TEST-RUN.yml / E2E-ORB-MONITOR.yml. Reads
 // (suites, runs, cycles, orb-monitor status) stay open for now; the rebuilt
-// screens (plan: Testing & QA rebuild) move them behind the same gate.
-const adminOnly = [requireAuth, requireExafyAdmin];
+// screens (plan: Testing & QA rebuild) move them behind the same gate. The
+// middleware is written out on each route (not spread from an array) so the
+// Impact Scan's auth rule can see it.
 
 // VTID-04635: E2E runs target staging only. The owner rule (CLAUDE.md 48,
 // vitana-v1 absolute rule) forbids automated suites against production, and
@@ -118,7 +119,8 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
 });
 
 // ─── POST /run — Trigger a test run ──────────────────────────────────────
-router.post('/run', ...adminOnly, async (req: Request, res: Response) => {
+router.post('/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   const { projects = [], type = 'e2e' } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
@@ -213,7 +215,8 @@ router.get('/cycles', async (_req: Request, res: Response) => {
 });
 
 // ─── POST /cycles — Create a test cycle ──────────────────────────────────
-router.post('/cycles', ...adminOnly, async (req: Request, res: Response) => {
+router.post('/cycles', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
@@ -229,7 +232,8 @@ router.post('/cycles', ...adminOnly, async (req: Request, res: Response) => {
 });
 
 // ─── POST /cycles/:id/run — Execute a test cycle ────────────────────────
-router.post('/cycles/:id/run', ...adminOnly, async (req: Request, res: Response) => {
+router.post('/cycles/:id/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   const community_url = resolveE2eCommunityUrl(req.body?.community_url);
   if (!community_url) {
     return res.status(400).json({ ok: false, error: `E2E runs target staging only (${E2E_STAGING_COMMUNITY_URL})` });
@@ -526,7 +530,8 @@ router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/orb-monitor/trigger', ...adminOnly, async (_req: Request, res: Response) => {
+router.post('/orb-monitor/trigger', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, ORB_MONITOR_WORKFLOW, 'main');
     res.json({ ok: true, message: 'ORB Monitor workflow triggered' });
