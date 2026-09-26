@@ -42,7 +42,7 @@ export const test = base.extend<GuardOptions & GuardFixtures>({
         const url = req.url();
         let host = '';
         try {
-          host = new URL(url).host;
+          host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
         } catch {
           return route.continue();
         }

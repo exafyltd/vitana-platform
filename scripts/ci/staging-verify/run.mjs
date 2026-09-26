@@ -53,8 +53,22 @@ function isAncestor(repoRoot, a, b) {
   }
 }
 
-async function httpGet(url, init = {}) {
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(20_000), ...init });
+// Redirects are followed by hand so every hop is re-checked: a staging
+// endpoint that redirects to production must never turn a staging test into
+// a production request (rule 48). A write probe is never redirected at all —
+// its 3xx is returned as the answer and fails the expected 401/403.
+async function httpGet(url, init = {}, { allowProduction = false } = {}) {
+  const method = String(init.method || 'GET').toUpperCase();
+  let current = url;
+  let res;
+  for (let hop = 0; ; hop++) {
+    if (!allowProduction) lib.assertStagingTarget(current);
+    res = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    const location = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !location || !['GET', 'HEAD'].includes(method)) break;
+    if (hop >= 5) throw new Error(`too many redirects from ${url}`);
+    current = new URL(location, current).toString();
+  }
   const body = (await res.text()).slice(0, 1_000_000);
   let json;
   try {
@@ -80,7 +94,7 @@ async function stagingStamp(service) {
 // deploy check, never a test.
 async function productionStamp(service) {
   try {
-    const r = await httpGet(`${lib.PRODUCTION_VERSION_SOURCES[service]}${service === 'gateway' ? '' : `?staging-verify=${Date.now()}`}`);
+    const r = await httpGet(`${lib.PRODUCTION_VERSION_SOURCES[service]}${service === 'gateway' ? '' : `?staging-verify=${Date.now()}`}`, {}, { allowProduction: true });
     return service === 'gateway' ? r.json?.git_commit || null : lib.parseFrontendVersion(r.body);
   } catch (e) {
     log(`production version unreadable: ${e.message}`);
@@ -293,6 +307,16 @@ async function verify(args) {
   const prodStamp = await productionStamp(service);
   const prodSha = prodStamp ? git(repoRoot, ['rev-parse', '--verify', `${prodStamp}^{commit}`], { allowFail: true }) : null;
   const rangeFrom = prodSha && prodSha !== sha && isAncestor(repoRoot, prodSha, sha) ? prodSha : null;
+  // Fail closed: without a known production baseline the run cannot say
+  // what a PUBLISH would ship, so it cannot approve anything. The head
+  // commit's suites still run, for information, but the outcome is failed.
+  const baselineProblem = !prodStamp
+    ? 'the production version stamp could not be read'
+    : !prodSha
+      ? `production commit ${prodStamp} is not in this repository's history`
+      : prodSha !== sha && !rangeFrom
+        ? `production commit ${prodStamp} is not an ancestor of ${sha.slice(0, 12)} (histories diverged)`
+        : null;
   const commits = prodSha === sha ? [] : commitsBetween(repoRoot, rangeFrom, sha);
   const manifests = {};
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
@@ -302,6 +326,9 @@ async function verify(args) {
 
   let results = [];
   let superseded = before.state === 'superseded';
+  if (baselineProblem) {
+    results.push({ suite: 'deploy', name: 'production baseline known', kind: 'http', ok: false, problems: [`${baselineProblem} — cannot list what would ship, so nothing can be approved`], ms: 0 });
+  }
   if (before.state === 'mismatch') {
     results.push({ suite: 'deploy', name: 'staging serves the deployed commit', kind: 'http', ok: false, problems: [`staging reports ${before.stamp || 'nothing'}, not ${sha}`], ms: 0 });
   } else if (!superseded) {
@@ -363,12 +390,16 @@ function checkPr(args) {
     process.exit(1);
   };
   if (vtids.length === 0) fail(`PR changes ${service} deploy paths but its title names no VTID — the change suite lives at docs/validation/<VTID>/staging-tests.json (CLAUDE.md rule 47).`);
+  // Every VTID in the title needs its own suite: the squash-merge subject
+  // carries them all, and STAGING-VERIFY requires a suite per VTID.
   const errors = [];
-  let found = 0;
+  const missing = [];
   for (const vtid of vtids) {
     const m = loadManifest(repoRoot, vtid);
-    if (!m) continue;
-    found++;
+    if (!m) {
+      missing.push(vtid);
+      continue;
+    }
     if (m.__parseError) {
       errors.push(`${vtid}: staging-tests.json is not valid JSON (${m.__parseError})`);
       continue;
@@ -376,8 +407,8 @@ function checkPr(args) {
     const v = lib.validateManifest(m, { vtid, service });
     if (!v.ok) errors.push(...v.errors.map((e) => `${vtid}: ${e}`));
   }
-  if (found === 0) {
-    fail(`PR changes ${service} deploy paths but has no docs/validation/${vtids[0]}/staging-tests.json — no suite, no merge (CLAUDE.md rule 47, docs/DEPLOYMENT-PIPELINE.md §3.2).`);
+  if (missing.length) {
+    fail(`PR changes ${service} deploy paths but has no docs/validation/<VTID>/staging-tests.json for ${missing.join(', ')} — every VTID in the title needs one; no suite, no merge (CLAUDE.md rule 47, docs/DEPLOYMENT-PIPELINE.md §3.2).`);
   }
   if (errors.length) fail(`staging-tests.json invalid:\n  ${errors.join('\n  ')}`);
   log(`✓ change suite present and valid for ${vtids.join(', ')}`);

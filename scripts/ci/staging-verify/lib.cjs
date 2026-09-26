@@ -68,7 +68,9 @@ const ENFORCE_SINCE = '2026-09-27T00:00:00Z';
 function isProductionHost(url) {
   let host;
   try {
-    host = new URL(url).host.toLowerCase();
+    // hostname, not host: a port (vitanaland.com:8443) or a trailing dot must
+    // not slip a production host past the check.
+    host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
   } catch {
     return false;
   }
@@ -84,7 +86,7 @@ function assertStagingTarget(url) {
   }
   if (parsed.protocol !== 'https:') throw new Error(`staging target must be https: ${url}`);
   if (isProductionHost(url)) {
-    throw new Error(`refusing to test against production host ${parsed.host} (CLAUDE.md rule 48)`);
+    throw new Error(`refusing to test against production host ${parsed.hostname} (CLAUDE.md rule 48)`);
   }
   return parsed.origin;
 }

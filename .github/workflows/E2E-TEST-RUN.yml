@@ -84,7 +84,10 @@ jobs:
         env:
           COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://preview-aws.vitanaland.com' }}
         run: |
-          HOST=$(echo "$COMMUNITY_URL" | sed -E 's|https?://||; s|/.*||')
+          # Parse, don't slice: VITANALAND.COM, :443 and ?x=1 must all resolve
+          # to the same hostname before the comparison (VTID-04613 review).
+          HOST=$(node -e 'try { console.log(new URL(process.argv[1]).hostname.toLowerCase().replace(/\.$/, "")) } catch { console.log("INVALID") }' "$COMMUNITY_URL")
+          if [ "$HOST" = "INVALID" ]; then echo "::error::COMMUNITY_URL is not a URL: $COMMUNITY_URL"; exit 1; fi
           case "$HOST" in
             vitanaland.com|www.vitanaland.com|gateway.vitanaland.com|dr-app.vitanaland.com|dr-gateway.vitanaland.com)
               echo "::error::Refusing to run E2E against production host $HOST — never test against production (vitana-v1 CLAUDE.md). Use https://preview-aws.vitanaland.com."

@@ -9,6 +9,9 @@ test('production hosts are refused as test targets', () => {
   for (const u of ['https://vitanaland.com', 'https://www.vitanaland.com/x', 'https://gateway.vitanaland.com/alive', 'https://dr-gateway.vitanaland.com']) {
     assert.throws(() => lib.assertStagingTarget(u), /production host/, u);
   }
+  for (const u of ['https://VITANALAND.COM', 'https://vitanaland.com:8443/x', 'https://vitanaland.com./', 'https://gateway.vitanaland.com?x=1']) {
+    assert.throws(() => lib.assertStagingTarget(u), /production host/, u);
+  }
   assert.equal(lib.assertStagingTarget('https://preview-aws-gateway.vitanaland.com'), 'https://preview-aws-gateway.vitanaland.com');
   assert.equal(lib.assertStagingTarget('https://preview-aws.vitanaland.com/'), 'https://preview-aws.vitanaland.com');
   assert.throws(() => lib.assertStagingTarget('http://preview-aws.vitanaland.com'), /https/);
