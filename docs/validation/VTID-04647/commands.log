@@ -1,0 +1,5 @@
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))"   # parses; step ids: commit, ecr, source, build, prev, roll, smoke, postverify, rollback
+$ npx jest test/vtid-04647-prod-deploy-auto-rollback.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-04230-prod-operator-flags-declared.test.ts test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts test/vtid-03958-env-overrides-input.test.ts
+Test Suites: 5 passed, 5 total — Tests: 72 passed
+$ npx jest <every suite that reads AWS-PROD-DEPLOY-GATEWAY.yml>
+Test Suites: 50 passed, 50 total — Tests: 549 passed

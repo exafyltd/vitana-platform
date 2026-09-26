@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04647",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "build-info answers JSON (the route the rollback reads)", "path": "/api/v1/admin/build-info",
+      "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04647-prod-deploy-auto-rollback.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts", "cwd": "services/gateway",
+      "reason": "the change is to the production deploy workflow, which never runs on staging; the pins prove the step order, the GET-only post-deploy check, the rollback target and the rolled_back OASIS topic" }
+  ]
+}

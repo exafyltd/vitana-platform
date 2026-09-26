@@ -836,7 +836,26 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Wrote partial task definition to /tmp/vitana-new-task-def.json ($(wc -c < /tmp/vitana-new-task-def.json) bytes)"
 
+      # VTID-04647: record what production runs BEFORE this deploy touches the
+      # service, so a failed post-deploy check can put it back. Read-only.
+      - name: Capture rollback target (task definition live before this deploy)
+        id: prev
+        run: |
+          set -e
+          PREV_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          PREV_SHA=$(aws ecs describe-task-definition --task-definition "$PREV_ARN" \
+            --query "taskDefinition.containerDefinitions[0].environment[?name=='GIT_COMMIT_SHA'].value | [0]" --output text)
+          if [ -z "$PREV_ARN" ] || [ "$PREV_ARN" = "None" ]; then
+            echo "::error::Could not read the live task definition; refusing to deploy without a rollback target."
+            exit 1
+          fi
+          echo "arn=$PREV_ARN" >> "$GITHUB_OUTPUT"
+          echo "sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+          echo "Rollback target: $PREV_ARN (commit $PREV_SHA)"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
+        id: roll
         env:
           # VTID-04573: the gateway's GitHub token. vitana/github/token (last
           # set 2026-08-26) returns 401 since 2026-09-25 ~10:00 UTC (30-day
@@ -1174,6 +1193,7 @@ jobs:
           echo "Service stable on $NEW_ARN"
 
       - name: Smoke — env=production + deployed commit live
+        id: smoke
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
@@ -1194,6 +1214,58 @@ jobs:
           echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
           exit 1
 
+      # VTID-04647: read-only post-deploy verification. GET requests only, no
+      # auth, nothing written — production gets read-only checks (owner rule
+      # 2026-09-26). Only long-standing routes, so an env-only redeploy of an
+      # older image cannot trip it. Each path must answer JSON below 500,
+      # three attempts each.
+      - name: Post-deploy verification (read-only)
+        id: postverify
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          FAIL=0
+          for P in /api/v1/admin/health /api/v1/admin/build-info /api/v1/orb/health; do
+            OK=0
+            for i in 1 2 3; do
+              OUT=$(curl -sS -o /dev/null -m 15 -w "%{http_code} %{content_type}" "$URL$P" 2>/dev/null || echo "000 none")
+              CODE=${OUT%% *}; CT=${OUT#* }
+              if [ "$CODE" -lt 500 ] && [ "$CODE" != "000" ] && echo "$CT" | grep -qi 'application/json'; then OK=1; break; fi
+              echo "Attempt $i: GET $P -> $OUT"; sleep 10
+            done
+            if [ "$OK" = 1 ]; then echo "✓ GET $P -> $OUT"; else echo "::error::GET $P failed post-deploy ($OUT)"; FAIL=1; fi
+          done
+          [ "$FAIL" = 0 ]
+
+      # VTID-04647: automatic rollback. Runs when the service was rolled and a
+      # later step failed (stabilize, smoke or post-deploy verification). It
+      # re-points the service at the task definition captured before the
+      # deploy and waits for it to serve the previous commit again. Kill switch:
+      # repository variable PROD_AUTO_ROLLBACK_DISABLED=true (the dispatch form
+      # is at the 25-input ceiling, so it cannot be an input).
+      - name: Roll back to the previous task definition
+        id: rollback
+        if: ${{ failure() && steps.prev.outputs.arn != '' && steps.roll.outcome != 'skipped' && vars.PROD_AUTO_ROLLBACK_DISABLED != 'true' }}
+        env:
+          PREV_ARN: ${{ steps.prev.outputs.arn }}
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
+        run: |
+          set -e
+          echo "::warning::Post-deploy checks failed — rolling back to $PREV_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$PREV_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          LIVE=""
+          for i in 1 2 3 4 5 6; do
+            LIVE=$(curl -fsS "${{ env.GATEWAY_URL }}/api/v1/admin/build-info" 2>/dev/null | jq -r '.git_commit // empty' || true)
+            if [ -z "$PREV_SHA" ] || [ "$PREV_SHA" = "None" ] || [ "$LIVE" = "$PREV_SHA" ]; then break; fi
+            sleep 15
+          done
+          echo "rolled_back=true" >> "$GITHUB_OUTPUT"
+          echo "live_commit=$LIVE" >> "$GITHUB_OUTPUT"
+          echo "Rolled back: service on $PREV_ARN, build-info reports '$LIVE'"
+          # The job still fails: a rolled-back deploy is not a successful deploy.
+
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
         env:
@@ -1203,6 +1275,8 @@ jobs:
           SHORT: ${{ steps.source.outputs.short }}
           OUTCOME: ${{ job.status }}
           REASON: ${{ inputs.reason }}
+          ROLLED_BACK: ${{ steps.rollback.outputs.rolled_back }}
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
         run: |
           set +e
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
@@ -1211,6 +1285,7 @@ jobs:
           fi
           STATUS=$([ "$OUTCOME" = "success" ] && echo success || echo error)
           TOPIC=$([ "$OUTCOME" = "success" ] && echo prod.deploy.completed || echo prod.deploy.failed)
+          if [ "$ROLLED_BACK" = "true" ]; then TOPIC=prod.deploy.rolled_back; fi
           curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
             -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
             -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
@@ -1220,7 +1295,7 @@ jobs:
           curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
             -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
             -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
-            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" --arg reason "$REASON" '{
+            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" --arg reason "$REASON" --arg rb "$ROLLED_BACK" --arg prev "$PREV_SHA" '{
               vtid: "VTID-03398",
               topic: $topic,
               service: "vitana-gateway-aws-dr",
@@ -1228,7 +1303,7 @@ jobs:
               model: "aws-prod-deploy",
               status: $st,
               message: ("AWS-PROD-DEPLOY-GATEWAY: " + $short + " (" + $reason + ")"),
-              metadata: { env: "production", platform: "aws-ecs-dr", git_commit: $sha, workflow: "AWS-PROD-DEPLOY-GATEWAY.yml", reason: $reason }
+              metadata: { env: "production", platform: "aws-ecs-dr", git_commit: $sha, workflow: "AWS-PROD-DEPLOY-GATEWAY.yml", reason: $reason, rolled_back: ($rb == "true"), rolled_back_to: $prev }
             }')" || echo "::warning::oasis_events insert failed; continuing."
 
       - name: Summary
