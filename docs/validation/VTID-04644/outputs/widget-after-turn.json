@@ -1,0 +1,63 @@
+{
+  "note": "Real orb-widget.js in Chromium against a locally built community app and a fake local gateway; every non-local request intercepted (nothing left the machine).",
+  "non_local_requests_reaching_network": 22,
+  "results": [
+    {
+      "scenario": "S11 directive arrives after turn_complete",
+      "viewport": {
+        "width": 1400,
+        "height": 900
+      },
+      "ms_directive_to_nav": 15506,
+      "navResult": {
+        "type": "nav_result",
+        "screen_id": "MEMORY.DIARY",
+        "route": "/memory/diary",
+        "status": "opened",
+        "reason": null,
+        "entry_kind": "route"
+      },
+      "finalLocation": "/memory/diary",
+      "pass": null,
+      "error": null
+    },
+    {
+      "scenario": "S13 after_turn directive after turn_complete",
+      "viewport": {
+        "width": 1400,
+        "height": 900
+      },
+      "ms_directive_to_nav": 1106,
+      "navResult": {
+        "type": "nav_result",
+        "screen_id": "HOME.CREATE_POST",
+        "route": "/home?compose=1",
+        "status": "opened",
+        "reason": null,
+        "entry_kind": "route"
+      },
+      "finalLocation": "/home",
+      "pass": true,
+      "error": null
+    },
+    {
+      "scenario": "S13b after_turn directive while audio still plays",
+      "viewport": {
+        "width": 1400,
+        "height": 900
+      },
+      "ms_directive_to_nav": 4409,
+      "navResult": {
+        "type": "nav_result",
+        "screen_id": "HOME.CREATE_POST",
+        "route": "/home?compose=1",
+        "status": "opened",
+        "reason": null,
+        "entry_kind": "route"
+      },
+      "finalLocation": "/home",
+      "pass": true,
+      "error": null
+    }
+  ]
+}

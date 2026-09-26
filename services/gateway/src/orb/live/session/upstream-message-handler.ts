@@ -67,6 +67,7 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
 import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop } from './remember-backstop-hook';
+import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -2337,6 +2338,9 @@ export function handleTurnComplete(
     }
   }
 
+  // VTID-04644: read before turn_count moves — the per-turn marker stops
+  // matching the moment it does.
+  const navigatedDuringTurn = navigationDispatchedThisTurn(session);
   session.turn_count++;
   session.consecutiveModelTurns++;
   const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
@@ -2478,7 +2482,15 @@ export function handleTurnComplete(
     // VTID-04619: Vitana said she is opening a page but never called navigate
     // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no
     // tool call, the repeats muted as duplicates). The gateway navigates.
-    maybeRunNavigateBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+    const announcedNavigation = maybeRunNavigateBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+
+    // VTID-04644: the member plainly asked to open or see a screen ("show me
+    // the screen where I can make a post") and the model opened nothing.
+    // Only when the VTID-04619 backstop above did not take the turn, so the
+    // two can never both navigate.
+    if (!announcedNavigation) {
+      maybeRunExplicitOpenBackstop(ctx.deps, session, userText, navigatedDuringTurn);
+    }
 
     // VTID-01953 identity-mutation intent intercept.
     if (session.identity?.user_id && session.identity?.tenant_id) {
