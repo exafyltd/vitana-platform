@@ -14,16 +14,17 @@ A member asked Vitana, by voice on mobile, where to make a post for the communit
 
 ## Acceptance
 
-- AC-1: "where can I make a post / how do I share a post / show me where I can post" (en, de, es) reaches HOME.CREATE_POST (`/home?compose=1`, opens the composer).
+AC-1: "where can I make a post / how do I share a post / show me where I can post" (en, de, es) reaches HOME.CREATE_POST (`/home?compose=1`, opens the composer).
   TEST: services/gateway/test/nav-redirect/nav-redirect-suite.test.ts (R51–R56)
-- AC-2: "Öffne den Newsfeed" from another screen opens the Home news feed.
+AC-2: "Öffne den Newsfeed" from another screen opens the Home news feed.
   TEST: services/gateway/test/nav-redirect/nav-redirect-suite.test.ts (R57, P05)
-- AC-3: an invented screen id whose last part names a real screen (`COMM.NEWSFEED`, `SOCIAL.CREATE_POST`, `HOME.NEWSFEED`) still opens that screen; the member's own words are used when the id matches nothing.
+AC-3: an invented screen id whose last part names a real screen (`COMM.NEWSFEED`, `SOCIAL.CREATE_POST`, `HOME.NEWSFEED`) still opens that screen; the member's own words are used when the id matches nothing.
   TEST: services/gateway/test/nav-redirect/nav-redirect-suite.test.ts (I01–I03)
-- AC-4: no existing case regresses (ratchet baseline, golden set).
+AC-4: no existing case regresses (ratchet baseline, golden set).
   TEST: services/gateway/test/nav-golden
-- AC-5: the live voice run (Polly speech → Nova Sonic, cascade for es) opens the composer for the post cases, including the offer → "ja bitte" follow-up.
+AC-5: the live voice run (Polly speech → Nova Sonic, cascade for es) opens the composer for the post cases, including the offer → "ja bitte" follow-up.
   Evidence: outputs/voice-post-cases.json — 9 of 10 open the right screen. R52 ("How can I share a post…"): Nova answered from knowledge search and did not navigate, even after "yes please". Model behaviour, not the resolver (CI resolves R52 correctly).
+  TEST: services/gateway/test/nav-redirect/run-live.ts (LAYER=voice, CASES=R51..R57, live runner, not CI)
 
 ## Staging
 
