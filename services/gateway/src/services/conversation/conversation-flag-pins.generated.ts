@@ -69,6 +69,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   OPERATOR_ONRAMP_EXECUTOR: { staging: "agent", prod: "agent" },
   OPERATOR_PLANNER_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_PR_APPROVAL_REQUIRED: { staging: "true", prod: "true" },
+  OPERATOR_SQL_READONLY_BACKEND: { staging: "supabase", prod: null },
   OPERATOR_SQL_READONLY_ENABLED: { staging: "true", prod: null },
   OPERATOR_THREADS_ENABLED: { staging: "true", prod: "true" },
   OPERATOR_TURN_MEMORY_ENABLED: { staging: "true", prod: "true" },
