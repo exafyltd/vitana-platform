@@ -54,6 +54,9 @@ TEST: services/gateway/test/orb/conversation-flow.contract.test.ts
 AC-3: the name header stays a lookup that obeys the turn directive.
 TEST: services/gateway/test/orb/live/instruction/authoritative-user-name.test.ts
 
+AC-6: each deduplicated rule appears once, the identity lock is Nova-safe for every provider, and the instruction stays under a measured ceiling (26,336 → 18,932 bytes on the pinned call).
+TEST: services/gateway/test/orb/live/instruction/vtid-04653-scaffold-each-rule-once.test.ts
+
 AC-4: specialists (Devon) keep their full behavioural block.
 TEST: services/gateway/test/routes/orb-live.test.ts
 
