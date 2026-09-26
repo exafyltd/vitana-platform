@@ -321,7 +321,11 @@ async function analyzeFailedDeploys(config: OasisAnalyzerConfig): Promise<Failed
     const lookbackTime = new Date(Date.now() - config.lookback_hours * 60 * 60 * 1000).toISOString();
 
     // Query deploy failure events
-    const query = `or=(topic.eq.deploy.failed,topic.eq.cicd.deploy.service.failed,topic.eq.deploy.gateway.failed)&created_at=gte.${lookbackTime}&order=created_at.desc&limit=500`;
+    // VTID-04666: the AWS deploy workflows write staging.deploy.failed /
+    // prod.deploy.failed; the three older topics are GCP-era and no longer
+    // emitted. The error clustering treats all deploy topics as noise, so this
+    // pass is the only place deploy failures become recommendations.
+    const query = `or=(topic.eq.deploy.failed,topic.eq.cicd.deploy.service.failed,topic.eq.deploy.gateway.failed,topic.eq.staging.deploy.failed,topic.eq.prod.deploy.failed)&created_at=gte.${lookbackTime}&order=created_at.desc&limit=500`;
     const result = await queryOasisEvents(query);
 
     if (!result.ok || !result.data) {

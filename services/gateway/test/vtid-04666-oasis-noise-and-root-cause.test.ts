@@ -134,4 +134,28 @@ describe('analyzeOasisEvents — end to end over mocked oasis_events', () => {
     const again = { ...patterns[0], message: 'different services' };
     expect(generateOasisFingerprint(again)).toBe(generateOasisFingerprint(patterns[0]));
   });
+
+  it('deploy failures still become recommendations through the failed-deploy pass, including the AWS topics', async () => {
+    const deployUrls: string[] = [];
+    fetchMock.mockImplementation((url: string) => {
+      const u = String(url);
+      let data: unknown[] = [];
+      if (u.includes('deploy.failed')) {
+        deployUrls.push(u);
+        data = [
+          { topic: 'staging.deploy.failed', service: 'vitana-gateway-aws', message: 'task failed to start', created_at: '2026-09-24T10:00:00Z' },
+          { topic: 'staging.deploy.failed', service: 'vitana-gateway-aws', message: 'task failed to start', created_at: '2026-09-24T09:00:00Z' },
+        ];
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => data, text: async () => '' });
+    });
+
+    const result = await analyzeOasisEvents({});
+    expect(deployUrls.length).toBeGreaterThan(0);
+    expect(deployUrls[0]).toContain('topic.eq.staging.deploy.failed');
+    expect(deployUrls[0]).toContain('topic.eq.prod.deploy.failed');
+    const deploys = result.signals.filter((s) => s.type === 'failed_deploy');
+    expect(deploys).toHaveLength(1);
+    expect(deploys[0].source).toBe('vitana-gateway-aws');
+  });
 });

@@ -124,6 +124,9 @@ TEST: services/gateway/test/vtid-04666-dev-findings-rejected-expiry-sort.test.ts
 AC-9 The data fix only touches open, system-wide roadmap / health / oasis rows matching the new rules, and contains no DELETE/INSERT/DROP.
 TEST: services/gateway/test/vtid-04666-onramp-excluded-and-sql-contract.test.ts
 
+AC-10 Deploy failures still become recommendations: the error clustering treats deploy topics as noise, so the failed-deploy pass now also reads the AWS topics `staging.deploy.failed` / `prod.deploy.failed` (live, 30 days: 31 and 5 events) — before, it only read three GCP-era topics that are no longer emitted.
+TEST: services/gateway/test/vtid-04666-oasis-noise-and-root-cause.test.ts
+
 ## Existing tests changed
 
 `services/gateway/test/dev-autopilot-synthesis.test.ts` ("the dedup GET query
