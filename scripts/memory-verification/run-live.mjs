@@ -47,6 +47,10 @@ const RUNS = Number(opt('runs', '2'));
 const OUT = opt('out', join(HERE, 'out', new Date().toISOString().replace(/[:.]/g, '-')));
 const CACHE = join(HERE, 'out', 'audio-cache');
 const SETTLE_MS = Number(process.env.MEMORY_VERIFY_SETTLE_MS || 12000);
+// A Memory Garden write rebuilds the voice snapshot ~3 s later (VTID-04627).
+// A member does not speak within a second of editing the Garden, so the run
+// waits for that rebuild before opening the session.
+const SEED_SETTLE_MS = Number(process.env.MEMORY_VERIFY_SEED_SETTLE_MS || 10000);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` });
@@ -227,10 +231,12 @@ async function runScenario(sc, baselineIds, runNo) {
   await cleanupSuiteFacts(baselineIds);
   const priorDeleted = deletedValues.slice();
   for (const s of sc.seed_facts || []) await gardenAdd(s.key, s.value);
+  if ((sc.seed_facts || []).length) await sleep(SEED_SETTLE_MS);
 
   for (const sess of sc.sessions) {
     if (sess.garden_forget) {
       for (const f of await gardenFacts()) if (keyLike(sess.garden_forget, f.fact_key)) { deletedValues.push(f.content); await gardenDelete(f.id); }
+      await sleep(SEED_SETTLE_MS);
     }
     const pcm = sess.turns.map((t) => speech(t.say, sess.lang));
     const log = await runSession(sess.lang, pcm);
