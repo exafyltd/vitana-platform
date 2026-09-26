@@ -110,6 +110,20 @@ export function isNovaProvider(session: GeminiLiveSession): boolean {
 }
 
 /**
+ * VTID-04609: the conversation was closed after Vitana's farewell was spoken
+ * (end_conversation tool, or a turn_complete backstop). Anything the model
+ * generates after that is a repeat: Gemini Live answers the tool result by
+ * saying the farewell again ("…prijatan dan!Razumem. Nema problema…",
+ * session live-a7b3a904, 2026-09-26). Drop that audio and transcript so it is
+ * neither heard nor stored in the inbox. When the model called the tool
+ * before saying anything, the flag stays false and its farewell still plays.
+ */
+export function isPostFarewellOutput(session: GeminiLiveSession): boolean {
+  return (session as any).endConversationDirectiveSent === true
+    && (session as any).farewellSpokenBeforeClose === true;
+}
+
+/**
  * BOOTSTRAP-CHAT-BRIDGE-RELIABILITY: write one voice-transcript turn into
  * chat_messages so it shows up in the user's "Vitana" Inbox thread. This is
  * the ONLY path that makes a voice conversation visible in chat history —
@@ -1244,7 +1258,7 @@ export function createUpstreamLiveMessageHandler(
                 // are dropped. The first ~30-60 chars before detection
                 // still reach the user — better than nothing-suppressed.
                 // The model continues generating; we just stop forwarding.
-                if ((session as any).suppressCurrentTurnAudio === true) {
+                if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
                   (session as any).currentTurnAudioChunksDropped =
                     ((session as any).currentTurnAudioChunksDropped || 0) + 1;
                   // Log every 25th dropped chunk so we don't spam the log
@@ -1362,6 +1376,8 @@ export function createUpstreamLiveMessageHandler(
             // the post-nav model response even though the user never heard it.
             if (session.navigationDispatched) {
               console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
+            } else if (isPostFarewellOutput(session)) {
+              // VTID-04609: repeat of the farewell after the close — not stored.
             } else {
               console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
               if (session.sseResponse) {
@@ -1773,7 +1789,7 @@ export function handleAudioOutput(
       });
     }
   }
-  if ((session as any).suppressCurrentTurnAudio === true) {
+  if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
     if ((session as any).currentTurnAudioChunksDropped % 25 === 1) {
@@ -1876,6 +1892,8 @@ export function handleTranscript(
     console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
     return;
   }
+  // VTID-04609: repeat of the farewell after the close — not stored.
+  if (isPostFarewellOutput(session)) return;
 
   // Nova staged generation: FINAL replaces the accumulated speculative
   // buffer (the committed transcript — persist exactly once, never both
