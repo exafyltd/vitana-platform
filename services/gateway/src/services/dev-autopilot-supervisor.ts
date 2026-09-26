@@ -272,11 +272,17 @@ export function summarizeExecutions(execs: ExecRow[], nowMs: number) {
     if (e.status === 'completed' || e.status === 'self_healed') b.succeeded++;
     if (TERMINAL_FAIL.includes(e.status)) b.failed++;
   }
-  const reasons = new Map<string, number>();
+  const reasons = new Map<string, { count: number; last_seen_at: string; count_24h: number }>();
   for (const e of week) {
     if (!TERMINAL_FAIL.includes(e.status)) continue;
     const k = normalizeFailureReason(e.error);
-    reasons.set(k, (reasons.get(k) || 0) + 1);
+    const prev = reasons.get(k) ?? { count: 0, last_seen_at: e.created_at, count_24h: 0 };
+    const isRecent = Date.parse(e.created_at) >= dayAgo;
+    reasons.set(k, {
+      count: prev.count + 1,
+      last_seen_at: e.created_at > prev.last_seen_at ? e.created_at : prev.last_seen_at,
+      count_24h: prev.count_24h + (isRecent ? 1 : 0),
+    });
   }
   const active = execs.filter((e) => IN_FLIGHT_STATUSES.includes(e.status));
   const activeByStatus: Record<string, number> = {};
@@ -297,8 +303,8 @@ export function summarizeExecutions(execs: ExecRow[], nowMs: number) {
     active_by_status: activeByStatus,
     awaiting_approval: activeByStatus['awaiting_approval'] || 0,
     last_execution_at: execs.reduce<string | null>((m, e) => (!m || e.created_at > m ? e.created_at : m), null),
-    top_failure_reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
-      .map(([reason, count]) => ({ reason, count })),
+    top_failure_reasons: [...reasons.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8)
+      .map(([reason, v]) => ({ reason, count: v.count, last_seen_at: v.last_seen_at, count_24h: v.count_24h })),
   };
 }
 
