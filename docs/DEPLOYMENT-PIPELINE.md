@@ -26,10 +26,13 @@ PR reviewed + approved
        platform: AWS-STAGE-DEPLOY-GATEWAY.yml   → preview-aws-gateway.vitanaland.com
        frontend: AWS-STAGE-DEPLOY-FRONTEND.yml  → preview-aws.vitanaland.com
   → deploy check (existing): env=staging and build-info / served chunk = the merge commit
-  → STAGING-VERIFY (automatic, triggered by the successful deploy)
+  → STAGING-VERIFY (automatic — .github/workflows/STAGING-VERIFY.yml in vitana-platform)
+       gateway:  workflow_run of "AWS Stage Deploy Gateway (ECS)" (success only)
+       frontend: repository_dispatch `community-app-staging-deployed`, sent by
+                 vitana-v1 AWS-STAGE-DEPLOY-FRONTEND.yml's last step
        ├─ smoke suite for the deployed service (always)
-       └─ change suite for this VTID (always, see §3)
-  → result recorded in OASIS: staging.verify.passed | staging.verify.failed
+       └─ change suites of every commit between production and this commit (§3.2)
+  → result recorded in OASIS: staging.verify.passed | failed | superseded
        ├─ passed → ready message to Claude Code + Operator Chat (§5)
        │            "Staging verified — ready for deployment to production?"
        │            → yes → PUBLISH (§6) → production deploy check (§7)
@@ -58,10 +61,14 @@ So every automated staging test is read-only by construction:
   effect (e.g. an auth-required route answering `401 application/json` — the
   §15 "route exists" probe).
 - Browser tests may sign in as the documented test user (the auth session is
-  the one allowed exception) and navigate, open, render and read. A network
-  guard aborts every non-`GET` request to the gateway and Supabase REST except
-  sign-in, and the test fails if the guard had to abort anything it did not
-  expect.
+  the one allowed exception) and navigate, open, render and read. They run
+  behind `scripts/ci/staging-verify/staging-guard.ts`, which aborts every
+  non-read request to any gateway or to Supabase except sign-in, aborts
+  **every** request to a production host, and fails the test if it had to
+  abort anything the spec did not declare with
+  `test.use({ allowAbortedWrites: [/…/] })` (a telemetry beacon, say — it is
+  still aborted, nothing is written). The runner copies the guard next to each
+  spec on every run, so no repo can carry a weakened copy.
 - Anything that needs a write — posting, liking, messaging, profile edits,
   onboarding steps, wallet, ticket creation — is verified by unit/integration
   tests in CI (in-memory or local Supabase), never on staging.
@@ -76,12 +83,19 @@ it, that is a **blocker to raise**, not a reason to skip verification.
 
 ### 3.1 Smoke suite (per service, always runs)
 
-Maintained once per deployable, lives with the workflow that runs it.
+Maintained once per deployable in `scripts/ci/staging-verify/smoke/<service>.json`
+(same format as a change suite). Before any test, the runner confirms on
+several consecutive samples that staging serves the deployed commit
+(gateway: `build-info.git_commit`; community app: the
+`<meta name="vitana-app-version">` stamp), and again after the last test.
 
-| Service | Minimum checks |
+| Service | Checks today |
 |---|---|
-| gateway | `/alive`; `/api/v1/admin/health` reports `env=staging`; build-info reports the merge commit; one route-exists probe per top-level router (JSON, never `text/html`); ORB health endpoint |
-| community app | shell loads; served `assets/index-*.js` is the new build (sampled, see vitana-v1 CLAUDE.md); bundle bakes the staging gateway URL; login page renders; one signed-in read-only page per role renders without console errors |
+| gateway | `/alive`; admin health + build-info report `env=staging`; ORB, Nova Sonic, autopilot, VTID ledger, scheduler and operator health; OASIS tasks list; an auth-required read answers 401 JSON; the PUBLISH route exists (auth-rejected probe) |
+| community app | app shell + version stamp; SPA deep-link fallback; `/nav-registry.json`; staging gateway reachable; browser: the pre-login landing boots with no uncaught errors, and the served bundle talks to the staging gateway (`tests/e2e/staging/smoke.staging.spec.ts` in vitana-v1) |
+
+Still to add: a signed-in read-only page per role (needs the test-user
+secrets, which STAGING-VERIFY already passes to browser tests).
 
 A smoke suite failure is a failed verification like any other.
 
@@ -97,22 +111,51 @@ docs/validation/<VTID>/staging-tests.json
 ```json
 {
   "vtid": "VTID-XXXXX",
-  "service": "gateway | community-app",
+  "service": "gateway",
   "tests": [
-    { "kind": "http", "method": "GET", "path": "/api/v1/…",
-      "expect_status": 200, "expect_json_path": "ok", "expect": true },
-    { "kind": "playwright", "spec": "e2e/…/my-change.staging.spec.ts" },
-    { "kind": "existing", "ref": "npm run test:roles" }
+    { "kind": "http", "name": "new route answers", "path": "/api/v1/foo/health",
+      "expect_status": 200, "expect_json": { "ok": true } },
+    { "kind": "http", "name": "write route exists", "method": "POST",
+      "path": "/api/v1/foo", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "playwright", "spec": "e2e/staging/foo.staging.spec.ts", "cwd": "e2e" },
+    { "kind": "existing", "ref": "npm run test:roles", "cwd": "services/gateway",
+      "reason": "pins the role matrix this change edits" }
   ]
 }
 ```
 
-- `http` — read-only request against the staging host, with expected status /
-  content type / JSON field.
-- `playwright` — a spec file in the same PR, run against the staging host
-  under the §2 network guard.
-- `existing` — an already-maintained suite that covers the change; name it
-  and say why it covers it.
+- `http` — against `target` `gateway` (default for the gateway) or `frontend`
+  (default for the community app). Fields: `method` (`GET`/`HEAD`),
+  `expect_status` (default 200), `expect_content_type` (default
+  `application/json` for gateway `/api` paths), `expect_json` (dotted path →
+  exact value), `expect_body_contains`. A `POST`/`PUT`/`PATCH`/`DELETE` is
+  accepted only as `"rejected_probe": true` with `expect_status` 401/403; it
+  is sent with an invalid token, and a 2xx answer fails loudly as an accepted
+  write.
+- `playwright` — a `*.staging.spec.ts` in the same repo that imports
+  `{ test, expect } from './staging-guard'` (the runner supplies that file).
+  `cwd` is the directory whose `package.json` provides `@playwright/test`
+  (`e2e` in vitana-platform, `.` in vitana-v1). Base URL = the staging host;
+  `STAGING_GATEWAY_URL`, `STAGING_FRONTEND_URL`, `TEST_USER_EMAIL` and
+  `TEST_USER_PASSWORD` are in the environment.
+- `existing` — a CI-level suite (`npm run <script>`, `npx jest <paths>`,
+  `npx vitest run <paths>`, nothing else), run without any secret, with a
+  `reason` saying why it covers the change.
+
+**If the suite does not exist, building it is part of the change.** A PR that
+deploys and has no `staging-tests.json` is not ready to merge — the
+`STAGING-TESTS-REQUIRED` check (both repos) fails it: a PR that touches the
+service's deploy paths must name a VTID in its title whose manifest exists and
+validates. The test is written in the same PR as the code, never after the
+deploy. Worked example: `exafyltd/vitana-v1`
+`docs/validation/VTID-04616/staging-tests.json`.
+
+**Which suites run.** Every commit between the commit production serves and
+the verified commit that touches the service's deploy paths contributes its
+VTIDs' suites — so a verification proves everything a PUBLISH would ship, not
+only the last merge. Commits merged before the rule took effect
+(`ENFORCE_SINCE` in `lib.cjs`, 2026-09-27) without a suite are listed as
+"smoke only" and do not fail the run; a later commit without one does.
 
 **If the suite does not exist, building it is part of the change.** A PR that
 deploys and has no `staging-tests.json` is not ready to merge. The test is
@@ -125,15 +168,20 @@ written in the same PR as the code, never after the deploy.
 All of these, on one run:
 
 1. The commit under test is the merge commit, confirmed from the staging
-   host itself (build-info / served chunk), before and after the run. If
-   staging moved to another commit during the run, the result is void —
-   re-run on the new commit.
+   host itself (build-info / version stamp), before and after the run. If
+   staging moved to a newer commit, the result is `superseded` — no prompt;
+   the newer deploy gets its own verification, which covers this commit's
+   suites too (§3.2).
 2. Every smoke check and every change-suite test is green.
 3. The §2 network guard aborted nothing unexpected.
 
-The result is recorded as an OASIS event (`staging.verify.passed` /
-`staging.verify.failed`) with `vtid`, `service`, `commit`, per-test results
-and the workflow run URL. That event is the single source both channels read.
+The result is recorded as one OASIS event — topic `staging.verify.passed` /
+`failed` / `superseded`, `service` `staging-verify-<service>`, `vtid` = the
+verified commit's VTID, `message` = the ready message, `metadata` = commit,
+per-test results, missing/invalid suites, the commit list that would ship,
+production commit and run URL. A runner crash is recorded as `failed`. That
+event is the single source both channels read; the run keeps
+`results.json` / `message.md` as an artifact for 30 days.
 
 A flake is not a root cause. One re-run is allowed only when the job died
 before any test ran (runner/checkout/install) — the same rule as PR CI.
@@ -223,14 +271,18 @@ same two channels.
 |---|---|
 | Staging deploys on merge, deploy check | exists |
 | PUBLISH endpoint + prod workflows | exists |
-| Suites usable as `existing` refs (`test:support`, `test:operator`, `test:roles`, E2E specs) | exist |
 | This process, rules in both CLAUDE.md files | VTID-04610 |
-| `STAGING-VERIFY.yml` (both repos), smoke suites, `staging-tests.json` runner, network guard | to build (follow-up VTID) |
-| `staging.verify.*` OASIS events, Operator Chat message + Publish action | to build (follow-up VTID) |
-| VALIDATOR-CHECK: deploying PR without `staging-tests.json` fails | to build (follow-up VTID) |
-| `E2E-TEST-RUN.yml`: stop defaulting to `vitanaland.com`, stop triggering from the prod deploy | to fix (follow-up VTID) |
+| `STAGING-VERIFY.yml` (vitana-platform, both services), runner `scripts/ci/staging-verify/`, smoke suites, network guard, frontend dispatch from vitana-v1 | VTID-04613 |
+| `staging.verify.*` OASIS events + ready message (read by the Claude Code session) | VTID-04613 |
+| `STAGING-TESTS-REQUIRED` pre-merge check (both repos) | VTID-04613 |
+| `E2E-TEST-RUN.yml` / `e2e/playwright.config.ts` default to staging, refuse production hosts, dispatched runs read-only | VTID-04613 |
+| Operator Chat: show `staging.verify.*` as a pipeline message with a Publish action | to build (next VTID) |
+| Signed-in read-only page per role in the community-app smoke suite | to build |
 
-**Until STAGING-VERIFY exists, the rule still applies by hand:** after the
-staging deploy finishes, the session runs the smoke checks and the change's
-`staging-tests.json` against staging itself (read-only, §2), reports the
-result per test in the session, and only then asks the ready question.
+**How a Claude Code session follows its merge.** After merging, find the run
+named `STAGING-VERIFY <service> @ <merge sha>` (or the `staging.verify.*`
+OASIS event with `metadata.commit` = the merge sha). A frontend run appears
+only after the frontend staging deploy has finished. Relay its `message`
+verbatim — it already carries the question, the results and the commit list —
+and wait for the developer's answer. Until the Operator Chat piece exists, the
+Claude Code session is the only channel that asks.

@@ -1,0 +1,10 @@
+{
+  "service": "community-app",
+  "tests": [
+    { "kind": "http", "name": "app shell loads with a version stamp", "target": "frontend", "path": "/", "expect_content_type": "text/html", "expect_body_contains": ["<div id=\"root\"", "vitana-app-version"] },
+    { "kind": "http", "name": "SPA fallback serves deep links", "target": "frontend", "path": "/maxina", "expect_content_type": "text/html", "expect_body_contains": "<div id=\"root\"" },
+    { "kind": "http", "name": "screen registry published", "target": "frontend", "path": "/nav-registry.json" },
+    { "kind": "http", "name": "staging gateway reachable", "target": "gateway", "path": "/alive" },
+    { "kind": "playwright", "name": "app boots against the staging gateway without runtime errors", "spec": "tests/e2e/staging/smoke.staging.spec.ts", "cwd": "." }
+  ]
+}

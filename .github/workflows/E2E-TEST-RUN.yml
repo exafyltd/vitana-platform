@@ -1,5 +1,12 @@
 name: E2E Test Run
 
+# VTID-04613: this workflow defaulted to https://vitanaland.com, and its
+# repository_dispatch path (wired to vitana-v1 DEPLOY.yml's production job)
+# ran with the write-capable setup enabled — i.e. tests against production,
+# which exafyltd/vitana-v1 CLAUDE.md forbids absolutely. It now targets staging by
+# default, refuses every production host, and a repository_dispatch run is
+# always read-only. Post-deploy verification is STAGING-VERIFY.yml.
+
 on:
   repository_dispatch:
     types: [community-app-deployed]
@@ -15,10 +22,10 @@ on:
         type: string
         default: ''
       community_url:
-        description: 'Community app URL to test against (default: vitanaland.com, use Cloud Run URL for migration testing)'
+        description: 'Community app URL to test against (staging by default; production hosts are refused)'
         required: false
         type: string
-        default: 'https://vitanaland.com'
+        default: 'https://preview-aws.vitanaland.com'
       read_only:
         description: 'Read-only run (VTID-04482): no test-user reset, no /me/active-role write'
         required: false
@@ -73,18 +80,33 @@ jobs:
           echo "cmd=$CMD" >> $GITHUB_OUTPUT
           echo "Running: $CMD"
 
+      - name: Refuse production targets
+        env:
+          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://preview-aws.vitanaland.com' }}
+        run: |
+          HOST=$(echo "$COMMUNITY_URL" | sed -E 's|https?://||; s|/.*||')
+          case "$HOST" in
+            vitanaland.com|www.vitanaland.com|gateway.vitanaland.com|dr-app.vitanaland.com|dr-gateway.vitanaland.com)
+              echo "::error::Refusing to run E2E against production host $HOST — never test against production (vitana-v1 CLAUDE.md). Use https://preview-aws.vitanaland.com."
+              exit 1 ;;
+          esac
+          echo "Target: $COMMUNITY_URL"
+
       - name: Run E2E tests
         working-directory: e2e
         run: ${{ steps.cmd.outputs.cmd }}
         env:
           HUB_URL: https://preview-aws-gateway.vitanaland.com
-          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://vitanaland.com' }}
+          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://preview-aws.vitanaland.com' }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           # VTID-04482: a read-only run gets no service-role key at all, so
           # global-setup cannot write to the test user even if the guard fails.
-          E2E_READONLY: ${{ inputs.read_only && '1' || '' }}
-          SUPABASE_SERVICE_ROLE: ${{ !inputs.read_only && secrets.SUPABASE_SERVICE_ROLE || '' }}
+          # A repository_dispatch run has no inputs, so `inputs.read_only` was
+          # empty there and the write-capable setup ran — on the production
+          # deploy path. Dispatched runs are now always read-only.
+          E2E_READONLY: ${{ (github.event_name == 'repository_dispatch' || inputs.read_only) && '1' || '' }}
+          SUPABASE_SERVICE_ROLE: ${{ github.event_name != 'repository_dispatch' && !inputs.read_only && secrets.SUPABASE_SERVICE_ROLE || '' }}
 
       - name: Report failure to self-healing
         if: failure()
