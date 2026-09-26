@@ -1,0 +1,3 @@
+$ npx jest test/command-hub test/routes/command-hub-static-cache-headers.test.ts   # services/gateway
+Test Suites: 27 passed, 27 total — Tests: 360 passed, 360 total
+$ curl staging orb-widget.js at the old and the new version | grep -c "msg.after_turn === true"   # outputs/staging-widget-probe.txt

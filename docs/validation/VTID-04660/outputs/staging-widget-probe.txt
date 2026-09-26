@@ -1,0 +1,2 @@
+old version ?v=20260925-vtid-04587-thinking: 0
+new version ?v=20260926-vtid-04660-after-turn: 1

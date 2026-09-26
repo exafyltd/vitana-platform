@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04660",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "method": "GET", "path": "/command-hub/",
+      "expect_status": 200, "expect_body_contains": "orb-widget.js?v=20260926-vtid-04660-after-turn",
+      "reason": "the Command Hub page loads the widget at the new version, so Cloudflare cannot serve the cached pre-VTID-04644 copy" },
+    { "kind": "http", "target": "gateway", "method": "GET", "path": "/command-hub/orb-widget.js?v=20260926-vtid-04660-after-turn",
+      "expect_status": 200, "expect_body_contains": "msg.after_turn === true",
+      "reason": "the widget at that version carries the VTID-04644 after-turn branch" },
+    { "kind": "existing", "ref": "npx jest test/command-hub test/routes/command-hub-static-cache-headers.test.ts", "cwd": "services/gateway",
+      "reason": "Command Hub static and cache-header suites stay green" }
+  ]
+}
