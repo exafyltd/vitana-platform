@@ -1,0 +1,3 @@
+cd services/gateway && npx jest test/orb/live/session/vtid-04599-schluss-with-filler.test.ts test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts test/orb/live/detect-still-here-complaint.test.ts   # 3 suites, 48/48
+# mutation: removing the new pattern -> 9 failed
+cd services/gateway && npx tsc --noEmit -p .   # clean

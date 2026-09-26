@@ -415,6 +415,7 @@ import {
 import {
   type computeGreetingDecision,
   shouldAttemptNewdayOverview,
+  isBeforeNewDayStartHour,
   shouldAttemptResumeOverview,
   newdayHasContent,
   setNewdayOverviewRungEnabled,
@@ -11887,10 +11888,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             outcome: 'guard_rejected',
             // The guard is one boolean; report its four inputs separately or
             // this tells you no more than `override_v2` already did.
-            briefing_due: !(
-              typeof _ctxNS.lastFullBriefingDate === 'string' &&
-              _ctxNS.lastFullBriefingDate >= _ctxNS.todayTz
-            ),
+            briefing_due:
+              !isBeforeNewDayStartHour(_ctxNS.localHour) &&
+              !(
+                typeof _ctxNS.lastFullBriefingDate === 'string' &&
+                _ctxNS.lastFullBriefingDate >= _ctxNS.todayTz
+              ),
+            // VTID-04595 — the day starts at 05:00 local; before that no briefing.
+            before_new_day_start: isBeforeNewDayStartHour(_ctxNS.localHour),
             has_first_name:
               typeof _ctxNS.firstName === 'string' && _ctxNS.firstName.trim().length > 0,
             not_first_time: _ctxNS.greetingIsFirstTime !== true,
