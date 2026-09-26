@@ -209,6 +209,14 @@ export interface ApprovalInput {
    *  manually activate never also widens what gets auto-approved with no
    *  human in the loop. */
   allowManualSourceTypes?: boolean;
+  /** VTID-04657: accept a finding in status 'activated' as well as 'new'.
+   *  `activate_autopilot_recommendation` flips the row to 'activated'
+   *  BEFORE the route bridges it, so without this every Activate click and
+   *  every activation-reaper retry was refused by the status guard below
+   *  and no execution was ever created. Only bridgeActivationToExecution()
+   *  sets it; 'completed'/'rejected'/'snoozed' stay refused, and the
+   *  stranded-PR and in-flight guards still apply. */
+  allowActivatedStatus?: boolean;
 }
 
 export interface ApprovalResult {
@@ -531,7 +539,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
   // duplicate PRs — exactly the failure mode that forced the 2026-04-30
   // sweep (6 identical admin-notification-categories middleware refactors
   // closed in one batch).
-  if (rec.status !== 'new') {
+  const statusOk = rec.status === 'new'
+    || (input.allowActivatedStatus === true && rec.status === 'activated');
+  if (!statusOk) {
     return {
       ok: false,
       error: `finding status is '${rec.status}' — only 'new' findings can be approved`,
@@ -912,6 +922,8 @@ export async function bridgeActivationToExecution(
     // community/health recommendations — see isManuallyBridgeableSourceType's
     // own doc comment for why this must never be set from an autonomous path.
     allowManualSourceTypes: true,
+    // VTID-04657: the activate RPC has already set status='activated'.
+    allowActivatedStatus: true,
   });
   if (!approval.ok || !approval.execution) {
     // VTID-02669: surface decision.violations[] so the caller (and the UI)

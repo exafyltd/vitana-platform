@@ -473,6 +473,10 @@ export async function queryRecommendationsByRole(
     // Callers must have authorized the role first (resolveLineupRole).
     params.set('user_id', 'is.null');
     params.set('source_type', 'neq.community');
+    // VTID-04666: an operator_onramp row is an operator request that was
+    // already executed, not a recommendation. Repeated column filters are
+    // ANDed by PostgREST.
+    params.append('source_type', 'neq.operator_onramp');
   } else {
     // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
     // NO filter, returning every user's personal suggestions.
@@ -1605,6 +1609,101 @@ router.post('/:id/draft', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-04657: bounded, reported bridge from Activate into Dev Autopilot
+// =============================================================================
+
+export type ActivationExecutionReport =
+  | { state: 'queued'; execution_id: string; note?: string }
+  | { state: 'pending'; note: string }
+  | { state: 'failed'; error: string; violations?: string[] }
+  | { state: 'not_executable'; source_type: string | null; note: string };
+
+/** How long Activate waits for the bridge before answering `pending`. Plan
+ *  generation is an LLM call, so a finding with no plan can take longer. */
+export const ACTIVATION_BRIDGE_BUDGET_MS = Number(process.env.AUTOPILOT_ACTIVATION_BRIDGE_BUDGET_MS) || 8000;
+
+export async function bridgeActivationWithBudget(
+  recommendationId: string,
+  approvedBy: string | null,
+  vtid: string,
+  budgetMs: number = ACTIVATION_BRIDGE_BUDGET_MS,
+): Promise<ActivationExecutionReport> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) {
+    return { state: 'failed', error: 'Supabase not configured' };
+  }
+
+  let srcType: string | null = null;
+  try {
+    const srcResp = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recommendationId}&select=source_type&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
+    srcType = srcRows[0]?.source_type ?? null;
+  } catch (err: any) {
+    return { state: 'failed', error: `source_type lookup failed: ${err?.message ?? 'unknown'}` };
+  }
+
+  if (!isManuallyBridgeableSourceType(srcType)) {
+    return {
+      state: 'not_executable',
+      source_type: srcType,
+      note: 'This recommendation type has no automated executor — a VTID and a draft spec were created for a person to pick up.',
+    };
+  }
+
+  const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
+  const bridge = bridgeActivationToExecution(recommendationId, approvedBy)
+    .then((br): ActivationExecutionReport => {
+      if (br.ok && br.execution_id) {
+        return { state: 'queued', execution_id: br.execution_id, ...(br.skipped ? { note: br.skipped } : {}) };
+      }
+      if (br.ok) return { state: 'failed', error: br.skipped || 'bridge returned no execution' };
+      const violations = ((br.decision as { violations?: Array<{ rule?: string; message?: string }> } | undefined)?.violations || [])
+        .map((v) => v.rule || v.message || '')
+        .filter(Boolean);
+      return { state: 'failed', error: br.error || 'bridge failed', ...(violations.length ? { violations } : {}) };
+    })
+    .catch((err: any): ActivationExecutionReport => ({ state: 'failed', error: err?.message ?? 'bridge threw' }));
+
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<ActivationExecutionReport>((resolve) => {
+    timer = setTimeout(() => resolve({
+      state: 'pending',
+      note: 'Still preparing the execution plan — it continues in the background.',
+    }), budgetMs);
+  });
+  const report = await Promise.race([bridge, timeout]);
+  if (timer) clearTimeout(timer);
+
+  // A late result is still logged and, on failure, recorded in OASIS.
+  const record = async (r: ActivationExecutionReport) => {
+    if (r.state === 'queued') {
+      console.log(`${LOG_PREFIX} Bridged ${recommendationId.slice(0, 8)} → execution ${r.execution_id.slice(0, 8)}`);
+      return;
+    }
+    if (r.state !== 'failed') return;
+    console.warn(`${LOG_PREFIX} Bridge failed for ${recommendationId.slice(0, 8)}: ${r.error}`);
+    await emitOasisEvent({
+      vtid,
+      type: 'autopilot.recommendation.activation_bridge_failed',
+      source: 'autopilot-recommendations',
+      status: 'error',
+      message: `Activation of ${recommendationId.slice(0, 8)} did not reach execution: ${r.error}`,
+      payload: { recommendation_id: recommendationId, vtid, source_type: srcType, error: r.error, violations: r.violations ?? [] },
+    }).catch(() => undefined);
+  };
+  if (report.state === 'pending') {
+    bridge.then(record).catch(() => undefined);
+  } else {
+    await record(report);
+  }
+  return report;
+}
+
+// =============================================================================
 // POST /recommendations/:id/activate - Activate recommendation (creates VTID)
 // =============================================================================
 /**
@@ -1879,45 +1978,23 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Bridge activations into the executor (cooldown skipped) for every
     // manually-bridgeable source_type (VTID-04108: dev_autopilot* plus
     // community/health). Without this, "Activate" only writes the
-    // vtid_ledger row and the card sits in IN PROGRESS forever — there is
-    // no other code path that picks up vtid_ledger rows for these
-    // findings. The reaper tick in
-    // dev-autopilot-execute.ts catches any failures from this fire-and-forget
-    // call. Fire-and-forget on purpose so a slow LLM plan generation doesn't
-    // block the activate response.
+    // vtid_ledger row and the card sits in IN PROGRESS forever.
+    //
+    // VTID-04657: this used to be fire-and-forget and the route answered
+    // ok:true whatever happened, so every refusal (status guard, safety gate,
+    // plan generation) stayed in the gateway log while the Command Hub said
+    // "Activated!". The route now waits a bounded time for the bridge and
+    // reports the real outcome as `execution`; a bridge still running when
+    // the budget expires keeps going and is reported as `pending`, and the
+    // activation reaper retries anything that never got an execution row.
+    let execution: ActivationExecutionReport | undefined;
     if (!response.already_activated && response.vtid) {
-      try {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const svcKey = process.env.SUPABASE_SERVICE_ROLE;
-        if (supabaseUrl && svcKey) {
-          const srcResp = await fetch(
-            `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=source_type&limit=1`,
-            { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
-          );
-          const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
-          const srcType = srcRows[0]?.source_type;
-          if (isManuallyBridgeableSourceType(srcType)) {
-            const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
-            bridgeActivationToExecution(id, userId || null)
-              .then((br) => {
-                if (br.ok) {
-                  console.log(`${LOG_PREFIX} Bridged ${id.slice(0, 8)} → execution ${br.execution_id?.slice(0, 8) || '?'} (${br.skipped || 'enqueued'})`);
-                } else {
-                  console.warn(`${LOG_PREFIX} Bridge failed for ${id.slice(0, 8)}: ${br.error}`);
-                }
-              })
-              .catch((bridgeErr: any) => {
-                console.error(`${LOG_PREFIX} Bridge error for ${id.slice(0, 8)}: ${bridgeErr.message}`);
-              });
-          }
-        }
-      } catch (bridgeErr: any) {
-        console.error(`${LOG_PREFIX} Bridge dispatch error (non-fatal):`, bridgeErr.message);
-      }
+      execution = await bridgeActivationWithBudget(id, userId || null, response.vtid);
     }
 
     return res.status(200).json({
       ...response,
+      ...(execution ? { execution } : {}),
       vtid_ref: 'VTID-01180',
       timestamp: new Date().toISOString(),
     });

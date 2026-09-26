@@ -316,7 +316,12 @@ describe('ingestScan — dedup lookup covers activated findings (VTID-04274)', (
 
     await ingestScan({ triggered_by: 'test', signals: [signal()] });
 
-    expect(getUrls).toHaveLength(1);
+    // VTID-04666 added one per-run GET for recently rejected fingerprints
+    // (status=eq.rejected); this test is about the per-signal dedup lookup.
+    const dedupUrls = getUrls.filter((u) => u.includes('signal_fingerprint=eq.'));
+    expect(getUrls.filter((u) => u.includes('status=eq.rejected'))).toHaveLength(1);
+    expect(dedupUrls).toHaveLength(1);
+    getUrls.splice(0, getUrls.length, ...dedupUrls);
     expect(getUrls[0]).toContain('status=in.(new,snoozed,activated)');
     expect(getUrls[0]).not.toContain('status=in.(new,snoozed)&');
   });

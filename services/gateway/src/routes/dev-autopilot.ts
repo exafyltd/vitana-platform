@@ -25,6 +25,12 @@ import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
 import { feedbackTicketRefFor } from '../services/feedback-ticket-ref';
+import {
+  devRecommendationExpiresAtIso,
+  recentlyRejectedFingerprintsPath,
+  sortPendingApprovals,
+  toFingerprintSet,
+} from '../services/dev-recommendation-policy';
 
 const router = Router();
 
@@ -254,10 +260,25 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
   }
 
   const { createHash } = await import('node:crypto');
-  const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  // VTID-04666: every impact finding expires unless it keeps being seen.
+  const expiresAt = devRecommendationExpiresAtIso(nowMs);
   let newCount = 0;
   let updatedCount = 0;
   let skippedInfo = 0;
+  let suppressedRejected = 0;
+
+  // VTID-04666: fingerprints a human rejected in the last 30 days stay
+  // blocked (one lookup per request; a failed lookup blocks nothing).
+  const rejectedLookup = await supaGet<Array<{ signal_fingerprint: string }>>(
+    supa,
+    recentlyRejectedFingerprintsPath('dev_autopilot_impact', nowMs),
+  );
+  if (!rejectedLookup.ok) {
+    console.warn(`[dev-autopilot] impact-ingest rejected-fingerprint lookup failed (not blocking any): ${rejectedLookup.error}`);
+  }
+  const recentlyRejected = toFingerprintSet(rejectedLookup.ok ? rejectedLookup.data : []);
 
   for (const f of body.findings) {
     if (!f || !f.rule || !f.message) continue;
@@ -283,8 +304,16 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
         seen_count: (hit.seen_count || 1) + 1,
         last_seen_at: now,
         updated_at: now,
+        // VTID-04666: still seen → still live; push the expiry forward.
+        expires_at: expiresAt,
       });
       updatedCount++;
+      continue;
+    }
+
+    // VTID-04666: rejected by a human within 30 days — do not re-surface.
+    if (recentlyRejected.has(fingerprint)) {
+      suppressedRejected++;
       continue;
     }
 
@@ -315,6 +344,7 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
       first_seen_at: now,
       last_seen_at: now,
       seen_count: 1,
+      expires_at: expiresAt,
       spec_snapshot: {
         rule: f.rule,
         category: f.category || 'companion',
@@ -336,6 +366,7 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
     new_count: newCount,
     updated_count: updatedCount,
     skipped_info: skippedInfo,
+    ...(suppressedRejected > 0 ? { suppressed_rejected: suppressedRejected } : {}),
   });
 });
 
@@ -665,13 +696,25 @@ const PENDING_APPROVALS_PREDICATE =
   // not.is.true covers both FALSE (default for new rows) and NULL (legacy rows
   // pre-dating the column's existence) — anything not affirmatively auto-exec.
   '&auto_exec_eligible=not.is.true' +
-  '&or=(snoozed_until.is.null,snoozed_until.lt.now())';
+  '&or=(snoozed_until.is.null,snoozed_until.lt.now())' +
+  // VTID-04666: expired findings (not seen for 30 days) leave the inbox.
+  // Repeated `or` params are ANDed by PostgREST.
+  '&or=(expires_at.is.null,expires_at.gt.now())';
 
 const PENDING_APPROVALS_SELECT =
   'id,title,summary,domain,risk_class,impact_score,effort_score,' +
   'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot,' +
   // VTID-04333: source_ref + activated_vtid drive the feedback_ticket field.
-  'source_ref,activated_vtid';
+  'source_ref,activated_vtid,' +
+  // VTID-04666: created_at is the last sort key.
+  'created_at';
+
+/**
+ * VTID-04666: the inbox is sorted in JS (sortPendingApprovals) because
+ * PostgREST orders risk_class as text (medium > low > high). To keep paging
+ * correct the whole open set is read up to this cap, sorted, then sliced.
+ */
+const PENDING_APPROVALS_SORT_WINDOW = 1000;
 
 router.get('/pending-approvals', requireDevRole, async (req: Request, res: Response) => {
   const supa = getSupabase();
@@ -680,15 +723,18 @@ router.get('/pending-approvals', requireDevRole, async (req: Request, res: Respo
   const limit = Math.min(parseInt(String(req.query.limit || '200'), 10), 500);
   const offset = Math.max(parseInt(String(req.query.offset || '0'), 10), 0);
 
-  // Sort riskiest-first then highest impact then most recent activity.
-  const order = 'order=risk_class.desc.nullslast,impact_score.desc.nullslast,last_seen_at.desc';
+  // VTID-04666: riskiest first by an explicit rank (high > medium > low),
+  // then highest impact, then newest. The DB order below only decides which
+  // rows fall inside the window; the final order is sortPendingApprovals.
+  const order = 'order=impact_score.desc.nullslast,created_at.desc';
   const path =
     `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
-    `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${limit}&offset=${offset}`;
+    `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${PENDING_APPROVALS_SORT_WINDOW}`;
 
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  const recommendations = ((r.data || []) as Array<Record<string, unknown>>)
+  const recommendations = sortPendingApprovals((r.data || []) as Array<Record<string, unknown>>)
+    .slice(offset, offset + limit)
     .map((rec) => ({ ...rec, feedback_ticket: feedbackTicketRefFor(rec) }));
   return res.json({ ok: true, recommendations, count: recommendations.length });
 });
