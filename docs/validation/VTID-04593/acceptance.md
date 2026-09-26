@@ -16,16 +16,16 @@ fallbacks (Bedrock Sonnet 4.6 for both stages under v17) still apply.
 
 ## Acceptance criteria
 
-- AC-1: `devPlannerModel()` defaults to deepseek/deepseek-flash and `devWorkerModel()` to bedrock/eu.anthropic.claude-sonnet-4-6; env pairs override; vertex/anthropic are refused.
-  TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
-- AC-2: the operator on-ramp stamps the coding agent model on the execution row (`llm_on_ramp_override`), so the executor and any self-heal child run on it.
-  TEST: services/gateway/test/vtid-04007-open-ended-intake.test.ts
-- AC-3: the agent executor's default model (rows without an override, i.e. the autonomous lane) is `devWorkerModel()`.
-  TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
-- AC-4: Dev Autopilot plan generation and the spec generator override the `planner` stage primary with `devPlannerModel()`.
-  TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
-- AC-5: the operator pipeline regression suite passes end to end with the new model on the row and on every worker call (assertions updated on purpose — the pipeline's model contract changed, per rule 42f).
-  TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
+AC-1: `devPlannerModel()` defaults to deepseek/deepseek-flash and `devWorkerModel()` to bedrock/eu.anthropic.claude-sonnet-4-6; env pairs override; vertex/anthropic are refused.
+TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
+AC-2: the operator on-ramp stamps the coding agent model on the execution row (`llm_on_ramp_override`), so the executor and any self-heal child run on it.
+TEST: services/gateway/test/vtid-04007-open-ended-intake.test.ts
+AC-3: the agent executor's default model (rows without an override, i.e. the autonomous lane) is `devWorkerModel()`.
+TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
+AC-4: Dev Autopilot plan generation and the spec generator override the `planner` stage primary with `devPlannerModel()`.
+TEST: services/gateway/test/vtid-04593-dev-pipeline-models.test.ts
+AC-5: the operator pipeline regression suite passes end to end with the new model on the row and on every worker call (assertions updated on purpose — the pipeline's model contract changed, per rule 42f).
+TEST: services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts
 
 ## Not verified here
 
