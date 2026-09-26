@@ -536,6 +536,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
+  // VTID-04663: Service Health checks for signals the database already computes.
+  const { opsHealthChecksRouter } = require('./routes/ops-health-checks');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -1389,6 +1391,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
+  // VTID-04663: GET /api/v1/ops/health/* — Command Hub Service Health checks (public, cached, read-only)
+  mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
