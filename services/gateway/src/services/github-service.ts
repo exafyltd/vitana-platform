@@ -709,7 +709,8 @@ export async function getWorkflowRuns(
  */
 export async function getWorkflowRunJobs(
   repo: string,
-  runId: number
+  runId: number,
+  tokenOverride?: string
 ): Promise<{
   jobs: Array<{
     id: number;
@@ -729,7 +730,31 @@ export async function getWorkflowRunJobs(
       started_at: string;
       completed_at: string | null;
     }>;
-  }>(`/repos/${repo}/actions/runs/${runId}/jobs`);
+  }>(`/repos/${repo}/actions/runs/${runId}/jobs?per_page=100`, {}, tokenOverride);
+}
+
+/**
+ * VTID-04641: one page (100) of completed workflow runs created at or after
+ * `since`, newest first, across every workflow in the repository. The Testing
+ * & QA results store filters them against the test catalog.
+ */
+export async function listCompletedWorkflowRuns(
+  repo: string,
+  since: string,
+  page: number,
+  tokenOverride?: string
+): Promise<Array<Record<string, any>>> {
+  const q = new URLSearchParams({
+    status: 'completed',
+    created: `>=${since}`,
+    per_page: '100',
+    page: String(page),
+    exclude_pull_requests: 'true',
+  });
+  const body = await githubRequest<{ workflow_runs?: Array<Record<string, any>> }>(
+    `/repos/${repo}/actions/runs?${q.toString()}`, {}, tokenOverride,
+  );
+  return body.workflow_runs || [];
 }
 
 /**

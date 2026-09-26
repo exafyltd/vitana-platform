@@ -2887,3 +2887,41 @@ replaces both policies with calls to one helper:
 
 Evidence: `docs/validation/VTID-04337/outputs/` (42P17 before; clean reads for
 `authenticated` and `anon` after).
+
+## Testing & QA results store — `ci_test_runs`, `ci_test_sync_state` (VTID-04641, 2026-09-26) — APPLIED to the live project 2026-09-26
+
+Migration `20260926130000_vtid_04641_ci_test_results.sql`. History of every
+completed GitHub Actions run of a test / gate / monitor / e2e / deploy-smoke
+workflow in `exafyltd/vitana-platform` and `exafyltd/vitana-v1` (the kinds and
+environments come from the test catalog, VTID-04637), for the Command Hub
+Testing & QA screens. Written only by the gateway
+(`services/testing/test-results.ts`, lazy sync on read, upsert on
+`(repo, run_id)`). RLS enabled with no policy: service role only. The older
+`test_runs` / `test_results` / `test_cycles` tables (hub-started Playwright
+runs) are unchanged.
+
+### ci_test_runs
+
+| Column | Type | Notes |
+|---|---|---|
+| `repo` | text | PK part. `exafyltd/vitana-platform` or `exafyltd/vitana-v1` |
+| `run_id` | bigint | PK part. GitHub Actions run id |
+| `run_attempt` | integer | a re-run keeps `run_id`, bumps this, and replaces the verdict |
+| `workflow_file` / `workflow_name` | text | e.g. `TEST-SUITE.yml` |
+| `kind` | text | catalog kind: test, gate, monitor, e2e, deploy_smoke |
+| `environments` | text[] | catalog environments at ingest: dev_pr, nightly, staging, production |
+| `event`, `branch`, `head_sha`, `actor`, `html_url` | text | from the run |
+| `status` | text | always `completed` (only finished runs are stored) |
+| `conclusion` | text | success, failure, cancelled, skipped, timed_out, … |
+| `run_created_at` / `run_started_at` / `run_updated_at` | timestamptz | |
+| `duration_s` | integer | started → last update |
+| `jobs` | jsonb | `[{name, conclusion, started_at, completed_at}]` |
+| `ingested_at` | timestamptz | |
+
+Indexes: `(repo, workflow_file, run_created_at desc)`, `(run_created_at desc)`.
+
+### ci_test_sync_state
+
+One row per repository: `synced_through` (newest stored `run_created_at`; the
+next sync re-reads 6 h before it), `last_synced_at`, `last_error`,
+`last_ingested`, `updated_at`.
