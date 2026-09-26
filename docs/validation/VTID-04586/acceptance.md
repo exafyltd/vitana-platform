@@ -53,7 +53,8 @@ AC-6 The VTID-04544 gather contract still holds.
   TEST: services/gateway/test/services/conversation/vtid-04544-greeting-payload-gather.test.ts
 AC-7 (staging, after merge) Command Hub first model audio p50 back near the pre-VTID-04560 3.3 s,
   no `dev_system_status` tool call on turn 0, no `greeting_gather_awaited` on Command Hub sessions.
-  Recorded in `outputs/staging-benchmark-after.*` once measured.
+  Measured 2026-09-26 on `ea0ccbf`: pooled p50 3,888 ms (before 4,904), 11/12 spoke; no turn-0 tool call and
+  no gather on any session; `outputs/staging-telemetry-after.md`.
   CURL: https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info (serves the merge commit), then scripts/orb/measure-orb-first-audio.mjs --auth --lang=en --route=/command-hub --trials=6
 
 Both fixes were mutation-checked: undoing each one fails its test (commands.log).
