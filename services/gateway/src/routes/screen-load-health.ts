@@ -36,9 +36,14 @@ const TOPIC = 'screen.load.synthetic_test';
 // full authenticated SPA route load (JS bundle + data fetch + render), not
 // a bare LCP paint, so it runs hotter than the RUM LCP thresholds in rum.ts.
 const SLOW_THRESHOLD_MS = 6000;
-// A run counts "stale" (→ down, not just degraded) if nothing has reported
-// in this long — catches the cron itself being broken, not just a slow app.
-const STALE_AFTER_MS = 3 * 60 * 60 * 1000; // 3h — covers a couple of missed 30-min runs
+// VTID-04661: two freshness tiers. The workflow is scheduled every 30 min,
+// but GitHub runs scheduled workflows best-effort — measured 2026-09-26,
+// consecutive runs landed 3-5.5h apart. A single 3h cutoff therefore read
+// "down" most of the day while every run was green. A report older than
+// LAGGING_AFTER_MS is 'degraded' (reason scheduler_lag); only nothing in
+// STALE_AFTER_MS — the job is really broken or not reporting — is 'down'.
+const LAGGING_AFTER_MS = 3 * 60 * 60 * 1000;
+const STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
 const ReportSchema = z.object({
   run_id: z.string().min(1).max(128),
@@ -148,7 +153,7 @@ router.get('/health', async (_req: Request, res: Response) => { // public-route
     return res.status(200).json({
       status: 'down',
       reason: 'no_recent_runs',
-      message: `No screen-load-timing results in the last ${Math.round(STALE_AFTER_MS / 3600000)}h — the scheduled job may be broken.`,
+      message: `No screen-load-timing results in the last ${Math.round(STALE_AFTER_MS / 3600000)}h — the scheduled job is not running, or its report is being rejected (see the SCREEN-LOAD-TIMING run's 'Check the report was accepted' step).`,
     });
   }
 
@@ -173,15 +178,19 @@ router.get('/health', async (_req: Request, res: Response) => { // public-route
   const p75Ms = durations.length ? durations[p75Index] : null;
   const maxMs = durations.length ? durations[durations.length - 1] : null;
 
+  const lagging = Date.now() - latestAt > LAGGING_AFTER_MS;
   const status: 'ok' | 'degraded' | 'down' =
     failed.length > 0 || p75Ms === null
       ? 'down'
-      : p75Ms > SLOW_THRESHOLD_MS
+      : p75Ms > SLOW_THRESHOLD_MS || lagging
         ? 'degraded'
         : 'ok';
 
   return res.status(200).json({
     status,
+    ...(status === 'degraded' && lagging && !(p75Ms !== null && p75Ms > SLOW_THRESHOLD_MS)
+      ? { reason: 'scheduler_lag', message: `Last report is ${Math.round((Date.now() - latestAt) / 60000)} min old — the schedule runs late; results are still from a real run.` }
+      : {}),
     checked_at: new Date().toISOString(),
     last_run_at: data[0].created_at,
     threshold_ms: SLOW_THRESHOLD_MS,

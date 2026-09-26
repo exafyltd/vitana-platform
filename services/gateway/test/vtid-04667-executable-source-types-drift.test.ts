@@ -53,7 +53,11 @@ describe('Command Hub executable source types', () => {
 
   it('cache-bust is bumped for this change', () => {
     const html = fs.readFileSync(path.resolve(__dirname, '../src/frontend/command-hub/index.html'), 'utf8');
-    expect(html).toContain('app.js?v=20261016-vtid-04667');
-    expect(html).toContain('styles.css?v=20261016-vtid-04667');
+    // At or after this change's tag: a later change bumps it again (VTID-04661
+    // relaxed the exact pin, same form as the VTID-04028/04033 pins).
+    const app = html.match(/app\.js\?v=([^"]+)/)![1];
+    const css = html.match(/styles\.css\?v=([^"]+)/)![1];
+    expect(app >= '20261016-vtid-04667').toBe(true);
+    expect(css >= '20261016-vtid-04667').toBe(true);
   });
 });

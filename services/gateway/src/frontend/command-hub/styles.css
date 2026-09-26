@@ -16457,6 +16457,15 @@ border-bottom: 1px solid var(--color-border, #333);
 .health-dot-green { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.4); }
 
 .health-dot-red { background:#ef4444; box-shadow:0 0 6px rgba(239,68,68,0.4); }
+.health-dot-yellow { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,0.4); }
+/* VTID-04661: grey = the probe could not look (401/403), not an outage. */
+.health-dot-grey { background:#6b7280; }
+.health-modal__title--bad { color: #ef4444; }
+.health-modal__title--ok { color: #10b981; }
+.health-modal__summary { display: inline-block; white-space: nowrap; font-size: 0.75em; font-weight: 600; margin-left: 8px; padding: 2px 8px; border-radius: 999px; vertical-align: middle; }
+.health-modal__summary--bad { background: rgba(239,68,68,0.15); color: #ef4444; }
+.health-modal__summary--muted { background: rgba(107,114,128,0.2); color: #9ca3af; }
+.health-grid__group-badge--warn { color: #f59e0b; font-size: 0.85em; margin-left: 6px; }
 
 /* Service Health — grouped view (used by overview System Overview page) */
 .overview-health-groups {

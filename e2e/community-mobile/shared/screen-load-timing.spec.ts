@@ -1,4 +1,5 @@
 import { test } from '@playwright/test';
+import { writeFileSync } from 'fs';
 
 /**
  * Screen Load Time — standard basic test (VTID-SCREEN-LOAD-01).
@@ -46,6 +47,16 @@ type ScreenResult = {
   error?: string;
 };
 
+function recordReportOutcome(status: string, detail: string) {
+  const file = process.env.SCREEN_LOAD_REPORT_STATUS_FILE;
+  if (!file) return;
+  try {
+    writeFileSync(file, `${status}\n${detail.slice(0, 500)}\n`);
+  } catch {
+    /* best effort */
+  }
+}
+
 async function reportResults(results: ScreenResult[]) {
   try {
     const serviceToken = process.env.GATEWAY_SERVICE_TOKEN;
@@ -53,14 +64,24 @@ async function reportResults(results: ScreenResult[]) {
       console.warn('[screen-load-timing] GATEWAY_SERVICE_TOKEN not set — skipping report POST');
       return;
     }
-    await fetch(`${GATEWAY_URL}/api/v1/frontend/screen-load/report`, {
+    const res = await fetch(`${GATEWAY_URL}/api/v1/frontend/screen-load/report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceToken}` },
       body: JSON.stringify({ run_id: RUN_ID, environment: ENVIRONMENT, results }),
     });
+    // VTID-04661: the response used to be ignored, so a rejected report
+    // (e.g. 401 invalid_service_token) left the job green while the Command
+    // Hub showed "no recent runs" for two weeks. Record the outcome; the
+    // workflow's next step turns a rejection into a visible failure.
+    const text = await res.text().catch(() => '');
+    recordReportOutcome(`${res.status}`, text);
+    if (!res.ok) {
+      console.error(`[screen-load-timing] report rejected: HTTP ${res.status} ${text.slice(0, 300)}`);
+    }
   } catch (err) {
-    // The report call must never fail the test suite — a down gateway
-    // should surface as a "no recent runs" health check, not a CI red.
+    // The report call must never fail the test suite itself — the workflow
+    // step after the suite reads the recorded outcome instead.
+    recordReportOutcome('network_error', String(err));
     console.warn('[screen-load-timing] failed to report results:', err);
   }
 }
