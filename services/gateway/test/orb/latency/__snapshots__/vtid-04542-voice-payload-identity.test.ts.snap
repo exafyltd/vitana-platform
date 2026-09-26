@@ -3,8 +3,8 @@
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) admin-surface-en: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 8473,
-  "instruction_sha256": "416e664b852f252c56eb5c55bd4f20c19d307e93c0656ff0354d0f8bd67e0c19",
+  "instruction_bytes": 8658,
+  "instruction_sha256": "0ccc2f08af644f4bdf9161086f08dfdea44ffc9fc1c31156cf1c4fd772fc1835",
   "provider": "nova_sonic",
   "tool_count": 135,
   "tools_bytes": 45542,
@@ -81,7 +81,8 @@ REPETITION PREVENTION (CRITICAL):
 - Each response uses new wording and moves the conversation forward.
 
 TOOLS:
-- Use the admin_* tools for briefings, KPI snapshots, insight detail, approve/reject/snooze of insights, KPI history and tenant health
+- The admin briefing is already loaded into this instruction when the session opens: open from it directly, and call admin_briefing only when the user asks for a refresh later in the conversation
+- Use the admin_* tools for KPI snapshots, insight detail, approve/reject/snooze of insights, KPI history and tenant health
 - Use the admin user/RBAC, moderation, marketplace, notification, governance and feedback tools for their respective screens
 - Use navigate / get_current_screen only for /admin screens
 - Use search_knowledge for how a platform feature works

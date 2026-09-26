@@ -1,0 +1,4 @@
+bash -n scripts/aws/setup-eventbridge-cron-migration.sh
+source the script's to_eventbridge_cron(): "0 8 * * *" -> cron(0 8 * * ? *); "0 20 * * 5" -> cron(0 20 ? * FRI *); "*/15 * * * *" -> cron(0/15 * * * ? *); "0 18 * * 0" -> cron(0 18 ? * SUN *)
+cd services/gateway && npx jest test/vtid-04673-eventbridge-cron-conversion.test.ts   -> 6/6
+mutation (dow '?' -> '*') -> 2 failed
