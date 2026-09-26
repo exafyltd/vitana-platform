@@ -48,3 +48,8 @@ OASIS_PROOF: none. Read-only health aggregation; no state transitions.
   this tree, stubbed APIs, nothing live): all 8 groups drawn, "2 down · 1 no access",
   Screen Load Time visible as degraded.
 - `commands.log` — test and typecheck runs.
+
+## Route mount evidence
+ROUTE_MOUNT: adminHealthRouter is mounted at /api/v1/admin (existing mount in services/gateway/src/index.ts, `mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' })`); this change adds the path `/health/summary` to that router.
+FINAL_URL: GET /api/v1/admin/health/summary (admin-only)
+CURL_PROOF: pre-merge, the same router is live on staging — `curl -s -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/admin/health-registry` → `200 application/json; charset=utf-8`. After merge, STAGING-VERIFY checks that an anonymous GET of the new path answers 401 JSON (route exists, admin gate holds), per staging-tests.json.
