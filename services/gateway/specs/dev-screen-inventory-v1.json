@@ -152,11 +152,10 @@
       "playground"
     ],
     "testing-qa": [
-      "unit-tests",
-      "integration-tests",
-      "validator-tests",
-      "e2e",
-      "ci-reports"
+      "overview",
+      "catalog",
+      "runs",
+      "e2e"
     ],
     "intelligence-memory-dev": [
       "memory-vault",
@@ -182,8 +181,8 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 116,
-    "total_entries": 290,
+    "total_screens": 115,
+    "total_entries": 289,
     "last_synced": "2026-04-27",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
@@ -861,24 +860,24 @@
         "role": "DEVELOPER"
       },
       {
-        "screen_id": "DEV-UNIT_TESTS",
+        "screen_id": "DEV-TESTING_OVERVIEW",
         "module": "Testing & QA",
-        "tab": "Unit Tests",
-        "url_path": "/command-hub/testing-qa/unit-tests/",
+        "tab": "Overview",
+        "url_path": "/command-hub/testing-qa/overview/",
         "role": "DEVELOPER"
       },
       {
-        "screen_id": "DEV-INTEGRATION_TESTS",
+        "screen_id": "DEV-TESTING_CATALOG",
         "module": "Testing & QA",
-        "tab": "Integration Tests",
-        "url_path": "/command-hub/testing-qa/integration-tests/",
+        "tab": "Catalog",
+        "url_path": "/command-hub/testing-qa/catalog/",
         "role": "DEVELOPER"
       },
       {
-        "screen_id": "DEV-VALIDATOR_TESTS",
+        "screen_id": "DEV-TESTING_RUNS",
         "module": "Testing & QA",
-        "tab": "Validator Tests",
-        "url_path": "/command-hub/testing-qa/validator-tests/",
+        "tab": "Runs",
+        "url_path": "/command-hub/testing-qa/runs/",
         "role": "DEVELOPER"
       },
       {
@@ -886,13 +885,6 @@
         "module": "Testing & QA",
         "tab": "E2E",
         "url_path": "/command-hub/testing-qa/e2e/",
-        "role": "DEVELOPER"
-      },
-      {
-        "screen_id": "DEV-CI_REPORTS",
-        "module": "Testing & QA",
-        "tab": "CI Reports",
-        "url_path": "/command-hub/testing-qa/ci-reports/",
         "role": "DEVELOPER"
       },
       {

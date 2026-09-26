@@ -3799,11 +3799,10 @@ const NAVIGATION_CONFIG = [
         "section": "testing-qa",
         "basePath": "/command-hub/testing-qa/",
         "tabs": [
-            { "key": "unit-tests", "path": "/command-hub/testing-qa/unit-tests/" },
-            { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
-            { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
-            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
+            { "key": "overview", "path": "/command-hub/testing-qa/overview/" },
+            { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
+            { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
+            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
         ]
     },
     {
@@ -4850,6 +4849,16 @@ const state = {
     // Testing & QA — E2E runs + suites
     testingE2e: { runs: [], suites: [], loading: false, error: null, fetched: false, runningId: null },
     // Testing & QA — Unit Tests
+    // Testing & QA — Overview / Catalog / Runs (VTID-04642)
+    testingQa: {
+        summary: { data: null, loading: false, error: null },
+        catalog: { data: null, loading: false, error: null },
+        runs: { data: null, loading: false, error: null },
+        catalogFilters: { environment: '', q: '' },
+        runsFilters: { environment: '', conclusion: '', repo: '' },
+        expandedSuite: null,
+        suiteFiles: {}
+    },
     testingUnit: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Integration Tests
     testingIntegration: { runs: [], loading: false, error: null, fetched: false },
@@ -8633,16 +8642,14 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderModelsPlaygroundView());
 
     // ──── Testing & QA Module ────
-    } else if (moduleKey === 'testing-qa' && tab === 'unit-tests') {
-        container.appendChild(renderTestingUnitView());
-    } else if (moduleKey === 'testing-qa' && tab === 'integration-tests') {
-        container.appendChild(renderTestingIntegrationView());
-    } else if (moduleKey === 'testing-qa' && tab === 'validator-tests') {
-        container.appendChild(renderTestingValidatorView());
+    } else if (moduleKey === 'testing-qa' && tab === 'overview') {
+        container.appendChild(renderTestingOverviewView());
+    } else if (moduleKey === 'testing-qa' && tab === 'catalog') {
+        container.appendChild(renderTestingCatalogView());
+    } else if (moduleKey === 'testing-qa' && tab === 'runs') {
+        container.appendChild(renderTestingRunsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
-    } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
-        container.appendChild(renderTestingCiReportsView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -12335,6 +12342,11 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
     '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
     '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
+    // VTID-04642: the Testing & QA rebuild replaced four stale tabs; old links land on the new ones.
+    '/command-hub/testing-qa/unit-tests/':        { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/integration-tests/': { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/validator-tests/':   { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/ci-reports/':        { section: 'testing-qa', tab: 'runs' },
 };
 
 // VTID-02856: Apply optional `subtab` field from a redirect entry to the
@@ -12388,6 +12400,7 @@ function formatTabLabel(key) {
     // DEV-COMHU-2025-0010: Special case handling for VTID labels
     if (key === 'vtid-ledger') return 'VTID Ledger';
     if (key === 'vtids') return 'VTID´s';
+    if (key === 'e2e') return 'E2E'; // VTID-04642
     return key.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
@@ -35404,116 +35417,465 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
-// VTID-04635: the Testing & QA module is being rebuilt (generated test
-// catalog, run history across environments, manual runs). Until the new
-// screens land, each tab states what really runs and where, instead of the
-// hand-typed tables and dead run buttons it used to show.
-function renderTestingRebuildNotice() {
-    var note = document.createElement('div');
-    note.className = 'databases-arch-note';
-    note.innerHTML = '<h3>Being rebuilt</h3><p>This module is being rebuilt into a test control center: a catalog of every test generated from the code, run history for development, staging and production, coverage gaps, and manual runs. Until then this tab shows what runs today.</p>';
-    return note;
+// ─── Testing & QA: Overview / Catalog / Runs (VTID-04642) ───────────────
+// The supervisor's view of every automated test in both repositories:
+//   Overview — health per environment, what is failing or flaky, the latest
+//              STAGING-VERIFY verdict per service, and the coverage gaps.
+//   Catalog  — every suite and workflow from the generated test catalog
+//              (VTID-04637): where it runs, how often, and whether it ran.
+//   Runs     — every CI run of a test / gate / monitor / e2e workflow, from
+//              the results store (VTID-04641).
+// All three read exafy_admin routes. Styling lives in styles.css (tq-*).
+
+var TQ_ENVIRONMENTS = [
+    { key: 'dev_pr', label: 'Development / PR', note: 'Every pull request and push to main' },
+    { key: 'nightly', label: 'Nightly', note: 'Scheduled full suites' },
+    { key: 'staging', label: 'Staging', note: 'Tests against the staging deployment' },
+    { key: 'production', label: 'Production', note: 'Read-only monitors and health checks' }
+];
+var TQ_HEALTH_LABEL = { failing: 'Failing', flaky: 'Flaky', passing: 'Passing', no_recent_runs: 'No runs in 30 days' };
+
+function tqEnvLabel(key) {
+    for (var i = 0; i < TQ_ENVIRONMENTS.length; i++) if (TQ_ENVIRONMENTS[i].key === key) return TQ_ENVIRONMENTS[i].label;
+    return key;
 }
 
-function renderTestingUnitView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Jest (gateway) and Vitest (frontend), run by GitHub Actions.</p>';
-    container.appendChild(renderTestingRebuildNotice());
+function tqRepoShort(repo) {
+    return repo === 'exafyltd/vitana-v1' || repo === 'frontend' ? 'vitana-v1' : 'platform';
+}
 
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>What runs today</h3><ul>' +
-        '<li><strong>Gateway:</strong> Jest, <code>services/gateway/test/</code> (about 1,300 files), via <code>TEST-SUITE.yml</code> on every PR, every push to main and nightly at 03:17 UTC.</li>' +
-        '<li><strong>Frontend:</strong> Vitest, <code>exafyltd/vitana-v1</code> <code>src/**/*.test.ts(x)</code> (about 190 files), via <code>UNIT-TESTS.yml</code> on every PR, push and nightly at 03:47 UTC. It cannot be started from here yet.</li>' +
-        '<li><strong>Coverage:</strong> not published yet.</li></ul>';
-    info.classList.add('testing-info-spaced');
-    container.appendChild(info);
+function tqFetchJson(url, opts) {
+    var init = opts || {};
+    init.headers = buildContextHeaders(init.headers || {});
+    return fetch(url, init).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+            if (!r.ok || body.ok === false) {
+                var msg = body.message || body.error || ('HTTP ' + r.status);
+                if (r.status === 401 || r.status === 403) msg = 'Sign in as an exafy admin to see test results (' + msg + ').';
+                throw new Error(msg);
+            }
+            return body;
+        });
+    });
+}
 
-    container.appendChild(renderTestingQuickRunButtons('unit', [
-        { label: 'Gateway Tests (Jest)', projects: ['gateway-jest'] },
-    ]));
+function tqLoad(key, url) {
+    var slot = state.testingQa[key];
+    if (slot.loading || slot.data || slot.error) return;
+    slot.loading = true;
+    tqFetchJson(url).then(function (body) {
+        slot.data = body; slot.loading = false; renderApp();
+    }).catch(function (err) {
+        slot.error = err.message; slot.loading = false; renderApp();
+    });
+}
 
-    // Runs history
-    fetchTestingRuns('unit', 'testingUnit');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
+function tqReload(key) {
+    state.testingQa[key] = { data: null, loading: false, error: null };
+}
 
-    if (state.testingUnit.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingUnit.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingUnit.error; container.appendChild(e);
+function tqEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = text;
+    return el;
+}
+
+function tqStatusBlock(slot, what) {
+    if (slot.loading || (!slot.data && !slot.error)) return tqEl('div', 'placeholder-content', 'Loading ' + what + '…');
+    if (slot.error) return tqEl('div', 'placeholder-content error-text', 'Could not load ' + what + ': ' + slot.error);
+    return null;
+}
+
+function tqHeader(title, subtitle) {
+    var box = tqEl('div', 'tq-header');
+    box.appendChild(tqEl('h2', null, title));
+    box.appendChild(tqEl('p', 'section-subtitle', subtitle));
+    return box;
+}
+
+function tqPill(text, kind) {
+    return tqEl('span', 'tq-pill tq-pill-' + (kind || 'neutral'), text);
+}
+
+function tqConclusionKind(conclusion) {
+    if (conclusion === 'success') return 'ok';
+    if (conclusion === 'failure' || conclusion === 'timed_out') return 'bad';
+    if (conclusion === 'cancelled' || conclusion === 'skipped') return 'neutral';
+    return 'warn';
+}
+
+function tqHealthKind(health) {
+    return { passing: 'ok', failing: 'bad', flaky: 'warn', no_recent_runs: 'neutral' }[health] || 'neutral';
+}
+
+function tqPct(v) {
+    return v === null || v === undefined ? '—' : v + '%';
+}
+
+function tqLink(href, text) {
+    var a = tqEl('a', 'tq-link', text);
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    return a;
+}
+
+function tqTable(headers) {
+    var wrap = tqEl('div', 'tq-table-wrap');
+    var table = tqEl('table', 'list-table tq-table');
+    var thead = document.createElement('thead');
+    var tr = document.createElement('tr');
+    headers.forEach(function (h) { tr.appendChild(tqEl('th', null, h)); });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return { wrap: wrap, tbody: tbody };
+}
+
+function tqCell(row, content, className) {
+    var td = tqEl('td', className || null);
+    if (content && content.nodeType) td.appendChild(content);
+    else td.textContent = content === undefined || content === null ? '—' : String(content);
+    row.appendChild(td);
+    return td;
+}
+
+function tqEnvPills(envs) {
+    var box = tqEl('span', 'tq-pill-row');
+    (envs || []).forEach(function (e) { box.appendChild(tqPill(tqEnvLabel(e), 'env')); });
+    if (!envs || envs.length === 0) box.appendChild(tqPill('none', 'neutral'));
+    return box;
+}
+
+function tqGoToTab(tabKey) {
+    handleTabClick(tabKey);
+}
+
+// ─── Overview ─────────────────────────────────────────────────────────────
+
+function renderTestingOverviewView() {
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Testing & QA', 'Every automated test in vitana-platform and vitana-v1: where it runs, how it did in the last 30 days, and what is missing.'));
+
+    var s = state.testingQa.summary;
+    var status = tqStatusBlock(s, 'test results');
+    if (status) {
+        container.appendChild(status);
     } else {
-        container.appendChild(renderTestRunsTable(state.testingUnit.runs));
+        var sum = s.data;
+        // Environments
+        var grid = tqEl('div', 'tq-env-grid');
+        TQ_ENVIRONMENTS.forEach(function (env) {
+            var e = (sum.environments || []).filter(function (x) { return x.environment === env.key; })[0] || {};
+            var card = tqEl('div', 'tq-env-card' + (e.failing ? ' tq-env-card-bad' : e.flaky ? ' tq-env-card-warn' : ''));
+            card.appendChild(tqEl('div', 'tq-env-title', env.label));
+            card.appendChild(tqEl('div', 'tq-env-note', env.note));
+            card.appendChild(tqEl('div', 'tq-env-rate', tqPct(e.pass_rate_7d)));
+            card.appendChild(tqEl('div', 'tq-env-sub', 'pass rate, last 7 days · ' + (e.runs_7d || 0) + ' runs'));
+            var pills = tqEl('div', 'tq-pill-row');
+            pills.appendChild(tqPill((e.workflows || 0) + ' workflows', 'neutral'));
+            if (e.failing) pills.appendChild(tqPill(e.failing + ' failing', 'bad'));
+            if (e.flaky) pills.appendChild(tqPill(e.flaky + ' flaky', 'warn'));
+            if (e.no_recent_runs) pills.appendChild(tqPill(e.no_recent_runs + ' idle', 'neutral'));
+            card.appendChild(pills);
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+
+        // Staging verification
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Staging verification'));
+        container.appendChild(tqEl('p', 'tq-muted', 'After every staging deploy, STAGING-VERIFY runs the smoke suite and each change\'s own suite. Production is only offered after it passes.'));
+        var sv = sum.staging_verify || [];
+        if (sv.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'No staging verification recorded yet.'));
+        } else {
+            var svGrid = tqEl('div', 'tq-sv-grid');
+            sv.forEach(function (v) {
+                var card = tqEl('div', 'tq-sv-card');
+                var top = tqEl('div', 'tq-sv-top');
+                top.appendChild(tqEl('strong', null, v.service));
+                top.appendChild(tqPill(v.outcome, v.outcome === 'passed' ? 'ok' : v.outcome === 'failed' ? 'bad' : 'neutral'));
+                card.appendChild(top);
+                card.appendChild(tqEl('div', 'tq-muted', 'commit ' + String(v.commit || '').slice(0, 7) + ' · ' + formatRelativeTime(v.at) + ' · ' + (v.tests || 0) + ' tests'));
+                (v.failed || []).slice(0, 5).forEach(function (f) {
+                    card.appendChild(tqEl('div', 'tq-sv-fail', (f.suite ? f.suite + ' › ' : '') + f.name + (f.problems && f.problems[0] ? ' — ' + String(f.problems[0]).slice(0, 160) : '')));
+                });
+                if (v.run_url) card.appendChild(tqLink(v.run_url, 'Open run'));
+                svGrid.appendChild(card);
+            });
+            container.appendChild(svGrid);
+        }
+
+        // Needs attention
+        var attention = (sum.workflows || []).filter(function (w) { return w.health === 'failing' || w.health === 'flaky'; });
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Needs attention (' + attention.length + ')'));
+        if (attention.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'Nothing failing or flaky in the last 30 days.'));
+        } else {
+            var t = tqTable(['Health', 'Workflow', 'Repo', 'Environments', 'Failing streak', 'Last success', 'Last run']);
+            attention.forEach(function (w) {
+                var row = document.createElement('tr');
+                tqCell(row, tqPill(TQ_HEALTH_LABEL[w.health] || w.health, tqHealthKind(w.health)));
+                tqCell(row, w.workflow_name || w.workflow_file);
+                tqCell(row, tqRepoShort(w.repo));
+                tqCell(row, tqEnvPills(w.environments));
+                tqCell(row, w.failing_streak ? w.failing_streak + ' runs' : (w.flaky_commits_30d + ' flaky commits'));
+                tqCell(row, w.last_success_at ? formatRelativeTime(w.last_success_at) : 'never (30 days)');
+                tqCell(row, w.last_run && w.last_run.html_url ? tqLink(w.last_run.html_url, (w.last_run.conclusion || '') + ' · ' + formatRelativeTime(w.last_run.run_created_at)) : '—');
+                t.tbody.appendChild(row);
+            });
+            container.appendChild(t.wrap);
+        }
+
+        // Sync state
+        var sync = sum.sync || {};
+        var syncLine = tqEl('div', 'tq-sync');
+        var states = (sync.state || []).map(function (x) {
+            return tqRepoShort(x.repo) + ': ' + (x.last_synced_at ? 'synced ' + formatRelativeTime(x.last_synced_at) : 'never synced') + (x.last_error ? ' (error: ' + x.last_error + ')' : '');
+        });
+        syncLine.appendChild(tqEl('span', 'tq-muted', (sum.runs || 0) + ' runs in the last 30 days. ' + (states.join(' · ') || 'Not synced yet.') + (sync.pending ? ' Sync in progress.' : '') + (sync.sync_error ? ' Sync error: ' + sync.sync_error : '')));
+        var syncBtn = tqEl('button', 'task-spec-pipeline-btn', 'Sync from GitHub now');
+        syncBtn.onclick = function () {
+            syncBtn.disabled = true; syncBtn.textContent = 'Syncing…';
+            tqFetchJson('/api/v1/testing/results/sync', { method: 'POST' }).then(function () {
+                tqReload('summary'); tqReload('runs'); renderApp();
+            }).catch(function (err) {
+                syncBtn.disabled = false; syncBtn.textContent = 'Sync failed: ' + err.message;
+            });
+        };
+        syncLine.appendChild(syncBtn);
+        container.appendChild(syncLine);
+    }
+
+    // Coverage snapshot from the catalog
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Coverage'));
+    var c = state.testingQa.catalog;
+    var cStatus = tqStatusBlock(c, 'the test catalog');
+    if (cStatus) {
+        container.appendChild(cStatus);
+    } else {
+        var cs = c.data.summary || {};
+        var stats = tqEl('div', 'tq-stat-row');
+        [['Test files', cs.files], ['Test cases', cs.cases], ['Suites', cs.suites], ['Scheduled runs / day', cs.scheduled_runs_per_day],
+         ['Suites never run in CI', (cs.never_run_suites || []).length], ['Workflows flagged', (cs.flagged_workflows || []).length]].forEach(function (p) {
+            var st = tqEl('div', 'tq-stat');
+            st.appendChild(tqEl('div', 'tq-stat-value', p[1] === undefined || p[1] === null ? '—' : typeof p[1] === 'number' ? Math.round(p[1]).toLocaleString('en-US') : String(p[1])));
+            st.appendChild(tqEl('div', 'tq-stat-label', p[0]));
+            stats.appendChild(st);
+        });
+        container.appendChild(stats);
+        var gaps = cs.never_run_suites || [];
+        if (gaps.length) {
+            var gapBox = tqEl('div', 'databases-arch-note');
+            gapBox.appendChild(tqEl('h3', null, 'Suites no workflow runs'));
+            var ul = document.createElement('ul');
+            gaps.forEach(function (g) { ul.appendChild(tqEl('li', null, g)); });
+            gapBox.appendChild(ul);
+            container.appendChild(gapBox);
+        }
+        var btn = tqEl('button', 'task-spec-pipeline-btn', 'Open the full catalog');
+        btn.onclick = function () { tqGoToTab('catalog'); };
+        container.appendChild(btn);
+        container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + ' from the code on main.'));
     }
     return container;
 }
 
-function renderTestingIntegrationView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Pipeline regression suites that run the real code of several stages together.</p>';
-    container.appendChild(renderTestingRebuildNotice());
+// ─── Catalog ──────────────────────────────────────────────────────────────
 
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>What runs today</h3><ul>' +
-        '<li><code>npm run test:operator</code>: Operator Console to Dev Autopilot pipeline</li>' +
-        '<li><code>npm run test:support</code>: customer support pipeline</li>' +
-        '<li><code>npm run test:roles</code>: role separation of the ORB assistant</li>' +
-        '<li><code>npm run test:calendar</code>, <code>test:replay</code>, <code>test:flow</code>, <code>test:nav-redirect</code>, <code>test:voice-identity</code></li>' +
-        '<li><code>AURORA-I18N-INTEGRATION.yml</code>: DB i18n against a Postgres container</li></ul>' +
-        '<p>These run inside the full gateway Jest run on every PR. Start that run from Unit Tests.</p>';
-    container.appendChild(info);
+function tqWorkflowHealthIndex() {
+    var s = state.testingQa.summary.data;
+    var index = {};
+    ((s && s.workflows) || []).forEach(function (w) { index[tqRepoShort(w.repo) + '|' + w.workflow_file] = w; });
+    return index;
+}
 
-    // Runs history
-    fetchTestingRuns('integration', 'testingIntegration');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
+function renderTestingCatalogView() {
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test catalog', 'Generated from the code on every merge: every suite, the workflows that run it, where and how often. Suites nothing runs are gaps.'));
 
-    if (state.testingIntegration.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingIntegration.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingIntegration.error; container.appendChild(e);
-    } else {
-        container.appendChild(renderTestRunsTable(state.testingIntegration.runs));
-    }
+    var c = state.testingQa.catalog;
+    var status = tqStatusBlock(c, 'the test catalog');
+    if (status) { container.appendChild(status); return container; }
+
+    var f = state.testingQa.catalogFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    var envSel = document.createElement('select');
+    envSel.className = 'tq-select';
+    envSel.setAttribute('aria-label', 'Environment');
+    [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })).concat([['never_run', 'Never run in CI']]).forEach(function (o) {
+        var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+        if (f.environment === o[0]) opt.selected = true;
+        envSel.appendChild(opt);
+    });
+    envSel.onchange = function () { f.environment = envSel.value; renderApp(); };
+    bar.appendChild(envSel);
+    var search = document.createElement('input');
+    search.type = 'search'; search.className = 'tq-input'; search.placeholder = 'Search suites and workflows';
+    search.setAttribute('aria-label', 'Search suites and workflows');
+    search.value = f.q;
+    search.oninput = function () { f.q = search.value; clearTimeout(tqSearchTimer); tqSearchTimer = setTimeout(renderApp, 250); };
+    bar.appendChild(search);
+    container.appendChild(bar);
+
+    var q = (f.q || '').toLowerCase();
+    var health = tqWorkflowHealthIndex();
+    var suites = (c.data.suites || []).filter(function (s) {
+        var envOk = !f.environment || (f.environment === 'never_run' ? s.never_run : (s.environments || []).indexOf(f.environment) >= 0);
+        return envOk && (!q || (s.name + ' ' + s.id).toLowerCase().indexOf(q) >= 0);
+    });
+
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Suites (' + suites.length + ')'));
+    var t = tqTable(['Suite', 'Repo', 'Runner', 'Files', 'Cases', 'Environments', 'Runs', 'Latest result']);
+    suites.forEach(function (s) {
+        var row = document.createElement('tr');
+        row.className = 'tq-row-click';
+        makeClickable(row, function () {
+            state.testingQa.expandedSuite = state.testingQa.expandedSuite === s.id ? null : s.id;
+            renderApp();
+        }, { label: 'Show files of ' + s.name });
+        var nameCell = tqCell(row, s.name);
+        if (s.never_run) { nameCell.appendChild(document.createTextNode(' ')); nameCell.appendChild(tqPill('never run', 'bad')); }
+        tqCell(row, tqRepoShort(s.repo));
+        tqCell(row, s.runner);
+        tqCell(row, s.files);
+        tqCell(row, s.cases);
+        tqCell(row, tqEnvPills(s.environments));
+        tqCell(row, (s.schedules || []).length ? s.schedules.map(function (x) { return x.human; }).join(', ') : (s.runs_in || []).length ? 'on PR / push' : '—');
+        var worst = null;
+        (s.runs_in || []).forEach(function (file) {
+            var w = health[tqRepoShort(s.repo) + '|' + file];
+            if (w && (!worst || ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(w.health) < ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(worst.health))) worst = w;
+        });
+        tqCell(row, worst ? tqPill((TQ_HEALTH_LABEL[worst.health] || worst.health) + ' · ' + worst.workflow_file, tqHealthKind(worst.health)) : '—');
+        t.tbody.appendChild(row);
+        if (state.testingQa.expandedSuite === s.id) t.tbody.appendChild(renderTestingSuiteFilesRow(s, 8));
+    });
+    container.appendChild(t.wrap);
+
+    var workflows = (c.data.workflows || []).filter(function (w) {
+        return (!f.environment || f.environment === 'never_run' || (w.environments || []).indexOf(f.environment) >= 0) &&
+            (!q || (w.file + ' ' + w.name).toLowerCase().indexOf(q) >= 0);
+    });
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Workflows (' + workflows.length + ')'));
+    var wt = tqTable(['Workflow', 'Repo', 'Kind', 'Schedule', 'Environments', 'Pass rate 7d', 'Latest result', 'Flags']);
+    workflows.forEach(function (w) {
+        var row = document.createElement('tr');
+        tqCell(row, w.file);
+        tqCell(row, tqRepoShort(w.repo));
+        tqCell(row, w.kind);
+        tqCell(row, (w.schedules || []).map(function (x) { return x.human; }).join(', ') || (w.manual_trigger ? 'on demand / on events' : 'on events'));
+        tqCell(row, tqEnvPills(w.environments));
+        var h = health[tqRepoShort(w.repo) + '|' + w.file];
+        tqCell(row, h ? tqPct(h.pass_rate_7d) : '—');
+        tqCell(row, h && h.last_run ? (h.last_run.html_url ? tqLink(h.last_run.html_url, (h.last_run.conclusion || '') + ' · ' + formatRelativeTime(h.last_run.run_created_at)) : h.last_run.conclusion) : 'no run recorded');
+        var flags = tqEl('span', 'tq-pill-row');
+        (w.flags || []).forEach(function (fl) { flags.appendChild(tqPill(fl.replace(/_/g, ' '), 'bad')); });
+        tqCell(row, (w.flags || []).length ? flags : '—');
+        wt.tbody.appendChild(row);
+    });
+    container.appendChild(wt.wrap);
+    container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + '. Sources: ' + Object.keys(c.data.sources || {}).map(function (k) {
+        var src = c.data.sources[k]; return tqRepoShort(src.repo || k) + (src.missing ? ' (missing)' : ' @' + String(src.sha || '').slice(0, 7));
+    }).join(', ') + '.'));
     return container;
 }
 
-function renderTestingValidatorView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance gates every pull request passes before merge.</p>';
-    container.appendChild(renderTestingRebuildNotice());
+var tqSearchTimer = null;
 
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>What runs today</h3><ul>' +
-        '<li><code>VALIDATOR-CHECK.yml</code>: VTID, validation profile, path ownership, evidence pack, acceptance mapping, CSP, build, route mount, OASIS traceability</li>' +
-        '<li><code>STAGING-TESTS-REQUIRED.yml</code>: a deploying PR carries its staging test suite</li>' +
-        '<li><code>COMMAND-HUB-GUARDRAILS.yml</code>, <code>MIGRATION-DRIFT-CHECK.yml</code>, <code>CALENDAR-REGRESSION.yml</code>, i18n gates</li></ul>' +
-        '<p>These run on pull requests in GitHub and are not started from here.</p>';
-    container.appendChild(info);
-
-    // Runs history
-    fetchTestingRuns('validator', 'testingValidator');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1.5rem';
-    container.appendChild(runsTitle);
-
-    if (state.testingValidator.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingValidator.error) {
-        var e2 = document.createElement('div'); e2.className = 'placeholder-content error-text'; e2.textContent = 'Error: ' + state.testingValidator.error; container.appendChild(e2);
-    } else {
-        container.appendChild(renderTestRunsTable(state.testingValidator.runs));
+function renderTestingSuiteFilesRow(suite, colspan) {
+    var tr = tqEl('tr', 'tq-detail-row');
+    var td = tqEl('td');
+    td.colSpan = colspan;
+    var slot = state.testingQa.suiteFiles[suite.id];
+    if (!slot) {
+        slot = state.testingQa.suiteFiles[suite.id] = { loading: true, data: null, error: null };
+        tqFetchJson('/api/v1/testing/catalog/suite?id=' + encodeURIComponent(suite.id)).then(function (b) {
+            slot.data = b; slot.loading = false; renderApp();
+        }).catch(function (e) { slot.error = e.message; slot.loading = false; renderApp(); });
     }
+    if (slot.loading) td.appendChild(tqEl('div', 'tq-muted', 'Loading files…'));
+    else if (slot.error) td.appendChild(tqEl('div', 'error-text', slot.error));
+    else {
+        var ul = tqEl('ul', 'tq-file-list');
+        (slot.data.files || []).forEach(function (file) {
+            ul.appendChild(tqEl('li', null, file.path + ' — ' + file.cases + ' cases' + (file.domain ? ' · ' + file.domain : '')));
+        });
+        td.appendChild(ul);
+    }
+    tr.appendChild(td);
+    return tr;
+}
+
+// ─── Runs ─────────────────────────────────────────────────────────────────
+
+function tqRunsUrl() {
+    var f = state.testingQa.runsFilters;
+    var params = ['limit=100'];
+    if (f.environment) params.push('environment=' + encodeURIComponent(f.environment));
+    if (f.conclusion) params.push('conclusion=' + encodeURIComponent(f.conclusion));
+    if (f.repo) params.push('repo=' + encodeURIComponent(f.repo));
+    return '/api/v1/testing/results/runs?' + params.join('&');
+}
+
+function renderTestingRunsView() {
+    tqLoad('runs', tqRunsUrl());
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test runs', 'Every CI run of a test, gate, monitor or end-to-end workflow in both repositories, newest first.'));
+
+    var f = state.testingQa.runsFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    function select(label, key, options) {
+        var sel = document.createElement('select');
+        sel.className = 'tq-select';
+        sel.setAttribute('aria-label', label);
+        options.forEach(function (o) {
+            var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+            if (f[key] === o[0]) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = function () { f[key] = sel.value; tqReload('runs'); renderApp(); };
+        bar.appendChild(sel);
+    }
+    select('Environment', 'environment', [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })));
+    select('Result', 'conclusion', [['', 'All results'], ['failure', 'Failed'], ['success', 'Passed'], ['cancelled', 'Cancelled'], ['timed_out', 'Timed out']]);
+    select('Repository', 'repo', [['', 'Both repositories'], ['exafyltd/vitana-platform', 'vitana-platform'], ['exafyltd/vitana-v1', 'vitana-v1']]);
+    var runBtn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', 'Run gateway tests now');
+    runBtn.title = 'Dispatches TEST-SUITE.yml on main';
+    runBtn.onclick = function () { triggerTestRun('unit', ['gateway-jest'], runBtn); };
+    bar.appendChild(runBtn);
+    container.appendChild(bar);
+
+    var r = state.testingQa.runs;
+    var status = tqStatusBlock(r, 'runs');
+    if (status) { container.appendChild(status); return container; }
+    var runs = r.data.runs || [];
+    if (r.data.sync_error) container.appendChild(tqEl('div', 'placeholder-content error-text', 'Sync from GitHub failed: ' + r.data.sync_error + '. Showing stored runs.'));
+    if (runs.length === 0) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No runs match these filters yet.'));
+        return container;
+    }
+    var t = tqTable(['When', 'Result', 'Workflow', 'Repo', 'Environments', 'Trigger', 'Commit', 'Duration', 'Failed jobs']);
+    runs.forEach(function (run) {
+        var row = document.createElement('tr');
+        tqCell(row, formatRelativeTime(run.run_created_at));
+        tqCell(row, tqPill(run.conclusion || 'unknown', tqConclusionKind(run.conclusion)));
+        tqCell(row, run.html_url ? tqLink(run.html_url, run.workflow_name || run.workflow_file) : (run.workflow_name || run.workflow_file));
+        tqCell(row, tqRepoShort(run.repo));
+        tqCell(row, tqEnvPills(run.environments));
+        tqCell(row, (run.event || '') + (run.branch ? ' · ' + run.branch : ''));
+        tqCell(row, String(run.head_sha || '').slice(0, 7), 'tq-mono');
+        tqCell(row, run.duration_s !== null && run.duration_s !== undefined ? (run.duration_s >= 60 ? Math.round(run.duration_s / 60) + ' min' : run.duration_s + ' s') : '—');
+        var failed = (run.jobs || []).filter(function (j) { return j.conclusion === 'failure' || j.conclusion === 'timed_out'; });
+        tqCell(row, failed.length ? failed.map(function (j) { return j.name; }).join(', ') : '—');
+        t.tbody.appendChild(row);
+    });
+    container.appendChild(t.wrap);
     return container;
 }
 
@@ -38240,30 +38602,6 @@ function renderLivekitTestView() {
     // queries above (which the closure uses) are fully attached.
     setTimeout(_kickPrewarm, 0);
 
-    return container;
-}
-
-function renderTestingCiReportsView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    var title = document.createElement('h2');
-    title.textContent = 'CI Reports';
-    container.appendChild(title);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Test and gate runs in GitHub Actions.';
-    container.appendChild(subtitle);
-    container.appendChild(renderTestingRebuildNotice());
-
-    // VTID-04635: this tab used to read /api/v1/cicd/health, a capability
-    // health object, and render it as a one-row "build" table. There is no
-    // build feed yet; say where the reports are instead.
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Where the reports are today</h3><ul>' +
-        '<li><a href="https://github.com/exafyltd/vitana-platform/actions" target="_blank" rel="noopener">vitana-platform Actions</a>: TEST-SUITE, VALIDATOR-CHECK, STAGING-VERIFY, E2E-TEST-RUN, monitors</li>' +
-        '<li><a href="https://github.com/exafyltd/vitana-v1/actions" target="_blank" rel="noopener">vitana-v1 Actions</a>: UNIT-TESTS, CALENDAR-REGRESSION, i18n checks</li></ul>';
-    container.appendChild(info);
     return container;
 }
 

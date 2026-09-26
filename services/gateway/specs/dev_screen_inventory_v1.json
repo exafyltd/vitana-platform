@@ -144,11 +144,10 @@
       "playground"
     ],
     "testing-qa": [
-      "unit-tests",
-      "integration-tests",
-      "validator-tests",
-      "e2e",
-      "ci-reports"
+      "overview",
+      "catalog",
+      "runs",
+      "e2e"
     ],
     "intelligence-memory-dev": [
       "memory-vault",
@@ -166,6 +165,6 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 89
+    "total_screens": 88
   }
 }

@@ -2839,8 +2839,13 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: { en: { title: 'Model Evaluations', description: 'LLM evaluation results and benchmarks.', when_to_visit: 'When asking about model evaluations, benchmarks, model quality, or eval results.' } } },
 
   // ── Testing & QA ──
-  { screen_id: 'DEVHUB.TESTING.CI_REPORTS', route: '/command-hub/testing-qa/ci-reports/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
-    i18n: { en: { title: 'CI Reports', description: 'CI/CD pipeline reports and build status.', when_to_visit: 'When asking about CI, build status, pipeline, CI reports, test results, or build failures.' } } },
+  // VTID-04642: Testing & QA rebuilt into Overview / Catalog / Runs / E2E. CI_REPORTS keeps its id and now opens Runs.
+  { screen_id: 'DEVHUB.TESTING.OVERVIEW', route: '/command-hub/testing-qa/overview/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Testing Overview', description: 'Test health per environment, failing and flaky workflows, staging verification and coverage gaps.', when_to_visit: 'When asking about test health, testing overview, what tests are failing, flaky tests, staging verification, or test coverage.' } } },
+  { screen_id: 'DEVHUB.TESTING.CATALOG', route: '/command-hub/testing-qa/catalog/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Test Catalog', description: 'Every test suite and workflow, where and how often it runs, and suites nothing runs.', when_to_visit: 'When asking about the test catalog, which tests exist, unit tests, integration tests, missing tests, or how often tests run.' } } },
+  { screen_id: 'DEVHUB.TESTING.CI_REPORTS', route: '/command-hub/testing-qa/runs/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
+    i18n: { en: { title: 'Test Runs', description: 'Every CI run of test, gate, monitor and end-to-end workflows in both repositories.', when_to_visit: 'When asking about CI, build status, pipeline, CI reports, test runs, test results, or build failures.' } } },
   { screen_id: 'DEVHUB.TESTING.E2E', route: '/command-hub/testing-qa/e2e/', category: 'developer', access: 'authenticated', anonymous_safe: false, allowed_roles: ['developer', 'DEV'],
     i18n: { en: { title: 'E2E Tests', description: 'End-to-end test results and playwright tests.', when_to_visit: 'When asking about E2E tests, end-to-end tests, playwright, or integration testing.' } } },
 

@@ -3,8 +3,8 @@
  *
  * P0 of the Testing & QA rebuild removed a hand-typed coverage table, the dead
  * GCP Cloud Run host, three run buttons the backend always refused and a fake
- * CI Reports row, and put a "being rebuilt" notice on every tab. This pins it
- * in source. (The served bytes are not a usable check: the function sits past
+ * CI Reports row, and put a "being rebuilt" notice on every tab until the new
+ * screens landed (VTID-04642). This pins what must stay gone. (The served bytes are not a usable check: the function sits past
  * the first megabyte of a 2.5 MB file, and Cloudflare caches the unversioned
  * /command-hub/app.js path.)
  */
@@ -14,9 +14,10 @@ import { join } from 'path';
 const APP = readFileSync(join(__dirname, '../../src/frontend/command-hub/app.js'), 'utf8');
 
 describe('VTID-04635 Testing & QA tabs', () => {
-  it('renders the rebuild notice on the Testing & QA tabs', () => {
-    expect(APP).toMatch(/function renderTestingRebuildNotice\(/);
-    expect((APP.match(/appendChild\(renderTestingRebuildNotice\(\)\)/g) || []).length).toBeGreaterThanOrEqual(3);
+  it('replaced the stale tabs with the rebuilt screens (the P0 notice was temporary; VTID-04642 removed it)', () => {
+    expect(APP).toMatch(/function renderTestingOverviewView\(/);
+    expect(APP).not.toMatch(/function renderTestingUnitView\(/);
+    expect(APP).not.toMatch(/function renderTestingCiReportsView\(/);
   });
 
   it('no longer carries the hand-typed coverage table or the Cloud Run URL state', () => {
