@@ -663,13 +663,13 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
     // item of the gap analysis' §4.4 access list. FilterLogEvents only.
     {
       name: 'dev_cloudwatch_logs',
-      description: `Read recent CloudWatch log events from one documented Vitana ECS service's log group (/ecs/vitana-<service>, e.g. /ecs/vitana-gateway for staging, /ecs/vitana-gateway-awsdr for prod, /ecs/vitana-autopilot-executor for the executor task). Read-only — FilterLogEvents only, never writes, never touches any other group. Bounded: window default ${LOGS_DEFAULT_MINUTES} min (max ${LOGS_MAX_MINUTES}), events default ${LOGS_DEFAULT_LIMIT} (max ${LOGS_MAX_LIMIT}), messages clipped. Use filter_pattern (CloudWatch filter syntax, e.g. "ERROR", "[VTID-04007]", "execution 4f5d7ea4") to narrow. Developer/admin role only.`,
+      description: `Read recent CloudWatch log events from one documented Vitana ECS service's log group (/vitana/<service>, e.g. /vitana/gateway for staging, /vitana/gateway-awsdr for prod, /vitana/autopilot-executor for the executor task; a bare service name such as gateway also works). Read-only — FilterLogEvents only, never writes, never touches any other group. Bounded: window default ${LOGS_DEFAULT_MINUTES} min (max ${LOGS_MAX_MINUTES}), events default ${LOGS_DEFAULT_LIMIT} (max ${LOGS_MAX_LIMIT}), messages clipped. Use filter_pattern (CloudWatch filter syntax, e.g. "ERROR", "[VTID-04007]", "execution 4f5d7ea4") to narrow. Developer/admin role only.`,
       parameters: {
         type: 'object',
         properties: {
           log_group: {
             type: 'string',
-            description: 'The log group, exactly /ecs/vitana-<service-name>. The ECS service names are the ones dev_aws_ecs_status accepts.'
+            description: 'The log group, /vitana/<service> (e.g. /vitana/gateway). A bare service name (gateway, gateway-awsdr, autopilot-executor) is mapped to its group.'
           },
           filter_pattern: {
             type: 'string',
@@ -2880,7 +2880,7 @@ async function executeDevAwsEcsStatus(
 
 /**
  * VTID-04020: dev_cloudwatch_logs — read-only CloudWatch FilterLogEvents
- * over one /ecs/vitana-<service> log group. Same kill switch as the ECS
+ * over one /vitana/<service> log group (VTID-04672). Same kill switch as the ECS
  * status tool; the log-group shape is enforced before any AWS call
  * (aws-cloudwatch-logs-readonly.ts); an IAM denial comes back verbatim.
  */
@@ -2892,7 +2892,7 @@ async function executeDevCloudwatchLogs(
     return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
   }
   if (!args.log_group || !String(args.log_group).trim()) {
-    return { ok: false, error: 'log_group is required (e.g. /ecs/vitana-gateway)' };
+    return { ok: false, error: 'log_group is required (e.g. /vitana/gateway)' };
   }
   try {
     const result = await filterVitanaLogs({
