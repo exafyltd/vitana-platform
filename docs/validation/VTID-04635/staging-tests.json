@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04635",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "run dispatch refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/run", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "cycle run refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/cycles/00000000-0000-0000-0000-000000000000/run", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "cycle creation refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/cycles", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "ORB monitor trigger refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/orb-monitor/trigger", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "suite list still answers", "path": "/api/v1/testing/suites",
+      "expect_status": 200, "expect_json": { "ok": true } },
+    { "kind": "http", "name": "served app.js carries the corrected Testing & QA tabs", "target": "gateway",
+      "path": "/command-hub/app.js", "expect_status": 200, "expect_content_type": "application/javascript",
+      "expect_body_contains": "renderTestingRebuildNotice" },
+    { "kind": "existing", "ref": "npx jest test/routes/testing.test.ts", "cwd": "services/gateway",
+      "reason": "pins the admin gate on every run route and the staging-only E2E target" }
+  ]
+}

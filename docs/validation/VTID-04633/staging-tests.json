@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04633",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04633-github-api-error-message.test.ts", "cwd": "services/gateway",
+      "reason": "the error path needs a failing GitHub call, which a read-only staging suite cannot make; the unit suite pins it" }
+  ]
+}

@@ -34,14 +34,17 @@ import * as fs from 'fs';
 import { REDIRECT_CASES, RedirectCase } from './redirect-cases';
 
 const NAV_TOOLS = ['navigate', 'navigate_to_screen', 'get_current_screen'];
-const ROUTE = '/home';
+const DEFAULT_ROUTE = '/home';
+const routeOf = (c: RedirectCase) => c.from ?? DEFAULT_ROUTE;
+/** The member's short confirmation, for the turn after an offer. */
+const YES: Record<string, string> = { en: 'Yes please.', de: 'Ja bitte.', es: 'Sí, por favor.', fr: 'Oui, s\'il te plaît.', pt: 'Sim, por favor.', pl: 'Tak, poproszę.', ru: 'Да, пожалуйста.', tr: 'Evet lütfen.', ar: 'نعم من فضلك.', zh: '好的，请打开。' };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface ToolStep { name: string; args: unknown; directive: string | null; decision: string | null; first_candidate: string | null; ok: boolean }
 interface VoiceResult {
   id: string; lang: string; say: string; expect: string[];
   path: 'nova' | 'cascade' | 'not_covered';
-  outcome: 'open' | 'wrong' | 'no_open' | 'not_covered' | 'error';
+  outcome: 'open' | 'offered' | 'wrong' | 'no_open' | 'not_covered' | 'error';
   opened: string | null; heard: string | null; said: string; steps: ToolStep[]; ms: number; note?: string;
 }
 
@@ -123,7 +126,7 @@ async function runTool(
   // Same args orb-live's handleNavigate adds: the member's transcript.
   const res: any = await dispatchOrbTool(
     name,
-    { ...args, current_route: ROUTE, is_mobile: c.viewport === 'mobile', transcript_excerpt: memberWords },
+    { ...args, current_route: routeOf(c), is_mobile: c.viewport === 'mobile', transcript_excerpt: memberWords },
     identityFor(c) as any,
     null as any,
   );
@@ -132,7 +135,7 @@ async function runTool(
     name, args, ok: res?.ok !== false,
     directive: d?.screen_id ?? null,
     decision: res?.result?.decision ?? (res?.ok === false ? `error: ${res.error}` : null),
-    first_candidate: res?.result?.candidates?.[0]?.screen_id ?? null,
+    first_candidate: res?.result?.offer?.screen_id ?? res?.result?.candidates?.[0]?.screen_id ?? null,
   });
   const text = typeof res?.text === 'string' && res.text ? res.text : JSON.stringify(res?.result ?? res);
   return { ok: res?.ok !== false, text: res?.ok === false ? String(res.error) : text };
@@ -141,15 +144,20 @@ async function runTool(
 function grade(c: RedirectCase, steps: ToolStep[]): Pick<VoiceResult, 'outcome' | 'opened'> {
   // The first directive is the screen that opens (later ones are refused).
   const first = steps.find((s) => s.directive)?.directive ?? null;
-  if (!first) return { outcome: 'no_open', opened: null };
+  if (!first) {
+    // A "where" question is answered with an offer, not a navigation.
+    const offered = steps.find((s) => s.decision === 'offer')?.first_candidate ?? null;
+    if ((c.intent ?? 'open') === 'where' && offered && c.expect.includes(offered)) return { outcome: 'offered', opened: offered };
+    return { outcome: 'no_open', opened: null };
+  }
   return { outcome: c.expect.includes(first) ? 'open' : 'wrong', opened: first };
 }
 
-async function systemPrompt(lang: string): Promise<string> {
+async function systemPrompt(lang: string, route: string): Promise<string> {
   const { buildLiveSystemInstruction } = await import('../../src/orb/live/instruction/live-system-instruction');
   const { decomposeInstructionSections, enforceInstructionBudget } = await import('../../src/orb/live/instruction/instruction-budget');
   const { buildPersonaBehavioralRule } = await import('../../src/routes/orb-live');
-  const raw = buildLiveSystemInstruction(lang, 'friendly, calm, empathetic', buildPersonaBehavioralRule('vitana'), 'community', undefined, undefined, false, null, ROUTE, [], undefined, null, false, undefined, true);
+  const raw = buildLiveSystemInstruction(lang, 'friendly, calm, empathetic', buildPersonaBehavioralRule('vitana'), 'community', undefined, undefined, false, null, route, [], undefined, null, false, undefined, true);
   const capped: any = enforceInstructionBudget(decomposeInstructionSections(raw));
   return capped.text ?? capped.finalText ?? raw;
 }
@@ -172,30 +180,42 @@ async function runVoice(c: RedirectCase): Promise<VoiceResult> {
 async function runCascade(c: RedirectCase): Promise<VoiceResult> {
   const started = Date.now();
   const base = { id: c.id, lang: c.lang, say: c.say, expect: c.expect };
-  const { extractCascadeTools, runCascadeModelTurn } = await import('../../src/orb/live/upstream/cascaded-live-client');
+  const { extractCascadeTools, runCascadeModelTurn, CASCADE_TOOL_CONTINUE_PROMPT } = await import('../../src/orb/live/upstream/cascaded-live-client');
   const { buildLiveApiTools } = await import('../../src/orb/live/tools/live-tool-catalog');
   const steps: ToolStep[] = [];
-  const { completion } = await runCascadeModelTurn({
-    userText: c.say,
-    systemPrompt: await systemPrompt(c.lang),
-    priorHistory: [],
-    tools: extractCascadeTools(buildLiveApiTools('authenticated', ROUTE, 'community') as any),
-    service: 'redirect-suite-cascade',
+  const sys = await systemPrompt(c.lang, routeOf(c));
+  const tools = extractCascadeTools(buildLiveApiTools('authenticated', routeOf(c), 'community') as any);
+  const turn = async (userText: string, priorHistory: any[]) => runCascadeModelTurn({
+    userText, systemPrompt: sys, priorHistory, tools, service: 'redirect-suite-cascade',
     runToolCalls: async (calls) => {
       const withIds = calls.map((t, i) => ({ ...t, arguments: t.arguments || {}, id: t.id || `redirect-${steps.length}-${i}` }));
       const results = [];
       for (const t of withIds) {
-        const r = await runTool(c, t.name, t.arguments as Record<string, unknown>, steps, c.say);
+        const r = await runTool(c, t.name, t.arguments as Record<string, unknown>, steps, userText);
         results.push({ id: t.id, name: t.name, result: r.text, isError: !r.ok });
       }
       return { withIds, results };
     },
   });
-  if (!completion.ok) throw new Error(`cascade model call failed: ${completion.error}`);
-  return {
-    ...base, path: 'cascade', ...grade(c, steps), heard: c.say, said: String(completion.text ?? '').trim(), steps,
-    ms: Date.now() - started, note: `text turn on ${completion.provider}/${completion.model}; speech-to-text not exercised`,
-  };
+  const first = await turn(c.say, []);
+  if (!first.completion.ok) throw new Error(`cascade model call failed: ${first.completion.error}`);
+  let said = String(first.completion.text ?? '').trim();
+  let heard = c.say;
+  let note = `text turn on ${first.completion.provider}/${first.completion.model}; speech-to-text not exercised`;
+  // Nothing opened: the member says "yes please", the way they would after an offer.
+  if (!steps.some((s) => s.directive)) {
+    const history = first.toolRound.length > 0
+      ? [{ role: 'user', content: c.say }, ...first.toolRound, { role: 'user', content: CASCADE_TOOL_CONTINUE_PROMPT }, { role: 'assistant', content: said }]
+      : [{ role: 'user', content: c.say }, { role: 'assistant', content: said }];
+    const yes = YES[c.lang] ?? YES.en;
+    const second = await turn(yes, history);
+    if (second.completion.ok) {
+      said += ` || ${String(second.completion.text ?? '').trim()}`;
+      heard += ` || ${yes}`;
+      note += '; follow-up "yes" turn';
+    }
+  }
+  return { ...base, path: 'cascade', ...grade(c, steps), heard, said, steps, ms: Date.now() - started, note };
 }
 
 async function runNova(c: RedirectCase): Promise<VoiceResult> {
@@ -209,9 +229,9 @@ async function runNova(c: RedirectCase): Promise<VoiceResult> {
   const { synthesizePolly } = await import('../../src/services/tts/polly');
 
   const cfg = getNovaSonicConfig(process.env);
-  const instr = sanitizeInstructionForNova(await systemPrompt(c.lang)).text;
+  const instr = sanitizeInstructionForNova(await systemPrompt(c.lang, routeOf(c))).text;
   const { budgetBytes } = resolveToolCatalogByteBudgetFor('nova_sonic');
-  const tools = enforceToolCatalogBudget(buildLiveApiTools('authenticated', ROUTE, 'community') as any[], budgetBytes).tools as any[];
+  const tools = enforceToolCatalogBudget(buildLiveApiTools('authenticated', routeOf(c), 'community') as any[], budgetBytes).tools as any[];
   const voice = c.lang === 'de' ? 'tina' : 'amy';
   const client = new NovaSonicLiveClient({ config: cfg, voiceId: voice } as any);
   const steps: ToolStep[] = [];
@@ -242,34 +262,43 @@ async function runNova(c: RedirectCase): Promise<VoiceResult> {
   } as any);
   const silence = Buffer.alloc(3200).toString('base64');
   for (let i = 0; i < 5; i++) { client.sendAudioChunk(silence); await sleep(100); }
-  const speech = await synthesizePolly({ text: c.say, lang: c.lang, format: 'pcm' });
-  if (!speech || speech.sampleRateHz !== 16000) throw new Error('Polly did not return 16 kHz PCM');
-  const audio = Buffer.from(speech.audioB64, 'base64');
   // The widget streams continuously: speech, then silence until Vitana has
   // answered and any tool round has finished (a hand-off takes two).
-  let finished = false;
-  const deadline = Date.now() + 30_000;
-  const waitTurn = () => new Promise<void>((r) => { turnDone = () => { turnDone = null; r(); }; });
-  let turn = waitTurn().then(() => { finished = true; });
-  for (let o = 0; o < audio.length; o += 3200) { client.sendAudioChunk(audio.subarray(o, o + 3200).toString('base64')); await sleep(100); }
-  while (Date.now() < deadline) {
-    client.sendAudioChunk(silence);
-    await sleep(100);
-    if (finished && toolsInFlight === 0) {
-      // A tool call ends Nova's turn early; the answer to the tool result is
-      // a further turn. Give it a moment to start before calling it done.
-      const before = said.length + steps.length;
-      await sleep(2500);
-      if (said.length + steps.length === before && toolsInFlight === 0) break;
-      finished = false;
-      turn = waitTurn().then(() => { finished = true; });
+  const speak = async (text: string) => {
+    const speech = await synthesizePolly({ text, lang: c.lang, format: 'pcm' });
+    if (!speech || speech.sampleRateHz !== 16000) throw new Error('Polly did not return 16 kHz PCM');
+    const audio = Buffer.from(speech.audioB64, 'base64');
+    let finished = false;
+    const deadline = Date.now() + 30_000;
+    const waitTurn = () => new Promise<void>((r) => { turnDone = () => { turnDone = null; r(); }; });
+    waitTurn().then(() => { finished = true; });
+    for (let o = 0; o < audio.length; o += 3200) { client.sendAudioChunk(audio.subarray(o, o + 3200).toString('base64')); await sleep(100); }
+    while (Date.now() < deadline) {
+      client.sendAudioChunk(silence);
+      await sleep(100);
+      if (finished && toolsInFlight === 0) {
+        // A tool call ends Nova's turn early; the answer to the tool result is
+        // a further turn. Give it a moment to start before calling it done.
+        const before = said.length + steps.length;
+        await sleep(2500);
+        if (said.length + steps.length === before && toolsInFlight === 0) break;
+        finished = false;
+        waitTurn().then(() => { finished = true; });
+      }
     }
+  };
+  await speak(c.say);
+  let followUp = false;
+  // Nothing opened: the member says "yes please", the way they would after an offer.
+  if (!steps.some((s) => s.directive) && !upstreamError) {
+    followUp = true;
+    said += ' || ';
+    await speak(YES[c.lang] ?? YES.en);
   }
-  void turn;
   await client.close('redirect_suite_done').catch(() => {});
   return {
     ...base, path: 'nova', ...grade(c, steps), heard: heard.trim() || null, said: said.trim(), steps, ms: Date.now() - started,
-    note: upstreamError ? `upstream: ${upstreamError}` : undefined,
+    note: [followUp ? 'follow-up "yes" turn' : '', upstreamError ? `upstream: ${upstreamError}` : ''].filter(Boolean).join('; ') || undefined,
   };
 }
 

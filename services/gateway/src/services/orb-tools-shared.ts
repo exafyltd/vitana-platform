@@ -3307,7 +3307,9 @@ export async function tool_navigate_to_screen(
         // the model said it wanted instead of fuzzy-matching the id string.
         const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
         const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-        const r = await nav.navigateByRequest(query, 'open', navCtx);
+        // VTID-04629: the member's own words first, as navigate does.
+        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
         if (r) return r;
       }
     }

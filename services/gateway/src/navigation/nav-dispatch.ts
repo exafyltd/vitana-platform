@@ -99,8 +99,25 @@ export function findRegistryScreen(idOrAlias: string): NavScreen | null {
     screens.find((s) => s.id === key || s.id === upper) ||
     screens.find((s) => (s.formerIds || []).some((f) => f === key || f === upper)) ||
     screens.find((s) => (s.aliases || []).some((a) => a.toLowerCase() === lower)) ||
+    findByInventedIdTail(screens, key) ||
     null
   );
+}
+
+/**
+ * VTID-04629 — the voice model sometimes invents an id in the registry's
+ * shape ("COMM.NEWSFEED", "SOCIAL.CREATE_POST"). Its last segment is often
+ * exactly an alias ("newsfeed", "create-post"); match that before treating
+ * the id as unknown. Only whole-alias matches, so "SETTINGS.OVERVIEW"-style
+ * tails never land on an unrelated screen.
+ */
+function findByInventedIdTail(screens: NavScreen[], key: string): NavScreen | null {
+  const parts = key.split('.');
+  if (parts.length < 2) return null;
+  const tail = parts[parts.length - 1].toLowerCase();
+  if (tail.length < 4) return null;
+  const variants = new Set([tail, tail.replace(/_/g, '-'), tail.replace(/_/g, '')]);
+  return screens.find((s) => (s.aliases || []).some((a) => variants.has(a.toLowerCase()))) || null;
 }
 
 /**

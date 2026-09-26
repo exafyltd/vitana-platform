@@ -61,12 +61,22 @@ describe('VTID-04614 — Autopilot Live failure-reason meta display', () => {
     expect(appJs).toContain("main.textContent = r.count + '\\u00D7  ' + r.reason");
   });
 
-  it('index.html styles.css link has bumped ?v=20261013-vtid-04614', () => {
-    expect(indexHtml).toContain('styles.css?v=20261013-vtid-04614');
+  it('index.html styles.css link has been bumped at or after 20261013-vtid-04614', () => {
+    const m = indexHtml.match(/styles\.css\?v=(\d{8})-vtid-(\d{5})/);
+    expect(m).not.toBeNull();
+    const [, date, vtid] = m as RegExpMatchArray;
+    expect(date >= '20261013').toBe(true);
+    expect(Number(vtid)).toBeGreaterThanOrEqual(4614);
   });
 
-  it('index.html app.js script has bumped ?v=20261013-vtid-04614', () => {
-    expect(indexHtml).toContain('app.js?v=20261013-vtid-04614');
+  it('index.html app.js script has been bumped at or after 20261013-vtid-04614', () => {
+    // VTID-04635: later app.js changes bump the version again; pin "at or
+    // after" rather than the exact string so this suite does not block them.
+    const m = indexHtml.match(/app\.js\?v=(\d{8})-vtid-(\d{5})/);
+    expect(m).not.toBeNull();
+    const [, date, vtid] = m as RegExpMatchArray;
+    expect(date >= '20261013').toBe(true);
+    expect(Number(vtid)).toBeGreaterThanOrEqual(4614);
   });
 
   it('index.html does not still carry the old vtid-04560 version on styles.css or app.js', () => {
