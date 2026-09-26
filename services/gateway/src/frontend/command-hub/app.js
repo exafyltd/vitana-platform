@@ -6539,7 +6539,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' no access' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6570,7 +6570,7 @@ function renderHeader() {
         hmHeader.innerHTML =
             '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
             (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
-            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' no access</span>' : '') +
+            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' not checked</span>' : '') +
             '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
@@ -27513,7 +27513,8 @@ let cicdHealthPollInterval = null;
 // counted in "54/55" but never shown.
 var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
     'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
-    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity'];
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity',
+    'Deploy & Release', 'AWS Runtime', 'Dev Autopilot', 'Voice & Media', 'Data & Scheduling', 'Business & Support'];
 
 /**
  * VTID-04661: every group present in `items`, the known ones first in
@@ -27581,7 +27582,7 @@ function serviceHealthCounts(items) {
     var healthy = 0, noAccess = 0;
     for (var i = 0; i < items.length; i++) {
         if (items[i].healthy) healthy++;
-        else if (items[i].status === 'no_access') noAccess++;
+        else if (items[i].status === 'no_access' || items[i].status === 'not_configured') noAccess++;
     }
     return { total: items.length, healthy: healthy, noAccess: noAccess, failing: items.length - healthy - noAccess };
 }
@@ -27589,7 +27590,8 @@ function serviceHealthCounts(items) {
 /** VTID-04661: dot colour for one check. */
 function serviceHealthDot(svc) {
     if (svc.healthy) return 'green';
-    if (svc.status === 'no_access') return 'grey';
+    // VTID-04664: not_configured = deliberately off on this stack — grey, not red.
+    if (svc.status === 'no_access' || svc.status === 'not_configured') return 'grey';
     if (svc.status === 'degraded' || svc.status === 'warning') return 'yellow';
     return 'red';
 }
@@ -27694,7 +27696,45 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
     { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
     { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
-    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' }
+    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-04664: systems that had no check.
+    { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
+    { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
+    { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
+    { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release' },
+    { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
+    { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
+    { name: 'ECS Community App Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Community App Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Operator', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Projector', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector', group: 'AWS Runtime' },
+    { name: 'ECS Worker Runner', url: '/api/v1/ops/runtime/aws/ecs/vitana-worker-runner', group: 'AWS Runtime' },
+    { name: 'ECS Verification Engine', url: '/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine', group: 'AWS Runtime' },
+    { name: 'ECS ORB Agent', url: '/api/v1/ops/runtime/aws/ecs/vitana-orb-agent', group: 'AWS Runtime' },
+    { name: 'Autopilot Kill Switch', url: '/api/v1/ops/runtime/autopilot/kill-switch', group: 'Dev Autopilot' },
+    { name: 'Autopilot Stuck Runs', url: '/api/v1/ops/runtime/autopilot/stuck-runs', group: 'Dev Autopilot' },
+    { name: 'Autopilot Approval Backlog', url: '/api/v1/ops/runtime/autopilot/approval-backlog', group: 'Dev Autopilot' },
+    { name: 'Autopilot Success Rate', url: '/api/v1/ops/runtime/autopilot/success-rate', group: 'Dev Autopilot' },
+    { name: 'Autopilot Scan Freshness', url: '/api/v1/ops/runtime/autopilot/scan-freshness', group: 'Dev Autopilot' },
+    { name: 'Autopilot Dispatch', url: '/api/v1/ops/runtime/autopilot/dispatch-failures', group: 'Dev Autopilot' },
+    { name: 'Polly TTS', url: '/api/v1/ops/runtime/voice/polly', group: 'Voice & Media' },
+    { name: 'Fish TTS', url: '/api/v1/ops/runtime/voice/fish', group: 'Voice & Media' },
+    { name: 'Serbian Voice Bridge', url: '/api/v1/ops/runtime/voice/serbian-bridge', group: 'Voice & Media' },
+    { name: 'Voice Session Errors', url: '/api/v1/ops/runtime/voice/session-errors', group: 'Voice & Media' },
+    { name: 'Bedrock', url: '/api/v1/ops/runtime/ai/bedrock', group: 'Voice & Media' },
+    { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
+    { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
+    { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
+    { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling' },
+    { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
+    { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
+    { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },
+    { name: 'Support Tickets', url: '/api/v1/ops/runtime/support/stuck-tickets', group: 'Business & Support' },
+    { name: 'ERP Bridge', url: '/api/v1/ops/runtime/business/erp-bridge', group: 'Business & Support' },
+    { name: 'Jev Decisions', url: '/api/v1/ops/runtime/business/jev', group: 'Business & Support' }
 ];
 
 /**
@@ -27811,7 +27851,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' no access' : '') + ' (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**
@@ -29857,7 +29897,7 @@ function renderOverviewSystemView() {
                     svcList.className = 'overview-health-chip-row';
                     svcs.forEach(function (s) {
                         // VTID-04661: a check the probe could not look at is grey, not red.
-                        var dotClass = (s.status === 'no_access') ? 'grey'
+                        var dotClass = (s.status === 'no_access' || s.status === 'not_configured') ? 'grey'
                             : (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                             : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                             : 'red';
