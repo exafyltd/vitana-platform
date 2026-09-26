@@ -30,5 +30,6 @@ AC-3: Only the admin payload changes; every member scenario is byte-identical.
 TEST: services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.test.ts
 
 AC-4 (staging, after deploy): admin-surface sessions open from the insights with no apology on repeated runs.
+CURL: POST https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/session/start {surface:'admin', view_role:'admin'} + SSE greeting transcript (greeting only, then /session/stop)
 
 Mutation check: reverting the source changes fails 4 of the new tests.
