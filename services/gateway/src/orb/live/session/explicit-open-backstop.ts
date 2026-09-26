@@ -24,7 +24,6 @@ import WebSocket from 'ws';
 import { isLegacySurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
 import { recordPendingNavAck, type NavAckSession } from '../../../navigation/nav-ack';
 import { resolveScreenRequest } from '../../../navigation/nav-service';
-import { markNavigationDispatchedThisTurn } from './navigation-turn-scope';
 
 export function isExplicitOpenBackstopEnabled(): boolean {
   return (process.env.ORB_NAV_OPEN_BACKSTOP_ENABLED ?? 'true') !== 'false';
@@ -65,15 +64,42 @@ const NOT_A_REQUEST = new RegExp(
     `${B_START}(?:öffne|öffnen|zeig\\p{L}*|bring)${B_END}[^.?!]{0,30}${B_START}nicht${B_END}`,
     `${B_START}no\\s+(?:abras|me muestres|me lleves|abra)${B_END}`,
     `${B_START}(?:ne|n['’])[^.?!]{0,20}${B_START}pas${B_END}`,
-    words(['nemoj', 'не', 'açma']),
+    // sr / hr "ne otvaraj", pt "não abra", it "non aprire", pl "nie otwieraj",
+    // ru "не открывай", tr "açma", ar "لا تفتح", zh "不要/别/不用 打开"
+    words(['nemoj', 'ne', 'não', 'nao', 'non', 'nie', 'не', 'açma', 'gösterme', 'لا']),
+    '不要|别|別|不用|不必',
   ].join('|'),
   'iu',
 );
 
+/**
+ * The member talking about an action, not asking Vitana for it:
+ * "I tried to open my calendar", "Should I open it?", "Ich kann das selbst
+ * öffnen". A first-person subject before the verb in the same clause, unless
+ * it is a wish ("I want to see …", "ich möchte … öffnen").
+ */
+const FIRST_PERSON = new RegExp(words(['i', "i'm", "i've", "i'd", 'we', 'ich', 'wir', 'yo', 'je', "j'", 'eu', 'io']), 'iu');
+const WISH = new RegExp(
+  `${words(['i', 'we'])}\\s+(?:really\\s+|just\\s+)?${words(['want', 'wanna', 'need', 'would like', "'d like"])}|${words(["i'd like", "i'd love"])}` +
+    `|${words(['ich', 'wir'])}[^,.;?!]{0,20}${words(['möchte', 'möchten', 'will', 'wollen', 'würde gern', 'würde gerne', 'hätte gern', 'hätte gerne', 'brauche'])}`,
+  'iu',
+);
+
+function isCommandAt(t: string, index: number): boolean {
+  const before = t.slice(0, index);
+  const clauseStart = Math.max(before.lastIndexOf('.'), before.lastIndexOf('?'), before.lastIndexOf('!'), before.lastIndexOf(';'), before.lastIndexOf(','));
+  const clause = before.slice(clauseStart + 1);
+  return !FIRST_PERSON.test(clause) || WISH.test(clause);
+}
+
 export function detectExplicitOpenRequest(text: string): boolean {
   const t = (text || '').replace(/\s+/g, ' ').trim();
-  if (t.length < 4) return false;
-  return OPEN_REQUEST.test(t) && !NOT_A_REQUEST.test(t);
+  if (t.length < 4 || NOT_A_REQUEST.test(t)) return false;
+  const all = new RegExp(OPEN_REQUEST.source, 'giu');
+  for (const m of t.matchAll(all)) {
+    if (isCommandAt(t, m.index ?? 0)) return true;
+  }
+  return false;
 }
 
 export interface ExplicitOpenSession extends NavAckSession {
@@ -159,7 +185,10 @@ export function maybeRunExplicitOpenBackstop(
       try { deps.sendWsMessage(session.clientWs, payload); } catch { /* WS closed */ }
     }
     recordPendingNavAck(session, payload);
-    markNavigationDispatchedThisTurn(session);
+    // Attribute it to the turn that just ended: turn_count already moved on
+    // at turn_complete, and marking the new value would make the NEXT turn
+    // look navigated and silence this backstop there.
+    session.navigationDispatchedTurn = (session.turn_count ?? 1) - 1;
     deps.emitDiag(session, 'nav_open_backstop', { outcome: 'opened', screen_id: r.screen.screen_id, route: payload.route, top_score: r.top_score });
     console.log(`[VTID-04644] explicit open backstop ${session.sessionId}: opened ${r.screen.screen_id} (${String(payload.route)})`);
     return r.screen.screen_id;

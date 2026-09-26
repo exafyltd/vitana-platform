@@ -19,6 +19,7 @@ import {
   detectExplicitOpenRequest,
   maybeRunExplicitOpenBackstop,
 } from '../../src/orb/live/session/explicit-open-backstop';
+import { navigationDispatchedThisTurn } from '../../src/orb/live/session/navigation-turn-scope';
 import { loadRegistryFixture } from '../nav-golden/registry-fixture';
 import { REDIRECT_CASES } from './redirect-cases';
 import { directiveProblems, REDIRECT_CURRENT_ROUTE } from './redirect-harness';
@@ -62,6 +63,12 @@ describe('VTID-04644 explicit open request — detection', () => {
     ['tr', 'Ayarları aç'],
     ['ar', 'افتح الإعدادات'],
     ['zh', '打开设置'],
+    ['en', 'I want to see my calendar, open it please'],
+    ["en", "I'd like you to open my wallet"],
+    ['en', 'Could you show me my messages?'],
+    ['de', 'Ich möchte meine Benachrichtigungen einstellen, öffne das bitte'],
+    ['de', 'Kannst du mir den Kalender öffnen?'],
+    ['de', 'Ja, öffne den Kalender'],
   ])('%s "%s" is an open request', (_lang, text) => {
     expect(detectExplicitOpenRequest(text)).toBe(true);
   });
@@ -80,6 +87,23 @@ describe('VTID-04644 explicit open request — detection', () => {
     "N'ouvre pas ça",
     'Nemoj otvoriti',
     'ja mach das',
+    // negated, in every language the verb list covers (review on #3757)
+    'Não abra a minha carteira',
+    'Non apri il calendario',
+    'Nie otwieraj ustawień',
+    'Ne otvaraj podešavanja',
+    'Не открывай настройки',
+    'Ayarları açma',
+    'لا تفتح الإعدادات',
+    '不要打开设置',
+    '别打开日历',
+    // statements and questions about the action, not a request to Vitana
+    'I tried to open my calendar but it failed',
+    'Should I open my calendar?',
+    'I can open my calendar myself',
+    'We opened the wallet yesterday and it was empty',
+    'Soll ich den Kalender öffnen?',
+    'Ich kann das selbst öffnen',
     'What is my Vitana Index?',
     '',
   ])('"%s" is not an open request', (text) => {
@@ -113,7 +137,16 @@ describe('VTID-04644 explicit open backstop — through the registry', () => {
     expect(sent[0]).toMatchObject({ type: 'orb_directive', directive: 'navigate', screen_id: 'HOME.CREATE_POST', after_speech: true, after_turn: true });
     expect(String(sent[0].route)).toContain('compose=1');
     expect(session.pendingNavAck).toMatchObject({ screen_id: 'HOME.CREATE_POST' });
-    expect(session.navigationDispatchedTurn).toBe(3);
+    // recorded against the turn that just ended (turn_count already moved to 3)
+    expect(session.navigationDispatchedTurn).toBe(2);
+  });
+
+  it('does not make the next turn look navigated (review on #3757)', async () => {
+    // turn_complete already moved turn_count to 3 when the backstop runs; the
+    // member's next turn completes with turn_count still 3 at the check.
+    const { session } = fakeSession({ current_route: '/comm/events-meetups' });
+    await maybeRunExplicitOpenBackstop(deps, session, 'Show me the screen where I can make a post', false);
+    expect(navigationDispatchedThisTurn(session)).toBe(false);
   });
 
   it('the same in German opens the post composer', async () => {

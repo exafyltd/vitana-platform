@@ -34,7 +34,9 @@ AC-2: across all 57 requests of the redirect suite the backstop never opens a wr
   TEST: services/gateway/test/nav-redirect/explicit-open-backstop.test.ts
 AC-3: nothing happens when the model navigated in the turn, a navigation is pending, the model navigates while the resolver runs, the flag is off, or the member is on a role surface.
   TEST: services/gateway/test/nav-redirect/explicit-open-backstop.test.ts
-AC-4: negations and "is open" statements are not open requests ("don't open it", "Öffne das bitte nicht", "I'm open to suggestions", "N'ouvre pas ça", …).
+AC-4: negations in every covered language ("don't open it", "Öffne das bitte nicht", "Não abra …", "Non apri …", "不要打开设置", …), "is open" statements, and statements or questions about the action ("I tried to open my calendar", "Should I open it?", "Soll ich den Kalender öffnen?") are not open requests; wishes ("I'd like you to open …", "ich möchte …, öffne das") are.
+  TEST: services/gateway/test/nav-redirect/explicit-open-backstop.test.ts
+AC-4b: a screen the backstop opens is recorded against the turn that just ended, so the next turn is not treated as already navigated.
   TEST: services/gateway/test/nav-redirect/explicit-open-backstop.test.ts
 AC-5: the real widget in Chromium opens the screen 1.1 s after an after_turn directive (was 15.5 s without it), and waits for audio still playing before it navigates.
   TEST: services/gateway/test/nav-redirect/explicit-open-backstop.test.ts (wiring) and outputs/widget-after-turn.json (browser run, local only)
