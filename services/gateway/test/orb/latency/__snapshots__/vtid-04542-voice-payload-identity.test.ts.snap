@@ -417,8 +417,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "915d76811acee95ed0c28a6abd205d801dd36c532ff113117d754b3d542812d0",
   "provider": "nova_sonic",
   "tool_count": 45,
-  "tools_bytes": 65551,
-  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+  "tools_bytes": 65549,
+  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
   "voice": "tina",
 }
 `;
@@ -798,8 +798,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "2c2fa8d6395af9451cbd8b398dc556a0b0d0e94af12100c4dabe543ad4b6cee5",
   "provider": "nova_sonic",
   "tool_count": 45,
-  "tools_bytes": 65551,
-  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+  "tools_bytes": 65549,
+  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
   "voice": "amy",
 }
 `;
@@ -1199,8 +1199,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "5e5523e88c017d9ccf47981eb8f9f8c8c9a94e84ffe3df25aa3634e42fb0acb1",
   "provider": "cascaded",
   "tool_count": 295,
-  "tools_bytes": 228600,
-  "tools_sha256": "6ac3743a6cb06eb3a6b298e78379073c4877ef15d79492cf964ae1ae8010a3c1",
+  "tools_bytes": 228598,
+  "tools_sha256": "e2275a68691c15548b5cadb32e815f12f1d0936c1b26d056eeb2efe05d738378",
   "voice": "polly:ru",
 }
 `;
@@ -2147,8 +2147,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
   "provider": "nova_sonic",
   "tool_count": 45,
-  "tools_bytes": 65551,
-  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+  "tools_bytes": 65549,
+  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
   "voice": "matthew",
 }
 `;
@@ -2249,8 +2249,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "bbcc33b74350ca55a608694757ff22d38bbee0cfb650fe61b219fbb447771a06",
   "provider": "nova_sonic",
   "tool_count": 45,
-  "tools_bytes": 65551,
-  "tools_sha256": "cb9f8df619233fab808b60b9bcc9c6bc236ab2c7cc8a5955daecbeee3b9af0b3",
+  "tools_bytes": 65549,
+  "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
   "voice": "tina",
 }
 `;
@@ -2669,8 +2669,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "instruction_sha256": "e25ca0da9e01316270550b1bd77b92c5e89c2bd3dd71b3397da37192d74557ac",
   "provider": "vertex",
   "tool_count": 34,
-  "tools_bytes": 49200,
-  "tools_sha256": "61829612b5a980b38e288c2631dbb76a985c02a799d5312004d3be56e0d1e8cf",
+  "tools_bytes": 49198,
+  "tools_sha256": "0e6608d2759ca1c5c214dab99863231db756c5246d087065d7be239f254e7798",
   "voice": "Aoede",
 }
 `;
