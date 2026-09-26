@@ -1,0 +1,16 @@
+# VTID-04668 — commands run (cwd services/gateway unless noted)
+# Built on local commit a69aa69ec (P1 VTID-04666 + P4 VTID-04667). Nothing
+# written to any database; the migration ships as a file.
+
+npx tsc --noEmit -p .                                   # clean
+node node_modules/.bin/jest test/vtid-04668             # 2 suites, 27 tests passed (outputs/vtid-04668-suites.txt)
+npm run test:operator                                   # 1 suite, 30 tests passed (rules 42e/42f)
+npm run test:support                                    # 4 suites, 82 tests passed (rules 42c/42d)
+node node_modules/.bin/jest test/vtid-0466 test/vtid-04668 test/dev-autopilot-synthesis.test.ts \
+  test/routes/dev-autopilot.test.ts test/routes/autopilot-recommendations.test.ts \
+  test/services/autopilot-voice-next-actions.test.ts test/vtid-04500-lineup-role.test.ts
+                                                        # touched-file suites: all passed (3 count tests updated on purpose, see acceptance.md)
+node node_modules/.bin/jest test/services/recommendation-generator-dedupe.test.ts test/services/recommendation-engine \
+  test/vtid-04363-autopilot-loop-owner.test.ts test/vtid-04280-pipeline-unstick.test.ts test/vtid-04667
+                                                        # 11 suites, 131 tests passed
+node node_modules/.bin/jest --silent                    # 1350 passed / 1 skipped suites; 21684 passed, 29 skipped, 6 todo (outputs/full-gateway-jest.txt)

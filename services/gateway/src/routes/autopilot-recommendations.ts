@@ -48,6 +48,7 @@ import {
   type RecommendationAction,
 } from '../services/community-autopilot/action-registry';
 import { capOpenLineup } from '../services/community-autopilot/lineup-cap';
+import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
 import { MAX_OPEN_PER_ROLE } from '../services/community-autopilot/ranker';
 import {
   DRAFTABLE_KINDS,
@@ -436,13 +437,19 @@ async function resolveRequestRole(req: Request): Promise<string | null> {
 // the Autopilot popup hits. There must be only one canonical "which
 // recommendations does this user see" source.
 // =============================================================================
+export interface RoleQueryOptions {
+  /** VTID-04668: include open developer rows below the quality floor. */
+  includeBelowFloor?: boolean;
+}
+
 export async function queryRecommendationsByRole(
   role: string,
   userId: string | null,
   statuses: string[],
   limit: number,
   offset: number,
-): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string }> {
+  opts: RoleQueryOptions = {},
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number }> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !supabaseKey) {
@@ -465,6 +472,10 @@ export async function queryRecommendationsByRole(
   // popup/count. Repeated `or` params are ANDed by PostgREST.
   params.append('or', '(expires_at.is.null,expires_at.gt.now())');
 
+  // VTID-04668: the developer lineup is ordered by priority and filtered by
+  // the quality floor in JS, so it reads a window and pages after that.
+  let developerLineup = false;
+
   if (role === 'community' || role === 'patient') {
     // Community role: only personal recs from community analyzer
     if (!userId) return { ok: true, data: [], count: 0 };
@@ -479,6 +490,11 @@ export async function queryRecommendationsByRole(
     // already executed, not a recommendation. Repeated column filters are
     // ANDed by PostgREST.
     params.append('source_type', 'neq.operator_onramp');
+    developerLineup = true;
+    params.set('select', `${select},priority_score,quality`);
+    params.set('order', 'priority_score.desc.nullslast,impact_score.desc,created_at.desc');
+    params.set('limit', String(DEVELOPER_LINEUP_WINDOW));
+    params.set('offset', '0');
   } else {
     // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
     // NO filter, returning every user's personal suggestions.
@@ -505,6 +521,18 @@ export async function queryRecommendationsByRole(
       return { ok: false, error: `${response.status}: ${errorText}` };
     }
     const data = await response.json() as any[];
+    if (developerLineup) {
+      const listed = applyDeveloperQualityListing(data, {
+        includeBelowFloor: opts.includeBelowFloor === true,
+        tiebreak: compareDeveloperLineup,
+      });
+      return {
+        ok: true,
+        data: listed.rows.slice(offset, offset + Math.max(0, limit)),
+        count: listed.rows.length,
+        below_floor_count: listed.below_floor_count,
+      };
+    }
     const contentRange = response.headers.get('content-range');
     const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
     return { ok: true, data, count: totalCount };
@@ -513,6 +541,17 @@ export async function queryRecommendationsByRole(
   } finally {
     timeout.clear();
   }
+}
+
+/** VTID-04668: rows read for the developer lineup before filter/sort/paging. */
+export const DEVELOPER_LINEUP_WINDOW = 1000;
+
+/** Lineup tie-break after priority: impact desc, then newest. */
+function compareDeveloperLineup(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const ia = typeof a.impact_score === 'number' ? a.impact_score : -1;
+  const ib = typeof b.impact_score === 'number' ? b.impact_score : -1;
+  if (ia !== ib) return ib - ia;
+  return (Date.parse(String(b.created_at || '')) || 0) - (Date.parse(String(a.created_at || '')) || 0);
 }
 
 // =============================================================================
@@ -616,7 +655,8 @@ router.get('/', async (req: Request, res: Response) => {
     if (role) {
       // Fetch extra rows to account for duplicates that will be collapsed by dedup
       const fetchLimit = role === 'community' ? Math.max((limit + 1) * 4, 80) : limit + 1;
-      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
+      const includeBelowFloor = String(req.query.include_below_floor || '') === '1';
+      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset, { includeBelowFloor });
       console.log(`${LOG_PREFIX} queryRecommendationsByRole result`, {
         ok: result.ok,
         count: result.data?.length ?? 0,
@@ -813,6 +853,8 @@ router.get('/', async (req: Request, res: Response) => {
         // Capped open rows are not a next page: paging must not re-reveal them.
         has_more: hasMore && lineupCapped === 0,
         ...(waves ? { waves } : {}),
+        // VTID-04668: open developer rows left out because they are below the quality floor.
+        ...(typeof result.below_floor_count === 'number' ? { below_floor_count: result.below_floor_count } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
         _debug: {
