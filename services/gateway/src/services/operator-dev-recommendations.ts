@@ -44,7 +44,7 @@ export interface DevRecommendationSnapshot {
     succeeded_7d: number;
     failed_7d: number;
     success_rate_7d: number | null;
-    top_failure_reasons: Array<{ reason: string; count: number; last_seen_at?: string; count_24h?: number }>;
+    top_failure_reasons: Array<{ reason: string; count: number }>;
   };
   findings: { open: number; by_actor: Record<string, number>; items: SnapshotFinding[] };
   alerts: Array<{ severity?: string; text?: string; tab?: string } | string>;
