@@ -2,7 +2,7 @@
   "generated_by": "services/gateway/scripts/generate-command-hub-symbol-index.mjs",
   "generated_at": "2026-09-26",
   "note": "function name -> line range index for the Command Hub frontend *.js files, all nesting depths. Regenerate with the generator script; do not hand-edit.",
-  "total_functions": 864,
+  "total_functions": 866,
   "files": {
     "app.js": [
       {
@@ -6366,103 +6366,119 @@
         "kind": "function",
         "startLine": 106,
         "bodyStartLine": 106,
-        "endLine": 279,
-        "lineCount": 174
+        "endLine": 273,
+        "lineCount": 168
       },
       {
         "name": "renderRevertButton",
         "kind": "function",
-        "startLine": 294,
-        "bodyStartLine": 294,
-        "endLine": 310,
+        "startLine": 288,
+        "bodyStartLine": 288,
+        "endLine": 304,
         "lineCount": 17
       },
       {
         "name": "openRevertOverlay",
         "kind": "function",
-        "startLine": 312,
-        "bodyStartLine": 312,
-        "endLine": 448,
+        "startLine": 306,
+        "bodyStartLine": 306,
+        "endLine": 442,
         "lineCount": 137
       },
       {
         "name": "summarize",
         "kind": "function",
-        "startLine": 383,
-        "bodyStartLine": 383,
-        "endLine": 391,
+        "startLine": 377,
+        "bodyStartLine": 377,
+        "endLine": 385,
         "lineCount": 9
       },
       {
         "name": "phaseChip",
         "kind": "function",
-        "startLine": 458,
-        "bodyStartLine": 458,
-        "endLine": 473,
+        "startLine": 452,
+        "bodyStartLine": 452,
+        "endLine": 467,
         "lineCount": 16
       },
       {
         "name": "spinnerSvg",
         "kind": "function",
-        "startLine": 475,
-        "bodyStartLine": 475,
-        "endLine": 482,
+        "startLine": 469,
+        "bodyStartLine": 469,
+        "endLine": 476,
         "lineCount": 8
       },
       {
         "name": "ensureSpinnerCss",
         "kind": "function",
-        "startLine": 485,
-        "bodyStartLine": 485,
-        "endLine": 491,
+        "startLine": 479,
+        "bodyStartLine": 479,
+        "endLine": 485,
         "lineCount": 7
       },
       {
         "name": "renderPublishInlineFlow",
         "kind": "function",
-        "startLine": 507,
-        "bodyStartLine": 507,
-        "endLine": 897,
+        "startLine": 501,
+        "bodyStartLine": 501,
+        "endLine": 891,
         "lineCount": 391
+      },
+      {
+        "name": "postPublish",
+        "kind": "function",
+        "startLine": 901,
+        "bodyStartLine": 901,
+        "endLine": 920,
+        "lineCount": 20
+      },
+      {
+        "name": "send",
+        "kind": "function",
+        "startLine": 902,
+        "bodyStartLine": 902,
+        "endLine": 909,
+        "lineCount": 8
       },
       {
         "name": "dispatchPublish",
         "kind": "function",
-        "startLine": 899,
-        "bodyStartLine": 899,
-        "endLine": 923,
-        "lineCount": 25
+        "startLine": 922,
+        "bodyStartLine": 922,
+        "endLine": 943,
+        "lineCount": 22
       },
       {
         "name": "pollUntilCanaryActive",
         "kind": "function",
-        "startLine": 925,
-        "bodyStartLine": 925,
-        "endLine": 954,
+        "startLine": 945,
+        "bodyStartLine": 945,
+        "endLine": 974,
         "lineCount": 30
       },
       {
         "name": "pollUntilCommitLive",
         "kind": "function",
-        "startLine": 970,
-        "bodyStartLine": 970,
-        "endLine": 1034,
+        "startLine": 990,
+        "bodyStartLine": 990,
+        "endLine": 1054,
         "lineCount": 65
       },
       {
         "name": "pollUntilFullVerified",
         "kind": "function",
-        "startLine": 1036,
-        "bodyStartLine": 1036,
-        "endLine": 1049,
+        "startLine": 1056,
+        "bodyStartLine": 1056,
+        "endLine": 1069,
         "lineCount": 14
       },
       {
         "name": "renderLiveRevisionPill",
         "kind": "function",
-        "startLine": 1059,
-        "bodyStartLine": 1059,
-        "endLine": 1097,
+        "startLine": 1079,
+        "bodyStartLine": 1079,
+        "endLine": 1117,
         "lineCount": 39
       }
     ],
