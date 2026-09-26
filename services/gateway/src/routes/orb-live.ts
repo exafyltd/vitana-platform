@@ -7522,6 +7522,11 @@ export function dispatchEndConversationDirective(session: GeminiLiveSession, rea
   // VTID-04592: once per session, whichever path fires first (the tool, the
   // still-here complaint, or the stop-request backstop).
   if ((session as any).endConversationDirectiveSent) return;
+  // VTID-04609: every dispatch site fires after the farewell was spoken, so
+  // later model output is a repeat — unless the tool came first and nothing
+  // has been said yet, in which case the farewell must still play.
+  (session as any).farewellSpokenBeforeClose =
+    (session.outputTranscriptBuffer || '').trim().length > 0;
   (session as any).endConversationDirectiveSent = true;
   const directive = {
     type: 'orb_directive',
