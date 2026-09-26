@@ -1,0 +1,9 @@
+2026-09-26 staging (preview-aws-gateway.vitanaland.com), before the fix:
+/command-hub/command-hub/events/ -> 200 text/event-stream   (body contains id="root")
+/command-hub/oasis/events/       -> 200 text/event-stream   (body contains id="root")
+/command-hub/oasis/streams/      -> 200 text/event-stream   (body contains id="root")
+/command-hub/oasis/              -> 200 text/html; charset=UTF-8
+/command-hub/tasks/              -> 200 text/html; charset=UTF-8
+
+E2E hub-developer (run 36067956537, 2026-09-24): the three event/stream screens
+failed "locator('#root') not found".
