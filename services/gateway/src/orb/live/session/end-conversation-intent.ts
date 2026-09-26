@@ -61,6 +61,10 @@ const USER_STOP_PATTERNS: RegExp[] = [
 const USER_STOP_UNAMBIGUOUS_PATTERNS: RegExp[] = [
   // The whole utterance is a farewell word ("Schluss.", "Tschüss!", "Bye").
   /^(schlu(ss|ß)|tsch(ü|u)(ss?|ß)|auf\s+wiedersehen|good\s*bye|bye(\s+bye)?)(\s+jetzt)?[\s.!]*$/,
+  // VTID-04599 — "Schluss" with nothing but filler around it: "jetzt ist
+  // Schluss", "ok, Schluss", "Schluss für heute", "und damit Schluss". Still
+  // never "zum Schluss …" or "mach Schluss mit dem Thema", which carry content.
+  /^((ok(ay)?|so|also|gut|und|dann|jetzt|na|damit)[\s,.!]+)*(ist\s+)?schlu(ss|ß)([\s,]+(jetzt|bitte|damit|f(ü|u)r\s+heute))*[\s.!,]*$/,
   /\bschalt(e)?\s+(dich\s+)?(jetzt\s+)?(ab|aus)\b/,
   /\bdu\s+(sollst|kannst|darfst)\s+(jetzt\s+)?gehen\b/,
   /\bgeh(\s+jetzt|\s+weg)\b/,

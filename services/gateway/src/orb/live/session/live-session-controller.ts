@@ -2314,8 +2314,14 @@ export async function handleLiveSessionStart(
             );
           }
           const tz = (session as any).clientContext?.timezone ?? null;
-          const todayDateIso = todayInTimezone(new Date(), tz);
-          const kind = decideGreetingKind(journey, todayDateIso);
+          const nowForJourney = new Date();
+          const todayDateIso = todayInTimezone(nowForJourney, tz);
+          // VTID-04595 — pass the local hour so no morning greeting (and no
+          // last_session_date stamp) happens before 05:00 local.
+          const { localHourInTimezone } = await import(
+            '../../../services/assistant-continuation/providers/new-day-return'
+          );
+          const kind = decideGreetingKind(journey, todayDateIso, localHourInTimezone(nowForJourney, tz));
           if (kind) {
             const meta = { kind, today_date_iso: todayDateIso };
             (session as any).journeyGreetingMeta = meta;
