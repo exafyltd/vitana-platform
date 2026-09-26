@@ -86,7 +86,7 @@ describe('T12: server-side registry backs the frontend fetch', () => {
 
   it('admin-health.ts mounts an unauthenticated /health-registry route sourced from the registry module', () => {
     const src = readFileSync(ADMIN_HEALTH_TS_PATH, 'utf8');
-    expect(src).toMatch(/import\s*\{\s*SERVICE_HEALTH_REGISTRY\s*\}\s*from\s*['"]\.\.\/constants\/service-health-registry['"]/);
+    expect(src).toMatch(/import\s*\{\s*SERVICE_HEALTH_REGISTRY\b[^}]*\}\s*from\s*['"]\.\.\/constants\/service-health-registry['"]/);
     const routeMatch = src.match(/router\.get\(\s*['"]\/health-registry['"][\s\S]*?\n\}\);/);
     expect(routeMatch).toBeTruthy();
     const routeSrc = routeMatch![0];

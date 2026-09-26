@@ -4707,7 +4707,7 @@ const state = {
     // ──── New Module States (51-screen build) ────
 
     // Shared service health (feeds both header pill and dashboard grid)
-    serviceHealth: { items: [], loading: false, fetched: false, lastRefreshed: null },
+    serviceHealth: { items: [], groups: null, source: null, loading: false, fetched: false, lastRefreshed: null },
 
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
@@ -6508,14 +6508,17 @@ function renderHeader() {
     // Compute service health score (shared with dashboard grid)
     let capsTotal = 0;
     let capsHealthy = 0;
+    let capsNoAccess = 0;
     if (state.serviceHealth.items.length > 0) {
-        capsTotal = state.serviceHealth.items.length;
-        capsHealthy = state.serviceHealth.items.filter(function (s) { return s.healthy; }).length;
+        const shCounts = serviceHealthCounts(state.serviceHealth.items);
+        capsTotal = shCounts.total;
+        capsHealthy = shCounts.healthy;
+        capsNoAccess = shCounts.noAccess;
     } else if (state.cicdHealth?.capabilities) {
         // Fallback while service health loads
         for (const v of Object.values(state.cicdHealth.capabilities)) { capsTotal++; if (v) capsHealthy++; }
     }
-    const capsFailing = capsTotal - capsHealthy;
+    const capsFailing = capsTotal - capsHealthy - capsNoAccess;
 
     // Score-based pill: shows green/red counts at a glance
     const statusPill = document.createElement('button');
@@ -6536,7 +6539,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' no access' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6564,7 +6567,10 @@ function renderHeader() {
         hmHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
         var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
         hmHeader.innerHTML =
-            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
+            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
+            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
+            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' no access</span>' : '') +
+            '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
@@ -6584,7 +6590,10 @@ function renderHeader() {
 
         if (state.serviceHealth.items.length > 0) {
             // Group items by their group field (preserved from endpoint definition)
-            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling', 'Community & Social', 'Domain & Context', 'Visual & VTID'];
+            // VTID-04661: every group present is drawn — known groups first in
+            // registry order, then any other. The old hardcoded list silently
+            // dropped 'Frontend & Performance' (Screen Load Time).
+            var groupOrder = orderedHealthGroups(state.serviceHealth.items, state.serviceHealth.groups);
             var grouped = {};
             for (var gi = 0; gi < state.serviceHealth.items.length; gi++) {
                 var grp = state.serviceHealth.items[gi].group || 'Other';
@@ -6605,11 +6614,13 @@ function renderHeader() {
                 });
 
                 // Group header
-                var groupFailed = groupItems.filter(function (s) { return !s.healthy; }).length;
+                var groupDown = groupItems.filter(function (s) { return serviceHealthDot(s) === 'red'; }).length;
+                var groupDegraded = groupItems.filter(function (s) { return serviceHealthDot(s) === 'yellow'; }).length;
                 var grpHeader = document.createElement('div');
                 grpHeader.className = 'health-grid__group-header';
                 grpHeader.innerHTML = groupName +
-                    (groupFailed > 0 ? ' <span class="health-grid__group-badge--bad">' + groupFailed + ' down</span>' : '');
+                    (groupDown > 0 ? ' <span class="health-grid__group-badge--bad">' + groupDown + ' down</span>' : '') +
+                    (groupDegraded > 0 ? ' <span class="health-grid__group-badge--warn">' + groupDegraded + ' degraded</span>' : '');
                 hmBody.appendChild(grpHeader);
 
                 // Grid for this group
@@ -6618,10 +6629,7 @@ function renderHeader() {
 
                 for (var shi = 0; shi < groupItems.length; shi++) {
                     (function (svc) {
-                        var dot = 'green';
-                        if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
-                        if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
-                        if (!svc.healthy && dot === 'green') dot = 'red';
+                        var dot = serviceHealthDot(svc);
 
                         var cell = document.createElement('div');
                         cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
@@ -27446,6 +27454,93 @@ let cicdHealthPollInterval = null;
 // service-health-registry.ts) can't be reached. That route is now the
 // canonical source — keep this list in sync when adding/removing a check,
 // but a routine change belongs there first, not here.
+// VTID-04661: display order of the Service Health groups. The registry
+// route serves the canonical copy (SERVICE_HEALTH_GROUPS); this is the
+// fallback. Any group NOT listed here is still drawn, after these — the
+// panel used to drop such groups, which is how 'Screen Load Time' was
+// counted in "54/55" but never shown.
+var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance'];
+
+/**
+ * VTID-04661: every group present in `items`, the known ones first in
+ * `preferred` order, then the rest alphabetically. Never drops a group.
+ */
+function orderedHealthGroups(items, preferred) {
+    var order = (preferred && preferred.length) ? preferred : FALLBACK_HEALTH_GROUPS;
+    var present = {};
+    for (var i = 0; i < items.length; i++) present[items[i].group || 'Other'] = true;
+    var out = order.filter(function (g) { return present[g]; });
+    Object.keys(present).sort().forEach(function (g) { if (out.indexOf(g) < 0) out.push(g); });
+    return out;
+}
+
+/**
+ * VTID-04661: browser copy of classifyHealthResponse()
+ * (services/gateway/src/services/service-health-probe.ts) — a parity test
+ * keeps the two in step. Used only when the server-side summary is
+ * unavailable and the panel probes each check itself.
+ *   - no response            -> down
+ *   - 401/403                -> no_access (could not look; not an outage)
+ *   - 2xx + body.status      -> that status (healthy only if ok/healthy/ok_governance_limited)
+ *   - 2xx + {ok:false}       -> down (used to read as healthy)
+ *   - 2xx otherwise          -> healthy
+ *   - other + known bad body.status -> that status, else down
+ */
+var HEALTHY_PROBE_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
+var KNOWN_BAD_PROBE_STATUSES = ['down', 'degraded', 'warning', 'error', 'unhealthy', 'unavailable', 'misconfigured'];
+function classifyHealthProbe(httpStatus, body) {
+    if (httpStatus === null || httpStatus === undefined) return { status: 'down', healthy: false };
+    if (httpStatus === 401 || httpStatus === 403) return { status: 'no_access', healthy: false };
+    var obj = (body && typeof body === 'object' && !Array.isArray(body)) ? body : null;
+    var reported = (obj && typeof obj.status === 'string') ? obj.status.toLowerCase() : null;
+    if (httpStatus >= 200 && httpStatus < 300) {
+        if (reported) return { status: reported, healthy: HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0 };
+        if (obj && obj.ok === false) return { status: 'down', healthy: false };
+        return { status: 'healthy', healthy: true };
+    }
+    if (reported && KNOWN_BAD_PROBE_STATUSES.indexOf(reported) >= 0) return { status: reported, healthy: false };
+    return { status: 'down', healthy: false };
+}
+
+/** VTID-04661: probe one check from the browser and classify it. */
+function probeHealthEndpointInBrowser(ep, headers, timeoutMs) {
+    var start = Date.now();
+    return fetchWT(ep.url, { headers: headers }, timeoutMs || 6000)
+        .then(function (r) {
+            var latency = Date.now() - start;
+            return r.json().catch(function () { return null; }).then(function (body) {
+                var c = classifyHealthProbe(r.status, body);
+                return { name: ep.name, url: ep.url, group: ep.group, status: c.status, healthy: c.healthy, http_status: r.status, latency_ms: latency, details: body };
+            });
+        })
+        .catch(function () {
+            return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, http_status: null, latency_ms: -1, details: null };
+        });
+}
+
+/**
+ * VTID-04661: panel counts. `failing` excludes no_access — a check the
+ * probe could not look at is shown grey and counted separately, never as
+ * an outage and never as healthy.
+ */
+function serviceHealthCounts(items) {
+    var healthy = 0, noAccess = 0;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].healthy) healthy++;
+        else if (items[i].status === 'no_access') noAccess++;
+    }
+    return { total: items.length, healthy: healthy, noAccess: noAccess, failing: items.length - healthy - noAccess };
+}
+
+/** VTID-04661: dot colour for one check. */
+function serviceHealthDot(svc) {
+    if (svc.healthy) return 'green';
+    if (svc.status === 'no_access') return 'grey';
+    if (svc.status === 'degraded' || svc.status === 'warning') return 'yellow';
+    return 'red';
+}
+
 var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
     { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
@@ -27520,53 +27615,58 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    // VTID-04087: fetch the endpoint list from the gateway's own registry
-    // (GET /api/v1/admin/health-registry) so a new health check can be
-    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
-    // is only the last-resort copy used when that fetch fails (offline,
-    // route down, malformed response) — keep it in sync when adding/removing
-    // a check, but the registry route is the canonical source now.
-    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    // VTID-01982: send the operator's bearer token so admin-gated health
+    // routes answer instead of returning 401.
+    var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
     try {
-        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
-        if (registryResp.ok) {
-            var registryBody = await registryResp.json();
-            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
-                healthEndpoints = registryBody.endpoints;
-            }
-        }
-    } catch (registryError) {
-        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
-    }
-    try {
-        // VTID-01982: send the operator's bearer token so health probes against
-        // routers gated by requireAuth/requireExafyAdmin (diary, automations,
-        // capacity, alignment, routing, situational, availability, mobility,
-        // user-prefs, taste, overload, mitigation, opportunities,
-        // vtid-terminalize) don't return 401 and trip a false "down" badge.
-        var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
-        var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: probeHeaders }, 6000)
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        var rawStatus = ok ? (body.status || 'healthy') : 'degraded';
-                        var isHealthy = (rawStatus === 'ok' || rawStatus === 'healthy' || rawStatus === 'ok_governance_limited');
-                        return { name: ep.name, url: ep.url, group: ep.group, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, group: ep.group, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, latency_ms: -1, details: null };
-                });
-        }));
+        var items = null;
 
-        var items = results.map(function (r) {
-            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
-        });
+        // VTID-04661: preferred path — the gateway probes every check once,
+        // server side, and serves a cached, classified summary
+        // (GET /api/v1/admin/health/summary). One request instead of one per
+        // check. Admin-only; any failure falls through to the browser path.
+        try {
+            var summaryResp = await fetchWT('/api/v1/admin/health/summary', { headers: probeHeaders }, 15000);
+            if (summaryResp.ok) {
+                var summaryBody = await summaryResp.json();
+                if (summaryBody && Array.isArray(summaryBody.items) && summaryBody.items.length > 0) {
+                    items = summaryBody.items;
+                    if (Array.isArray(summaryBody.groups)) state.serviceHealth.groups = summaryBody.groups;
+                    state.serviceHealth.source = 'server';
+                }
+            }
+        } catch (summaryError) {
+            console.warn('[ServiceHealth] Summary fetch failed, probing from the browser:', summaryError);
+        }
+
+        if (!items) {
+            // VTID-04087: fetch the endpoint list from the gateway's own registry
+            // (GET /api/v1/admin/health-registry) so a new health check can be
+            // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+            // is only the last-resort copy used when that fetch fails (offline,
+            // route down, malformed response) — keep it in sync when adding/removing
+            // a check, but the registry route is the canonical source now.
+            var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+            try {
+                var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+                if (registryResp.ok) {
+                    var registryBody = await registryResp.json();
+                    if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                        healthEndpoints = registryBody.endpoints;
+                    }
+                    if (registryBody && Array.isArray(registryBody.groups)) state.serviceHealth.groups = registryBody.groups;
+                }
+            } catch (registryError) {
+                console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+            }
+            var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
+                return probeHealthEndpointInBrowser(ep, probeHeaders, 6000);
+            }));
+            items = results.map(function (r) {
+                return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
+            });
+            state.serviceHealth.source = 'browser';
+        }
 
         state.serviceHealth.items = items;
         state.serviceHealth.fetched = true;
@@ -27602,8 +27702,9 @@ function updateServiceHealthPill() {
     var items = state.serviceHealth.items;
     if (!items || items.length === 0) return;
 
-    var healthy = items.filter(function (s) { return s.healthy; }).length;
-    var failing = items.length - healthy;
+    var counts = serviceHealthCounts(items);
+    var healthy = counts.healthy;
+    var failing = counts.failing;
 
     pill.className = 'header-pill';
     if (failing === 0) {
@@ -27618,7 +27719,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' no access' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**
@@ -28978,7 +29079,7 @@ async function fetchOverviewDashboard() {
         healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
     } else {
         var healthEndpoints = state.serviceHealth.items.length > 0
-            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url }; })
+            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
             : [
                 { name: 'Gateway', url: '/health' },
                 { name: 'CI/CD',   url: '/api/v1/cicd/health' },
@@ -28992,21 +29093,9 @@ async function fetchOverviewDashboard() {
             ];
         // VTID-01982: pass the operator's bearer token to /health probes
         var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
+        // VTID-04661: same classification as the Service Health panel.
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: dashHeaders })
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        return { name: ep.name, url: ep.url, status: ok ? (body.status || 'healthy') : 'degraded', latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, status: 'down', latency_ms: -1, details: null };
-                });
+            return probeHealthEndpointInBrowser(ep, dashHeaders);
         }));
     }
 
@@ -29643,8 +29732,7 @@ function renderOverviewSystemView() {
             var hasGroups = services.some(function (s) { return s.group; });
             if (hasGroups) {
                 // Build group buckets preserving group order from the endpoint list
-                var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-                                  'Community & Social', 'Domain & Context', 'Visual & VTID'];
+                var groupOrder = orderedHealthGroups(services, state.serviceHealth.groups);
                 var groupMap = {};
                 services.forEach(function (s) {
                     var g = s.group || 'Other';

@@ -22,6 +22,26 @@ export interface ServiceHealthEndpoint {
   group: string;
 }
 
+/**
+ * VTID-04661 — display order of the panel's groups. The panel used to carry
+ * its own hardcoded copy of this list and silently dropped any check whose
+ * group was not in it — which is how 'Screen Load Time' ('Frontend &
+ * Performance') was counted in "54/55" but never drawn. The panel now draws
+ * these first, in this order, and then every other group it finds, so an
+ * entry can never be counted but hidden. A test fails if a registry entry
+ * names a group that is not listed here.
+ */
+export const SERVICE_HEALTH_GROUPS: string[] = [
+  'Core Infrastructure',
+  'AI & Assistant',
+  'Autopilot',
+  'Automation & Scheduling',
+  'Community & Social',
+  'Domain & Context',
+  'Visual & VTID',
+  'Frontend & Performance',
+];
+
 export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'Gateway', url: '/health', group: 'Core Infrastructure' },
   { name: 'Gateway Alive', url: '/alive', group: 'Core Infrastructure' },
@@ -78,10 +98,10 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'VTID Terminalize', url: '/api/v1/oasis/vtid/terminalize/health', group: 'Visual & VTID' },
   { name: 'VTID', url: '/api/v1/vtid/health', group: 'Visual & VTID' },
   // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test — scheduled
-  // Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min) measures mobile
-  // screen load time against production and reports here. 'down' means
-  // either a screen failed to load or the scheduled job itself hasn't
-  // reported in 3h+; 'degraded' means it's reporting but slow (p75 over
-  // budget).
+  // Playwright run (SCREEN-LOAD-TIMING.yml) measures mobile screen load time
+  // against staging and reports here. 'down' means a screen failed to load
+  // or nothing has reported in 12h; 'degraded' means it's slow (p75 over
+  // budget) or the last report is 3-12h old — GitHub runs the 30-minute
+  // cron every 3-5h in practice (VTID-04661).
   { name: 'Screen Load Time', url: '/api/v1/frontend/screen-load/health', group: 'Frontend & Performance' },
 ];

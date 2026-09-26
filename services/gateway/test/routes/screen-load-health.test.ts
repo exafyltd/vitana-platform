@@ -229,6 +229,35 @@ describe('GET /api/v1/frontend/screen-load/health', () => {
     expect(res.body.screens_failed).toContain('/inbox');
   });
 
+  it('11b. VTID-04661: last report 3-12h old, all fast → degraded (scheduler_lag), not down', async () => {
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    mockQueryResult = {
+      data: [{ created_at: fiveHoursAgo, metadata: { screen: '/home', duration_ms: 1000, load_status: 'ok' } }],
+      error: null,
+    };
+    const res = await request(buildApp()).get('/api/v1/frontend/screen-load/health');
+    expect(res.body.status).toBe('degraded');
+    expect(res.body.reason).toBe('scheduler_lag');
+  });
+
+  it('11c. VTID-04661: a fresh fast run carries no scheduler_lag reason', async () => {
+    const now = new Date().toISOString();
+    mockQueryResult = {
+      data: [{ created_at: now, metadata: { screen: '/home', duration_ms: 1000, load_status: 'ok' } }],
+      error: null,
+    };
+    const res = await request(buildApp()).get('/api/v1/frontend/screen-load/health');
+    expect(res.body.status).toBe('ok');
+    expect(res.body.reason).toBeUndefined();
+  });
+
+  it('11d. VTID-04661: the no-runs message names the 12h window and the report check', async () => {
+    const res = await request(buildApp()).get('/api/v1/frontend/screen-load/health');
+    expect(res.body.status).toBe('down');
+    expect(res.body.message).toMatch(/12h/);
+    expect(res.body.message).toMatch(/rejected/);
+  });
+
   it('12. supabase unconfigured → down', async () => {
     mockGetSupabase = () => null;
     const app = buildApp();

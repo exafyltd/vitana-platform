@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04661",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "registry serves the group order, incl. Frontend & Performance", "path": "/api/v1/admin/health-registry", "expect_json": { "ok": true }, "expect_body_contains": "\"groups\":[\"Core Infrastructure\"" },
+    { "kind": "http", "name": "registry still lists Screen Load Time", "path": "/api/v1/admin/health-registry", "expect_body_contains": "Frontend & Performance" },
+    { "kind": "http", "name": "health summary refuses a caller that is not an admin", "path": "/api/v1/admin/health/summary", "expect_status": 401 },
+    { "kind": "http", "name": "screen-load health answers JSON", "path": "/api/v1/frontend/screen-load/health", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "Command Hub serves the new app.js", "path": "/command-hub/", "expect_body_contains": "app.js?v=20261015-vtid-04661" },
+    { "kind": "http", "name": "served app.js draws every group", "path": "/command-hub/app.js", "expect_body_contains": "function orderedHealthGroups(items, preferred)" },
+    { "kind": "http", "name": "served app.js classifies ok:false and 401", "path": "/command-hub/app.js", "expect_body_contains": "function classifyHealthProbe(httpStatus, body)" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04661-service-health-panel.test.ts test/routes/screen-load-health.test.ts", "cwd": "services/gateway", "reason": "the summary's admin path forwards a real admin token; a read-only staging suite has none, so the probe run, cache and classification are proven by these suites" }
+  ]
+}
