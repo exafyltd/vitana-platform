@@ -74,15 +74,17 @@ function timeMs(v: unknown): number {
  * then impact_score desc, then created_at desc; stable otherwise. Returns a
  * new array.
  */
+export function comparePendingApprovals(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  return (
+    riskRank(b.risk_class) - riskRank(a.risk_class) ||
+    impact(b.impact_score) - impact(a.impact_score) ||
+    timeMs(b.created_at) - timeMs(a.created_at)
+  );
+}
+
 export function sortPendingApprovals<T extends Record<string, unknown>>(rows: T[]): T[] {
   return rows
     .map((row, i) => ({ row, i }))
-    .sort(
-      (a, b) =>
-        riskRank(b.row.risk_class) - riskRank(a.row.risk_class) ||
-        impact(b.row.impact_score) - impact(a.row.impact_score) ||
-        timeMs(b.row.created_at) - timeMs(a.row.created_at) ||
-        a.i - b.i,
-    )
+    .sort((a, b) => comparePendingApprovals(a.row, b.row) || a.i - b.i)
     .map((x) => x.row);
 }

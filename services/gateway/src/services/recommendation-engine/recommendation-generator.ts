@@ -55,6 +55,7 @@ import {
   type RankProvenance,
 } from '../decision-contract';
 import { deriveEconomicAxis } from './economic-axis';
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from '../recommendation-quality/scoring-service';
 import {
   analyzeMarketplace,
   MarketplaceSignal,
@@ -758,6 +759,13 @@ export async function generateRecommendations(
       } else {
         errors.push({ source: rec.source_type, error: insertResult.error || 'Insert failed' });
       }
+    }
+
+    // VTID-04668: the insert RPC takes no score fields, so the system-wide
+    // (developer) rows this run created are scored right after insert.
+    // Community rows are never touched. Never throws.
+    if (generated > 0) {
+      await scoreNewDeveloperRecommendations(new Date(startTime - SCORING_CLOCK_SKEW_MS).toISOString());
     }
 
     // Complete the run

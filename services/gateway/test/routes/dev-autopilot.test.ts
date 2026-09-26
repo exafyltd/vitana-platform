@@ -711,9 +711,11 @@ describe('GET /pending-approvals', () => {
 });
 
 describe('GET /pending-approvals/count', () => {
-  it('parses the exact count from Content-Range', async () => {
+  // VTID-04668: the badge counts the rows the popup lists (quality floor
+  // applied in JS), no longer the PostgREST Content-Range total.
+  it('counts the listed rows (VTID-04668)', async () => {
     setFetchRoutes([
-      (url) => (url.includes('/rest/v1/autopilot_recommendations') ? jsonRes(200, [], { 'content-range': '0-0/42' }) : undefined),
+      (url) => (url.includes('/rest/v1/autopilot_recommendations') ? jsonRes(200, Array.from({ length: 42 }, (_, i) => ({ id: `f${i}`, status: 'new' }))) : undefined),
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals/count'));
     expect(res.status).toBe(200);

@@ -25,10 +25,12 @@ import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
 import { feedbackTicketRefFor } from '../services/feedback-ticket-ref';
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from '../services/recommendation-quality/scoring-service';
+import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
 import {
   devRecommendationExpiresAtIso,
   recentlyRejectedFingerprintsPath,
-  sortPendingApprovals,
+  comparePendingApprovals,
   toFingerprintSet,
 } from '../services/dev-recommendation-policy';
 
@@ -359,6 +361,11 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
       },
     });
     if (inserted.ok) newCount++;
+  }
+
+  // VTID-04668: score what this request created. Never throws.
+  if (newCount > 0) {
+    await scoreNewDeveloperRecommendations(new Date(nowMs - SCORING_CLOCK_SKEW_MS).toISOString());
   }
 
   return res.json({
@@ -707,7 +714,9 @@ const PENDING_APPROVALS_SELECT =
   // VTID-04333: source_ref + activated_vtid drive the feedback_ticket field.
   'source_ref,activated_vtid,' +
   // VTID-04666: created_at is the last sort key.
-  'created_at';
+  'created_at,' +
+  // VTID-04668: evidence-based priority + its components.
+  'priority_score,quality';
 
 /**
  * VTID-04666: the inbox is sorted in JS (sortPendingApprovals) because
@@ -722,51 +731,50 @@ router.get('/pending-approvals', requireDevRole, async (req: Request, res: Respo
 
   const limit = Math.min(parseInt(String(req.query.limit || '200'), 10), 500);
   const offset = Math.max(parseInt(String(req.query.offset || '0'), 10), 0);
+  const includeBelowFloor = String(req.query.include_below_floor || '') === '1';
 
-  // VTID-04666: riskiest first by an explicit rank (high > medium > low),
-  // then highest impact, then newest. The DB order below only decides which
-  // rows fall inside the window; the final order is sortPendingApprovals.
-  const order = 'order=impact_score.desc.nullslast,created_at.desc';
+  // VTID-04668: highest evidence-based priority first (unscored rows last),
+  // then the VTID-04666 explicit risk rank (high > medium > low), impact,
+  // newest. Rows below the quality floor are left out unless
+  // ?include_below_floor=1. The DB order below only decides which rows fall
+  // inside the window; the final order is applyDeveloperQualityListing.
+  const order = 'order=priority_score.desc.nullslast,impact_score.desc.nullslast,created_at.desc';
   const path =
     `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
     `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${PENDING_APPROVALS_SORT_WINDOW}`;
 
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  const recommendations = sortPendingApprovals((r.data || []) as Array<Record<string, unknown>>)
+  const listed = applyDeveloperQualityListing((r.data || []) as Array<Record<string, unknown>>, {
+    includeBelowFloor,
+    tiebreak: comparePendingApprovals,
+  });
+  const recommendations = listed.rows
     .slice(offset, offset + limit)
     .map((rec) => ({ ...rec, feedback_ticket: feedbackTicketRefFor(rec) }));
-  return res.json({ ok: true, recommendations, count: recommendations.length });
+  return res.json({
+    ok: true,
+    recommendations,
+    count: recommendations.length,
+    below_floor_count: listed.below_floor_count,
+  });
 });
 
 router.get('/pending-approvals/count', requireDevRole, async (_req: Request, res: Response) => {
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
-  // PostgREST exact count: HEAD with Prefer: count=exact returns total in
-  // Content-Range. We use a tiny GET to sidestep adding a HEAD helper.
+  // VTID-04668: the badge counts exactly what the popup shows — rows below
+  // the quality floor are filtered in JS from the stored score, so the count
+  // reads the same window with only the columns that decision needs.
   const path =
     `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
-    `&select=id&limit=1`;
+    `&select=id,status,priority_score,quality&limit=${PENDING_APPROVALS_SORT_WINDOW}`;
 
-  try {
-    const url = `${supa.url}${path}`;
-    const resp = await fetch(url, {
-      headers: {
-        apikey: supa.key,
-        Authorization: `Bearer ${supa.key}`,
-        Prefer: 'count=exact',
-      },
-    });
-    if (!resp.ok) {
-      return res.status(500).json({ ok: false, error: `${resp.status}: ${await resp.text()}` });
-    }
-    const range = resp.headers.get('content-range') || '';
-    const total = parseInt(range.split('/').pop() || '0', 10) || 0;
-    return res.json({ ok: true, count: total });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
-  }
+  const r = await supaGet<unknown[]>(supa, path);
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const listed = applyDeveloperQualityListing((r.data || []) as Array<Record<string, unknown>>);
+  return res.json({ ok: true, count: listed.rows.length, below_floor_count: listed.below_floor_count });
 });
 
 // =============================================================================
