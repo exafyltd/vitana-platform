@@ -32,8 +32,8 @@ import { loadBundledEmbeddings } from '../../src/navigation/nav-embedder';
 import { isVoiceTarget, loadSnapshotRegistry } from '../../src/navigation/nav-registry';
 import { __setNavServiceForTests } from '../../src/navigation/nav-service';
 import { loadRegistryFixture } from '../nav-golden/registry-fixture';
-import { PARAPHRASE_CASES, REDIRECT_CASES } from './redirect-cases';
-import { formatRedirectTable, RedirectResult, runParaphraseCase, runRedirectCase, summarizeRedirect } from './redirect-harness';
+import { INVENTED_ID_CASES, PARAPHRASE_CASES, REDIRECT_CASES } from './redirect-cases';
+import { formatRedirectTable, RedirectResult, runInventedIdCase, runParaphraseCase, runRedirectCase, summarizeRedirect } from './redirect-harness';
 
 const BASELINE_FILE = path.join(__dirname, 'baseline.redirect.json');
 
@@ -78,7 +78,7 @@ describe('VTID-04607 redirect suite — through the navigate tool', () => {
     for (const c of REDIRECT_CASES) results.push(await runRedirectCase(c));
     const s = summarizeRedirect(results);
     // eslint-disable-next-line no-console
-    console.log(`redirect suite: ${s.open} open, ${s.handoff} handed to the voice model, ${s.wrong} wrong, ${s.none} none of ${s.total}\n${formatRedirectTable(results)}`);
+    console.log(`redirect suite: ${s.open} open, ${s.handoff} handed to the voice model, ${s.offer} offered, ${s.wrong} wrong, ${s.none} none of ${s.total}\n${formatRedirectTable(results)}`);
     if (process.env.NAV_REDIRECT_WRITE_BASELINE === '1') {
       const outcomes = Object.fromEntries(results.map((r) => [r.id, r.outcome]));
       fs.writeFileSync(BASELINE_FILE, JSON.stringify({ ...s, outcomes }, null, 2) + '\n');
@@ -93,7 +93,7 @@ describe('VTID-04607 redirect suite — through the navigate tool', () => {
     const r = results.find((x) => x.id === id)!;
     expect({ id, outcome: r.outcome, problems: r.problems }).toEqual({
       id,
-      outcome: expect.stringMatching(/^(open|handoff)$/),
+      outcome: expect.stringMatching(/^(open|handoff|offer)$/),
       problems: [],
     });
   });
@@ -127,4 +127,22 @@ describe('VTID-04607 redirect suite — when the voice model shortens the reques
       });
     },
   );
+});
+
+describe('VTID-04629 redirect suite — screen ids the voice model invented', () => {
+  beforeAll(async () => {
+    process.env.NAV_V2_ENABLED = 'true';
+    const f = await loadRegistryFixture();
+    __setNavServiceForTests({ index: f.index, embedder: f.embedder });
+  });
+
+  afterAll(() => {
+    delete process.env.NAV_V2_ENABLED;
+  });
+
+  it.each(INVENTED_ID_CASES.map((c) => [c.id, c.screenId, c] as const))('%s navigate_to_screen("%s") still opens the right screen', async (_id, _sid, c) => {
+    const r = await runInventedIdCase(c.screenId);
+    expect(r.ok).toBe(true);
+    expect(c.expect).toContain(r.screen_id);
+  });
 });

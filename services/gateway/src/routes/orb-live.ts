@@ -3733,6 +3733,8 @@ export async function handleNavigateToScreen(
     {
       ...args,
       current_route: session.current_route ?? null,
+      // VTID-04629: an invented screen id is resolved from the member's words.
+      transcript_excerpt: session.inputTranscriptBuffer || '',
     },
     {
       user_id: session.identity?.user_id ?? '',
