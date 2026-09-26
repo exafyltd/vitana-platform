@@ -26,7 +26,7 @@ import { resolveFeedbackTicketRef } from '../feedback-ticket-ref';
 import { fixRoundTurnBudget, resolveFixRoundMinTurns } from './fix-round-budget';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
-import type { LLMProvider, LLMRouterMessage } from '../llm-router';
+import type { LLMRouterMessage } from '../llm-router';
 import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
 import { buildStartingMap, explorationThresholds } from './agent-exploration';
@@ -40,6 +40,7 @@ import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
 import { buildAgentMemoryContext, recordAgentRunMemory } from './agent-memory-context';
 import type { FinishArgs } from './agent-tools';
+import { devWorkerModel } from '../dev-pipeline-models';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -49,12 +50,13 @@ const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
 const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
 const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
 
-/** STANDING model policy (docs/OPERATOR-AGENT-BUILD-PLAN.md): DeepSeek Flash
- *  4.1 primary; the `worker` stage's policy fallback (Bedrock Claude) applies
- *  through the router unchanged. Env-overridable for a controlled experiment,
- *  never to Google. */
-const AGENT_PRIMARY_PROVIDER = (process.env.AGENT_PRIMARY_PROVIDER || 'deepseek') as LLMProvider;
-const AGENT_PRIMARY_MODEL = process.env.AGENT_PRIMARY_MODEL || 'deepseek-flash';
+/** VTID-04593 (owner decision 2026-09-26): the coding agent runs on Bedrock
+ *  Claude Sonnet 4.6; the `worker` stage's policy fallback applies through the
+ *  router unchanged. Resolved in dev-pipeline-models.ts (env-overridable,
+ *  never to Google or the direct Anthropic API). Replaces the earlier DeepSeek
+ *  Flash primary, under which 9 of 15 operator runs since 2026-09-22 hit the
+ *  turn cap without finishing. */
+const AGENT_PRIMARY = devWorkerModel();
 const AGENT_MAX_TURNS = Number.parseInt(process.env.AGENT_MAX_TURNS || '60', 10);
 const AGENT_DEADLINE_MS = Number.parseInt(process.env.AGENT_DEADLINE_MS || String(22 * 60_000), 10);
 const AGENT_MAX_FIX_ROUNDS = Number.parseInt(process.env.AGENT_MAX_FIX_ROUNDS || '3', 10);
@@ -190,7 +192,7 @@ export async function runAgentExecutionSession(
     },
   });
   const cancelledResult = () => finish({ ok: false, cancelled: true, error: 'cancelled by operator', session_id: sessionId, branch });
-  const override = extractLlmOnRampOverride(exec.metadata) || { provider: AGENT_PRIMARY_PROVIDER, model: AGENT_PRIMARY_MODEL };
+  const override = extractLlmOnRampOverride(exec.metadata) || AGENT_PRIMARY;
   const { callViaRouter } = await import('../llm-router');
 
   let ws: Workspace | null = null;

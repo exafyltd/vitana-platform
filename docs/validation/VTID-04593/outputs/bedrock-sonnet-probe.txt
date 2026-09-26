@@ -1,0 +1,20 @@
+Bedrock probe, eu-central-1, 2026-09-26 (session IAM user, boto3)
+
+list_inference_profiles (sonnet / fable entries):
+  eu.anthropic.claude-sonnet-4-6                ACTIVE
+  eu.anthropic.claude-sonnet-5                  ACTIVE
+  global.anthropic.claude-sonnet-4-6            ACTIVE
+  global.anthropic.claude-sonnet-5              ACTIVE
+  (plus older sonnet 3 / 4 / 4.5 and fable-5 / fable-5-1 profiles)
+
+invoke_model, max_tokens 16, "hi":
+  eu.anthropic.claude-sonnet-4-6       OK  "Hi there! How are you doing? ..."
+  global.anthropic.claude-sonnet-4-6   OK
+  eu.anthropic.claude-sonnet-5         AccessDeniedException: anthropic.claude-sonnet-5 is not available for this account
+  global.anthropic.claude-sonnet-5     AccessDeniedException: anthropic.claude-sonnet-5 is not available for this account
+
+Conclusion: Sonnet 5 is listed but not subscribed; the coding agent uses eu.anthropic.claude-sonnet-4-6.
+
+Live llm_routing_policy v17 (DEV, shared by both stacks), unchanged by this VTID:
+  planner: bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0  fallback bedrock/eu.anthropic.claude-sonnet-4-6
+  worker:  bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0  fallback bedrock/eu.anthropic.claude-sonnet-4-6

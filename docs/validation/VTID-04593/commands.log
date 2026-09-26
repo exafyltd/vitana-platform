@@ -1,0 +1,4 @@
+python3 bedrock-probe.py                      # list + invoke Sonnet 4.6 / Sonnet 5 profiles
+npx tsc --noEmit -p services/gateway          # clean
+npx jest test/vtid-04593-dev-pipeline-models.test.ts test/vtid-04007-open-ended-intake.test.ts test/vtid-04465-operator-pipeline-regression.test.ts ...   # pass
+npx jest (full gateway suite)                 # see PR body

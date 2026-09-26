@@ -287,7 +287,8 @@ describe('Golden path: an operator request becomes a merged, deployed, verified 
       require_approval: true,
       source: 'operator-onramp',
       triggered_by: `operator-chat:${threadId}`,
-      llm_on_ramp_override: { provider: 'deepseek', model: 'deepseek-flash' },
+      // VTID-04593: the coding agent runs on Bedrock Claude Sonnet 4.6.
+      llm_on_ramp_override: { provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' },
     }));
     expect(platform.events('operator.execution_onramp.triggered')).toEqual([
       expect.objectContaining({ vtid, metadata: expect.objectContaining({ execution_id: execId, vtid_allocated: true, intake: 'open_ended' }) }),
@@ -304,7 +305,7 @@ describe('Golden path: an operator request becomes a merged, deployed, verified 
     // The agent ran on DeepSeek Flash (the on-ramp override), through the worker stage.
     const workerCalls = model.calls.filter((c) => c.stage === 'worker');
     expect(workerCalls).toHaveLength(4);
-    expect(workerCalls.every((c) => c.providerOverride === 'deepseek' && c.modelOverride === 'deepseek-flash' && c.vtid === vtid)).toBe(true);
+    expect(workerCalls.every((c) => c.providerOverride === 'bedrock' && c.modelOverride === 'eu.anthropic.claude-sonnet-4-6' && c.vtid === vtid)).toBe(true);
     // The runner re-verified independently of the model's own run_check.
     expect(checks.log.map((c) => c.kind)).toEqual(['jest', 'runner:tsc', 'runner:jest']);
 
@@ -530,7 +531,7 @@ describe('Safety: an LLM provider outage stops the loop instead of feeding it', 
     expect(ex.status).toBe('reverted');
     const child = platform.rows('dev_autopilot_executions').find((e) => e.parent_execution_id === execId)!;
     expect(child).toEqual(expect.objectContaining({ status: 'cooling', auto_fix_depth: 1 }));
-    expect(child.metadata.llm_on_ramp_override).toEqual({ provider: 'deepseek', model: 'deepseek-flash' });
+    expect(child.metadata.llm_on_ramp_override).toEqual({ provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' });
     expect(platform.ledger(vtid).is_terminal).toBe(false);
   });
 
