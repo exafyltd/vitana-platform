@@ -1,0 +1,6 @@
+cd services/gateway
+npx jest test/vtid-04650-community-autopilot-template-retirement.test.ts test/vtid-04505-community-autopilot-scan.test.ts test/vtid-04523-community-autopilot-lineup-cap.test.ts   # 34/34
+npm run test:community-autopilot   # 14 suites, 242 tests
+sed -i (ranker drop -> if (false)); npx jest test/vtid-04650-...   # 1 failed (mutation caught), restored
+npx tsc --noEmit -p .   # clean
+node runhttp.cjs docs/validation/VTID-04650/staging-tests.json   # read-only, staging gateway
