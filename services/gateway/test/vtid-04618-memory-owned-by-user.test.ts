@@ -30,8 +30,20 @@ describe('VTID-04618 memory self-check', () => {
       expect(text).toContain('WHAT THE USER TOLD YOU IS THEIRS');
       expect(text).toMatch(/partner, family, friends: names,\s+birthdays/);
       expect(text).toContain('Never refuse');
-      expect(text).toContain('never cite privacy or data protection');
-      expect(text).toContain('look it up with your memory tool first');
+      expect(text).toMatch(/never cite privacy or data\s+protection/);
+      expect(text).toContain('call search_memory before');
+    }
+  });
+
+  // VTID-04645: staging 2026-09-26 — asked for the wife's birthday, Vitana
+  // answered with the brother's date from a session summary instead of
+  // looking it up.
+  it('never lends one person\'s fact to another, and says so when it is not found', () => {
+    for (const text of renders()) {
+      expect(text).toMatch(/Match the person\s+exactly/);
+      expect(text).toMatch(/is never the answer for another/);
+      expect(text).toMatch(/no such fact for exactly that person, call search_memory before\s+you answer/);
+      expect(text).toMatch(/say you don't have it\s+yet and ask for it/);
     }
   });
 

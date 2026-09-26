@@ -17944,6 +17944,56 @@ button.fb-chip:focus-visible,
 }
 
 /* VTID-04635: Testing & QA tabs (CSP: classes, never inline styles). */
-.testing-info-spaced { margin-bottom: 1rem; }
+
 .testing-e2e-title { margin: 0; }
 .testing-e2e-badge { font-size: 0.75rem; }
+
+/* VTID-04642: Testing & QA — Overview / Catalog / Runs (tq-*). */
+.tq-view { padding: 1.5rem; max-width: 100%; box-sizing: border-box; }
+.tq-header h2 { margin: 0 0 0.25rem; }
+.tq-section-title { margin: 1.75rem 0 0.5rem; }
+.tq-muted { color: var(--color-text-secondary); font-size: 0.85rem; margin: 0.25rem 0 0.75rem; }
+.tq-link { color: var(--color-accent); text-decoration: none; }
+.tq-link:hover, .tq-link:focus-visible { text-decoration: underline; }
+.tq-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+.tq-pill-row { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
+.tq-pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+.tq-pill-ok { background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.35); }
+.tq-pill-bad { background: rgba(239, 68, 68, 0.15); color: #f87171; border-color: rgba(239, 68, 68, 0.35); }
+.tq-pill-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border-color: rgba(245, 158, 11, 0.35); }
+.tq-pill-neutral { background: rgba(148, 163, 184, 0.12); color: var(--color-text-secondary); border-color: var(--color-border); }
+.tq-pill-env { background: rgba(59, 130, 246, 0.12); color: #93c5fd; border-color: rgba(59, 130, 246, 0.3); }
+.tq-table th { text-align: left; font-size: 0.8rem; white-space: nowrap; }
+.tq-env-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+.tq-env-card { border: 1px solid var(--color-border); border-radius: 10px; padding: 0.9rem 1rem; background: var(--color-sidebar-bg); }
+.tq-env-card-bad { border-color: rgba(239, 68, 68, 0.55); }
+.tq-env-card-warn { border-color: rgba(245, 158, 11, 0.55); }
+.tq-env-title { font-weight: 700; }
+.tq-env-note { color: var(--color-text-secondary); font-size: 0.78rem; margin-bottom: 0.5rem; }
+.tq-env-rate { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
+.tq-env-sub { color: var(--color-text-secondary); font-size: 0.75rem; margin-bottom: 0.5rem; }
+.tq-sv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
+.tq-sv-card { border: 1px solid var(--color-border); border-radius: 10px; padding: 0.75rem 1rem; background: var(--color-sidebar-bg); display: flex; flex-direction: column; gap: 0.35rem; }
+.tq-sv-top { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.tq-sv-fail { color: #fca5a5; font-size: 0.8rem; overflow-wrap: anywhere; }
+.tq-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--color-border); border-radius: 8px; }
+.tq-table { width: 100%; min-width: 720px; }
+.tq-table td { vertical-align: top; font-size: 0.85rem; }
+.tq-row-click { cursor: pointer; }
+.tq-row-click:hover, .tq-row-click:focus-visible { background: rgba(59, 130, 246, 0.08); }
+.tq-detail-row td { background: rgba(15, 23, 42, 0.6); }
+.tq-file-list { margin: 0.25rem 0; padding-left: 1.25rem; font-size: 0.8rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.tq-filter-bar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 1rem 0; }
+.tq-select, .tq-input { background: var(--color-sidebar-bg); color: var(--color-text-primary); border: 1px solid var(--color-border); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.85rem; min-height: 36px; }
+.tq-input { min-width: 220px; flex: 1 1 220px; }
+.tq-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+.tq-stat { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.6rem 0.75rem; }
+.tq-stat-value { font-size: 1.3rem; font-weight: 700; }
+.tq-stat-label { color: var(--color-text-secondary); font-size: 0.75rem; }
+.tq-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin-top: 1.25rem; }
+@media (max-width: 640px) {
+    .tq-view { padding: 1rem; }
+    .tq-env-grid, .tq-sv-grid { grid-template-columns: 1fr; }
+    .tq-input { min-width: 0; width: 100%; }
+    .tq-select { flex: 1 1 45%; }
+}
