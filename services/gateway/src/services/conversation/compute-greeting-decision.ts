@@ -718,8 +718,13 @@ export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecisi
     .filter((h) => h.length > 0)
     .slice(0, 6)
     .map((h) => (h.length > 240 ? `${h.slice(0, 237)}...` : h));
+  // VTID-04586: these facts come from the snapshot taken as the session opened.
+  // Without saying so, the conduct rule "use your tools before you state a
+  // current fact" made the model call dev_system_status before its opener on
+  // most Command Hub sessions — a full tool round trip (~1.3-2 s) before the
+  // first word, re-fetching what it had just been given.
   const facts = highlights.length > 0
-    ? `\nFacts (as of this session start):\n${highlights.map((h) => `- ${h}`).join('\n')}`
+    ? `\nFacts (loaded as this session opened — current enough for this opening; speak from them directly and call no tool before this first reply):\n${highlights.map((h) => `- ${h}`).join('\n')}`
     : '\nFacts: none loaded yet — offer to check the system status for them.';
   const directive =
     `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${intent} ` +
@@ -1058,7 +1063,15 @@ function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | nu
  * `openDecision`) — never a greeting-facts pre-fetch field. Pure.
  */
 export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boolean {
-  return trySupportReportRung(ctx) !== null || tryGuidedTopicRung(ctx) !== null;
+  // VTID-04586: the work-surface rung outranks every ladder and never reads a
+  // member payload, so a Command Hub / admin / BackOffice session must not pay
+  // for the member new-day gather (measured 350-470 ms on staging) or the
+  // greeting-facts wait in front of it.
+  return (
+    tryWorkSurfaceRung(ctx) !== null ||
+    trySupportReportRung(ctx) !== null ||
+    tryGuidedTopicRung(ctx) !== null
+  );
 }
 
 /** VTID-04420: the name clause of the first-time welcome intent. */
