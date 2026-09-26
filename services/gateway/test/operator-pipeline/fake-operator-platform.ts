@@ -472,6 +472,8 @@ export class FakeGitHub {
   readonly pushes: Array<{ branch: string; sha: string; force: boolean; files: string[] }> = [];
   readonly calls: Array<{ method: string; path: string }> = [];
   readonly deletedBranches: string[] = [];
+  /** VTID-04612: main moved ahead of every open PR by `behindBy` commits touching `files`. Null = up to date. */
+  mainAhead: { behindBy: number; files: string[] } | null = null;
   private nextPr = 3600;
   private nextCheck = 900;
 
@@ -593,7 +595,21 @@ export class FakeGitHub {
       return this.res(200, { total_count: (this.checks.get(m[1]) || []).length, check_runs: this.checks.get(m[1]) || [] });
     }
     if ((m = /^\/compare\/(.+)\.\.\.(.+)$/.exec(rest)) && method === 'GET') {
+      const [a, b] = [decodeURIComponent(m[1]), decodeURIComponent(m[2])];
+      const ahead = this.mainAhead;
+      // getBaseChangesSince: {head}...main — what main gained since the PR branched.
+      if (b === 'main') return this.res(200, { ahead_by: ahead ? ahead.behindBy : 0, behind_by: 1, files: (ahead ? ahead.files : []).map((filename) => ({ filename })) });
+      // getBehindBy: main...{head}.
+      if (a === 'main') return this.res(200, { behind_by: ahead ? ahead.behindBy : 0, ahead_by: 1, status: ahead ? 'diverged' : 'ahead' });
       return this.res(200, { behind_by: 0, ahead_by: 1, status: 'ahead' });
+    }
+    if ((m = /^\/pulls\/(\d+)\/files$/.exec(rest)) && method === 'GET') {
+      const pr = this.prs.get(Number(m[1]));
+      if (!pr) return this.res(404, { message: 'Not Found' });
+      const main = this.filesAt('main');
+      const head = this.filesAt(pr.head.sha);
+      const changed = Object.keys({ ...main, ...head }).filter((f) => main[f] !== head[f]).sort();
+      return this.res(200, changed.map((filename) => ({ filename, status: 'modified', additions: 1, deletions: 0 })));
     }
     if ((m = /^\/actions\/jobs\/(\d+)\/logs$/.exec(rest)) && method === 'GET') {
       const log = this.jobLogs.get(Number(m[1]));

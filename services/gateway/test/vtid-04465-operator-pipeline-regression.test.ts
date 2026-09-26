@@ -985,6 +985,32 @@ describe('Safety: the kill switch stops claiming and the watchers', () => {
   });
 });
 
+// ===========================================================================
+// VTID-04612 — a green PR that is behind main
+// ===========================================================================
+
+describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
+  it('main moved but touched none of the PR files → merged on its green CI, no branch update', async () => {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    platform.github.mainAhead = { behindBy: 2, files: ['services/gateway/src/services/unrelated.ts', 'docs/notes.md'] };
+    await ciTick();
+    expect(platform.github.calls.some((c) => c.path.endsWith(`/pulls/${prNumber}/update-branch`))).toBe(false);
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(true);
+    expect(platform.execution(execId).status).not.toBe('ci');
+    expect(execEvents('dev_autopilot.execution.branch_updated', execId)).toEqual([]);
+  });
+
+  it('main touched a file the PR changes → the branch is updated and the PR waits for CI on the new head', async () => {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    platform.github.mainAhead = { behindBy: 1, files: [GREETING] };
+    await ciTick();
+    expect(platform.github.calls.some((c) => c.path.endsWith(`/pulls/${prNumber}/update-branch`))).toBe(true);
+    expect(platform.github.prs.get(prNumber)!.merged).toBe(false);
+    expect(platform.execution(execId).status).toBe('ci');
+    expect(execEvents('dev_autopilot.execution.branch_updated', execId)).toHaveLength(1);
+  });
+});
+
 describe('Contract: the emulated one-in-flight-execution index matches the migration', () => {
   it('the fake refuses a second in-flight execution for a finding with the same statuses the real index covers', () => {
     const dir = path.join(__dirname, '../../../supabase/migrations');

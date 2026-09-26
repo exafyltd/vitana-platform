@@ -326,13 +326,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",
@@ -13348,13 +13351,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",

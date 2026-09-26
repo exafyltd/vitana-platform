@@ -76,7 +76,6 @@ import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
 import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
-import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
@@ -108,6 +107,20 @@ import {
  */
 export function isNovaProvider(session: GeminiLiveSession): boolean {
   return (session as any).upstreamProvider === 'nova_sonic';
+}
+
+/**
+ * VTID-04609: the conversation was closed after Vitana's farewell was spoken
+ * (end_conversation tool, or a turn_complete backstop). Anything the model
+ * generates after that is a repeat: Gemini Live answers the tool result by
+ * saying the farewell again ("…prijatan dan!Razumem. Nema problema…",
+ * session live-a7b3a904, 2026-09-26). Drop that audio and transcript so it is
+ * neither heard nor stored in the inbox. When the model called the tool
+ * before saying anything, the flag stays false and its farewell still plays.
+ */
+export function isPostFarewellOutput(session: GeminiLiveSession): boolean {
+  return (session as any).endConversationDirectiveSent === true
+    && (session as any).farewellSpokenBeforeClose === true;
 }
 
 /**
@@ -158,47 +171,6 @@ export async function bridgeVoiceTranscript(
     },
   }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
   return false;
-}
-
-/**
- * VTID-03520: fire the same push+inapp notification
- * chat.ts's /send route has always fired for a Vitana reply to a human
- * (type `new_chat_message`) — voice-bridged turns never did. Without this,
- * `bridgeVoiceTranscript()`'s insert lands in `chat_messages` immediately,
- * but nothing tells the client a new message exists: the frontend's
- * Realtime subscription only mirrors while the Messages screen is mounted
- * and React Query's `staleTime` otherwise leaves it looking current, so the
- * message is only discovered whenever the user next happens to reopen the
- * Messenger — anywhere from minutes to 24h+ later (reported live). Only
- * call this for the Vitana→user leg (the user doesn't need a push about
- * their own transcribed speech), and only once `wroteToChatMessages` is
- * true — no point notifying about a row that was never written.
- */
-export function notifyOrbVoiceBridgeWrite(
-  wroteToChatMessages: boolean,
-  bridgeUserId: string,
-  bridgeTenantId: string,
-  assistantText: string,
-  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
-): void {
-  if (!wroteToChatMessages) return;
-  notifyUserAsync(
-    bridgeUserId,
-    bridgeTenantId,
-    'new_chat_message',
-    {
-      title: 'Vitana',
-      body: assistantText.length > 100 ? assistantText.slice(0, 97) + '...' : assistantText,
-      data: {
-        type: 'new_chat_message',
-        sender_id: VITANA_BOT_USER_ID,
-        sender_name: 'Vitana',
-        thread_id: VITANA_BOT_USER_ID,
-        url: `/inbox/u/${VITANA_BOT_USER_ID}`,
-      },
-    },
-    bridgeSupabase,
-  );
 }
 
 /**
@@ -1023,7 +995,9 @@ export function createUpstreamLiveMessageHandler(
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
-                // Pre-set read_at since user already heard this during the voice session
+                // Pre-set read_at since user already heard this during the voice session.
+                // VTID-04601: no push/in-app notification — the user is in the live
+                // conversation and just heard this. Matches handleTurnComplete().
                 if (chatBridgeAssistantText.length > 0) {
                   void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
@@ -1034,9 +1008,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }, 'vitana_to_user', session.sessionId).then((written) => {
-                    notifyOrbVoiceBridgeWrite(written, bridgeUserId, bridgeTenantId, chatBridgeAssistantText, bridgeSupabase);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
@@ -1286,7 +1258,7 @@ export function createUpstreamLiveMessageHandler(
                 // are dropped. The first ~30-60 chars before detection
                 // still reach the user — better than nothing-suppressed.
                 // The model continues generating; we just stop forwarding.
-                if ((session as any).suppressCurrentTurnAudio === true) {
+                if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
                   (session as any).currentTurnAudioChunksDropped =
                     ((session as any).currentTurnAudioChunksDropped || 0) + 1;
                   // Log every 25th dropped chunk so we don't spam the log
@@ -1404,6 +1376,8 @@ export function createUpstreamLiveMessageHandler(
             // the post-nav model response even though the user never heard it.
             if (session.navigationDispatched) {
               console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
+            } else if (isPostFarewellOutput(session)) {
+              // VTID-04609: repeat of the farewell after the close — not stored.
             } else {
               console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
               if (session.sseResponse) {
@@ -1815,7 +1789,7 @@ export function handleAudioOutput(
       });
     }
   }
-  if ((session as any).suppressCurrentTurnAudio === true) {
+  if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
     if ((session as any).currentTurnAudioChunksDropped % 25 === 1) {
@@ -1918,6 +1892,8 @@ export function handleTranscript(
     console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
     return;
   }
+  // VTID-04609: repeat of the farewell after the close — not stored.
+  if (isPostFarewellOutput(session)) return;
 
   // Nova staged generation: FINAL replaces the accumulated speculative
   // buffer (the committed transcript — persist exactly once, never both
