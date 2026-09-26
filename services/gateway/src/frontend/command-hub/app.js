@@ -35421,7 +35421,7 @@ function renderTestingUnitView() {
         '<li><strong>Gateway:</strong> Jest, <code>services/gateway/test/</code> (about 1,300 files), via <code>TEST-SUITE.yml</code> on every PR, every push to main and nightly at 03:17 UTC.</li>' +
         '<li><strong>Frontend:</strong> Vitest, <code>exafyltd/vitana-v1</code> <code>src/**/*.test.ts(x)</code> (about 190 files), via <code>UNIT-TESTS.yml</code> on every PR, push and nightly at 03:47 UTC. It cannot be started from here yet.</li>' +
         '<li><strong>Coverage:</strong> not published yet.</li></ul>';
-    info.style.marginBottom = '1rem';
+    info.classList.add('testing-info-spaced');
     container.appendChild(info);
 
     container.appendChild(renderTestingQuickRunButtons('unit', [
@@ -35518,7 +35518,14 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">staging</span>';
+    var e2eTitle = document.createElement('h2');
+    e2eTitle.className = 'testing-e2e-title';
+    e2eTitle.textContent = 'E2E Tests';
+    var e2eBadge = document.createElement('span');
+    e2eBadge.className = 'status-badge status-active testing-e2e-badge';
+    e2eBadge.textContent = 'staging';
+    titleRow.appendChild(e2eTitle);
+    titleRow.appendChild(e2eBadge);
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
