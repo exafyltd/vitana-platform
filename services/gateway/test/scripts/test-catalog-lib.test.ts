@@ -124,6 +124,62 @@ jobs:
     expect(w.environments).toContain('production');
   });
 
+  it('does not flag production curl checks when the Playwright step runs on staging (VTID-04648)', () => {
+    const w = wf('MORNING-SYSTEM-HEALTH-CHECK.yml', `on:
+  schedule:
+    - cron: '0 6 * * *'
+env:
+  GATEWAY_URL: https://gateway.vitanaland.com
+  COMMUNITY_STAGING_URL: https://preview-aws.vitanaland.com
+jobs:
+  x:
+    steps:
+      - name: prod health
+        run: curl -sS "$GATEWAY_URL/alive"
+      - name: screen load (staging)
+        env:
+          COMMUNITY_URL: \${{ env.COMMUNITY_STAGING_URL }}
+        run: npx playwright test screen-load-timing.spec.ts
+`);
+    expect(w.flags).not.toContain('ui_test_touches_production');
+    expect(w.environments).toContain('production');
+  });
+
+  it('resolves env references in the Playwright step (VTID-04648)', () => {
+    const w = wf('X-E2E.yml', `on:
+  workflow_dispatch:
+env:
+  COMMUNITY_PROD_URL: https://vitanaland.com
+jobs:
+  x:
+    steps:
+      - name: e2e
+        env:
+          COMMUNITY_URL: \${{ env.COMMUNITY_PROD_URL }}
+        run: npx playwright test
+`);
+    expect(w.flags).toContain('ui_test_touches_production');
+  });
+
+  it('ignores production hosts in a refusal glob (VTID-04648)', () => {
+    const w = wf('SCREEN-LOAD-TIMING.yml', `on:
+  workflow_dispatch:
+jobs:
+  x:
+    steps:
+      - name: run
+        run: |
+          case "$COMMUNITY_URL" in
+            https://vitanaland.com*|https://www.vitanaland.com*) exit 1 ;;
+          esac
+          npx playwright test screen-load-timing.spec.ts
+        env:
+          COMMUNITY_URL: https://preview-aws.vitanaland.com
+`);
+    expect(w.flags).not.toContain('ui_test_touches_production');
+    expect(w.environments).toEqual(['staging']);
+  });
+
   it('flags dead GCP hosts and ignores commented-out steps', () => {
     const w = wf('MOBILE-DEVICE-E2E.yml', `on:
   workflow_dispatch:
@@ -223,6 +279,14 @@ describe('this repository, scanned for real', () => {
       .filter((w: any) => w.environments.length === 0 && w.flags.length === 0 && w.triggers.workflow_dispatch === false)
       .map((w: any) => w.file);
     expect(unlabelled).toEqual([]);
+  });
+
+  it('runs no browser suite against production (VTID-04648)', () => {
+    const flagged = workflows
+      .map((w) => lib.parseWorkflow('platform', w.file, w.text))
+      .filter((w: any) => w.flags.includes('ui_test_touches_production'))
+      .map((w: any) => w.file);
+    expect(flagged).toEqual([]);
   });
 
   it('catalogues TEST-CATALOG.yml itself as a job, not a test', () => {

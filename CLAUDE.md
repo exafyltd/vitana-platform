@@ -351,7 +351,11 @@ Applies to both repos.
 48. **Staging tests are read-only.** Staging writes to the production
     Supabase project (rules 31–32). Suites read, render and probe; anything
     that needs a write is proven by CI unit/integration tests. **No
-    automated suite ever targets production.**
+    automated test suite ever targets production.** Production gets only
+    read-only checks: the post-deploy verification (automatic rollback on
+    failure, VTID-04647) and scheduled health checks — unauthenticated GETs
+    of health and build-info endpoints, no sign-in, no writes, no browser
+    suite. A browser suite runs on staging (VTID-04648).
 49. **Ready message — two channels only.** **IF** STAGING-VERIFY passes →
     **THEN** the Claude Code session that merged the change, and the Command
     Hub Operator Chat, ask the developer: *"Staging verified — ready for
@@ -2260,8 +2264,9 @@ When changing code:
    ```
    (`scripts/deploy/publish-to-prod.sh` wraps the dead GCP-era
    `EXEC-DEPLOY.yml` — do not use it.)
-8. **Verify prod** — deploy check only, per §15. No test suite ever runs
-   against production.
+8. **Verify prod** — deploy check only, per §15, plus the workflow's own
+   read-only post-deploy check with automatic rollback (VTID-04647). No test
+   suite ever runs against production.
 
 ### Do NOT manually dispatch a prod deploy workflow as a routine step
 
