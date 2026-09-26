@@ -256,6 +256,16 @@ jobs:
       # (04550), mobile lead on the first burst only (04552), tool acknowledgement
       # intent (04553). ORB_PREWARM_FULL_CONTEXT_ENABLED (04554) is deliberately NOT
       # pinned: it would stop the blind prewarm claim, losing its latency gain. Rollback: one value to 'false'.
+      # (VTID-04624: moved out of the run: block below to stay under the 20,000-char limit, VTID-03788.)
+      # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
+      # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
+      # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
+      # untouched on the task definition and the gateway keeps reporting the
+      # bridge as not_configured. It must never fail a gateway deploy.
+      # VTID-04133: Operator Console machine-to-machine auth token — optional,
+      # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
+      # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
+      # task def, never forced off); present => enabled + wired as a secret.
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -706,11 +716,12 @@ jobs:
 #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
 #     memory through the broker; falls back to the legacy read on failure.
 #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
-# Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
-# if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
-# gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
-# nothing is wired and the tool keeps reporting not_configured. It must
-# never fail a gateway deploy. Rollback for any of these is the value ->
+# Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
+# readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
+# the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
+# ENABLED=true + OPERATOR_SQL_READONLY_BACKEND=supabase: the live DB through
+# public.operator_readonly_query (service_role only, read-only transaction).
+# It must never fail a gateway deploy. Rollback for any of these is the value ->
 # "false" (or removal), no code revert.
 #
 # VTID-04225 -- three credentials the starved autopilot/self-healing loops
@@ -876,11 +887,6 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
-          # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
-          # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
-          # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
-          # untouched on the task definition and the gateway keeps reporting the
-          # bridge as not_configured. It must never fail a gateway deploy.
           ERP_BRIDGE_URL="http://erp-bridge.vitana.internal:8080"
           SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_ERP_BRIDGE" ] || [ "$SEC_ERP_BRIDGE" = "None" ]; then
@@ -892,17 +898,13 @@ jobs:
           SEC_SQL_RO=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-sql-readonly-url --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_SQL_RO" ] || [ "$SEC_SQL_RO" = "None" ]; then
             SEC_SQL_RO=""
-            echo "  operator sql read-only secret absent - dev_run_sql_readonly stays not_configured (VTID-04037; run scripts/aws/setup-operator-sql-readonly-secret.sh)"
+            echo "  operator sql read-only secret absent - dev_run_sql_readonly reads the live DB via operator_readonly_query (VTID-04624)"
           else
             echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
           SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
           [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
           [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
-          # VTID-04133: Operator Console machine-to-machine auth token — optional,
-          # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
-          # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
-          # task def, never forced off); present => enabled + wired as a secret.
           SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_MACHINE_AUTH" ] || [ "$SEC_MACHINE_AUTH" = "None" ]; then
             SEC_MACHINE_AUTH=""
@@ -973,7 +975,7 @@ jobs:
                                                 "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
-                                                "OPERATOR_SQL_READONLY_ENABLED",
+                                                "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH",
@@ -1092,7 +1094,9 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_DATABASE_URL") | not) ]
                             + [ {name:"OPERATOR_SQL_READONLY_DATABASE_URL", valueFrom:$SEC_SQL_RO} ] ) )
-                    else . end )
+                    else ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND") | not) ]
+                            + [ {name:"OPERATOR_SQL_READONLY_ENABLED", value:"true"}, {name:"OPERATOR_SQL_READONLY_BACKEND", value:"supabase"} ] ) ) end )
                 | ( if $SEC_MACHINE_AUTH != "" then
                       ( .containerDefinitions[0].environment |=
                           ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_ENABLED") | not) ]
