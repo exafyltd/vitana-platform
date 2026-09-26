@@ -1,0 +1,14 @@
+$ npx jest test/routes/testing.test.ts
+Tests: 28 passed, 28 total
+
+$ npx jest test/vtid-04614 test/command-hub test/routes/testing.test.ts test/scripts
+Tests: 545 passed, 545 total
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+(ok)
+
+$ npx tsc --noEmit
+(no errors)
+
+$ node -e 'validateManifest(staging-tests.json)'
+{"ok":true,"errors":[]}
