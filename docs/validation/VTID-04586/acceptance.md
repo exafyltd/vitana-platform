@@ -39,21 +39,22 @@ guard is byte-identical; only the Command Hub instruction snapshot moved
 
 ## Acceptance criteria
 
-- AC-1 A work surface (Command Hub developer, admin) skips the member payload gathers on both ladders.
+AC-1 A work surface (Command Hub developer, admin) skips the member payload gathers on both ladders.
   TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts ("VTID-04586: a work surface skips the member payload gathers")
-- AC-2 The member surface still gathers on both ladders.
+AC-2 The member surface still gathers on both ladders.
   TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts ("VTID-04586: the member surface still gathers")
-- AC-3 The work-surface opener tells the model to speak from the loaded facts and call no tool first.
+AC-3 The work-surface opener tells the model to speak from the loaded facts and call no tool first.
   TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts ("VTID-04586: the opener speaks from the loaded facts and calls no tool first")
-- AC-4 The developer conduct rule no longer demands a tool call for facts the snapshot covers.
+AC-4 The developer conduct rule no longer demands a tool call for facts the snapshot covers.
   TEST: services/gateway/test/vtid-04560-role-separation-regression.test.ts ("VTID-04586: the developer conduct rule no longer demands a tool call …")
-- AC-5 Nothing else the voice provider receives changes; only the Command Hub instruction moves.
+AC-5 Nothing else the voice provider receives changes; only the Command Hub instruction moves.
   TEST: services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.test.ts
-- AC-6 The VTID-04544 gather contract still holds.
+AC-6 The VTID-04544 gather contract still holds.
   TEST: services/gateway/test/services/conversation/vtid-04544-greeting-payload-gather.test.ts
-- AC-7 (staging, after merge) Command Hub first model audio p50 back near the pre-VTID-04560 3.3 s,
+AC-7 (staging, after merge) Command Hub first model audio p50 back near the pre-VTID-04560 3.3 s,
   no `dev_system_status` tool call on turn 0, no `greeting_gather_awaited` on Command Hub sessions.
   Recorded in `outputs/staging-benchmark-after.*` once measured.
+  CURL: https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info (serves the merge commit), then scripts/orb/measure-orb-first-audio.mjs --auth --lang=en --route=/command-hub --trials=6
 
 Both fixes were mutation-checked: undoing each one fails its test (commands.log).
 
