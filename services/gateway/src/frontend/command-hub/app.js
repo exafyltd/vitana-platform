@@ -6630,16 +6630,17 @@ function renderHeader() {
                 for (var shi = 0; shi < groupItems.length; shi++) {
                     (function (svc) {
                         var dot = serviceHealthDot(svc);
+                        var dotClass = SERVICE_HEALTH_DOT_CLASS[dot];
 
                         var cell = document.createElement('div');
                         cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
                         cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                         cell.innerHTML =
-                            '<span class="health-dot health-dot-' + dot + '"></span>' +
+                            '<span class="health-dot ' + dotClass + '"></span>' +
                             '<span class="health-grid__cell-name">' + svc.name + '</span>';
                         cell.onclick = function () {
                             var detailHTML = '<div class="health-detail__header">' +
-                                '<span class="health-dot health-dot-' + dot + '"></span>' +
+                                '<span class="health-dot ' + dotClass + '"></span>' +
                                 '<strong>' + svc.name + '</strong>' +
                                 '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
                                 (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
@@ -27541,6 +27542,17 @@ function serviceHealthDot(svc) {
     return 'red';
 }
 
+/**
+ * VTID-04661: literal class names, so styles.css's dead-rule checker
+ * (scripts/find-dead-css-classes.mjs) can see every dot class in use.
+ */
+var SERVICE_HEALTH_DOT_CLASS = {
+    green: 'health-dot-green',
+    yellow: 'health-dot-yellow',
+    red: 'health-dot-red',
+    grey: 'health-dot-grey'
+};
+
 var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
     { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
@@ -29764,7 +29776,9 @@ function renderOverviewSystemView() {
                     var svcList = document.createElement('div');
                     svcList.className = 'overview-health-chip-row';
                     svcs.forEach(function (s) {
-                        var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                        // VTID-04661: a check the probe could not look at is grey, not red.
+                        var dotClass = (s.status === 'no_access') ? 'grey'
+                            : (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                             : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                             : 'red';
                         var chip = document.createElement('span');
