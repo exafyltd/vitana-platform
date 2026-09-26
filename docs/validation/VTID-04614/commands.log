@@ -1,0 +1,26 @@
+# VTID-04614 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-26T09:16:05.425Z
+# execution_id=d085fdd6-4977-4bdf-ad43-648c9f1fc395 finding_id=bcf46282-2450-49b4-a261-4d377ce41a28 plan_version=1
+# branch=dev-autopilot/d085fdd6 base=main
+# llm provider=bedrock model=eu.anthropic.claude-sonnet-4-6
+
+# agent turns=21 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/d085fdd6
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add services/gateway/src/frontend/command-hub/app.js   # modify
+$ git add services/gateway/src/frontend/command-hub/index.html   # modify
+$ git add services/gateway/src/frontend/command-hub/styles.css   # modify
+$ git add services/gateway/test/vtid-04614-autopilot-live-failure-reason-meta.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04614/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/d085fdd6
+$ gh pr create --base main --head dev-autopilot/d085fdd6
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).
