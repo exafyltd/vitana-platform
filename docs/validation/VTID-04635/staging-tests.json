@@ -12,9 +12,8 @@
       "path": "/api/v1/testing/orb-monitor/trigger", "rejected_probe": true, "expect_status": 401 },
     { "kind": "http", "name": "suite list still answers", "path": "/api/v1/testing/suites",
       "expect_status": 200, "expect_json": { "ok": true } },
-    { "kind": "http", "name": "served app.js carries the corrected Testing & QA tabs", "target": "gateway",
-      "path": "/command-hub/app.js", "expect_status": 200, "expect_content_type": "application/javascript",
-      "expect_body_contains": "renderTestingRebuildNotice" },
+    { "kind": "existing", "ref": "npx jest test/command-hub/vtid-04635-testing-qa-tabs-honest.test.ts", "cwd": "services/gateway",
+      "reason": "pins the corrected Testing & QA tabs in app.js; the served file is not checkable (the change sits past the runner's 1 MB body limit and Cloudflare caches the unversioned path)" },
     { "kind": "existing", "ref": "npx jest test/routes/testing.test.ts", "cwd": "services/gateway",
       "reason": "pins the admin gate on every run route and the staging-only E2E target" }
   ]

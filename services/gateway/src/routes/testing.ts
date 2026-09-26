@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import githubService from '../services/github-service';
 import * as repo from '../services/testing/testing-repository';
+import { loadTestCatalog, queryCatalog, suiteDetail } from '../services/testing/test-catalog';
 import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
@@ -89,6 +90,44 @@ router.get('/suites', (_req: Request, res: Response) => {
 });
 
 // ─── GET /runs — List historical test runs ────────────────────────────────
+// ─── GET /catalog — the generated test catalog (VTID-04637) ──────────────
+// Every automated test in both repositories, grouped into suites, with the
+// workflows that run them, their schedules and the environment each touches
+// (dev_pr / nightly / staging / production). Built by TEST-CATALOG.yml on
+// every merge; read here from S3. exafy_admin only: it lists internal hosts,
+// workflow files and gaps.
+router.get('/catalog', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  try {
+    const { catalog, fromCache, source } = await loadTestCatalog();
+    const q = req.query as Record<string, string | undefined>;
+    const body = queryCatalog(catalog, {
+      environment: q.environment,
+      domain: q.domain,
+      runner: q.runner,
+      repo: q.repo,
+      q: q.q,
+      include_files: q.include_files === 'true',
+    });
+    res.json({ ok: true, from_cache: fromCache, source, ...body });
+  } catch (err: any) {
+    res.status(503).json({ ok: false, error: 'catalog_unavailable', message: err?.message || String(err) });
+  }
+});
+
+// ─── GET /catalog/suite?id=… — one suite with its files (VTID-04637) ─────
+router.get('/catalog/suite', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const id = String(req.query.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  try {
+    const { catalog } = await loadTestCatalog();
+    const detail = suiteDetail(catalog, id);
+    if (!detail) return res.status(404).json({ ok: false, error: 'suite_not_found' });
+    res.json({ ok: true, ...detail });
+  } catch (err: any) {
+    res.status(503).json({ ok: false, error: 'catalog_unavailable', message: err?.message || String(err) });
+  }
+});
+
 router.get('/runs', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
