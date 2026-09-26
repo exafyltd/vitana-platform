@@ -17997,3 +17997,18 @@ button.fb-chip:focus-visible,
     .tq-input { min-width: 0; width: 100%; }
     .tq-select { flex: 1 1 45%; }
 }
+
+/* VTID-04643: Testing & QA — Run Tests launcher. */
+.tq-launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.75rem; }
+.tq-launch-card { border: 1px solid var(--color-border); border-radius: 10px; padding: 0.85rem 1rem; background: var(--color-sidebar-bg); display: flex; flex-direction: column; gap: 0.5rem; }
+.tq-launch-effect { font-size: 0.85rem; }
+.tq-projects { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.5rem 0.75rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.25rem 0.75rem; margin: 0; }
+.tq-projects legend { font-size: 0.78rem; color: var(--color-text-secondary); padding: 0 0.25rem; }
+.tq-check { font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem; min-height: 28px; }
+.tq-reason { width: 100%; box-sizing: border-box; flex: none; }
+.tq-launch-ok { font-size: 0.85rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.tq-details { margin-top: 1.5rem; }
+.tq-details summary { cursor: pointer; font-weight: 600; padding: 0.4rem 0; }
+@media (max-width: 640px) {
+    .tq-launch-grid { grid-template-columns: 1fr; }
+}

@@ -3802,6 +3802,7 @@ const NAVIGATION_CONFIG = [
             { "key": "overview", "path": "/command-hub/testing-qa/overview/" },
             { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
             { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
+            { "key": "run-tests", "path": "/command-hub/testing-qa/run-tests/" },
             { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
         ]
     },
@@ -4854,6 +4855,9 @@ const state = {
         summary: { data: null, loading: false, error: null },
         catalog: { data: null, loading: false, error: null },
         runs: { data: null, loading: false, error: null },
+        launchable: { data: null, loading: false, error: null },
+        launches: { data: null, loading: false, error: null },
+        launchForms: {},
         catalogFilters: { environment: '', q: '' },
         runsFilters: { environment: '', conclusion: '', repo: '' },
         expandedSuite: null,
@@ -8648,6 +8652,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingCatalogView());
     } else if (moduleKey === 'testing-qa' && tab === 'runs') {
         container.appendChild(renderTestingRunsView());
+    } else if (moduleKey === 'testing-qa' && tab === 'run-tests') {
+        container.appendChild(renderTestingRunTestsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
 
@@ -35887,6 +35893,149 @@ function renderTestingRunsView() {
     });
     container.appendChild(t.wrap);
     return container;
+}
+
+// ─── Testing & QA: Run Tests (VTID-04643) ────────────────────────────────
+// Starts a reviewed test workflow (the gateway's launch list): development and
+// staging tests, and read-only production health checks. Deploys are never
+// started here. Every launch asks why and is recorded in OASIS.
+
+function renderTestingRunTestsView() {
+    tqLoad('launchable', '/api/v1/testing/launchable');
+    tqLoad('launches', '/api/v1/testing/launches');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Run tests', 'Start a reviewed test workflow. Development and staging tests run against code or staging; production only gets read-only health checks. Deploys go through PUBLISH, never through here.'));
+
+    var l = state.testingQa.launchable;
+    var status = tqStatusBlock(l, 'the launch list');
+    if (status) { container.appendChild(status); return container; }
+
+    var groups = [
+        { env: 'dev_pr', title: 'Development / PR', note: 'Runs on a GitHub runner against the code on main. Touches no deployment.' },
+        { env: 'staging', title: 'Staging', note: 'Runs read-only against the staging deployment.' },
+        { env: 'production', title: 'Production (read-only health checks)', note: 'Reads only. Nothing here writes to production.' }
+    ];
+    groups.forEach(function (g) {
+        var items = (l.data.launchable || []).filter(function (x) { return x.environment === g.env; });
+        if (!items.length) return;
+        container.appendChild(tqEl('h3', 'tq-section-title', g.title));
+        container.appendChild(tqEl('p', 'tq-muted', g.note));
+        var grid = tqEl('div', 'tq-launch-grid');
+        items.forEach(function (item) { grid.appendChild(renderTestingLaunchCard(item, l.data.e2e_projects || [])); });
+        container.appendChild(grid);
+    });
+
+    var not = l.data.not_launchable || [];
+    if (not.length) {
+        var det = tqEl('details', 'tq-details');
+        det.appendChild(tqEl('summary', null, 'Not launchable from here (' + not.length + ')'));
+        var t = tqTable(['Workflow', 'Repo', 'Kind', 'Why not']);
+        not.forEach(function (w) {
+            var row = document.createElement('tr');
+            tqCell(row, w.file);
+            tqCell(row, tqRepoShort(w.repo));
+            tqCell(row, w.kind);
+            tqCell(row, w.reason);
+            t.tbody.appendChild(row);
+        });
+        det.appendChild(t.wrap);
+        container.appendChild(det);
+    }
+
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Recent manual runs'));
+    var rl = state.testingQa.launches;
+    var rs = tqStatusBlock(rl, 'recent runs');
+    if (rs) { container.appendChild(rs); return container; }
+    var launches = rl.data.launches || [];
+    if (!launches.length) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No manual runs yet.'));
+    } else {
+        var lt = tqTable(['When', 'Who', 'Workflow', 'Environment', 'Why']);
+        launches.forEach(function (x) {
+            var row = document.createElement('tr');
+            tqCell(row, formatRelativeTime(x.at));
+            tqCell(row, x.by || '—');
+            tqCell(row, x.label || x.workflow);
+            tqCell(row, tqPill(tqEnvLabel(x.environment), 'env'));
+            tqCell(row, x.reason);
+            lt.tbody.appendChild(row);
+        });
+        container.appendChild(lt.wrap);
+    }
+    return container;
+}
+
+function renderTestingLaunchCard(item, e2eProjects) {
+    var key = item.repo + '|' + item.file;
+    var form = state.testingQa.launchForms[key] || (state.testingQa.launchForms[key] = { reason: '', projects: [], busy: false, result: null, error: null });
+    var card = tqEl('div', 'tq-launch-card');
+    var top = tqEl('div', 'tq-sv-top');
+    top.appendChild(tqEl('strong', null, item.label));
+    top.appendChild(tqPill(tqRepoShort(item.repo), 'neutral'));
+    card.appendChild(top);
+    card.appendChild(tqEl('div', 'tq-mono tq-muted', item.file));
+    card.appendChild(tqEl('div', 'tq-launch-effect', item.effect));
+    if (!item.in_catalog) card.appendChild(tqEl('div', 'tq-sv-fail', 'Not found in the current test catalog; the workflow may have been renamed.'));
+
+    if (item.inputs === 'e2e_projects') {
+        var box = tqEl('fieldset', 'tq-projects');
+        box.appendChild(tqEl('legend', null, 'Playwright projects'));
+        e2eProjects.forEach(function (p) {
+            var lab = tqEl('label', 'tq-check');
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = form.projects.indexOf(p.project) >= 0;
+            cb.onchange = function () {
+                var i = form.projects.indexOf(p.project);
+                if (cb.checked && i < 0) form.projects.push(p.project);
+                if (!cb.checked && i >= 0) form.projects.splice(i, 1);
+            };
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode(' ' + p.label));
+            box.appendChild(lab);
+        });
+        card.appendChild(box);
+    }
+    if (item.inputs === 'staging_verify_gateway') {
+        card.appendChild(tqEl('div', 'tq-muted', 'Runs against the commit the staging gateway reports at start.'));
+    }
+
+    var reason = document.createElement('input');
+    reason.type = 'text';
+    reason.className = 'tq-input tq-reason';
+    reason.placeholder = 'Why are you running this? (recorded)';
+    reason.setAttribute('aria-label', 'Reason for running ' + item.label);
+    reason.value = form.reason;
+    reason.oninput = function () { form.reason = reason.value; };
+    card.appendChild(reason);
+
+    var btn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', form.busy ? 'Starting…' : 'Start');
+    btn.disabled = form.busy;
+    btn.onclick = function () {
+        form.busy = true; form.error = null; form.result = null; renderApp();
+        tqFetchJson('/api/v1/testing/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo: item.repo, workflow: item.file, reason: form.reason, projects: form.projects })
+        }).then(function (body) {
+            form.busy = false; form.result = body; form.reason = '';
+            tqReload('launches');
+            renderApp();
+        }).catch(function (err) {
+            form.busy = false; form.error = err.message; renderApp();
+        });
+    };
+    card.appendChild(btn);
+    if (form.error) card.appendChild(tqEl('div', 'tq-sv-fail', form.error));
+    if (form.result) {
+        var ok = tqEl('div', 'tq-launch-ok');
+        ok.appendChild(tqPill('started', 'ok'));
+        ok.appendChild(document.createTextNode(' '));
+        ok.appendChild(tqLink(form.result.actions_url, 'Follow in GitHub Actions'));
+        ok.appendChild(tqEl('span', 'tq-muted', ' · the result appears in Runs when it finishes.'));
+        card.appendChild(ok);
+    }
+    return card;
 }
 
 function renderTestingE2eView() {
