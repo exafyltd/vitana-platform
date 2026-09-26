@@ -839,6 +839,55 @@ a direct PostgREST request against the live project: `200 OK` with real
 
 ---
 
+### notification_type_controls / notification_type_control_audit / notification_type_blocks — NOT YET APPLIED (VTID-04674)
+**Purpose:** the admin on/off switch per notification type (Admin › Notifications),
+applied to every notification. Migration:
+`supabase/migrations/20260926190000_vtid_04674_notification_type_controls.sql`,
+held until the owner approves the starting on/off list (the database is shared,
+so applying it takes effect in production immediately).
+
+```sql
+CREATE TABLE notification_type_controls (
+  tenant_id uuid NOT NULL, type text NOT NULL,
+  source_key text NOT NULL DEFAULT '',      -- '' = the type; 'AP-0101' = one automation's sends of it
+  enabled boolean NOT NULL DEFAULT false,
+  auto_registered boolean NOT NULL DEFAULT false,  -- added as off on first send
+  reason text, updated_by uuid, updated_by_email text,
+  created_at timestamptz, updated_at timestamptz,
+  PRIMARY KEY (tenant_id, type, source_key)
+);
+CREATE TABLE notification_type_control_audit (id uuid PK, tenant_id, type, source_key,
+  old_enabled, new_enabled, reason, actor_user_id, actor_email, created_at);
+CREATE TABLE notification_type_blocks (tenant_id, type, source_key,
+  block_reason text CHECK (block_reason IN ('admin_off','member_off')), day date,
+  blocked_count int, last_blocked_at, PRIMARY KEY (tenant_id, type, source_key, block_reason, day));
+-- All three: RLS on, no policies, REVOKE ALL from anon/authenticated → service role only.
+ALTER TABLE notification_categories ADD COLUMN member_can_disable boolean NOT NULL DEFAULT true;
+```
+
+**Functions** (SECURITY DEFINER, `service_role` only):
+- `notification_type_allowed(tenant, type, source_key)`: a missing row is inserted as OFF and answers false.
+- `notification_member_allows(user, tenant, type)`
+- `notification_record_block(...)`
+- `notification_type_stats(tenant, days)`
+- `notification_daily_activity(tenant, days≤90)`
+
+**Trigger:** `trg_enforce_notification_type_controls` runs BEFORE INSERT on
+`user_notifications`. It drops the row (returns NULL) and counts it when the
+admin switch is off or the member switched the category off. On an internal
+error it fails open with a WARNING.
+
+**New index:** `idx_user_notifications_tenant_time`.
+
+**New member categories:** `posts_reactions` and `tips_updates`.
+`connections_social` gains `new_follower`; `direct_messages` gains `message_reaction`.
+
+**Rules:** the gateway (`notification-controls-service.ts`) applies the same
+decision before pushing: in `notifyUser`, `/push-dispatch` and the reminders push.
+Every automation send carries `data.automation_id`.
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -1116,6 +1165,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-26 | VTID-04674, **file only — not yet applied** (owner approves the starting on/off list first): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
 | 2026-09-25 | VTID-04561, **applied live** (`vtid_04561_one_role_truth`): the two role switchers now keep the two role tables in step. `set_role_preference()` (community app) also upserts `user_active_roles`; `me_set_active_role()` (Command Hub) also upserts `role_preferences` when the caller has a tenant. One-time backfill in both directions (5 of 6 users with rows disagreed before). Two `role_preferences` rows still differ from `user_active_roles` afterwards; both belong to a secondary tenant, and the ORB reads the role per tenant, so they are expected. Migration `20260925120000_vtid_04561_one_role_truth.sql`. | Claude Code | VTID-04561 |
 | 2026-09-24 | VTID-04494, **applied live**: `write_fact()` takes a per-key `pg_advisory_xact_lock` (tenant, user, entity, fact_key), compares against the newest current row and supersedes EVERY other current row (was `FOR UPDATE SKIP LOCKED` + one-row supersede, which let concurrent writers create duplicate current facts that never cleared). One-time repair: 80 duplicate current rows in 70 key groups marked superseded by the newest row; nothing deleted. Invariant: one `superseded_by IS NULL` row per (tenant_id, user_id, entity, fact_key). | Claude Code | VTID-04494 |

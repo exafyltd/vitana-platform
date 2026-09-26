@@ -1,0 +1,62 @@
+PASS test/vtid-04674-notification-controls-wiring.test.ts
+  ✓ Admin › Notifications (compose/sent/stats) authenticates before the exafy_admin check
+  ✓ tenant-admin role lookup reads the service key the task definitions actually set
+    ✓ admin switch off: nothing written, nothing pushed, counted (14 ms)
+    ✓ an automation send is checked against its own switch (1 ms)
+    ✓ member category off: nothing written, counted as member_off (1 ms)
+    ✓ the database guard dropped the row: no push (2 ms)
+    ✓ the legacy per-area columns no longer suppress (categories decide) (1 ms)
+    ✓ switch on: row written as before (1 ms)
+    ✓ push-dispatch checks the admin switch before pushing a pending row (1 ms)
+    ✓ reminder push waits on the full delivery decision for reminder_due (1 ms)
+    ✓ automation sends carry their automation id
+    ✓ no other code path pushes directly (106 ms)
+PASS test/routes/admin-notifications.test.ts
+    ✓ POST /compose - requires recipients (25 ms)
+    ✓ POST /compose - direct user (6 ms)
+    ✓ GET /sent - returns 200 (4 ms)
+    ✓ GET /preferences/stats - returns 200 (3 ms)
+PASS test/vtid-04674-notification-controls.test.ts
+    ✓ answers the database switch: off → false (2 ms)
+    ✓ passes the automation id as the source key
+    ✓ reuses the answer within the cache window, re-reads after clear (1 ms)
+    ✓ fails open, loudly, when the switch cannot be read (1 ms)
+    ✓ true/false from the database, null when unreadable
+    ✓ overnight span (1 ms)
+    ✓ HH:MM:SS values from Postgres time columns
+    ✓ off or incomplete → never quiet
+    ✓ admin switch off → not sent, counted as admin_off (4 ms)
+    ✓ member category off → not sent, counted as member_off
+    ✓ push switch off → not sent (1 ms)
+    ✓ quiet hours hold a normal push but not a P0
+    ✓ loads the member prefs when not given
+    ✓ everything on → sent (1 ms)
+    ✓ switching on writes the row, the audit entry and the OASIS event (1 ms)
+    ✓ refuses to switch on a type whose text is English only (1 ms)
+    ✓ switching an English-only type OFF is always allowed (1 ms)
+    ✓ refuses to switch on an automation whose domain writes English only (1 ms)
+    ✓ rejects bad input
+    ✓ catalog + types seen only in the database, with switch state and category (9 ms)
+    ✓ stats that cannot be read come back as an error, never as zeros (1 ms)
+    ✓ the switch table itself failing is an error (18 ms)
+    ✓ every entry has both languages and a known audience (12 ms)
+PASS test/routes/admin-notification-controls.test.ts
+    ✓ no token → 401 (4 ms)
+    ✓ a member → 403 (5 ms)
+    ✓ an admin of another tenant → 403 (3 ms)
+    ✓ tenant admin (role looked up with SUPABASE_SERVICE_ROLE) → 200 (2 ms)
+    ✓ exafy admin, any tenant → 200 (3 ms)
+    ✓ passes the switch, reason, automation and actor through (5 ms)
+    ✓ English-only text → 409 (2 ms)
+    ✓ bad input → 400 (2 ms)
+    ✓ activity clamps days to 90 (3 ms)
+    ✓ a failed read is an error, not an empty list (3 ms)
+    ✓ audit for one type (2 ms)
+PASS test/routes/user-category-preferences-vtid-04674.test.ts
+  ✓ only categories holding an admin-enabled type are listed, with those types (6 ms)
+  ✓ a locked category is on even when an old preference row says off (2 ms)
+  ✓ the switch list unreadable → every category is shown (2 ms)
+  ✓ switching off a locked category → 409, nothing written (4 ms)
+  ✓ switching off a normal category is saved (2 ms)
+Test Suites: 5 passed, 5 total
+Tests:       55 passed, 55 total
