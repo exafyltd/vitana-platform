@@ -377,6 +377,21 @@ export interface VerificationAnalysis {
 export interface VerificationWindowOptions {
   /** The execution's own ledger VTID(s) (VTID-04246 activated_vtid); never blast radius. */
   ownVtids?: string[];
+  /**
+   * VTID-04625: how many MORE events of one error type than its baseline the
+   * window must see before that type is blast radius. Default 1 (any rise).
+   * The live watcher passes verificationMinExcess() (3): on a platform with
+   * member traffic, one or two sporadic errors of a rare type are not
+   * evidence against a deploy — measured 2026-09-26, PR #3726 was reverted
+   * for one member voice-session measurement and one console turn.
+   */
+  minExcess?: number;
+}
+
+/** VTID-04625: DEV_AUTOPILOT_VERIFY_MIN_EXCESS (default 3, minimum 1). */
+export function verificationMinExcess(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.DEV_AUTOPILOT_VERIFY_MIN_EXCESS || '', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 3;
 }
 
 /**
@@ -395,7 +410,11 @@ export function isVerificationNoiseTopic(type: string | undefined): boolean {
     type.startsWith('operator.execution_onramp.') ||
     type.startsWith('deploy.') ||
     type.startsWith('staging.deploy.') ||
-    type.startsWith('prod.deploy.')
+    type.startsWith('prod.deploy.') ||
+    // VTID-04625: telemetry, not runtime errors — a latency measurement of a
+    // member voice session that errored, and an operator-console turn record.
+    type.startsWith('voice.latency.') ||
+    type === 'assistant.turn'
   );
 }
 
@@ -447,7 +466,8 @@ export function analyzeVerificationWindow(
   });
   const windowCounts = new Map<string, number>();
   for (const e of inWindow) windowCounts.set(e.type, (windowCounts.get(e.type) || 0) + 1);
-  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) > (baseline.get(e.type) || 0));
+  const minExcess = Math.max(1, Math.floor(opts.minExcess ?? 1));
+  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) - (baseline.get(e.type) || 0) >= minExcess);
   if (blastRadius.length > 0) {
     return {
       state: 'fail',
@@ -1051,6 +1071,7 @@ export async function verificationWatcherTick(): Promise<void> {
     const ownVtid = await loadFindingVtid(s, exec.finding_id);
     const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix, {
       ownVtids: ownVtid ? [ownVtid] : [],
+      minExcess: verificationMinExcess(),
     });
 
     if (verdict.state === 'pending') continue;

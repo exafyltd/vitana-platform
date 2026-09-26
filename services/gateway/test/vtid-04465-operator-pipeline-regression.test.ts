@@ -1011,6 +1011,46 @@ describe('Merge: a green PR while main keeps moving (VTID-04612)', () => {
   });
 });
 
+describe('Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)', () => {
+  async function toVerifying(): Promise<string> {
+    const { execId, prNumber } = seedForeignCiExecution(null);
+    await ciTick();
+    expect(platform.execution(execId).status).toBe('deploying');
+    stagingDeployCompleted(platform.github.prs.get(prNumber)!.merge_commit_sha!);
+    await deployWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('verifying');
+    return execId;
+  }
+  const errorEvent = (topic: string, vtid: string) => platform.insert('oasis_events', {
+    topic, vtid, status: 'error', service: 'gateway', message: topic, metadata: {}, created_at: new Date().toISOString(),
+  });
+
+  it('the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted', async () => {
+    const execId = await toVerifying();
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('voice.latency.measured', 'VTID-03177');
+    errorEvent('assistant.turn', 'VTID-0536');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    errorEvent('orb.live.connection_failed', 'VTID-01155');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toEqual([]);
+  });
+
+  it('a new error type firing 3 times after the deploy still fails verification', async () => {
+    const execId = await toVerifying();
+    for (let i = 0; i < 3; i++) errorEvent('memory.write.failed', 'VTID-02000');
+    elapseVerificationWindow(execId);
+    await verificationWatcherTick();
+    await platform.settle();
+    expect(platform.execution(execId).status).not.toBe('completed');
+    expect(execEvents('dev_autopilot.execution.verification_failed', execId)).toHaveLength(1);
+  });
+});
+
 describe('Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)', () => {
   const APP = 'services/gateway/src/frontend/command-hub/app.js';
   const PIN_TEST = 'services/gateway/test/command-hub/cache-bust-pin.test.ts';
