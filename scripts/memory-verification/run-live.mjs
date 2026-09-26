@@ -34,7 +34,7 @@ import { fileURLToPath } from 'url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATEWAY = process.env.MEMORY_VERIFY_GATEWAY || 'https://preview-aws-gateway.vitanaland.com';
 const ORIGIN = process.env.MEMORY_VERIFY_ORIGIN || 'https://preview-aws.vitanaland.com';
-const TOKEN = process.env.MEMORY_VERIFY_TOKEN;
+const TOKEN = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
 const TEST_USER = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 
 const args = process.argv.slice(2);
