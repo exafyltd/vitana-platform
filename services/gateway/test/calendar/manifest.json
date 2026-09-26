@@ -128,6 +128,11 @@
       "tests": [
         "test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts"
       ]
+    },
+    "src/orb/live/tools/calendar-write-guard.ts": {
+      "tests": [
+        "test/vtid-04602-04604-go-live.test.ts"
+      ]
     }
   }
 }

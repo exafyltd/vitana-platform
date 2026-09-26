@@ -213,6 +213,27 @@ export function decideBranchUpdate(behindBy: number, updatesSoFar: number): 'mer
   return updatesSoFar >= MAX_BRANCH_UPDATES ? 'give_up' : 'update';
 }
 
+/**
+ * VTID-04612: may a green PR that is behind main merge without another branch
+ * update? Only when main's new commits touch none of the files the PR changes.
+ * The VTID-04379 rule re-ran ~8 minutes of CI on every main merge and gave up
+ * after MAX_BRANCH_UPDATES; with main taking a merge every 5-10 minutes an
+ * operator PR could never land. Overlap, an incomplete file list (truncated
+ * compare, unknown PR files) or no PR files at all keep the update path — the
+ * two green PRs that broke main together (VTID-04219) touched shared files.
+ */
+export function canMergeBehindWithoutUpdate(input: {
+  prFiles: string[] | null;
+  baseChangedFiles: string[] | null;
+  baseTruncated: boolean;
+}): { ok: boolean; overlap: string[] } {
+  const { prFiles, baseChangedFiles, baseTruncated } = input;
+  if (!prFiles || prFiles.length === 0 || !baseChangedFiles || baseTruncated) return { ok: false, overlap: [] };
+  const base = new Set(baseChangedFiles);
+  const overlap = prFiles.filter((f) => base.has(f));
+  return { ok: overlap.length === 0, overlap };
+}
+
 export type CiStateName = 'passing' | 'failing' | 'pending';
 export interface CiAnalysis {
   state: CiStateName;
@@ -608,7 +629,29 @@ export async function ciWatcherTick(): Promise<void> {
           continue;
         }
         const updates = Number((exec.metadata as Record<string, unknown> | null)?.branch_updates || 0);
-        const decision = decideBranchUpdate(behindBy, updates);
+        let decision = decideBranchUpdate(behindBy, updates);
+        // VTID-04612: a clean PR whose files main has not touched merges on the
+        // CI it already has, instead of chasing main one ~8-minute CI run per
+        // merge. `behind` (strict branch protection) always updates.
+        if (decision !== 'merge' && mState === 'clean') {
+          try {
+            const [prFiles, baseChanges] = await Promise.all([
+              githubService.getPrFiles(GITHUB_REPO, exec.pr_number),
+              githubService.getBaseChangesSince(GITHUB_REPO, pr?.base?.ref || 'main', headSha),
+            ]);
+            const verdict = canMergeBehindWithoutUpdate({
+              prFiles: prFiles.map((f) => f.filename),
+              baseChangedFiles: baseChanges.files,
+              baseTruncated: baseChanges.truncated,
+            });
+            if (verdict.ok) {
+              console.log(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} is ${behindBy} behind main but main touched none of its ${prFiles.length} file(s); merging on its green CI`);
+              decision = 'merge';
+            }
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] overlap check failed: ${err}; keeping the branch-update path`);
+          }
+        }
         if (decision === 'update') {
           try {
             await githubService.updatePullRequestBranch(GITHUB_REPO, exec.pr_number, headSha);

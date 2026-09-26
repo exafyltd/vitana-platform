@@ -3329,7 +3329,7 @@ async function executeLiveApiTool(
   // the background. Give them the same extended budget as the Autopilot tools.
   const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
   // VTID-04485: the read-only orchestrator specialists wait up to their own
-  // voice ack window (specialistAckWindowMs, 4.5 s default) so the answer lands
+  // voice ack window (specialistAckWindowMs, 6 s default since VTID-04602) so the answer lands
   // in the same turn. The flat 3 s budget cut them off first — measured live on
   // staging: a 3.2 s support lookup returned "timed out after 3000ms" and the
   // member heard "I can't check that right now". Budget = ack window + 1 s, never below 3 s.
@@ -4708,6 +4708,18 @@ async function executeLiveApiToolInner(
             result: 'I need at least a title and start time to create a calendar event.',
             error: 'Missing required fields: title and start_time',
           };
+        }
+
+        // VTID-04604: never on the model's own initiative, never unconfirmed, never in the past.
+        {
+          const { checkVoiceCalendarWrite, memberHasSpoken } = await import('../orb/live/tools/calendar-write-guard');
+          const refusal = checkVoiceCalendarWrite({
+            memberHasSpoken: memberHasSpoken(session),
+            confirmed: args.confirmed,
+            startTime: eventStart,
+            nowMs: Date.now(),
+          });
+          if (refusal) return { success: false, result: refusal, error: refusal.split('.')[0] };
         }
 
         try {

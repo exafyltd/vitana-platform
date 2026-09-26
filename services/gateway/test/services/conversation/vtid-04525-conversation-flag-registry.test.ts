@@ -122,4 +122,18 @@ describe('VTID-04525 B7 — conversation flag registry', () => {
       prod: 'https://vitanaland.com/nav-registry.json',
     });
   });
+  // VTID-04605: the orchestrator specialists go live in production with the
+  // same values as staging (owner-approved go-live, 2026-09-26).
+  test('pins the three orchestrator specialist flags "true" on staging and prod', () => {
+    const { GATEWAY_WORKFLOW_PINS } = require('../../../src/services/conversation/conversation-flag-pins.generated');
+    for (const flag of [
+      'ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED',
+      'ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED',
+      'ORCHESTRATOR_DELEGATION_PERSIST_ENABLED',
+    ]) {
+      expect(GATEWAY_WORKFLOW_PINS[flag]).toEqual({ staging: 'true', prod: 'true' });
+    }
+    // Run leases stay off everywhere until their migration and review.
+    expect(GATEWAY_WORKFLOW_PINS.ORCHESTRATOR_RUN_LEASE_ENABLED ?? { staging: null, prod: null }).toEqual({ staging: null, prod: null });
+  });
 });

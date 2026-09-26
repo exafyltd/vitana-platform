@@ -25,10 +25,10 @@ afterEach(() => {
 });
 
 describe('specialistAckWindowMs', () => {
-  test('AC-1 voice defaults to 4.5 s, above the 3.0 s measured specialist latency', () => {
+  test('AC-1 voice defaults to 6 s (VTID-04602), above the 2.6-4.7 s measured specialist latency', () => {
     delete process.env[ENV];
-    expect(SPECIALIST_VOICE_ACK_DEFAULT_MS).toBe(4_500);
-    expect(specialistAckWindowMs('voice')).toBe(4_500);
+    expect(SPECIALIST_VOICE_ACK_DEFAULT_MS).toBe(6_000);
+    expect(specialistAckWindowMs('voice')).toBe(6_000);
     expect(specialistAckWindowMs('voice')).toBeGreaterThan(3_000);
   });
 
@@ -42,7 +42,7 @@ describe('specialistAckWindowMs', () => {
     process.env[ENV] = '100'; expect(specialistAckWindowMs('voice')).toBe(1_500);
     process.env[ENV] = '60000'; expect(specialistAckWindowMs('voice')).toBe(8_000);
     process.env[ENV] = '3000'; expect(specialistAckWindowMs('voice')).toBe(3_000);
-    process.env[ENV] = 'abc'; expect(specialistAckWindowMs('voice')).toBe(4_500);
+    process.env[ENV] = 'abc'; expect(specialistAckWindowMs('voice')).toBe(6_000);
   });
 });
 

@@ -871,6 +871,13 @@ jobs:
         run: |
           set -e
           NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
+          # VTID-04605 orchestrator specialists on prod (staging: VTID-04474); rollback = "false".
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED") | not) ]
+                + [ {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"},
+                    {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"},
+                    {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"} ] )')
 
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).

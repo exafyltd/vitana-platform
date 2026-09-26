@@ -243,7 +243,11 @@ export async function runDeepDiveAsync(session: DelegationSession, args: Record<
  * on staging, so at 1.5 s the member only ever heard "I'm checking". Waiting a
  * little longer lets the answer land in the same turn. Env-tunable, clamped.
  */
-export const SPECIALIST_VOICE_ACK_DEFAULT_MS = 4_500;
+// VTID-04602: 6 s. Live staging (VTID-04487) measured specialist lookups of
+// 2.6-4.7 s; at 4.5 s one run in three still missed the window.
+export const SPECIALIST_VOICE_ACK_DEFAULT_MS = 6_000;
+/** VTID-04603: a repeated call to the same specialist within this window reuses the job. */
+export const SPECIALIST_REUSE_WITHIN_MS = 15_000;
 export function specialistAckWindowMs(channel: string): number | undefined {
   if (channel !== 'voice') return undefined;
   const raw = Number(process.env.ORCHESTRATOR_SPECIALIST_VOICE_ACK_MS);
@@ -259,7 +263,7 @@ export async function runAskSupportSpecialist(session: DelegationSession, args: 
   registerDefaultDelegationTargets();
   const caller = callerFromSession(session);
   const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
-  const r = await delegateToAgent(SUPPORT_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel) });
+  const r = await delegateToAgent(SUPPORT_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel), reuseWithinMs: SPECIALIST_REUSE_WITHIN_MS });
   switch (r.status) {
     case 'done':
       return { success: true, result: JSON.stringify(r.result) };
@@ -304,7 +308,7 @@ export async function runAskCommerceSpecialist(
     }
   }
   const question = typeof args.question === 'string' ? args.question : typeof args.request === 'string' ? args.request : '';
-  const r = await delegateToAgent(COMMERCE_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel) });
+  const r = await delegateToAgent(COMMERCE_SPECIALIST_AGENT_ID, question, caller, { ackWindowMs: specialistAckWindowMs(caller.channel), reuseWithinMs: SPECIALIST_REUSE_WITHIN_MS });
   switch (r.status) {
     case 'done':
       return { success: true, result: JSON.stringify(r.result) };
