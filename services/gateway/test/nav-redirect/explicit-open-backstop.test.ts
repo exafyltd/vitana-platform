@@ -197,6 +197,11 @@ describe('VTID-04644 explicit open backstop — through the registry', () => {
 describe('VTID-04644 wiring', () => {
   const handler = fs.readFileSync(path.join(__dirname, '../../src/orb/live/session/upstream-message-handler.ts'), 'utf8');
   const widget = fs.readFileSync(path.join(__dirname, '../../src/frontend/command-hub/orb-widget.js'), 'utf8');
+  const guard = fs.readFileSync(path.join(__dirname, '../../../../scripts/ci/command-hub-ownership-guard.js'), 'utf8');
+
+  it('the Command Hub ownership guard allows this change to touch orb-widget.js', () => {
+    expect(guard).toMatch(/ALLOWED_VTID_PATTERN = \/[^\n]*VTID-04644/);
+  });
 
   it('turn_complete reads the per-turn marker before advancing turn_count, then runs the backstop', () => {
     const body = handler.slice(handler.indexOf('export function handleTurnComplete('));
