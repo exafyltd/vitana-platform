@@ -1,11 +1,11 @@
 # VTID-04608 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
 
-# 2026-09-26T08:54:12.320Z
-# execution_id=bfaf037c-f352-43ec-980c-d46c88331767 finding_id=29c10ef6-cf3d-45a4-b9d7-66f57f500a87 plan_version=1
+# 2026-09-26T09:28:58.590Z
+# execution_id=e8118eb9-05a5-41f4-914d-92883b763375 finding_id=29c10ef6-cf3d-45a4-b9d7-66f57f500a87 plan_version=1
 # branch=dev-autopilot/bfaf037c base=main
 # llm provider=bedrock model=eu.anthropic.claude-sonnet-4-6
 
-# agent turns=8 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
+# agent turns=5 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
 
 $ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/bfaf037c
 $ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
@@ -15,6 +15,9 @@ $ autopilot-agent: git status --porcelain → changed files; scope check against
 $ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
 $ npx jest <test file(s) paired to the changed files>   # runner, per project
 # a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add docs/validation/VTID-04608/acceptance.md   # create
+$ git add docs/validation/VTID-04608/commands.log   # create
+$ git add docs/validation/VTID-04608/outputs/execution.json   # create
 $ git add scripts/aws/setup-operator-agent-task-role-grants.sh   # modify
 $ git add services/gateway/test/operator-agent-task-role-grants-script.test.ts   # create
 $ dev-autopilot: write docs/validation/VTID-04608/ evidence pack (this file)
