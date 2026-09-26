@@ -334,6 +334,38 @@ Claude must **never** do the following:
     VTID-03990 closed for one specific trigger — don't assume a new one is
     safe by default.
 
+### Staging Verification Gate (STANDING RULE — VTID-04610)
+
+Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`.
+Applies to both repos.
+
+46. **Merge → staging deploy → STAGING-VERIFY → ready message → PUBLISH.**
+    Every merge that deploys is followed automatically by a test run against
+    the new staging deployment: the service's smoke suite plus the change's
+    own suite (`docs/validation/<VTID>/staging-tests.json`). A change is not
+    done at merge, and not done at "deploy green" — it is done when that run
+    has passed on the exact deployed commit.
+47. **No suite, no merge.** **IF** a change deploys and no test proves it on
+    staging → **THEN** write that test in the same PR. Never after the
+    deploy, never "verified by looking".
+48. **Staging tests are read-only.** Staging writes to the production
+    Supabase project (rules 31–32). Suites read, render and probe; anything
+    that needs a write is proven by CI unit/integration tests. **No
+    automated suite ever targets production.**
+49. **Ready message — two channels only.** **IF** STAGING-VERIFY passes →
+    **THEN** the Claude Code session that merged the change, and the Command
+    Hub Operator Chat, ask the developer: *"Staging verified — ready for
+    deployment to production?"*, with the verified commit, what passed, and
+    **every commit between production and the verified commit**. Not DevOps
+    Chat, not push, not a PR comment. The merging session keeps watching
+    until the result exists; merging is not a stopping point.
+50. **"Yes" goes directly to PUBLISH** (the Command Hub promotion, or the
+    same prod workflows dispatched from Claude Code pinned to the verified
+    commit). Only the commit that passed is promoted — if staging now serves
+    a newer, unverified commit, wait for its own verification. **IF**
+    STAGING-VERIFY fails → **THEN** no ready message and no PUBLISH: fix
+    forward and re-verify; never skip, disable or loosen a test to get green.
+
 ---
 
 ## 🔁 IF–THEN RULES
@@ -1783,6 +1815,7 @@ aws logs tail /ecs/vitana-gateway-awsdr --region eu-central-1 --since 1h
 | `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` | Canonical gateway deployment workflow |
 | `docs/AWS-PRODUCTION-BUILD-LOG.md` | Full AWS build record and pre-existing-state findings |
 | `docs/AWS-CUTOVER-RUNBOOK.md` | Historical record of the GCP→AWS cutover execution |
+| `docs/DEPLOYMENT-PIPELINE.md` | Merge → staging → STAGING-VERIFY → ready message → PUBLISH (Part 1 rules 46–50) |
 | `docs/MOBILE_DEVICE_TESTING.md` | Device-level frontend testing (sim-use: iOS Simulator / Android) |
 
 ---
@@ -2110,6 +2143,11 @@ Deployments have repeatedly failed because the checkout being deployed had stale
 > `env=staging`. You verify **production** only after a PUBLISH-button
 > promotion or an escape-hatch (`scripts/deploy/publish-to-prod.sh`) /
 > manual-dispatch deploy — never as a side effect of a push.
+>
+> **This section is the deploy check (is the right code running?). Whether
+> the change actually WORKS on staging is the STAGING-VERIFY test run that
+> follows it** — Part 1 rules 46–50, `docs/DEPLOYMENT-PIPELINE.md`. A green
+> deploy check alone never justifies asking for production.
 
 ### Pre-Deploy Verification (BEFORE the CI build starts)
 
@@ -2181,7 +2219,9 @@ deploy" flow is gone because GCP itself is gone.**
 | Action | Where it lands | How |
 |--------|----------------|-----|
 | Push / merge to `main` (gateway) | **STAGING** (ECS `vitana-gateway`) | `AWS-STAGE-DEPLOY-GATEWAY.yml`, automatic |
-| Promote to **production** | `gateway` (+ frontend) | **PUBLISH button** in Command Hub |
+| After every staging deploy | test run on staging | **STAGING-VERIFY**, automatic (Part 1 rules 46–50) |
+| Verification passed | developer, in Claude Code + Operator Chat | "Staging verified — ready for deployment to production?" |
+| Developer says yes | `gateway` (+ frontend) | **PUBLISH** (button / Operator Chat action / pinned dispatch from Claude Code) |
 | Exceptional manual prod deploy | single service | `scripts/deploy/publish-to-prod.sh` |
 
 - **`AWS-STAGE-DEPLOY-GATEWAY.yml`** auto-deploys staging on every push to
@@ -2198,21 +2238,30 @@ When changing code:
 1. **Code fix** — on the feature/`claude/` branch.
 2. **Commit** — include a VTID (`(VTID-XXXXX)`) or `BOOTSTRAP-<description>`.
 3. **Push** — to the `claude/` branch; open a PR.
-4. **Merge to `main`** — this auto-deploys to **STAGING only**.
-5. **Verify on staging** — `preview-aws-gateway.vitanaland.com` (gateway) /
-   `preview-aws.vitanaland.com` (frontend, see `exafyltd/vitana-v1`
-   CLAUDE.md). Confirm `env=staging`. Do **NOT** expect or look for a prod
-   deploy here.
-6. **Ship to production** — when staging is verified, click **PUBLISH** in the
-   Command Hub (promotes the exact tested staging build). For the rare
-   out-of-band case, dispatch the service's `AWS-PROD-DEPLOY-*.yml` workflow
-   directly (`scripts/deploy/publish-to-prod.sh` wraps the dead GCP-era
-   `EXEC-DEPLOY.yml` — do not use it; see the subsection below):
+4. **Merge to `main`** — this auto-deploys to **STAGING only**. The PR must
+   already carry `docs/validation/<VTID>/staging-tests.json` (Part 1 rule 47).
+5. **STAGING-VERIFY** — runs automatically after the staging deploy: smoke
+   suite + the change suite, read-only, on the exact deployed commit
+   (`preview-aws-gateway.vitanaland.com` / `preview-aws.vitanaland.com`).
+   Keep watching until it has a result: the run `STAGING-VERIFY <service> @
+   <sha>` / the `staging.verify.*` OASIS event. Do **NOT** expect or look for
+   a prod deploy here.
+6. **Ready message** — on a pass, ask the developer in the Claude Code
+   session (the Operator Chat gets the same message): *"Staging verified —
+   ready for deployment to production?"* with the verified commit, the
+   results and every commit between production and it. On a failure: fix
+   forward, no prompt.
+7. **Ship to production** — on a "yes", PUBLISH: the Command Hub promotion,
+   or from Claude Code the same prod workflow(s) pinned to the verified commit:
    ```
    gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml --repo exafyltd/vitana-platform \
-     -f reason="why this exceptional prod deploy is justified"
+     -f reason="VTID-XXXXX — STAGING-VERIFY <run url> passed, approved in session" \
+     -f expected_commit=<verified commit SHA>
    ```
-7. **Verify prod** — only after PUBLISH/escape-hatch, per §15.
+   (`scripts/deploy/publish-to-prod.sh` wraps the dead GCP-era
+   `EXEC-DEPLOY.yml` — do not use it.)
+8. **Verify prod** — deploy check only, per §15. No test suite ever runs
+   against production.
 
 ### Do NOT manually dispatch a prod deploy workflow as a routine step
 
@@ -2223,6 +2272,13 @@ routine step rather than a deliberate, reasoned action, stop — that
 reintroduces the auto-to-prod behavior the staging-first cutover removed.
 
 ### A session-approved manual prod deploy ships that session's change only (Part 1 IF-THEN 26)
+
+> **With the Staging Verification Gate (Part 1 rules 46–50)** the ready
+> message lists every commit between production and the verified commit, so
+> a "yes" to it is an explicit approval of exactly that range — IF-THEN 26 is
+> satisfied by the list, not waived. A range the message did not show was
+> not approved. Everything below still applies to any prod deploy that did
+> not come from a ready message.
 
 When the user approves a production deploy in conversation and it goes out
 via a manual `workflow_dispatch` — **not** the Command Hub PUBLISH button —
@@ -2312,6 +2368,8 @@ defs that carry it, and record the rotation in this file's CHANGE LOG.
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-09-26 | **STAGING-VERIFY built — the Staging Verification Gate (VTID-04610) now runs by itself.** New `.github/workflows/STAGING-VERIFY.yml` verifies both services from this repo: the gateway on `workflow_run` of its staging deploy, the community app on a `community-app-staging-deployed` dispatch that `exafyltd/vitana-v1` AWS-STAGE-DEPLOY-FRONTEND.yml now sends as its last step. Runner `scripts/ci/staging-verify/` (pure logic in `lib.cjs`, 16 `node --test` cases): confirms on sampled requests that staging serves the deployed commit, runs `smoke/<service>.json` plus the change suite (`docs/validation/<VTID>/staging-tests.json`) of every commit between production and that commit, re-confirms the commit, and records one `staging.verify.passed` / `failed` / `superseded` OASIS event whose `message` is the ready question with the results and the commit list that would ship. Read-only by construction: http tests are GET/HEAD or an auth-rejected probe (a 2xx fails loudly), production hosts are refused, browser tests run behind `staging-guard.ts` (copied in fresh each run) which aborts writes to gateways/Supabase and every request to production. New `STAGING-TESTS-REQUIRED` PR check (both repos) enforces rule 47. `E2E-TEST-RUN.yml` / `e2e/playwright.config.ts` defaulted to `vitanaland.com` and ran the write-capable setup on the dispatched path: now staging by default, production refused, dispatched runs read-only. **Verified here against staging (read-only):** gateway 12/12 smoke checks passed on `2cd002b` with the correct 3-commit ship list; community-app http smoke 4/4. The browser guard's first run found a real leak, fixed as VTID-04616 in vitana-v1: `notifDiag.ts` read the gateway via an optional-chained `import.meta` that Vite never inlines, so every staging/preview build POSTed diagnostics to the **production** gateway. **Not verified:** the browser half end to end (this sandbox's proxy drops Chromium requests), the workflow triggers themselves (they only exist once merged), and whether `PLATFORM_DISPATCH_TOKEN` can read this repo's runner for the v1 pre-merge check (falls back to a basic check). Operator Chat surfacing is the next VTID. | VTID-04613 |
+| 2026-09-26 | **Staging Verification Gate — the merge → staging → verify → publish process becomes a standing rule (owner decision).** Until now "verify on staging" meant a deploy check (right commit, `env=staging`) plus whatever a person chose to look at; nothing ran a test against the new staging deployment and nothing asked for production. New Part 1 rules 46–50 and `docs/DEPLOYMENT-PIPELINE.md`: every deploying merge is followed by STAGING-VERIFY (the service's smoke suite + the change's own `docs/validation/<VTID>/staging-tests.json`) on the exact deployed commit; a deploying PR with no staging test is not ready to merge; staging suites are read-only because staging writes to the production Supabase project, and no suite ever targets production; on a pass the ready message goes **only** to the Claude Code session that merged and the Command Hub Operator Chat (owner decision), listing every commit between production and the verified commit; a "yes" goes **directly to PUBLISH** (owner decision), promoting only the verified commit; a failure means fix forward, no prompt. §15/§16 now point at the gate; `vitana-v1` CLAUDE.md gets the matching section. **Docs only — not built yet:** `STAGING-VERIFY.yml` (both repos), the smoke suites and manifest runner, `staging.verify.*` OASIS events, the Operator Chat message + Publish action, the VALIDATOR-CHECK requirement, and fixing `E2E-TEST-RUN.yml` (defaults to `vitanaland.com` and fires from the prod deploy) are the follow-up VTID; until then sessions run the suites by hand (§9 of the pipeline doc). The CLAUDE.md size cleanup is deliberately a separate change (owner decision). | VTID-04610 |
 | 2026-09-26 | **Orchestrator specialists go-live bundle (owner-approved): prod flags + the three fixes live staging testing demanded.** Status check before this: prod ran all orchestrator code but pinned none of its flags, and the only specialist calls ever recorded were test-account staging sessions — the orchestrator had never served a real member. **VTID-04602:** specialist voice ack default 4.5 s → 6 s (live lookups 2.6–4.7 s; at 4.5 s one run in three got "I'm checking"). **VTID-04603:** a repeated call to the same specialist in the same session joins the running job or reuses a result under 15 s old (the model asked twice per turn in 2 of 3 live runs). **VTID-04604:** voice `create_calendar_event` refuses before the member has spoken, without `confirmed=true`, or with a past start (a stray event dated 2026-04-15 was created during a greeting); the new description is 2 bytes shorter so no surface's tool set changes (a longer draft evicted tools via the byte budget — caught by the VTID-04542 payload-identity snapshots). **VTID-04605:** `AWS-PROD-DEPLOY-GATEWAY.yml` pins the three `ORCHESTRATOR_*` flags (step 2/2, 20 KB guard). Full gateway suite 20,832 passed. **Production changes only on the owner's PUBLISH**; real-member use is then checked in prod logs. | VTID-04602 / VTID-04603 / VTID-04604 / VTID-04605 |
 | 2026-09-25 | **Command Hub voice latency regression from VTID-04560 fixed on staging (owner held the VTID-04542 production publish for it).** Measured on staging (8fa030b): Command Hub first model audio p50 4,904 ms against 3,270 ms before VTID-04560. Two causes, read from `voice.latency.measured` and `orb.live.tool.executed`: (1) on most opens Nova called `dev_system_status({fresh:true})` on turn 0 and spoke ~1.3 s after the result — re-fetching the snapshot the session already carried, because the developer conduct rule said to use the tools "before you state a current fact"; (2) the member new-day gather (350–470 ms) ran for work surfaces although `work_surface_open` outranks every ladder and never reads it. Fix: `overviewIndependentOpenerWins()` includes the work-surface rung (all three gather sites already key off it, VTID-04544); the opener directive says the facts were loaded as the session opened and to call no tool before the first reply; the conduct rule now asks for a tool only for facts the snapshot does not cover or once it is a few minutes old. Member payloads byte-identical; only the Command Hub instruction snapshot re-recorded. 4 new role-suite tests, mutation-checked. Evidence: `docs/validation/VTID-04586/`. | VTID-04586 |
 | 2026-09-25 | **Vitana answers as the role whose screens are shown; the developer Vitana becomes a system supervisor (owner ask).** Tested live, the Command Hub greeted a developer with the community Vitana ("you completed 9 sessions today — shall we continue the guided journey?", production session live-848f1576). Root causes, read from live data: the greeting ladder ignored surface and role; `session.active_role` was null until the late context build, so setup went out with no role and no developer tools; the Command Hub kept the member brain; surface was guessed from the route and a User-Agent phone regex; engineering context leaked to member text callers; and three role tables disagreed for 5 of 6 users. **VTID-04560:** one Assistant Profile per session from the widget's declared `surface`/`view_role`, verified by the token, resolved before the envelope; `work_surface_open` greeting rung on both ladders; work surfaces carry only `WORK_SURFACE_CONTEXT_MARKER` content; `orb.session.profile.resolved` on every start. **VTID-04561:** `set_role_preference()`/`me_set_active_role()` write both role tables (applied live, backfilled); `ROLE_REGISTRY`; a role switch restarts an open conversation; the Command Hub switches into its own environment's community app. **VTID-04562:** live system snapshot (builds, Dev Autopilot, errors, cached 90 s), 15-domain atlas with a route drift guard, recent `dev_agent_memory`; `dev_system_status`/`dev_domain_atlas`. **VTID-04563:** `dev_deep_dive` — planner-stage, read-only investigator (code index, files, git history, GET-only endpoint probe, screen trace, OASIS/logs/ECS/read-only SQL), async over the delegation dispatcher. **VTID-04564:** the Operator Console shares all three tools. **VTID-04565:** 69-question eval set (atlas routes 69/69), staging-only live eval script, profile/deep-dive telemetry in the snapshot. New standing rules 42g/42h, `npm run test:roles` (90+ tests). The VTID-04542 payload guard was regenerated for the admin and Command Hub scenarios on purpose; every member scenario is byte-identical. Frontend: `exafyltd/vitana-v1` declares `surface`/`view_role`. **Not verified by a spoken session** — audio needs a real device; staging verification is in `docs/validation/VTID-04560/outputs/`. | VTID-04560 |
