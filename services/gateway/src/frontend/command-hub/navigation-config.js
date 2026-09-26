@@ -203,11 +203,10 @@ export const NAVIGATION_CONFIG = [
     module: "testing-qa",
     label: "Testing & QA",
     tabs: [
-      { key: "unit-tests", label: "Unit Tests" },
-      { key: "integration-tests", label: "Integration Tests" },
-      { key: "validator-tests", label: "Validator Tests" },
-      { key: "e2e", label: "E2E" },
-      { key: "ci-reports", label: "CI Reports" }
+      { key: "overview", label: "Overview" },
+      { key: "catalog", label: "Catalog" },
+      { key: "runs", label: "Runs" },
+      { key: "e2e", label: "E2E" }
     ]
   },
   {
