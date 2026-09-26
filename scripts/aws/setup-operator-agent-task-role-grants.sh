@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# VTID-04037 — grant the gateway/executor ECS task role the three read-only
-# and one control permission the Operator Console tools shipped under
-# VTID-04020, VTID-04032 and VTID-04035 need at runtime.
+# VTID-04037 — grant the gateway/executor ECS task role the read-only
+# and control permissions the Operator Console tools shipped under
+# VTID-04020, VTID-04032, VTID-04035 and VTID-03836 need at runtime.
 #
 # WHY THIS EXISTS
 #
-# Three operator tools already ship and already fail HONESTLY without these
+# Operator tools already ship and already fail HONESTLY without these
 # grants — each returns the IAM denial verbatim to the console instead of
 # pretending (verified live 2026-09-17 for logs:FilterLogEvents, VTID-04020):
 #
@@ -18,6 +18,8 @@
 #                                        (best effort — a denial is recorded on
 #                                        the execution row and the agent still
 #                                        stops cooperatively at its next turn)
+#   dev_aws_ecs_status    (VTID-03836)  ecs:DescribeServices on services in
+#                                        cluster Vitana-ECS-Cluster
 #
 # No Claude Code session can write IAM here: the session user
 # (claude-code-aws-agent) carries a permissions boundary that explicitly
@@ -91,6 +93,12 @@ POLICY_DOC=$(cat <<JSON
       "Action": ["ecs:StopTask"],
       "Resource": "arn:aws:ecs:${REGION}:${ACCOUNT_ID}:task/${CLUSTER_NAME}/*",
       "Condition": { "ArnEquals": { "ecs:cluster": "${CLUSTER_ARN}" } }
+    },
+    {
+      "Sid": "OperatorEcsServicesReadVTID03836",
+      "Effect": "Allow",
+      "Action": ["ecs:DescribeServices"],
+      "Resource": "arn:aws:ecs:${REGION}:${ACCOUNT_ID}:service/${CLUSTER_NAME}/*"
     }
   ]
 }
