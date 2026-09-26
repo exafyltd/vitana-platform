@@ -43,13 +43,14 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
-// VTID-03820: DeepSeek-powered execution on-ramp
+// VTID-03820: execution on-ramp (coding model: dev-pipeline-models.ts, VTID-04593)
 import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 import { toDevRecommendations, type DevRecommendationSnapshot } from './operator-dev-recommendations';
 import { findFabricatedToolClaims, fabricatedToolNotice } from './operator-fabricated-tool-guard';
+import { devWorkerModel } from './dev-pipeline-models';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
@@ -261,7 +262,7 @@ export const GEMINI_TOOL_DEFINITIONS = {
     },
     {
       name: 'autopilot_execute_task',
-      description: 'VTID-03820: Execute an already-approved VTID via the DeepSeek-powered execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
+      description: 'VTID-03820: Execute an already-approved VTID via the execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
       parameters: {
         type: 'object',
         properties: {
@@ -1642,9 +1643,11 @@ async function executeExecuteTask(
     data: {
       vtid: args.vtid,
       execution_id: result.execution_id,
-      provider: 'deepseek',
+      // VTID-04598: the model the on-ramp stamps on the row (VTID-04593), not a hard-coded name.
+      provider: devWorkerModel().provider,
+      model: devWorkerModel().model,
       status: 'queued',
-      message: `Execution queued for ${args.vtid} via the DeepSeek on-ramp (${result.execution_id.slice(0, 8)}). It will run on the next executor tick.`,
+      message: `Execution queued for ${args.vtid} via the execution on-ramp (${result.execution_id.slice(0, 8)}), coding model ${devWorkerModel().provider}/${devWorkerModel().model}. It will run on the next executor tick.`,
     },
   };
 }
@@ -1751,7 +1754,9 @@ async function executeRunTask(
       vtid_allocated: result.vtid_allocated,
       execution_id: result.execution_id,
       executor: 'agent',
-      provider: 'deepseek',
+      // VTID-04598: the model the on-ramp stamps on the row (VTID-04593), not a hard-coded name.
+      provider: devWorkerModel().provider,
+      model: devWorkerModel().model,
       status: 'queued',
       message: `Allocated ${result.vtid} and queued an agent-mode execution (${result.execution_id.slice(0, 8)}) for it. The agent will locate the code, make the change, run tsc + jest and open a pull request on the next executor tick.`,
     },
@@ -4227,7 +4232,7 @@ function getOperatorSystemPrompt(): string {
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
-- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
+- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
 - autopilot_run_task: Turn a free-text development request into a governed agent-mode execution — allocates and registers the VTID itself, then the agent executor reads the code, makes the change, runs tsc + jest and opens a real pull request. Takes request (the user's words) and an optional title. No VTID and no file list are needed.
 - autopilot_review_execution: Show a Dev Autopilot execution that is held for approval (the agent pushed its branch but did not open the PR yet): branch, PR title/body, changed files, --stat and a bounded diff. With no execution_id it lists everything waiting for a decision. Read-only.
 - autopilot_approve_execution: Approve a held execution — opens the real pull request on the pushed branch and hands it to CI. Takes execution_id.
