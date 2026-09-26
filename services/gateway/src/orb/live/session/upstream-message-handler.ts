@@ -76,7 +76,6 @@ import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
 import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
-import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
@@ -158,47 +157,6 @@ export async function bridgeVoiceTranscript(
     },
   }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
   return false;
-}
-
-/**
- * VTID-03520: fire the same push+inapp notification
- * chat.ts's /send route has always fired for a Vitana reply to a human
- * (type `new_chat_message`) — voice-bridged turns never did. Without this,
- * `bridgeVoiceTranscript()`'s insert lands in `chat_messages` immediately,
- * but nothing tells the client a new message exists: the frontend's
- * Realtime subscription only mirrors while the Messages screen is mounted
- * and React Query's `staleTime` otherwise leaves it looking current, so the
- * message is only discovered whenever the user next happens to reopen the
- * Messenger — anywhere from minutes to 24h+ later (reported live). Only
- * call this for the Vitana→user leg (the user doesn't need a push about
- * their own transcribed speech), and only once `wroteToChatMessages` is
- * true — no point notifying about a row that was never written.
- */
-export function notifyOrbVoiceBridgeWrite(
-  wroteToChatMessages: boolean,
-  bridgeUserId: string,
-  bridgeTenantId: string,
-  assistantText: string,
-  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
-): void {
-  if (!wroteToChatMessages) return;
-  notifyUserAsync(
-    bridgeUserId,
-    bridgeTenantId,
-    'new_chat_message',
-    {
-      title: 'Vitana',
-      body: assistantText.length > 100 ? assistantText.slice(0, 97) + '...' : assistantText,
-      data: {
-        type: 'new_chat_message',
-        sender_id: VITANA_BOT_USER_ID,
-        sender_name: 'Vitana',
-        thread_id: VITANA_BOT_USER_ID,
-        url: `/inbox/u/${VITANA_BOT_USER_ID}`,
-      },
-    },
-    bridgeSupabase,
-  );
 }
 
 /**
@@ -1023,7 +981,9 @@ export function createUpstreamLiveMessageHandler(
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
-                // Pre-set read_at since user already heard this during the voice session
+                // Pre-set read_at since user already heard this during the voice session.
+                // VTID-04601: no push/in-app notification — the user is in the live
+                // conversation and just heard this. Matches handleTurnComplete().
                 if (chatBridgeAssistantText.length > 0) {
                   void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
@@ -1034,9 +994,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }, 'vitana_to_user', session.sessionId).then((written) => {
-                    notifyOrbVoiceBridgeWrite(written, bridgeUserId, bridgeTenantId, chatBridgeAssistantText, bridgeSupabase);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
