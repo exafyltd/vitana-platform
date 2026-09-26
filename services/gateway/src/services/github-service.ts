@@ -30,6 +30,25 @@ function getGitHubToken(override?: string): string {
 }
 
 /**
+ * VTID-04633: the thrown message keeps the `GitHub API error: <status> - <text>`
+ * prefix callers match on, and appends GitHub's own `message` (e.g. "Resource
+ * not accessible by personal access token"), so a 403 in the Command Hub says
+ * why. Before this, PUBLISH showed a bare "403 - Forbidden".
+ */
+export function formatGitHubApiError(status: number, statusText: string, body: string): string {
+  const base = `GitHub API error: ${status} - ${statusText || 'error'}`;
+  let detail = '';
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown };
+    if (typeof parsed?.message === 'string') detail = parsed.message.trim();
+  } catch {
+    // Non-JSON body (HTML error page, empty) — no detail to add.
+  }
+  if (!detail || detail === statusText) return base;
+  return `${base}: ${detail.slice(0, 300)}`;
+}
+
+/**
  * Make an authenticated request to GitHub API
  */
 async function githubRequest<T>(
@@ -54,7 +73,7 @@ async function githubRequest<T>(
   if (!response.ok) {
     const errorBody = await response.text();
     console.error(`GitHub API error: ${response.status} - ${errorBody}`);
-    throw new Error(`GitHub API error: ${response.status} - ${response.statusText}`);
+    throw new Error(formatGitHubApiError(response.status, response.statusText, errorBody));
   }
 
   // Handle empty responses (like 204 No Content)
