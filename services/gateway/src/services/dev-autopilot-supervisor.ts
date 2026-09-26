@@ -25,6 +25,8 @@ import { getSupabase, supa, planRetryDecision, findingVtid } from './dev-autopil
 import { describeLoopOwnership } from './dev-autopilot-loop-owner';
 import { detectProviderOutage, isProviderOutageFailure, type OutageState } from './dev-autopilot-retry-breaker';
 import { chunkIds, countPipelineStatuses, pipelineSlots, resolveTailCap } from './dev-autopilot-pipeline-guards';
+// VTID-04667: per-scanner / per-rule circuit breaker state for the Command Hub.
+import { loadScannerBreakers, summarizeBreakers, isFindingBreakerOpen, type LoadedBreakers } from './dev-autopilot-scanner-breaker';
 
 type Supa = NonNullable<ReturnType<typeof getSupabase>>;
 
@@ -89,6 +91,8 @@ export interface DiagnoseContext {
   nowMs: number;
   budgetLeft: number;
   concurrencyLeft: number;
+  /** VTID-04667: the finding's scanner / rule breaker is open. */
+  breakerOpen?: boolean;
 }
 
 /** Why an open finding is not moving. Order mirrors autoApproveTick. */
@@ -141,6 +145,15 @@ export function diagnoseFinding(f: OpenFinding, ctx: DiagnoseContext): FindingDi
     if (!cfg.auto_approve_scanners.includes(scanner)) {
       return { code: 'scanner_not_opted_in', actor: 'human', label: 'Needs approval (scanner not opted in)', detail: `Scanner ${scanner || '?'} is not in auto_approve_scanners.` };
     }
+  }
+  if (ctx.breakerOpen) {
+    const key = f.spec_snapshot?.scanner || (f.spec_snapshot?.rule ? `impact:${f.spec_snapshot.rule}` : f.source_type);
+    return {
+      code: 'scanner_breaker_open',
+      actor: 'system',
+      label: `Paused: ${key} breaker open`,
+      detail: 'Fewer than 20% of this scanner\'s recent executions landed — auto-approve and planning are paused for it until that changes (VTID-04667). A human Activate still works.',
+    };
   }
   const stranded = ctx.execs.find((e) => e.pr_url && !e.pr_closed && !['completed', 'self_healed', 'auto_archived'].includes(e.status));
   if (stranded) {
@@ -341,11 +354,16 @@ export function buildAlerts(input: {
   nowMs: number;
   loop?: { owner_env: string; this_env: string; active_here: boolean };
   providerOutage?: { state: string; failures_7d: number; last_error: string | null };
+  /** VTID-04667: scanner / rule keys whose circuit breaker is open. */
+  openBreakers?: string[];
 }): SupervisorAlert[] {
   const a: SupervisorAlert[] = [];
   if (input.cfg.kill_switch) a.push({ severity: 'critical', text: 'Kill switch is ON — no autonomous execution.', tab: 'auto-approve' });
   if (input.providerOutage && input.providerOutage.state !== 'clear') {
     a.push({ severity: 'critical', text: `LLM providers are failing every execution — approving and claiming ${input.providerOutage.state === 'outage' ? 'paused' : 'one at a time (probing)'}${input.providerOutage.last_error ? `: "${input.providerOutage.last_error}"` : ''}.`, tab: 'live' });
+  }
+  if (input.openBreakers && input.openBreakers.length > 0) {
+    a.push({ severity: 'warning', text: `Circuit breaker paused ${input.openBreakers.length} scanner/rule(s) whose work does not land: ${input.openBreakers.slice(0, 6).join(', ')}${input.openBreakers.length > 6 ? ', …' : ''}.`, tab: 'scanners' });
   }
   if (input.loop && !input.loop.active_here) {
     a.push({ severity: 'info', text: `This gateway (${input.loop.this_env}) does not run the autopilot loop — ${input.loop.owner_env} claims, approves and plans for both.`, tab: 'live' });
@@ -454,6 +472,9 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
     planFail.set(r.vtid, { count: prev.count + 1, lastMs: prev.lastMs === null ? t : Math.max(prev.lastMs, t) });
   }
 
+  // VTID-04667: breaker state (read-only here — transitions are emitted by the ticks).
+  const breakers: LoadedBreakers = await loadScannerBreakers(<T>(p: string) => supa<T>(s, p), { emitTransitions: false, useCache: false, nowMs });
+
   const execRows: ExecRow[] = (execs || []).map((e) => ({ ...e, source_type: e.source_type ?? e.finding?.source_type ?? null }));
   const execSummary = summarizeExecutions(execRows, nowMs);
   const budgetLeft = Math.max(0, cfg.daily_budget - (approvedToday || []).length);
@@ -469,6 +490,7 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       nowMs,
       budgetLeft,
       concurrencyLeft,
+      breakerOpen: isFindingBreakerOpen(breakers, f),
     });
     return {
       id: f.id,
@@ -530,6 +552,8 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
     /** VTID-04363: which gateway runs the claim / approve / plan loop. */
     loop,
     provider_outage: providerOutage,
+    /** VTID-04667: which scanners / impact rules are paused by the circuit breaker. */
+    scanner_breakers: summarizeBreakers(breakers),
     scan,
     executions: execSummary,
     findings: {
@@ -552,6 +576,6 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
       last_run_at: communityEngineLastRunAt,
       days_since_last_run: communityEngineLastRunAt ? Math.floor((nowMs - Date.parse(communityEngineLastRunAt)) / 86400000) : null,
     },
-    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs, loop, providerOutage }),
+    alerts: buildAlerts({ cfg, scan, exec: execSummary, blockers: blockerCounts, communityEngineLastRunAt, nowMs, loop, providerOutage, openBreakers: summarizeBreakers(breakers).open }),
   };
 }

@@ -242,7 +242,9 @@ function scoreSignal(signal: DevAutopilotSignal): {
     impact_score: impact,
     effort_score: effort,
     risk_class: risk,
-    auto_exec_eligible: risk === 'low' && impact >= 5,
+    // VTID-04667: large_file refactors (2,000+ line files) are never
+    // auto-executed, independent of how their risk class is tuned.
+    auto_exec_eligible: risk === 'low' && impact >= 5 && signal.type !== 'large_file',
   };
 }
 

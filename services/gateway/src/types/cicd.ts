@@ -814,6 +814,9 @@ export type CicdEventType =
   // VTID-04368: LLM provider outage gate on the autopilot loop
   | 'dev_autopilot.provider_outage.detected'
   | 'dev_autopilot.provider_outage.cleared'
+  // VTID-04667: per-scanner / per-rule circuit breaker on autonomous work
+  | 'dev_autopilot.scanner_breaker.opened'
+  | 'dev_autopilot.scanner_breaker.closed'
   | 'dev_autopilot.finding.completed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
