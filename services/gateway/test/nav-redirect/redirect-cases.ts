@@ -33,6 +33,13 @@ export interface RedirectCase {
   expect: string[];
   /** Device the member is on; desktop when omitted. */
   viewport?: 'mobile' | 'desktop';
+  /**
+   * "open" (default): they asked to open or see it — the screen must open.
+   * "where": they asked where it is — the screen must be offered, not opened.
+   */
+  intent?: 'open' | 'where';
+  /** The screen the member is on; /home when omitted. */
+  from?: string;
 }
 
 export const REDIRECT_CASES: RedirectCase[] = [
@@ -103,6 +110,17 @@ export const REDIRECT_CASES: RedirectCase[] = [
   { id: 'R48', lang: 'sr', say: 'Otvori moj profil', expect: ['PROFILE.ME'] },
   { id: 'R49', lang: 'pt', say: 'Abre as minhas recompensas', expect: ['WALLET.REWARDS'] },
   { id: 'R50', lang: 'ar', say: 'افتح الإعدادات', expect: ['SETTINGS.OVERVIEW'] },
+
+  // Making a post — one of the most common things members do (VTID-04629).
+  // Found in production: "where can I make a post" was answered with the
+  // news feed, then the Following tab opened, then an invented screen id.
+  { id: 'R51', lang: 'en', say: 'Where can I make a post for the community?', expect: ['HOME.CREATE_POST'], intent: 'where' },
+  { id: 'R52', lang: 'en', say: 'How can I share a post with the community?', expect: ['HOME.CREATE_POST'], intent: 'where' },
+  { id: 'R53', lang: 'en', say: 'Show me the screen where I can make a post', expect: ['HOME.CREATE_POST'] },
+  { id: 'R54', lang: 'de', say: 'Wo kann ich einen Beitrag für die Community machen?', expect: ['HOME.CREATE_POST'], intent: 'where' },
+  { id: 'R55', lang: 'de', say: 'Zeig mir, wo ich einen Post machen kann', expect: ['HOME.CREATE_POST'] },
+  { id: 'R56', lang: 'es', say: 'Quiero publicar algo para la comunidad', expect: ['HOME.CREATE_POST'] },
+  { id: 'R57', lang: 'de', say: 'Öffne den Newsfeed', expect: ['HOME.OVERVIEW', 'HOME.NEWS_ALL'], from: '/comm/events-meetups' },
 ];
 
 /**
@@ -127,4 +145,18 @@ export const PARAPHRASE_CASES: ParaphraseCase[] = [
   { id: 'P03', lang: 'en', say: 'Show me my orders', modelQuestion: 'orders', expect: ['DISCOVER.ORDERS', 'DISCOVER.ORDERS_ACTIVE'] },
   // A bare yes carries no screen: the model's question must decide.
   { id: 'P04', lang: 'en', say: 'Yes please, open it', modelQuestion: 'my blood test results', expect: ['HEALTH.MY_BIOLOGY'] },
+  // Production, 2026-09-26: after "yes", the model asked for "Newsfeed" and
+  // opened the Following tab of Events (VTID-04629).
+  { id: 'P05', lang: 'de', say: 'ja mach das', modelQuestion: 'Newsfeed', expect: ['HOME.OVERVIEW', 'HOME.NEWS_ALL'] },
+];
+
+/**
+ * Screen ids the voice model invented instead of taking one from a tool
+ * (VTID-04629: production sent navigate_to_screen("COMM.NEWSFEED")). They
+ * must still open the screen the member meant, never "no matching screen".
+ */
+export const INVENTED_ID_CASES: Array<{ id: string; screenId: string; expect: string[] }> = [
+  { id: 'I01', screenId: 'COMM.NEWSFEED', expect: ['HOME.OVERVIEW'] },
+  { id: 'I02', screenId: 'SOCIAL.CREATE_POST', expect: ['HOME.CREATE_POST'] },
+  { id: 'I03', screenId: 'HOME.NEWSFEED', expect: ['HOME.OVERVIEW'] },
 ];
