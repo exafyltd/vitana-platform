@@ -59,7 +59,7 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     'autopilot_execute_task',
     {
       name: 'autopilot_execute_task',
-      description: 'Execute an already-approved VTID via the DeepSeek-powered execution on-ramp (writes code, opens a PR). Requires the target VTID to have spec_status=approved. Disabled by default — gated on OPERATOR_EXECUTION_ONRAMP_ENABLED.',
+      description: 'Execute an already-approved VTID via the execution on-ramp (writes code, opens a PR). Requires the target VTID to have spec_status=approved. Disabled by default — gated on OPERATOR_EXECUTION_ONRAMP_ENABLED.',
       parameters_schema: {
         type: 'object',
         properties: {
