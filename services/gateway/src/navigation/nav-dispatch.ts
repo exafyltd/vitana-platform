@@ -55,6 +55,21 @@ export interface NavCallContext {
    * correctness of the answer.
    */
   recordOffer?: (offer: { screen_id: string; title: string; route: string }) => Promise<void>;
+  /**
+   * VTID-04607: what the member actually said this turn (the live session's
+   * transcript). The voice model often shortens the request it passes as
+   * `question` ("pop up my wallet for a quick look" → "wallet"), which loses
+   * exactly the words that pick a popup over a page or one tab over another.
+   */
+  memberWords?: string;
+}
+
+/** The member's words, when they add something to the model's question. */
+export function memberWordsFor(question: string, memberWords: string | undefined): string | null {
+  const w = (memberWords || '').replace(/\s+/g, ' ').trim();
+  if (w.length < 3) return null;
+  const tail = w.length > 300 ? w.slice(-300) : w;
+  return tail.toLowerCase() === question.trim().toLowerCase() ? null : tail;
 }
 
 function resolveContext(c: NavCallContext): NavResolveContext {
@@ -213,10 +228,19 @@ export async function navigateByRequest(
   c: NavCallContext,
 ): Promise<OrbToolResult | null> {
   const started = Date.now();
-  const r = await resolveScreenRequest(question, resolveContext(c));
+  // VTID-04607: the member's own words first; the model's question only
+  // when those match nothing (a bare "yes, open it" carries no screen).
+  const words = memberWordsFor(question, c.memberWords);
+  let r = words ? await resolveScreenRequest(words, resolveContext(c)) : null;
+  let querySource: 'member_words' | 'model_question' = 'member_words';
+  if (!r || r.kind === 'none' || r.kind === 'unavailable') {
+    r = await resolveScreenRequest(question, resolveContext(c));
+    querySource = 'model_question';
+  }
   const base = {
     session_id: c.sessionId, question, intent, lang: c.lang, is_anonymous: c.isAnonymous, is_mobile: c.isMobile,
     current_route: c.currentRoute, ms_elapsed: Date.now() - started,
+    query_source: querySource, ...(words ? { member_words: words } : {}),
   };
   if (r.kind === 'unavailable') {
     await emit('orb.navigator.resolved', 'warning', `resolver unavailable: ${r.reason}`, { ...base, kind: 'unavailable', reason: r.reason });

@@ -27,6 +27,7 @@
     "reconcile:aurora-supabase": "tsx scripts/reconciliation/aurora-supabase-reconcile.ts",
     "test:replay": "jest test/services/conversation/vtid-04443-conversation-replay.test.ts",
     "test:roles": "jest test/vtid-04560-role-separation-regression.test.ts",
+    "test:nav-redirect": "jest test/nav-redirect",
     "test:voice-identity": "jest test/orb/latency"
   },
   "dependencies": {
