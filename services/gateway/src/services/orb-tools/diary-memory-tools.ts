@@ -535,6 +535,14 @@ export async function tool_forget_memory(
       return { ok: false, error: `Could not delete the memory: ${del.error.message}` };
     }
 
+    // VTID-04627: the deleted memory must leave the next session's snapshot too.
+    try {
+      const { refreshSnapshotAfterMemoryEdit } = await import('../conversation/brain-core-snapshot');
+      refreshSnapshotAfterMemoryEdit({ tenantId: id.tenant_id as string, userId: id.user_id });
+    } catch {
+      /* fire-and-forget */
+    }
+
     // Governance ledger (VTID-01099) — best-effort; the delete already happened.
     try {
       await repo.insertMemoryDeletion(sb, {

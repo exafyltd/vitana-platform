@@ -412,7 +412,15 @@ export async function buildRememberFactDeps(sb: SupabaseClient) {
       const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
       return typeof value === 'string' && value.trim() ? value.trim() : null;
     },
-    write: rememberFact,
+    async write(...args: Parameters<typeof rememberFact>) {
+      const result = await rememberFact(...args);
+      if (result.ok) {
+        // VTID-04627: a fact saved now must be in the next session's snapshot.
+        const { refreshSnapshotAfterMemoryEdit } = await import('./conversation/brain-core-snapshot');
+        refreshSnapshotAfterMemoryEdit({ tenantId: args[0].tenant_id, userId: args[0].user_id });
+      }
+      return result;
+    },
   };
 }
 
