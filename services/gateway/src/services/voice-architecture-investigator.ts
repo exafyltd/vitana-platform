@@ -726,6 +726,28 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
     const error = callResult.error ?? 'model returned no parseable JSON and no error captured';
     const reason = investigatorFailureReason(error);
     const stubId = await persistFailureStub(input, reason, error, summary, llm);
+    // VTID-04626: a failed investigation is a state change too — make it
+    // visible in OASIS instead of only as a stub row.
+    try {
+      await emitOasisEvent({
+        vtid: input.related_vtid ?? 'VTID-VOICE-HEALING',
+        type: 'voice.healing.investigation.completed',
+        source: 'voice-architecture-investigator',
+        status: 'error',
+        message: `Architecture Investigator failed for ${input.class} (${input.trigger_reason}): ${error.slice(0, 200)}`,
+        payload: {
+          report_id: stubId,
+          class: input.class,
+          normalized_signature: input.normalized_signature,
+          trigger_reason: input.trigger_reason,
+          failure_reason: reason,
+          llm_provider: llm.provider,
+          llm_model: llm.model,
+        },
+      });
+    } catch {
+      /* best-effort emit */
+    }
     return {
       ok: false,
       report_id: stubId,

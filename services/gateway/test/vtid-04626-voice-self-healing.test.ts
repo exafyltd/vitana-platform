@@ -142,6 +142,9 @@ describe('investigator runs on the triage routing stage', () => {
     expect(posted[0].schema_version).toBe('v1-stub');
     expect(posted[0].report.failure_reason).toBe('llm_call_failed');
     expect(posted[0].report.failure_detail).toContain('AccessDeniedException');
+    // the failure is visible in OASIS, not only as a stub row
+    const ev = (mockEmit.mock.calls as any[]).map((c) => c[0]).find((e) => e.type === 'voice.healing.investigation.completed');
+    expect(ev).toMatchObject({ status: 'error', payload: { failure_reason: 'llm_call_failed' } });
   });
 
   test('a thrown router error never escapes', async () => {
@@ -364,6 +367,13 @@ describe('routes and screen', () => {
     "router.post('/healing/quarantine/release', requireExafyAdmin",
   ])('mutating route is exafy_admin only: %s', (sig) => {
     expect(routes).toContain(sig);
+  });
+
+  test('report PATCH and quarantine release emit their own OASIS events', () => {
+    const patch = routes.slice(routes.indexOf("router.patch('/healing/reports/:id'"), routes.indexOf("function healingActor"));
+    expect(patch).toContain("type: 'voice.healing.report.decided'");
+    const rel = routes.slice(routes.indexOf("router.post('/healing/quarantine/release'"), routes.indexOf("router.post('/healing/investigate'"));
+    expect(rel).toContain("type: 'voice.healing.quarantine.released'");
   });
 
   test('overview route exists behind requireAuth', () => {

@@ -1129,6 +1129,21 @@ router.post('/healing/quarantine/release', requireExafyAdmin as any, async (req:
     return res.status(400).json({ ok: false, error: 'class and signature body fields required' });
   }
   const r = await releaseQuarantine(klass, signature, reason);
+  if (r.ok) {
+    // VTID-04626: the release is a state transition the operator made.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      const actor = healingActor(req);
+      await emitOasisEvent({
+        vtid: 'VTID-VOICE-HEALING',
+        type: 'voice.healing.quarantine.released',
+        source: 'voice-lab',
+        status: 'info',
+        message: `Voice healing quarantine released into probation: ${klass} (${signature})`,
+        payload: { class: klass, normalized_signature: signature, reason: reason ?? null, probation_until: r.probation_until ?? null, actor: actor.email || actor.user_id },
+      });
+    } catch { /* best-effort */ }
+  }
   if (!r.ok) {
     return res.status(400).json({
       ok: false,
@@ -1155,6 +1170,7 @@ router.post('/healing/quarantine/release', requireExafyAdmin as any, async (req:
  * Body: { class: string, signature?: string, notes?: string, related_vtid?: string }
  */
 router.post('/healing/investigate', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — spawnInvestigator emits voice.healing.investigation.completed (success and failure).
   const body = (req.body || {}) as Record<string, unknown>;
   const klass = typeof body.class === 'string' ? body.class : '';
   const signature = typeof body.signature === 'string' ? body.signature : null;
@@ -1297,6 +1313,18 @@ router.patch('/healing/reports/:id', requireExafyAdmin as any, async (req: Reque
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, error: 'report not found' });
     }
+    // VTID-04626: record the operator's decision.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        vtid: rows[0].related_vtid || 'VTID-VOICE-HEALING',
+        type: 'voice.healing.report.decided',
+        source: 'voice-lab',
+        status: 'info',
+        message: `Voice investigator report ${id} (${rows[0].class}) set to ${status} by ${acknowledged_by}`,
+        payload: { report_id: id, class: rows[0].class, status, decision_notes, actor: acknowledged_by },
+      });
+    } catch { /* best-effort */ }
     return res.json({ ok: true, report: rows[0] });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -1336,6 +1364,7 @@ router.get('/healing/overview', async (_req: Request, res: Response) => {
  * Body: { decision_notes?: string }
  */
 router.post('/healing/reports/:id/execute', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — acceptReport() emits voice.healing.report.accepted.
   const body = (req.body || {}) as Record<string, unknown>;
   const notes = typeof body.decision_notes === 'string' ? body.decision_notes.slice(0, 2000) : null;
   const r = await acceptReport(req.params.id, healingActor(req), notes);
@@ -1350,6 +1379,7 @@ router.post('/healing/reports/:id/execute', requireExafyAdmin as any, async (req
  * closed only when the retry produced a real report. exafy_admin only.
  */
 router.post('/healing/reports/:id/retry', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — spawnInvestigator emits voice.healing.investigation.completed (success and failure).
   const r = await retryReport(req.params.id, healingActor(req));
   const { status, ...rest } = r;
   return res.status(status).json(rest);
@@ -1363,6 +1393,7 @@ router.post('/healing/reports/:id/retry', requireExafyAdmin as any, async (req: 
  * exafy_admin only.
  */
 router.post('/healing/reports/dismiss', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — dismissReports() emits voice.healing.report.dismissed.
   const body = (req.body || {}) as Record<string, unknown>;
   const reason = typeof body.reason === 'string' && body.reason.trim() ? body.reason.trim() : 'dismissed from Command Hub';
   let target: string[] | 'all_failed';
@@ -1444,6 +1475,7 @@ router.post('/healing/gchat-ping-test', async (req: Request, res: Response) => {
  * Idempotent. Emits voice.healing.dispatched (mode flip event) for audit.
  */
 router.post('/healing/mode', requireExafyAdmin as any, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — setMode() emits voice.healing.mode.changed.
   const body = (req.body || {}) as Record<string, unknown>;
   const next = body.mode;
   // VTID-04626: the actor is the signed-in admin, not a VTID typed into a

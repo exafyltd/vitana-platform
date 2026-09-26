@@ -59,7 +59,7 @@ CURL_PROOF: pre-deploy, staging `bf985e64` — `curl https://preview-aws-gateway
 
 ## OASIS
 
-OASIS_PROOF: `voice.healing.report.accepted` (on accept, vtid = the execution's VTID) and `voice.healing.report.dismissed` are asserted in the test; `voice.healing.mode.changed` replaces the mode-flip use of `voice.healing.dispatched` (asserted in "mode flips no longer masquerade as detections"). Types added to `src/types/cicd.ts`.
+OASIS_PROOF: `voice.healing.report.accepted` (on accept, vtid = the execution's VTID) and `voice.healing.report.dismissed` are asserted in the test; `voice.healing.mode.changed` replaces the mode-flip use of `voice.healing.dispatched` (asserted in "mode flips no longer masquerade as detections"). Types added to `src/types/cicd.ts`. After the impact scan: `voice.healing.report.decided` (report PATCH), `voice.healing.quarantine.released` (quarantine release) and a `status:error` `voice.healing.investigation.completed` for a failed investigation, all asserted in the test.
 
 ## Not verified
 
