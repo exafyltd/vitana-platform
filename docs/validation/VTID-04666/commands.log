@@ -1,0 +1,17 @@
+# VTID-04666 — commands run in this session (services/gateway unless noted)
+npx tsc --noEmit                                                        # clean
+node node_modules/.bin/jest test/vtid-04666                              # 5 suites, 51/51 pass
+node node_modules/.bin/jest test/vtid-04666 test/dev-autopilot-synthesis.test.ts test/routes/dev-autopilot.test.ts \
+  test/routes/autopilot-recommendations.test.ts test/vtid-04625-verification-min-excess.test.ts \
+  test/vtid-04377-verification-baseline.test.ts test/services/autopilot-voice-next-actions.test.ts \
+  test/vtid-04500-lineup-role.test.ts                                    # 12 suites; 1 failure in dev-autopilot-synthesis (incidental GET count) -> test updated, see acceptance.md
+node node_modules/.bin/jest test/dev-autopilot-synthesis.test.ts         # 24/24 pass after the update
+node node_modules/.bin/jest                                              # full: 1344 passed / 1 skipped suites; 21605 passed, 29 skipped, 6 todo, 0 failed; exit 0
+# mutation checks (source mutated, suite run, source restored):
+#   oasis-analyzer: remove the noise-topic skip in clusterErrorEvents   -> vtid-04666-oasis 2 failed / 9 passed
+#   dev-recommendation-policy: drop the risk-rank comparator            -> vtid-04666-dev   1 failed / 9 passed
+#   roadmap-analyzer: drop the is_terminal check                        -> vtid-04666-roadmap 2 failed / 14 passed
+# SQL (repo root):
+python3 -c "pglast.parse_sql(...)"                                       # migration 8 statements, data fix 3 statements parse
+python3 -c "pglast.parser.parse_plpgsql_json(...)"                       # all 4 function bodies parse as PL/pgSQL
+# Not run: no database write, no RUN-MIGRATION dispatch, no push, no PR.

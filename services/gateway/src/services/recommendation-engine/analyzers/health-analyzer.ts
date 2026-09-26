@@ -237,26 +237,40 @@ interface EnvGap {
   required_for: string;
 }
 
-function checkEnvGaps(): EnvGap[] {
+/**
+ * VTID-04666: env vars that are required, each with the names that satisfy
+ * it. The first name is the canonical one reported in a gap; any alias
+ * being set satisfies the requirement.
+ *
+ * GitHub: the gateway's PR/merge/dispatch calls read GITHUB_SAFE_MERGE_TOKEN
+ * (CLAUDE.md §8 / §16, Secrets Manager `vitana/github/pat`), not
+ * GITHUB_TOKEN — checking GITHUB_TOKEN alone reported a gap forever.
+ */
+export const REQUIRED_ENV_VARS: ReadonlyArray<{ name: string; aliases: readonly string[]; required_for: string }> = [
+  { name: 'SUPABASE_URL', aliases: [], required_for: 'Database connectivity' },
+  { name: 'SUPABASE_SERVICE_ROLE', aliases: [], required_for: 'Database authentication' },
+  { name: 'GITHUB_SAFE_MERGE_TOKEN', aliases: ['GITHUB_TOKEN'], required_for: 'GitHub API access' },
+];
+
+/**
+ * VTID-04666: env vars that are deliberately NOT set and must never be
+ * recommended. Each entry carries the reason, so a future reader does not
+ * "fix" the gap back.
+ */
+export const INTENTIONALLY_ABSENT_ENV_VARS: Readonly<Record<string, string>> = {
+  // Standing rule VTID-03563 (CLAUDE.md ALWAYS 10a/10b): Claude runs on AWS
+  // Bedrock only; the direct Anthropic account has no credit balance and a
+  // key would reintroduce the silent-fallback incident.
+  ANTHROPIC_API_KEY: 'Claude runs on AWS Bedrock only (VTID-03563); the direct Anthropic API is deliberately unused',
+};
+
+export function checkEnvGaps(env: NodeJS.ProcessEnv = process.env): EnvGap[] {
   const gaps: EnvGap[] = [];
 
-  // Required environment variables
-  const requiredVars = [
-    { name: 'SUPABASE_URL', required_for: 'Database connectivity' },
-    { name: 'SUPABASE_SERVICE_ROLE', required_for: 'Database authentication' },
-    { name: 'GITHUB_TOKEN', required_for: 'GitHub API access' },
-    { name: 'ANTHROPIC_API_KEY', required_for: 'Claude AI integration' },
-  ];
-
-  // Optional but recommended
-  const recommendedVars = [
-    { name: 'REDIS_URL', required_for: 'Caching and rate limiting' },
-    { name: 'SENTRY_DSN', required_for: 'Error tracking' },
-  ];
-
-  // Check required
-  for (const v of requiredVars) {
-    if (!process.env[v.name]) {
+  for (const v of REQUIRED_ENV_VARS) {
+    if (INTENTIONALLY_ABSENT_ENV_VARS[v.name]) continue;
+    const satisfied = [v.name, ...v.aliases].some((n) => !!env[n]);
+    if (!satisfied) {
       gaps.push({
         variable: v.name,
         required_for: v.required_for,

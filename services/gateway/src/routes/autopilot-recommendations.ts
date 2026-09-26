@@ -473,6 +473,10 @@ export async function queryRecommendationsByRole(
     // Callers must have authorized the role first (resolveLineupRole).
     params.set('user_id', 'is.null');
     params.set('source_type', 'neq.community');
+    // VTID-04666: an operator_onramp row is an operator request that was
+    // already executed, not a recommendation. Repeated column filters are
+    // ANDed by PostgREST.
+    params.append('source_type', 'neq.operator_onramp');
   } else {
     // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
     // NO filter, returning every user's personal suggestions.

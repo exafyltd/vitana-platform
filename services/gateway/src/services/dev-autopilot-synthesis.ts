@@ -13,6 +13,11 @@
 
 import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import {
+  devRecommendationExpiresAtIso,
+  recentlyRejectedFingerprintsPath,
+  toFingerprintSet,
+} from './dev-recommendation-policy';
 
 const LOG_PREFIX = '[dev-autopilot-synthesis]';
 const SCAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -72,6 +77,8 @@ export interface ScanResult {
   signal_count?: number;
   new_finding_count?: number;
   updated_finding_count?: number;
+  /** VTID-04666: signals skipped because the same finding was rejected in the last 30 days. */
+  suppressed_rejected_count?: number;
   error?: string;
 }
 
@@ -513,7 +520,23 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
   // 3. Dedup + upsert findings
   let newCount = 0;
   let updatedCount = 0;
-  const now = new Date().toISOString();
+  let suppressedRejected = 0;
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  // VTID-04666: every dev finding expires unless the scanner keeps seeing it.
+  const expiresAt = devRecommendationExpiresAtIso(nowMs);
+
+  // VTID-04666: fingerprints a human rejected in the last 30 days stay
+  // blocked. One lookup per run. A failed lookup is logged and treated as
+  // "none rejected" — the pre-VTID-04666 behaviour, never a failed scan.
+  const rejectedLookup = await supaRequest<Array<{ signal_fingerprint: string }>>(
+    supa,
+    recentlyRejectedFingerprintsPath('dev_autopilot', nowMs),
+  );
+  if (!rejectedLookup.ok) {
+    console.warn(`${LOG_PREFIX} rejected-fingerprint lookup failed (not blocking any): ${rejectedLookup.error}`);
+  }
+  const recentlyRejected = toFingerprintSet(rejectedLookup.ok ? rejectedLookup.data : []);
 
   for (const signal of effectiveSignals) {
     const fingerprint = fingerprintSignal(signal);
@@ -549,9 +572,18 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
           last_seen_at: now,
           updated_at: now,
           source_run_id: runId,
+          // VTID-04666: still seen → still live; push the expiry forward.
+          expires_at: expiresAt,
         }),
       });
       if (bumped.ok) updatedCount++;
+      continue;
+    }
+
+    // VTID-04666: no live row, but a human rejected this exact finding
+    // recently — do not re-surface it.
+    if (recentlyRejected.has(fingerprint)) {
+      suppressedRejected++;
       continue;
     }
 
@@ -578,6 +610,7 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
         first_seen_at: now,
         last_seen_at: now,
         seen_count: 1,
+        expires_at: expiresAt,
         spec_snapshot: {
           signal_type: signal.type,
           file_path: signal.file_path,
@@ -622,8 +655,14 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
     type: 'dev_autopilot.scan.completed',
     source: 'dev-autopilot',
     status: 'success',
-    message: `Dev Autopilot scan ${runId.slice(0, 8)}: ${newCount} new, ${updatedCount} updated`,
-    payload: { run_id: runId, new: newCount, updated: updatedCount, total_signals: input.signals.length },
+    message: `Dev Autopilot scan ${runId.slice(0, 8)}: ${newCount} new, ${updatedCount} updated, ${suppressedRejected} suppressed (recently rejected)`,
+    payload: {
+      run_id: runId,
+      new: newCount,
+      updated: updatedCount,
+      suppressed_rejected: suppressedRejected,
+      total_signals: input.signals.length,
+    },
   });
 
   // 5. Eager Stage B — plan the top K new findings so the UI has actionable
@@ -652,6 +691,7 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
     signal_count: input.signals.length,
     new_finding_count: newCount,
     updated_finding_count: updatedCount,
+    suppressed_rejected_count: suppressedRejected,
   };
 }
 
