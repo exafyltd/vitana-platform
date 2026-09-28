@@ -49,6 +49,7 @@ class FakeUpstreamClient implements UpstreamLiveClient {
   private transcriptH: ((e: TranscriptEvent) => void) | null = null;
   private toolH: ((e: ToolCallEvent) => void) | null = null;
   private turnH: ((e: TurnCompleteEvent) => void) | null = null;
+  private interruptH: ((e: InterruptedEvent) => void) | null = null;
   async connect(_o: UpstreamConnectOptions): Promise<void> { this.state = 'open'; }
   sendAudioChunk(): boolean { return true; }
   sendTextTurn(): boolean { return true; }
@@ -58,7 +59,7 @@ class FakeUpstreamClient implements UpstreamLiveClient {
   onTranscript(h: (e: TranscriptEvent) => void): void { this.transcriptH = h; }
   onToolCall(h: (e: ToolCallEvent) => void): void { this.toolH = h; }
   onTurnComplete(h: (e: TurnCompleteEvent) => void): void { this.turnH = h; }
-  onInterrupted(_h: (e: InterruptedEvent) => void): void {}
+  onInterrupted(h: (e: InterruptedEvent) => void): void { this.interruptH = h; }
   onUsage(_h: (e: UpstreamUsageEvent) => void): void {}
   onError(_h: (e: UpstreamErrorEvent) => void): void {}
   onClose(_h: (e: UpstreamCloseEvent) => void): void {}
@@ -69,6 +70,7 @@ class FakeUpstreamClient implements UpstreamLiveClient {
   audio(n: number): void { for (let i = 0; i < n; i++) this.audioH?.({ dataB64: `chunk${i}`, mimeType: 'audio/pcm;rate=24000' }); }
   tool(name: string): void { this.toolH?.({ calls: [{ name, args: {}, id: 'c1' }] }); }
   done(): void { this.turnH?.({}); }
+  interrupt(): void { this.interruptH?.({} as InterruptedEvent); }
 }
 
 function setup(over: Record<string, unknown> = {}) {
@@ -192,6 +194,23 @@ describe('VTID-04702 the reply of a remember turn waits for the save', () => {
     await flush();
     expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
     expect(spokenText()).not.toMatch(/notiert/);
+  });
+
+  it('a held reply cut off by the member is never played; the hold re-arms for the next reply', async () => {
+    const { client, callbacks } = setup();
+    backstopRuns.push(async (session) => {
+      session.rememberNoteSentAt = Date.now();
+      return [{ fact_key: 'user_birthday', status: 'profile_owned' }];
+    });
+    client.said('merk dir bitte mein geburtstag ist der neunte september');
+    client.audio(3); // Nova answered the first half of the sentence
+    client.interrupt(); // the member kept talking
+    client.said('neunzehnhundertneunundsechzig');
+    client.replies('Ich habe dein Geburtsdatum notiert.');
+    client.audio(2);
+    client.done();
+    await flush();
+    expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
   });
 
   it('a turn that is not about remembering plays live', () => {

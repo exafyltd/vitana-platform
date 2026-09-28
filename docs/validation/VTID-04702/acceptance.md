@@ -43,5 +43,8 @@ TEST: services/gateway/test/orb/live/session/vtid-04702-remember-hold.test.ts
 AC-4: turns that are not about remembering, non-Nova sessions and the kill switch play live, unchanged.
 TEST: services/gateway/test/orb/live/session/vtid-04702-remember-hold.test.ts
 
+AC-6: a held reply the member cuts off (barge-in) is never played afterwards; the hold re-arms for the reply that follows.
+TEST: services/gateway/test/orb/live/session/vtid-04702-remember-hold.test.ts
+
 AC-5: live B-PROF-01 passes on staging after deploy.
 TEST: scripts/memory-verification/run-live.mjs

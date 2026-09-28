@@ -73,6 +73,7 @@ import {
   holdText,
   maybeArmOnMemberSpeech,
   maybeArmOnReplyText,
+  dropRememberHold,
   releaseRememberHold,
   settleRememberHold,
   takeRememberHold,
@@ -1706,6 +1707,10 @@ export function handleInterrupted(
   console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
   session.isModelSpeaking = false;
   session.outputTranscriptBuffer = '';
+  // VTID-04702: a held reply that was cut off is never played afterwards; the
+  // member's next words re-arm the hold for the reply that follows.
+  const cutOffHold = takeRememberHold(session);
+  if (cutOffHold) dropRememberHold(ctx as any, cutOffHold, 'interrupted');
   // VTID-04571: a FINAL block still in flight belongs to the cut-off turn.
   (session as any).outputTurnClosed = true;
   session.pendingEventLinks = [];
