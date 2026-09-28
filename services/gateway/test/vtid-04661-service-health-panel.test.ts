@@ -67,6 +67,8 @@ const CASES: Array<[number | null, unknown, string, boolean]> = [
   [200, { status: 'degraded' }, 'degraded', false],
   [200, { ok: false }, 'down', false],
   [200, { ok: false, error: 'x' }, 'down', false],
+  [200, { ok: false, status: 'healthy' }, 'down', false],
+  [200, { ok: false, status: 'degraded' }, 'degraded', false],
   [401, { ok: false }, 'no_access', false],
   [403, null, 'no_access', false],
   [404, null, 'down', false],

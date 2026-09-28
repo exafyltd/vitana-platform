@@ -54,10 +54,14 @@ export function classifyHealthResponse(
   const reported = obj && typeof obj.status === 'string' ? obj.status.toLowerCase() : null;
 
   if (httpStatus >= 200 && httpStatus < 300) {
+    // An explicit ok:false is a failure even when the body also carries a
+    // nominal status such as "healthy"; a reported bad status is kept.
+    if (obj && obj.ok === false && (!reported || HEALTHY_STATUSES.includes(reported))) {
+      return { status: 'down', healthy: false };
+    }
     if (reported) {
       return { status: reported, healthy: HEALTHY_STATUSES.includes(reported) };
     }
-    if (obj && obj.ok === false) return { status: 'down', healthy: false };
     return { status: 'healthy', healthy: true };
   }
 

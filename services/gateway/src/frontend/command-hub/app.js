@@ -27547,8 +27547,8 @@ function classifyHealthProbe(httpStatus, body) {
     var obj = (body && typeof body === 'object' && !Array.isArray(body)) ? body : null;
     var reported = (obj && typeof obj.status === 'string') ? obj.status.toLowerCase() : null;
     if (httpStatus >= 200 && httpStatus < 300) {
+        if (obj && obj.ok === false && (!reported || HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0)) return { status: 'down', healthy: false };
         if (reported) return { status: reported, healthy: HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0 };
-        if (obj && obj.ok === false) return { status: 'down', healthy: false };
         return { status: 'healthy', healthy: true };
     }
     if (reported && KNOWN_BAD_PROBE_STATUSES.indexOf(reported) >= 0) return { status: reported, healthy: false };
