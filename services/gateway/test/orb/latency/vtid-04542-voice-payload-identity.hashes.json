@@ -22,8 +22,8 @@
   "connect:authenticated-community-de-first-day": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "a16cc8927fd1df38e6514114cf5f86c638cf9521bc22d7f34709447cad4748f1",
-    "instruction_bytes": 20007,
+    "instruction_sha256": "ad076cec28f7a6d61b43045dd5a4db9653654db2977b52dff7c2bd4abf398dcb",
+    "instruction_bytes": 20163,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -32,8 +32,8 @@
   "connect:authenticated-community-en-returning": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "5058cd7918effbd51e547592f829642892ee028f4312c4ac80118b00bf60a9dd",
-    "instruction_bytes": 21054,
+    "instruction_sha256": "e95224c1144d44c0ea1b2cbd4b3aaa6106825d12f01b0db6e559d235c08fe1a9",
+    "instruction_bytes": 21210,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -42,11 +42,11 @@
   "connect:cascade-ru": {
     "provider": "cascaded",
     "voice": "polly:ru",
-    "instruction_sha256": "6c5a6c5d132817795d562f2f1243d79c4a9799c430b710cde8d9fdd3d586a13a",
-    "instruction_bytes": 19788,
-    "tools_sha256": "e2275a68691c15548b5cadb32e815f12f1d0936c1b26d056eeb2efe05d738378",
-    "tools_bytes": 228598,
-    "tool_count": 295,
+    "instruction_sha256": "d691e23f50d98441094239d5b304c2cdc47b1c2a3dc6f146fc9342c49bf9c31f",
+    "instruction_bytes": 19944,
+    "tools_sha256": "f9b5f9d07533e1f39b35d4aeab391fc06dc1274ca1c38b2d5a33a9c969dc8a61",
+    "tools_bytes": 228798,
+    "tool_count": 296,
     "deferred_tools": 0
   },
   "connect:command-hub-developer-en": {
@@ -72,8 +72,8 @@
   "connect:guided-topic-de": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "1ebd33f3ffe42c9f94f8e416303f66b8236bf7baed4bbeac032d1187f14d6f48",
-    "instruction_bytes": 21416,
+    "instruction_sha256": "21726f9f4fb456629fbf30cf342fdf86f4e72864111766ef9ac37ff598636834",
+    "instruction_bytes": 21572,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -82,8 +82,8 @@
   "connect:vertex-serbian-bridge-sr": {
     "provider": "vertex",
     "voice": "Aoede",
-    "instruction_sha256": "68fcd4c5af000aacb829a30c3ea74a96d406716891dac1037e61de4616470b54",
-    "instruction_bytes": 19804,
+    "instruction_sha256": "97cd00c3e7cd7dd8436e6f6672c0abd08e67b294aac80c05cbde326a722f2c85",
+    "instruction_bytes": 19960,
     "tools_sha256": "0e6608d2759ca1c5c214dab99863231db756c5246d087065d7be239f254e7798",
     "tools_bytes": 49198,
     "tool_count": 34,

@@ -3031,6 +3031,20 @@ function buildLiveApiToolsUngated(
         ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
+        // VTID-04684: forget a stored fact the member asks to forget. Last in
+        // the catalog on purpose: the Nova budget packs the remainder in
+        // catalog order, so appending it never moves another tool out. It is
+        // reachable through find_tool / use_tool, and the gateway backstop
+        // runs the forget when the model does not call it.
+        {
+          name: 'forget_fact',
+          description: 'Forget a stored fact the member asks you to forget; reply per STATUS.',
+          parameters: {
+            type: 'object',
+            properties: { what: { type: 'string' } },
+            required: ['what'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls
