@@ -155,7 +155,11 @@ async function runSession(lang, utterances) {
           lastActivity = Date.now();
         }
         if (t === 'input_transcript' && m.text && sent >= 0) log.heard[sent] += m.text;
-        if (t === 'error') log.error = m.message || m.code || 'error';
+        // An error the gateway recovers from (a 'reconnected' follows) is what a
+        // member experiences as a short pause, not a failure; it is kept as a
+        // note. Only an error nothing recovers from fails the session.
+        if (t === 'error') { log.pendingError = m.message || m.code || 'error'; (log.recoveredErrors ||= []); }
+        if (t === 'reconnected' && log.pendingError) { log.recoveredErrors.push(log.pendingError); log.pendingError = null; }
         if (t === 'turn_complete') turnDoneAt = Date.now();
       }
     }
@@ -177,6 +181,7 @@ async function runSession(lang, utterances) {
   await fetch(`${GATEWAY}/api/v1/orb/live/session/stop`, { method: 'POST', headers: headers(), body: JSON.stringify({ session_id: sb.session_id }) }).catch(() => {});
   log.ended = new Date().toISOString();
   log.completed_all = sent === utterances.length - 1;
+  if (log.pendingError) log.error = log.pendingError;
   return log;
 }
 
@@ -293,6 +298,7 @@ async function runScenario(sc, baselineIds, runNo) {
     const log = await runSession(sess.lang, pcm);
     out.sessions.push(log);
     if (log.error) out.failures.push(`session error: ${log.error}`);
+    if (log.recoveredErrors?.length) (out.notes ||= []).push(`recovered after: ${log.recoveredErrors.join('; ')}`);
     if (!log.completed_all) out.failures.push('session ended before every line was spoken');
     sess.turns.forEach((t, i) => {
       const reply = (log.replies[i] || '').toLowerCase();
@@ -371,6 +377,7 @@ for (const r of results) {
   for (const run of r.runs) {
     lines.push(`- run ${run.run}: ${run.pass ? 'pass' : 'fail'} · sessions ${run.sessions.map((s) => s.session_id).join(', ')}`);
     run.sessions.forEach((s, si) => s.replies?.forEach((rep, i) => lines.push(`  - s${si + 1} line ${i + 1} heard "${s.heard[i]}" → "${rep}"`)));
+    for (const n of run.notes || []) lines.push(`  - note: ${n}`);
     for (const f of run.failures) lines.push(`  - ✗ ${f}`);
   }
   lines.push('');
