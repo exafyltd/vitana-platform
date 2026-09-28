@@ -99,6 +99,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     default_enabled,
     mapped_types,
     tenant_id,
+    member_can_disable,
   } = req.body;
 
   // Validate required fields
@@ -128,6 +129,13 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     tenant_id: tenant_id || null,
     created_by: identity.user_id,
   };
+  // VTID-04674: account/security categories members may not switch off.
+  if (member_can_disable !== undefined) {
+    if (typeof member_can_disable !== 'boolean') {
+      return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: 'member_can_disable must be a boolean' });
+    }
+    insertData.member_can_disable = member_can_disable;
+  }
 
   const { data, error } = await repo.insertCategory(supabase, insertData);
 
@@ -151,7 +159,10 @@ router.patch('/:id', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'no supabase' });
 
-  const allowedFields = ['display_name', 'description', 'icon', 'sort_order', 'is_active', 'default_enabled', 'mapped_types'];
+  const allowedFields = ['display_name', 'description', 'icon', 'sort_order', 'is_active', 'default_enabled', 'mapped_types', 'member_can_disable'];
+  if (req.body.member_can_disable !== undefined && typeof req.body.member_can_disable !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: 'member_can_disable must be a boolean' });
+  }
   const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
 
   for (const field of allowedFields) {

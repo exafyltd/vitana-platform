@@ -23,6 +23,10 @@
  */
 
 import { sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices } from './notification-service';
+import { decidePushDelivery } from './notification-controls/notification-controls-service';
+
+/** VTID-04674: the notification type the admin switches reminders with. */
+export const REMINDER_NOTIFICATION_TYPE = 'reminder_due';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from '../routes/scheduled-notifications-repository';
@@ -286,6 +290,20 @@ export async function scheduleReminderFcmPush(
   };
 
   try {
+    // VTID-04674: the same rule as every other notification — admin switch
+    // for 'reminder_due', the member's category, push switch, quiet hours.
+    // The in-app reminder (SSE overlay) is unaffected; only the push is held.
+    const decision = await decidePushDelivery(supa, {
+      userId: row.user_id,
+      tenantId: row.tenant_id,
+      type: REMINDER_NOTIFICATION_TYPE,
+      priority: 'p1',
+    });
+    if (!decision.send) {
+      console.log(`[reminders-tick] push for ${row.id} not sent: ${decision.reason}`);
+      return;
+    }
+
     const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
 
     // Avoid double-notifying. Mirrors notifyUser()'s FCM/Appilix coexistence

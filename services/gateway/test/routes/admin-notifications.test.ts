@@ -13,6 +13,8 @@ jest.mock('../../src/services/notification-service', () => ({
 }));
 
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  // VTID-04674: the router now runs requireAuth before requireExafyAdmin.
+  requireAuth: jest.fn((_req, _res, next) => next()),
   requireExafyAdmin: jest.fn((req, res, next) => {
     req.identity = {
       user_id: 'admin-id',

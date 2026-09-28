@@ -83,6 +83,7 @@ import {
 import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
 import { rescoreTick } from './recommendation-quality/scoring-service';
 import { qualityReviewTick } from './recommendation-quality/quality-review';
+import { weeklySummaryTick } from './recommendation-quality/acceptance';
 // VTID-04467: agent runs are requeued, never run in-process without a toolchain.
 import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
 
@@ -4342,6 +4343,11 @@ export function startBackgroundExecutor(): void {
     // (self-throttled to 15 min, <= 5 rows, daily cap, kill switch).
     qualityReviewTick().catch((err) => {
       console.error(`${LOG_PREFIX} recommendation quality-review tick error:`, err);
+    });
+    // VTID-04670: one OASIS weekly summary of recommendation acceptance
+    // (checks hourly; sends when the newest summary event is ≥ 7 days old).
+    weeklySummaryTick().catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation weekly-summary tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }

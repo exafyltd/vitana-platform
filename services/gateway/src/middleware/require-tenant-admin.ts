@@ -25,7 +25,9 @@ import { createClient } from '@supabase/supabase-js';
 import * as repo from './require-tenant-admin-repository';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+// VTID-04674: the task definitions set SUPABASE_SERVICE_ROLE (not _KEY), so
+// without the fallback every non-exafy tenant admin was refused.
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
 
 /**
  * Lookup the caller's active_role for a given tenant from user_tenants.
