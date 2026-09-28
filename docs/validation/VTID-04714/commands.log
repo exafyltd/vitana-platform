@@ -1,0 +1,3 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/orb/live/session test/services/memory test/services/guide   # 94 suites, 1258 passed

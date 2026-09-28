@@ -67,6 +67,7 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
 import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop, maybeRunForgetBackstop, maybeRunRecallBackstop } from './remember-backstop-hook';
+import { maybeRecoverFromMutedLeak } from './muted-leak-recovery';
 import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import {
   holdAudio,
@@ -1961,6 +1962,8 @@ export function handleTranscript(
     );
     if (leak) {
       (session as any).suppressCurrentTurnAudio = true;
+      // VTID-04714: remembered so turn_complete can ask for a real answer.
+      (session as any).backendLeakMutedThisTurn = leak;
       console.warn(
         `[VTID-04480] Backend data (${leak}) in spoken output for session ${session.sessionId} — muting the rest of the turn.`,
       );
@@ -2435,6 +2438,8 @@ export function handleTurnComplete(
   }
   (session as any).suppressCurrentTurnAudio = false;
   (session as any).currentTurnAudioChunksDropped = 0;
+  const leakMuted: string | undefined = (session as any).backendLeakMutedThisTurn || undefined;
+  (session as any).backendLeakMutedThisTurn = undefined;
 
   // Anonymous-session auth-intent detection + turn limits.
   if (session.isAnonymous && !isGreetingTurn) {
@@ -2536,12 +2541,23 @@ export function handleTurnComplete(
 
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
+    const backstopsSince = Date.now();
     (session as any).rememberBackstopRun = maybeRunRememberBackstop(ctx, session, userText, undefined, session.outputTranscriptBuffer || '');
     // VTID-04684: a forget request the model answered without calling forget_fact.
-    maybeRunForgetBackstop(ctx, session, userText);
+    const forgetRun = maybeRunForgetBackstop(ctx, session, userText);
     // VTID-04692: the member asked about something stored ("Wie heißt mein
     // Hund?") and the reply said it is not stored, with the fact present.
-    maybeRunRecallBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+    const recallRun = maybeRunRecallBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+    // VTID-04714: the reply was muted for reading internal data or its own
+    // reasoning aloud — the member heard none of it. Unless a backstop above
+    // already answered, ask for the reply the member should have heard.
+    if (leakMuted) {
+      void maybeRecoverFromMutedLeak(ctx, session, leakMuted, backstopsSince, [
+        (session as any).rememberBackstopRun,
+        forgetRun,
+        recallRun,
+      ]);
+    }
 
     // VTID-04619: Vitana said she is opening a page but never called navigate
     // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no

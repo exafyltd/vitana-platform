@@ -28,8 +28,10 @@ import { REMEMBER_BACKSTOP_MARKER } from './remember-backstop';
 
 // A question word and a first-person possessive in the same utterance:
 // "wie heißt mein Hund", "wann hat meine Frau Geburtstag", "what is my …".
+// VTID-04712: German wo-compounds and "why" words. Live B-SELF-02 (pass 7):
+// "Worauf bin ich allergisch?" matched no question word.
 const QUESTION_WORD =
-  /\b(wie|wann|wo|was|wer|welche[rsnm]?|wieso|what|when|where|who|which|how|cómo|cuál|cuándo|dónde|qué|quién|kako|kada|gde|gdje|šta|što|koji|koja|koje)\b/i;
+  /\b(wie|wann|wo|was|wer|welche[rsnm]?|wieso|warum|weshalb|weswegen|wieviele?|wor?(auf|an|aus|bei|durch|für|gegen|her|hin|mit|nach|rin|über|um|unter|von|vor|zu)|what|when|where|who|which|how|why|cómo|cuál|cuándo|dónde|qué|quién|kako|kada|gde|gdje|šta|što|zašto|koji|koja|koje)\b/i;
 const OWN_POSSESSIVE =
   /\b(mein|meine|meinen|meinem|meiner|meines|my|mi|mis|moj|moja|moje|mog|mojoj|mojem)\b/i;
 // "weißt du noch …", "erinnerst du dich …", "do you remember …".
@@ -100,6 +102,11 @@ const DENIES_OR_DEFERS = new RegExp(
     "\\bi('m| am) (checking|looking)\\b",
     '\\b(voy a|déjame) (revisar|comprobar|mirar|buscar)\\b',
     '\\b(proveriću|proveravam|provjerit ću|provjeravam)\\b',
+    // VTID-04712: "Lass mich kurz in deinen Aufzeichnungen nachsehen." ended
+    // the turn (live B-SELF-02, pass 7).
+    '\\blass mich (mal |kurz |gleich |eben )?([\\wäöüß]+ ){0,6}(nachsehen|nachschauen|nachschlagen|schauen|prüfen|überprüfen|checken|suchen)\\b',
+    '\\blet me (quickly |just |first )?(check|look|see)\\b',
+    '\\bdaj(te)? da (pogledam|proverim|provjerim)\\b',
   ].join('|'),
   'i',
 );
