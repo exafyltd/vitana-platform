@@ -148,8 +148,12 @@ describe('VTID-04671 CSP, styling, cache-bust, ownership', () => {
   });
 
   it('cache-bust bumped and the guard allows both VTIDs', () => {
-    expect(INDEX_HTML).toContain('app.js?v=20261019-vtid-04671');
-    expect(INDEX_HTML).toContain('styles.css?v=20261019-vtid-04671');
-    expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/VTID-04671\|VTID-04670\|/);
+    // At or after this change's tag: a later change bumps it again (VTID-04665).
+    const app = (INDEX_HTML.match(/app\.js\?v=([^"]+)/) || [])[1] || '';
+    const css = (INDEX_HTML.match(/styles\.css\?v=([^"]+)/) || [])[1] || '';
+    expect(app >= '20261019-vtid-04671').toBe(true);
+    expect(css >= '20261019-vtid-04671').toBe(true);
+    const allowed = (GUARD.match(/ALLOWED_VTID_PATTERN = \/([^/]+)\//) || [])[1] || '';
+    expect(allowed.split('|')).toEqual(expect.arrayContaining(['VTID-04671', 'VTID-04670']));
   });
 });

@@ -13,6 +13,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './command-hub-repository';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 /** Allowed roles for Command Hub access */
@@ -141,8 +142,9 @@ router.post('/api/chat', requireAuth, requireDeveloperAccess, async (req: Reques
   }
 });
 
-router.get('/health', (req: Request, res: Response) => {
-  res.json({
+router.get('/health', async (req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ file: path.join(__dirname, '../frontend/command-hub/app.js') }, { file: path.join(__dirname, '../frontend/command-hub/index.html') }], {
     status: 'healthy',
     service: 'command-hub',
     version: '2.0.0',
@@ -155,7 +157,7 @@ router.get('/health', (req: Request, res: Response) => {
       screens: 87
     },
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 /**

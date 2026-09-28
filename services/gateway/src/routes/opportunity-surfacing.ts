@@ -43,6 +43,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { createClient } from '@supabase/supabase-js';
 import * as repo from './opportunity-surfacing-repository';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 const LOG_PREFIX = '[D48-Routes]';
 const VTID = 'VTID-01142';
@@ -590,13 +591,14 @@ router.get('/config', async (_req: Request, res: Response) => {
 // =============================================================================
 
 router.get('/health', async (_req: Request, res: Response) => {
-  return res.status(200).json({
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'contextual_opportunities' }], {
     ok: true,
     vtid: VTID,
     service: 'd48-opportunity-surfacing',
     status: 'healthy',
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 export default router;

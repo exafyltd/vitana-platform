@@ -769,14 +769,15 @@ router.get('/chat/:threadId', async (req: Request, res: Response) => {
 /**
  * GET /health → /api/v1/operator/health
  */
-router.get('/health', (_req: Request, res: Response) => {
-  return res.status(200).json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'vtid_ledger' }, { table: 'oasis_events' }], {
     ok: true,
     service: 'operator-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
     vtid: 'VTID-0509'
-  });
+  }));
 });
 
 /**
@@ -981,6 +982,7 @@ import deployOrchestrator from '../services/deploy-orchestrator';
 import { triggerWorkflow, getWorkflowRuns } from '../services/github-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { evaluatePublishGate, OVERRIDE_REASON_MIN } from '../services/testing/publish-gate';
+import { withDependencyHealth } from '../services/dependency-probe';
 // VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
 // import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
 
