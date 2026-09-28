@@ -441,7 +441,7 @@
    ],
    "expect_facts": [
     {
-     "key": "%food%",
+     "key": "%food%|%essen%",
      "value": "Lasagne",
      "count": 1
     }
@@ -956,8 +956,7 @@
      "key": "%pet%|%dog%",
      "value": "Bello"
     }
-   ],
-   "gap": "voice forget_memory deletes conversation notes, not memory_facts (layer A: A-FORG-01)"
+   ]
   },
   {
    "id": "B-FORG-02",

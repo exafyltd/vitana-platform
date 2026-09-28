@@ -13132,6 +13132,21 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
           "type": "object",
         },
       },
+      {
+        "description": "Forget a stored fact the member asks you to forget; reply per STATUS.",
+        "name": "forget_fact",
+        "parameters": {
+          "properties": {
+            "what": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "what",
+          ],
+          "type": "object",
+        },
+      },
     ],
   },
   {
@@ -20816,6 +20831,21 @@ Warenkorb?".",
             },
           },
           "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Forget a stored fact the member asks you to forget; reply per STATUS.",
+        "name": "forget_fact",
+        "parameters": {
+          "properties": {
+            "what": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "what",
+          ],
           "type": "object",
         },
       },
