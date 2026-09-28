@@ -14,3 +14,7 @@ AC-4: A failed read or close is reported (warning + job summary) and never fails
 ## Not verified here
 
 The workflow itself runs only on a real merge; the first merged PR after this lands (this PR's own merge closes VTID-04691) is the live exercise.
+
+## OASIS
+
+OASIS_PROOF: the workflow emits nothing itself; each close goes through `POST /api/v1/oasis/tasks/:vtid/complete`, which writes `vtid.lifecycle.completed`. Verified on the live ledger: VTID-04633, closed through the same endpoint on 2026-09-26, has `oasis_events` row `topic=vtid.lifecycle.completed, created_at=2026-09-26 14:18:18.27+00`. No new topic is introduced.
