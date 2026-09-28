@@ -1,0 +1,341 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.watchdog.turn_response_timeout_ms" tenant_id="GLOBAL" — using defaultValue
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getTurnResponseTimeoutMs (src/orb/upstream/constants.ts:148:30)
+      at handleTranscript (src/orb/live/session/upstream-message-handler.ts:1889:69)
+      at FakeUpstreamClient.transcriptH (src/orb/live/session/upstream-message-handler.ts:2946:38)
+      at FakeUpstreamClient.said (test/orb/live/session/vtid-04702-remember-hold.test.ts:67:48)
+      at Object.<anonymous> (test/orb/live/session/vtid-04702-remember-hold.test.ts:141:12)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.post_turn.cooldown_ms" tenant_id="GLOBAL" — using defaultValue
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getPostTurnCooldownMs (src/orb/upstream/constants.ts:120:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2323:143)
+      at FakeUpstreamClient.turnH (src/orb/live/session/upstream-message-handler.ts:2948:40)
+      at FakeUpstreamClient.done (test/orb/live/session/vtid-04702-remember-hold.test.ts:71:30)
+      at Object.<anonymous> (test/orb/live/session/vtid-04702-remember-hold.test.ts:147:12)
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-hold — mic audio ungated (cooldown 300ms)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2323:11)
+  console.log
+    [VTID-01219] Turn complete for session sess-hold (turn 2, isGreeting=false, consecutiveModelTurns=1)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2397:11)
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_model_turns" tenant_id="GLOBAL" — using defaultValue
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getMaxConsecutiveModelTurns (src/orb/upstream/constants.ts:162:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2483:100)
+      at FakeUpstreamClient.turnH (src/orb/live/session/upstream-message-handler.ts:2948:40)
+      at FakeUpstreamClient.done (test/orb/live/session/vtid-04702-remember-hold.test.ts:71:30)
+      at Object.<anonymous> (test/orb/live/session/vtid-04702-remember-hold.test.ts:147:12)
+  console.log
+    [VTID-01955] REDIS_URL not set — Tier 0 Redis disabled (legacy in-process buffer in use)
+      at getRedisClient (src/services/redis-client.ts:40:13)
+  console.log
+    [VTID-01225] Writing assistant turn to memory: "Ich habe dein Geburtsdatum notiert: 9 September 1969...."
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2752:15)
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-hold: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2925:13)
+  console.warn
+    [VTID-04387] transcript turn write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      86 |     });
+      87 |     if (error) {
+    > 88 |       console.warn(`[VTID-04387] transcript turn write failed: ${error.message}`);
+         |               ^
+      89 |       return false;
+      90 |     }
+      91 |     return true;
+      at recordTranscriptTurn (src/services/memory/transcript.ts:88:15)
+  console.error
+    [VTID-01186] Memory write error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      733 |         return { ok: false, error: 'Memory Core not available' };
+      734 |       }
+    > 735 |       console.error('[VTID-01186] Memory write error:', error.message);
+          |               ^
+      736 |       return { ok: false, error: error.message };
+      737 |     }
+      738 |
+      at writeMemoryItemWithIdentity (src/services/orb-memory-bridge.ts:735:15)
+  console.log
+    [OASIS Event] Emitted: memory.identity.write_attempted for VTID-01952 (8bd3e980-16ad-4dae-be7c-d0f18a81f9d9)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.log
+    [VTID-01953] Identity-mutation intent intercepted on ORB voice: fact_key=user_date_of_birth, pattern="Mein Geburtstag ist X / Ich wurde am X geboren"
+      at src/orb/live/session/upstream-message-handler.ts:2561:17
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 1/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] vitana_to_user transcript write attempt 1/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 2/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.log
+    [OASIS Event] Emitted: orb.chat_bridge.write_failed for BOOTSTRAP-CHAT-BRIDGE-RELIABILITY (5099e240-df74-4d71-b43f-b782bc068d10)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] vitana_to_user transcript write attempt 2/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.log
+    [OASIS Event] Emitted: orb.chat_bridge.write_failed for BOOTSTRAP-CHAT-BRIDGE-RELIABILITY (7804dc38-5def-4d78-99c9-714de9a987b9)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_tool_calls" tenant_id="GLOBAL" — using defaultValue
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getMaxConsecutiveToolCalls (src/orb/upstream/constants.ts:169:30)
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2017:155)
+      at FakeUpstreamClient.toolH (src/orb/live/session/upstream-message-handler.ts:2947:36)
+      at FakeUpstreamClient.tool (test/orb/live/session/vtid-04702-remember-hold.test.ts:70:42)
+      at Object.<anonymous> (test/orb/live/session/vtid-04702-remember-hold.test.ts:164:12)
+  console.log
+    [VTID-01224] Tool call received for session sess-hold (consecutive: 1/5): remember_fact
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2017:11)
+  console.log
+    [VTID-01224] Executing tool: remember_fact with args: {}
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2124:13)
+  console.log
+    [VTID-01224] Tool remember_fact completed in 0ms, success=true, resultLen=13
+      at src/orb/live/session/upstream-message-handler.ts:2130:17
+  console.log
+    [OASIS Event] Emitted: orb.live.tool.executed for VTID-01224 (5b6a0b0c-df45-41cc-8c47-12a0851fa3c0)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-hold — mic audio ungated (cooldown 300ms)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2323:11)
+  console.log
+    [VTID-01219] Turn complete for session sess-hold (turn 2, isGreeting=false, consecutiveModelTurns=1)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2397:11)
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-hold: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2925:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 1/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.warn
+    [VTID-04387] transcript turn write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      86 |     });
+      87 |     if (error) {
+    > 88 |       console.warn(`[VTID-04387] transcript turn write failed: ${error.message}`);
+         |               ^
+      89 |       return false;
+      90 |     }
+      91 |     return true;
+      at recordTranscriptTurn (src/services/memory/transcript.ts:88:15)
+  console.error
+    [VTID-01186] Memory write error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      733 |         return { ok: false, error: 'Memory Core not available' };
+      734 |       }
+    > 735 |       console.error('[VTID-01186] Memory write error:', error.message);
+          |               ^
+      736 |       return { ok: false, error: error.message };
+      737 |     }
+      738 |
+      at writeMemoryItemWithIdentity (src/services/orb-memory-bridge.ts:735:15)
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 2/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.log
+    [OASIS Event] Emitted: orb.chat_bridge.write_failed for BOOTSTRAP-CHAT-BRIDGE-RELIABILITY (a8f6c8e0-4726-485d-bd5e-835ea8899c85)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-hold — mic audio ungated (cooldown 300ms)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2323:11)
+  console.log
+    [VTID-01219] Turn complete for session sess-hold (turn 2, isGreeting=false, consecutiveModelTurns=1)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2397:11)
+  console.log
+    [VTID-01225] Writing assistant turn to memory: "Ich habe den Geburtstag von Paul am siebten Mai notiert...."
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2752:15)
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-hold: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2925:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] vitana_to_user transcript write attempt 1/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.warn
+    [VTID-04387] transcript turn write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      86 |     });
+      87 |     if (error) {
+    > 88 |       console.warn(`[VTID-04387] transcript turn write failed: ${error.message}`);
+         |               ^
+      89 |       return false;
+      90 |     }
+      91 |     return true;
+      at recordTranscriptTurn (src/services/memory/transcript.ts:88:15)
+  console.error
+    [VTID-01186] Memory write error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      733 |         return { ok: false, error: 'Memory Core not available' };
+      734 |       }
+    > 735 |       console.error('[VTID-01186] Memory write error:', error.message);
+          |               ^
+      736 |       return { ok: false, error: error.message };
+      737 |     }
+      738 |
+      at writeMemoryItemWithIdentity (src/services/orb-memory-bridge.ts:735:15)
+  console.warn
+    [VTID-CHAT-BRIDGE] vitana_to_user transcript write attempt 2/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.log
+    [OASIS Event] Emitted: orb.chat_bridge.write_failed for BOOTSTRAP-CHAT-BRIDGE-RELIABILITY (83cc263a-bde5-4e92-a8f2-38f98ad1048b)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 1/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.warn
+    [VTID-CHAT-BRIDGE] user_to_vitana transcript write attempt 2/2 failed for session sess-hold: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+      167 |     if (!error) return true;
+      168 |     lastError = error.message;
+    > 169 |     console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+          |             ^
+      170 |   }
+      171 |   emitOasisEvent({
+      172 |     vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+      at bridgeVoiceTranscript (src/orb/live/session/upstream-message-handler.ts:169:13)
+  console.log
+    [OASIS Event] Emitted: orb.chat_bridge.write_failed for BOOTSTRAP-CHAT-BRIDGE-RELIABILITY (964062bf-ea69-4876-8784-d66914c1120e)
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+  console.log
+    [VTID-VOICE-INIT] Model started speaking for session sess-hold — mic audio gated
+      at handleAudioOutput (src/orb/live/session/upstream-message-handler.ts:1740:13)
+PASS test/orb/live/session/vtid-04702-remember-hold.test.ts
+  VTID-04702 the reply of a remember turn waits for the save
+    ✓ live B-PROF-01: the false "notiert" reply is never forwarded; the reply after the save is (144 ms)
+    ✓ Nova called remember_fact: the reply plays once the tool result is sent (9 ms)
+    ✓ the backstop did not answer: the held reply still plays, never silence (26 ms)
+    ✓ a plain statement whose reply claims a save is held too (live B-CONF-02 shape) (24 ms)
+    ✓ a turn that is not about remembering plays live (3 ms)
+    ✓ is off with ORB_REMEMBER_HOLD_ENABLED=false and for a non-Nova session (4 ms)
+  VTID-04702 note wording when the reply was held
+    ✓ asks for the outcome as the answer, not as a correction (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        1.351 s
+Ran all test suites matching /test\/orb\/live\/session\/vtid-04702-remember-hold.test.ts/i.

@@ -1,0 +1,3 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/orb/live test/services/memory test/services/vtid-04591-remember-backstop.test.ts test/services/guide   # 2841 passed

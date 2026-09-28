@@ -68,6 +68,15 @@ import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
 import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop, maybeRunForgetBackstop, maybeRunRecallBackstop } from './remember-backstop-hook';
 import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
+import {
+  holdAudio,
+  holdText,
+  maybeArmOnMemberSpeech,
+  maybeArmOnReplyText,
+  releaseRememberHold,
+  settleRememberHold,
+  takeRememberHold,
+} from './remember-hold';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -1809,6 +1818,8 @@ export function handleAudioOutput(
   // speech reached the client mislabelled and played 1.5x fast — the reported
   // chipmunk voice. VTID-03711 fixed the CLIENT's parsing; the rate still has
   // to survive the server to give that parser anything true to read.
+  // VTID-04702: a remember turn's reply waits until the save has run.
+  if (holdAudio(ctx as any, event.dataB64, event.mimeType)) return;
   ctx.callbacks.onAudioResponse(event.dataB64, event.mimeType);
 }
 
@@ -1847,6 +1858,9 @@ export function handleTranscript(
     session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
     session.consecutiveModelTurns = 0;
     session.consecutiveToolCalls = 0;
+    // VTID-04702: the member asked Vitana to remember something — hold the
+    // reply until the save has run.
+    maybeArmOnMemberSpeech(ctx as any);
 
     // Loop-guard re-arm of the PCM silence keepalive — providers that need
     // synthetic silence at all get it (both Vertex and Nova; see the
@@ -1921,7 +1935,13 @@ export function handleTranscript(
   }
   (session as any).outputTurnClosed = false;
 
-  if (session.sseResponse) {
+  // VTID-04702: a reply that claims a save with no remember tool call is held
+  // too; its text runs ahead of its audio, so most of it is caught.
+  const replySoFar = session.outputTranscriptBuffer;
+  session.outputTranscriptBuffer += outputTranscription;
+  maybeArmOnReplyText(ctx as any);
+  session.outputTranscriptBuffer = replySoFar;
+  if (!holdText(ctx as any, outputTranscription) && session.sseResponse) {
     writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
   }
   session.outputTranscriptBuffer += outputTranscription;
@@ -2164,6 +2184,10 @@ export function handleToolCall(
           output: modelFacingResult.result ?? '',
           error: modelFacingResult.error,
         });
+        // VTID-04702: the save ran — the held reply may play now.
+        if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
+          releaseRememberHold(ctx as any, 'tool_result_sent');
+        }
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
         } else {
@@ -2213,6 +2237,9 @@ export function handleToolCall(
           output: '',
           error: err.message,
         });
+        if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
+          releaseRememberHold(ctx as any, 'tool_failed');
+        }
         // Nova item 5: a failed tool result is still a result — the model owes
         // a response to it, so response liveness resets here too.
         session.modelRespondedThisTurn = false;
@@ -2275,6 +2302,16 @@ export function handleTurnComplete(
   _event: UpstreamTurnCompleteEvent,
 ): void {
   const { session } = ctx;
+
+  // VTID-04702: detach the held reply (the corrected reply that follows must
+  // play live) and decide once the remember backstop below is done.
+  (session as any).rememberBackstopRun = null;
+  const heldReply = takeRememberHold(session);
+  if (heldReply) {
+    setImmediate(() => {
+      void settleRememberHold(ctx as any, heldReply, (session as any).rememberBackstopRun ?? null);
+    });
+  }
 
   ctx.deps.clearResponseWatchdog(session);
   session.isModelSpeaking = false;
@@ -2381,7 +2418,8 @@ export function handleTurnComplete(
       dropped_chunks: droppedChunks,
       transcript_chars: completedTranscript.length,
     });
-  } else if (completedTranscript.length >= 30) {
+  } else if (completedTranscript.length >= 30 && !heldReply) {
+    // A held reply was not heard: the corrected one must not be muted as its repeat.
     const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
     recent.push(completedTranscript);
     while (recent.length > 3) recent.shift();
@@ -2490,7 +2528,7 @@ export function handleTurnComplete(
 
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
-    maybeRunRememberBackstop(ctx, session, userText, undefined, session.outputTranscriptBuffer || '');
+    (session as any).rememberBackstopRun = maybeRunRememberBackstop(ctx, session, userText, undefined, session.outputTranscriptBuffer || '');
     // VTID-04684: a forget request the model answered without calling forget_fact.
     maybeRunForgetBackstop(ctx, session, userText);
     // VTID-04692: the member asked about something stored ("Wie heißt mein
