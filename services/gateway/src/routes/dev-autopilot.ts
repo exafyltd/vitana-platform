@@ -757,6 +757,8 @@ router.get('/pending-approvals', requireDevRole, async (req: Request, res: Respo
     recommendations,
     count: recommendations.length,
     below_floor_count: listed.below_floor_count,
+    // VTID-04669: rows that pass the floor but have not been reviewed yet.
+    awaiting_review_count: listed.awaiting_review_count,
   });
 });
 
@@ -774,7 +776,12 @@ router.get('/pending-approvals/count', requireDevRole, async (_req: Request, res
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
   const listed = applyDeveloperQualityListing((r.data || []) as Array<Record<string, unknown>>);
-  return res.json({ ok: true, count: listed.rows.length, below_floor_count: listed.below_floor_count });
+  return res.json({
+    ok: true,
+    count: listed.rows.length,
+    below_floor_count: listed.below_floor_count,
+    awaiting_review_count: listed.awaiting_review_count,
+  });
 });
 
 // =============================================================================

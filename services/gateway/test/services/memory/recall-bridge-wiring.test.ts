@@ -9,8 +9,10 @@ jest.mock('../../../src/services/memory/recall', () => ({
 import { fetchMemoryContextWithIdentity } from '../../../src/services/orb-memory-bridge';
 
 const ID = { user_id: '11111111-1111-1111-1111-111111111111', tenant_id: '22222222-2222-2222-2222-222222222222' };
-// Relative to now: a fixed date aged out of the recall window (VTID-04683).
-const T = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+// VTID-04687: a current timestamp. selectContextWindow decays relevance with
+// age, and the importance-40 episode sits exactly on the health domain's
+// minimum — a fixed date turned this test red once the date aged.
+const T = new Date().toISOString();
 
 describe('fetchMemoryContextWithIdentity + recall()', () => {
   const env = { ...process.env };

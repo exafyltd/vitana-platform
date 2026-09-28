@@ -114,3 +114,72 @@ export function maybeRunRememberBackstop(
   });
   return run;
 }
+
+// ---------------------------------------------------------------- VTID-04684: forget
+
+export interface ForgetBackstopSession extends RememberBackstopSession {
+  forgetFactCalledThisTurn?: boolean;
+}
+
+/** Marks the injected forget note; the input-transcript path never records it as member speech. */
+export const FORGET_BACKSTOP_MARKER = REMEMBER_BACKSTOP_MARKER;
+
+/**
+ * A forget request ("vergiss bitte, dass …") the model answered without
+ * calling forget_fact or forget_memory: the gateway forgets the matching fact
+ * and tells the model the real outcome. Live suite B-FORG-01: Nova said the
+ * dog's name was deleted, called nothing, and the fact stayed.
+ */
+export function maybeRunForgetBackstop(
+  ctx: { deps: { emitDiag: EmitDiag } },
+  sessionIn: unknown,
+  userText: string,
+  depsOverride?: import('../../../services/memory/forget-fact').ForgetFactDeps,
+): Promise<import('../../../services/memory/forget-fact').ForgetFactResult | null> | null {
+  const session = sessionIn as ForgetBackstopSession;
+  const toolCalled = session.forgetFactCalledThisTurn === true;
+  session.forgetFactCalledThisTurn = false;
+  if (toolCalled) return null;
+  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  const userId = session.identity?.user_id;
+  const tenantId = session.identity?.tenant_id;
+  if (!userId || !tenantId || !session.upstreamClient) return null;
+  if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
+
+  const run = (async () => {
+    const { detectForgetIntent } = await import('../../../services/memory/memory-intent');
+    if (!detectForgetIntent(userText)) return null;
+    const { runForgetFact, formatForgetFactResult } = await import('../../../services/memory/forget-fact');
+    let deps = depsOverride;
+    if (!deps) {
+      const { getSupabase } = await import('../../../lib/supabase');
+      const sb = getSupabase();
+      if (!sb) return null;
+      const { buildForgetFactDeps } = await import('../../../services/orb-tools-shared');
+      deps = await buildForgetFactDeps(sb);
+    }
+    const result = await runForgetFact({ tenant_id: tenantId, user_id: userId, request: userText }, deps);
+    ctx.deps.emitDiag(session, 'forget_backstop', {
+      status: result.status,
+      keys: result.forgotten.map((f) => f.fact_key),
+      transcript_lines_removed: result.transcript_lines_removed ?? 0,
+      injected: Boolean(session.active),
+    });
+    console.log(`[VTID-04684] forget backstop ${session.sessionId}: ${result.status} ${result.forgotten.map((f) => f.fact_key).join(',')}`);
+    if (session.active && session.upstreamClient) {
+      session.upstreamClient.sendTextTurn(
+        [
+          `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked you to forget something and you answered without calling forget_fact. The gateway ran it:`,
+          `- ${formatForgetFactResult(result)}`,
+          'Now tell the member the real outcome in one short sentence, in their language. If your previous answer said something different, correct it plainly. Do not call forget_fact for this again.',
+        ].join('\n'),
+        true,
+      );
+    }
+    return result;
+  })().catch((err: any) => {
+    console.warn(`[VTID-04684] forget backstop failed (non-blocking): ${err?.message ?? err}`);
+    return null;
+  });
+  return run;
+}
