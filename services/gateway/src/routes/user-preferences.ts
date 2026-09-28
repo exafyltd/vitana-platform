@@ -129,7 +129,7 @@ router.get('/', (_req: Request, res: Response) => {
  */
 router.get('/health', async (_req: Request, res: Response) => {
   // VTID-04665: report whether the dependency answers, not just that the route exists.
-  return res.status(200).json(await withDependencyHealth([{ table: 'user_preferences' }, { rpc: 'preference_set' }, { rpc: 'preference_get_audit' }], {
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_explicit_preferences' }, { rpc: 'preference_set' }, { rpc: 'preference_get_audit' }], {
     ok: true,
     status: 'healthy',
     vtid: VTID,

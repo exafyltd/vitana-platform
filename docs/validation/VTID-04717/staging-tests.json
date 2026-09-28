@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04717",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Risk Mitigation (D49) health reads ok:true (its data layer exists)",
+      "path": "/api/v1/mitigation/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Risk Mitigation (D49) health probes risk_mitigations",
+      "path": "/api/v1/mitigation/health",
+      "expect_body_contains": "risk_mitigations"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04716-feature-data-layers.test.ts",
+      "cwd": "services/gateway",
+      "reason": "shipped in the VTID-04716 PR; migration contracts for Risk Mitigation (D49) live there"
+    }
+  ]
+}
