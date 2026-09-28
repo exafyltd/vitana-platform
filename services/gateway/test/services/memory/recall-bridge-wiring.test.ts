@@ -9,7 +9,9 @@ jest.mock('../../../src/services/memory/recall', () => ({
 import { fetchMemoryContextWithIdentity } from '../../../src/services/orb-memory-bridge';
 
 const ID = { user_id: '11111111-1111-1111-1111-111111111111', tenant_id: '22222222-2222-2222-2222-222222222222' };
-const T = '2026-09-23T08:00:00Z';
+// Relative to now: a fixed date aged the episode below the window's relevance
+// floor a few days after this test was written (red on main from 2026-09-28).
+const T = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
 describe('fetchMemoryContextWithIdentity + recall()', () => {
   const env = { ...process.env };
