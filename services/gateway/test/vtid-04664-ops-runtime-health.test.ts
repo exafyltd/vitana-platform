@@ -144,6 +144,10 @@ describe('evaluators', () => {
     const { OPEN_TICKET_STATUSES } = jest.requireActual('../src/routes/ops-runtime-health');
     for (const s of ['spec_pending', 'answer_pending', 'approved', 'reopened']) expect(OPEN_TICKET_STATUSES).toContain(s);
     for (const s of ['resolved', 'user_confirmed', 'duplicate', 'rejected', 'wont_fix']) expect(OPEN_TICKET_STATUSES).not.toContain(s);
+    // a reopened ticket keeps its old resolved_at, so the query must not filter on it
+    const src = require('fs').readFileSync(require('path').join(__dirname, '../src/routes/ops-runtime-health.ts'), 'utf8');
+    const q = src.slice(src.indexOf("'support/stuck-tickets'"), src.indexOf("'business/erp-bridge'"));
+    expect(q).not.toMatch(/\.is\('resolved_at'/);
     expect(parseTargets('staging=https://s/x,prod=https://p/x')).toEqual({ staging: 'https://s/x', prod: 'https://p/x' });
   });
 });

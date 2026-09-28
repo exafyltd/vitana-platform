@@ -495,8 +495,8 @@ export const RUNTIME_CHECKS: Record<string, Handler> = {
     const { data, error } = await sb()
       .from('feedback_tickets')
       .select('created_at,status')
+      // Status alone decides: a reopened ticket keeps its old resolved_at.
       .in('status', OPEN_TICKET_STATUSES)
-      .is('resolved_at', null)
       .limit(1000);
     if (error) throw new Error(`feedback_tickets: ${error.message}`);
     return evalStuckTickets((data ?? []) as Array<{ created_at: string; status: string }>);
