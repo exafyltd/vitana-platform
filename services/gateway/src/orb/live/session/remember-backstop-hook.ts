@@ -18,6 +18,7 @@
 import {
   REMEMBER_BACKSTOP_MARKER,
   buildRememberBackstopNote,
+  detectRememberClaim,
   detectRememberIntent,
   openConflictsFrom,
   runConflictAnswerBackstop,
@@ -66,6 +67,7 @@ export function maybeRunRememberBackstop(
   sessionIn: unknown,
   userText: string,
   depsOverride?: RememberBackstopDeps,
+  replyText = '',
 ): Promise<RememberFactToolResult[]> | null {
   const session = sessionIn as RememberBackstopSession;
   const toolCalled = session.rememberFactCalledThisTurn === true;
@@ -88,7 +90,16 @@ export function maybeRunRememberBackstop(
   if (!userId || !tenantId || !session.upstreamClient) return null;
 
   const openConflict = recheck ? undefined : session.openRememberConflicts?.[0];
-  const isRequest = recheck || detectRememberIntent(userText);
+  // VTID-04697: a plain statement ("Paul hat am siebten Mai Geburtstag") that
+  // the reply claims to have remembered, with no tool call, is run too.
+  const claimed =
+    !recheck &&
+    !toolCalled &&
+    !detectRememberIntent(userText) &&
+    Boolean(userText) &&
+    !userText.startsWith(REMEMBER_BACKSTOP_MARKER) &&
+    detectRememberClaim(replyText);
+  const isRequest = recheck || claimed || detectRememberIntent(userText);
   if (!openConflict && !isRequest) return null;
   // One try per asked conflict: the member's next turn answers it or moves on.
   if (openConflict) session.openRememberConflicts = session.openRememberConflicts!.slice(1);
@@ -106,9 +117,9 @@ export function maybeRunRememberBackstop(
       const conflicts = openConflictsFrom(results, abouts);
       if (conflicts.length) session.openRememberConflicts = [...(session.openRememberConflicts ?? []), ...conflicts];
     }
-    const note = buildRememberBackstopNote(results, recheck ? 'stored_value_echoed' : 'no_call');
+    const note = buildRememberBackstopNote(results, recheck ? 'stored_value_echoed' : claimed && !openConflict ? 'claimed_without_call' : 'no_call');
     ctx.deps.emitDiag(session, 'remember_backstop', {
-      trigger: openConflict ? 'conflict_answer' : recheck ? 'stored_value_echoed' : 'remember_request',
+      trigger: openConflict ? 'conflict_answer' : recheck ? 'stored_value_echoed' : claimed ? 'claimed_without_call' : 'remember_request',
       statuses: results.map((r) => `${r.fact_key}:${r.status}`),
       injected: Boolean(note && session.active),
     });

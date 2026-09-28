@@ -17,21 +17,20 @@ there; the model did not use it.
 
 ## Acceptance
 
-- AC-1: a question about the member's own details answered with a denial or a
-  "one moment" (every live reply above) gets the member's current facts as a
-  `[memory-check]` note, the matching fact first.
-  TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
-- AC-2: "Was weißt du über mich?" answered without a single stored value gets the
-  facts and the intent to name two or three.
-  TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
-- AC-3: no note when the reply already carries a stored value, when nothing is
-  stored, on a remember/forget turn or remember request, or off Nova.
-  TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
-- AC-4: system keys (language, timezone) are never offered; the note is bounded
-  to 40 facts.
-  TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
-- AC-5: live B-REC-01, B-REC-03, B-REC-05, B-REC-06 pass on staging after deploy
-  (scripts/memory-verification/run-live.mjs).
+AC-1: a question about the member's own details answered with a denial or a "one moment" (every live reply above) gets the member's current facts as a `[memory-check]` note, the matching fact first.
+TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
+
+AC-2: "Was weißt du über mich?" answered without a single stored value gets the facts and the intent to name two or three.
+TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
+
+AC-3: no note when the reply already carries a stored value, when nothing is stored, on a remember/forget turn or remember request, or off Nova.
+TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
+
+AC-4: system keys (language, timezone) are never offered; the note is bounded to 40 facts.
+TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
+
+AC-5: live B-REC-01, B-REC-03, B-REC-05, B-REC-06 pass on staging after deploy (scripts/memory-verification/run-live.mjs).
+TEST: scripts/memory-verification/run-live.mjs
 
 `ORB_RECALL_BACKSTOP_ENABLED=false` turns it off. The note is intent, never a
 sentence Vitana speaks (NEVER rule 41).

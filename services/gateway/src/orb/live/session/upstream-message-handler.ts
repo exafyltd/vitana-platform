@@ -2490,7 +2490,7 @@ export function handleTurnComplete(
 
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
-    maybeRunRememberBackstop(ctx, session, userText);
+    maybeRunRememberBackstop(ctx, session, userText, undefined, session.outputTranscriptBuffer || '');
     // VTID-04684: a forget request the model answered without calling forget_fact.
     maybeRunForgetBackstop(ctx, session, userText);
     // VTID-04692: the member asked about something stored ("Wie heißt mein

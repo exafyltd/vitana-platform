@@ -244,6 +244,8 @@ export function claims(reply, word) {
 const words = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 4);
 // First turn whose recognised transcript holds under half of the spoken
 // line's content words, as a confound reason; null when every turn was heard.
+const NETWORK_ERROR = /\b(terminated|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|socket hang up|fetch failed|other side closed)\b/i;
+
 export function misheardTurn(sc, sessions) {
   for (let s = 0; s < sc.sessions.length; s++) {
     const turns = sc.sessions[s].turns;
@@ -389,7 +391,12 @@ for (const sc of scenarios) {
   const runs = [];
   for (let r = 1; r <= RUNS; r++) {
     let res;
-    try { res = await runScenario(sc, baselineIds, r); } catch (err) { res = { id: sc.id, run: r, pass: false, failures: [`runner error: ${err.message}`], sessions: [] }; }
+    try { res = await runScenario(sc, baselineIds, r); } catch (err) {
+      res = { id: sc.id, run: r, pass: false, failures: [`runner error: ${err.message}`], sessions: [] };
+      // The connection to staging dropped mid-scenario ("terminated",
+      // ECONNRESET, a timeout): nothing reached memory, so re-run, never count.
+      if (NETWORK_ERROR.test(String(err?.message ?? '') + ' ' + String(err?.cause?.code ?? ''))) res.confounded = `connection to staging dropped (${err.message}) — re-run`;
+    }
     runs.push(res);
     console.log(`${sc.id} run ${r}: ${res.confounded ? 'CONFOUNDED' : res.pass ? 'PASS' : 'FAIL'}${res.pass ? '' : ' — ' + res.failures[0]}${res.confounded ? ' — ' + res.confounded : ''}`);
     writeFileSync(join(OUT, 'report.json'), JSON.stringify({ env, runStarted, results: [...results, { ...sc, runs }] }, null, 2));
