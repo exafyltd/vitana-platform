@@ -13,3 +13,7 @@ node node_modules/.bin/jest   # full suite, see below
 #   GET  /rest/v1/oasis_events?select=*&limit=0      -> 200 []
 # Fix: GET with limit(0). Test reproduces the HEAD shape and fails on the old code (1 failed / 25 passed).
 npx jest test/vtid-04665-dependency-probe.test.ts   # 26 passed
+# STAGING-VERIFY run 60 (546143797188): the VTID-04696 guard failed — docs/validation/VTID-04688/staging-tests.json
+# named app.js?v=20261017-vtid-04661 while index.html loads ?v=20261020-vtid-04665 (bumped by P1–P4). Suite updated
+# to the served version; staging serves app.js?v=20261020-vtid-04665.
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts  # 3 passed
