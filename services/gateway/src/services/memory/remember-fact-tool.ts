@@ -347,7 +347,13 @@ export async function runRememberFact(
     };
   }
 
-  const profileKey = resolveProfileKey(factKey, input.about);
+  // VTID-04694: the English form of the key. The profile lock is checked on
+  // both forms — "geburtstag" is the member's birthday exactly as "birthday"
+  // is, and must never be written as an ordinary fact (Codex review, #3791).
+  const canonicalKey = canonicalFactKey(factKey);
+  const profileKey =
+    resolveProfileKey(factKey, input.about) ??
+    (canonicalKey !== factKey ? resolveProfileKey(canonicalKey, input.about) : null);
   if (profileKey) {
     const profileValue = await deps.readProfileValue(input.user_id, profileKey).catch(() => null);
     const target = getRedirectTarget(profileKey);
@@ -371,6 +377,16 @@ export async function runRememberFact(
   const pendingConflicts = deps.pendingConflicts ?? defaultPendingConflicts;
   const now = (deps.now ?? Date.now)();
   let stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
+  // An exact read of the English key before the fact counts as new: the
+  // related-fact listing is capped and may miss an older `favorite_food`,
+  // which a write would then replace without the conflict question.
+  if (!stored && canonicalKey !== factKey) {
+    const english = await deps.readCurrentFact(input.tenant_id, input.user_id, canonicalKey).catch(() => null);
+    if (english) {
+      factKey = canonicalKey;
+      stored = english;
+    }
+  }
   if (!stored && deps.listCurrentFacts) {
     const facts = await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[]);
     const related = findRelatedFact(factKey, facts);
@@ -382,7 +398,7 @@ export async function runRememberFact(
   }
   // A new fact is stored under its English key (VTID-04694); a fact that
   // already exists keeps the key it was stored under.
-  if (!stored) factKey = canonicalFactKey(factKey);
+  if (!stored) factKey = canonicalKey;
   base.fact_key = factKey;
   if (stored && valuesMatch(stored.fact_value, newValue)) {
     return {

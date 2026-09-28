@@ -58,4 +58,23 @@ describe('VTID-04694 remember_fact', () => {
     const r = await runRememberFact({ ...base, about: 'other', fact_key: 'colleague_marko_coffee', fact_value: 'mag keinen Kaffee' }, d);
     expect(r.fact_key).toBe('colleague_marko_coffee');
   });
+
+  // Codex review on #3791 (P1): a German profile alias must stay profile-owned.
+  it.each([['geburtstag', '1990-01-01'], ['wohnort', 'Berlin']])('%s is still a profile field, never an ordinary fact', async (key, value) => {
+    const d = deps();
+    const r = await runRememberFact({ ...base, fact_key: key, fact_value: value }, d);
+    expect(r.status).toBe('profile_owned');
+    expect(d.write).not.toHaveBeenCalled();
+  });
+
+  // Codex review on #3791 (P2): the English key is read exactly, not only
+  // through the capped related-fact listing.
+  it('finds an English fact the listing missed and asks instead of replacing it', async () => {
+    const d = deps([{ fact_key: 'favorite_food', fact_value: 'Pizza' }]);
+    d.listCurrentFacts = jest.fn(async () => []);
+    const r = await runRememberFact({ ...base, fact_key: 'lieblingsessen', fact_value: 'Lasagne' }, d);
+    expect(r.status).toBe('conflict');
+    expect(r.fact_key).toBe('favorite_food');
+    expect(d.write).not.toHaveBeenCalled();
+  });
 });

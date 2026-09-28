@@ -40,7 +40,10 @@ describe('VTID-04696 staging checks follow Command Hub asset bumps', () => {
       let m: RegExpExecArray | null;
       while ((m = re.exec(raw)) !== null) {
         const want = served.get(m[1]);
-        if (want && want !== m[2]) stale.push(`${dir}: ${m[1]}?v=${m[2]} (index.html loads ?v=${want})`);
+        // An asset index.html no longer loads at all (renamed or removed) is
+        // stale too: the suite would probe a URL nothing serves any more.
+        if (!want) stale.push(`${dir}: ${m[1]}?v=${m[2]} (index.html does not load ${m[1]})`);
+        else if (want !== m[2]) stale.push(`${dir}: ${m[1]}?v=${m[2]} (index.html loads ?v=${want})`);
       }
     }
     expect(stale).toEqual([]);
