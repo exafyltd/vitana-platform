@@ -90,6 +90,7 @@ import { requireAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { bindConversationBodyIdentity, bindConversationQueryIdentity } from './conversation-identity';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // =============================================================================
@@ -1124,14 +1125,15 @@ router.get('/tools', (_req: Request, res: Response) => {
 // GET /health - Health check
 // =============================================================================
 
-router.get('/health', (_req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
   // VTID-03472: web_search's primary backend is Claude's web_search tool via
   // direct Anthropic API (ANTHROPIC_API_KEY), with Perplexity as a fallback —
   // report available when EITHER is configured. Never GCP/Vertex.
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 
-  res.status(200).json({
+  res.status(200).json(await withDependencyHealth([{ table: 'conversation_messages' }], {
     ok: true,
     service: 'conversation-api',
     vtid: 'VTID-01216',
@@ -1143,7 +1145,7 @@ router.get('/health', (_req: Request, res: Response) => {
       web_search: hasAnthropic || !!PERPLEXITY_API_KEY,
       streaming: true,
     },
-  });
+  }));
 });
 
 export default router;

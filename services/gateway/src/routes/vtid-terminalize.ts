@@ -24,6 +24,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const VTID = 'VTID-01169';
 const VTID_INTEGRITY = 'VTID-01204'; // Pipeline integrity gates
 const router = Router();
@@ -908,13 +909,14 @@ router.post('/api/v1/scheduler/terminalize-repair', async (req: Request, res: Re
 /**
  * Health check for terminalize service
  */
-router.get('/api/v1/oasis/vtid/terminalize/health', (_req: Request, res: Response) => {
-  res.json({
+router.get('/api/v1/oasis/vtid/terminalize/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ table: 'vtid_ledger' }], {
     ok: true,
     service: 'vtid-terminalize',
     vtid: VTID,
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 export default router;

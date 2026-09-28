@@ -69,6 +69,8 @@ async function httpGet(url, init = {}, { allowProduction = false } = {}) {
     if (hop >= 5) throw new Error(`too many redirects from ${url}`);
     current = new URL(location, current).toString();
   }
+  // VTID-04662 / VTID-04688: the Command Hub app.js is ~2.5 MB; bodies are read
+  // in full up to lib.MAX_HTTP_BODY_CHARS, and a body that hits it says so.
   const { body, truncated } = lib.clipBody(await res.text());
   let json;
   try {

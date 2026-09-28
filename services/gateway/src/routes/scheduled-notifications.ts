@@ -31,9 +31,11 @@ import {
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
 import * as repo from './scheduled-notifications-repository';
+import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // ── Helper: get service-role Supabase client ─────────────────
@@ -1158,6 +1160,18 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
 
   for (const notif of pending) {
     try {
+      // VTID-04674: the admin switch. The row exists (it passed the database
+      // guard when it was written), but a type switched off since must not
+      // push. Marked handled so it is not picked up again.
+      const sourceKey = normalizeSourceKey(
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).automation_id : '',
+      );
+      if (!(await isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey))) {
+        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        skipped++;
+        continue;
+      }
+
       // Check user preferences (DND, category toggles, push_enabled)
       const { data: prefs } = await repo.fetchUserNotificationPreferences(supa, {
         userId: notif.user_id,
@@ -1171,18 +1185,12 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         continue;
       }
 
-      // DND check — p0 bypasses DND
-      if (prefs?.dnd_enabled && prefs.dnd_start_time && prefs.dnd_end_time && notif.priority !== 'p0') {
-        const now = new Date();
-        const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const start = prefs.dnd_start_time;
-        const end = prefs.dnd_end_time;
-        const inDnd = start > end ? (hhmm >= start || hhmm < end) : (hhmm >= start && hhmm < end);
-        if (inDnd) {
-          await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
-          skipped++;
-          continue;
-        }
+      // DND check — p0 bypasses DND. VTID-04674: in the member's timezone,
+      // not the gateway's UTC clock.
+      if (notif.priority !== 'p0' && (await isMemberInQuietHours(supa, notif.user_id, prefs))) {
+        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        skipped++;
+        continue;
       }
 
       // Send push. Mirror notifyUser()'s dispatch policy
@@ -1473,8 +1481,9 @@ router.post('/night-push', async (req: Request, res: Response) => {
 // =============================================================================
 // Health check
 // =============================================================================
-router.get('/health', (_req: Request, res: Response) => {
-  return res.status(200).json({ ok: true, service: 'scheduled-notifications' });
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], { ok: true, service: 'scheduled-notifications' }));
 });
 
 export default router;

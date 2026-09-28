@@ -186,6 +186,20 @@ export interface PriorityRow {
 
 export interface CostStat { median_cost_usd: number; median_input_tokens: number; runs: number }
 
+/**
+ * VTID-04670: per-producer acceptance from human decisions
+ * (recommendation-quality/acceptance.ts). Injected so this module stays pure.
+ */
+export interface AcceptanceLookup {
+  decided: number;
+  accepted: number;
+  acceptance_rate: number | null;
+  demoted: boolean;
+  /** Multiplies confidence (1 = no effect). */
+  demotion_factor: number;
+  noise_rejections: number;
+}
+
 export interface ScoringContext {
   /** Scanner breaker stats (VTID-04667). Null/!ok → no history. */
   breakers?: LoadedBreakers | null;
@@ -193,6 +207,8 @@ export interface ScoringContext {
   costByKey?: Map<string, CostStat> | null;
   /** Code-index lookup; null → the file check is skipped. */
   fileExists?: ((path: string) => boolean) | null;
+  /** VTID-04670: acceptance per breaker key; null → no demotion. */
+  acceptanceFor?: ((key: string) => AcceptanceLookup | null) | null;
   nowMs?: number;
 }
 
@@ -212,7 +228,11 @@ export interface QualityJson {
     confidence: string[];
     success_odds: string;
     cost: string;
+    /** VTID-04670: human acceptance of this producer. */
+    acceptance?: string;
   };
+  /** VTID-04670: present when the producer has human decisions on record. */
+  acceptance?: { decided: number; accepted: number; rate: number | null; demoted: boolean; demotion_factor: number };
   scored_at: string;
 }
 
@@ -384,10 +404,23 @@ export function scoreRecommendation(row: PriorityRow, ctx: ScoringContext = {}):
   }
   confidence = clamp01(confidence);
 
+  // VTID-04670: a producer people keep dismissing loses confidence.
+  const key = breakerKeyFor(row);
+  const acc = key && ctx.acceptanceFor ? ctx.acceptanceFor(key) : null;
+  let accWhy: string | undefined;
+  if (acc) {
+    const pct = acc.acceptance_rate === null ? 'n/a' : `${Math.round(acc.acceptance_rate * 100)}%`;
+    accWhy = `${acc.accepted}/${acc.decided} human decisions accepted (${pct})`;
+    if (acc.demoted && acc.demotion_factor < 1) {
+      confidence = clamp01(confidence * acc.demotion_factor);
+      accWhy += `; demoted ×${acc.demotion_factor}`;
+      confBasis.push(`producer demoted by acceptance ×${acc.demotion_factor}`);
+    }
+  }
+
   // success odds
   let successOdds: number;
   let oddsWhy: string;
-  const key = breakerKeyFor(row);
   if (!executable) {
     successOdds = NON_EXECUTABLE_SUCCESS_PRIOR;
     oddsWhy = `non-executable type: fixed prior ${NON_EXECUTABLE_SUCCESS_PRIOR}`;
@@ -432,7 +465,9 @@ export function scoreRecommendation(row: PriorityRow, ctx: ScoringContext = {}):
         confidence: confBasis,
         success_odds: oddsWhy,
         cost: costWhy,
+        ...(accWhy ? { acceptance: accWhy } : {}),
       },
+      ...(acc ? { acceptance: { decided: acc.decided, accepted: acc.accepted, rate: acc.acceptance_rate, demoted: acc.demoted, demotion_factor: acc.demotion_factor } } : {}),
       scored_at: new Date(nowMs).toISOString(),
     },
   };

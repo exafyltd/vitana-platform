@@ -1,0 +1,28 @@
+    ✓ runs the rules on the member words, asks, and opens the conflict (24 ms)
+    ✓ then applies the confirmation the member gives on the next turn (6 ms)
+    ✓ says nothing when the member really repeated the stored value (2 ms)
+    ✓ stands down as before when the tool saved or asked (1 ms)
+    ✓ the note is null for all-already_known results only in the echo case (1 ms)
+    ✓ the live handler records an already_known answer and clears it per utterance (2 ms)
+    ✓ detects merk dir bittemein geburtstag ist der neunte september (11 ms)
+    ✓ detects und merk dir mein bruder paul hat am fünften mai geburtstag (2 ms)
+    ✓ detects Vergiss nicht, dass meine Frau Anna heißt (1 ms)
+    ✓ detects please remember that my dog is called Bello (1 ms)
+    ✓ detects don't forget my sister's birthday is in March
+    ✓ detects recuerda que mi hermano se llama Paul (1 ms)
+    ✓ detects zapamti da mi je brat Paul (1 ms)
+    ✓ ignores mein bruder paul hat am fünften mai geburtstag
+    ✓ ignores wie ist das wetter heute (1 ms)
+    ✓ ignores I remembered nothing
+    ✓ ignores [memory-check] System result ... remember_fact (1 ms)
+    ✓ a sibling birthday is saved, and the note carries STATUS: saved (5 ms)
+    ✓ the member's own birthday is profile_owned and never written (3 ms)
+    ✓ a different stored value is a conflict and nothing is written (3 ms)
+    ✓ no extracted fact means no note (1 ms)
+    ✓ the member's answer to the conflict question is applied only when it names one of the two values (3 ms)
+    ✓ stands down when the model called remember_fact this turn (1 ms)
+    ✓ does nothing for an ordinary turn, or off Nova (1 ms)
+    ✓ runs the rules and hands the model the result as a marked text turn (17 ms)
+    ✓ a backstop conflict is remembered, and the next turn answering it is applied (7 ms)
+Test Suites: 2 passed, 2 total
+Tests:       26 passed, 26 total

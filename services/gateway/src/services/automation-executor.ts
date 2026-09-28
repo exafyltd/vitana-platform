@@ -312,6 +312,10 @@ export async function executeAutomation(
         shadow.notifications.push({ user_id: userId, type, title: payload?.title || '' });
         return;
       }
+      // VTID-04674: every automation send carries its automation id, so the
+      // admin switches it per automation (notification_type_controls
+      // source_key) on top of the type switch.
+      payload = { ...payload, data: { ...(payload?.data || {}), automation_id: automationId } };
       // Throttle: check daily limit before sending
       checkNotificationThrottle(userId, supabase).then(allowed => {
         if (allowed) {

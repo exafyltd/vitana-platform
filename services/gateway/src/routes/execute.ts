@@ -40,6 +40,7 @@ import { randomUUID } from "crypto";
 import { emitOasisEvent } from "../services/oasis-event-service";
 import { TaskStage } from "../lib/stage-mapping";
 
+import { withDependencyHealth } from '../services/dependency-probe';
 export const router = Router();
 
 // =============================================================================
@@ -1877,8 +1878,9 @@ router.get("/workorders", async (req: Request, res: Response) => {
 // Health Check
 // =============================================================================
 
-router.get("/health", (_req: Request, res: Response) => {
-  res.status(200).json({
+router.get("/health", async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.status(200).json(await withDependencyHealth([{ table: 'vtid_ledger' }], {
     ok: true,
     service: "execution-bridge",
     version: "2.4.0", // VTID-01150: v2.4.0 - update allocated shell entries with real title/status
@@ -1910,5 +1912,5 @@ router.get("/health", (_req: Request, res: Response) => {
       workorders: "GET /workorders",
       workorder: "GET /workorders/:vtid",
     },
-  });
+  }));
 });

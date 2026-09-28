@@ -27,6 +27,7 @@ import { detectProviderOutage, isProviderOutageFailure, type OutageState } from 
 import { chunkIds, countPipelineStatuses, pipelineSlots, resolveTailCap } from './dev-autopilot-pipeline-guards';
 // VTID-04667: per-scanner / per-rule circuit breaker state for the Command Hub.
 import { loadScannerBreakers, summarizeBreakers, isFindingBreakerOpen, type LoadedBreakers } from './dev-autopilot-scanner-breaker';
+import { loadAcceptanceStats, summarizeAcceptance } from './recommendation-quality/acceptance';
 
 type Supa = NonNullable<ReturnType<typeof getSupabase>>;
 
@@ -475,6 +476,9 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
   // VTID-04667: breaker state (read-only here — transitions are emitted by the ticks).
   const breakers: LoadedBreakers = await loadScannerBreakers(<T>(p: string) => supa<T>(s, p), { emitTransitions: false, useCache: false, nowMs });
 
+  // VTID-04670: human acceptance per producer (same keying as the breaker).
+  const acceptance = await loadAcceptanceStats(<T>(p: string) => supa<T>(s, p), { nowMs, useCache: false });
+
   const execRows: ExecRow[] = (execs || []).map((e) => ({ ...e, source_type: e.source_type ?? e.finding?.source_type ?? null }));
   const execSummary = summarizeExecutions(execRows, nowMs);
   const budgetLeft = Math.max(0, cfg.daily_budget - (approvedToday || []).length);
@@ -554,6 +558,8 @@ export async function buildSupervisorSnapshot(nowMs: number = Date.now()) {
     provider_outage: providerOutage,
     /** VTID-04667: which scanners / impact rules are paused by the circuit breaker. */
     scanner_breakers: summarizeBreakers(breakers),
+    /** VTID-04670: acceptance of developer recommendations per scanner / rule (90 d). */
+    recommendation_acceptance: summarizeAcceptance(acceptance.stats, acceptance.ok),
     scan,
     executions: execSummary,
     findings: {

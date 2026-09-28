@@ -344,7 +344,7 @@ router.get('/events', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
-// GET /events/window?from&to[&include_busy=false][&include_work=false] — VTID-04331
+// GET /events/window?from&to[&include_busy=false][&include_work=true] — VTID-04331
 // Everything the calendar shows in a date range for the active role:
 // recurring entries expanded into occurrences, entries from other lenses as
 // grey busy blocks (time only). Max 62 days per request.
@@ -406,8 +406,10 @@ router.get('/events/window', async (req: Request, res: Response) => {
     );
     // VTID-04357: developer/admin work lenses — computed live, read-only,
     // Exafy staff only (verified claim; the role header only picks the lens).
+    // VTID-04680: opt-in. Work is not the member's own calendar, so it is
+    // left out unless the caller asks for it (the app's folded "Work" line).
     const { workLensesFor, listWorkItems, mergeWorkItems } = await import('../services/calendar-work-lens');
-    const lenses = req.query.include_work === 'false'
+    const lenses = req.query.include_work !== 'true'
       ? []
       : workLensesFor(role, (req as AuthenticatedRequest).identity?.exafy_admin === true);
     const work = lenses.length

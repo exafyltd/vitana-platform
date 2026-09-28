@@ -49,6 +49,13 @@ import {
 } from '../services/community-autopilot/action-registry';
 import { capOpenLineup } from '../services/community-autopilot/lineup-cap';
 import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
+import {
+  buildDismissRecord,
+  DISMISS_REASON_CODES,
+  isDismissReasonCode,
+  type DismissReasonCode,
+  type DismissRecord,
+} from '../services/recommendation-quality/acceptance';
 import { MAX_OPEN_PER_ROLE } from '../services/community-autopilot/ranker';
 import {
   DRAFTABLE_KINDS,
@@ -449,7 +456,7 @@ export async function queryRecommendationsByRole(
   limit: number,
   offset: number,
   opts: RoleQueryOptions = {},
-): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number }> {
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number; awaiting_review_count?: number }> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !supabaseKey) {
@@ -531,6 +538,7 @@ export async function queryRecommendationsByRole(
         data: listed.rows.slice(offset, offset + Math.max(0, limit)),
         count: listed.rows.length,
         below_floor_count: listed.below_floor_count,
+        awaiting_review_count: listed.awaiting_review_count,
       };
     }
     const contentRange = response.headers.get('content-range');
@@ -855,6 +863,8 @@ router.get('/', async (req: Request, res: Response) => {
         ...(waves ? { waves } : {}),
         // VTID-04668: open developer rows left out because they are below the quality floor.
         ...(typeof result.below_floor_count === 'number' ? { below_floor_count: result.below_floor_count } : {}),
+        // VTID-04669: open developer rows waiting for their quality review.
+        ...(typeof result.awaiting_review_count === 'number' ? { awaiting_review_count: result.awaiting_review_count } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
         _debug: {
@@ -2049,6 +2059,54 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-04670: store a dismiss reason on a developer recommendation
+// =============================================================================
+/**
+ * Reads the row, and only when it is a developer row (user_id NULL, not
+ * community) merges `dismiss` into its quality JSON. The PATCH repeats
+ * user_id=is.null so a community row can never be written by this path.
+ * Never throws.
+ */
+async function recordDeveloperDismiss(id: string, dismiss: DismissRecord): Promise<boolean> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) return false;
+  const headers = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' };
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,user_id,source_type,quality&limit=1`,
+      { headers, signal: timeout.signal },
+    );
+    if (!r.ok) return false;
+    const rows = (await r.json()) as Array<{ user_id: string | null; source_type: string | null; quality: unknown }>;
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row || row.user_id || row.source_type === 'community') return false;
+    const prior = row.quality && typeof row.quality === 'object' && !Array.isArray(row.quality)
+      ? (row.quality as Record<string, unknown>) : {};
+    const p = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&user_id=is.null`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ quality: { ...prior, dismiss } }),
+        signal: timeout.signal,
+      },
+    );
+    if (!p.ok) {
+      console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${p.status}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${err?.message || err}`);
+    return false;
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
 // POST /recommendations/:id/reject - Reject/dismiss recommendation
 // =============================================================================
 /**
@@ -2056,18 +2114,42 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
  *
  * Body:
  * {
- *   reason?: string // Optional reason for rejection
+ *   reason?: string       // Optional reason for rejection (free text, passed to the RPC)
+ *   reason_code?: string  // VTID-04670: one of DISMISS_REASON_CODES; unknown → 400
+ *   note?: string         // VTID-04670: optional, ≤ 300 chars
  * }
+ *
+ * VTID-04670: the RPC stores no reason, so for a DEVELOPER row (user_id
+ * NULL, not community) with a reason code the route PATCHes
+ * quality.dismiss = {reason_code, note, by, at} after the RPC succeeded.
+ * Community rows are never touched. The PATCH is best-effort: the reject
+ * itself already happened, so a failure is logged and reported as
+ * dismiss_recorded:false, never as a failed reject.
  */
 router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason } = req.body || {};
     const userId = getUserId(req);
     const role = await resolveRequestRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
+    }
+
+    // VTID-04670: validate the structured reason before anything is written.
+    const rawCode = (req.body || {}).reason_code;
+    let reasonCode: DismissReasonCode | null = null;
+    if (rawCode !== undefined && rawCode !== null && rawCode !== '') {
+      if (!isDismissReasonCode(rawCode)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Unknown reason_code; expected one of ${DISMISS_REASON_CODES.join(', ')}`,
+        });
+      }
+      reasonCode = rawCode;
+    } else if (isDismissReasonCode(reason)) {
+      reasonCode = reason;
     }
 
     console.log(`${LOG_PREFIX} Rejecting recommendation ${id.slice(0, 8)}...`);
@@ -2086,6 +2168,11 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
     }
 
+    // VTID-04670: record the structured dismiss reason on developer rows.
+    const dismissRecorded = reasonCode
+      ? await recordDeveloperDismiss(id, buildDismissRecord(reasonCode, (req.body || {}).note, userId))
+      : false;
+
     // VTID-03301: dismissing the last rec also empties the queue — kick the
     // same guarded regeneration the /complete path uses. Community only;
     // fire-and-forget so reject stays fast.
@@ -2098,6 +2185,7 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ...response,
+      ...(reasonCode ? { reason_code: reasonCode, dismiss_recorded: dismissRecorded } : {}),
       vtid: 'VTID-01180',
       timestamp: new Date().toISOString(),
     });

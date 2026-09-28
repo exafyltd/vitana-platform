@@ -75,6 +75,9 @@ const CASES: Array<[number | null, unknown, string, boolean]> = [
   [500, { ok: false }, 'down', false],
   [503, { status: 'degraded' }, 'degraded', false],
   [503, { status: 'healthy' }, 'down', false],
+  // VTID-04664: deliberately off on this stack, and the AWS-denied case.
+  [200, { status: 'not_configured' }, 'not_configured', false],
+  [200, { status: 'no_access' }, 'no_access', false],
 ];
 
 describe('classifyHealthResponse (server)', () => {
@@ -134,9 +137,10 @@ describe('every check is drawn', () => {
       { healthy: false, status: 'no_access' },
       { healthy: false, status: 'down' },
       { healthy: false, status: 'degraded' },
+      { healthy: false, status: 'not_configured' },
     ];
-    expect(JSON.parse(JSON.stringify(b.serviceHealthCounts(items)))).toEqual({ total: 4, healthy: 1, noAccess: 1, failing: 2 });
-    expect(items.map((i) => b.serviceHealthDot(i))).toEqual(['green', 'grey', 'red', 'yellow']);
+    expect(JSON.parse(JSON.stringify(b.serviceHealthCounts(items)))).toEqual({ total: 5, healthy: 1, noAccess: 2, failing: 2 });
+    expect(items.map((i) => b.serviceHealthDot(i))).toEqual(['green', 'grey', 'red', 'yellow', 'grey']);
   });
 
   it('the yellow and grey dots have styles', () => {

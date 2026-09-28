@@ -18,6 +18,7 @@
 import {
   REMEMBER_BACKSTOP_MARKER,
   buildRememberBackstopNote,
+  detectRememberClaim,
   detectRememberIntent,
   openConflictsFrom,
   runConflictAnswerBackstop,
@@ -36,6 +37,8 @@ export interface RememberBackstopSession {
   identity?: { user_id?: string | null; tenant_id?: string | null } | null;
   upstreamClient?: { sendTextTurn(text: string, turnComplete?: boolean): boolean } | null;
   rememberFactCalledThisTurn?: boolean;
+  /** VTID-04690: a remember_fact call this turn answered STATUS: already_known. */
+  rememberFactAlreadyKnownThisTurn?: boolean;
   openRememberConflicts?: OpenConflict[];
 }
 
@@ -64,11 +67,19 @@ export function maybeRunRememberBackstop(
   sessionIn: unknown,
   userText: string,
   depsOverride?: RememberBackstopDeps,
+  replyText = '',
 ): Promise<RememberFactToolResult[]> | null {
   const session = sessionIn as RememberBackstopSession;
   const toolCalled = session.rememberFactCalledThisTurn === true;
+  const toolAlreadyKnown = session.rememberFactAlreadyKnownThisTurn === true;
   session.rememberFactCalledThisTurn = false;
-  if (toolCalled) {
+  session.rememberFactAlreadyKnownThisTurn = false;
+  // VTID-04690: live B-CONF-03 — the member said "Paul hat am siebten Mai
+  // Geburtstag", Nova called remember_fact with the STORED "May 5", got
+  // already_known, and the new date was never saved or asked about. When the
+  // tool answered already_known, the member's own words are checked too.
+  const recheck = toolCalled && toolAlreadyKnown && Boolean(userText) && !userText.startsWith(REMEMBER_BACKSTOP_MARKER);
+  if (toolCalled && !recheck) {
     // The model handled it; any conflict the gateway asked about is now the tool's.
     session.openRememberConflicts = [];
     return null;
@@ -78,8 +89,17 @@ export function maybeRunRememberBackstop(
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
 
-  const openConflict = session.openRememberConflicts?.[0];
-  const isRequest = detectRememberIntent(userText);
+  const openConflict = recheck ? undefined : session.openRememberConflicts?.[0];
+  // VTID-04697: a plain statement ("Paul hat am siebten Mai Geburtstag") that
+  // the reply claims to have remembered, with no tool call, is run too.
+  const claimed =
+    !recheck &&
+    !toolCalled &&
+    !detectRememberIntent(userText) &&
+    Boolean(userText) &&
+    !userText.startsWith(REMEMBER_BACKSTOP_MARKER) &&
+    detectRememberClaim(replyText);
+  const isRequest = recheck || claimed || detectRememberIntent(userText);
   if (!openConflict && !isRequest) return null;
   // One try per asked conflict: the member's next turn answers it or moves on.
   if (openConflict) session.openRememberConflicts = session.openRememberConflicts!.slice(1);
@@ -97,9 +117,9 @@ export function maybeRunRememberBackstop(
       const conflicts = openConflictsFrom(results, abouts);
       if (conflicts.length) session.openRememberConflicts = [...(session.openRememberConflicts ?? []), ...conflicts];
     }
-    const note = buildRememberBackstopNote(results);
+    const note = buildRememberBackstopNote(results, recheck ? 'stored_value_echoed' : claimed && !openConflict ? 'claimed_without_call' : 'no_call');
     ctx.deps.emitDiag(session, 'remember_backstop', {
-      trigger: openConflict ? 'conflict_answer' : 'remember_request',
+      trigger: openConflict ? 'conflict_answer' : recheck ? 'stored_value_echoed' : claimed ? 'claimed_without_call' : 'remember_request',
       statuses: results.map((r) => `${r.fact_key}:${r.status}`),
       injected: Boolean(note && session.active),
     });
@@ -182,4 +202,79 @@ export function maybeRunForgetBackstop(
     return null;
   });
   return run;
+}
+
+// ---------------------------------------------------------------- VTID-04692: recall
+
+export interface RecallBackstopSession extends RememberBackstopSession {
+  /** remember_fact / forget_fact / forget_memory ran this turn — a write, not a question. A search that found nothing does NOT stand the backstop down: live smoke run 2 searched, missed, and said "nicht finden". */
+  memoryWriteToolCalledThisTurn?: boolean;
+}
+
+export interface RecallBackstopDeps {
+  listCurrentFacts(tenantId: string, userId: string): Promise<Array<{ fact_key: string; fact_value: string }>>;
+}
+
+/**
+ * A question about the member's own details ("Wie heißt mein Hund?") the
+ * model answered with "not stored" / "one moment", calling no memory tool:
+ * the gateway gives it the member's current facts and it answers again.
+ * Live suite B-REC-01 / B-REC-03, see services/memory/recall-backstop.ts.
+ */
+export function maybeRunRecallBackstop(
+  ctx: { deps: { emitDiag: EmitDiag } },
+  sessionIn: unknown,
+  userText: string,
+  replyText: string,
+  depsOverride?: RecallBackstopDeps,
+): Promise<number> | null {
+  const session = sessionIn as RecallBackstopSession;
+  const toolCalled = session.memoryWriteToolCalledThisTurn === true;
+  session.memoryWriteToolCalledThisTurn = false;
+  if (toolCalled) return null;
+  if (!isRecallBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  const userId = session.identity?.user_id;
+  const tenantId = session.identity?.tenant_id;
+  if (!userId || !tenantId || !session.upstreamClient) return null;
+  if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
+  // A remember request belongs to the remember backstop, never both.
+  if (detectRememberIntent(userText)) return null;
+
+  const run = (async () => {
+    const { detectRecallQuestion, detectAboutMeQuestion, replyDeniesOrDefers, replyContainsStoredValue, buildRecallBackstopNote } =
+      await import('../../../services/memory/recall-backstop');
+    // "Was weißt du über mich?" answered without naming a single stored fact
+    // (live B-REC-06), or a specific question answered with "not stored".
+    const aboutMe = detectAboutMeQuestion(userText);
+    if (!aboutMe && !(detectRecallQuestion(userText) && replyDeniesOrDefers(replyText))) return 0;
+    let deps = depsOverride;
+    if (!deps) {
+      const { getSupabase } = await import('../../../lib/supabase');
+      const sb = getSupabase();
+      if (!sb) return 0;
+      const { buildRememberFactDeps } = await import('../../../services/orb-tools-shared');
+      const base = await buildRememberFactDeps(sb);
+      if (!base.listCurrentFacts) return 0;
+      deps = { listCurrentFacts: base.listCurrentFacts.bind(base) };
+    }
+    const facts = await deps.listCurrentFacts(tenantId, userId).catch(() => []);
+    if (replyContainsStoredValue(replyText, facts)) return 0;
+    const note = buildRecallBackstopNote(facts, userText, aboutMe ? 'about_me_vague' : 'denied');
+    ctx.deps.emitDiag(session, 'recall_backstop', {
+      trigger: aboutMe ? 'about_me_vague' : 'denied',
+      facts_offered: note ? facts.length : 0,
+      injected: Boolean(note && session.active),
+    });
+    console.log(`[VTID-04692] recall backstop ${session.sessionId}: ${note ? `${facts.length} facts offered` : 'nothing stored'}`);
+    if (note && session.active && session.upstreamClient) session.upstreamClient.sendTextTurn(note, true);
+    return note ? facts.length : 0;
+  })().catch((err: any) => {
+    console.warn(`[VTID-04692] recall backstop failed (non-blocking): ${err?.message ?? err}`);
+    return 0;
+  });
+  return run;
+}
+
+export function isRecallBackstopEnabled(): boolean {
+  return (process.env.ORB_RECALL_BACKSTOP_ENABLED ?? 'true') !== 'false';
 }

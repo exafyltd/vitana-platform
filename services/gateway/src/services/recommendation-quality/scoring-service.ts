@@ -25,6 +25,7 @@ import {
   type PriorityRow,
   type ScoringContext,
 } from './priority';
+import { acceptanceLookupFrom, loadAcceptanceStats } from './acceptance';
 import { defaultQualityPatch, defaultQualityQuery, type QualityPatch, type QualityQuery } from './rest';
 
 const LOG_PREFIX = '[recommendation-quality]';
@@ -134,6 +135,14 @@ export async function loadScoringContext(deps: ScoringDeps = {}): Promise<Scorin
   } catch (err) {
     console.warn(`${LOG_PREFIX} cost stats unavailable (priors apply): ${err instanceof Error ? err.message : String(err)}`);
   }
+  // VTID-04670: human acceptance per producer (fail-open: nothing demoted).
+  let acceptanceFor: ScoringContext['acceptanceFor'] = null;
+  try {
+    const acc = await loadAcceptanceStats(query, { nowMs });
+    if (acc.ok) acceptanceFor = acceptanceLookupFrom(acc.stats);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} acceptance stats unavailable (nothing demoted): ${err instanceof Error ? err.message : String(err)}`);
+  }
   let fileExists: ((p: string) => boolean) | null = null;
   if (deps.loadIndex) {
     try {
@@ -143,7 +152,7 @@ export async function loadScoringContext(deps: ScoringDeps = {}): Promise<Scorin
       fileExists = null;
     }
   }
-  return { breakers, costByKey, fileExists, nowMs };
+  return { breakers, costByKey, fileExists, acceptanceFor, nowMs };
 }
 
 /** The PATCH body for one row; keeps the P3 review fields already on it. */
@@ -152,7 +161,7 @@ export function buildScorePatch(row: PriorityRow & { quality?: unknown }, ctx: S
   const prior = row.quality && typeof row.quality === 'object' && !Array.isArray(row.quality)
     ? (row.quality as Record<string, unknown>) : {};
   const keep: Record<string, unknown> = {};
-  for (const k of ['review', 'review_attempts', 'review_last_attempt_at']) if (prior[k] !== undefined) keep[k] = prior[k];
+  for (const k of ['review', 'review_attempts', 'review_last_attempt_at', 'dismiss']) if (prior[k] !== undefined) keep[k] = prior[k];
   return {
     priority_score: r.priority_score,
     quality: { ...r.quality, ...keep },

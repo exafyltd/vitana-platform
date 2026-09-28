@@ -173,6 +173,10 @@ export type GatewayI18nKey =
   | 'notif.category.community.live_rooms.desc'
   | 'notif.category.community.connections_social.label'
   | 'notif.category.community.connections_social.desc'
+  | 'notif.category.community.posts_reactions.label'
+  | 'notif.category.community.posts_reactions.desc'
+  | 'notif.category.community.tips_updates.label'
+  | 'notif.category.community.tips_updates.desc'
   // Priority of the Day banner (VTID-01947) — awareness-driven Home card +
   // morning-brief fallback body. Emitted by the gateway as a full sentence,
   // so it must be localized server-side (the frontend renders it verbatim).

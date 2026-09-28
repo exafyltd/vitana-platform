@@ -1,0 +1,6 @@
+Supabase (read-only): to_regclass() for 17 candidate tables; pg_proc lookups for overload_*, taste_*, preference_*, d43_get_data_points
+curl (anonymous, staging): every registered health URL, flagged those whose body touches no dependency (23)
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04665-dependency-probe.test.ts   # 25/25
+npx tsc --noEmit -p .   # clean
+node node_modules/.bin/jest   # full suite, see below

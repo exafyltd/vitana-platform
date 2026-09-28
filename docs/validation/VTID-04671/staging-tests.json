@@ -1,0 +1,42 @@
+{
+  "vtid": "VTID-04671",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "name": "served app.js renders the card metrics (this change's versioned URL: Cloudflare caches assets per URL, VTID-04659; index.html is not pinned, so a later bump does not break this)",
+      "path": "/command-hub/app.js?v=20261020-vtid-04665",
+      "expect_body_contains": "function renderRecQualityMetrics(rec)"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js has the dismiss-reason picker",
+      "path": "/command-hub/app.js?v=20261020-vtid-04665",
+      "expect_body_contains": "function renderRecDismissPicker(rec, onDismissed)"
+    },
+    {
+      "kind": "http",
+      "name": "served app.js has the Why section",
+      "path": "/command-hub/app.js?v=20261020-vtid-04665",
+      "expect_body_contains": "function renderRecWhySection(rec)"
+    },
+    {
+      "kind": "http",
+      "name": "pending approvals listing exists and requires a login",
+      "path": "/api/v1/dev-autopilot/pending-approvals",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04671-recommendation-card.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Dismiss and Activate write to the recommendation row; staging writes to the production database, so the card's actions are proven by the suite, not by a staging click"
+    }
+  ]
+}

@@ -194,12 +194,17 @@ describe('reads', () => {
     expectGolden(G, 'window.member', shape(res));
   });
 
-  it('window: staff developer lens adds read-only work items; include flags turn parts off', async () => {
+  it('window: staff developer lens adds read-only work items only when asked; include flags turn parts off', async () => {
     const app = build(STAFF);
-    const q = '/api/v1/calendar/events/window?from=2026-10-05T00:00:00Z&to=2026-10-12T00:00:00Z';
+    const base = '/api/v1/calendar/events/window?from=2026-10-05T00:00:00Z&to=2026-10-12T00:00:00Z';
+    // VTID-04680: without include_work=true a staff calendar has no work items.
+    const plain = await request(app).get(base).set('X-Vitana-Active-Role', 'developer');
+    expect(plain.body.work_lenses).toEqual([]);
+    expect(plain.body.data.some((d: any) => String(d.id).startsWith('work:'))).toBe(false);
+    const q = `${base}&include_work=true`;
     const dev = await request(app).get(q).set('X-Vitana-Active-Role', 'developer');
     expectGolden(G, 'window.staff.developer', { lenses: dev.body.work_lenses, ids: dev.body.data.map((d: any) => [d.id, d.busy, d.display_emoji ?? null, d.movable ?? null]) });
-    const off = await request(app).get(`${q}&include_work=false&include_busy=false`).set('X-Vitana-Active-Role', 'developer');
+    const off = await request(app).get(`${base}&include_busy=false`).set('X-Vitana-Active-Role', 'developer');
     expectGolden(G, 'window.staff.off', { lenses: off.body.work_lenses, ids: off.body.data.map((d: any) => d.id) });
     // A member claiming the developer role header gets no work lens.
     const member = build(MEMBER);

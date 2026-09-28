@@ -4198,6 +4198,16 @@ const state = {
     // Phase 2 batch UX: selected ids in the popup. Use Set for O(1) toggle.
     autopilotSelectedIds: new Set(),
     autopilotBatchInFlight: false, // disables footer buttons during a batch op
+    // VTID-04671: the popup's quality counters (below_floor_count /
+    // awaiting_review_count from GET /pending-approvals), the rec whose
+    // dismiss-reason picker is open (+ its draft), open "Why" sections, and
+    // recs activated from the popup whose execution is followed live until
+    // the popup closes.
+    autopilotRecommendationsMeta: { below_floor_count: null, awaiting_review_count: null },
+    autopilotDismissPickerFor: null,
+    autopilotDismissDraft: { reason_code: null, note: '' },
+    autopilotWhyOpen: {},
+    autopilotActivatedRecs: [], // [{ rec, vtid, execution_id }]
 
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
@@ -6341,6 +6351,11 @@ function renderHeader() {
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
                 state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
+                // VTID-04671: what the quality floor / review held back.
+                state.autopilotRecommendationsMeta = {
+                    below_floor_count: typeof data.below_floor_count === 'number' ? data.below_floor_count : null,
+                    awaiting_review_count: typeof data.awaiting_review_count === 'number' ? data.awaiting_review_count : null
+                };
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }
@@ -6539,7 +6554,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' no access' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' failing' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6569,8 +6584,8 @@ function renderHeader() {
         var titleClass = capsFailing > 0 ? 'health-modal__title health-modal__title--bad' : 'health-modal__title health-modal__title--ok';
         hmHeader.innerHTML =
             '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
-            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
-            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' no access</span>' : '') +
+            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' failing</span>' : '') +
+            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' not checked</span>' : '') +
             '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
@@ -6634,7 +6649,8 @@ function renderHeader() {
                         var dotClass = SERVICE_HEALTH_DOT_CLASS[dot];
 
                         var cell = document.createElement('div');
-                        cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
+                        // VTID-04664: a not-checked cell (grey) is muted, not styled as a failure.
+                        cell.className = svc.healthy ? 'health-grid__cell' : (dot === 'grey' ? 'health-grid__cell health-grid__cell--muted' : 'health-grid__cell health-grid__cell--bad');
                         cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                         cell.innerHTML =
                             '<span class="health-dot ' + dotClass + '"></span>' +
@@ -25933,6 +25949,296 @@ function activationToastLevel(data) {
     return 'info';
 }
 
+// --- VTID-04671: the card shows evidence, value, odds and cost ---
+// Dismiss reasons, mirrored from DISMISS_REASON_CODES in
+// services/gateway/src/services/recommendation-quality/acceptance.ts
+// (VTID-04670) — test/vtid-04671-recommendation-card.test.ts fails on drift.
+var REC_DISMISS_REASONS = [
+    { code: 'not_a_real_problem', label: 'Not a real problem' },
+    { code: 'not_worth_it', label: 'Not worth it' },
+    { code: 'duplicate', label: 'Duplicate' },
+    { code: 'already_fixed', label: 'Already fixed' },
+    { code: 'wrong_fix', label: 'Wrong fix proposed' },
+    { code: 'other', label: 'Other' }
+];
+var REC_DISMISS_NOTE_MAX = 300;
+
+// The P2/P3 quality JSON on a developer recommendation, or null.
+function recQualityOf(rec) {
+    var q = rec && rec.quality;
+    return q && typeof q === 'object' && !Array.isArray(q) ? q : null;
+}
+
+function formatRecTokens(n) {
+    var v = Number(n);
+    if (!isFinite(v) || v <= 0) return '0';
+    if (v >= 1000000) return (Math.round(v / 100000) / 10) + 'M';
+    if (v >= 1000) return Math.round(v / 1000) + 'k';
+    return String(Math.round(v));
+}
+
+function recMetric(label, value, title) {
+    var el = document.createElement('span');
+    el.className = 'rec-q-metric';
+    if (title) el.title = title;
+    var k = document.createElement('span');
+    k.className = 'rec-q-metric-label';
+    k.textContent = label;
+    var v = document.createElement('strong');
+    v.className = 'rec-q-metric-value';
+    v.textContent = value;
+    el.appendChild(k);
+    el.appendChild(v);
+    return el;
+}
+
+// Priority, value, confidence, success odds, expected cost and the
+// Executable / Needs a person badge. Falls back to the legacy impact/effort
+// line when the row has no P2 score (community rows, older rows).
+function renderRecQualityMetrics(rec) {
+    var row = document.createElement('div');
+    row.className = 'rec-q-metrics';
+    var executable = EXECUTABLE_REC_SOURCE_TYPES.indexOf(rec && rec.source_type) !== -1;
+    var badge = document.createElement('span');
+    badge.className = 'rec-q-badge ' + (executable ? 'rec-q-badge--exec' : 'rec-q-badge--manual');
+    badge.textContent = executable ? 'Executable' : 'Needs a person';
+    badge.title = executable
+        ? 'An automated executor can carry this out after Activate.'
+        : 'No automated executor for this type: Activate creates a task for a person.';
+    row.appendChild(badge);
+
+    var q = recQualityOf(rec);
+    if (!q) {
+        row.appendChild(recMetric('Impact', (rec.impact_score || 5) + '/10'));
+        row.appendChild(recMetric('Effort', (rec.effort_score || 5) + '/10'));
+        return row;
+    }
+    var basis = q.basis && typeof q.basis === 'object' ? q.basis : {};
+    var pr = Number(rec.priority_score);
+    var hasPriority = rec.priority_score !== null && rec.priority_score !== undefined && isFinite(pr);
+    row.appendChild(recMetric('Priority', hasPriority ? pr.toFixed(2) : '—',
+        'value × confidence × success odds ÷ expected cost'));
+    row.appendChild(recMetric('Value', Math.round(Number(q.value || 0) * 100) + '%',
+        [basis.audience, basis.severity, basis.frequency, basis.trend].filter(Boolean).join(' · ')));
+    row.appendChild(recMetric('Confidence', Math.round(Number(q.confidence || 0) * 100) + '%',
+        Array.isArray(basis.confidence) ? basis.confidence.join(' · ') : ''));
+    row.appendChild(recMetric('Success odds', Math.round(Number(q.success_odds || 0) * 100) + '%', basis.success_odds || ''));
+    row.appendChild(recMetric('Expected cost', '$' + Number(q.expected_cost_usd || 0).toFixed(2) + ' · ' + formatRecTokens(q.expected_input_tokens) + ' tokens',
+        basis.cost || ''));
+    return row;
+}
+
+function appendRecWhyList(parent, heading, items, render) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    var h = document.createElement('div');
+    h.className = 'rec-why-heading';
+    h.textContent = heading;
+    parent.appendChild(h);
+    var ul = document.createElement('ul');
+    ul.className = 'rec-why-list';
+    items.forEach(function (it) {
+        var li = document.createElement('li');
+        render(li, it);
+        ul.appendChild(li);
+    });
+    parent.appendChild(ul);
+}
+
+// The expandable "Why" section from quality.review (VTID-04669): problem,
+// evidence, files with risk, acceptance criteria, why now. A scored row the
+// review has not kept yet gets an "awaiting review" note instead.
+function renderRecWhySection(rec) {
+    var q = recQualityOf(rec);
+    if (!q) return null;
+    var review = q.review && typeof q.review === 'object' ? q.review : null;
+    if (!review || review.verdict !== 'keep') {
+        var note = document.createElement('div');
+        note.className = 'rec-why-awaiting';
+        note.textContent = 'Awaiting quality review — the evidence check has not run on this card yet.';
+        return note;
+    }
+    var details = document.createElement('details');
+    details.className = 'rec-why';
+    if (state.autopilotWhyOpen && state.autopilotWhyOpen[rec.id]) details.open = true;
+    details.ontoggle = function () {
+        if (!state.autopilotWhyOpen) state.autopilotWhyOpen = {};
+        state.autopilotWhyOpen[rec.id] = details.open;
+    };
+    var sum = document.createElement('summary');
+    sum.className = 'rec-why-summary';
+    sum.textContent = 'Why';
+    details.appendChild(sum);
+    var bodyEl = document.createElement('div');
+    bodyEl.className = 'rec-why-body';
+    if (review.problem) {
+        var p = document.createElement('p');
+        p.className = 'rec-why-problem';
+        p.textContent = String(review.problem);
+        bodyEl.appendChild(p);
+    }
+    appendRecWhyList(bodyEl, 'Evidence', review.evidence, function (li, it) { li.textContent = String(it); });
+    appendRecWhyList(bodyEl, 'Files', review.files, function (li, it) {
+        var path = document.createElement('code');
+        path.className = 'rec-why-path';
+        path.textContent = String((it && it.path) || it || '');
+        li.appendChild(path);
+        if (it && it.risk) {
+            var risk = document.createElement('span');
+            risk.className = 'rec-why-risk';
+            risk.textContent = ' — ' + String(it.risk);
+            li.appendChild(risk);
+        }
+    });
+    appendRecWhyList(bodyEl, 'Done when', review.acceptance, function (li, it) { li.textContent = String(it); });
+    if (review.why_now) {
+        var h = document.createElement('div');
+        h.className = 'rec-why-heading';
+        h.textContent = 'Why now';
+        bodyEl.appendChild(h);
+        var wn = document.createElement('p');
+        wn.className = 'rec-why-now';
+        wn.textContent = String(review.why_now);
+        bodyEl.appendChild(wn);
+    }
+    details.appendChild(bodyEl);
+    return details;
+}
+
+// POST the dismiss with its reason (VTID-04670 stores it as quality.dismiss).
+async function submitRecDismiss(rec, reasonCode, note) {
+    var body = { reason: reasonCode, reason_code: reasonCode };
+    var trimmed = String(note || '').trim().slice(0, REC_DISMISS_NOTE_MAX);
+    if (trimmed) body.note = trimmed;
+    var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    return response.json();
+}
+
+// The reason picker a Dismiss opens: the six codes + an optional note. Its
+// open/draft state lives in state so a live re-render keeps it.
+function renderRecDismissPicker(rec, onDismissed) {
+    var draft = state.autopilotDismissDraft;
+    var picker = document.createElement('div');
+    picker.className = 'rec-dismiss-picker';
+    picker.setAttribute('role', 'group');
+    picker.setAttribute('aria-label', 'Why dismiss this recommendation?');
+    var q = document.createElement('div');
+    q.className = 'rec-dismiss-question';
+    q.textContent = 'Why dismiss it?';
+    picker.appendChild(q);
+    var opts = document.createElement('div');
+    opts.className = 'rec-dismiss-options';
+    REC_DISMISS_REASONS.forEach(function (r) {
+        var label = document.createElement('label');
+        label.className = 'rec-dismiss-option' + (draft.reason_code === r.code ? ' rec-dismiss-option--on' : '');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'rec-dismiss-' + rec.id;
+        input.value = r.code;
+        input.checked = draft.reason_code === r.code;
+        input.onchange = function () {
+            state.autopilotDismissDraft.reason_code = r.code;
+            renderApp();
+        };
+        label.appendChild(input);
+        var span = document.createElement('span');
+        span.textContent = r.label;
+        label.appendChild(span);
+        opts.appendChild(label);
+    });
+    picker.appendChild(opts);
+    var noteId = 'rec-dismiss-note-' + rec.id;
+    var noteLabel = document.createElement('label');
+    noteLabel.className = 'rec-dismiss-note-label';
+    noteLabel.setAttribute('for', noteId);
+    noteLabel.textContent = 'Note (optional)';
+    picker.appendChild(noteLabel);
+    var noteEl = document.createElement('textarea');
+    noteEl.id = noteId;
+    noteEl.className = 'rec-dismiss-note';
+    noteEl.maxLength = REC_DISMISS_NOTE_MAX;
+    noteEl.rows = 2;
+    noteEl.value = draft.note || '';
+    noteEl.oninput = function () { state.autopilotDismissDraft.note = noteEl.value; };
+    picker.appendChild(noteEl);
+    var actions = document.createElement('div');
+    actions.className = 'rec-dismiss-actions';
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-secondary rec-dismiss-confirm';
+    confirmBtn.textContent = 'Dismiss';
+    confirmBtn.disabled = !draft.reason_code;
+    confirmBtn.onclick = async function () {
+        if (!state.autopilotDismissDraft.reason_code) return;
+        confirmBtn.disabled = true;
+        try {
+            var data = await submitRecDismiss(rec, state.autopilotDismissDraft.reason_code, state.autopilotDismissDraft.note);
+            if (data.ok) {
+                state.autopilotDismissPickerFor = null;
+                state.autopilotDismissDraft = { reason_code: null, note: '' };
+                onDismissed();
+                showToast('Recommendation dismissed', 'info');
+            } else {
+                confirmBtn.disabled = false;
+                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (err) {
+            confirmBtn.disabled = false;
+            showToast('Dismiss error: ' + (err.message || 'Network error'), 'error');
+        }
+    };
+    actions.appendChild(confirmBtn);
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = function () {
+        state.autopilotDismissPickerFor = null;
+        state.autopilotDismissDraft = { reason_code: null, note: '' };
+        renderApp();
+    };
+    actions.appendChild(cancelBtn);
+    picker.appendChild(actions);
+    return picker;
+}
+
+function openRecDismissPicker(rec) {
+    state.autopilotDismissPickerFor = rec.id;
+    state.autopilotDismissDraft = { reason_code: null, note: '' };
+    renderApp();
+}
+
+// A recommendation activated from the popup whose execution was queued: the
+// card stays, showing the live execution state from the same SSE tail the
+// Operator Console follow panel uses (VTID-04033 followOperatorExecution,
+// rendered by renderAutopilotLiveStepsPanel).
+function renderActivatedRecCard(entry) {
+    var card = document.createElement('div');
+    card.className = 'recommendation-card rec-activated';
+    var head = document.createElement('div');
+    head.className = 'rec-activated-head';
+    var t = document.createElement('span');
+    t.className = 'rec-activated-title';
+    t.textContent = (entry.rec && entry.rec.title) || 'Recommendation';
+    head.appendChild(t);
+    var chip = document.createElement('a');
+    chip.className = 'chat-exec-follow-chip';
+    chip.href = '/command-hub/autopilot/live/#autopilot-live-exec-' + entry.execution_id;
+    chip.textContent = (entry.vtid ? entry.vtid + ' · ' : '') + 'execution ' + String(entry.execution_id).slice(0, 8);
+    chip.title = 'Open this execution on Autopilot Live';
+    head.appendChild(chip);
+    card.appendChild(head);
+    card.appendChild(renderAutopilotLiveStepsPanel(entry.execution_id));
+    return card;
+}
+
+function resetAutopilotRecommendationsPopupState() {
+    state.autopilotDismissPickerFor = null;
+    (state.autopilotActivatedRecs || []).forEach(function (e) { closeOperatorExecutionFollow(e.execution_id); });
+    state.autopilotActivatedRecs = [];
+}
+
 // --- VTID-01180: Autopilot Recommendations Modal ---
 
 /**
@@ -25973,6 +26279,7 @@ function renderAutopilotRecommendationsModal() {
     overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.showAutopilotRecommendationsModal = false;
+            resetAutopilotRecommendationsPopupState();
             renderApp();
         }
     };
@@ -26018,6 +26325,7 @@ function renderAutopilotRecommendationsModal() {
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
     closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
+        resetAutopilotRecommendationsPopupState();
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -26029,6 +26337,11 @@ function renderAutopilotRecommendationsModal() {
     body.className = 'modal-body';
     body.style.cssText = 'padding: 16px 20px; overflow-y: auto; flex: 1;';
 
+    // VTID-04671: activated recs keep their card with the live execution state.
+    (state.autopilotActivatedRecs || []).forEach(function (entry) {
+        body.appendChild(renderActivatedRecCard(entry));
+    });
+
     if (state.autopilotRecommendationsLoading) {
         var loadingDiv = document.createElement('div');
         loadingDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
@@ -26039,7 +26352,7 @@ function renderAutopilotRecommendationsModal() {
         errorDiv.style.cssText = 'text-align: center; padding: 40px; color: #f87171;';
         errorDiv.textContent = 'Error: ' + state.autopilotRecommendationsError;
         body.appendChild(errorDiv);
-    } else if (state.autopilotRecommendations.length === 0) {
+    } else if (state.autopilotRecommendations.length === 0 && (state.autopilotActivatedRecs || []).length === 0) {
         var emptyDiv = document.createElement('div');
         emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
         emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
@@ -26098,6 +26411,18 @@ function renderAutopilotRecommendationsModal() {
         countLabel.textContent = state.autopilotRecommendations.length + ' awaiting your decision';
     }
     leftFooter.appendChild(countLabel);
+    // VTID-04671: what the quality floor and the review held back.
+    var meta = state.autopilotRecommendationsMeta || {};
+    var held = [];
+    if (typeof meta.below_floor_count === 'number' && meta.below_floor_count > 0) held.push(meta.below_floor_count + ' below the quality floor');
+    if (typeof meta.awaiting_review_count === 'number' && meta.awaiting_review_count > 0) held.push(meta.awaiting_review_count + ' awaiting review');
+    if (held.length) {
+        var heldLabel = document.createElement('span');
+        heldLabel.className = 'rec-footer-held';
+        heldLabel.textContent = 'Hidden: ' + held.join(' · ');
+        heldLabel.title = 'Cards are shown once they pass the quality floor and the evidence review.';
+        leftFooter.appendChild(heldLabel);
+    }
     footer.appendChild(leftFooter);
 
     var rightFooter = document.createElement('div');
@@ -26142,6 +26467,7 @@ function renderAutopilotRecommendationsModal() {
     closeFooterBtn.style.cssText = 'padding: 8px 16px;';
     closeFooterBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
+        resetAutopilotRecommendationsPopupState();
         state.autopilotSelectedIds = new Set();
         renderApp();
     };
@@ -26155,6 +26481,7 @@ function renderAutopilotRecommendationsModal() {
     attachModalA11y(modal, {
         onClose: function () {
             state.showAutopilotRecommendationsModal = false;
+            resetAutopilotRecommendationsPopupState();
             renderApp();
         }
     });
@@ -26219,21 +26546,11 @@ function createRecommendationCard(rec) {
     summaryEl.textContent = rec.summary;
     card.appendChild(summaryEl);
 
-    // Scores row
-    var scoresRow = document.createElement('div');
-    scoresRow.style.cssText = 'display: flex; gap: 16px; margin-bottom: 12px;';
-
-    var impactEl = document.createElement('span');
-    impactEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
-    impactEl.innerHTML = 'Impact: <strong style="color: #22c55e;">' + (rec.impact_score || 5) + '/10</strong>';
-    scoresRow.appendChild(impactEl);
-
-    var effortEl = document.createElement('span');
-    effortEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
-    effortEl.innerHTML = 'Effort: <strong style="color: #eab308;">' + (rec.effort_score || 5) + '/10</strong>';
-    scoresRow.appendChild(effortEl);
-
-    card.appendChild(scoresRow);
+    // VTID-04671: priority, value, confidence, success odds, expected cost and
+    // the Executable / Needs a person badge (was Impact N/10 · Effort N/10).
+    card.appendChild(renderRecQualityMetrics(rec));
+    var whyEl = renderRecWhySection(rec);
+    if (whyEl) card.appendChild(whyEl);
 
     // Action buttons
     var actionsRow = document.createElement('div');
@@ -26260,8 +26577,16 @@ function createRecommendationCard(rec) {
                 delete state.autopilotRecommendationErrors[rec.id];
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                card.remove();
-                updateRecommendationModalFooter();
+                // VTID-04671: a queued execution keeps its card with the live state.
+                var ex = data.execution;
+                if (ex && ex.state === 'queued' && ex.execution_id) {
+                    state.autopilotActivatedRecs.push({ rec: rec, vtid: data.vtid || '', execution_id: ex.execution_id });
+                    followOperatorExecution(ex.execution_id, 'approved');
+                    renderApp();
+                } else {
+                    card.remove();
+                    updateRecommendationModalFooter();
+                }
                 await fetchTasks();
                 // VTID-04657: report what happened to the execution, not just the VTID.
                 showToast(describeActivationOutcome(data), activationToastLevel(data));
@@ -26319,34 +26644,20 @@ function createRecommendationCard(rec) {
     rejectBtn.className = 'btn btn-secondary';
     rejectBtn.textContent = 'Dismiss';
     rejectBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-secondary, #888); border-radius: 4px; cursor: pointer;';
-    rejectBtn.onclick = async function () {
-        rejectBtn.disabled = true;
-        try {
-            var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
-                method: 'POST',
-                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
-            });
-            var data = await response.json();
-            if (data.ok) {
-                state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
-                state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                card.remove();
-                updateRecommendationModalFooter();
-                showToast('Recommendation dismissed', 'info');
-            } else {
-                rejectBtn.disabled = false;
-                rejectBtn.textContent = 'Dismiss';
-                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
-            }
-        } catch (err) {
-            rejectBtn.disabled = false;
-            rejectBtn.textContent = 'Dismiss';
-            showToast('Dismiss error: ' + err.message, 'error');
-        }
-    };
+    // VTID-04671: Dismiss asks why (reason codes stored by VTID-04670).
+    rejectBtn.setAttribute('aria-expanded', state.autopilotDismissPickerFor === rec.id ? 'true' : 'false');
+    rejectBtn.onclick = function () { openRecDismissPicker(rec); };
     actionsRow.appendChild(rejectBtn);
 
     card.appendChild(actionsRow);
+
+    if (state.autopilotDismissPickerFor === rec.id) {
+        card.appendChild(renderRecDismissPicker(rec, function () {
+            state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
+            state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
+            renderApp();
+        }));
+    }
 
     // Show inline error if activation/snooze/dismiss failed previously
     if (state.autopilotRecommendationErrors[rec.id]) {
@@ -27512,7 +27823,9 @@ let cicdHealthPollInterval = null;
 // panel used to drop such groups, which is how 'Screen Load Time' was
 // counted in "54/55" but never shown.
 var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance'];
+    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity',
+    'Deploy & Release', 'AWS Runtime', 'Dev Autopilot', 'Voice & Media', 'Data & Scheduling', 'Business & Support'];
 
 /**
  * VTID-04661: every group present in `items`, the known ones first in
@@ -27580,7 +27893,7 @@ function serviceHealthCounts(items) {
     var healthy = 0, noAccess = 0;
     for (var i = 0; i < items.length; i++) {
         if (items[i].healthy) healthy++;
-        else if (items[i].status === 'no_access') noAccess++;
+        else if (items[i].status === 'no_access' || items[i].status === 'not_configured') noAccess++;
     }
     return { total: items.length, healthy: healthy, noAccess: noAccess, failing: items.length - healthy - noAccess };
 }
@@ -27588,7 +27901,8 @@ function serviceHealthCounts(items) {
 /** VTID-04661: dot colour for one check. */
 function serviceHealthDot(svc) {
     if (svc.healthy) return 'green';
-    if (svc.status === 'no_access') return 'grey';
+    // VTID-04664: not_configured = deliberately off on this stack — grey, not red.
+    if (svc.status === 'no_access' || svc.status === 'not_configured') return 'grey';
     if (svc.status === 'degraded' || svc.status === 'warning') return 'yellow';
     return 'red';
 }
@@ -27665,7 +27979,73 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     // here. 'down' means either a screen failed to load or the
     // scheduled job itself hasn't reported in 3h+; 'degraded' means
     // it's reporting but slow (p75 over budget).
-    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' },
+    // VTID-04662: existing health routes, now registered.
+    { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+    { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+    { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+    { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+    { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+    { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+    { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
+    { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+    { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+    { name: 'Memory Broker', url: '/api/v1/admin/memory/health', group: 'Data & Memory' },
+    { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+    { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+    { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+    { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+    { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+    { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+    { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
+    // VTID-04663: database-computed signals.
+    { name: 'LLM Routing Policy', url: '/api/v1/ops/health/llm-routing', group: 'AI & Assistant' },
+    { name: 'Anthropic Credit Failures', url: '/api/v1/ops/health/anthropic-credit', group: 'AI & Assistant' },
+    { name: 'Google LLM Fallback', url: '/api/v1/ops/health/google-fallback', group: 'AI & Assistant' },
+    { name: 'Locale Coverage', url: '/api/v1/ops/health/locale-coverage', group: 'Governance & Integrity' },
+    { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
+    { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
+    { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
+    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-04664: systems that had no check.
+    { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
+    { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
+    { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
+    { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release' },
+    { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
+    { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
+    { name: 'ECS Community App Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Community App Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Operator', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Projector', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector', group: 'AWS Runtime' },
+    { name: 'ECS Worker Runner', url: '/api/v1/ops/runtime/aws/ecs/vitana-worker-runner', group: 'AWS Runtime' },
+    { name: 'ECS Verification Engine', url: '/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine', group: 'AWS Runtime' },
+    { name: 'ECS ORB Agent', url: '/api/v1/ops/runtime/aws/ecs/vitana-orb-agent', group: 'AWS Runtime' },
+    { name: 'Autopilot Kill Switch', url: '/api/v1/ops/runtime/autopilot/kill-switch', group: 'Dev Autopilot' },
+    { name: 'Autopilot Stuck Runs', url: '/api/v1/ops/runtime/autopilot/stuck-runs', group: 'Dev Autopilot' },
+    { name: 'Autopilot Approval Backlog', url: '/api/v1/ops/runtime/autopilot/approval-backlog', group: 'Dev Autopilot' },
+    { name: 'Autopilot Success Rate', url: '/api/v1/ops/runtime/autopilot/success-rate', group: 'Dev Autopilot' },
+    { name: 'Autopilot Scan Freshness', url: '/api/v1/ops/runtime/autopilot/scan-freshness', group: 'Dev Autopilot' },
+    { name: 'Autopilot Dispatch', url: '/api/v1/ops/runtime/autopilot/dispatch-failures', group: 'Dev Autopilot' },
+    { name: 'Polly TTS', url: '/api/v1/ops/runtime/voice/polly', group: 'Voice & Media' },
+    { name: 'Fish TTS', url: '/api/v1/ops/runtime/voice/fish', group: 'Voice & Media' },
+    { name: 'Serbian Voice Bridge', url: '/api/v1/ops/runtime/voice/serbian-bridge', group: 'Voice & Media' },
+    { name: 'Voice Session Errors', url: '/api/v1/ops/runtime/voice/session-errors', group: 'Voice & Media' },
+    { name: 'Bedrock', url: '/api/v1/ops/runtime/ai/bedrock', group: 'Voice & Media' },
+    { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
+    { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
+    { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
+    { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling' },
+    { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
+    { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
+    { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },
+    { name: 'Support Tickets', url: '/api/v1/ops/runtime/support/stuck-tickets', group: 'Business & Support' },
+    { name: 'ERP Bridge', url: '/api/v1/ops/runtime/business/erp-bridge', group: 'Business & Support' },
+    { name: 'Jev Decisions', url: '/api/v1/ops/runtime/business/jev', group: 'Business & Support' }
 ];
 
 /**
@@ -27782,7 +28162,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' no access' : '') + ' (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' failing' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**
@@ -29828,7 +30208,7 @@ function renderOverviewSystemView() {
                     svcList.className = 'overview-health-chip-row';
                     svcs.forEach(function (s) {
                         // VTID-04661: a check the probe could not look at is grey, not red.
-                        var dotClass = (s.status === 'no_access') ? 'grey'
+                        var dotClass = (s.status === 'no_access' || s.status === 'not_configured') ? 'grey'
                             : (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                             : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                             : 'red';
@@ -30274,7 +30654,8 @@ function renderOverviewSystemView() {
             impactEl.className = 'rec-impact';
             impactEl.textContent = 'Impact: ' + (rec.impact_score || 0) + '/10';
             cardMeta.appendChild(riskEl);
-            cardMeta.appendChild(impactEl);
+            // VTID-04671: scored developer recs show the quality metrics instead.
+            if (!recQualityOf(rec)) cardMeta.appendChild(impactEl);
             if (rec.summary) {
                 var summaryEl = document.createElement('div');
                 summaryEl.className = 'rec-summary';
@@ -30286,6 +30667,7 @@ function renderOverviewSystemView() {
                 card.appendChild(cardTop);
                 card.appendChild(cardMeta);
             }
+            if (recQualityOf(rec)) card.appendChild(renderRecQualityMetrics(rec));
             var cardActions = document.createElement('div');
             cardActions.className = 'rec-actions';
             var activateBtn = document.createElement('button');
@@ -30321,30 +30703,21 @@ function renderOverviewSystemView() {
             var dismissBtn = document.createElement('button');
             dismissBtn.className = 'btn btn-sm';
             dismissBtn.textContent = 'Dismiss';
-            dismissBtn.onclick = async function (e) {
+            // VTID-04671: Dismiss asks why (reason codes stored by VTID-04670).
+            dismissBtn.onclick = function (e) {
                 e.stopPropagation();
-                dismissBtn.disabled = true;
-                try {
-                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
-                        method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' })
-                    });
-                    var data = await resp.json();
-                    if (data.ok) {
-                        state.overviewPipelineSummary.fetched = false;
-                        fetchPipelineSummary();
-                        showToast('Recommendation dismissed', 'success');
-                    } else {
-                        dismissBtn.disabled = false;
-                        showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
-                    }
-                } catch (err) {
-                    dismissBtn.disabled = false;
-                    showToast('Dismiss error: ' + err.message, 'error');
-                }
+                openRecDismissPicker(rec);
             };
             cardActions.appendChild(activateBtn);
             cardActions.appendChild(dismissBtn);
             card.appendChild(cardActions);
+            if (state.autopilotDismissPickerFor === rec.id) {
+                card.appendChild(renderRecDismissPicker(rec, function () {
+                    state.overviewPipelineSummary.fetched = false;
+                    fetchPipelineSummary();
+                    renderApp();
+                }));
+            }
             recsSection.appendChild(card);
         });
     }

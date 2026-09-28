@@ -51,6 +51,7 @@ import {
 } from '../types/overload-detection';
 import { z } from 'zod';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // Route-level constants
@@ -550,13 +551,14 @@ router.get('/signal-sources', async (_req: Request, res: Response) => {
 // =============================================================================
 
 router.get('/health', async (_req: Request, res: Response) => {
-  return res.json({
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.json(await withDependencyHealth([{ rpc: 'overload_detect' }, { rpc: 'overload_get_detections' }], {
     ok: true,
     vtid: VTID,
     service: 'D51 Overload Detection Engine',
     status: 'healthy',
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 export default router;

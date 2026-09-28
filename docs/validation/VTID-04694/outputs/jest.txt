@@ -1,0 +1,29 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/memory/vtid-04694-english-fact-key.test.ts
+  VTID-04694 canonicalFactKey
+    ✓ lieblingsessen → favorite_food (5 ms)
+    ✓ mein_lieblingsessen → mein_favorite_food (1 ms)
+    ✓ mutter_name → mother_name
+    ✓ zahnarzttermin → dentist_appointment
+    ✓ Paul Geburtstag → paul_birthday
+    ✓ user_favorite_food → user_favorite_food (1 ms)
+    ✓ work_address → work_address (1 ms)
+    ✓ wife_name → wife_name
+    ✓ colleague_marko_coffee → colleague_marko_coffee
+  VTID-04694 remember_fact
+    ✓ stores a new German-named fact under the English key (2 ms)
+    ✓ keeps the key an existing fact already has (3 ms)
+    ✓ leaves an English key alone (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        0.935 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04694-english-fact-key.test.ts/i.

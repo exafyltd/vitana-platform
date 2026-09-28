@@ -34,7 +34,11 @@ import { fileURLToPath } from 'url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATEWAY = process.env.MEMORY_VERIFY_GATEWAY || 'https://preview-aws-gateway.vitanaland.com';
 const ORIGIN = process.env.MEMORY_VERIFY_ORIGIN || 'https://preview-aws.vitanaland.com';
-const TOKEN = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+const TOKEN_ENV = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+// A full run outlasts one access token (60 min). With MEMORY_VERIFY_TOKEN_FILE
+// the token is re-read on every call, so an operator can refresh the file.
+const TOKEN_FILE = process.env.MEMORY_VERIFY_TOKEN_FILE ?? '';
+const token = () => (TOKEN_FILE ? readFileSync(TOKEN_FILE, 'utf8').trim() : TOKEN_ENV);
 const TEST_USER = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 
 const args = process.argv.slice(2);
@@ -60,11 +64,12 @@ const QUIET_MS = Number(process.env.MEMORY_VERIFY_QUIET_MS || 8000);
 const PAUSE_RESET = args.includes('--pause-reset');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` });
+const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${token()}` });
 
 // ---------------------------------------------------------------- guards
 async function guard() {
-  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN (the test user JWT) is required');
+  const TOKEN = token();
+  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN or MEMORY_VERIFY_TOKEN_FILE (the test user JWT) is required');
   const payload = JSON.parse(Buffer.from(TOKEN.split('.')[1], 'base64url').toString());
   if (payload.sub !== TEST_USER) throw new Error(`token is not the test user (${payload.sub})`);
   const h = await (await fetch(`${GATEWAY}/api/v1/admin/health`)).json();
@@ -94,8 +99,8 @@ async function runSession(lang, utterances) {
   if (!sb.ok) return { ...log, error: `start ${start.status}` };
   log.session_id = sb.session_id;
   fetch(`${GATEWAY}/api/v1/orb/session/${sb.session_id}/audio-ready`, { method: 'POST', headers: headers(), body: '{}' }).catch(() => {});
-  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(TOKEN)}`,
-    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` } });
+  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(token())}`,
+    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${token()}` } });
   const reader = sse.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -150,7 +155,11 @@ async function runSession(lang, utterances) {
           lastActivity = Date.now();
         }
         if (t === 'input_transcript' && m.text && sent >= 0) log.heard[sent] += m.text;
-        if (t === 'error') log.error = m.message || m.code || 'error';
+        // An error the gateway recovers from (a 'reconnected' follows) is what a
+        // member experiences as a short pause, not a failure; it is kept as a
+        // note. Only an error nothing recovers from fails the session.
+        if (t === 'error') { log.pendingError = m.message || m.code || 'error'; (log.recoveredErrors ||= []); }
+        if (t === 'reconnected' && log.pendingError) { log.recoveredErrors.push(log.pendingError); log.pendingError = null; }
         if (t === 'turn_complete') turnDoneAt = Date.now();
       }
     }
@@ -172,6 +181,7 @@ async function runSession(lang, utterances) {
   await fetch(`${GATEWAY}/api/v1/orb/live/session/stop`, { method: 'POST', headers: headers(), body: JSON.stringify({ session_id: sb.session_id }) }).catch(() => {});
   log.ended = new Date().toISOString();
   log.completed_all = sent === utterances.length - 1;
+  if (log.pendingError) log.error = log.pendingError;
   return log;
 }
 
@@ -218,6 +228,38 @@ async function cleanupSuiteFacts(baselineIds) {
 
 // ---------------------------------------------------------------- matching (mirrors remember-fact-tool.ts)
 const MONTHS = { jan: 1, january: 1, januar: 1, feb: 2, february: 2, februar: 2, mar: 3, march: 3, märz: 3, maerz: 3, apr: 4, april: 4, may: 5, mai: 5, jun: 6, june: 6, juni: 6, jul: 7, july: 7, juli: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, okt: 10, oktober: 10, nov: 11, november: 11, dec: 12, december: 12, dez: 12, dezember: 12 };
+// A reply_none word only counts when a sentence asserts it. "Ich kann dein
+// Geburtsdatum nicht speichern … kann nicht direkt gespeichert werden" is the
+// correct refusal, not a claim that it was saved (B-PROF-01, pass 3). A word
+// that is itself a negation ("nicht speichern") is matched as written.
+const NEGATION = /\b(nicht|kein|keine|keinen|nie|niemals|not|no|never|cannot|can't|won't|didn't|don't|ne|nemoj|no puedo)\b/i;
+export function claims(reply, word) {
+  const w = word.toLowerCase();
+  if (NEGATION.test(w)) return reply.includes(w);
+  return reply
+    .split(/(?<=[.!?])\s*|\n+/)
+    .some((s) => s.includes(w) && !NEGATION.test(s));
+}
+
+const words = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 4);
+// First turn whose recognised transcript holds under half of the spoken
+// line's content words, as a confound reason; null when every turn was heard.
+const NETWORK_ERROR = /\b(terminated|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPIPE|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|socket hang up|fetch failed|other side closed)\b/i;
+
+export function misheardTurn(sc, sessions) {
+  for (let s = 0; s < sc.sessions.length; s++) {
+    const turns = sc.sessions[s].turns;
+    for (let i = 0; i < turns.length; i++) {
+      const said = words(turns[i].say);
+      if (said.length < 2) continue;
+      const heard = new Set(words(sessions[s]?.heard?.[i]));
+      const kept = said.filter((w) => heard.has(w)).length;
+      if (kept / said.length < 0.5) return `speech recognition heard "${sessions[s]?.heard?.[i] || ''}" for "${turns[i].say}" — re-run`;
+    }
+  }
+  return null;
+}
+
 function normalizeDate(value) {
   const v = String(value).trim().toLowerCase();
   let m = v.match(/^--(\d{1,2})-(\d{1,2})$/);
@@ -288,6 +330,7 @@ async function runScenario(sc, baselineIds, runNo) {
     const log = await runSession(sess.lang, pcm);
     out.sessions.push(log);
     if (log.error) out.failures.push(`session error: ${log.error}`);
+    if (log.recoveredErrors?.length) (out.notes ||= []).push(`recovered after: ${log.recoveredErrors.join('; ')}`);
     if (!log.completed_all) out.failures.push('session ended before every line was spoken');
     sess.turns.forEach((t, i) => {
       const reply = (log.replies[i] || '').toLowerCase();
@@ -295,7 +338,7 @@ async function runScenario(sc, baselineIds, runNo) {
         if (!group.some((w) => reply.includes(w.toLowerCase()))) out.failures.push(`reply ${i + 1} lacks one of [${group.join(', ')}]: "${log.replies[i]}"`);
       }
       for (const w of t.reply_none || []) {
-        if (reply.includes(w.toLowerCase())) out.failures.push(`reply ${i + 1} says "${w}": "${log.replies[i]}"`);
+        if (claims(reply, w)) out.failures.push(`reply ${i + 1} says "${w}": "${log.replies[i]}"`);
       }
       if (t.reply_ask && !reply.includes('?')) out.failures.push(`reply ${i + 1} does not ask: "${log.replies[i]}"`);
     });
@@ -319,6 +362,15 @@ async function runScenario(sc, baselineIds, runNo) {
   const judged = [...(sc.expect_facts || []), ...(sc.absent_facts || [])].map((x) => x.value).filter((v) => v != null && !seeded.has(String(v)));
   const hit = judged.find((v) => priorDeleted.some((d) => valuesMatch(d, v)));
   if (hit) out.confounded = `"${hit}" was deleted earlier in this invocation (forgotten marker) — purge markers and re-run alone`;
+  // The suite tests memory, not speech recognition. When a failed run's
+  // transcript does not carry the line that was spoken (B-CONF-02, pass 3:
+  // "Mein Bruder Paul hat … am siebten Mai Geburtstag" was heard as "mein
+  // buddha hat übrigens am mittwoch einen neuen putztag"), the input never
+  // reached memory, so the run is confounded — re-run it, never count it.
+  if (!out.pass && !out.confounded) {
+    const misheard = misheardTurn(sc, out.sessions);
+    if (misheard) out.confounded = misheard;
+  }
   return out;
 }
 
@@ -339,7 +391,12 @@ for (const sc of scenarios) {
   const runs = [];
   for (let r = 1; r <= RUNS; r++) {
     let res;
-    try { res = await runScenario(sc, baselineIds, r); } catch (err) { res = { id: sc.id, run: r, pass: false, failures: [`runner error: ${err.message}`], sessions: [] }; }
+    try { res = await runScenario(sc, baselineIds, r); } catch (err) {
+      res = { id: sc.id, run: r, pass: false, failures: [`runner error: ${err.message}`], sessions: [] };
+      // The connection to staging dropped mid-scenario ("terminated",
+      // ECONNRESET, a timeout): nothing reached memory, so re-run, never count.
+      if (NETWORK_ERROR.test(String(err?.message ?? '') + ' ' + String(err?.cause?.code ?? ''))) res.confounded = `connection to staging dropped (${err.message}) — re-run`;
+    }
     runs.push(res);
     console.log(`${sc.id} run ${r}: ${res.confounded ? 'CONFOUNDED' : res.pass ? 'PASS' : 'FAIL'}${res.pass ? '' : ' — ' + res.failures[0]}${res.confounded ? ' — ' + res.confounded : ''}`);
     writeFileSync(join(OUT, 'report.json'), JSON.stringify({ env, runStarted, results: [...results, { ...sc, runs }] }, null, 2));
@@ -366,6 +423,7 @@ for (const r of results) {
   for (const run of r.runs) {
     lines.push(`- run ${run.run}: ${run.pass ? 'pass' : 'fail'} · sessions ${run.sessions.map((s) => s.session_id).join(', ')}`);
     run.sessions.forEach((s, si) => s.replies?.forEach((rep, i) => lines.push(`  - s${si + 1} line ${i + 1} heard "${s.heard[i]}" → "${rep}"`)));
+    for (const n of run.notes || []) lines.push(`  - note: ${n}`);
     for (const f of run.failures) lines.push(`  - ✗ ${f}`);
   }
   lines.push('');

@@ -720,6 +720,8 @@ export type CicdEventType =
   // VTID-02934: Autopilot recommendation activation
   | 'autopilot.recommendation.activated'
   | 'autopilot.recommendation.activation_bridge_failed' // VTID-04657
+  | 'autopilot.recommendation.quality_reviewed' // VTID-04669
+  | 'autopilot.recommendations.weekly_summary' // VTID-04670
   // VTID-02935: Mission Alignment warnings — fired when a recommendation
   // graduates to a VTID without declaring how it serves the Ultimate Goal.
   // See docs/GOVERNANCE/ULTIMATE-GOAL.md. NOT a hard block — visibility only.
@@ -942,6 +944,9 @@ export type CicdEventType =
   | 'voice.chat_message.missing_session_fallback'
   | 'vitana_id.confirmed'
   // VTID-02047: Unified Feedback Pipeline events
+  // VTID-04674: an admin switched a notification type (or one automation's
+  // sends of it) on or off.
+  | 'notification.control.changed'
   | 'feedback.ticket.created'
   | 'feedback.ticket.status_changed'
   | 'feedback.ticket.triaged'
