@@ -1257,3 +1257,20 @@ jobs:
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"
             echo "- Reason: ${{ env.DEPLOY_REASON }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # VTID-04715: STAGING-VERIFY (workflow_run) only sees this run's
+      # head_sha, which is main HEAD even when a commit_sha pin deployed an
+      # older commit. Hand it the commit actually deployed.
+      - name: Record deployed commit for STAGING-VERIFY (VTID-04715)
+        if: success()
+        run: |
+          mkdir -p "$RUNNER_TEMP/deployed-commit"
+          echo "${{ steps.commit.outputs.sha }}" > "$RUNNER_TEMP/deployed-commit/sha"
+
+      - name: Upload deployed commit (VTID-04715)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-commit
+          path: ${{ runner.temp }}/deployed-commit/sha
+          retention-days: 7

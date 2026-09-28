@@ -188,3 +188,35 @@ test('the runner reads response bodies through clipBody, never a fixed slice', (
   assert.match(src, /lib\.clipBody\(await res\.text\(\)\)/);
   assert.doesNotMatch(src, /\.text\(\)\)\.slice\(/);
 });
+
+// VTID-04715 — the 2026-09-28 case: staging pinned to a4adbbe while
+// production already ran 72e8e2f (23 commits later). That is not a
+// divergence and must not list a4adbbe as "what would ship".
+test('production already past the verified commit is its own failed state', () => {
+  const sha = 'a4adbbea580f7389ce00529a675e9a5d59000a1e';
+  const prod = '72e8e2f2088cff47479e550a055918fb16948e6b';
+  const b = lib.describeBaseline({ sha, prodStamp: prod, prodSha: prod, prodIsAncestor: false, shaIsAncestorOfProd: true });
+  assert.equal(b.state, 'ahead');
+  assert.equal(b.rangeFrom, null);
+  assert.equal(b.check, 'production is behind the verified commit');
+  assert.match(b.problem, /production already runs 72e8e2f2088c, which contains a4adbbea580f/);
+  assert.match(b.problem, /roll production back/);
+  assert.doesNotMatch(b.problem, /diverged/);
+});
+
+test('every other baseline state keeps its meaning', () => {
+  const sha = 'a'.repeat(40);
+  const prod = 'b'.repeat(40);
+  assert.deepEqual(lib.describeBaseline({ sha, prodStamp: prod, prodSha: prod, prodIsAncestor: true, shaIsAncestorOfProd: false }), { state: 'behind', rangeFrom: prod, check: null, problem: null });
+  assert.deepEqual(lib.describeBaseline({ sha, prodStamp: sha, prodSha: sha, prodIsAncestor: false, shaIsAncestorOfProd: false }), { state: 'same', rangeFrom: null, check: null, problem: null });
+  const diverged = lib.describeBaseline({ sha, prodStamp: prod, prodSha: prod, prodIsAncestor: false, shaIsAncestorOfProd: false });
+  assert.equal(diverged.state, 'diverged');
+  assert.match(diverged.problem, /diverged histories — cannot list what would ship/);
+  const unknown = lib.describeBaseline({ sha, prodStamp: null, prodSha: null });
+  assert.equal(unknown.state, 'unknown');
+  assert.match(unknown.problem, /could not be read/);
+  const missing = lib.describeBaseline({ sha, prodStamp: 'deadbeef', prodSha: null });
+  assert.equal(missing.state, 'missing');
+  assert.match(missing.problem, /not in this repository's history/);
+  for (const b of [diverged, unknown, missing]) assert.equal(b.check, 'production baseline known');
+});

@@ -295,6 +295,32 @@ function evaluateHttp(t, res) {
   return { ok: problems.length === 0, problems };
 }
 
+// ── Production baseline ──────────────────────────────────────────────────
+// Where production stands relative to the verified commit. Only 'same' and
+// 'behind' let the run say what a PUBLISH would ship; every other state is a
+// failed check. 'ahead' is its own state (VTID-04715): production already
+// contains the commit, so there is nothing to ship and promoting it would
+// roll production back — not a divergence.
+function describeBaseline({ sha, prodStamp, prodSha, prodIsAncestor, shaIsAncestorOfProd }) {
+  if (!prodStamp) {
+    return { state: 'unknown', rangeFrom: null, check: 'production baseline known', problem: 'the production version stamp could not be read — cannot list what would ship, so nothing can be approved' };
+  }
+  if (!prodSha) {
+    return { state: 'missing', rangeFrom: null, check: 'production baseline known', problem: `production commit ${prodStamp} is not in this repository's history — cannot list what would ship, so nothing can be approved` };
+  }
+  if (prodSha === sha) return { state: 'same', rangeFrom: null, check: null, problem: null };
+  if (prodIsAncestor) return { state: 'behind', rangeFrom: prodSha, check: null, problem: null };
+  if (shaIsAncestorOfProd) {
+    return {
+      state: 'ahead',
+      rangeFrom: null,
+      check: 'production is behind the verified commit',
+      problem: `production already runs ${short(prodSha)}, which contains ${short(sha)} — nothing to ship, and promoting ${short(sha)} would roll production back`,
+    };
+  }
+  return { state: 'diverged', rangeFrom: null, check: 'production baseline known', problem: `production commit ${prodStamp} and ${short(sha)} are on diverged histories — cannot list what would ship, so nothing can be approved` };
+}
+
 // ── Outcome + message ────────────────────────────────────────────────────
 function decideOutcome({ superseded, results, plan }) {
   if (superseded) return 'superseded';
@@ -346,7 +372,7 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
   }
   lines.push('');
   lines.push(`What would ship (production \`${short(prodStamp) || 'unknown'}\` → \`${short(sha)}\`, ${shipping.length} commit(s)):`);
-  if (shipping.length === 0) lines.push('- (none — production already serves this commit, or its version could not be read)');
+  if (shipping.length === 0) lines.push('- (none — production already serves or contains this commit, or its version could not be read)');
   for (const c of shipping.slice(0, 60)) {
     const v = extractVtids(c.subject);
     lines.push(`- \`${short(c.sha)}\` ${v.length ? v.join(', ') + ' — ' : ''}${c.subject}${c.author ? ` (${c.author})` : ''}`);
@@ -377,6 +403,7 @@ module.exports = {
   MAX_HTTP_BODY_CHARS,
   clipBody,
   evaluateHttp,
+  describeBaseline,
   decideOutcome,
   buildReadyMessage,
 };
