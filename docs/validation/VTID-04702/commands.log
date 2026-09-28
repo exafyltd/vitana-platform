@@ -1,3 +1,4 @@
 cd services/gateway
 npx tsc --noEmit -p .   # clean
-npx jest test/orb/live test/services/memory test/services/vtid-04591-remember-backstop.test.ts test/services/guide   # 2842 passed
+npx jest test/orb/live test/services/memory test/services/vtid-04591-remember-backstop.test.ts test/services/guide   # 2845 passed
+# mutation: removing the unheard-reply guard fails 'a dropped reply is not stored as something Vitana said'

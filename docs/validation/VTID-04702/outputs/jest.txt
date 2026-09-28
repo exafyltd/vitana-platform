@@ -1,13 +1,16 @@
 PASS test/orb/live/session/vtid-04702-remember-hold.test.ts
   VTID-04702 the reply of a remember turn waits for the save
-    ✓ live B-PROF-01: the false "notiert" reply is never forwarded; the reply after the save is (150 ms)
-    ✓ Nova called remember_fact: the reply plays once the tool result is sent (24 ms)
-    ✓ the backstop did not answer: the held reply still plays, never silence (22 ms)
-    ✓ a plain statement whose reply claims a save is held too (live B-CONF-02 shape) (26 ms)
-    ✓ a held reply cut off by the member is never played; the hold re-arms for the next reply (25 ms)
-    ✓ a turn that is not about remembering plays live (3 ms)
+    ✓ live B-PROF-01: the false "notiert" reply is never forwarded; the reply after the save is (146 ms)
+    ✓ Nova called remember_fact: what it said before the result is dropped, its reply to the result plays (10 ms)
+    ✓ a failed remember_fact drops the pre-tool claim (12 ms)
+    ✓ a dropped reply is not stored as something Vitana said (23 ms)
+    ✓ releases the reply at the maximum even when nothing else arrives (5 ms)
+    ✓ the backstop did not answer: the held reply still plays, never silence (16 ms)
+    ✓ a plain statement whose reply claims a save is held too (live B-CONF-02 shape) (17 ms)
+    ✓ a held reply cut off by the member is never played; the hold re-arms for the next reply (26 ms)
+    ✓ a turn that is not about remembering plays live (4 ms)
     ✓ is off with ORB_REMEMBER_HOLD_ENABLED=false and for a non-Nova session (3 ms)
   VTID-04702 note wording when the reply was held
     ✓ asks for the outcome as the answer, not as a correction (1 ms)
 Test Suites: 1 passed, 1 total
-Tests:       8 passed, 8 total
+Tests:       11 passed, 11 total

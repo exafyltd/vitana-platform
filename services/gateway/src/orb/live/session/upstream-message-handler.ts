@@ -74,7 +74,6 @@ import {
   maybeArmOnMemberSpeech,
   maybeArmOnReplyText,
   dropRememberHold,
-  releaseRememberHold,
   settleRememberHold,
   takeRememberHold,
 } from './remember-hold';
@@ -2189,9 +2188,12 @@ export function handleToolCall(
           output: modelFacingResult.result ?? '',
           error: modelFacingResult.error,
         });
-        // VTID-04702: the save ran — the held reply may play now.
+        // VTID-04702: what Nova said before the result may claim a save that
+        // failed or conflicted (Codex review on #3800) — drop it; its reply to
+        // this result states the real outcome and plays live.
         if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
-          releaseRememberHold(ctx as any, 'tool_result_sent');
+          const preToolReply = takeRememberHold(session);
+          if (preToolReply) dropRememberHold(ctx as any, preToolReply, result.success ? 'tool_result_sent' : 'tool_failed');
         }
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
@@ -2243,7 +2245,8 @@ export function handleToolCall(
           error: err.message,
         });
         if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
-          releaseRememberHold(ctx as any, 'tool_failed');
+          const preToolReply = takeRememberHold(session);
+          if (preToolReply) dropRememberHold(ctx as any, preToolReply, 'tool_failed');
         }
         // Nova item 5: a failed tool result is still a result — the model owes
         // a response to it, so response liveness resets here too.
@@ -2711,6 +2714,12 @@ export function handleTurnComplete(
     session.pendingEventLinks = [];
   }
 
+  // VTID-04702: a held reply was not heard (Codex review on #3800) — it is not
+  // stored, bridged to chat or extracted. If it is released later because the
+  // backstop did not answer, the member hears it but it stays out of history.
+  if (heldReply && session.outputTranscriptBuffer.length > 0) {
+    session.outputTranscriptBuffer = '';
+  }
   if (session.outputTranscriptBuffer.length > 0) {
     const fullTranscript = session.outputTranscriptBuffer.trim();
     chatBridgeAssistantText = fullTranscript;

@@ -158,17 +158,65 @@ describe('VTID-04702 the reply of a remember turn waits for the save', () => {
     expect(spokenText()).toMatch(/Profil/);
   });
 
-  it('Nova called remember_fact: the reply plays once the tool result is sent', async () => {
-    const { client, callbacks } = setup();
+  it('Nova called remember_fact: what it said before the result is dropped, its reply to the result plays', async () => {
+    const { client, callbacks, spokenText } = setup();
     client.said('merk dir mein hund heißt bello');
-    client.audio(3); // "Einen Moment ..." before the tool call
-    expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
+    client.replies('Ich habe es gespeichert.'); // before the tool result — may be wrong
+    client.audio(3);
     client.tool('remember_fact');
     await flush();
     expect(client.toolResults).toHaveLength(1);
-    expect(callbacks.onAudioResponse).toHaveBeenCalledTimes(3);
-    client.audio(2); // the reply after the result
-    expect(callbacks.onAudioResponse).toHaveBeenCalledTimes(5);
+    expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
+    expect(spokenText()).not.toMatch(/gespeichert/);
+    client.replies('Gespeichert: dein Hund heißt Bello.'); // the reply to the result
+    client.audio(2);
+    expect(callbacks.onAudioResponse).toHaveBeenCalledTimes(2);
+    expect(spokenText()).toMatch(/Bello/);
+  });
+
+  // Codex review on #3800 (P1): a failed write must not let the pre-tool
+  // "I saved that" through.
+  it('a failed remember_fact drops the pre-tool claim', async () => {
+    const { client, callbacks, deps, spokenText } = setup();
+    (deps.executeLiveApiTool as jest.Mock).mockResolvedValue({ success: false, result: '', error: 'db down' });
+    client.said('merk dir mein hund heißt bello');
+    client.replies('Ich habe es gespeichert.');
+    client.audio(3);
+    client.tool('remember_fact');
+    await flush();
+    expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
+    expect(spokenText()).not.toMatch(/gespeichert/);
+  });
+
+  // Codex review on #3800 (P1): an unheard reply is not conversation history.
+  it('a dropped reply is not stored as something Vitana said', async () => {
+    const { client, session } = setup();
+    backstopRuns.push(async (s) => {
+      s.rememberNoteSentAt = Date.now();
+      return [{ fact_key: 'user_birthday', status: 'profile_owned' }];
+    });
+    client.said(B_PROF_01);
+    client.replies('Ich habe dein Geburtsdatum notiert: 9 September 1969.');
+    client.audio(2);
+    client.done();
+    await flush();
+    const said = session.transcriptTurns.filter((t: any) => t.role === 'assistant').map((t: any) => t.text).join(' ');
+    expect(said).not.toMatch(/notiert/);
+  });
+
+  // Codex review on #3800 (P2): the 15 s maximum holds without further events.
+  it('releases the reply at the maximum even when nothing else arrives', () => {
+    jest.useFakeTimers();
+    try {
+      const { client, callbacks } = setup();
+      client.said('merk dir mein hund heißt bello');
+      client.audio(3);
+      expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(15_001);
+      expect(callbacks.onAudioResponse).toHaveBeenCalledTimes(3);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('the backstop did not answer: the held reply still plays, never silence', async () => {

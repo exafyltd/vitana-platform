@@ -17,8 +17,9 @@
  *     reply text (which runs ahead of the audio) claims a save while no
  *     remember/forget tool has been called;
  *   - while armed, the reply's audio and text are buffered, not forwarded;
- *   - Nova called remember_fact/forget_fact → the save ran; the held reply is
- *     released once the tool result is sent;
+ *   - Nova called remember_fact/forget_fact → what it said before the result
+ *     is dropped (it may claim a save that failed or conflicted); its reply
+ *     to the tool result, which states the real outcome, plays live;
  *   - no tool call → at turn_complete the backstop does the save and tells
  *     Nova the result; its next reply is the one the member hears, and the
  *     held one is dropped;
@@ -38,6 +39,13 @@ export interface RememberHold {
   armedAt: number;
   audio: Array<{ dataB64: string; mimeType?: string }>;
   text: string[];
+  /** Releases the reply at REMEMBER_HOLD_MAX_MS even if no further event arrives. */
+  timer?: NodeJS.Timeout;
+}
+
+function clearTimer(hold: RememberHold): void {
+  if (hold.timer) clearTimeout(hold.timer);
+  hold.timer = undefined;
 }
 
 type EmitDiag = (session: any, stage: string, payload?: Record<string, unknown>) => void;
@@ -69,7 +77,14 @@ function eligible(session: any): boolean {
 function arm(ctx: RememberHoldCtx, reason: RememberHold['reason']): void {
   const { session } = ctx;
   if (session.rememberHold) return;
-  session.rememberHold = { reason, armedAt: Date.now(), audio: [], text: [] } as RememberHold;
+  const hold: RememberHold = { reason, armedAt: Date.now(), audio: [], text: [] };
+  // Codex review on #3800: the maximum must hold even when Nova stalls and no
+  // further chunk or turn_complete arrives.
+  hold.timer = setTimeout(() => {
+    if (session.rememberHold === hold) releaseRememberHold(ctx, 'max_hold');
+  }, REMEMBER_HOLD_MAX_MS);
+  hold.timer.unref?.();
+  session.rememberHold = hold;
   ctx.deps.emitDiag(session, 'remember_hold_armed', { reason });
 }
 
@@ -124,6 +139,7 @@ export function releaseRememberHold(ctx: RememberHoldCtx, outcome: string): void
   const hold = ctx.session.rememberHold as RememberHold | undefined;
   if (!hold) return;
   ctx.session.rememberHold = undefined;
+  clearTimer(hold);
   flush(ctx, hold);
   ctx.deps.emitDiag(ctx.session, 'remember_hold_released', {
     reason: hold.reason,
@@ -135,6 +151,7 @@ export function releaseRememberHold(ctx: RememberHoldCtx, outcome: string): void
 
 /** Stop holding without forwarding: a corrected reply replaces the held one. */
 export function dropRememberHold(ctx: RememberHoldCtx, hold: RememberHold, outcome: string): void {
+  clearTimer(hold);
   ctx.deps.emitDiag(ctx.session, 'remember_hold_dropped', {
     reason: hold.reason,
     outcome,
@@ -150,6 +167,7 @@ export function dropRememberHold(ctx: RememberHoldCtx, hold: RememberHold, outco
 export function takeRememberHold(session: any): RememberHold | undefined {
   const hold = session.rememberHold as RememberHold | undefined;
   session.rememberHold = undefined;
+  if (hold) clearTimer(hold);
   // Read by the backstop note built during this same turn_complete.
   session.rememberReplyHeld = Boolean(hold);
   return hold;
