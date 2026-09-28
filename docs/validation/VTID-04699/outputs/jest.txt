@@ -13,31 +13,35 @@ ts-jest[config] (WARN)
 
 PASS test/services/memory/vtid-04697-remember-claim-backstop.test.ts
   VTID-04697 detectRememberClaim
-    ✓ a save claim: Danke für die Info! Ich merke mir den Geburtstag deines Bruders Paul am siebten Mai. Möchtest du, dass ich dich daran erinnere? (7 ms)
+    ✓ a save claim: Danke für die Info! Ich merke mir den Geburtstag deines Bruders Paul am siebten Mai. Möchtest du, dass ich dich daran erinnere? (11 ms)
     ✓ a save claim: Alles klar, das habe ich notiert. (1 ms)
     ✓ a save claim: Okay, ist gespeichert. (1 ms)
-    ✓ a save claim: Got it, I'll remember that.
-    ✓ a save claim: I've noted that your brother's birthday is May 7.
+    ✓ a save claim: Got it, I'll remember that. (1 ms)
+    ✓ a save claim: I've noted that your brother's birthday is May 7. (1 ms)
     ✓ a save claim: Vielen Dank für die Information. Ich habe den Geburtstag von Paul am siebten Mai notiert. (1 ms)
-    ✓ a save claim: Ich habe dein Geburtsdatum notiert: 9 September 1969.
+    ✓ a save claim: Ich habe dein Geburtsdatum notiert: 9 September 1969. (1 ms)
     ✓ a save claim: Möchtest du, dass ich dich erinnere?Ich habe es gespeichert. (1 ms)
     ✓ a save claim: I have saved your brother's birthday. (1 ms)
-    ✓ not a save claim: Das kann ich leider nicht speichern. (1 ms)
+    ✓ a save claim: Ich habe den Geburtstag am 7. Mai notiert.
+    ✓ a save claim: Alles klar. Ich habe den 9. September 1969 gespeichert.
+    ✓ a save claim: Danke!Ich habe es notiert.Möchtest du eine Erinnerung? (1 ms)
+    ✓ not a save claim: Das kann ich leider nicht speichern.
     ✓ not a save claim: I can't save that, it belongs in your profile.
-    ✓ not a save claim: Wann hat Paul Geburtstag? (1 ms)
+    ✓ not a save claim: Wann hat Paul Geburtstag?
     ✓ not a save claim: Möchtest du, dass ich dich daran erinnere?
     ✓ not a save claim: Soll ich das für dich notieren? (1 ms)
     ✓ not a save claim: Hast du das schon notiert?
     ✓ not a save claim: Das wird in deinem Profil gespeichert, damit alle Teile es nutzen. (1 ms)
     ✓ not a save claim: Ich habe das leider nicht gespeichert.
+    ✓ not a save claim: Hast du am 7. Mai Zeit? Soll ich das notieren? (1 ms)
     ✓ not a save claim: 
   VTID-04697 live hook
-    ✓ runs the rules on the live B-CONF-02 turn: conflict, nothing written, marked note (16 ms)
+    ✓ runs the rules on the live B-CONF-02 turn: conflict, nothing written, marked note (19 ms)
     ✓ stands down when remember_fact ran, when the reply claims nothing, or off Nova (2 ms)
     ✓ is wired at turn_complete with the reply transcript (2 ms)
 
 Test Suites: 1 passed, 1 total
-Tests:       21 passed, 21 total
+Tests:       25 passed, 25 total
 Snapshots:   0 total
-Time:        0.958 s, estimated 1 s
+Time:        0.792 s, estimated 1 s
 Ran all test suites matching /test\/services\/memory\/vtid-04697-remember-claim-backstop.test.ts/i.

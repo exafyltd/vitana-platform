@@ -18,7 +18,7 @@ and questions ("Soll ich das notieren?").
 AC-1: both live pass-4 replies are detected; they are not detected by the previous detector.
 TEST: services/gateway/test/services/memory/vtid-04697-remember-claim-backstop.test.ts
 
-AC-2: questions, negations and descriptions ("Das wird in deinem Profil gespeichert") are not claims.
+AC-2: a date inside the claim ("am 7. Mai notiert") is still one sentence; questions, negations and descriptions ("Das wird in deinem Profil gespeichert") are not claims.
 TEST: services/gateway/test/services/memory/vtid-04697-remember-claim-backstop.test.ts
 
 AC-3: live B-CONF-02 passes on staging after deploy.

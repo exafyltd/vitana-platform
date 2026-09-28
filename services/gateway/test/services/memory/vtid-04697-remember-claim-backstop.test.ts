@@ -31,6 +31,10 @@ describe('VTID-04697 detectRememberClaim', () => {
     // Two turns glued together without a space.
     'Möchtest du, dass ich dich erinnere?Ich habe es gespeichert.',
     "I have saved your brother's birthday.",
+    // Codex review on #3797: a date's period stays inside the sentence.
+    'Ich habe den Geburtstag am 7. Mai notiert.',
+    'Alles klar. Ich habe den 9. September 1969 gespeichert.',
+    'Danke!Ich habe es notiert.Möchtest du eine Erinnerung?',
   ])(
     'a save claim: %s',
     (r) => expect(detectRememberClaim(r)).toBe(true),
@@ -44,6 +48,7 @@ describe('VTID-04697 detectRememberClaim', () => {
     'Hast du das schon notiert?',
     'Das wird in deinem Profil gespeichert, damit alle Teile es nutzen.',
     'Ich habe das leider nicht gespeichert.',
+    'Hast du am 7. Mai Zeit? Soll ich das notieren?',
     '',
   ])('not a save claim: %s', (r) => expect(detectRememberClaim(r)).toBe(false));
 });

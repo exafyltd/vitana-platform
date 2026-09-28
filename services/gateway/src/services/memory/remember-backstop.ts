@@ -68,12 +68,12 @@ const REMEMBER_CLAIM = new RegExp(
     '\\b(ich )?merke? (ich )?(mir|es mir|das mir)\\b',
     // VTID-04699: words may stand between the verb and the participle —
     // "Ich habe den Geburtstag von Paul am siebten Mai notiert" (pass 4).
-    '\\b(hab|habe|hat|haben)\\b[^.!?]{0,80}?\\b(gemerkt|notiert|gespeichert|vermerkt|aufgeschrieben)\\b',
+    '\\b(hab|habe|hat|haben)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(gemerkt|notiert|gespeichert|vermerkt|aufgeschrieben)\\b',
     '\\b(notiere|speichere|merke) ich (mir )?\\b',
     '\\bich (notiere|speichere|vermerke)\\b',
     '\\b(ist|wurde) (jetzt )?(notiert|gespeichert|vermerkt)\\b',
     "\\bi('ll| will) remember\\b",
-    "\\bi('ve| have)\\b[^.!?]{0,80}?\\b(noted|saved|stored|made a note)\\b",
+    "\\bi('ve| have)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(noted|saved|stored|made a note)\\b",
     '\\b(got it|noted)[,.!]',
     '\\b(lo )?(recordaré|he guardado|he anotado)\\b',
     '\\b(zapamtila|zapamtiću|zabeležila)\\b',
@@ -86,11 +86,14 @@ const CLAIM_NEGATION = /\b(nicht|kein|keine|keinen|nie|not|can't|cannot|won't|do
  * True when a sentence of the reply claims a save; negated sentences and
  * questions ("Soll ich das notieren?") do not count. Sentences split even
  * without a space after the mark: two turns reach the transcript glued
- * together ("…erinnere?Diese…", pass 4).
+ * together ("…erinnere?Diese…", pass 4). A period after a digit never splits.
  */
 export function detectRememberClaim(reply: string): boolean {
   if (!reply) return false;
-  return (reply.match(/[^.!?\n]+[.!?]?/g) ?? [])
+  // A period after a digit is part of a date or ordinal ("am 7. Mai"), never a
+  // sentence end (Codex review, #3797); ? and ! always end a sentence.
+  return reply
+    .split(/\n+|(?<=[!?])|(?<=[^\d\s]\.)(?=\s|\p{Lu}|$)/u)
     .map((sentence) => sentence.trim())
     .some((sentence) => !sentence.endsWith('?') && REMEMBER_CLAIM.test(sentence) && !CLAIM_NEGATION.test(sentence));
 }
