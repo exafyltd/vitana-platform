@@ -27513,7 +27513,7 @@ let cicdHealthPollInterval = null;
 // counted in "54/55" but never shown.
 var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
     'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
-    'Self-Healing & Ops', 'Data & Memory', 'Commerce'];
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity'];
 
 /**
  * VTID-04661: every group present in `items`, the known ones first in
@@ -27685,7 +27685,16 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
     { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
     { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
-    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' }
+    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
+    // VTID-04663: database-computed signals.
+    { name: 'LLM Routing Policy', url: '/api/v1/ops/health/llm-routing', group: 'AI & Assistant' },
+    { name: 'Anthropic Credit Failures', url: '/api/v1/ops/health/anthropic-credit', group: 'AI & Assistant' },
+    { name: 'Google LLM Fallback', url: '/api/v1/ops/health/google-fallback', group: 'AI & Assistant' },
+    { name: 'Locale Coverage', url: '/api/v1/ops/health/locale-coverage', group: 'Governance & Integrity' },
+    { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
+    { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
+    { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
+    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' }
 ];
 
 /**

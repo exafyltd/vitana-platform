@@ -46,9 +46,9 @@ describe('VTID-04662: existing health routes are registered', () => {
     expect(src).toMatch(new RegExp(`\\.get\\(\\s*${path.replace(/[/.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
-  it('the panel now carries 73 checks and no duplicate URL or name', () => {
-    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(73);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(73);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(73);
+  it('the panel now carries 81 checks (after Phase 2) and no duplicate URL or name', () => {
+    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(81);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(81);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(81);
   });
 });
