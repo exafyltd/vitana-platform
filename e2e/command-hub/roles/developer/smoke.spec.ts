@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../../fixtures/readonly-test';
 import { ALL_HUB_ROUTES } from '../../../fixtures/routes';
 
 test.describe('Command Hub — Developer Role (All 87 Screens)', () => {

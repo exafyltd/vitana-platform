@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 
 test.describe('Mobile — Touch Interactions', () => {
   test('interactive elements have adequate tap target size (>= 44px)', async ({ page }) => {

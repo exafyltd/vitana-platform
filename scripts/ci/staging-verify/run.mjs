@@ -21,9 +21,6 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, appen
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** Largest response body a check reads (the Command Hub app.js is ~2.5 MB). */
-const MAX_BODY_CHARS = 8_000_000;
-
 const require = createRequire(import.meta.url);
 const lib = require('./lib.cjs');
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -72,16 +69,16 @@ async function httpGet(url, init = {}, { allowProduction = false } = {}) {
     if (hop >= 5) throw new Error(`too many redirects from ${url}`);
     current = new URL(location, current).toString();
   }
-  // VTID-04662: the Command Hub app.js is ~2.5 MB; a 1 MB cut made every
-  // expect_body_contains past the first megabyte fail on a correct deploy.
-  const body = (await res.text()).slice(0, MAX_BODY_CHARS);
+  // VTID-04662 / VTID-04688: the Command Hub app.js is ~2.5 MB; bodies are read
+  // in full up to lib.MAX_HTTP_BODY_CHARS, and a body that hits it says so.
+  const { body, truncated } = lib.clipBody(await res.text());
   let json;
   try {
     json = JSON.parse(body);
   } catch {
     json = undefined;
   }
-  return { status: res.status, contentType: res.headers.get('content-type') || '', body, json };
+  return { status: res.status, contentType: res.headers.get('content-type') || '', body, truncated, json };
 }
 
 // ── Version stamps ───────────────────────────────────────────────────────

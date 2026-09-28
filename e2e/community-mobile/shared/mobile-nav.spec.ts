@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 
 test.describe('Mobile — Navigation', () => {
   test('bottom navigation is visible after login', async ({ page }) => {

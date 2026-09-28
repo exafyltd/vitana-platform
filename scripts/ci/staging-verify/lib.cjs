@@ -249,6 +249,20 @@ function getJsonPath(obj, path) {
     .reduce((o, k) => (o === null || o === undefined ? undefined : o[k]), obj);
 }
 
+// VTID-04688: a response body is read in full up to this many characters.
+// The old 1,000,000 cut-off silently hid everything past the first MB of
+// the 2.5 MB Command Hub app.js, so a check for code that really is served
+// failed as "body does not contain". The cap only guards against a runaway
+// response; a check that meets it says so instead of reporting a miss.
+const MAX_HTTP_BODY_CHARS = 16_000_000;
+
+function clipBody(text) {
+  const s = String(text ?? '');
+  return s.length > MAX_HTTP_BODY_CHARS
+    ? { body: s.slice(0, MAX_HTTP_BODY_CHARS), truncated: true }
+    : { body: s, truncated: false };
+}
+
 function evaluateHttp(t, res) {
   const want = t.expect_status ?? 200;
   const problems = [];
@@ -270,7 +284,12 @@ function evaluateHttp(t, res) {
   }
   if (t.expect_body_contains) {
     for (const s of [].concat(t.expect_body_contains)) {
-      if (!String(res.body || '').includes(s)) problems.push(`body does not contain ${JSON.stringify(s)}`);
+      if (!String(res.body || '').includes(s)) {
+        problems.push(
+          `body does not contain ${JSON.stringify(s)}` +
+            (res.truncated ? ` (only the first ${MAX_HTTP_BODY_CHARS} characters were read)` : ''),
+        );
+      }
     }
   }
   return { ok: problems.length === 0, problems };
@@ -355,6 +374,8 @@ module.exports = {
   planRange,
   commitMatches,
   parseFrontendVersion,
+  MAX_HTTP_BODY_CHARS,
+  clipBody,
   evaluateHttp,
   decideOutcome,
   buildReadyMessage,
