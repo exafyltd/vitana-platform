@@ -45,10 +45,17 @@ export function detectAboutMeQuestion(text: string): boolean {
   return ABOUT_ME.test(text);
 }
 
+// VTID-04705: the member asks about themself with "ich", not "mein" — live
+// B-PROF-03: "Wann habe ich Geburtstag?" got "Ich überprüfe das für dich.
+// einen Moment bitte." and nothing else. A verb directly followed by the
+// pronoun is the question word order ("habe ich", "bin ich", "am I").
+const OWN_SUBJECT =
+  /\b(habe|hab|bin|war|heiße|heisse|wohne|arbeite|mag|esse|trinke|lebe)\s+ich\b|\b(am|was|do|did)\s+i\b|\b(tengo|soy|vivo)\b|\b(imam|sam|živim)\s+ja\b/i;
+
 export function detectRecallQuestion(text: string): boolean {
   if (!text || text.startsWith(REMEMBER_BACKSTOP_MARKER)) return false;
   if (ASK_MEMORY.test(text)) return true;
-  return QUESTION_WORD.test(text) && OWN_POSSESSIVE.test(text);
+  return QUESTION_WORD.test(text) && (OWN_POSSESSIVE.test(text) || OWN_SUBJECT.test(text));
 }
 
 // The reply said it does not know, cannot show it, or only promised to look.
