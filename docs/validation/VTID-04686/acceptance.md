@@ -23,3 +23,4 @@ AC-3: A failed write retires nothing; a failed retire keeps the write; retireOth
 TEST: services/gateway/test/services/memory/vtid-04686-one-current-row-per-key.test.ts
 
 AC-4 (live, staging): B-CONF-04 passes — one current paul_birthday row holding May 5.
+TEST: scripts/memory-verification/run-live.mjs

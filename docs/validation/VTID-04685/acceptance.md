@@ -24,3 +24,4 @@ AC-3: The extractor filters through valueOnlyInNonStatements and its prompt carr
 TEST: services/gateway/test/services/memory/vtid-04685-hypothetical-not-a-fact.test.ts
 
 AC-4 (live, staging): B-NOISE-01 passes — nothing is stored with the value "Max".
+TEST: scripts/memory-verification/run-live.mjs

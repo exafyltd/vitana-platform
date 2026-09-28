@@ -52,5 +52,7 @@ TEST: services/gateway/test/services/memory/vtid-04684-forget-fact.test.ts
 
 AC-5: forget_fact is in the catalog and dispatched, stays out of the Nova priority list (no screen tool evicted), and the prompt forbids an unbacked "forgotten".
 TEST: services/gateway/test/services/memory/vtid-04684-forget-fact.test.ts
+TEST: services/gateway/test/orb/live/instruction/vtid-04684-memory-forget-instruction.test.ts
 
 AC-6 (live, staging): B-FORG-01 passes — the fact is gone and the next session does not say "Bello".
+TEST: scripts/memory-verification/run-live.mjs
