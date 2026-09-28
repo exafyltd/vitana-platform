@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04701",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory", "cwd": "services/gateway",
+      "reason": "forgetting deletes rows and a read-only staging suite may not write; the delete targets and the summary guard are pinned by unit tests, and the live voice suite (scripts/memory-verification/run-live.mjs, B-FORG-01) is run by hand on staging as the test user against its own rows" }
+  ]
+}

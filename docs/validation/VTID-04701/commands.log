@@ -1,0 +1,4 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory test/orb/live/session test/services/guide   # 1169 passed
+node --check ../../scripts/memory-verification/run-live.mjs

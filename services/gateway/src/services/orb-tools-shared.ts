@@ -500,7 +500,28 @@ export async function buildForgetFactDeps(sb: SupabaseClient) {
         .ilike('content', pattern)
         .select('id');
       if (error) throw new Error(error.message);
-      return Array.isArray(data) ? data.length : 0;
+      let removed = Array.isArray(data) ? data.length : 0;
+      // VTID-04701: the transcript turns and session summaries that carry the
+      // value go too — the next session's context reads both (live B-FORG-01).
+      // Best-effort each: memory_items is the primary store and already gone.
+      const turns = await sb
+        .from('memory_transcript_turns')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .ilike('content', pattern)
+        .select('id');
+      if (turns.error) console.warn(`[VTID-04701] transcript turns not cleared: ${turns.error.message}`);
+      else removed += Array.isArray(turns.data) ? turns.data.length : 0;
+      const summaries = await sb
+        .from('user_session_summaries')
+        .delete()
+        .eq('user_id', userId)
+        .ilike('summary', pattern)
+        .select('id');
+      if (summaries.error) console.warn(`[VTID-04701] session summaries not cleared: ${summaries.error.message}`);
+      else removed += Array.isArray(summaries.data) ? summaries.data.length : 0;
+      return removed;
     },
     refreshSnapshot(tenantId: string, userId: string) {
       void import('./conversation/brain-core-snapshot')

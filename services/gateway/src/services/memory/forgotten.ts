@@ -147,3 +147,33 @@ export async function checkForgottenGate(
     return { allow: true };
   }
 }
+
+/**
+ * VTID-04701: does this text name a value the user forgot?
+ *
+ * Live B-FORG-01 (staging, 2026-09-28): after `user_pet_name = Bello` was
+ * forgotten, that session's own summary read "The user asked Vitana to
+ * forget that their dog is named Bello", and the next session said "Du hast
+ * jedoch erwähnt, dass dein Haustier Bello heißt". The markers keep only a
+ * hash, so the text is checked by hashing its runs of one to four words.
+ */
+export function textNamesForgottenValue(text: string, valueHashes: Set<string>): boolean {
+  if (!text || valueHashes.size === 0) return false;
+  const words = String(text)
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+    .filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    for (let n = 1; n <= 4 && i + n <= words.length; n++) {
+      if (valueHashes.has(hashFactValue(words.slice(i, i + n).join(' ')))) return true;
+    }
+  }
+  return false;
+}
+
+/** The value hashes of every fact this user forgot (any key). */
+export async function listForgottenValueHashes(client: SupabaseClient, userId: string): Promise<Set<string>> {
+  const { data, error } = await client.from(TABLE).select('value_hash').eq('user_id', userId).limit(1000);
+  if (error) throw new Error(error.message);
+  return new Set((Array.isArray(data) ? data : []).map((r: any) => String(r.value_hash)));
+}
