@@ -50,6 +50,7 @@ import {
 } from '../types/risk-mitigation';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 const ENGINE_VERSION = '1.0.0';
 
@@ -390,14 +391,15 @@ router.post('/expire', async (req: Request, res: Response) => {
  * Health check endpoint
  */
 router.get('/health', async (_req: Request, res: Response) => {
-  return res.json({
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.json(await withDependencyHealth([{ table: 'risk_mitigations' }], {
     ok: true,
     vtid: VTID,
     engine: 'D49 Risk Mitigation Engine',
     version: ENGINE_VERSION,
     status: 'healthy',
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 // =============================================================================

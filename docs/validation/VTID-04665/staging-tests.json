@@ -1,0 +1,182 @@
+{
+  "vtid": "VTID-04665",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "/api/v1/execute/health lists the dependencies it checked",
+      "path": "/api/v1/execute/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/operator/health lists the dependencies it checked",
+      "path": "/api/v1/operator/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/telemetry/health lists the dependencies it checked",
+      "path": "/api/v1/telemetry/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/events/health lists the dependencies it checked",
+      "path": "/events/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/command-hub/health lists the dependencies it checked",
+      "path": "/command-hub/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/voice-lab/health lists the dependencies it checked",
+      "path": "/api/v1/voice-lab/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/conversation/health lists the dependencies it checked",
+      "path": "/api/v1/conversation/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/autopilot/prompts/health lists the dependencies it checked",
+      "path": "/api/v1/autopilot/prompts/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/capacity/health lists the dependencies it checked",
+      "path": "/api/v1/capacity/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/scheduler/health lists the dependencies it checked",
+      "path": "/api/v1/scheduler/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/scheduled-notifications/health lists the dependencies it checked",
+      "path": "/api/v1/scheduled-notifications/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/voice-feedback/health lists the dependencies it checked",
+      "path": "/api/v1/voice-feedback/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/user-preferences/health lists the dependencies it checked",
+      "path": "/api/v1/user-preferences/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/taste-alignment/health lists the dependencies it checked",
+      "path": "/api/v1/taste-alignment/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/overload/health lists the dependencies it checked",
+      "path": "/api/v1/overload/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/mitigation/health lists the dependencies it checked",
+      "path": "/api/v1/mitigation/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/opportunities/health lists the dependencies it checked",
+      "path": "/api/v1/opportunities/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "/api/v1/oasis/vtid/terminalize/health lists the dependencies it checked",
+      "path": "/api/v1/oasis/vtid/terminalize/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dependencies\":["
+    },
+    {
+      "kind": "http",
+      "name": "a route whose table exists stays healthy",
+      "path": "/api/v1/telemetry/health",
+      "expect_json": {
+        "status": "ok"
+      }
+    },
+    {
+      "kind": "http",
+      "name": "a route whose table is missing now reads down (risk_mitigations does not exist)",
+      "path": "/api/v1/mitigation/health",
+      "expect_status": 200,
+      "expect_json": {
+        "ok": false,
+        "status": "down"
+      }
+    },
+    {
+      "kind": "http",
+      "name": "liveness stays dependency-free (never tied to the database)",
+      "path": "/alive",
+      "expect_json": {
+        "status": "ok"
+      }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04665-dependency-probe.test.ts",
+      "cwd": "services/gateway",
+      "reason": "missing-table and missing-function outcomes, caching and the never-call-an-RPC rule need controlled database answers"
+    }
+  ]
+}

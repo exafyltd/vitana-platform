@@ -34,6 +34,7 @@ import * as repo from './scheduled-notifications-repository';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // ── Helper: get service-role Supabase client ─────────────────
@@ -1473,8 +1474,9 @@ router.post('/night-push', async (req: Request, res: Response) => {
 // =============================================================================
 // Health check
 // =============================================================================
-router.get('/health', (_req: Request, res: Response) => {
-  return res.status(200).json({ ok: true, service: 'scheduled-notifications' });
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], { ok: true, service: 'scheduled-notifications' }));
 });
 
 export default router;

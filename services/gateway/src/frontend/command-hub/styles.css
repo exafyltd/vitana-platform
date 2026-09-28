@@ -3456,6 +3456,13 @@ body {
   background: rgba(239, 68, 68, 0.15);
 }
 
+/* VTID-04665: a check that was not run (no access / not configured) — not a failure. */
+.health-grid__cell--muted {
+  color: var(--text-secondary, #9ca3af);
+  border-left: 3px solid #6b7280;
+  opacity: 0.8;
+}
+
 .health-grid__cell .health-dot {
   flex-shrink: 0;
 }

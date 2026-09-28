@@ -1,0 +1,32 @@
+    ✓ a reachable table is ok; a missing one is down with table_missing (6 ms)
+    ✓ an RPC is checked by presence in the schema listing, never called (2 ms)
+    ✓ the schema listing is fetched once and cached (1 ms)
+    ✓ a file dependency must exist and be non-empty (4 ms)
+    ✓ results are cached per dependency (1 ms)
+    ✓ keeps the body and its own status when every dependency answers (1 ms)
+    ✓ turns a route with a missing dependency red for the panel (1 ms)
+    ✓ execute.ts (2 ms)
+    ✓ operator.ts (53 ms)
+    ✓ telemetry.ts (1 ms)
+    ✓ events.ts (2 ms)
+    ✓ command-hub.ts (1 ms)
+    ✓ voice-lab.ts (2 ms)
+    ✓ conversation.ts (1 ms)
+    ✓ autopilot-prompts.ts (1 ms)
+    ✓ health-capacity.ts
+    ✓ scheduler.ts
+    ✓ scheduled-notifications.ts (54 ms)
+    ✓ voice-feedback.ts (1 ms)
+    ✓ user-preferences.ts
+    ✓ taste-alignment.ts
+    ✓ overload-detection.ts (1 ms)
+    ✓ risk-mitigation.ts (1 ms)
+    ✓ opportunity-surfacing.ts (1 ms)
+    ✓ vtid-terminalize.ts (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+# pre-merge read-only GET on staging (status before dependency probing):
+/api/v1/autopilot/prompts/health     {"ok":true,"service":"autopilot-prompts","vtid":"VTID-01089","timestamp":"2026-09-28T13:25:56.606Z","status":"healthy","capabilities":{"prom
+/api/v1/mitigation/health            {"ok":true,"vtid":"VTID-01143","engine":"D49 Risk Mitigation Engine","version":"1.0.0","status":"healthy","timestamp":"2026-09-28T13:25:57.0
+/api/v1/overload/health              {"ok":true,"vtid":"VTID-01145","service":"D51 Overload Detection Engine","status":"healthy","timestamp":"2026-09-28T13:25:57.473Z"}
+/api/v1/scheduler/health             {"ok":true,"service":"scheduler","vtid":"VTID-01095","timestamp":"2026-09-28T13:25:57.755Z"}

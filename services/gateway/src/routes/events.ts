@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const OasisEventSchema = z.object({
   service: z.string().min(1, "Service name required"),
   event: z.string().min(1, "Event name required"),
@@ -449,12 +450,13 @@ router.get("/events", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/events/health", (_req: Request, res: Response) => {
-  res.status(200).json({
+router.get("/events/health", async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.status(200).json(await withDependencyHealth([{ table: 'oasis_events' }], {
     ok: true,
     service: "oasis-events",
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 /**
