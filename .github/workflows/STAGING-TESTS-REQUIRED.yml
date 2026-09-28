@@ -31,6 +31,8 @@ jobs:
           node-version: 20
       - name: Runner unit tests
         run: node --test scripts/ci/staging-verify/lib.test.cjs
+      - name: VTID auto-close unit tests (VTID-04691)
+        run: node --test scripts/ci/vtid-auto-close.test.cjs
       - name: Change suite present and valid
         env:
           TITLE: ${{ github.event.pull_request.title }}
