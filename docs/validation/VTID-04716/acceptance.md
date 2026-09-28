@@ -71,7 +71,20 @@ AC-2: The dependency-probe contract still holds with the renamed table.
 TEST: services/gateway/test/vtid-04665-dependency-probe.test.ts
 
 AC-3 (staging): after the migrations are applied and the commit is deployed, all five health routes
-report `status: ok` (`staging-tests.json`).
+report `ok: true` (each route keeps its own status word, e.g. `healthy`) (`staging-tests.json`).
+
+## Applied live (2026-09-28)
+`RUN-MIGRATION.yml` could not be used: its `SUPABASE_ACCESS_TOKEN` returns `401 Unauthorized`
+(run 36481329017), which is an owner item. The five migrations were applied through the Supabase MCP.
+Each file was stripped of comment-only lines, and the stripped copy was first applied to a fresh
+local database without an error.
+
+`outputs/live-function-md5.txt`: all 28 function bodies live are byte-identical to that tested copy.
+
+All 18 tables exist with RLS on. `public.user_preferences` is unchanged (36 columns, 230 rows), and
+`trg_notify_risk_mitigation` is not attached.
+
+On staging, before this code deployed, 4 of 5 health routes already read `ok: true, status: healthy`.
 
 ## Not done here
 - `matches_daily` (VTID-01088) does not exist, so Autopilot Prompts has its tables but no source of

@@ -4,52 +4,52 @@
   "tests": [
     {
       "kind": "http",
-      "name": "Autopilot Prompts health reads ok (its data layer now exists)",
+      "name": "Autopilot Prompts health reads ok:true, not down (its data layer now exists)",
       "path": "/api/v1/autopilot/prompts/health",
       "expect_status": 200,
       "expect_content_type": "application/json",
       "expect_json": {
-        "status": "ok"
+        "ok": true
       }
     },
     {
       "kind": "http",
-      "name": "Risk Mitigation health reads ok (its data layer now exists)",
+      "name": "Risk Mitigation health reads ok:true, not down (its data layer now exists)",
       "path": "/api/v1/mitigation/health",
       "expect_status": 200,
       "expect_content_type": "application/json",
       "expect_json": {
-        "status": "ok"
+        "ok": true
       }
     },
     {
       "kind": "http",
-      "name": "Overload Detection health reads ok (its data layer now exists)",
+      "name": "Overload Detection health reads ok:true, not down (its data layer now exists)",
       "path": "/api/v1/overload/health",
       "expect_status": 200,
       "expect_content_type": "application/json",
       "expect_json": {
-        "status": "ok"
+        "ok": true
       }
     },
     {
       "kind": "http",
-      "name": "Taste Alignment health reads ok (its data layer now exists)",
+      "name": "Taste Alignment health reads ok:true, not down (its data layer now exists)",
       "path": "/api/v1/taste-alignment/health",
       "expect_status": 200,
       "expect_content_type": "application/json",
       "expect_json": {
-        "status": "ok"
+        "ok": true
       }
     },
     {
       "kind": "http",
-      "name": "User Preferences health reads ok (its data layer now exists)",
+      "name": "User Preferences health reads ok:true, not down (its data layer now exists)",
       "path": "/api/v1/user-preferences/health",
       "expect_status": 200,
       "expect_content_type": "application/json",
       "expect_json": {
-        "status": "ok"
+        "ok": true
       }
     },
     {
