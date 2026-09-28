@@ -4,3 +4,12 @@ cd services/gateway
 node node_modules/.bin/jest test/vtid-04665-dependency-probe.test.ts   # 25/25
 npx tsc --noEmit -p .   # clean
 node node_modules/.bin/jest   # full suite, see below
+# Post-merge on staging (00ce3fb): /mitigation/health and /autopilot/prompts/health read ok although
+# to_regclass('public.risk_mitigations') and ('public.autopilot_prompts') are null. Root cause: the
+# table probe used a HEAD request; PostgREST answers a missing table with a bodyless 404 and supabase-js
+# returns no error for it. Measured with the anon key:
+#   GET  /rest/v1/risk_mitigations?select=*&limit=0  -> 404 {"code":"PGRST205",...}
+#   HEAD /rest/v1/risk_mitigations?select=*&limit=1  -> 404 (no body)
+#   GET  /rest/v1/oasis_events?select=*&limit=0      -> 200 []
+# Fix: GET with limit(0). Test reproduces the HEAD shape and fails on the old code (1 failed / 25 passed).
+npx jest test/vtid-04665-dependency-probe.test.ts   # 26 passed
