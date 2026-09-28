@@ -33,6 +33,7 @@ Rules:
 - Refer to the user as "the user", never "you".
 - Lead with the topic. Skip greetings, sign-offs, "user said hello", etc.
 - If the user revealed a fact about themselves (their company, their goal, a name), include it concisely.
+- Record only facts the USER stated. Never record a personal fact that only the assistant stated (a name, a date, a birthday, an allergy): the assistant may have been wrong. Write "Vitana answered about X" without the value instead.
 - Do NOT invent details. Stick to what is in the transcript.
 - Plain prose. No markdown, no quotes, no JSON.
 
@@ -375,7 +376,12 @@ function truncate(s: string, max: number): string {
  */
 export function formatSummariesForPrompt(summaries: SessionSummary[]): string {
   if (!summaries || summaries.length === 0) return '';
-  const lines: string[] = ['Recent prior sessions (most recent first — weave naturally, do NOT recite):'];
+  // VTID-04713: live B-PROF-03 (pass 7). A summary recorded a guessed answer
+  // ("her name is Anna and birthday is March 12") and later sessions repeated
+  // it as memory. Summaries are recaps, never the source of a personal fact.
+  const lines: string[] = [
+    'Recent prior sessions (most recent first — weave naturally, do NOT recite). These are recaps, not stored facts: never take a name, date, birthday or other personal detail from them; use only the stored facts for those:',
+  ];
   for (const s of summaries) {
     const when = new Date(s.ended_at).toISOString().slice(0, 10);
     const themes = s.themes && s.themes.length > 0 ? ` [themes: ${s.themes.join(', ')}]` : '';
