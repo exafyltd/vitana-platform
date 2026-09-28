@@ -134,10 +134,16 @@ export function evalOrbSessionLedger(h: {
   acks_failed_24h?: number;
   session_starts_24h?: number;
   acks_24h?: number;
+  state_writes_24h?: number;
 }): OpsCheck {
   if (h.table_exists === false) return { status: 'down', reason: 'orb_session_state_table_missing' };
   const failed = h.acks_failed_24h ?? 0;
-  const base = { session_starts_24h: h.session_starts_24h ?? null, acks_24h: h.acks_24h ?? null, acks_failed_24h: failed };
+  const starts = h.session_starts_24h ?? 0;
+  const writes = h.state_writes_24h ?? null;
+  const base = { session_starts_24h: h.session_starts_24h ?? null, state_writes_24h: writes, acks_24h: h.acks_24h ?? null, acks_failed_24h: failed };
+  // Same rule as ALERT-ORB-SESSION-STATE-HEALTH.yml: the state helpers fail
+  // silently, so real traffic with no writes is a failure on its own.
+  if (starts >= 5 && writes === 0) return { status: 'down', reason: 'no_state_writes', ...base };
   return failed > 0 ? { status: 'degraded', reason: 'failed_acks', ...base } : { status: 'ok', ...base };
 }
 

@@ -281,7 +281,10 @@ export const SCHEDULED_WORKFLOWS = [
 export function evalScheduledWorkflows(
   results: Array<{ workflow: string; conclusion: string | null; error?: string }>,
 ): RuntimeCheck {
-  const failing = results.filter((r) => r.error || r.conclusion === 'failure' || r.conclusion === 'timed_out');
+  // Anything but success/skipped/neutral is a run that did not do its job
+  // (failure, timed_out, cancelled, action_required, startup_failure, stale).
+  const OK = ['success', 'skipped', 'neutral'];
+  const failing = results.filter((r) => r.error || (r.conclusion !== null && !OK.includes(r.conclusion)));
   const detail = results.map((r) => ({ workflow: r.workflow, last: r.error ? 'unreadable' : r.conclusion ?? 'running' }));
   return failing.length === 0
     ? { status: 'ok', workflows: detail }
@@ -290,7 +293,12 @@ export function evalScheduledWorkflows(
 
 // ── Support ─────────────────────────────────────────────────────────────────
 
-export const OPEN_TICKET_STATUSES = ['new', 'interviewing', 'triaged', 'needs_more_info', 'spec_ready', 'answer_ready', 'in_progress'];
+// Every status in the feedback_tickets CHECK constraint except the terminal
+// ones (resolved, user_confirmed, duplicate, rejected, wont_fix).
+export const OPEN_TICKET_STATUSES = [
+  'new', 'interviewing', 'triaged', 'needs_more_info', 'spec_pending', 'spec_ready',
+  'answer_pending', 'answer_ready', 'approved', 'in_progress', 'reopened',
+];
 export function evalStuckTickets(rows: Array<{ created_at: string; status: string }>, now = Date.now()): RuntimeCheck {
   const stale = rows.filter((r) => ageMin(r.created_at, now) > 7 * 24 * 60);
   return stale.length === 0
@@ -487,8 +495,8 @@ export const RUNTIME_CHECKS: Record<string, Handler> = {
     const { data, error } = await sb()
       .from('feedback_tickets')
       .select('created_at,status')
+      // Status alone decides: a reopened ticket keeps its old resolved_at.
       .in('status', OPEN_TICKET_STATUSES)
-      .is('resolved_at', null)
       .limit(1000);
     if (error) throw new Error(`feedback_tickets: ${error.message}`);
     return evalStuckTickets((data ?? []) as Array<{ created_at: string; status: string }>);

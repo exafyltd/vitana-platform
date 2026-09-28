@@ -42,6 +42,7 @@ export interface DependencyHealth {
 const CACHE_MS = 60_000;
 const SCHEMA_CACHE_MS = 10 * 60_000;
 const TIMEOUT_MS = 3_000;
+const SCHEMA_TIMEOUT_MS = 3_000;
 
 const resultCache = new Map<string, { at: number; value: DependencyResult }>();
 let schemaCache: { at: number; rpcs: Set<string> } | null = null;
@@ -68,7 +69,8 @@ async function loadRpcNames(): Promise<Set<string>> {
   if (!url || !key) throw new Error('supabase_unconfigured');
   schemaInflight = (async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
+    // Below the summary's 5 s loopback deadline (SUMMARY_PROBE_TIMEOUT_MS).
+    const timer = setTimeout(() => controller.abort(), SCHEMA_TIMEOUT_MS);
     try {
       const res = await fetch(`${url}/rest/v1/`, {
         headers: { apikey: key, Authorization: `Bearer ${key}`, Accept: 'application/openapi+json' },

@@ -27990,7 +27990,6 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
     { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
     { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
-    { name: 'Memory Broker', url: '/api/v1/admin/memory/health', group: 'Data & Memory' },
     { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
     { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
     { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },

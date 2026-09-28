@@ -618,8 +618,13 @@ router.post(
 // separate endpoint would let the two drift. See buildCascadeHealthPayload
 // for why `effective` (not `enabled`) is the field to read.
 router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
+  const payload = buildNovaSonicHealthPayload(process.env);
   return res.json({
-    ...buildNovaSonicHealthPayload(process.env),
+    ...payload,
+    // VTID-04662: `ok` only says the route answered. The Service Health panel
+    // reads `status`, so it follows readiness: ready → ok, enabled but not
+    // ready → down, switched off on this stack → not_configured.
+    status: payload.ready ? 'ok' : payload.enabled ? 'down' : 'not_configured',
     cascade: buildCascadeHealthPayload(process.env),
   });
 });
