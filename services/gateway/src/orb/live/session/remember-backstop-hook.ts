@@ -36,6 +36,8 @@ export interface RememberBackstopSession {
   identity?: { user_id?: string | null; tenant_id?: string | null } | null;
   upstreamClient?: { sendTextTurn(text: string, turnComplete?: boolean): boolean } | null;
   rememberFactCalledThisTurn?: boolean;
+  /** VTID-04690: a remember_fact call this turn answered STATUS: already_known. */
+  rememberFactAlreadyKnownThisTurn?: boolean;
   openRememberConflicts?: OpenConflict[];
 }
 
@@ -67,8 +69,15 @@ export function maybeRunRememberBackstop(
 ): Promise<RememberFactToolResult[]> | null {
   const session = sessionIn as RememberBackstopSession;
   const toolCalled = session.rememberFactCalledThisTurn === true;
+  const toolAlreadyKnown = session.rememberFactAlreadyKnownThisTurn === true;
   session.rememberFactCalledThisTurn = false;
-  if (toolCalled) {
+  session.rememberFactAlreadyKnownThisTurn = false;
+  // VTID-04690: live B-CONF-03 — the member said "Paul hat am siebten Mai
+  // Geburtstag", Nova called remember_fact with the STORED "May 5", got
+  // already_known, and the new date was never saved or asked about. When the
+  // tool answered already_known, the member's own words are checked too.
+  const recheck = toolCalled && toolAlreadyKnown && Boolean(userText) && !userText.startsWith(REMEMBER_BACKSTOP_MARKER);
+  if (toolCalled && !recheck) {
     // The model handled it; any conflict the gateway asked about is now the tool's.
     session.openRememberConflicts = [];
     return null;
@@ -78,8 +87,8 @@ export function maybeRunRememberBackstop(
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
 
-  const openConflict = session.openRememberConflicts?.[0];
-  const isRequest = detectRememberIntent(userText);
+  const openConflict = recheck ? undefined : session.openRememberConflicts?.[0];
+  const isRequest = recheck || detectRememberIntent(userText);
   if (!openConflict && !isRequest) return null;
   // One try per asked conflict: the member's next turn answers it or moves on.
   if (openConflict) session.openRememberConflicts = session.openRememberConflicts!.slice(1);
@@ -97,9 +106,9 @@ export function maybeRunRememberBackstop(
       const conflicts = openConflictsFrom(results, abouts);
       if (conflicts.length) session.openRememberConflicts = [...(session.openRememberConflicts ?? []), ...conflicts];
     }
-    const note = buildRememberBackstopNote(results);
+    const note = buildRememberBackstopNote(results, recheck ? 'stored_value_echoed' : 'no_call');
     ctx.deps.emitDiag(session, 'remember_backstop', {
-      trigger: openConflict ? 'conflict_answer' : 'remember_request',
+      trigger: openConflict ? 'conflict_answer' : recheck ? 'stored_value_echoed' : 'remember_request',
       statuses: results.map((r) => `${r.fact_key}:${r.status}`),
       injected: Boolean(note && session.active),
     });

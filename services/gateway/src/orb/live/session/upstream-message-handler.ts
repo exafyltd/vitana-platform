@@ -1837,6 +1837,7 @@ export function handleTranscript(
       ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
       // VTID-04591: a new member utterance starts a new remember_fact window.
       (session as any).rememberFactCalledThisTurn = false;
+      (session as any).rememberFactAlreadyKnownThisTurn = false;
     }
     ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
     if (session.sseResponse) {
@@ -2102,6 +2103,11 @@ export function handleToolCall(
       .then((result) => {
         const toolElapsed = Date.now() - toolStartTime;
         console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
+        // VTID-04690: remember the already_known answer; turn_complete then
+        // checks whether the member's words actually carried the stored value.
+        if (toolName === 'remember_fact' && /^STATUS: already_known\b/.test(String(result.result || ''))) {
+          (session as any).rememberFactAlreadyKnownThisTurn = true;
+        }
 
         // VTID-LINK: push title+URL pairs from tool results to the client.
         if (result.success && result.result) {
