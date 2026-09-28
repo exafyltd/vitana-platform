@@ -839,12 +839,12 @@ a direct PostgREST request against the live project: `200 OK` with real
 
 ---
 
-### notification_type_controls / notification_type_control_audit / notification_type_blocks — NOT YET APPLIED (VTID-04674)
+### notification_type_controls / notification_type_control_audit / notification_type_blocks — APPLIED 2026-09-28 (VTID-04674)
 **Purpose:** the admin on/off switch per notification type (Admin › Notifications),
 applied to every notification. Migration:
 `supabase/migrations/20260926190000_vtid_04674_notification_type_controls.sql`,
-held until the owner approves the starting on/off list (the database is shared,
-so applying it takes effect in production immediately).
+applied live 2026-09-28 (`vtid_04674_notification_type_controls`) after the owner
+approved the starting on/off list in session.
 
 ```sql
 CREATE TABLE notification_type_controls (
@@ -1165,7 +1165,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
-| 2026-09-26 | VTID-04674, **file only — not yet applied** (owner approves the starting on/off list first): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). | Claude Code | VTID-04674 |
+| 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
 | 2026-09-25 | VTID-04561, **applied live** (`vtid_04561_one_role_truth`): the two role switchers now keep the two role tables in step. `set_role_preference()` (community app) also upserts `user_active_roles`; `me_set_active_role()` (Command Hub) also upserts `role_preferences` when the caller has a tenant. One-time backfill in both directions (5 of 6 users with rows disagreed before). Two `role_preferences` rows still differ from `user_active_roles` afterwards; both belong to a secondary tenant, and the ORB reads the role per tenant, so they are expected. Migration `20260925120000_vtid_04561_one_role_truth.sql`. | Claude Code | VTID-04561 |
 | 2026-09-24 | VTID-04494, **applied live**: `write_fact()` takes a per-key `pg_advisory_xact_lock` (tenant, user, entity, fact_key), compares against the newest current row and supersedes EVERY other current row (was `FOR UPDATE SKIP LOCKED` + one-row supersede, which let concurrent writers create duplicate current facts that never cleared). One-time repair: 80 duplicate current rows in 70 key groups marked superseded by the newest row; nothing deleted. Invariant: one `superseded_by IS NULL` row per (tenant_id, user_id, entity, fact_key). | Claude Code | VTID-04494 |

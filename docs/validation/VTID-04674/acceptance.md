@@ -59,7 +59,7 @@ AC-13: the migration applies cleanly twice (idempotent).
 AC-14: on staging, the new routes are mounted and refuse anonymous callers.
   CURL: docs/validation/VTID-04674/staging-tests.json (run by STAGING-VERIFY after the staging deploy)
 
-## Starting state (needs the owner's approval before the migration is applied)
+## Starting state — approved by the owner in session 2026-09-28, applied live the same day
 The database is shared by staging and production, so applying the migration
 takes effect in production immediately. The migration switches these ON for
 every tenant, because they are the types delivered to members in the 30 days
@@ -87,3 +87,20 @@ CURL_PROOF: before this change, staging `GET /api/v1/admin/tenants/0000…/notif
 
 ## OASIS
 OASIS_PROOF: every switch emits `notification.control.changed` (vtid VTID-04674, payload tenant_id/type/source_key/old_enabled/new_enabled/reason, actor id + email) — asserted in test/vtid-04674-notification-controls.test.ts ("switching on writes the row, the audit entry and the OASIS event"). The block counters are not OASIS events on purpose (a per-notification count is telemetry, CLAUDE.md §6).
+
+## Applied live 2026-09-28
+Migration `vtid_04674_notification_type_controls`, applied after the owner chose
+"Approve as proposed". It seeds the starting state before the guard is created,
+all in one transaction.
+
+Read-only check straight after applying:
+- 2 tenants; 26 rows, all ON (the 13 types × 2 tenants).
+- `trg_enforce_notification_type_controls` enabled.
+- `posts_reactions` and `tips_updates` present; `connections_social` has `new_follower`; `direct_messages` has `message_reaction`.
+- 0 blocks at apply time.
+
+Production still runs the previous gateway until the next PUBLISH. For a type
+that is switched off, the guard drops the row, but the old `notifyUser` still
+sends the push. Only types outside the approved list are affected, and every
+one of them was sent before this change anyway. The staging gateway enforces
+the full rule once this PR is merged.

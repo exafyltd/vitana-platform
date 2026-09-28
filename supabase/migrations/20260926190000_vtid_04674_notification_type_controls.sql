@@ -199,11 +199,6 @@ EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_enforce_notification_type_controls ON public.user_notifications;
-CREATE TRIGGER trg_enforce_notification_type_controls
-  BEFORE INSERT ON public.user_notifications
-  FOR EACH ROW EXECUTE FUNCTION public._notif_enforce_type_controls();
-
 -- ── Read models for the admin screen ─────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.notification_type_stats(p_tenant uuid, p_days integer DEFAULT 7)
@@ -283,7 +278,7 @@ GRANT EXECUTE ON FUNCTION public.notification_record_block(uuid, text, text, tex
 GRANT EXECUTE ON FUNCTION public.notification_type_stats(uuid, integer)            TO service_role;
 GRANT EXECUTE ON FUNCTION public.notification_daily_activity(uuid, integer)        TO service_role;
 
--- ── Starting state (owner-approved list) ─────────────────────────────────────
+-- ── Starting state — approved by the owner in session, 2026-09-28 ────────────
 -- ON: the types members actually received in the 30 days before this change,
 -- plus reminders the member set themselves (sent without a notification row,
 -- 65 fired in those 30 days). Everything else starts OFF — including every
@@ -329,3 +324,11 @@ UPDATE public.notification_categories
 UPDATE public.notification_categories
    SET mapped_types = mapped_types || '["message_reaction"]'::jsonb, updated_at = now()
  WHERE tenant_id IS NULL AND slug = 'direct_messages' AND NOT (mapped_types ? 'message_reaction');
+
+-- ── The guard goes live last ─────────────────────────────────────────────────
+-- After the starting state is seeded, so no send in between finds an approved
+-- type missing and registers it as off. (Applied live 2026-09-28 in this order.)
+DROP TRIGGER IF EXISTS trg_enforce_notification_type_controls ON public.user_notifications;
+CREATE TRIGGER trg_enforce_notification_type_controls
+  BEFORE INSERT ON public.user_notifications
+  FOR EACH ROW EXECUTE FUNCTION public._notif_enforce_type_controls();
