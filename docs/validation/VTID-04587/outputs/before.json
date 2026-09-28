@@ -1,0 +1,332 @@
+[
+  {
+    "scenario": "answer-during-playback-tail",
+    "note": "the reported bug: user answers while the reply is still playing",
+    "ok": false,
+    "expected": [
+      "thinking",
+      "speaking",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 27,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 192,
+        "orb": "thinking",
+        "status": "Alles klar, es geht los!"
+      },
+      {
+        "t": 1572,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 8173,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      },
+      {
+        "t": 10542,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 13058,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "answer-during-tail-no-tool",
+    "note": "same, without a tool call",
+    "ok": false,
+    "expected": [
+      "thinking",
+      "speaking",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 16,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 176,
+        "orb": "thinking",
+        "status": "Gib mir einen kleinen Moment…"
+      },
+      {
+        "t": 1546,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 6175,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      },
+      {
+        "t": 9336,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 11657,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "greeting-then-silence",
+    "note": "normal: after a reply with no user input the orb listens",
+    "ok": true,
+    "expected": [
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 15,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 172,
+        "orb": "thinking",
+        "status": "Alles klar, es geht los!"
+      },
+      {
+        "t": 1545,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 4649,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "question-after-reply-finished",
+    "note": "normal: user asks once Vitana has finished speaking",
+    "ok": true,
+    "expected": [
+      "thinking",
+      "speaking",
+      "listening",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 17,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 181,
+        "orb": "thinking",
+        "status": "Ich will sichergehen, dass es passt…"
+      },
+      {
+        "t": 1553,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 4175,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      },
+      {
+        "t": 6858,
+        "orb": "thinking",
+        "status": "Alles klar, einen Moment…"
+      },
+      {
+        "t": 10530,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 11743,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "barge-in",
+    "note": "user interrupts mid-reply",
+    "ok": true,
+    "expected": [
+      "thinking",
+      "speaking",
+      "listening",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening",
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 16,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 176,
+        "orb": "thinking",
+        "status": "Ich füg alles zusammen…"
+      },
+      {
+        "t": 1539,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 4260,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      },
+      {
+        "t": 4629,
+        "orb": "thinking",
+        "status": "Fast geschafft…"
+      },
+      {
+        "t": 8039,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 9567,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "silent-turn-after-tail-input",
+    "note": "user spoke during the tail, the model closed the turn without speaking",
+    "ok": true,
+    "expected": [
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 17,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 176,
+        "orb": "thinking",
+        "status": "Kurz einen Moment…"
+      },
+      {
+        "t": 1548,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 6176,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  },
+  {
+    "scenario": "no-answer-fallback",
+    "note": "thinking shown, no answer ever arrives: falls back to listening after 15 s",
+    "ok": false,
+    "expected": [
+      "thinking",
+      "speaking",
+      "thinking",
+      "listening"
+    ],
+    "observed": [
+      "thinking",
+      "speaking",
+      "listening"
+    ],
+    "timeline": [
+      {
+        "t": 16,
+        "orb": "connecting",
+        "status": "Verbinden..."
+      },
+      {
+        "t": 173,
+        "orb": "thinking",
+        "status": "Gleich fertig ✨"
+      },
+      {
+        "t": 1548,
+        "orb": "speaking",
+        "status": "Vitana spricht..."
+      },
+      {
+        "t": 6137,
+        "orb": "listening",
+        "status": "Ich höre zu..."
+      }
+    ]
+  }
+]

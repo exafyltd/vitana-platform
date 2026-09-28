@@ -299,6 +299,48 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     expect(session.outputTranscriptBuffer).toBe('Ich helfe dir gern.');
   });
 
+  // VTID-04571: live member session live-03af48b7 (staging, 2026-09-25).
+  it('a FINAL block arriving after turnComplete does not seed the next turn', () => {
+    const { session, client } = makeContext();
+    const greeting = 'Ich sehe, dass du gerade zurückgekommen bist. Lass uns weitermachen.';
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    // Nova delivers the same turn's FINAL block after END_TURN.
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('');
+    // The next reply starts clean and is NOT treated as a duplicate.
+    client.emitTranscript({ direction: 'output', text: 'Der Geburtstag deiner Frau ist der 4. November.', isFinal: false, generationStage: 'SPECULATIVE' });
+    expect(session.outputTranscriptBuffer).toBe('Der Geburtstag deiner Frau ist der 4. November.');
+    expect(session.suppressCurrentTurnAudio).not.toBe(true);
+  });
+
+  it('a genuine repeat of the previous reply is still caught after a late FINAL', () => {
+    const { session, client } = makeContext();
+    const greeting = 'Ich sehe, dass du gerade zurückgekommen bist. Lass uns weitermachen.';
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: true, generationStage: 'FINAL' });
+    client.emitTranscript({ direction: 'output', text: greeting, isFinal: false, generationStage: 'SPECULATIVE' });
+    expect(session.suppressCurrentTurnAudio).toBe(true);
+  });
+
+  it('a FINAL within an open turn still replaces the speculative text', () => {
+    const { session, client } = makeContext();
+    client.emitTranscript({ direction: 'output', text: 'Erste Antwort hier.', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTurnComplete({});
+    client.emitTranscript({ direction: 'output', text: 'Zweite ', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitTranscript({ direction: 'output', text: 'Zweite Antwort.', isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('Zweite Antwort.');
+  });
+
+  it('a FINAL arriving after an interruption is dropped', () => {
+    const { session, client } = makeContext();
+    client.emitTranscript({ direction: 'output', text: 'Ich erzähle dir', isFinal: false, generationStage: 'SPECULATIVE' });
+    client.emitInterrupted({});
+    client.emitTranscript({ direction: 'output', text: 'Ich erzähle dir etwas.', isFinal: true, generationStage: 'FINAL' });
+    expect(session.outputTranscriptBuffer).toBe('');
+  });
+
   it('turn complete flushes buffers, bumps counters, notifies onTurnComplete', () => {
     const { session, client, callbacks, deps } = makeContext();
     session.inputTranscriptBuffer = 'wie geht es dir';
@@ -320,6 +362,50 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     expect(client.closeReasons).toEqual(['persona_swap']);
     expect(session.activePersona).toBe('devon');
     expect(session._personaSwapInFlight).toBe(true);
+  });
+
+  // VTID-04549 (ORB latency G): Devon pre-connect hand-over.
+  it('persona swap: a takeOverPersonaSwap that declines leaves today\'s close path unchanged', () => {
+    const takeOverPersonaSwap = jest.fn().mockReturnValue(false);
+    const { session, client } = makeContext({ deps: { takeOverPersonaSwap } });
+    session.pendingPersonaSwap = 'devon';
+    client.emitTurnComplete({});
+    expect(takeOverPersonaSwap).toHaveBeenCalledWith(session, 'devon');
+    expect(client.closeReasons).toEqual(['persona_swap']);
+    expect(session.activePersona).toBe('devon');
+    expect(session.pendingPersonaSwap).toBeNull();
+    expect(session._personaSwapInFlight).toBe(true);
+  });
+
+  it('persona swap: a takeOverPersonaSwap that takes over replaces the close, same session state', () => {
+    let seen: any = null;
+    const takeOverPersonaSwap = jest.fn((s: any) => {
+      // the swap state is already set, exactly as today, when it is called
+      seen = { active: s.activePersona, pending: s.pendingPersonaSwap, inFlight: s._personaSwapInFlight };
+      return true;
+    });
+    const { session, client, callbacks } = makeContext({ deps: { takeOverPersonaSwap } });
+    session.pendingPersonaSwap = 'devon';
+    client.emitTurnComplete({});
+    expect(seen).toEqual({ active: 'devon', pending: null, inFlight: true });
+    expect(client.closeReasons).toEqual([]);
+    expect(session.turn_count).toBe(1);
+    expect(callbacks.onTurnComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('a delivered tool result asks the pre-connect hook whether a swap was queued', async () => {
+    const onPersonaSwapMaybeQueued = jest.fn();
+    const executeLiveApiTool = jest.fn(async (s: any) => {
+      s.pendingPersonaSwap = 'devon';
+      return { success: true, result: 'STATUS: handoff_created.' };
+    });
+    const { session, client } = makeContext({ deps: { onPersonaSwapMaybeQueued, executeLiveApiTool } });
+    session.lang = 'de';
+    client.emitToolCall({ calls: [{ id: 't1', name: 'get_current_screen', args: {} }] });
+    await flushPromises();
+    expect(client.sentToolResults).toHaveLength(1);
+    expect(onPersonaSwapMaybeQueued).toHaveBeenCalledWith(session);
+    expect(onPersonaSwapMaybeQueued.mock.calls[0][0].pendingPersonaSwap).toBe('devon');
   });
 
   it('pending navigation dispatches an orb_directive at turn complete', () => {

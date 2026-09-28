@@ -1,8 +1,8 @@
 /**
  * VTID-03164 — New-day-return continuation provider (Slice 1).
  *
- * Fires the FIRST orb session of a new calendar day in the user's local
- * timezone. Wins priority 90 — above Teacher (85) and voice-wake-brief
+ * Fires the FIRST orb session of a new day in the user's local timezone. A
+ * day starts at 05:00 local (VTID-04595), never between 00:00 and 04:59. Wins priority 90 — above Teacher (85) and voice-wake-brief
  * (80). When this provider returns a candidate, Teacher and wake-brief
  * lose the ranker and Vitana opens with a warm "good {morning/afternoon/
  * evening}" greeting rather than a Teacher capability-introduction jump.
@@ -122,6 +122,36 @@ export function localHourInTimezone(now: Date, timezone: string | null): number 
     }
   }
   return now.getUTCHours();
+}
+
+/**
+ * VTID-04595 — a Vitana day starts at 05:00 local, not at midnight (owner
+ * rule 2026-09-26: "New day greeting is always after 5am. So if user has a
+ * break of 5 hours within the same day, no new day greeting.").
+ *
+ * With a midnight boundary a late-night conversation (00:39) was stamped with
+ * the NEW calendar date, so the member's real first conversation of the
+ * morning counted as a same-day repeat and got no morning greeting.
+ */
+export const NEW_DAY_START_HOUR = 5;
+
+/** Local hour that still belongs to the previous Vitana day (00:00–04:59). */
+export function isBeforeNewDayStart(localHour: number): boolean {
+  return Number.isInteger(localHour) && localHour >= 0 && localHour < NEW_DAY_START_HOUR;
+}
+
+/**
+ * The Vitana day (YYYY-MM-DD) `now` belongs to in the user's timezone: the
+ * local calendar date from 05:00 on, the previous date between 00:00 and
+ * 04:59. Used for every "is this a new day?" comparison and for the
+ * `last_session_date` stamp, so both sides of the comparison agree.
+ */
+export function logicalDayInTimezone(now: Date, timezone: string | null | undefined): string {
+  const calendarDay = todayInTimezone(now, timezone ?? null);
+  if (!isBeforeNewDayStart(localHourInTimezone(now, timezone ?? null))) return calendarDay;
+  const [y, m, d] = calendarDay.split('-').map((s) => parseInt(s, 10));
+  const prev = new Date(Date.UTC(y, m - 1, d) - 86_400_000);
+  return prev.toISOString().slice(0, 10);
 }
 
 export type SalutationKind = 'morning' | 'afternoon' | 'evening';
@@ -500,6 +530,19 @@ export function makeNewDayReturnProvider(
       }
 
       const nowDate = new Date(now());
+
+      // VTID-04595 — the new Vitana day starts at 05:00 local. Between
+      // 00:00 and 04:59 the member is still in the previous day: no new-day
+      // greeting, and no stamp that would swallow the real morning one.
+      // From 05:00 on the calendar date below IS the Vitana day.
+      if (isBeforeNewDayStart(localHourInTimezone(nowDate, inputs.timezone))) {
+        return {
+          providerKey: NEW_DAY_RETURN_PROVIDER_KEY,
+          status: 'suppressed',
+          latencyMs: Math.max(0, now() - t0),
+          reason: 'before_new_day_start',
+        };
+      }
       const todayIso = todayInTimezone(nowDate, inputs.timezone);
 
       // Same-day repeat: suppress. Lets voice-wake-brief / Teacher take

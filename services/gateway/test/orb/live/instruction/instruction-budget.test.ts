@@ -204,7 +204,10 @@ describe('enforceInstructionBudget — byte accounting + immutability', () => {
     const over = enforceInstructionBudget([
       { kind: 'bootstrap', text: rep('B', 40_000) },
     ]);
-    expect(over.trimmedSections).toEqual(['bootstrap']);
+    // VTID-04534: shrunk to fit, not dropped.
+    expect(over.trimmedSections).toEqual([]);
+    expect(over.shortenedSections).toEqual(['bootstrap']);
+    expect(over.totalBytesAfter).toBeLessThanOrEqual(30_720);
   });
 });
 
@@ -350,14 +353,14 @@ describe('decomposeInstructionSections + enforceInstructionBudget — R0 end-to-
     expect(byteLength(reassemble(sections))).toBeGreaterThan(budget); // genuinely over
 
     const result = enforceInstructionBudget(sections, budget);
-    // Bootstrap is dropped first and that brings the assembly under budget.
-    expect(result.trimmedSections).toEqual(['bootstrap']);
+    // VTID-04534: the bootstrap is shrunk first (or dropped when even its
+    // floor does not fit); either way the assembly ends under budget.
     expect(result.totalBytesAfter).toBeLessThanOrEqual(budget);
+    expect([...result.trimmedSections, ...result.shortenedSections]).toContain('bootstrap');
     // Preserved scaffold + the turn-1 wake-brief override survive verbatim.
     expect(result.text).toContain(M.WAKE_BRIEF_OVERRIDE);
     expect(result.text).toContain(M.NAVIGATOR_PREFIX);
     expect(result.text).toContain('=== AUTHORITATIVE USER ROLE ===');
-    expect(result.text).toContain(SECTION_TRIM_SENTINEL('bootstrap'));
     // The heavy bootstrap body is gone.
     expect(result.text).not.toContain(rep('b', 20_000));
   });

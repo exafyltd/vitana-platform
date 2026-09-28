@@ -14,6 +14,8 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   // /nova/decision mounts optionalAuth at router load — without this the
   // mocked module hands Express `undefined` and the whole suite fails to run.
   optionalAuth: jest.fn((req, res, next) => next()),
+  // VTID-04626: the voice self-healing actions are exafy_admin only.
+  requireExafyAdmin: jest.fn((req, res, next) => next()),
 }));
 
 import voiceLabRouter from '../../src/routes/voice-lab';

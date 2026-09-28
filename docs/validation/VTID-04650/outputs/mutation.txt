@@ -1,0 +1,1 @@
+Mutation: ranker retired-template drop replaced with 'if (false)' -> 1 failed, 9 passed (the ranker test catches it). Restored.

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const COMMUNITY_URL = process.env.COMMUNITY_URL || 'https://vitanaland.com';
+// VTID-04613: staging by default — never test against production (vitana-v1 CLAUDE.md).
+const COMMUNITY_URL = process.env.COMMUNITY_URL || 'https://preview-aws.vitanaland.com';
 const HUB_URL = process.env.HUB_URL || 'https://preview-aws-gateway.vitanaland.com';
 
 /** Roles that use the Lovable frontend (Desktop + Mobile) */

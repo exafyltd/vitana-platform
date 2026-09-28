@@ -247,17 +247,16 @@ export const DEV_ROUTES: string[] = [
 ];
 
 // ─── Legacy redirect map (old path → expected new path) ─────────────────────
+// The FINAL target: several routes redirect in a chain (e.g. /admin/users →
+// /admin/members/directory, /login → '/'), checked against vitana-v1 App.tsx.
 
 export const REDIRECT_MAP: Record<string, string> = {
-  // Auth
-  '/login': '/auth',
-  '/register': '/auth',
   // Dashboard → Home
   '/dashboard': '/home',
-  '/dashboard/context': '/home/context',
-  '/dashboard/actions': '/home/actions',
-  '/dashboard/matches': '/home/matches',
-  '/dashboard/aifeed': '/home/aifeed',
+  '/dashboard/context': '/home',
+  '/dashboard/actions': '/home',
+  '/dashboard/matches': '/home',
+  '/dashboard/aifeed': '/home',
   // Health legacy
   '/health/biomarker-results': '/health/my-biology',
   // Community legacy → /comm
@@ -282,11 +281,11 @@ export const REDIRECT_MAP: Record<string, string> = {
   '/profile': '/me/profile',
   // Admin legacy
   '/admin': '/admin/dashboard',
-  '/admin/user-management': '/admin/users',
-  '/admin/user-management/staff': '/admin/users/roles',
+  '/admin/user-management': '/admin/members/directory',
+  '/admin/user-management/staff': '/admin/members/roles',
   '/admin/user-management/audit': '/admin/audit/users',
   '/admin/tenant-management': '/admin/system/tenants',
-  '/admin/system-health': '/admin/dashboard/health',
+  '/admin/system-health': '/admin/health',
   '/admin/monitoring/reports': '/admin/audit',
   '/admin/monitoring/notifications': '/admin/notifications',
   '/admin/monitoring/apis': '/admin/audit/apis',
@@ -297,11 +296,18 @@ export const REDIRECT_MAP: Record<string, string> = {
   '/admin/bootstrap': '/admin/system/bootstrap',
 };
 
+// /login and /register send a signed-out visitor to the portal selector '/'.
+// Tested signed out: a signed-in user is routed on from '/' to their home.
+export const SIGNED_OUT_REDIRECT_MAP: Record<string, string> = {
+  '/login': '/',
+  '/register': '/',
+};
+
 // ─── Routes that require auth guard redirect testing ────────────────────────
 // A subset of critical protected routes to test unauthenticated access
+// Not /discover: it is a public browse surface (AuthGuard allowGuest, App.tsx).
 export const AUTH_GUARD_TEST_ROUTES: string[] = [
   '/home',
-  '/discover',
   '/health',
   '/comm',
   '/inbox',

@@ -61,7 +61,10 @@ describe('L-02: Bedrock client factory memoization', () => {
     // unaffected by that unrelated branch.
     // VTID-03848 added the work-surface prewarm gate in the same gap; widened
     // again for the same reason as above (the invariant is unaffected).
-    const window = src.slice(novaBranch, novaBranch + 9000);
+    // VTID-04542/04549/04554 (latency plan) added the prewarm-outcome diag,
+    // the persona pre-connect claim and the full-context prewarm claim in the
+    // same gap; widened again, invariant unaffected.
+    const window = src.slice(novaBranch, novaBranch + 14000);
 
     const prewarmAt = window.indexOf('prewarmNovaSonicBedrock(novaCfg)');
     const envelopeAt = window.indexOf('await buildOrbVertexSetupEnvelope()');

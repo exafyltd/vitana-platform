@@ -88,7 +88,7 @@ export async function runOperatorDelegate(
   args: Record<string, unknown>,
   deps: { runTurn?: RunTurn; waitMs?: number } = {},
 ): Promise<DelegateResult> {
-  if (resolveOrbSurface({ currentRoute: session.current_route ?? null }) !== 'command-hub') {
+  if (((session as any).assistantProfile ? (session as any).assistantProfile.surface : resolveOrbSurface({ currentRoute: session.current_route ?? null })) !== 'command-hub') {
     return { success: false, result: '', error: 'operator_delegate is only available in the Command Hub' };
   }
   const identity = session.identity;

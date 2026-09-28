@@ -119,7 +119,7 @@ describe('VTID-04007 triggerOperatorExecution open-ended path', () => {
     expect(ledger.body).toMatchObject({ spec_status: 'approved', title: expect.stringMatching(/^Operator: The CI failure reason/), metadata: expect.objectContaining({ intake: 'open_ended' }) });
     // execution row: agent executor pinned even though the env var is unset
     const execPatch = patches.find((p) => p.path.includes('dev_autopilot_executions?id=eq.exec-open-1'))!;
-    expect(execPatch.body.metadata).toMatchObject({ executor: 'agent', intake: 'open_ended', llm_on_ramp_override: { provider: 'deepseek', model: 'deepseek-flash' } });
+    expect(execPatch.body.metadata).toMatchObject({ executor: 'agent', intake: 'open_ended', llm_on_ramp_override: { provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' } });
     expect(mockedApprove).toHaveBeenCalledWith({ finding_id: 'finding-1', interactive: true });
     const evt = (emitOasisEvent as jest.Mock).mock.calls.find((c) => c[0].type === 'operator.execution_onramp.triggered')![0];
     expect(evt.vtid).toBe('VTID-04100');

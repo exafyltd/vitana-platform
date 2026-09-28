@@ -32,6 +32,8 @@
  *      changes.
  */
 
+import { shouldEndConversationAfterTurn } from './end-conversation-intent';
+import { maybeRunNavigateBackstop, noteNavigateToolCall } from './navigate-backstop-hook';
 import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
 import WebSocket from 'ws';
@@ -64,6 +66,8 @@ import {
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
+import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop } from './remember-backstop-hook';
+import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -74,10 +78,10 @@ import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
 import * as repo from './upstream-message-handler-repository';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
-import { notifyUserAsync } from '../../../services/notification-service';
 import { supportsInProcessPersonaSwap, buildInProcessPersonaSwap } from './in-process-persona-swap';
 // VTID-04427 (WS-3.2): the live advisor — inert unless the advisor stage is approved and flagged on.
 import { triggerLiveAdvisor } from './live-advisor-hook';
+import { notePersonaSwapDrained } from '../persona-swap-latency';
 import {
   detectBackendDataLeak,
   effectiveToolCallLimit,
@@ -105,6 +109,20 @@ import {
  */
 export function isNovaProvider(session: GeminiLiveSession): boolean {
   return (session as any).upstreamProvider === 'nova_sonic';
+}
+
+/**
+ * VTID-04609: the conversation was closed after Vitana's farewell was spoken
+ * (end_conversation tool, or a turn_complete backstop). Anything the model
+ * generates after that is a repeat: Gemini Live answers the tool result by
+ * saying the farewell again ("…prijatan dan!Razumem. Nema problema…",
+ * session live-a7b3a904, 2026-09-26). Drop that audio and transcript so it is
+ * neither heard nor stored in the inbox. When the model called the tool
+ * before saying anything, the flag stays false and its farewell still plays.
+ */
+export function isPostFarewellOutput(session: GeminiLiveSession): boolean {
+  return (session as any).endConversationDirectiveSent === true
+    && (session as any).farewellSpokenBeforeClose === true;
 }
 
 /**
@@ -158,47 +176,6 @@ export async function bridgeVoiceTranscript(
 }
 
 /**
- * VTID-03520: fire the same push+inapp notification
- * chat.ts's /send route has always fired for a Vitana reply to a human
- * (type `new_chat_message`) — voice-bridged turns never did. Without this,
- * `bridgeVoiceTranscript()`'s insert lands in `chat_messages` immediately,
- * but nothing tells the client a new message exists: the frontend's
- * Realtime subscription only mirrors while the Messages screen is mounted
- * and React Query's `staleTime` otherwise leaves it looking current, so the
- * message is only discovered whenever the user next happens to reopen the
- * Messenger — anywhere from minutes to 24h+ later (reported live). Only
- * call this for the Vitana→user leg (the user doesn't need a push about
- * their own transcribed speech), and only once `wroteToChatMessages` is
- * true — no point notifying about a row that was never written.
- */
-export function notifyOrbVoiceBridgeWrite(
-  wroteToChatMessages: boolean,
-  bridgeUserId: string,
-  bridgeTenantId: string,
-  assistantText: string,
-  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
-): void {
-  if (!wroteToChatMessages) return;
-  notifyUserAsync(
-    bridgeUserId,
-    bridgeTenantId,
-    'new_chat_message',
-    {
-      title: 'Vitana',
-      body: assistantText.length > 100 ? assistantText.slice(0, 97) + '...' : assistantText,
-      data: {
-        type: 'new_chat_message',
-        sender_id: VITANA_BOT_USER_ID,
-        sender_name: 'Vitana',
-        thread_id: VITANA_BOT_USER_ID,
-        url: `/inbox/u/${VITANA_BOT_USER_ID}`,
-      },
-    },
-    bridgeSupabase,
-  );
-}
-
-/**
  * orb-live.ts-local helpers the handler body invokes. Future slices may
  * lift these out individually; until then, the deps-bag is the seam.
  */
@@ -246,6 +223,17 @@ export interface UpstreamMessageHandlerDeps {
     timeoutMs: number,
     reason: string,
   ) => void;
+  // VTID-04549 (ORB latency G): Devon pre-connect. Both optional — only the
+  // Nova connect path supplies them, and both are no-ops unless
+  // ORB_DEVON_PRECONNECT_ENABLED=true.
+  /** A tool result was delivered; start pre-connecting a queued specialist. */
+  onPersonaSwapMaybeQueued?: (session: GeminiLiveSession) => void;
+  /**
+   * Turn complete with a queued swap: hand the session over to the
+   * pre-connected stream. Returns false when there is none usable — the
+   * caller then closes the upstream exactly as before.
+   */
+  takeOverPersonaSwap?: (session: GeminiLiveSession, persona: string) => boolean;
 }
 
 /**
@@ -422,6 +410,7 @@ export function createUpstreamLiveMessageHandler(
             // user-facing WS/SSE stays connected through the swap.
             const pendingSwap = (session as any).pendingPersonaSwap;
             if (pendingSwap && session.upstreamWs && session.active) {
+              notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
               (session as any).activePersona = pendingSwap;
               (session as any).pendingPersonaSwap = null;
               // Set unambiguous flag so close + reconnect handlers know this
@@ -1008,7 +997,9 @@ export function createUpstreamLiveMessageHandler(
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
-                // Pre-set read_at since user already heard this during the voice session
+                // Pre-set read_at since user already heard this during the voice session.
+                // VTID-04601: no push/in-app notification — the user is in the live
+                // conversation and just heard this. Matches handleTurnComplete().
                 if (chatBridgeAssistantText.length > 0) {
                   void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
@@ -1019,9 +1010,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }, 'vitana_to_user', session.sessionId).then((written) => {
-                    notifyOrbVoiceBridgeWrite(written, bridgeUserId, bridgeTenantId, chatBridgeAssistantText, bridgeSupabase);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
@@ -1271,7 +1260,7 @@ export function createUpstreamLiveMessageHandler(
                 // are dropped. The first ~30-60 chars before detection
                 // still reach the user — better than nothing-suppressed.
                 // The model continues generating; we just stop forwarding.
-                if ((session as any).suppressCurrentTurnAudio === true) {
+                if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
                   (session as any).currentTurnAudioChunksDropped =
                     ((session as any).currentTurnAudioChunksDropped || 0) + 1;
                   // Log every 25th dropped chunk so we don't spam the log
@@ -1389,6 +1378,8 @@ export function createUpstreamLiveMessageHandler(
             // the post-nav model response even though the user never heard it.
             if (session.navigationDispatched) {
               console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
+            } else if (isPostFarewellOutput(session)) {
+              // VTID-04609: repeat of the farewell after the close — not stored.
             } else {
               console.log(`[VTID-01219] Output transcription: ${outputTranscription}`);
               if (session.sseResponse) {
@@ -1483,6 +1474,7 @@ export function createUpstreamLiveMessageHandler(
           } else {
             for (const fc of functionCalls) {
             const toolName = fc.name;
+            noteNavigateToolCall(session, toolName);
             const toolArgs = fc.args || {};
             const callId = fc.id || randomUUID();
 
@@ -1705,6 +1697,8 @@ export function handleInterrupted(
   console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
   session.isModelSpeaking = false;
   session.outputTranscriptBuffer = '';
+  // VTID-04571: a FINAL block still in flight belongs to the cut-off turn.
+  (session as any).outputTurnClosed = true;
   session.pendingEventLinks = [];
   if (session.sseResponse) {
     writeSseEvent(session.sseResponse, { type: 'interrupted' });
@@ -1798,7 +1792,7 @@ export function handleAudioOutput(
       });
     }
   }
-  if ((session as any).suppressCurrentTurnAudio === true) {
+  if ((session as any).suppressCurrentTurnAudio === true || isPostFarewellOutput(session)) {
     (session as any).currentTurnAudioChunksDropped =
       ((session as any).currentTurnAudioChunksDropped || 0) + 1;
     if ((session as any).currentTurnAudioChunksDropped % 25 === 1) {
@@ -1827,6 +1821,9 @@ export function handleTranscript(
 
   if (event.direction === 'input') {
     const inputTranscription = event.text;
+    // VTID-04591: the gateway's memory-check note, echoed back as USER text,
+    // is not member speech — never buffered, shown or stored.
+    if (inputTranscription.trimStart().startsWith(REMEMBER_BACKSTOP_MARKER)) return;
     const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
       (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
     if (isGreetingPrompt) {
@@ -1838,6 +1835,8 @@ export function handleTranscript(
     session.transportHasShownLife = true;
     if (!session.inputTranscriptBuffer) {
       ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
+      // VTID-04591: a new member utterance starts a new remember_fact window.
+      (session as any).rememberFactCalledThisTurn = false;
     }
     ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
     if (session.sseResponse) {
@@ -1896,14 +1895,29 @@ export function handleTranscript(
     console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
     return;
   }
+  // VTID-04609: repeat of the farewell after the close — not stored.
+  if (isPostFarewellOutput(session)) return;
 
   // Nova staged generation: FINAL replaces the accumulated speculative
   // buffer (the committed transcript — persist exactly once, never both
   // copies). SPECULATIVE and Vertex-style deltas accumulate + forward.
+  //
+  // VTID-04571: Nova closes the turn on the SPECULATIVE block's END_TURN, so
+  // the FINAL block of that same turn usually arrives AFTER turnComplete.
+  // Written into the buffer then, it became the opening text of the NEXT
+  // turn: the next reply's prefix equalled the previous reply, the
+  // VTID-03143 duplicate check fired, and the real answer was muted (member
+  // session live-03af48b7, 2026-09-25: the spouse's birthday answer, 158
+  // chunks dropped, widget went back to listening). A FINAL for a turn that
+  // is already closed has nothing left to replace — drop it.
   if (event.generationStage === 'FINAL') {
+    if ((session as any).outputTurnClosed === true) {
+      return;
+    }
     session.outputTranscriptBuffer = outputTranscription;
     return;
   }
+  (session as any).outputTurnClosed = false;
 
   if (session.sseResponse) {
     writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
@@ -1968,6 +1982,9 @@ export function handleToolCall(
 ): void {
   const { session } = ctx;
   const toolNames = event.calls.map((c) => c.name);
+  // VTID-04591: the member's remember request was handled by the tool — the
+  // turn_complete backstop stands down for this turn.
+  if (toolNames.includes('remember_fact')) (session as any).rememberFactCalledThisTurn = true;
   session.consecutiveToolCalls++;
   console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}): ${toolNames.join(',')}`);
   ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
@@ -2064,6 +2081,7 @@ export function handleToolCall(
 
   for (const fc of event.calls) {
     const toolName = fc.name;
+    noteNavigateToolCall(session, toolName);
     const toolArgs = fc.args || {};
     const callId = fc.id || randomUUID();
 
@@ -2147,6 +2165,9 @@ export function handleToolCall(
         if (sent) {
           recordPendingToolResult(session, toolName, modelFacingResult.result ?? '');
         }
+        // VTID-04549: a hand-off tool may just have queued a specialist swap —
+        // open the specialist's stream now, while the bridge is spoken.
+        ctx.deps.onPersonaSwapMaybeQueued?.(session);
 
         emitOasisEvent({
           vtid: 'VTID-01224',
@@ -2285,6 +2306,7 @@ export function handleTurnComplete(
   if (pendingSwap && session.active && supportsInProcessPersonaSwap(ctx.client)) {
     // VTID-04336: the cascade has no upstream stream to reconnect — swap the
     // persona in process (prompt + TTS voice role) on the same client.
+    notePersonaSwapDrained(session, 'in_process'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     const applied = ctx.client.applyPersona(buildInProcessPersonaSwap(session as any, pendingSwap));
@@ -2299,15 +2321,26 @@ export function handleTurnComplete(
       restored_base_instruction: applied.restoredBaseInstruction,
     });
   } else if (pendingSwap && session.active) {
+    notePersonaSwapDrained(session, 'reconnect'); // VTID-04542 hand-off timing
     (session as any).activePersona = pendingSwap;
     (session as any).pendingPersonaSwap = null;
     (session as any)._personaSwapInFlight = true;
-    console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
-    void ctx.client.close('persona_swap').catch((_e) => {
-      console.warn('[VTID-02047] persona swap close failed:', _e);
-    });
+    // VTID-04549: with a pre-connected specialist stream the route switches
+    // onto it and retires this one; otherwise (and always with the flag off)
+    // the close below runs exactly as before.
+    if (ctx.deps.takeOverPersonaSwap?.(session, pendingSwap) === true) {
+      console.log(`[VTID-04549] turn_complete fired with pending persona swap → switching to pre-connected ${pendingSwap}`);
+    } else {
+      console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
+      void ctx.client.close('persona_swap').catch((_e) => {
+        console.warn('[VTID-02047] persona swap close failed:', _e);
+      });
+    }
   }
 
+  // VTID-04644: read before turn_count moves — the per-turn marker stops
+  // matching the moment it does.
+  const navigatedDuringTurn = navigationDispatchedThisTurn(session);
   session.turn_count++;
   session.consecutiveModelTurns++;
   const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
@@ -2427,6 +2460,36 @@ export function handleTurnComplete(
     ) {
       (session as any).stillHereEndDispatched = true;
       ctx.deps.dispatchEndConversationDirective(session, 'still_here_complaint_detected');
+    }
+
+    // VTID-04592: the member asked to stop and Vitana's reply this turn agreed
+    // ("Ich beende jetzt das Gespräch"), but no end_conversation tool call came
+    // — measured live on production, 9 stop requests in one session, 0 calls.
+    // Close the same way the tool would; see end-conversation-intent.ts.
+    if (
+      session.active &&
+      !(session as any).stillHereEndDispatched &&
+      shouldEndConversationAfterTurn(userText, session.outputTranscriptBuffer || '')
+    ) {
+      (session as any).stillHereEndDispatched = true;
+      ctx.deps.dispatchEndConversationDirective(session, 'stop_request_acknowledged');
+    }
+
+    // VTID-04591: a remember request the model answered without calling
+    // remember_fact is run by the gateway, and the model is told the result.
+    maybeRunRememberBackstop(ctx, session, userText);
+
+    // VTID-04619: Vitana said she is opening a page but never called navigate
+    // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no
+    // tool call, the repeats muted as duplicates). The gateway navigates.
+    const announcedNavigation = maybeRunNavigateBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+
+    // VTID-04644: the member plainly asked to open or see a screen ("show me
+    // the screen where I can make a post") and the model opened nothing.
+    // Only when the VTID-04619 backstop above did not take the turn, so the
+    // two can never both navigate.
+    if (!announcedNavigation) {
+      maybeRunExplicitOpenBackstop(ctx.deps, session, userText, navigatedDuringTurn);
     }
 
     // VTID-01953 identity-mutation intent intercept.
@@ -2691,6 +2754,9 @@ export function handleTurnComplete(
 
     session.outputTranscriptBuffer = '';
   }
+  // VTID-04571: this turn's output is committed. A late FINAL block for it
+  // must not seed the next turn's buffer (see handleTranscript).
+  (session as any).outputTurnClosed = true;
 
   // VTID-CHAT-BRIDGE: voice transcripts → chat_messages (fire-and-forget).
   // VTID-04309: Command Hub voice → Operator Console thread instead.

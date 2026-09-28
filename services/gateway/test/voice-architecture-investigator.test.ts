@@ -29,6 +29,12 @@ jest.mock('google-auth-library', () => ({
   GoogleAuth: class {},
 }));
 
+// VTID-04626: the investigator calls the `triage` routing stage. These
+// evidence-gathering tests exercise the "model gave nothing usable" path.
+jest.mock('../src/services/llm-router', () => ({
+  callViaRouter: jest.fn(async () => ({ ok: false, error: 'mocked: no model in unit tests' })),
+}));
+
 // Re-import after mocks
 import {
   spawnInvestigator,

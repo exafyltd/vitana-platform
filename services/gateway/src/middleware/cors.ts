@@ -82,6 +82,11 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // Only apply SSE headers to actual GET /stream endpoints, NOT POST /stream/send or /stream/end-turn.
   // The old check (path.includes("/stream")) incorrectly matched /live/stream/send POST requests,
   // setting text/event-stream content-type on JSON POST responses.
+  // VTID-04615: never on Command Hub pages. Its screens include
+  // /command-hub/oasis/events/ and /command-hub/oasis/streams/, and the
+  // browser would not render HTML served as text/event-stream. No SSE route
+  // lives under /command-hub; its streams are all under /api/v1.
+  if (req.path === '/command-hub' || req.path.startsWith('/command-hub/')) return next();
   if (req.method === 'GET' && (req.path.includes("/stream") || req.path.includes("/events"))) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");

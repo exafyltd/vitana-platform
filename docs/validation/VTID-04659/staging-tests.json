@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04659",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the Command Hub loads the widget at the VTID-04659 version",
+      "target": "gateway",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_body_contains": "/command-hub/orb-widget.js?v=20260926-vtid-04659-after-turn"
+    },
+    {
+      "kind": "http",
+      "name": "the widget at that versioned URL carries the VTID-04644 after-turn directive",
+      "target": "gateway",
+      "path": "/command-hub/orb-widget.js?v=20260926-vtid-04659-after-turn",
+      "expect_status": 200,
+      "expect_content_type": "application/javascript",
+      "expect_body_contains": "msg.after_turn === true"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04659-staging-checks-use-versioned-urls.test.ts test/routes/command-hub-static-cache-headers.test.ts test/scripts/generate-command-hub-symbol-index.test.ts",
+      "cwd": "services/gateway",
+      "reason": "no staging check reads a versioned Command Hub asset at its bare URL, the widget cache bust is in index.html, and the symbol index matches the widget"
+    }
+  ]
+}

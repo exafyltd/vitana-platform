@@ -1,0 +1,11 @@
+# VTID-04644 — commands run (local; nothing written to any live system)
+cd services/gateway
+npx jest test/nav-redirect/explicit-open-backstop.test.ts        # 46 passed; 35 of 57 suite requests opened, 0 wrong
+npx jest test/nav-redirect test/navigation test/nav-golden        # 12 suites, 458 passed (includes the new file)
+npx tsc --noEmit -p .                                             # clean
+# Browser: real orb-widget.js + locally built community app (VITE_GATEWAY_URL/BASE=http://127.0.0.1:18081),
+# fake local gateway, every non-local request intercepted.
+node navtest-d/harness.cjs S11,S13,S13b
+#   S11 held directive after turn_complete (old path): 15506 ms to navigate
+#   S13 after_turn directive after turn_complete:     1106 ms, nav_result opened HOME.CREATE_POST
+#   S13b after_turn while reply audio plays:          4409 ms (waited for audio), nav_result opened

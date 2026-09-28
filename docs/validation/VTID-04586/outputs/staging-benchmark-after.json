@@ -1,0 +1,155 @@
+{
+  "summary": {
+    "label": "auth-en-commandhub",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "en",
+    "route": "/command-hub",
+    "auth": true,
+    "trials": 6,
+    "with_audio": 5,
+    "no_audio": 1,
+    "first_audio_ms": {
+      "min": 999,
+      "p50": 1098,
+      "p90": 2035,
+      "max": 2035
+    },
+    "first_model_audio_ms": {
+      "min": 3795,
+      "p50": 3910,
+      "p90": 4809,
+      "max": 4809
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 195,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1790409686927,
+      "sessionStartMs": 1033,
+      "sessionId": "live-4a54edd4-8d28-4462-9e94-17ff6da9040e",
+      "sseOpenMs": 1551,
+      "firstAudioMs": 2035,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's one execution waiting for your approval. Let's dig into that failure and get it moving. Would you like me to pull up the details of the pending execution and the error logs?",
+      "firstModelAudioMs": 4809,
+      "turnCompleteMs": 7485
+    },
+    {
+      "idx": 2,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "error": 2
+      },
+      "t0": 1790409694832,
+      "sessionStartMs": 435,
+      "sessionId": "live-11b7bbcd-9516-4c87-a7be-c6682b1742e8",
+      "sseOpenMs": 854,
+      "errorFrame": {
+        "type": "error",
+        "message": "Voice connection failed. Please try again."
+      }
+    },
+    {
+      "idx": 3,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 163,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409695970,
+      "sessionStartMs": 696,
+      "sessionId": "live-67297311-e60b-4c09-83b1-8846942b478a",
+      "sseOpenMs": 1092,
+      "firstAudioMs": 1383,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's an execution waiting for your approval. Let's dig into that failure and get it moving. How would you like to proceed?",
+      "firstModelAudioMs": 3910,
+      "turnCompleteMs": 6248
+    },
+    {
+      "idx": 4,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 187,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409702654,
+      "sessionStartMs": 663,
+      "sessionId": "live-3af07db6-b7ed-45ac-8165-7e10a05b7c42",
+      "sseOpenMs": 829,
+      "firstAudioMs": 1050,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's one execution waiting for your approval. Let's dig into that failure and get it moving. What would you like to tackle first?",
+      "firstModelAudioMs": 3888,
+      "turnCompleteMs": 6561
+    },
+    {
+      "idx": 5,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 143,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1790409709565,
+      "sessionStartMs": 374,
+      "sessionId": "live-d538210b-a386-4aae-ab62-fddb8c1ed2b2",
+      "sseOpenMs": 506,
+      "firstAudioMs": 999,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's an execution waiting for your approval. Let's dig into that failure and get it moving.",
+      "firstModelAudioMs": 3795,
+      "turnCompleteMs": 5780
+    },
+    {
+      "idx": 6,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 214,
+        "output_transcript": 3,
+        "heartbeat": 1,
+        "turn_complete": 1
+      },
+      "t0": 1790409715531,
+      "sessionStartMs": 610,
+      "sessionId": "live-02f7a2a7-f32e-4b8c-86bd-4a7c15c6f5d9",
+      "sseOpenMs": 761,
+      "firstAudioMs": 1098,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's one execution waiting for your approval. Let's dig into that failure and get it moving. Would you like me to pull up the details of the pending execution and the error logs?",
+      "firstModelAudioMs": 4052,
+      "turnCompleteMs": 10928
+    }
+  ]
+}

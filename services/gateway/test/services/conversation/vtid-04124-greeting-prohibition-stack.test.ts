@@ -35,6 +35,10 @@ import {
   type GreetingDecisionContext,
 } from '../../../src/services/conversation/compute-greeting-decision';
 import { EMPTY_GREETING_LEDGER } from '../../../src/services/conversation/greeting-facts-ledger';
+import {
+  buildReconnectRecoveryPrompt,
+  RECONNECT_RECOVERY_STAGE_INTENTS,
+} from '../../../src/orb/live/instruction/reconnect-recovery-prompt';
 
 function baseCtx(over: Partial<GreetingDecisionContext> = {}): GreetingDecisionContext {
   return {
@@ -142,5 +146,75 @@ describe('VTID-04124 — greeting directives carry no prohibition stack', () => 
     expect(d.directive).toContain('propose the move yourself');
     expect(d.directive).toContain('Compose this sentence yourself');
     expect(d.directive).toContain('choosing fresh wording every time');
+  });
+});
+
+/**
+ * VTID-04551 — the generic reconnect-recovery prompt joins the budget.
+ *
+ * Measured read-only on `oasis_events`, 7 days to 2026-09-25: every Nova
+ * content-filter close was at turn 0, and 29 of the 30 sessions whose FIRST
+ * open was this prompt (`sendReconnectRecoveryPromptToLiveAPI`, reached when
+ * the widget restarts a session with transcript history) were closed —
+ * production 23/24, staging 6/6 — against 0 of 107 sessions whose first open
+ * went through the greeting brain. Nova's usage counter shows the same ~460-
+ * token first user turn (this prompt's size) in 28 of the 31 blocked
+ * sessions. The prompt carried 11 negative imperatives (12 for `thinking`)
+ * by the counter above; it now carries none.
+ */
+describe('VTID-04551 — the reconnect-recovery prompt carries no prohibition stack', () => {
+  const STAGES = [...Object.keys(RECONNECT_RECOVERY_STAGE_INTENTS), 'unknown_stage'];
+
+  for (const stage of STAGES) {
+    it(`stage "${stage}" carries zero negative imperatives`, () => {
+      expect(countProhibitions(buildReconnectRecoveryPrompt(stage))).toBe(0);
+    });
+  }
+
+  it('orders no VERBATIM reproduction and hands over no finished sentence', () => {
+    for (const stage of STAGES) {
+      const p = buildReconnectRecoveryPrompt(stage);
+      expect(p).not.toMatch(/say exactly|sag genau|dis exactement|verbatim/i);
+    }
+  });
+
+  it('kept every behavioural clause of the pre-fix prompt, restated positively', () => {
+    const p = buildReconnectRecoveryPrompt('listening_user_speaking');
+    // composes, fresh, varied (VTID-03622)
+    expect(p).toContain('Compose that sentence yourself, in your own words, fresh for this reconnect.');
+    expect(p).toContain('The wording is entirely yours to choose');
+    expect(p).toContain('Choose fresh wording every time');
+    expect(p).toContain('Compose every recovery line newly for this moment, different from any earlier one.');
+    expect(p).toContain('Keep it to one short sentence.');
+    // one acknowledgment, then the stage's follow-up
+    expect(p).toContain('speak one acknowledgment sentence first, then take the matching follow-up action');
+    // listening: name the topic, keep the floor open, leave the unasked question to them
+    expect(p).toContain('name the topic yourself and let them carry on from there');
+    expect(p).toContain('leave what they were about to ask for them to say');
+    // speaking: carry forward rather than restart
+    expect(p).toContain('carrying the answer forward from there');
+    // thinking: answer at once
+    expect(p).toContain("answer the user's last question right away");
+    // idle: yield the floor
+    expect(p).toContain('pause and listen for the user');
+    // no self-introduction, no greeting / name, recovery not a fresh start
+    expect(p).toContain('The user already knows you, so go straight to the acknowledgment.');
+    expect(p).toContain("keeping greetings and the user's name for a fresh conversation");
+    expect(p).toContain('it is a recovery, not a fresh start');
+    // VTID-02715: the drop is ours — connection / cut off vocabulary
+    expect(p).toContain('Call the interruption the connection, or being cut off — the drop was on our side.');
+    // one apology at most; language; speak at once
+    expect(p).toContain('If you apologise, apologise once.');
+    expect(p).toContain("Speak in the user's language");
+    expect(p).toContain('Speak as soon as this prompt arrives.');
+  });
+
+  it('the stage-specific intent is threaded in, and unknown stages fall back to idle', () => {
+    expect(buildReconnectRecoveryPrompt('thinking')).toContain(
+      `YOUR ACKNOWLEDGMENT for this stage must: ${RECONNECT_RECOVERY_STAGE_INTENTS.thinking}.`,
+    );
+    expect(buildReconnectRecoveryPrompt('something_else')).toContain(
+      `YOUR ACKNOWLEDGMENT for this stage must: ${RECONNECT_RECOVERY_STAGE_INTENTS.idle}.`,
+    );
   });
 });

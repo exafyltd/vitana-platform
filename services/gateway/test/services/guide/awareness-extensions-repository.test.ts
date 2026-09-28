@@ -66,10 +66,11 @@ describe('awareness-extensions-repository', () => {
   });
 
   describe('fetchProfileCompletionFields', () => {
-    it('reads the six completion-relevant columns from app_users', async () => {
+    it('reads the six completion-relevant columns from profiles (VTID-04572)', async () => {
       const sb = makeSupabaseStub({ data: null });
       await repo.fetchProfileCompletionFields(sb as any, 'u1');
-      expect(sb.from).toHaveBeenCalledWith('app_users');
+      expect(sb.from).toHaveBeenCalledWith('profiles');
+      expect(sb.from).not.toHaveBeenCalledWith('app_users');
       expect(sb.calls).toContainEqual({
         method: 'select',
         args: ['first_name, last_name, date_of_birth, gender, city, country, avatar_url'],

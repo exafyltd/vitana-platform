@@ -285,6 +285,12 @@ describe('VTID-04521 — prompts and tool lists under the flag', () => {
     expect(buildNavigatorPolicySection('en')).not.toBe(NAVIGATOR_POLICY_V2);
   });
 
+  it('sends open/show requests to navigate and forbids claiming an unopened screen (VTID-04557)', () => {
+    expect(NAVIGATOR_POLICY_V2).toMatch(/wins over content tools/);
+    expect(NAVIGATOR_POLICY_V2).toMatch(/Open my messages/);
+    expect(NAVIGATOR_POLICY_V2).toMatch(/No navigation call → no such claim/);
+  });
+
   it('never tells the model to call tools that do not exist', () => {
     const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/orb/live/instruction/live-system-instruction.ts'), 'utf8');
     expect(src).not.toMatch(/navigate_to\s*\(|navigate_to \/|get_route_for_path|get_route \//);

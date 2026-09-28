@@ -251,7 +251,7 @@ describe('runListFollows', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.text).toMatch(/Nobody follows the user/);
-      expect(result.result).toEqual({ direction: 'followers', count: 0, names: [] });
+      expect(result.result).toEqual({ direction: 'followers', count: 0, names: [], other: { direction: 'following', count: 0, names: [] } });
     }
   });
 

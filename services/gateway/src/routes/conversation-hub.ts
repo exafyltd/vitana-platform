@@ -49,6 +49,15 @@ import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } f
 import { readOfferOutcomeStats, OFFER_STATS_MAX_DAYS } from '../services/conversation/offer-outcome-stats';
 import { readShadowComparison, SHADOW_MAX_DAYS } from '../services/conversation/shadow-comparison';
 import {
+  summarizeToolExecutions,
+  summarizeGuards,
+  summarizeOpenings,
+  GUARD_STAGES,
+  AGGREGATE_MAX_HOURS,
+  AGGREGATE_MAX_ROWS,
+} from '../services/conversation/conversation-aggregates';
+import { VITANA_ENV } from '../env';
+import {
   summarizeConversationMetrics,
   buildMetricSeries,
   summarizeLearningJobs,
@@ -378,6 +387,86 @@ router.get('/admin/conversation/offer-outcomes', ...adminOnly, async (req: Authe
     return res.json({ ok: true, data: { days, user_id: userId, providers: rows } });
   } catch (e) {
     return jsonError(res, 500, e instanceof Error ? e.message : 'offer outcomes read failed');
+  }
+});
+
+/**
+ * VTID-04525 (Conversation hub B1): GET /admin/conversation/system[?refresh=1]
+ * What the conversation system is made of on THIS process, built from the
+ * same code a live session runs: every tool and where it is declared, how
+ * each provider's byte budget trims the catalog, the opening providers, the
+ * greeting rungs and every conversation flag. Cached 5 min per process.
+ * Loaded lazily: the tool catalog pulls in the whole ORB tool surface, which
+ * this router must not load at import time.
+ */
+router.get('/admin/conversation/system', ...adminOnly, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getConversationSystemSnapshot } = require('../services/conversation/conversation-system-introspection');
+    return res.json({ ok: true, data: getConversationSystemSnapshot({ refresh: req.query.refresh === '1' }) });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'system introspection failed');
+  }
+});
+
+/**
+ * VTID-04525 (B1): GET /admin/conversation/system/history?limit=10
+ * The last recorded `conversation.system.snapshot` events for this stack:
+ * one per build that changed the conversation system, with its diff against
+ * the build before. The full tool/flag lists are not returned.
+ */
+router.get('/admin/conversation/system/history', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { data, error } = await repo.fetchSystemSnapshotEvents(supabase, VITANA_ENV, limit);
+    if (error) return jsonError(res, 500, error.message);
+    const snapshots = (data || []).map((r: { created_at: string; metadata: Record<string, unknown> | null }) => {
+      const m = r.metadata || {};
+      return { recorded_at: r.created_at, fingerprint: m.fingerprint ?? null, commit: m.commit ?? null, counts: m.counts ?? null, diff: m.diff ?? null };
+    });
+    return res.json({ ok: true, data: { env: VITANA_ENV, snapshots } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'system history read failed');
+  }
+});
+
+/**
+ * VTID-04525 (Conversation hub B3): GET /admin/conversation/aggregates?hours=24
+ * Tool calls / failures / latency per tool, guard fires (loop guard, opening
+ * refusals, reply cap, backend-data mutes, catalog trims, instruction budget)
+ * and the opening mix, over a bounded window. Tool rows carry `env` and are
+ * split by it; diag rows do not carry a reliable env, so guard and opening
+ * counts cover both stacks.
+ */
+router.get('/admin/conversation/aggregates', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const hours = Math.min(Math.max(Number(req.query.hours) || 24, 1), AGGREGATE_MAX_HOURS);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const sinceIso = new Date(Date.now() - hours * 3_600_000).toISOString();
+    const [tools, guards, openings] = await Promise.all([
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.tool.executed', sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.diag', stages: GUARD_STAGES, sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.diag', stages: ['greeting_sent'], sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+    ]);
+    const failed = tools.error || guards.error || openings.error;
+    if (failed) return jsonError(res, 500, failed.message);
+    return res.json({
+      ok: true,
+      data: {
+        window_hours: hours,
+        since: sinceIso,
+        tools: summarizeToolExecutions(tools.data || []),
+        guards: summarizeGuards(guards.data || []),
+        openings: summarizeOpenings(openings.data || []),
+        truncated: { tools: tools.truncated, guards: guards.truncated, openings: openings.truncated },
+        note: 'Tool counts are split by env. Guard and opening counts cover staging and production together (diag rows carry no reliable env).',
+      },
+    });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'aggregates read failed');
   }
 });
 

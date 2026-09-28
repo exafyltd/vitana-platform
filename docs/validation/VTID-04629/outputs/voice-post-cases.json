@@ -1,0 +1,386 @@
+{
+ "started_at": "2026-09-26T10:32:11.125Z",
+ "registry_url": "http://127.0.0.1:8765/nav-registry.json",
+ "nav_service": {
+  "registry": {
+   "source": "remote",
+   "signature": "73bd089e2c80e426",
+   "screens": 186,
+   "commit": null
+  },
+  "index": {
+   "signature": "73bd089e2c80e426",
+   "texts": 9213,
+   "current": true
+  },
+  "building": null,
+  "last_error": null
+ },
+ "voice": {
+  "summary": {
+   "total": 10,
+   "open": 9,
+   "wrong": 0,
+   "no_open": 1,
+   "not_covered": 0,
+   "error": 0
+  },
+  "results": [
+   {
+    "id": "R01",
+    "lang": "en",
+    "say": "Take me to my wallet",
+    "expect": [
+     "WALLET.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "WALLET.OVERVIEW",
+    "heard": "take me to my wallet",
+    "said": "I'm taking you to your Wallet now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "my wallet",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "WALLET.OVERVIEW"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "WALLET.OVERVIEW"
+      },
+      "ok": true,
+      "directive": "WALLET.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 12156
+   },
+   {
+    "id": "R04",
+    "lang": "en",
+    "say": "Pop up my wallet quickly, I just want a quick look",
+    "expect": [
+     "OVERLAY.WALLET_POPUP"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "OVERLAY.WALLET_POPUP",
+    "heard": "pop up my wallet quickly i just want a quick look.",
+    "said": "The panel stays on top so you can keep checking while we continue our conversation.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "pop up my wallet quickly i just want a quick look",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "OVERLAY.WALLET_POPUP",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "WALLET.QUICK_VIEW"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 12914
+   },
+   {
+    "id": "R12",
+    "lang": "en",
+    "say": "Open my diary",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "MEMORY.DIARY",
+    "heard": "open my diary.",
+    "said": "Opening your Daily Diary now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my diary",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "MEMORY.DIARY",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8420
+   },
+   {
+    "id": "R51",
+    "lang": "en",
+    "say": "Where can I make a post for the community?",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HOME.CREATE_POST",
+    "heard": "where can i make a post for the community?",
+    "said": "Here you can write your post, add photos or videos, and share it with the Maxina community.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "where can I make a post for the community?",
+       "intent": "where"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "HOME.CREATE_POST"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "HOME.CREATE_POST"
+      },
+      "ok": true,
+      "directive": "HOME.CREATE_POST",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 11451
+   },
+   {
+    "id": "R52",
+    "lang": "en",
+    "say": "How can I share a post with the community?",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "how can i share a post with the community? yes, please.",
+    "said": "I can help you share a post with the community!  To share a post, you'll need to be on the post creation screen where you can add your content.  || { \"interrupted\" : true }  Once you've created your post, look for a \"Share\" button or option —  this is usually found near the top or bottom of the post composer. Great! Let me guide you through sharing your post with the community step by step.",
+    "steps": [
+     {
+      "name": "search_knowledge",
+      "args": {
+       "query": "how to share a post with the community"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 32344,
+    "note": "follow-up \"yes\" turn"
+   },
+   {
+    "id": "R53",
+    "lang": "en",
+    "say": "Show me the screen where I can make a post",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HOME.CREATE_POST",
+    "heard": "show me the screen where i can make a post.",
+    "said": "I'm taking you to the Create a Post screen now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "show me the screen where I can make a post",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "HOME.CREATE_POST",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "COMM.CREATE_POST"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 10440
+   },
+   {
+    "id": "R54",
+    "lang": "de",
+    "say": "Wo kann ich einen Beitrag für die Community machen?",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HOME.CREATE_POST",
+    "heard": "wo kann ich einen beitrag für die community machen ja bitte",
+    "said": "Möchtest du, dass ich dich dorthin führe? || { \"interrupted\" : true } Du kannst einen Beitrag für die Community auf der Seite  Community-Forum  erstellen.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "Community-Forum",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "HOME.CREATE_POST"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "HOME.CREATE_POST"
+      },
+      "ok": true,
+      "directive": "HOME.CREATE_POST",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 20835,
+    "note": "follow-up \"yes\" turn"
+   },
+   {
+    "id": "R55",
+    "lang": "de",
+    "say": "Zeig mir, wo ich einen Post machen kann",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HOME.CREATE_POST",
+    "heard": "zeig mir wo ich einen post machen kann ja bitte",
+    "said": "Möchtest du, dass ich das Beitragsfenster für dich öffne? || { \"interrupted\" : true } Du kannst einen Beitrag im News-Feed erstellen. Dort hast du die Möglichkeit, einen Text zu schreiben, Fotos oder Videos hinzuzufügen und ihn mit der Maxina-Community zu teilen.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "wo ich einen post machen kann",
+       "intent": "where"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "offer",
+      "first_candidate": "HOME.CREATE_POST"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "HOME.CREATE_POST"
+      },
+      "ok": true,
+      "directive": "HOME.CREATE_POST",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 18611,
+    "note": "follow-up \"yes\" turn"
+   },
+   {
+    "id": "R56",
+    "lang": "es",
+    "say": "Quiero publicar algo para la comunidad",
+    "expect": [
+     "HOME.CREATE_POST"
+    ],
+    "path": "cascade",
+    "outcome": "open",
+    "opened": "HOME.CREATE_POST",
+    "heard": "Quiero publicar algo para la comunidad",
+    "said": "Ya tienes el compositor listo para escribir tu publicación.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "publicar algo para la comunidad",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "HOME.CREATE_POST"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "HOME.CREATE_POST",
+       "reason": "El usuario quiere publicar algo para la comunidad"
+      },
+      "ok": true,
+      "directive": "HOME.CREATE_POST",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 6364,
+    "note": "text turn on bedrock/eu.anthropic.claude-sonnet-4-6; speech-to-text not exercised"
+   },
+   {
+    "id": "R57",
+    "lang": "de",
+    "say": "Öffne den Newsfeed",
+    "expect": [
+     "HOME.OVERVIEW",
+     "HOME.NEWS_ALL"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HOME.OVERVIEW",
+    "heard": "öffne den newsfeed",
+    "said": "Ich öffne den Newsfeed für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "öffne den newsfeed",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "HOME.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9470
+   }
+  ]
+ },
+ "finished_at": "2026-09-26T10:34:35.077Z"
+}

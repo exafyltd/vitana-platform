@@ -112,7 +112,7 @@ export const JOB_TTL_MS = 60 * 60 * 1000;
 export const MAX_JOBS = 1_000;
 export const MAX_REQUEST_CHARS = 4_000;
 
-interface JobEntry { job: DelegationJob; controller: AbortController; expires: number; persisted: Promise<void> }
+interface JobEntry { job: DelegationJob; controller: AbortController; expires: number; persisted: Promise<void>; done: Promise<void> }
 const jobs = new Map<string, JobEntry>();
 
 // undefined = not resolved yet (read the env on first use); null = off.
@@ -156,8 +156,8 @@ export function resetDelegationJobs(): void {
 }
 
 export type DelegateResponse =
-  | { status: 'done'; job_id: string; agent_id: string; result: unknown }
-  | { status: 'working'; job_id: string; agent_id: string; note: string }
+  | { status: 'done'; job_id: string; agent_id: string; result: unknown; reused?: boolean }
+  | { status: 'working'; job_id: string; agent_id: string; note: string; reused?: boolean }
   | { status: 'failed'; job_id: string; agent_id: string; error: string }
   | { status: 'escalate'; agent_id: string; policy: PolicyDecision; note: string }
   | { status: 'refused'; agent_id: string; error: string; policy?: PolicyDecision };
@@ -165,6 +165,35 @@ export type DelegateResponse =
 export interface DelegateOptions {
   ackWindowMs?: number;
   now?: () => number;
+  /**
+   * VTID-04603: reuse, instead of starting, a job for the same agent, user,
+   * surface and session that is still running or finished less than this many
+   * ms ago. Live staging showed the model asking a specialist twice in one
+   * turn (reworded), doubling cost and latency. 0/undefined = never reuse.
+   */
+  reuseWithinMs?: number;
+}
+
+/** VTID-04603: a job this call may reuse, or null. */
+export function findReusableJob(
+  agentId: string,
+  caller: Pick<DelegationCaller, 'user_id' | 'surface' | 'session_id'>,
+  withinMs: number,
+  nowMs: number,
+): JobEntry | null {
+  if (!withinMs || withinMs <= 0 || !caller.user_id || !caller.session_id) return null;
+  let best: JobEntry | null = null;
+  for (const e of jobs.values()) {
+    const j = e.job;
+    if (j.agent_id !== agentId || j.user_id !== caller.user_id || j.surface !== caller.surface || j.session_id !== caller.session_id) continue;
+    if (j.status === 'cancelled' || j.status === 'failed') continue;
+    if (j.status !== 'running') {
+      const done = j.completed_at ? Date.parse(j.completed_at) : NaN;
+      if (!Number.isFinite(done) || nowMs - done > withinMs) continue;
+    }
+    if (!best || j.created_at > best.job.created_at) best = e;
+  }
+  return best;
 }
 
 export async function delegateToAgent(
@@ -200,6 +229,27 @@ export async function delegateToAgent(
 
   const now = opts.now ?? Date.now;
   prune(now());
+
+  const reuse = findReusableJob(agentId, caller, opts.reuseWithinMs ?? 0, now());
+  if (reuse) {
+    const waitMs = opts.ackWindowMs ?? ACK_WINDOW_MS[caller.channel] ?? ACK_WINDOW_MS.web;
+    if (reuse.job.status === 'running') {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        reuse.done,
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, waitMs); (timer as { unref?: () => void }).unref?.(); }),
+      ]);
+      if (timer) clearTimeout(timer);
+    }
+    const j = reuse.job;
+    if (j.status === 'succeeded') return { status: 'done', job_id: j.job_id, agent_id: agentId, result: j.result, reused: true };
+    if (j.status === 'failed') return { status: 'failed', job_id: j.job_id, agent_id: agentId, error: j.error ?? 'failed' };
+    return {
+      status: 'working', job_id: j.job_id, agent_id: agentId, reused: true,
+      note: 'The same lookup is already running. Do not ask again; fetch the result later with this job id.',
+    };
+  }
+
   const controller = new AbortController();
   const job: DelegationJob = {
     job_id: randomUUID(), agent_id: agentId, user_id: caller.user_id, surface: caller.surface,
@@ -213,6 +263,7 @@ export async function delegateToAgent(
       ? store.recordStart({ ...job }, { tenant_id: caller.tenant_id, platform_role: caller.platform_role, channel: caller.channel }, target.tier)
         .catch(() => undefined)
       : Promise.resolve(),
+    done: Promise.resolve(),
   };
   jobs.set(job.job_id, entry);
 
@@ -230,6 +281,7 @@ export async function delegateToAgent(
       (o) => finish(o.ok ? 'succeeded' : 'failed', o.ok ? o.result : null, o.ok ? null : o.error ?? 'agent reported failure'),
       (e: unknown) => finish('failed', null, e instanceof Error ? e.message : String(e)),
     );
+  entry.done = run;
 
   const waitMs = opts.ackWindowMs ?? ACK_WINDOW_MS[caller.channel] ?? ACK_WINDOW_MS.web;
   let timer: NodeJS.Timeout | undefined;

@@ -119,12 +119,16 @@ export function renderLine(
   lang: string,
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  // VTID-04539: 0 days is today. Mapping it to "gestern" made Vitana say
+  // "you asked yesterday" about a question from seven minutes earlier.
   const ago =
     daysSinceLastMention == null
       ? isDe ? 'kürzlich' : 'a while back'
-      : daysSinceLastMention <= 1
-        ? isDe ? 'gestern' : 'yesterday'
-        : isDe ? `vor ${daysSinceLastMention} Tagen` : `${daysSinceLastMention} days ago`;
+      : daysSinceLastMention <= 0
+        ? isDe ? 'vorhin' : 'earlier today'
+        : daysSinceLastMention === 1
+          ? isDe ? 'gestern' : 'yesterday'
+          : isDe ? `vor ${daysSinceLastMention} Tagen` : `${daysSinceLastMention} days ago`;
   if (isDe) {
     return summary
       ? `Wir haben ${ago} über "${topic}" gesprochen — Stichwort: ${summary}. Wollen wir das weiterführen?`

@@ -1,0 +1,181 @@
+# STAGING-VERIFY — the automatic test run after every staging deploy
+# (VTID-04613; process: docs/DEPLOYMENT-PIPELINE.md, CLAUDE.md Part 1
+# rules 46–50).
+#
+# One workflow, both services:
+#   gateway        ← workflow_run: "AWS Stage Deploy Gateway (ECS)" succeeded
+#   community-app  ← repository_dispatch `community-app-staging-deployed`,
+#                    sent by exafyltd/vitana-v1 AWS-STAGE-DEPLOY-FRONTEND.yml
+#                    (same cross-repo pattern as REGEN-SCREENS-CATALOG), so
+#                    the test-user and OASIS credentials live in one repo.
+#   manual         ← workflow_dispatch (re-verify a commit by hand)
+#
+# What it does (scripts/ci/staging-verify/run.mjs):
+#   1. confirm staging serves the deployed commit (sampled — ECS rollouts
+#      serve old and new side by side for a minute);
+#   2. run the service smoke suite + the change suite
+#      (docs/validation/<VTID>/staging-tests.json) of every commit between
+#      production and that commit — READ-ONLY, never against production;
+#   3. re-confirm the commit, write the ready message;
+#   4. record staging.verify.passed | failed | superseded in OASIS — the
+#      record the Claude Code session and the Operator Chat read.
+#
+# It never deploys and never promotes. A "yes" to the ready message goes to
+# PUBLISH (rule 50); this workflow only produces the evidence for it.
+
+name: STAGING-VERIFY
+
+run-name: >-
+  STAGING-VERIFY ${{
+    github.event_name == 'repository_dispatch' && 'community-app' ||
+    github.event_name == 'workflow_dispatch' && inputs.service ||
+    'gateway' }} @ ${{
+    github.event_name == 'repository_dispatch' && github.event.client_payload.sha ||
+    github.event_name == 'workflow_dispatch' && inputs.commit_sha ||
+    github.event.workflow_run.head_sha }} (VTID-04613)
+
+on:
+  workflow_run:
+    workflows: ['AWS Stage Deploy Gateway (ECS)']
+    types: [completed]
+  repository_dispatch:
+    types: [community-app-staging-deployed]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to verify'
+        required: true
+        type: choice
+        options: [gateway, community-app]
+      commit_sha:
+        description: 'Full commit SHA staging is expected to serve'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # One verification per service at a time; a newer deploy queues behind the
+  # running one (never cancels it mid-run — a half-run proves nothing).
+  group: staging-verify-${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # A failed or cancelled deploy has nothing to verify.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SERVICE: ${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
+      SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.event.workflow_run.head_sha }}
+    outputs:
+      outcome: ${{ steps.verify.outputs.outcome }}
+    steps:
+      - name: Validate inputs
+        run: |
+          case "$SERVICE" in gateway|community-app) ;; *) echo "::error::unknown service '$SERVICE'"; exit 1;; esac
+          if ! echo "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit sha '$SHA' is not a full 40-char sha"; exit 1
+          fi
+          echo "Verifying $SERVICE @ $SHA"
+
+      # The runner always comes from vitana-platform main — the version that
+      # passed review — never from the commit under test.
+      - name: Checkout runner (vitana-platform main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: runner
+          sparse-checkout: scripts/ci/staging-verify
+
+      - name: Checkout commit under test (gateway)
+        if: env.SERVICE == 'gateway'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          path: target
+          fetch-depth: 0
+
+      - name: Checkout commit under test (community-app)
+        if: env.SERVICE == 'community-app'
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: ${{ env.SHA }}
+          path: target
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run STAGING-VERIFY
+        id: verify
+        env:
+          # Read-only sign-in for browser tests that need a session. Never the
+          # service role: nothing in this step may write (rule 48).
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          node runner/scripts/ci/staging-verify/run.mjs verify \
+            --service "$SERVICE" --sha "$SHA" \
+            --repo-root target --out "$RUNNER_TEMP/staging-verify"
+
+      - name: Record result in OASIS
+        if: always() && steps.verify.outcome != 'skipped'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          RESULTS: ${{ runner.temp }}/staging-verify/results.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE not set — the result cannot reach OASIS, so neither channel will see it."
+            exit 1
+          fi
+          if [ -f "$RESULTS" ]; then
+            BODY=$(jq -c --arg run "$RUN_URL" '{
+              vtid: (.vtid // "BOOTSTRAP-STAGING-VERIFY"),
+              topic: ("staging.verify." + .outcome),
+              service: ("staging-verify-" + .service),
+              role: "CICD",
+              model: "staging-verify",
+              status: (if .outcome == "passed" then "success" elif .outcome == "failed" then "error" else "info" end),
+              message: .message,
+              metadata: {
+                env: "staging", service: .service, commit: .sha, outcome: .outcome,
+                vtids: .vtids, run_url: $run, production_commit: .production_stamp,
+                results: [.results[] | {suite, name, ok, problems}],
+                missing_suites: .plan.missing, invalid_suites: .plan.invalid,
+                shipping: .shipping, workflow: "STAGING-VERIFY.yml"
+              }
+            }' "$RESULTS")
+          else
+            # The runner crashed before writing a result: that is a failed
+            # verification, and it must be visible as one.
+            BODY=$(jq -nc --arg svc "$SERVICE" --arg sha "$SHA" --arg run "$RUN_URL" '{
+              vtid: "BOOTSTRAP-STAGING-VERIFY", topic: "staging.verify.failed",
+              service: ("staging-verify-" + $svc), role: "CICD", model: "staging-verify", status: "error",
+              message: ("**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: " + $run),
+              metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: "STAGING-VERIFY.yml" }
+            }')
+          fi
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$BODY"
+          echo "✓ recorded $(echo "$BODY" | jq -r .topic) for $SERVICE @ ${SHA:0:12}"
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-verify-${{ env.SERVICE }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-verify
+          if-no-files-found: ignore
+          retention-days: 30

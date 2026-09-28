@@ -30,6 +30,7 @@ import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-l
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
+import { isVerificationNoiseTopic } from './oasis-noise-topics';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -213,6 +214,27 @@ export function decideBranchUpdate(behindBy: number, updatesSoFar: number): 'mer
   return updatesSoFar >= MAX_BRANCH_UPDATES ? 'give_up' : 'update';
 }
 
+/**
+ * VTID-04612: may a green PR that is behind main merge without another branch
+ * update? Only when main's new commits touch none of the files the PR changes.
+ * The VTID-04379 rule re-ran ~8 minutes of CI on every main merge and gave up
+ * after MAX_BRANCH_UPDATES; with main taking a merge every 5-10 minutes an
+ * operator PR could never land. Overlap, an incomplete file list (truncated
+ * compare, unknown PR files) or no PR files at all keep the update path — the
+ * two green PRs that broke main together (VTID-04219) touched shared files.
+ */
+export function canMergeBehindWithoutUpdate(input: {
+  prFiles: string[] | null;
+  baseChangedFiles: string[] | null;
+  baseTruncated: boolean;
+}): { ok: boolean; overlap: string[] } {
+  const { prFiles, baseChangedFiles, baseTruncated } = input;
+  if (!prFiles || prFiles.length === 0 || !baseChangedFiles || baseTruncated) return { ok: false, overlap: [] };
+  const base = new Set(baseChangedFiles);
+  const overlap = prFiles.filter((f) => base.has(f));
+  return { ok: overlap.length === 0, overlap };
+}
+
 export type CiStateName = 'passing' | 'failing' | 'pending';
 export interface CiAnalysis {
   state: CiStateName;
@@ -356,27 +378,27 @@ export interface VerificationAnalysis {
 export interface VerificationWindowOptions {
   /** The execution's own ledger VTID(s) (VTID-04246 activated_vtid); never blast radius. */
   ownVtids?: string[];
+  /**
+   * VTID-04625: how many MORE events of one error type than its baseline the
+   * window must see before that type is blast radius. Default 1 (any rise).
+   * The live watcher passes verificationMinExcess() (3): on a platform with
+   * member traffic, one or two sporadic errors of a rare type are not
+   * evidence against a deploy — measured 2026-09-26, PR #3726 was reverted
+   * for one member voice-session measurement and one console turn.
+   */
+  minExcess?: number;
 }
 
-/**
- * VTID-04377: topics that are never production blast radius of THIS merge —
- * autopilot/self-heal/CI bookkeeping (VTID-02699), ledger lifecycle and
- * on-ramp events about other VTIDs (VTID-04043), and deploy results, which
- * the deploy watcher already judged before the row reached `verifying`.
- */
-export function isVerificationNoiseTopic(type: string | undefined): boolean {
-  if (typeof type !== 'string') return false;
-  return (
-    type.startsWith('dev_autopilot.') ||
-    type.startsWith('self_healing.') ||
-    type.startsWith('cicd.') ||
-    type.startsWith('vtid.lifecycle.') ||
-    type.startsWith('operator.execution_onramp.') ||
-    type.startsWith('deploy.') ||
-    type.startsWith('staging.deploy.') ||
-    type.startsWith('prod.deploy.')
-  );
+/** VTID-04625: DEV_AUTOPILOT_VERIFY_MIN_EXCESS (default 3, minimum 1). */
+export function verificationMinExcess(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.DEV_AUTOPILOT_VERIFY_MIN_EXCESS || '', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 3;
 }
+
+// VTID-04377 / VTID-04625: isVerificationNoiseTopic now lives in
+// oasis-noise-topics.ts (VTID-04666) so the recommendation engine applies the
+// same list. Re-exported here unchanged for existing importers.
+export { isVerificationNoiseTopic };
 
 export function analyzeVerificationWindow(
   events: Array<{ type: string; vtid?: string; status?: string; created_at?: string }>,
@@ -426,7 +448,8 @@ export function analyzeVerificationWindow(
   });
   const windowCounts = new Map<string, number>();
   for (const e of inWindow) windowCounts.set(e.type, (windowCounts.get(e.type) || 0) + 1);
-  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) > (baseline.get(e.type) || 0));
+  const minExcess = Math.max(1, Math.floor(opts.minExcess ?? 1));
+  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) - (baseline.get(e.type) || 0) >= minExcess);
   if (blastRadius.length > 0) {
     return {
       state: 'fail',
@@ -608,7 +631,29 @@ export async function ciWatcherTick(): Promise<void> {
           continue;
         }
         const updates = Number((exec.metadata as Record<string, unknown> | null)?.branch_updates || 0);
-        const decision = decideBranchUpdate(behindBy, updates);
+        let decision = decideBranchUpdate(behindBy, updates);
+        // VTID-04612: a clean PR whose files main has not touched merges on the
+        // CI it already has, instead of chasing main one ~8-minute CI run per
+        // merge. `behind` (strict branch protection) always updates.
+        if (decision !== 'merge' && mState === 'clean') {
+          try {
+            const [prFiles, baseChanges] = await Promise.all([
+              githubService.getPrFiles(GITHUB_REPO, exec.pr_number),
+              githubService.getBaseChangesSince(GITHUB_REPO, pr?.base?.ref || 'main', headSha),
+            ]);
+            const verdict = canMergeBehindWithoutUpdate({
+              prFiles: prFiles.map((f) => f.filename),
+              baseChangedFiles: baseChanges.files,
+              baseTruncated: baseChanges.truncated,
+            });
+            if (verdict.ok) {
+              console.log(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} is ${behindBy} behind main but main touched none of its ${prFiles.length} file(s); merging on its green CI`);
+              decision = 'merge';
+            }
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] overlap check failed: ${err}; keeping the branch-update path`);
+          }
+        }
         if (decision === 'update') {
           try {
             await githubService.updatePullRequestBranch(GITHUB_REPO, exec.pr_number, headSha);
@@ -1008,6 +1053,7 @@ export async function verificationWatcherTick(): Promise<void> {
     const ownVtid = await loadFindingVtid(s, exec.finding_id);
     const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix, {
       ownVtids: ownVtid ? [ownVtid] : [],
+      minExcess: verificationMinExcess(),
     });
 
     if (verdict.state === 'pending') continue;

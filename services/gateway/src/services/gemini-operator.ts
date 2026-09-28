@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
-import { callViaRouter, type LLMRouterTool, type LLMUsage } from './llm-router';
+import { callViaRouter, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
 // VTID-04031: token usage + estimated cost per model call, folded into the reply meta.
 import { turnUsageFields, summarizeTurnCost, type ModelTurnCost } from './operator-turn-cost';
 // VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
@@ -43,11 +43,14 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
-// VTID-03820: DeepSeek-powered execution on-ramp
+// VTID-03820: execution on-ramp (coding model: dev-pipeline-models.ts, VTID-04593)
 import { triggerOperatorExecution } from './operator-execution-onramp';
 import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
+import { toDevRecommendations, type DevRecommendationSnapshot } from './operator-dev-recommendations';
+import { findFabricatedToolClaims, fabricatedToolNotice } from './operator-fabricated-tool-guard';
+import { devWorkerModel } from './dev-pipeline-models';
 // VTID-0538: Knowledge Hub integration
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
@@ -128,6 +131,8 @@ const VERTEX_MODEL = process.env.VERTEX_MODEL || 'gemini-2.5-pro';
 export interface GeminiToolCall {
   name: string;
   args: Record<string, unknown>;
+  /** VTID-04628: provider-assigned id, echoed on the matching tool result in the next round. */
+  id?: string;
 }
 
 /**
@@ -259,7 +264,7 @@ export const GEMINI_TOOL_DEFINITIONS = {
     },
     {
       name: 'autopilot_execute_task',
-      description: 'VTID-03820: Execute an already-approved VTID via the DeepSeek-powered execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
+      description: 'VTID-03820: Execute an already-approved VTID via the execution on-ramp — writes code and opens a real pull request. The target VTID MUST already have spec_status=approved; this tool does not approve specs itself. Disabled unless the platform owner has explicitly enabled OPERATOR_EXECUTION_ONRAMP_ENABLED. Only call this when the user has clearly asked to execute/implement/ship a SPECIFIC, already-approved VTID — never to create new work (use autopilot_create_task for that) and never speculatively.',
       parameters: {
         type: 'object',
         properties: {
@@ -502,16 +507,15 @@ Return results as a string or JSON that can be displayed to the user.`,
     // VTID-01221: Autopilot Recommendation Sync - Primary tool
     {
       name: 'autopilot_get_recommendations',
-      description: `Fetch recommended next actions from Autopilot for the current context.
+      description: `Fetch the Dev Autopilot backlog: the open developer findings (scanner and impact-rule), the gate holding each one (needs a human / system blocker / waiting / moving), the executions in flight and awaiting approval, the 7-day success rate and the supervisor alerts. Same data as the Command Hub Autopilot screens.
 
-ALWAYS call this tool BEFORE giving "next steps" advice when:
-- User asks "what next", "what should I do", "what do we do now", "recommend"
-- A VTID is selected or being discussed
-- A pipeline/deploy is in progress or just completed
+It NEVER returns community member recommendations (profile, photo, streak nudges) — those belong to members, not to this console.
 
-Returns prioritized recommendations with rationale, commands, and verification steps.
-Autopilot is the SINGLE SOURCE OF TRUTH for "what to do next".
-Do NOT invent recommendations if this tool returns results.`,
+Call it BEFORE giving "next steps" advice when:
+- The user asks "what next", "what should we work on", "what is the priority", "recommend", or for the Dev Autopilot recommendations/backlog/findings
+- A VTID is selected or being discussed (pass vtid to narrow to that finding)
+
+Findings blocked by a human come first — those are what the operator can unblock. Do NOT invent findings if this tool returns results.`,
       parameters: {
         type: 'object',
         properties: {
@@ -659,13 +663,13 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
     // item of the gap analysis' §4.4 access list. FilterLogEvents only.
     {
       name: 'dev_cloudwatch_logs',
-      description: `Read recent CloudWatch log events from one documented Vitana ECS service's log group (/ecs/vitana-<service>, e.g. /ecs/vitana-gateway for staging, /ecs/vitana-gateway-awsdr for prod, /ecs/vitana-autopilot-executor for the executor task). Read-only — FilterLogEvents only, never writes, never touches any other group. Bounded: window default ${LOGS_DEFAULT_MINUTES} min (max ${LOGS_MAX_MINUTES}), events default ${LOGS_DEFAULT_LIMIT} (max ${LOGS_MAX_LIMIT}), messages clipped. Use filter_pattern (CloudWatch filter syntax, e.g. "ERROR", "[VTID-04007]", "execution 4f5d7ea4") to narrow. Developer/admin role only.`,
+      description: `Read recent CloudWatch log events from one documented Vitana ECS service's log group (/vitana/<service>, e.g. /vitana/gateway for staging, /vitana/gateway-awsdr for prod, /vitana/autopilot-executor for the executor task; a bare service name such as gateway also works). Read-only — FilterLogEvents only, never writes, never touches any other group. Bounded: window default ${LOGS_DEFAULT_MINUTES} min (max ${LOGS_MAX_MINUTES}), events default ${LOGS_DEFAULT_LIMIT} (max ${LOGS_MAX_LIMIT}), messages clipped. Use filter_pattern (CloudWatch filter syntax, e.g. "ERROR", "[VTID-04007]", "execution 4f5d7ea4") to narrow. Developer/admin role only.`,
       parameters: {
         type: 'object',
         properties: {
           log_group: {
             type: 'string',
-            description: 'The log group, exactly /ecs/vitana-<service-name>. The ECS service names are the ones dev_aws_ecs_status accepts.'
+            description: 'The log group, /vitana/<service> (e.g. /vitana/gateway). A bare service name (gateway, gateway-awsdr, autopilot-executor) is mapped to its group.'
           },
           filter_pattern: {
             type: 'string',
@@ -707,6 +711,23 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
         },
         required: ['target']
       }
+    },
+    // VTID-04564: one brain, two channels — the developer knowledge and the
+    // deep dive the Command Hub voice assistant has (VTID-04562/04563).
+    {
+      name: 'dev_system_status',
+      description: 'Live system snapshot: which build staging and production serve, the Dev Autopilot state (kill switch, provider outage, executions in flight and waiting for approval, 7-day success rate, alerts) and the last hour of error events and voice sessions. Pass fresh:true to bypass the 90-second cache. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { fresh: { type: 'boolean', description: 'Bypass the 90-second cache.' } }, required: [] }
+    },
+    {
+      name: 'dev_domain_atlas',
+      description: 'The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { domain: { type: 'string', description: 'A domain key or a topic.' } }, required: [] }
+    },
+    {
+      name: 'dev_deep_dive',
+      description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
+      parameters: { type: 'object', properties: { question: { type: 'string', description: 'The full question, with every name, id, time window and environment mentioned.' } }, required: ['question'] }
     },
     // VTID-04116: Operator Console codebase intelligence — RepoWise. Closes
     // the gap the VTID-04002 gap analysis flagged: CLAUDE.md's mandatory
@@ -778,7 +799,7 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
     // any other table). Developer/admin only; inert until configured.
     {
       name: 'dev_run_sql_readonly',
-      description: `Run ONE read-only SQL statement (SELECT, WITH … SELECT, or plain EXPLAIN) against the platform database over a dedicated read-only connection, inside a READ ONLY transaction with a statement timeout. Use for joins, aggregates and tables dev_db_query does not cover (e.g. "how many dev_autopilot_executions failed per stage this week"). No writes, no DDL, no locking, no EXPLAIN ANALYZE; rows and payload are bounded. Developer/admin role only.`,
+      description: `Run ONE read-only SQL statement (SELECT or WITH … SELECT) against the LIVE platform database (public schema), inside a READ ONLY transaction with a statement timeout. User accounts: count from public.app_users (one row per registered user) or public.profiles — the auth schema is not readable. Exclude test/service accounts when counting real members — every one of these four tables keys a user by user_id (service_bot_accounts and notification_test_actors have no id column), e.g. SELECT count(*) FROM public.app_users a WHERE a.user_id NOT IN (SELECT user_id FROM public.service_bot_accounts UNION SELECT user_id FROM public.notification_test_actors). If a statement fails, read the database error, correct the statement and run it again. Use for joins, aggregates and tables dev_db_query does not cover (e.g. "how many dev_autopilot_executions failed per stage this week"). No writes, no DDL, no locking, no EXPLAIN ANALYZE; rows and payload are bounded. Developer/admin role only.`,
       parameters: {
         type: 'object',
         properties: {
@@ -1624,9 +1645,11 @@ async function executeExecuteTask(
     data: {
       vtid: args.vtid,
       execution_id: result.execution_id,
-      provider: 'deepseek',
+      // VTID-04598: the model the on-ramp stamps on the row (VTID-04593), not a hard-coded name.
+      provider: devWorkerModel().provider,
+      model: devWorkerModel().model,
       status: 'queued',
-      message: `Execution queued for ${args.vtid} via the DeepSeek on-ramp (${result.execution_id.slice(0, 8)}). It will run on the next executor tick.`,
+      message: `Execution queued for ${args.vtid} via the execution on-ramp (${result.execution_id.slice(0, 8)}), coding model ${devWorkerModel().provider}/${devWorkerModel().model}. It will run on the next executor tick.`,
     },
   };
 }
@@ -1733,7 +1756,9 @@ async function executeRunTask(
       vtid_allocated: result.vtid_allocated,
       execution_id: result.execution_id,
       executor: 'agent',
-      provider: 'deepseek',
+      // VTID-04598: the model the on-ramp stamps on the row (VTID-04593), not a hard-coded name.
+      provider: devWorkerModel().provider,
+      model: devWorkerModel().model,
       status: 'queued',
       message: `Allocated ${result.vtid} and queued an agent-mode execution (${result.execution_id.slice(0, 8)}) for it. The agent will locate the code, make the change, run tsc + jest and open a pull request on the next executor tick.`,
     },
@@ -2357,70 +2382,18 @@ async function executeGetRecommendations(
   }).catch(() => {});
 
   try {
-    // Call the existing recommendations API
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Supabase not configured');
+    // VTID-04582: the developer backlog, never the community recommender. The
+    // get_autopilot_recommendations RPC with p_user_id=null returned every
+    // member's nudges; the supervisor snapshot is what the Command Hub
+    // Autopilot screens render (open findings + the gate holding each one).
+    const { buildSupervisorSnapshot } = await import('./dev-autopilot-supervisor');
+    const snap = await buildSupervisorSnapshot();
+    if (!snap.ok) {
+      throw new Error(`Dev Autopilot supervisor snapshot unavailable: ${snap.error}`);
     }
-
-    // Build query params for the recommendations API
-    const queryParams = new URLSearchParams({
-      status: 'new,active',
-      limit: '10',
-    });
-
-    const response = await fetch(
-      `${supabaseUrl}/rest/v1/rpc/get_autopilot_recommendations`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({
-          p_status: ['new', 'active'],
-          p_limit: 10,
-          p_offset: 0,
-          p_user_id: null,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Recommendations API error: ${response.status} - ${errorText}`);
-    }
-
-    const rawRecommendations = await response.json() as any[];
+    const backlog = toDevRecommendations(snap as unknown as DevRecommendationSnapshot, { vtid });
+    const filteredRecs = backlog.recommendations;
     const durationMs = Date.now() - startTime;
-
-    // Transform to Recommendation format
-    const recommendations: Recommendation[] = rawRecommendations.map(r => ({
-      id: r.id,
-      title: r.title,
-      priority: r.priority || 'medium',
-      rationale: r.rationale || r.description || '',
-      suggested_commands: r.suggested_commands || [],
-      verification: r.verification_steps || [],
-      related_vtids: r.related_vtids || (r.vtid ? [r.vtid] : []),
-      requires_approval: r.requires_approval || false,
-      source: r.source_type,
-    }));
-
-    // Filter by VTID if specified
-    let filteredRecs = recommendations;
-    if (vtid) {
-      filteredRecs = recommendations.filter(r =>
-        r.related_vtids?.includes(vtid) || r.rationale?.includes(vtid)
-      );
-      // If no VTID-specific recs, return all but note the filter
-      if (filteredRecs.length === 0) {
-        filteredRecs = recommendations;
-      }
-    }
 
     // Emit received event
     await recommendationSyncEvents.recommendationsReceived(
@@ -2446,7 +2419,7 @@ async function executeGetRecommendations(
     return {
       ok: true,
       data: {
-        recommendations: filteredRecs,
+        ...backlog,
         count: filteredRecs.length,
         formatted: syncBrief.formatted,
         message: syncBrief.formatted,
@@ -2907,7 +2880,7 @@ async function executeDevAwsEcsStatus(
 
 /**
  * VTID-04020: dev_cloudwatch_logs — read-only CloudWatch FilterLogEvents
- * over one /ecs/vitana-<service> log group. Same kill switch as the ECS
+ * over one /vitana/<service> log group (VTID-04672). Same kill switch as the ECS
  * status tool; the log-group shape is enforced before any AWS call
  * (aws-cloudwatch-logs-readonly.ts); an IAM denial comes back verbatim.
  */
@@ -2919,7 +2892,7 @@ async function executeDevCloudwatchLogs(
     return { ok: false, error: 'operator_aws_readonly_disabled: OPERATOR_AWS_READONLY_ENABLED is not "true"' };
   }
   if (!args.log_group || !String(args.log_group).trim()) {
-    return { ok: false, error: 'log_group is required (e.g. /ecs/vitana-gateway)' };
+    return { ok: false, error: 'log_group is required (e.g. /vitana/gateway)' };
   }
   try {
     const result = await filterVitanaLogs({
@@ -3612,6 +3585,54 @@ async function executeInvestigateFailure(
 /**
  * Execute a tool call from Gemini
  */
+/**
+ * VTID-04564: the Operator Console runs the same developer knowledge and deep
+ * dive as the Command Hub voice assistant — one implementation, two channels.
+ * The deep dive needs a verified caller on this thread (the VTID-03851 marker)
+ * who is exafy_admin or holds a developer/admin role.
+ */
+async function executeDeveloperKnowledgeTool(
+  toolName: string,
+  args: Record<string, unknown>,
+  threadId: string,
+): Promise<ToolExecutionResult> {
+  try {
+    if (toolName === 'dev_system_status') {
+      const { getSystemSnapshot, buildSystemSnapshot, defaultSystemSnapshotDeps } = await import('../orb/developer/system-snapshot');
+      const snap = args.fresh === true ? await buildSystemSnapshot(defaultSystemSnapshotDeps()) : await getSystemSnapshot();
+      return { ok: true, data: { as_of: snap.asOf, highlights: snap.highlights, snapshot: snap.text } };
+    }
+    if (toolName === 'dev_domain_atlas') {
+      const { DOMAIN_ATLAS, findDomain, renderAtlasDomain, renderAtlasIndex } = await import('../orb/developer/domain-atlas');
+      const q = typeof args.domain === 'string' ? args.domain.trim() : '';
+      if (!q) return { ok: true, data: { atlas: renderAtlasIndex() } };
+      const d = findDomain(q);
+      return d
+        ? { ok: true, data: { domain: d.key, detail: renderAtlasDomain(d) } }
+        : { ok: true, data: { found: false, domains: DOMAIN_ATLAS.map((x) => x.key) } };
+    }
+    // dev_deep_dive
+    const auth = getThreadAuth(threadId);
+    const identity = threadIdentityMap.get(threadId);
+    if (!auth || !auth.user_id) return { ok: false, error: 'dev_deep_dive needs a signed-in developer session' };
+    const { runDeepDive } = await import('../orb/developer/deep-dive');
+    const question = typeof args.question === 'string' ? args.question : '';
+    const out = await runDeepDive(question, {
+      user_id: auth.user_id,
+      tenant_id: identity?.tenant_id ?? null,
+      platform_role: auth.exafy_admin ? 'developer' : (identity?.role ?? null),
+      exafy_admin: auth.exafy_admin === true,
+      surface: 'command-hub',
+      channel: 'chat',
+      session_id: threadId,
+    }, new AbortController().signal);
+    if (!out.ok) return { ok: false, error: out.error ?? 'deep dive failed' };
+    return { ok: true, data: out.result as Record<string, unknown> };
+  } catch (e) {
+    return { ok: false, error: `${toolName} failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export async function executeTool(
   toolName: string,
   args: Record<string, unknown>,
@@ -3816,6 +3837,13 @@ export async function executeTool(
           args as { command: string; argument?: string; repo?: string },
           threadId
         );
+        break;
+
+      // VTID-04564: the developer knowledge + deep dive, shared with voice.
+      case 'dev_system_status':
+      case 'dev_domain_atlas':
+      case 'dev_deep_dive':
+        result = await executeDeveloperKnowledgeTool(toolName, args as Record<string, unknown>, threadId);
         break;
 
       // VTID-04229: Operator Console codebase index (S3 bundle)
@@ -4132,6 +4160,34 @@ export async function executeTool(
  * Fail-open elsewhere (a failed/empty recall means no block, never an error
  * surfaced to the user) — this only formats hits that already came back.
  */
+/**
+ * VTID-04560 — may this turn carry the platform's engineering context
+ * (dev_agent_memory recall, codebase orientation, operator bootstrap pack)?
+ * Yes for the Operator Console itself (no custom system instruction) and for
+ * developer/admin callers; no for any member-facing caller that brings its
+ * own system instruction (ORB text fallbacks, conversation client).
+ */
+/**
+ * VTID-04564: the domain atlas for engineering callers of the Operator Console.
+ * The live snapshot is NOT preloaded on console turns (they are frequent and
+ * the snapshot reads the supervisor tables); the model fetches it on demand
+ * with dev_system_status — the same tool the voice assistant has.
+ */
+export async function operatorDeveloperKnowledge(): Promise<string> {
+  try {
+    const { renderAtlasIndex } = await import('../orb/developer/domain-atlas');
+    return `${renderAtlasIndex()}\nFor current state (builds, Dev Autopilot, errors in the last hour) call dev_system_status; for a question that needs evidence from code, history, data and runtime, call dev_deep_dive.`;
+  } catch {
+    return '';
+  }
+}
+
+export function engineeringContextAllowed(customSystemInstruction: string | undefined, userRole: string | undefined): boolean {
+  if (!customSystemInstruction) return true;
+  const role = (userRole || '').toLowerCase();
+  return role === 'developer' || role === 'admin' || role === 'infra' || role === 'exafy_admin';
+}
+
 function buildDevMemoryContextBlock(hits: DevMemoryHit[]): string {
   // VTID-04027: category-diverse top-10 selection over the wider candidate
   // set, rendered with a per-row clip and a total budget.
@@ -4178,13 +4234,14 @@ function getOperatorSystemPrompt(): string {
 - autopilot_list_recent_tasks: List recent tasks
 - knowledge_search: Search Vitana documentation (use for Vitana-specific questions like "What is OASIS?", "Explain the Vitana Index", etc.)
 - run_code: Execute JavaScript code for calculations, date math, conversions, data processing
-- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the DeepSeek execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
+- autopilot_execute_task: Execute an ALREADY-APPROVED VTID via the execution on-ramp (writes code and opens a real pull request). Takes vtid, plan_markdown and files_referenced (the files the plan will create or change).
 - autopilot_run_task: Turn a free-text development request into a governed agent-mode execution — allocates and registers the VTID itself, then the agent executor reads the code, makes the change, runs tsc + jest and opens a real pull request. Takes request (the user's words) and an optional title. No VTID and no file list are needed.
 - autopilot_review_execution: Show a Dev Autopilot execution that is held for approval (the agent pushed its branch but did not open the PR yet): branch, PR title/body, changed files, --stat and a bounded diff. With no execution_id it lists everything waiting for a decision. Read-only.
 - autopilot_approve_execution: Approve a held execution — opens the real pull request on the pushed branch and hands it to CI. Takes execution_id.
 - autopilot_reject_execution: Reject a held execution — deletes the pushed branch and cancels it with the recorded reason. Takes execution_id and an optional reason.
 - autopilot_activate_recommendation: Activate a specific Dev Autopilot recommendation by id — allocates its VTID (idempotent) and, for a manually-bridgeable source_type, starts a real execution with the cooldown skipped. Takes recommendation_id.
 - autopilot_cancel_execution: Cancel a queued (cooling) or RUNNING execution — the agent is stopped, nothing is pushed or opened. With no execution_id it only lists what can be cancelled. Takes an optional execution_id and an optional reason.
+- autopilot_get_recommendations: The Dev Autopilot backlog — open developer findings with the gate holding each one, executions in flight or awaiting approval, and supervisor alerts. Never community member recommendations. Takes an optional vtid.
 
 **When to use tools:**
 - Task creation requests (e.g., "Create a task to deploy gateway") → MUST call autopilot_create_task tool
@@ -4196,6 +4253,8 @@ function getOperatorSystemPrompt(): string {
 - An explicit decision on a held execution the user names (e.g., "approve 4f7d5ea4", "reject 4f7d5ea4, wrong approach") → call autopilot_approve_execution or autopilot_reject_execution
 - An explicit request to activate a specific Dev Autopilot recommendation by id (e.g., "activate recommendation a1b2c3d4-...") → call autopilot_activate_recommendation
 - A request to stop/cancel/abort a queued or running execution (e.g., "cancel 9a4d2c7e", "stop that run, wrong file", "what is running that I can cancel?") → call autopilot_cancel_execution (with no id to list, with the id they name to cancel)
+- Questions about what to work on next, the priority, or the Dev Autopilot recommendations/backlog/findings → call autopilot_get_recommendations
+- The CURRENT state of one execution (is it held, has its PR opened) → call autopilot_review_execution; OASIS events are history, not current state
 - Vitana-specific questions → use knowledge_search
 - Calculations, date math, age calculations, unit conversions → use run_code
 
@@ -4216,7 +4275,8 @@ function getOperatorSystemPrompt(): string {
   - If NO (e.g., "create a task", "make a new ticket", "log this"): ask the user for a title and description BEFORE calling the tool. Example: "Sure! What should this task be about? Please give me a title and a brief description."
 - NEVER generate fake VTID numbers. VTIDs are only created by the autopilot_create_task tool.
 - NEVER claim a task was created unless the tool returned a successful result.
-- If a tool call fails, tell the user honestly.`;
+- If a tool call fails, tell the user honestly.
+- When the user says an earlier answer was wrong, check what the tools actually returned in this conversation before replying. If the user is right, say so plainly and correct it; never claim a tool returned something it did not.`;
 
   if (opConfig.calculation_directive) {
     prompt += `\n\n${opConfig.calculation_directive}`;
@@ -4258,6 +4318,32 @@ function getRouterToolDefinitions(userRole?: string): LLMRouterTool[] {
  * VTID-01106: Added optional custom system instruction for ORB memory context
  * Returns the model response with optional tool calls
  */
+/**
+ * VTID-04628: how many rounds of tools one console turn may run (default 4,
+ * 1 = the pre-VTID-04628 single round). Each round is one model call plus the
+ * tools it asked for.
+ */
+export function operatorMaxToolRounds(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.OPERATOR_MAX_TOOL_ROUNDS || '', 10);
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 10) : 4;
+}
+
+/** VTID-04628: the user turn for a continuation round. English intent, not spoken text. */
+export const OPERATOR_CONTINUE_PROMPT =
+  'The tool results for your calls are above. If a call failed or the result does not answer the request yet, ' +
+  'call the tools again with corrected arguments (for SQL: check the table and column names, e.g. with a query on ' +
+  'information_schema.columns). When you have what you need, answer the original request directly. ' +
+  'Never claim a tool ran unless its result is above.';
+
+const OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS = 12_000;
+
+/** VTID-04628: a tool result as the model sees it in the next round — JSON, bounded. */
+export function clipToolResultForTranscript(response: unknown): string {
+  let s: string;
+  try { s = JSON.stringify(response); } catch { s = String(response); }
+  return s.length > OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS ? `${s.slice(0, OPERATOR_TRANSCRIPT_RESULT_MAX_CHARS)}…[truncated]` : s;
+}
+
 async function callVertexWithTools(
   text: string,
   threadId: string,
@@ -4267,7 +4353,12 @@ async function callVertexWithTools(
   userRole?: string,
   // VTID-03892: dev_agent_memory recall, rendered by the caller (processWithGemini)
   // and appended here regardless of which base prompt applies above.
-  memoryContextBlock?: string
+  memoryContextBlock?: string,
+  // VTID-04628: the tool rounds of THIS turn (assistant tool calls + user tool
+  // results), appended after the prior conversation so the model sees what its
+  // tools returned and can call more.
+  toolTranscript: LLMRouterMessage[] = [],
+  service = 'gemini-operator',
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -4309,8 +4400,18 @@ async function callVertexWithTools(
   // catalog rendered from the declarations below). '' unless
   // OPERATOR_BOOTSTRAP_PACK_ENABLED=true; fail-open by construction.
   const routerTools = getRouterToolDefinitions(userRole);
-  const bootstrapPack = await getOperatorBootstrapPack({ toolDefs: routerTools });
-  const systemPrompt = `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}`;
+  // VTID-04560: the engineering context (codebase orientation, bootstrap pack)
+  // is for the Operator Console and developer/admin callers only. Before this,
+  // a community ORB text fallback that passed its own member system
+  // instruction still received the platform's internal engineering context.
+  const engineering = engineeringContextAllowed(customSystemInstruction, userRole);
+  const bootstrapPack = engineering ? await getOperatorBootstrapPack({ toolDefs: routerTools }) : '';
+  // VTID-04564: the same domain atlas the Command Hub voice assistant starts
+  // with; the live snapshot is one tool call away (dev_system_status).
+  const developerKnowledge = engineering ? await operatorDeveloperKnowledge() : '';
+  const systemPrompt = engineering
+    ? `${withMemory}\n\n${CODEBASE_OVERVIEW_BLOCK}${bootstrapPack ? `\n\n${bootstrapPack}` : ''}${developerKnowledge ? `\n\n${developerKnowledge}` : ''}`
+    : withMemory;
 
   // VTID-03579: was a direct Vertex `generateContent` with ADC. The operator is
   // the last big Google caller and the hardest, because it is an agentic loop
@@ -4325,7 +4426,7 @@ async function callVertexWithTools(
   // used to wrap this would double-count every operator turn.
   const r = await callViaRouter('operator', text, {
     vtid: vtid || null,
-    service: 'gemini-operator',
+    service,
     systemPrompt,
     // VTID-04102: was 4096 — half the deepseekAdapter's own default (8000).
     // This call carries the full bootstrap pack + codebase-overview block +
@@ -4335,7 +4436,10 @@ async function callVertexWithTools(
     // text). Matches the router-wide default instead of a narrower one.
     maxTokens: 8000,
     tools: routerTools,
-    history: conversationHistory.map((m) => ({ role: m.role, content: m.content })),
+    history: [
+      ...conversationHistory.map((m) => ({ role: m.role, content: m.content }) as LLMRouterMessage),
+      ...toolTranscript,
+    ],
   });
 
   if (!r.ok) {
@@ -4347,7 +4451,7 @@ async function callVertexWithTools(
 
   const toolCalls: GeminiToolCall[] | undefined =
     r.toolCalls && r.toolCalls.length > 0
-      ? r.toolCalls.map((tc) => ({ name: tc.name, args: tc.arguments || {} }))
+      ? r.toolCalls.map((tc) => ({ name: tc.name, args: tc.arguments || {}, ...(tc.id ? { id: tc.id } : {}) }))
       : undefined;
 
   if (toolCalls) {
@@ -4382,7 +4486,10 @@ async function callVertexWithTools(
 async function sendToolResultsToVertex(
   originalText: string,
   toolResults: GeminiToolResult[],
-  threadId: string
+  threadId: string,
+  // VTID-04560: false for a member caller — the tool-result turn then carries
+  // no engineering context either (same gate as the main turn).
+  engineering = true,
   // VTID-04031: who served the final call and what it cost, for the turn's meta.
 ): Promise<{ reply: string; usage?: LLMUsage; provider?: string; model?: string }> {
   const baseToolResultPrompt = `You are Vitana, a friendly community assistant. Present the tool results to the user in a warm, helpful way.
@@ -4397,7 +4504,7 @@ CRITICAL — Sharing links:
   https://vitanaland.com/e/city-by-bike`;
   // VTID-04018 (§4.1 "same prompt for tool-result turns"): the tool-result
   // turn carries the same bootstrap pack as the main turn — '' when disabled.
-  const toolResultPack = await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) });
+  const toolResultPack = engineering ? await getOperatorBootstrapPack({ toolDefs: getRouterToolDefinitions(undefined) }) : '';
   const systemPrompt = toolResultPack ? `${baseToolResultPrompt}\n\n${toolResultPack}` : baseToolResultPrompt;
 
   // VTID-03579: results are presented as a TEXT turn, not as tool_result blocks,
@@ -4528,6 +4635,26 @@ function formatToolResultsAsResponse(toolResults: GeminiToolResult[]): { reply: 
  *
  * VTID-01106: Added optional systemInstruction override for ORB memory context
  */
+/**
+ * VTID-04582: a reply that presents a tool call which did not run this turn
+ * gets a visible notice and an OASIS event (see operator-fabricated-tool-guard).
+ */
+function guardReplyAgainstFabricatedToolCalls(reply: string, calledTools: string[], threadId: string): string {
+  const declared = GEMINI_TOOL_DEFINITIONS.functionDeclarations.map((d: { name: string }) => d.name);
+  const fabricated = findFabricatedToolClaims(reply, calledTools, declared);
+  if (fabricated.length === 0) return reply;
+  console.warn(`[VTID-04582] reply presents tool call(s) that did not run: ${fabricated.join(', ')} (thread ${threadId})`);
+  emitOasisEvent({
+    vtid: 'VTID-04582',
+    type: 'operator.reply.fabricated_tool_call',
+    source: 'operator-console',
+    status: 'warning',
+    message: `Operator reply presented tool call(s) that did not run: ${fabricated.join(', ')}`,
+    payload: { threadId, fabricated, called: calledTools },
+  }).catch(() => {});
+  return reply + fabricatedToolNotice(fabricated);
+}
+
 export async function processWithGemini(input: {
   text: string;
   threadId: string;
@@ -4583,7 +4710,8 @@ export async function processWithGemini(input: {
       // empty result never blocks or degrades the operator turn, it just
       // means no memory block gets appended.
       let memoryContextBlock: string | undefined;
-      try {
+      // VTID-04560: developer memory only for the console and developer/admin callers.
+      if (engineeringContextAllowed(systemInstruction, userRole)) try {
         // VTID-04027: fetch a wider candidate set; buildDevMemoryContextBlock diversifies and bounds it.
         const memRes = await recallDevMemory(buildRecallQuery(threadSummary, text), 'vitana-platform', { limit: RECALL_CANDIDATES });
         if (memRes.ok && memRes.hits.length > 0) {
@@ -4612,60 +4740,125 @@ export async function processWithGemini(input: {
       // Check if Vertex wants to call any tools
       if (vertexResponse.toolCalls && vertexResponse.toolCalls.length > 0) {
         const toolResults: GeminiToolResult[] = [];
+        // VTID-04628: the turn is a bounded loop, not one round. Each round's
+        // tool calls and results go back to the model WITH the tools, so it can
+        // correct a failed query or take a second step (look up a schema, then
+        // count). It ends when the model answers in text; when the round budget
+        // runs out, the tool-less final call below answers from what it has.
+        const maxRounds = operatorMaxToolRounds();
+        const transcript: LLMRouterMessage[] = [{ role: 'user', content: text }];
+        const modelCalls: Array<{ model?: string; usage?: LLMUsage }> = [{ model: vertexResponse.model, usage: vertexResponse.usage }];
+        let pending: GeminiToolCall[] = vertexResponse.toolCalls;
+        let pendingText = vertexResponse.reply || '';
+        let rounds = 0;
+        let loopReply: { reply: string; provider?: string; model?: string } | null = null;
+        let toolIndex = 0;
 
-        for (const [index, toolCall] of vertexResponse.toolCalls.entries()) {
-          // VTID-04028: announce the call before it runs, report it after —
-          // the transcript the Command Hub renders live.
-          emitTurnEvent(onEvent, { type: 'tool.call', index, name: toolCall.name, args: boundTurnEventArgs(toolCall.args) });
-          const toolStartedAt = Date.now();
-          const result = await executeTool(toolCall.name, toolCall.args, threadId);
-          emitTurnEvent(onEvent, {
-            type: 'tool.result',
-            index,
-            name: toolCall.name,
-            ok: result.ok,
-            duration_ms: Date.now() - toolStartedAt,
-            ...(result.error ? { error: clipForTurnEvent(result.error, TURN_EVENT_EXCERPT_MAX_CHARS) } : {}),
-            ...(result.governanceBlocked ? { governance_blocked: true } : {}),
-            excerpt: clipForTurnEvent(result.data ?? {}, TURN_EVENT_EXCERPT_MAX_CHARS),
+        while (pending.length > 0) {
+          rounds += 1;
+          transcript.push({
+            role: 'assistant',
+            toolCalls: pending.map((c) => ({ name: c.name, arguments: c.args, ...(c.id ? { id: c.id } : {}) })),
+            ...(pendingText ? { content: pendingText } : {}),
           });
-          toolResults.push({
-            name: toolCall.name,
-            response: {
+          const roundResults: Array<{ id?: string; name: string; result: string; isError?: boolean }> = [];
+          for (const toolCall of pending) {
+            const index = toolIndex++;
+            // VTID-04028: announce the call before it runs, report it after —
+            // the transcript the Command Hub renders live.
+            emitTurnEvent(onEvent, { type: 'tool.call', index, name: toolCall.name, args: boundTurnEventArgs(toolCall.args) });
+            const toolStartedAt = Date.now();
+            const result = await executeTool(toolCall.name, toolCall.args, threadId);
+            emitTurnEvent(onEvent, {
+              type: 'tool.result',
+              index,
+              name: toolCall.name,
+              ok: result.ok,
+              duration_ms: Date.now() - toolStartedAt,
+              ...(result.error ? { error: clipForTurnEvent(result.error, TURN_EVENT_EXCERPT_MAX_CHARS) } : {}),
+              ...(result.governanceBlocked ? { governance_blocked: true } : {}),
+              excerpt: clipForTurnEvent(result.data ?? {}, TURN_EVENT_EXCERPT_MAX_CHARS),
+            });
+            const response = {
               ok: result.ok,
               ...result.data,
               error: result.error,
               governanceBlocked: result.governanceBlocked
-            }
+            };
+            toolResults.push({ name: toolCall.name, response });
+            roundResults.push({
+              ...(toolCall.id ? { id: toolCall.id } : {}),
+              name: toolCall.name,
+              result: clipToolResultForTranscript(response),
+              ...(result.ok ? {} : { isError: true }),
+            });
+          }
+          transcript.push({ role: 'user', toolResults: roundResults });
+          pending = [];
+          if (rounds >= maxRounds) break;
+
+          const nextStartedAt = Date.now();
+          let next: Awaited<ReturnType<typeof callVertexWithTools>>;
+          try {
+            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue');
+          } catch (contErr: any) {
+            console.warn(`[VTID-04628] operator continuation round ${rounds + 1} failed, answering from the tool results: ${contErr?.message}`);
+            break;
+          }
+          modelCalls.push({ model: next.model, usage: next.usage });
+          const moreTools = next.toolCalls && next.toolCalls.length > 0 ? next.toolCalls : [];
+          emitTurnEvent(onEvent, {
+            type: 'model.turn',
+            stage: moreTools.length > 0 ? 'plan' : 'final',
+            provider: next.provider ?? vertexResponse.provider ?? 'router',
+            model: next.model ?? vertexResponse.model ?? 'router',
+            tool_calls: moreTools.length,
+            duration_ms: Date.now() - nextStartedAt,
+            ...turnUsageFields(next.model ?? vertexResponse.model, next.usage),
+          });
+          if (moreTools.length > 0) {
+            pending = moreTools;
+            pendingText = next.reply || '';
+          } else {
+            loopReply = { reply: next.reply, provider: next.provider, model: next.model };
+          }
+        }
+
+        let finalResponse: { reply: string; usage?: LLMUsage; provider?: string; model?: string };
+        if (loopReply) {
+          finalResponse = loopReply;
+        } else {
+          // Round budget spent (or a continuation failed): one tool-less call
+          // answers from every result gathered so far.
+          const finalStartedAt = Date.now();
+          finalResponse = await sendToolResultsToVertex(text, toolResults, threadId, engineeringContextAllowed(systemInstruction, userRole));
+          modelCalls.push({ model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage });
+          emitTurnEvent(onEvent, {
+            type: 'model.turn',
+            stage: 'final',
+            provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
+            model: finalResponse.model ?? vertexResponse.model ?? 'router',
+            tool_calls: 0,
+            duration_ms: Date.now() - finalStartedAt,
+            ...turnUsageFields(finalResponse.model ?? vertexResponse.model, finalResponse.usage),
           });
         }
 
-        // Send tool results back to Vertex for final response
-        const finalStartedAt = Date.now();
-        const finalResponse = await sendToolResultsToVertex(text, toolResults, threadId);
-        emitTurnEvent(onEvent, {
-          type: 'model.turn',
-          stage: 'final',
-          provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
-          model: finalResponse.model ?? vertexResponse.model ?? 'router',
-          tool_calls: 0,
-          duration_ms: Date.now() - finalStartedAt,
-          ...turnUsageFields(finalResponse.model ?? vertexResponse.model, finalResponse.usage),
-        });
-
-        // VTID-04031: both model calls of the turn folded into one cost line.
-        const turnCost = summarizeTurnCost([
-          { model: vertexResponse.model, usage: vertexResponse.usage },
-          { model: finalResponse.model ?? vertexResponse.model, usage: finalResponse.usage },
-        ]);
+        // VTID-04031: every model call of the turn folded into one cost line.
+        const turnCost = summarizeTurnCost(modelCalls);
         return {
-          reply: finalResponse.reply,
+          reply: guardReplyAgainstFabricatedToolCalls(finalResponse.reply, toolResults.map((r) => r.name), threadId),
           toolResults,
           meta: {
             provider: vertexResponse.provider ?? 'router',
             model: vertexResponse.model ?? 'router',
             mode: `operator_${vertexResponse.provider ?? 'router'}`,
-            tool_calls: vertexResponse.toolCalls.length,
+            tool_calls: toolResults.length,
+            tool_rounds: rounds,
+            // VTID-04540: the model that wrote the reply (the final call can
+            // land on a fallback different from the planning call).
+            reply_provider: finalResponse.provider ?? vertexResponse.provider ?? 'router',
+            reply_model: finalResponse.model ?? vertexResponse.model ?? 'router',
             vtid: 'VTID-01023',
             duration_ms: Date.now() - planStartedAt,
             ...turnCost,
@@ -4675,7 +4868,7 @@ export async function processWithGemini(input: {
 
       // No tool calls, return Vertex's direct response
       return {
-        reply: vertexResponse.reply,
+        reply: guardReplyAgainstFabricatedToolCalls(vertexResponse.reply, [], threadId),
         meta: {
           provider: vertexResponse.provider ?? 'router',
           model: vertexResponse.model ?? 'router',

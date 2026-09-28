@@ -30,6 +30,7 @@
  */
 
 import type { JourneyState } from '../../../services/journey/user-journey-service';
+import { isBeforeNewDayStart } from '../../../services/assistant-continuation/providers/new-day-return';
 
 export type JourneyGreetingKind = 'first_session' | 'daily_morning' | null;
 
@@ -93,9 +94,15 @@ export function todayInTimezone(now: Date, timezone: string | null | undefined):
 export function decideGreetingKind(
   journey: JourneyState | null,
   todayDateIso: string,
+  localHour?: number,
 ): JourneyGreetingKind {
   if (!journey) return null;
   if (journey.is_first_session) return 'first_session';
+  // VTID-04595 — a new day starts at 05:00 local. Between 00:00 and 04:59 the
+  // member is still in the previous day: no morning greeting, and (because the
+  // caller stamps last_session_date only when a kind fires) no stamp that
+  // would make the real first conversation of the morning a same-day repeat.
+  if (isBeforeNewDayStart(localHour ?? -1)) return null;
   if (!journey.last_session_date) return 'daily_morning';
   if (journey.last_session_date < todayDateIso) return 'daily_morning';
   return null;

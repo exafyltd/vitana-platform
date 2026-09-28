@@ -95,6 +95,12 @@ export class ScriptedModel {
   readonly refused: Array<{ stage: string; service: string }> = [];
   /** Console plan calls (service `gemini-operator`), consumed in order. */
   operatorPlan: Step[] = [];
+  /**
+   * VTID-04628: console continuation rounds (service `gemini-operator-continue`),
+   * consumed in order. Empty = the model answers in text from the results, as
+   * the old single-round final call did.
+   */
+  operatorContinue: Step[] = [];
   /** Worker runs, one per agent execution, consumed when a run starts. */
   workerRuns: WorkerRun[] = [];
   private run: WorkerRun | null = null;
@@ -105,6 +111,7 @@ export class ScriptedModel {
     this.calls.length = 0;
     this.refused.length = 0;
     this.operatorPlan = [];
+    this.operatorContinue = [];
     this.workerRuns = [];
     this.run = null;
     this.turn = 0;
@@ -125,6 +132,11 @@ export class ScriptedModel {
       const ctx = { stage, prompt, opts, turn: this.opTurn++ };
       if (!step) return text('I have nothing scripted for this turn.');
       return typeof step === 'function' ? step(ctx) : step;
+    }
+    if (stage === 'operator' && service === 'gemini-operator-continue') {
+      const step = this.operatorContinue.shift();
+      if (!step) return text(`Done. ${prompt.slice(0, 200)}`);
+      return typeof step === 'function' ? step({ stage, prompt, opts, turn: this.opTurn }) : step;
     }
     if (stage === 'operator' && service === 'gemini-operator-tool-results') {
       return text(`Done. ${prompt.slice(0, 200)}`);

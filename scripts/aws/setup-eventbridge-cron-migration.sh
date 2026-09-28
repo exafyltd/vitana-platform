@@ -89,6 +89,8 @@
 # ──────────────────────────────────────────────────────────────
 
 set -euo pipefail
+# VTID-04673: no interactive pager -- the first live apply stopped at "(END)".
+export AWS_PAGER=""
 
 REGION="${VITANA_AWS_REGION:-eu-central-1}"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"
@@ -426,10 +428,50 @@ echo "Waiting 10s for IAM role propagation..."
 sleep 10
 
 # ── 4. One EventBridge Scheduler schedule per job ────────────
-# 5-field unix cron -> EventBridge's 6-field cron(minute hour day-of-month
-# month day-of-week year), trailing wildcard year appended.
+# 5-field unix cron -> EventBridge Scheduler cron(). VTID-04673: the old
+# version only appended a year, which EventBridge rejects (`cron(0 8 * * * *)`
+# -- exactly one of day-of-month / day-of-week must be `?`) and which would
+# also have shifted every weekday by one (EventBridge 1 = Sunday, unix 0 =
+# Sunday, so unix `5` = Friday meant Thursday). All 11 schedules failed on the
+# first apply, 2026-09-26. Weekdays are emitted as names, `*/N` as `0/N`.
+# The block between the markers is executed by the VTID-04673 test.
 to_eventbridge_cron() {
-  echo "cron($1 *)"
+  python3 - "$1" <<'PY'
+# --- eventbridge-cron-converter:begin ---
+import re, sys
+DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+def _day(t):
+    return DAYS[int(t)] if t.isdigit() else t.upper()
+def _dow(field):
+    out = []
+    for item in field.split(','):
+        if '-' in item:
+            a, b = item.split('-', 1)
+            out.append(_day(a) + '-' + _day(b))
+        else:
+            out.append(_day(item))
+    return ','.join(out)
+def convert(expr):
+    f = expr.split()
+    if len(f) != 5:
+        raise ValueError('expected 5 unix cron fields: %r' % expr)
+    minute, hour, dom, month, dow = f
+    minute = re.sub(r'^\*/', '0/', minute)
+    hour = re.sub(r'^\*/', '0/', hour)
+    if dow == '*':
+        dow = '?'
+    else:
+        if dom != '*':
+            raise ValueError('EventBridge cannot restrict both day-of-month and day-of-week: %r' % expr)
+        dom, dow = '?', _dow(dow)
+    return 'cron(%s %s %s %s %s *)' % (minute, hour, dom, month, dow)
+try:
+    print(convert(sys.argv[1]))
+except ValueError as e:
+    print('ERROR: %s' % e, file=sys.stderr)
+    sys.exit(2)
+# --- eventbridge-cron-converter:end ---
+PY
 }
 
 CREATED=0
@@ -437,7 +479,10 @@ FAILED=0
 for JOB in "${JOBS[@]}"; do
   IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY EXTRA <<< "$JOB"
   EXTRA="${EXTRA:-{\}}"
-  EB_CRON=$(to_eventbridge_cron "$SCHEDULE")
+  if ! EB_CRON=$(to_eventbridge_cron "$SCHEDULE"); then
+    echo "── $NAME  FAILED — cannot convert '$SCHEDULE' to an EventBridge cron"
+    FAILED=$((FAILED+1)); continue
+  fi
   # Built in Python, not a bash heredoc — the Input field is itself a
   # JSON-encoded string (EventBridge Scheduler's contract), and getting
   # that double-encoding right with bash quoting alone is fragile.
@@ -452,31 +497,26 @@ print(json.dumps({
 ")
 
   echo "── $NAME  ($EB_CRON $TIMEZONE) -> $PATH_"
-  if aws scheduler create-schedule \
+  # VTID-04673: update when it exists, else create -- and never discard the
+  # AWS error (the old `> /dev/null 2>&1` printed "see above" with nothing above).
+  if aws scheduler get-schedule --name "$NAME" --region "$REGION" > /dev/null 2>&1; then
+    VERB=update-schedule; DONE_MSG="updated (already existed)."
+  else
+    VERB=create-schedule; DONE_MSG="created."
+  fi
+  if aws scheduler "$VERB" \
     --name "$NAME" \
     --region "$REGION" \
     --schedule-expression "$EB_CRON" \
     --schedule-expression-timezone "$TIMEZONE" \
     --flexible-time-window '{"Mode":"OFF"}' \
     --state ENABLED \
-    --target "$TARGET" > /dev/null 2>&1; then
-    echo "  created."
+    --target "$TARGET" > /dev/null; then
+    echo "  $DONE_MSG"
     CREATED=$((CREATED+1))
   else
-    if aws scheduler update-schedule \
-      --name "$NAME" \
-      --region "$REGION" \
-      --schedule-expression "$EB_CRON" \
-      --schedule-expression-timezone "$TIMEZONE" \
-      --flexible-time-window '{"Mode":"OFF"}' \
-      --state ENABLED \
-      --target "$TARGET" > /dev/null 2>&1; then
-      echo "  updated (already existed)."
-      CREATED=$((CREATED+1))
-    else
-      echo "  FAILED — see above for the error."
-      FAILED=$((FAILED+1))
-    fi
+    echo "  FAILED — the AWS error is printed just above."
+    FAILED=$((FAILED+1))
   fi
 done
 

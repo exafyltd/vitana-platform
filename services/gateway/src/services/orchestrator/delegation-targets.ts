@@ -13,6 +13,7 @@
 import { registerDelegationTarget, type DelegationTarget } from './dispatcher';
 import { isSupportSpecialistEnabled, SUPPORT_TARGET } from './support-specialist';
 import { COMMERCE_TARGET, isCommerceSpecialistEnabled } from './commerce-specialist';
+import { DEEP_DIVE_TARGET } from '../../orb/developer/deep-dive';
 
 /** Upper bound for one operator turn run as a delegated job. */
 export const OPERATOR_JOB_MAX_MS = 5 * 60 * 1000;
@@ -49,6 +50,8 @@ export function registerDefaultDelegationTargets(): void {
   if (registered) return;
   registered = true;
   registerDelegationTarget(OPERATOR_TARGET);
+  // VTID-04563: the developer's read-only deep dive (Command Hub only).
+  registerDelegationTarget(DEEP_DIVE_TARGET);
   // VTID-04397: the member-side support specialist, only when switched on.
   if (isSupportSpecialistEnabled()) registerDelegationTarget(SUPPORT_TARGET);
   // VTID-04400: the business-side commerce onboarding specialist, same rule.

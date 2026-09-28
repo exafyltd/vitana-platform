@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04649",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "member ticket list requires a login", "path": "/api/v1/feedback/tickets/mine", "expect_status": 401 },
+    { "kind": "http", "name": "ticket intake refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/feedback/tickets", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "admin ticket list requires a login", "path": "/api/v1/admin/feedback/tickets", "expect_status": 401 },
+    { "kind": "http", "name": "Approve & Fix refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/admin/feedback/tickets/00000000-0000-0000-0000-000000000000/approve", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04649-feedback-bridge-approver.test.ts test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04308-feedback-approve-dispatch.test.ts test/vtid-04333-feedback-bridge-ticket-ref.test.ts", "cwd": "services/gateway",
+      "reason": "auto-dispatch writes a recommendation, a VTID and an execution; staging writes to the production database, so the dispatch itself is proven by the suites, not by a staging write" }
+  ]
+}

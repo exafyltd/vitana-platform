@@ -56,6 +56,7 @@ import { applyScannerOverrides } from './dev-autopilot-safety';
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
+import { devPlannerModel } from './dev-pipeline-models';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -172,11 +173,16 @@ async function callRoutedLlm(
 ): Promise<{ ok: boolean; text?: string; usage?: MessagesResponse['usage']; error?: string }> {
   // Lazy import to avoid a circular dep at module init time.
   const { callViaRouter } = await import('./llm-router');
+  // VTID-04593: the planner runs on DeepSeek Flash (primary only; the stage's
+  // own fallback still applies). The shared `planner` policy row is untouched.
+  const planner = devPlannerModel();
   const r = await callViaRouter('planner', prompt, {
     vtid: vtid ?? null,
     service: 'dev-autopilot-planning',
     allowFallback: true,
     maxTokens: 8000,
+    providerOverride: planner.provider,
+    modelOverride: planner.model,
   });
   if (!r.ok) {
     return { ok: false, error: r.error || 'router returned ok=false' };

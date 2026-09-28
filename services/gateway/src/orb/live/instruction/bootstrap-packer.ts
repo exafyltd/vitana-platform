@@ -169,7 +169,8 @@ function packSentinel(shortened: string[], dropped: string[]): string {
   const parts: string[] = [];
   if (shortened.length) parts.push(`shortened: ${shortened.join(', ')}`);
   if (dropped.length) parts.push(`omitted: ${dropped.join(', ')}`);
-  return `\n[context packed to fit budget — ${parts.join('; ')}]`;
+  // VTID-04579: name the way back to what was left out.
+  return `\n[context packed to fit budget — ${parts.join('; ')}; use search_memory for anything not shown here]`;
 }
 
 export function packBootstrapContext(input: string, max: number = BOOTSTRAP_PACK_MAX_CHARS): BootstrapPackResult {
@@ -188,7 +189,7 @@ export function packBootstrapContext(input: string, max: number = BOOTSTRAP_PACK
   }
 
   // Reserve room for the sentinel so the result stays within max when possible.
-  const budget = Math.max(0, max - 160);
+  const budget = Math.max(0, max - 220); // VTID-04579: room for the longer sentinel
   const keptText = new Map<number, string>();
   let used = 0;
   // Pinned sections first, always.

@@ -60,11 +60,11 @@ export function triageRouterTools(): LLMRouterTool[] {
     },
     {
       name: 'dev_cloudwatch_logs',
-      description: 'Recent CloudWatch log events for one gateway/agent service log group (/ecs/vitana-<service>), optionally filtered. Read-only.',
+      description: 'Recent CloudWatch log events for one gateway/agent service log group (/vitana/<service>), optionally filtered. Read-only.',
       inputSchema: {
         type: 'object',
         properties: {
-          log_group: { type: 'string', description: 'e.g. /ecs/vitana-gateway or /ecs/vitana-gateway-awsdr' },
+          log_group: { type: 'string', description: 'e.g. /vitana/gateway (staging) or /vitana/gateway-awsdr (prod)' },
           filter_pattern: { type: 'string', description: 'CloudWatch filter pattern, e.g. "ERROR" or a session id' },
           minutes: { type: 'integer', description: 'Look-back window in minutes (default 30, max 1440)' },
           limit: { type: 'integer', description: 'Max events (default 50, max 200)' },
@@ -170,7 +170,7 @@ export function createTriageToolExecutor(ctx: TriageToolContext): (name: string,
         case 'dev_cloudwatch_logs': {
           if (env.OPERATOR_AWS_READONLY_ENABLED !== 'true') return { result: 'dev_cloudwatch_logs is disabled on this stack (OPERATOR_AWS_READONLY_ENABLED is not "true")', isError: true };
           const logGroup = typeof args.log_group === 'string' ? args.log_group.trim() : '';
-          if (!logGroup) return { result: 'dev_cloudwatch_logs: log_group is required (e.g. /ecs/vitana-gateway)', isError: true };
+          if (!logGroup) return { result: 'dev_cloudwatch_logs: log_group is required (e.g. /vitana/gateway)', isError: true };
           const r = await filterVitanaLogs({
             logGroup,
             filterPattern: typeof args.filter_pattern === 'string' ? args.filter_pattern : undefined,

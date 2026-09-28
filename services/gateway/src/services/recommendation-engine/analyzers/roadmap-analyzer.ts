@@ -140,6 +140,72 @@ interface StalledVtid {
   last_event_at: string;
 }
 
+/**
+ * VTID-04666: ledger statuses that are never "stalled work". Terminal or
+ * abandoned rows (voided / deleted / rejected / cancelled), finished rows,
+ * and bare `allocated` shells nobody approved.
+ */
+export const NON_STALLABLE_VTID_STATUSES = [
+  'completed',
+  'archived',
+  'voided',
+  'deleted',
+  'rejected',
+  'cancelled',
+  'allocated',
+] as const;
+
+/** VTID-04666: a VTID untouched for longer than this is dead, not stalled. */
+export const STALLED_VTID_MAX_AGE_DAYS = 365;
+
+export interface LedgerRowForStall {
+  vtid: string;
+  title?: string | null;
+  status?: string | null;
+  spec_status?: string | null;
+  is_terminal?: boolean | null;
+  updated_at: string;
+}
+
+/**
+ * VTID-04666: pure predicate mirroring the PostgREST filter, applied again
+ * in JS so a row the query let through (or a future query change) can never
+ * surface terminal / unapproved / ancient work as "stalled".
+ */
+export function isStalledVtidCandidate(
+  row: LedgerRowForStall,
+  nowMs: number,
+  staleDays: number,
+  maxAgeDays: number = STALLED_VTID_MAX_AGE_DAYS,
+): boolean {
+  if (!row || !row.vtid || !row.updated_at) return false;
+  if (row.is_terminal === true) return false;
+  const status = String(row.status || '').toLowerCase();
+  if ((NON_STALLABLE_VTID_STATUSES as readonly string[]).includes(status)) return false;
+  if (String(row.spec_status || '').toLowerCase() !== 'approved') return false;
+  const updatedMs = new Date(row.updated_at).getTime();
+  if (!Number.isFinite(updatedMs)) return false;
+  const ageDays = (nowMs - updatedMs) / 86400000;
+  return ageDays >= staleDays && ageDays <= maxAgeDays;
+}
+
+/** VTID-04666: the PostgREST query for stalled VTIDs (exported for tests). */
+export function buildStalledVtidQuery(nowMs: number, staleDays: number, maxAgeDays: number = STALLED_VTID_MAX_AGE_DAYS): string {
+  const staleDate = new Date(nowMs - staleDays * 86400000).toISOString();
+  const maxAgeDate = new Date(nowMs - maxAgeDays * 86400000).toISOString();
+  return (
+    'select=vtid,title,status,spec_status,is_terminal,updated_at' +
+    `&status=not.in.(${NON_STALLABLE_VTID_STATUSES.join(',')})` +
+    '&is_terminal=not.is.true' +
+    '&spec_status=eq.approved' +
+    `&updated_at=lt.${staleDate}` +
+    `&updated_at=gt.${maxAgeDate}` +
+    // Newest-stalled first: the most recently active approved work is the
+    // most likely to still matter.
+    '&order=updated_at.desc&limit=50'
+  );
+}
+
 async function scanStalledVtids(config: RoadmapAnalyzerConfig): Promise<StalledVtid[]> {
   const stalled: StalledVtid[] = [];
 
@@ -152,11 +218,14 @@ async function scanStalledVtids(config: RoadmapAnalyzerConfig): Promise<StalledV
       return stalled;
     }
 
-    const staleDate = new Date(Date.now() - config.stale_days * 24 * 60 * 60 * 1000).toISOString();
+    const nowMs = Date.now();
 
-    // Query VTIDs that haven't been updated recently
+    // VTID-04666: only approved, non-terminal work that went quiet between
+    // stale_days and STALLED_VTID_MAX_AGE_DAYS ago. The old query excluded
+    // only completed/archived, so voided / deleted / terminal VTIDs were
+    // recommended ("stalled in voided — no activity for 9765 days").
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?select=vtid,title,status,updated_at&status=neq.completed&status=neq.archived&updated_at=lt.${staleDate}&order=updated_at.asc&limit=50`,
+      `${supabaseUrl}/rest/v1/vtid_ledger?${buildStalledVtidQuery(nowMs, config.stale_days)}`,
       {
         method: 'GET',
         headers: {
@@ -172,16 +241,17 @@ async function scanStalledVtids(config: RoadmapAnalyzerConfig): Promise<StalledV
       return stalled;
     }
 
-    const vtids = (await response.json()) as any[];
+    const vtids = (await response.json()) as LedgerRowForStall[];
 
     for (const vtid of vtids) {
+      if (!isStalledVtidCandidate(vtid, nowMs, config.stale_days)) continue;
       const lastUpdate = new Date(vtid.updated_at);
-      const daysSince = Math.floor((Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
+      const daysSince = Math.floor((nowMs - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
 
       stalled.push({
         vtid: vtid.vtid,
         title: vtid.title || 'Untitled',
-        status: vtid.status,
+        status: String(vtid.status || ''),
         days_stalled: daysSince,
         last_event_at: vtid.updated_at,
       });
@@ -190,7 +260,8 @@ async function scanStalledVtids(config: RoadmapAnalyzerConfig): Promise<StalledV
     console.error(`${LOG_PREFIX} Error scanning stalled VTIDs:`, error);
   }
 
-  return stalled.sort((a, b) => b.days_stalled - a.days_stalled);
+  // VTID-04666: newest-stalled first (was oldest first).
+  return stalled.sort((a, b) => a.days_stalled - b.days_stalled);
 }
 
 // =============================================================================

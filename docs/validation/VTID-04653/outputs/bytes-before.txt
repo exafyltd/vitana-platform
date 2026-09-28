@@ -1,0 +1,9 @@
+admin-surface-en.txt                               total= 10629 (no bootstrap marker)
+anonymous-de.txt                                   total=  8157 (no bootstrap marker)
+authenticated-community-de-first-day.txt           total= 26787 scaffold= 23628 head= 15215 tail= 8413 mid= 3159
+authenticated-community-en-returning.txt           total= 27894 scaffold= 23787 head= 15484 tail= 8303 mid= 4107
+cascade-ru.txt                                     total= 26991 scaffold= 23991 head= 15580 tail= 8411 mid= 3000
+command-hub-developer-en.txt                       total= 12343 (no bootstrap marker)
+devon-specialist-en.txt                            total=  1973 (no bootstrap marker)
+guided-topic-de.txt                                total= 28196 scaffold= 22003 head= 13587 tail= 8416 mid= 6193
+vertex-serbian-bridge-sr.txt                       total= 27007 scaffold= 23997 head= 15582 tail= 8415 mid= 3010

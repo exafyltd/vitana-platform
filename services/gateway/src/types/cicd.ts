@@ -171,6 +171,8 @@ export type CicdEventType =
   | 'governance.evaluation'
   // VTID-0536: Gemini Operator Tools Bridge events
   | 'assistant.turn'
+  // VTID-04582: an Operator Console reply presented a tool call that did not run
+  | 'operator.reply.fabricated_tool_call'
   // VTID-0150-B: Assistant Core events
   | 'assistant.session.started'
   | 'autopilot.intent.created'
@@ -514,6 +516,13 @@ export type CicdEventType =
   | 'llm.call.started'
   | 'llm.call.completed'
   | 'llm.call.failed'
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. One event per
+  // decision call, same shape of purpose as llm.call.* (served traffic with
+  // provider, model, latency, tokens and cost), plus plane/role/tenant so
+  // spend can be split internal vs community (docs/JEV-INTEGRATION-PLAN.md §8.5).
+  | 'jev.decision.completed'
+  | 'jev.decision.failed'
+  | 'jev.decision.fallback'
   // VTID-03565: an operator preflighting a provider before flipping routing at
   // it. Deliberately its OWN topic rather than an llm.call.* event: a preflight
   // is not served traffic, and booking it as llm.call.completed would corrupt
@@ -529,6 +538,9 @@ export type CicdEventType =
   | 'conversation.turn.completed'
   // VTID-04353 (WS-0.4): one per finalized ORB live session.
   | 'conversation.session.finalized'
+  // VTID-04525 (Conversation hub B1): the conversation system changed with a
+  // build — tools, opening providers or flags differ from the last snapshot.
+  | 'conversation.system.snapshot'
   // VTID-04355 (WS-0.5): every offered action ends in exactly one outcome.
   | 'conversation.offer.accepted'
   | 'conversation.offer.declined'
@@ -571,6 +583,10 @@ export type CicdEventType =
   | 'admin.insight.dismissed'
   // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
   | 'admin.briefing.injected'
+  // VTID-04560/04563: which Vitana serves a session; developer deep dives
+  | 'orb.session.profile.resolved'
+  | 'orb.deep_dive.completed'
+  | 'orb.deep_dive.failed'
   | 'admin.insight.urgent_notified'
   // BOOTSTRAP-ADMIN-GG: tenant health index
   | 'tenant.health.computed'
@@ -660,6 +676,12 @@ export type CicdEventType =
   | 'voice.healing.rollback.triggered'
   | 'voice.healing.rollback.failed'
   | 'voice.healing.investigation.completed'
+  // VTID-04626: operator decisions on the Voice Self-Healing screen
+  | 'voice.healing.mode.changed'
+  | 'voice.healing.report.accepted'
+  | 'voice.healing.report.dismissed'
+  | 'voice.healing.report.decided'
+  | 'voice.healing.quarantine.released'
   // VTID-NAV-01: Vitana Navigator — voice-driven navigation guide events
   | 'orb.navigator.consulted'
   | 'orb.navigator.requested'
@@ -697,6 +719,7 @@ export type CicdEventType =
   | 'dev.fallback.tool_used'
   // VTID-02934: Autopilot recommendation activation
   | 'autopilot.recommendation.activated'
+  | 'autopilot.recommendation.activation_bridge_failed' // VTID-04657
   // VTID-02935: Mission Alignment warnings — fired when a recommendation
   // graduates to a VTID without declaring how it serves the Ultimate Goal.
   // See docs/GOVERNANCE/ULTIMATE-GOAL.md. NOT a hard block — visibility only.
@@ -791,6 +814,9 @@ export type CicdEventType =
   // VTID-04368: LLM provider outage gate on the autopilot loop
   | 'dev_autopilot.provider_outage.detected'
   | 'dev_autopilot.provider_outage.cleared'
+  // VTID-04667: per-scanner / per-rule circuit breaker on autonomous work
+  | 'dev_autopilot.scanner_breaker.opened'
+  | 'dev_autopilot.scanner_breaker.closed'
   | 'dev_autopilot.finding.completed'
   | 'dev_autopilot.execution.approved'
   | 'dev_autopilot.execution.auto_approved'
@@ -939,6 +965,8 @@ export type CicdEventType =
   | 'architecture.investigation.failed'
   // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
   // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  // VTID-04643: an exafy admin started a test workflow from the Command Hub Run Tests tab.
+  | 'testing.run.launched'
   | 'staging.deploy.completed'
   | 'staging.deploy.failed'
   | 'staging.metrics.snapshot'
@@ -961,6 +989,8 @@ export type CicdEventType =
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'
+  | 'production.publish.blocked'
+  | 'production.publish.verification_overridden'
   | 'production.revert.completed'
   // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
   //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
@@ -979,6 +1009,11 @@ export type CicdEventType =
   // All emitted with env=staging|production via env-tagging in emitOasisEvent().
   // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
   | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  // VTID-04542 (ORB latency P0): persona hand-off timing (request → drain →
+  // reconnect → first audio of the new persona) and the client-side beacon
+  // (ms since tap, posted by the widget to /orb/live/client-latency).
+  | 'voice.latency.handoff'
+  | 'voice.latency.client'
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
   // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
   // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so

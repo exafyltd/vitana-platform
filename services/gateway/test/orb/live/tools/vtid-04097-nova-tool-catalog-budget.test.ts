@@ -124,10 +124,17 @@ describe('orb-live.ts wiring', () => {
   });
 
   it('resolves the provider before the trim runs', () => {
+    // VTID-04554: the trim lives in assembleOrbSetupEnvelope (module level, so
+    // the Nova prewarm builds the same envelope). What must hold is unchanged:
+    // the session calls into it only after its provider is assigned.
     const assignAt = src.indexOf('session.upstreamProvider = __upstreamDecision.provider');
-    const trimAt = src.indexOf('resolveToolCatalogByteBudgetFor(session.upstreamProvider)');
+    const callAt = src.indexOf('const setupMessage = assembleOrbSetupEnvelope(session');
+    const fnAt = src.indexOf('export function assembleOrbSetupEnvelope(');
+    const fnEnd = src.indexOf('\n}\n', fnAt);
     expect(assignAt).toBeGreaterThan(-1);
-    expect(assignAt).toBeLessThan(trimAt);
+    expect(callAt).toBeGreaterThan(-1);
+    expect(src.slice(fnAt, fnEnd)).toContain('resolveToolCatalogByteBudgetFor(session.upstreamProvider)');
+    expect(assignAt).toBeLessThan(callAt);
   });
 
   it('emits a provider-neutral trim diag and keeps the bridge one for existing queries', () => {

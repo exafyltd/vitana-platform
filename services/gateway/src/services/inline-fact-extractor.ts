@@ -18,6 +18,12 @@
  */
 
 import { rememberFact } from './memory/remember'; // VTID-04364 single fact-write path
+import { valuesMatch, findRelatedFact } from './memory/remember-fact-tool';
+
+const STATED_SOURCES = new Set(['user_stated', 'user_stated_via_settings', 'user_edited', 'user_stated_via_memory_garden_ui']);
+function isStatedProvenance(source: string | undefined): boolean {
+  return !!source && STATED_SOURCES.has(source);
+}
 import { callViaRouter } from './llm-router'; // VTID-03579: provider comes from llm_routing_policy, never hardcoded
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
 // inline-fact-extractor activity.
@@ -82,7 +88,7 @@ Example output:
 // Types
 // =============================================================================
 
-interface ExtractedFact {
+export interface ExtractedFact {
   fact_key: string;
   fact_value: string;
   entity: string;
@@ -105,7 +111,7 @@ const CONFIDENCE_CAP = 0.98;
 // Core: Extract facts using Gemini
 // =============================================================================
 
-async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+export async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
   // VTID-03579: this was a hardcoded DeepSeek -> Vertex AI -> Gemini-API
   // cascade. Three providers chosen here, none of them visible to
   // `llm_routing_policy` — so the routing table could say one thing while this
@@ -228,12 +234,36 @@ async function persistFact(
   // confirmation loop ("is that still right?") upgrades facts the same way.
   const provenance = fact.stated ? 'user_stated' : 'assistant_inferred';
   let confidence = fact.stated ? CONFIDENCE_STATED : CONFIDENCE_INFERRED;
+  // VTID-04639: one row per fact. The same thing is often already stored
+  // under another key ("lieblingsessen" by the voice model, "user_favorite_food"
+  // here; "paul_birthday" vs "brother_paul_birthday"). Compare against — and
+  // write to — that stored key, so the dedupe and conflict guards below see it.
+  try {
+    const listResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/memory_facts?` +
+        `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
+        `superseded_at=is.null&select=fact_key,fact_value,extracted_at&order=extracted_at.desc&limit=500`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` } },
+    );
+    if (listResp.ok) {
+      const current = (await listResp.json()) as Array<{ fact_key: string; fact_value: string; extracted_at: string | null }>;
+      if (Array.isArray(current) && !current.some((f) => f.fact_key === effectiveFactKey)) {
+        const related = findRelatedFact(effectiveFactKey, current);
+        if (related) {
+          console.log(`[VTID-04639] ${effectiveFactKey} is stored as ${related.fact_key}; using the stored key`);
+          effectiveFactKey = related.fact_key;
+        }
+      }
+    }
+  } catch {
+    // Best effort: without the list the exact key is used, as before.
+  }
   try {
     const existingResp = await fetch(
       `${SUPABASE_URL}/rest/v1/memory_facts?` +
         `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
         `fact_key=eq.${encodeURIComponent(effectiveFactKey)}&superseded_at=is.null&` +
-        `select=fact_value,provenance_confidence&limit=1`,
+        `select=fact_value,provenance_confidence,provenance_source&limit=1`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE,
@@ -242,8 +272,23 @@ async function persistFact(
       },
     );
     if (existingResp.ok) {
-      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number }>;
+      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number; provenance_source?: string }>;
       const existing = rows?.[0];
+      // VTID-04581: a value the member stated is never silently replaced by
+      // a different one from background extraction. The live assistant asks
+      // which is right (remember_fact STATUS: conflict) and writes the
+      // answer itself with confirm_replace.
+      if (
+        existing &&
+        typeof existing.fact_value === 'string' &&
+        isStatedProvenance(existing.provenance_source) &&
+        !valuesMatch(existing.fact_value, fact.fact_value)
+      ) {
+        console.log(
+          `[VTID-04581] conflict kept for review: ${effectiveFactKey} stored="${existing.fact_value}" new="${fact.fact_value}" — not overwritten`,
+        );
+        return false;
+      }
       if (
         existing &&
         typeof existing.fact_value === 'string' &&

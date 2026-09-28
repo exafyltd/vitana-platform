@@ -148,10 +148,14 @@ describe('VTID-03795: GUIDED JOURNEY scaffold suppression', () => {
     }
   });
 
-  // The measurement this VTID exists for: the guided session must shed more
+  // The measurement this VTID exists for: the guided session had to shed more
   // than the 1,438 bytes that took the real blocked session over ~32,768.
-  it('sheds enough bytes to clear the measured overage (>= 3,000)', () => {
+  // VTID-04534 rewrote the generic GUIDED JOURNEY block (and RULE 0) shorter,
+  // which took ~10 KB off EVERY session, so that overage no longer exists and
+  // the scoped form now saves ~1.6 KB instead of ~3.8 KB. The invariant kept:
+  // the scoped form is still materially smaller than the full block.
+  it('the scoped form stays materially smaller than the full block (>= 1,000 bytes)', () => {
     const saved = bytes(build(ordinaryBootstrap)) - bytes(build(guidedBootstrap));
-    expect(saved).toBeGreaterThanOrEqual(3_000);
+    expect(saved).toBeGreaterThanOrEqual(1_000);
   });
 });

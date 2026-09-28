@@ -1,0 +1,1119 @@
+{
+ "_doc": "VTID-04600 layer B: live voice scenarios on STAGING. See docs/memory/MEMORY-VERIFICATION-SUITE.md.",
+ "scenarios": [
+  {
+   "id": "B-SELF-01",
+   "category": "self",
+   "title": "Favourite food saved, recalled next session",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Lieblingsessen ist Lasagne.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Was ist mein Lieblingsessen?",
+       "reply_any": [
+        [
+         "lasagne"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%food%",
+     "value": "Lasagne"
+    }
+   ]
+  },
+  {
+   "id": "B-SELF-02",
+   "category": "self",
+   "title": "English remember request (allergy), recalled in German",
+   "sessions": [
+    {
+     "lang": "en",
+     "turns": [
+      {
+       "say": "Remember that I'm allergic to penicillin.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Worauf bin ich allergisch?",
+       "reply_any": [
+        [
+         "penicillin",
+         "penizillin"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%allerg%",
+     "value": "penicillin"
+    }
+   ]
+  },
+  {
+   "id": "B-SELF-03",
+   "category": "self",
+   "title": "Dog's name saved, asked next session",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Hund heißt Bello.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heißt mein Hund?",
+       "reply_any": [
+        [
+         "bello"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%pet%|%dog%",
+     "value": "Bello"
+    }
+   ]
+  },
+  {
+   "id": "B-OTHER-01",
+   "category": "other",
+   "title": "Wife's birthday saved about the spouse, not refused",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, meine Frau Anna hat am vierten November Geburtstag.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen",
+        "profil"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%birthday%|%geburtstag%",
+     "value": "November 4"
+    }
+   ]
+  },
+  {
+   "id": "B-OTHER-02",
+   "category": "other",
+   "title": "Brother's birthday saved when the model may skip the tool",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Und merk dir: Mein Bruder Paul hat am fünften Mai Geburtstag.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5"
+    }
+   ]
+  },
+  {
+   "id": "B-OTHER-03",
+   "category": "other",
+   "title": "Colleague's preference saved about the colleague",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Kollege Marko mag keinen Kaffee.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%marko%|%colleague%|%kollege%"
+    }
+   ]
+  },
+  {
+   "id": "B-OTHER-04",
+   "category": "other",
+   "title": "Mother's name never becomes the member's name",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, meine Mutter heißt Vesna.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heiße ich?",
+       "reply_none": [
+        "vesna"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%mother%|%mutter%",
+     "value": "Vesna"
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "user_first_name"
+    },
+    {
+     "key": "user_name"
+    }
+   ]
+  },
+  {
+   "id": "B-PROF-01",
+   "category": "profile",
+   "title": "Own birthday with empty profile: goes in the profile, nothing saved",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir bitte, mein Geburtstag ist der neunte September 1969.",
+       "reply_any": [
+        [
+         "profil"
+        ]
+       ],
+       "reply_none": [
+        "gespeichert",
+        "notiert",
+        "gemerkt",
+        "merke ich mir",
+        "hab ich mir gemerkt",
+        "saved",
+        "noted"
+       ]
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%birth%"
+    }
+   ]
+  },
+  {
+   "id": "B-PROF-02",
+   "category": "profile",
+   "title": "'Mein Name ist …' goes in the profile, nothing saved",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Name ist Dragan.",
+       "reply_any": [
+        [
+         "profil"
+        ]
+       ],
+       "reply_none": [
+        "gespeichert",
+        "notiert",
+        "gemerkt",
+        "merke ich mir",
+        "hab ich mir gemerkt",
+        "saved",
+        "noted"
+       ]
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "user_first_name"
+    },
+    {
+     "key": "user_name"
+    }
+   ]
+  },
+  {
+   "id": "B-PROF-03",
+   "category": "profile",
+   "title": "'Wann habe ich Geburtstag?' with no data: says it does not know, invents nothing",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wann habe ich Geburtstag?",
+       "reply_any": [
+        [
+         "weiß ich nicht",
+         "nicht",
+         "kein",
+         "profil"
+        ]
+       ],
+       "reply_none": [
+        "1969",
+        "januar",
+        "februar",
+        "märz"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-PROF-04",
+   "category": "profile",
+   "title": "'Wie heiße ich?' with no name: invents nothing",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heiße ich eigentlich?",
+       "reply_none": [
+        "dragan",
+        "vesna",
+        "anna"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-DUP-01",
+   "category": "duplicate",
+   "title": "Same fact again next session: 'already know', one row",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Hund heißt Bello."
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Hund heißt Bello.",
+       "reply_any": [
+        [
+         "schon",
+         "bereits",
+         "weiß ich",
+         "already"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%pet%|%dog%",
+     "value": "Bello",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "B-DUP-02",
+   "category": "duplicate",
+   "title": "Repeated in one session: no second row",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Lieblingsessen ist Lasagne."
+      },
+      {
+       "say": "Merk dir nochmal, mein Lieblingsessen ist Lasagne.",
+       "reply_any": [
+        [
+         "schon",
+         "bereits",
+         "weiß ich",
+         "already"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%food%",
+     "value": "Lasagne",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-01",
+   "category": "conflict",
+   "title": "Different value, same session: names both and asks",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, mein Bruder Paul hat am fünften Mai Geburtstag."
+      },
+      {
+       "say": "Merk dir, Paul hat am siebten Mai Geburtstag.",
+       "reply_any": [
+        [
+         "5",
+         "fünf"
+        ],
+        [
+         "7",
+         "sieb"
+        ]
+       ],
+       "reply_ask": true
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5",
+     "count": 1
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 7"
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-02",
+   "category": "conflict",
+   "title": "Different value, later session: names both and asks",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Mein Bruder Paul hat übrigens am siebten Mai Geburtstag.",
+       "reply_any": [
+        [
+         "5",
+         "fünf"
+        ],
+        [
+         "7",
+         "sieb"
+        ]
+       ],
+       "reply_none": [
+        "aktualisiert",
+        "gespeichert"
+       ],
+       "reply_ask": true
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5",
+     "count": 1
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 7"
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-03",
+   "category": "conflict",
+   "title": "Member confirms the new value: replaced",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, Paul hat am siebten Mai Geburtstag.",
+       "reply_ask": true
+      },
+      {
+       "say": "Der siebte Mai ist richtig.",
+       "reply_any": [
+        [
+         "7",
+         "sieb"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 7",
+     "count": 1
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5"
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-04",
+   "category": "conflict",
+   "title": "Member confirms the old value: old kept",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, Paul hat am siebten Mai Geburtstag.",
+       "reply_ask": true
+      },
+      {
+       "say": "Nein, der fünfte Mai stimmt doch.",
+       "reply_any": [
+        [
+         "5",
+         "fünf"
+        ]
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5",
+     "count": 1
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 7"
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-05",
+   "category": "conflict",
+   "title": "Correction phrasing: asks before changing",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Nein, eigentlich hat Paul am siebten Mai Geburtstag.",
+       "reply_none": [
+        "aktualisiert",
+        "gespeichert"
+       ],
+       "reply_ask": true
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%paul%",
+     "value": "May 5",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "id": "B-CONF-06",
+   "category": "conflict",
+   "title": "Owner's case: wife's birthday 1997 stored, 1999 said: asks which is right",
+   "seed_facts": [
+    {
+     "key": "spouse_birthday",
+     "value": "1997-11-04"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, meine Frau hat am vierten November 1999 Geburtstag.",
+       "reply_any": [
+        [
+         "1997",
+         "siebenundneunzig"
+        ],
+        [
+         "1999",
+         "neunundneunzig"
+        ]
+       ],
+       "reply_ask": true
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "spouse_birthday",
+     "value": "1997-11-04",
+     "count": 1
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%birthday%",
+     "value": "1999-11-04"
+    }
+   ]
+  },
+  {
+   "id": "B-REC-01",
+   "category": "recall",
+   "title": "Seeded fact recalled in a new session",
+   "seed_facts": [
+    {
+     "key": "user_pet_name",
+     "value": "Bello"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heißt mein Hund?",
+       "reply_any": [
+        [
+         "bello"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-REC-02",
+   "category": "recall",
+   "title": "Saved in German, asked in English",
+   "seed_facts": [
+    {
+     "key": "user_favorite_color",
+     "value": "Dunkelblau"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "en",
+     "turns": [
+      {
+       "say": "What is my favourite colour?",
+       "reply_any": [
+        [
+         "dunkelblau",
+         "dark blue",
+         "navy"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-REC-03",
+   "category": "recall",
+   "title": "Paraphrased question finds it",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wann feiert mein Bruder Paul eigentlich?",
+       "reply_any": [
+        [
+         "5",
+         "fünf"
+        ],
+        [
+         "mai"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-REC-04",
+   "category": "recall",
+   "title": "Nothing stored: says so, invents nothing",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heißt eigentlich meine Katze?",
+       "reply_any": [
+        [
+         "weiß ich nicht",
+         "nicht",
+         "kein",
+         "keine"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-REC-05",
+   "category": "recall",
+   "title": "With many facts stored, the asked one is found",
+   "seed_facts": [
+    {
+     "key": "paul_birthday",
+     "value": "May 5"
+    },
+    {
+     "key": "user_note_0",
+     "value": "Notiz 0"
+    },
+    {
+     "key": "user_note_1",
+     "value": "Notiz 1"
+    },
+    {
+     "key": "user_note_2",
+     "value": "Notiz 2"
+    },
+    {
+     "key": "user_note_3",
+     "value": "Notiz 3"
+    },
+    {
+     "key": "user_note_4",
+     "value": "Notiz 4"
+    },
+    {
+     "key": "user_note_5",
+     "value": "Notiz 5"
+    },
+    {
+     "key": "user_note_6",
+     "value": "Notiz 6"
+    },
+    {
+     "key": "user_note_7",
+     "value": "Notiz 7"
+    },
+    {
+     "key": "user_note_8",
+     "value": "Notiz 8"
+    },
+    {
+     "key": "user_note_9",
+     "value": "Notiz 9"
+    },
+    {
+     "key": "user_note_10",
+     "value": "Notiz 10"
+    },
+    {
+     "key": "user_note_11",
+     "value": "Notiz 11"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wann hat mein Bruder Paul Geburtstag?",
+       "reply_any": [
+        [
+         "5",
+         "fünf"
+        ],
+        [
+         "mai"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-REC-06",
+   "category": "recall",
+   "title": "'Was weißt du über mich?' mentions a stored fact",
+   "seed_facts": [
+    {
+     "key": "user_favorite_food",
+     "value": "Lasagne"
+    },
+    {
+     "key": "user_pet_name",
+     "value": "Bello"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Was weißt du eigentlich alles über mich?",
+       "reply_any": [
+        [
+         "lasagne",
+         "bello"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "B-FORG-01",
+   "category": "forget",
+   "title": "Voice 'forget': the fact is gone and not recalled",
+   "seed_facts": [
+    {
+     "key": "user_pet_name",
+     "value": "Bello"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Vergiss bitte, dass mein Hund Bello heißt."
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wie heißt mein Hund?",
+       "reply_none": [
+        "bello"
+       ]
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%pet%|%dog%",
+     "value": "Bello"
+    }
+   ],
+   "gap": "voice forget_memory deletes conversation notes, not memory_facts (layer A: A-FORG-01)"
+  },
+  {
+   "id": "B-FORG-02",
+   "category": "forget",
+   "title": "After a Garden delete, 'Was weißt du über meinen Hund?' has nothing",
+   "seed_facts": [
+    {
+     "key": "user_pet_name",
+     "value": "Bello"
+    }
+   ],
+   "sessions": [
+    {
+     "lang": "de",
+     "garden_forget": "user_pet_name",
+     "turns": [
+      {
+       "say": "Was weißt du über meinen Hund?",
+       "reply_none": [
+        "bello"
+       ]
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "user_pet_name"
+    }
+   ]
+  },
+  {
+   "id": "B-NOISE-01",
+   "category": "noise",
+   "title": "Hypothetical is not stored",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wenn ich einen Hund hätte, würde er Max heißen."
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "%",
+     "value": "Max"
+    }
+   ]
+  },
+  {
+   "id": "B-NOISE-02",
+   "category": "noise",
+   "title": "Someone else's belief is not the member's fact",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Mein Nachbar glaubt wirklich, der Mond ist aus Käse."
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "user_%",
+     "value": "%käse%"
+    }
+   ]
+  },
+  {
+   "id": "B-NOISE-03",
+   "category": "noise",
+   "title": "'Ich heiße heute mal Batman': profile name untouched",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Ich heiße heute mal Batman, nur zum Spaß."
+      }
+     ]
+    }
+   ],
+   "absent_facts": [
+    {
+     "key": "user_first_name"
+    },
+    {
+     "key": "user_name"
+    },
+    {
+     "key": "%",
+     "value": "Batman"
+    }
+   ]
+  },
+  {
+   "id": "B-TIME-01",
+   "category": "time",
+   "title": "Appointment stored with a date",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, nächsten Dienstag um zehn habe ich einen Zahnarzttermin.",
+       "reply_none": [
+        "kann ich nicht speichern",
+        "nicht speichern",
+        "can't save",
+        "cannot save",
+        "kann keine informationen"
+       ]
+      }
+     ]
+    }
+   ],
+   "expect_facts": [
+    {
+     "key": "%dentist%|%zahnarzt%|%appointment%|%termin%"
+    }
+   ]
+  },
+  {
+   "id": "B-TIME-02",
+   "category": "time",
+   "title": "Appointment recalled next session",
+   "sessions": [
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Merk dir, nächsten Dienstag um zehn habe ich einen Zahnarzttermin."
+      }
+     ]
+    },
+    {
+     "lang": "de",
+     "turns": [
+      {
+       "say": "Wann ist mein Zahnarzttermin?",
+       "reply_any": [
+        [
+         "dienstag",
+         "29",
+         "tuesday"
+        ]
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

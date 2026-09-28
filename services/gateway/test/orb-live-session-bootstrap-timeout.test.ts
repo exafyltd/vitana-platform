@@ -48,11 +48,15 @@ describe('BOOTSTRAP-ORB-CONNECT-HANG: withBootstrapTimeout (orb-live.ts native-W
 
   it('resolves with the fallback (not hanging) when the real call is slower than the cap', async () => {
     const start = Date.now();
-    const result = await withBootstrapTimeout(delay('too-slow', 500), 'fallback-context', 'label', 50);
+    // VTID-04625: the slow call never settles, so returning at all proves the
+    // gate did not wait for it. The old 500 ms promise + "< 400 ms" assertion
+    // measured 427 ms on a loaded CI runner (PR #3739) without any code change.
+    const neverSettles = new Promise<string>(() => { /* never settles */ });
+    const result = await withBootstrapTimeout(neverSettles, 'fallback-context', 'label', 50);
     const elapsed = Date.now() - start;
     expect(result).toBe('fallback-context');
-    // Must return around the cap, not wait for the slow promise (500ms).
-    expect(elapsed).toBeLessThan(400);
+    expect(elapsed).toBeGreaterThanOrEqual(45);
+    expect(elapsed).toBeLessThan(5_000);
   });
 
   it('resolves with the fallback when the real call rejects', async () => {
@@ -75,10 +79,12 @@ describe('BOOTSTRAP-ORB-CONNECT-HANG: withProfilerTimeout (user-context-profiler
     const { withProfilerTimeout: withProfilerTimeoutFreshEnv } = await import('../src/services/user-context-profiler');
     try {
       const start = Date.now();
-      const result = await withProfilerTimeoutFreshEnv(delay({ ok: true }, 500), { ok: false }, 'label');
+      // VTID-04625: never settles — returning at all proves the cap held (see above).
+      const neverSettles = new Promise<{ ok: boolean }>(() => { /* never settles */ });
+      const result = await withProfilerTimeoutFreshEnv(neverSettles, { ok: false }, 'label');
       const elapsed = Date.now() - start;
       expect(result).toEqual({ ok: false });
-      expect(elapsed).toBeLessThan(400);
+      expect(elapsed).toBeLessThan(5_000);
     } finally {
       if (previousTimeout === undefined) delete process.env.USER_CONTEXT_PROFILER_TIMEOUT_MS;
       else process.env.USER_CONTEXT_PROFILER_TIMEOUT_MS = previousTimeout;

@@ -485,6 +485,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Conversation-flow roadmap Step 4 — Command Hub "Conversation" section (READ-ONLY:
   // config / Simulator preview / Monitor / Tool Health). Admin-gated in-router.
   const conversationHubRouter = require('./routes/conversation-hub').default;
+  // VTID-04473: Jev (TypeSafe System One) typed decisions — internal roles only.
+  const jevDecisionsRouter = require('./routes/jev-decisions').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -1334,6 +1336,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Conversation-flow Step 4 — read-only Command Hub Conversation section
   mountRouterSync(app, '/api/v1', conversationHubRouter, { owner: 'conversation-hub' });
+  // VTID-04473: Jev typed decisions (inert until TYPESAFE_API_KEY + JEV_DECISIONS_ENABLED)
+  mountRouterSync(app, '/api/v1', jevDecisionsRouter, { owner: 'jev-decisions' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
@@ -1986,6 +1990,44 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
           .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))
           .catch((err: any) => console.warn('⚠️ Registry navigation warm failed (non-fatal):', err.message));
       }
+
+      // VTID-04525 (Conversation hub B1): record one conversation.system.snapshot
+      // per stack when this build changed the conversation system (tools,
+      // opening providers or flags). Deferred so boot is never slowed; a no-op
+      // when the fingerprint matches the last recorded one; never throws.
+      setTimeout(() => {
+        try {
+          const intro = require('./services/conversation/conversation-system-introspection');
+          const { getSupabase } = require('./lib/supabase');
+          const { fetchSystemSnapshotEvents } = require('./routes/conversation-hub-repository');
+          const { emitOasisEvent } = require('./services/oasis-event-service');
+          const { VITANA_ENV } = require('./env');
+          intro.recordConversationSystemSnapshot({
+            env: VITANA_ENV,
+            readLatest: async (env: string) => {
+              const sb = getSupabase();
+              if (!sb) throw new Error('Database not configured');
+              const { data, error } = await fetchSystemSnapshotEvents(sb, env, 1);
+              if (error) throw new Error(error.message);
+              return data && data[0] ? (data[0].metadata as any) : null;
+            },
+            emit: (payload: any) => emitOasisEvent({
+              vtid: 'VTID-04525',
+              type: 'conversation.system.snapshot',
+              source: 'gateway',
+              status: 'info',
+              message: `Conversation system changed: ${payload.counts.tools} tools, ${payload.counts.providers} opening providers, ${payload.counts.flags} flags`,
+              payload,
+              surface: 'system',
+              actor_role: 'system',
+            }),
+          }).then((r: { recorded: boolean; reason: string; fingerprint?: string }) =>
+            console.log(`🧭 Conversation system snapshot: ${r.recorded ? 'recorded' : 'not recorded'} (${r.reason}) ${r.fingerprint ?? ''}`),
+          );
+        } catch (error) {
+          console.warn('⚠️ Conversation system snapshot failed (non-fatal):', error);
+        }
+      }, 45_000).unref();
 
       // Agents Registry: bootstrap Tier 2 (embedded) agents — they live in this
       // process so if the gateway is up, they are up. Marks each as healthy.

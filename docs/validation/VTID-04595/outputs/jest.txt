@@ -1,0 +1,1 @@
+Test output: see commands.log; 15/15 in test/vtid-04595-new-day-starts-at-5am.test.ts

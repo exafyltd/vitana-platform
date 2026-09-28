@@ -1116,6 +1116,9 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-09-26 | VTID-04668, **not yet applied** (migration `20260926160000_vtid_04668_recommendation_priority.sql`, additive): nullable `autopilot_recommendations.priority_score numeric` and `autopilot_recommendations.quality jsonb`, plus partial index `idx_autopilot_recommendations_dev_priority` on `(status, priority_score DESC) WHERE user_id IS NULL`. Written by the gateway for developer rows only (`user_id IS NULL`, not `community` / `operator_onramp`): `priority_score = value × confidence × success_odds / max(expected_cost_usd, 0.05)`; `quality = {version, value, confidence, success_odds, expected_cost_usd, expected_input_tokens, executable, basis, scored_at}` (VTID-04669 adds `review`, `review_attempts`, `review_last_attempt_at`). The same write maps `impact_score` (from value) and `effort_score` (from expected cost) so older readers keep working. Community rows keep NULL. Apply before the gateway code is deployed. | Claude Code | VTID-04668 |
+| 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
+| 2026-09-25 | VTID-04561, **applied live** (`vtid_04561_one_role_truth`): the two role switchers now keep the two role tables in step. `set_role_preference()` (community app) also upserts `user_active_roles`; `me_set_active_role()` (Command Hub) also upserts `role_preferences` when the caller has a tenant. One-time backfill in both directions (5 of 6 users with rows disagreed before). Two `role_preferences` rows still differ from `user_active_roles` afterwards; both belong to a secondary tenant, and the ORB reads the role per tenant, so they are expected. Migration `20260925120000_vtid_04561_one_role_truth.sql`. | Claude Code | VTID-04561 |
 | 2026-09-24 | VTID-04494, **applied live**: `write_fact()` takes a per-key `pg_advisory_xact_lock` (tenant, user, entity, fact_key), compares against the newest current row and supersedes EVERY other current row (was `FOR UPDATE SKIP LOCKED` + one-row supersede, which let concurrent writers create duplicate current facts that never cleared). One-time repair: 80 duplicate current rows in 70 key groups marked superseded by the newest row; nothing deleted. Invariant: one `superseded_by IS NULL` row per (tenant_id, user_id, entity, fact_key). | Claude Code | VTID-04494 |
 | 2026-09-24 | VTID-04489, **applied live** (read-only, additive): functions `get_index_boost(p_user_id uuid) RETURNS jsonb` (SECURITY DEFINER, `authenticated` only, NULL without a JWT) and helper `_index_boost_activity_key(text)` (IMMUTABLE; normalises free-text workout `activity_type` — e.g. `laufen`, `Fahrrad gefahren`, `Padel-Tennis` — to running / cycling / strength / racket / yoga_pilates / swimming / walking / workout). Returns the member's top 3 activity drivers over the last 7 days (when at least 2 things were logged in them) or else 30: workouts by type, meals, water, sleep, meditation (`health_features_daily`) and guided journey sessions (`journey_session_index_awards`), with counts; drivers whose Index pillar rose rank first, then by count. `kind` = `boost` when the Index rose over the window, else `active`. Visible to every signed-in member with numbers (owner decision 2026-09-24); hidden when `profiles.account_visibility.indexBoost` = `private` (or `connections` for non-connections). New visibility key `indexBoost`, default `public`. Migration `20260924170000_vtid_04489_index_boost.sql`; ranking corrected and re-applied the same day before any consumer shipped. | Claude Code | VTID-04489 |
 | 2026-09-24 | VTID-04498, **applied live** (read-only, additive): function `get_index_standing(p_user_id uuid) RETURNS jsonb` (SECURITY DEFINER, `authenticated` only, NULL without a JWT) behind the profile Vitana Index card's real "Top X%" badge. Cohort = the subject's tenant, each member's latest `vitana_index_scores` row in the last 30 days, excluding `service_bot_accounts` and `notification_test_actors`. Returns `{show:true, top_percent, cohort_size}` only when the cohort has >= 20 members, at least one member scores lower (48 of 66 members were tied at the starting score on 2026-09-24 and would otherwise each read "Top 29%"), and the rank is in the top half; otherwise `{show:false, reason}` with no percentage. Migration `20260924190000_vtid_04498_index_standing.sql`. | Claude Code | VTID-04498 |
@@ -2454,6 +2457,15 @@ created by a tenant `admin` or an Exafy super-admin (enforced in the gateway, ne
 
 ## role_preferences — the frontend role switcher's write target (VTID-03832 / VTID-03916)
 
+**VTID-04561 (`20260925120000_vtid_04561_one_role_truth.sql`, applied 2026-09-25):
+one role truth.** `role_preferences` (written by the community app's
+`set_role_preference()`, read by the ORB per tenant) and `user_active_roles`
+(written by the Command Hub's `me_set_active_role()`) used to drift apart, so
+the same user could be "developer" in one app and "community" in the other.
+Both functions now write BOTH tables in the same transaction, and a one-time
+backfill aligned the existing rows. `user_active_roles` is the canonical one
+for the Command Hub; `role_preferences` stays per tenant for the member app.
+
 Not previously documented here — the table (and `set_role_preference()`/
 `get_my_permitted_roles()`/`validate_role_assignment()`/`me_set_active_role()`)
 existed only in the live database before VTID-03832's
@@ -2876,3 +2888,41 @@ replaces both policies with calls to one helper:
 
 Evidence: `docs/validation/VTID-04337/outputs/` (42P17 before; clean reads for
 `authenticated` and `anon` after).
+
+## Testing & QA results store — `ci_test_runs`, `ci_test_sync_state` (VTID-04641, 2026-09-26) — APPLIED to the live project 2026-09-26
+
+Migration `20260926130000_vtid_04641_ci_test_results.sql`. History of every
+completed GitHub Actions run of a test / gate / monitor / e2e / deploy-smoke
+workflow in `exafyltd/vitana-platform` and `exafyltd/vitana-v1` (the kinds and
+environments come from the test catalog, VTID-04637), for the Command Hub
+Testing & QA screens. Written only by the gateway
+(`services/testing/test-results.ts`, lazy sync on read, upsert on
+`(repo, run_id)`). RLS enabled with no policy: service role only. The older
+`test_runs` / `test_results` / `test_cycles` tables (hub-started Playwright
+runs) are unchanged.
+
+### ci_test_runs
+
+| Column | Type | Notes |
+|---|---|---|
+| `repo` | text | PK part. `exafyltd/vitana-platform` or `exafyltd/vitana-v1` |
+| `run_id` | bigint | PK part. GitHub Actions run id |
+| `run_attempt` | integer | a re-run keeps `run_id`, bumps this, and replaces the verdict |
+| `workflow_file` / `workflow_name` | text | e.g. `TEST-SUITE.yml` |
+| `kind` | text | catalog kind: test, gate, monitor, e2e, deploy_smoke |
+| `environments` | text[] | catalog environments at ingest: dev_pr, nightly, staging, production |
+| `event`, `branch`, `head_sha`, `actor`, `html_url` | text | from the run |
+| `status` | text | always `completed` (only finished runs are stored) |
+| `conclusion` | text | success, failure, cancelled, skipped, timed_out, … |
+| `run_created_at` / `run_started_at` / `run_updated_at` | timestamptz | |
+| `duration_s` | integer | started → last update |
+| `jobs` | jsonb | `[{name, conclusion, started_at, completed_at}]` |
+| `ingested_at` | timestamptz | |
+
+Indexes: `(repo, workflow_file, run_created_at desc)`, `(run_created_at desc)`.
+
+### ci_test_sync_state
+
+One row per repository: `synced_through` (newest stored `run_created_at`; the
+next sync re-reads 6 h before it), `last_synced_at`, `last_error`,
+`last_ingested`, `updated_at`.

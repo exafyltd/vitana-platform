@@ -162,7 +162,7 @@ describe('VTID-04023 runReadonlySql (transaction discipline)', () => {
     await expect(runReadonlySql({ sql: 'delete from x' }, { pool: { connect } })).rejects.toThrow(/only a single SELECT/);
     expect(connect).not.toHaveBeenCalled();
     resetSqlReadonlyPool();
-    await expect(runReadonlySql({ sql: 'select 1' }, { env: { OPERATOR_SQL_READONLY_ENABLED: 'true' } as NodeJS.ProcessEnv })).rejects.toThrow(/not_configured: OPERATOR_SQL_READONLY_DATABASE_URL/);
+    await expect(runReadonlySql({ sql: 'select 1' }, { env: { OPERATOR_SQL_READONLY_ENABLED: 'true' } as NodeJS.ProcessEnv })).rejects.toThrow(/not_configured: .*OPERATOR_SQL_READONLY_DATABASE_URL/);
   });
 });
 

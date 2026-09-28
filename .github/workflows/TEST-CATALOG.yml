@@ -1,0 +1,98 @@
+name: TEST-CATALOG
+run-name: "TEST-CATALOG build + publish (VTID-04637)"
+
+# VTID-04637 — the catalog of every automated test in both repositories.
+#
+# Scans a checkout of exafyltd/vitana-platform and exafyltd/vitana-v1
+# (scripts/test-catalog/), labels every suite and workflow with the
+# environment it touches (dev_pr / nightly / staging / production), and
+# publishes one JSON object the Command Hub Testing & QA module reads through
+# GET /api/v1/testing/catalog.
+#
+# Published to the code-index bucket (VTID-04229) under test-catalog/: the
+# bucket policy already grants this workflow's OIDC role put and the gateway
+# task role get on the whole bucket, so no new IAM is needed.
+#
+# Runs on every merge to main that can change what is tested, daily (to pick
+# up frontend-only merges, which do not trigger this repo), and by hand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'e2e/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why the catalog is being rebuilt by hand'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: test-catalog
+  cancel-in-progress: false
+
+env:
+  CODE_INDEX_BUCKET: vitana-code-index
+  AWS_REGION: eu-central-1
+
+jobs:
+  build:
+    name: Build + publish the test catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout vitana-platform
+        uses: actions/checkout@v4
+        with:
+          path: platform
+
+      - name: Checkout vitana-v1
+        id: frontend
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          ref: main
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          path: frontend
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build the catalog
+        run: |
+          set -e
+          FRONTEND_ARGS=""
+          if [ "${{ steps.frontend.outcome }}" = "success" ] && [ -d frontend/.git ]; then
+            FRONTEND_ARGS="--frontend frontend"
+          else
+            echo "::warning::vitana-v1 checkout failed (VITANA_V1_READ_TOKEN?) — the catalog will say the frontend is missing"
+          fi
+          node platform/scripts/test-catalog/build.mjs --platform platform $FRONTEND_ARGS --out out/latest.json
+          gzip -9 -k out/latest.json
+          ls -la out
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Publish to S3
+        run: |
+          set -e
+          aws s3 cp out/latest.json.gz "s3://${CODE_INDEX_BUCKET}/test-catalog/latest.json.gz" \
+            --content-type application/json --content-encoding gzip
+          echo "published s3://${CODE_INDEX_BUCKET}/test-catalog/latest.json.gz"

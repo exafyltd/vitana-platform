@@ -11,23 +11,17 @@
  *   - Recent oasis_events for the session/class
  *   - Deterministic spec body if available (voice-spec-hints)
  *
- * Calls Claude Sonnet 4.6 with a strict schema described in the prompt
- * (Claude Sonnet 4.6 doesn't support native structured-output enforcement —
- * see claude-text-client.ts / model-migration notes). The schema requires
- * per-hypothesis confidence, top-3 disconfirming data points, and ≥ 3
- * alternative architectures with pros/cons/links — designed to make
- * polished hallucination harder — and validateReport() below is the
- * enforcement backstop since the provider can't guarantee the shape.
+ * Calls the `triage` LLM routing stage (VTID-04626 — see
+ * VOICE_INVESTIGATOR_STAGE below) with a strict schema described in the
+ * prompt. The schema requires per-hypothesis confidence, top-3 disconfirming
+ * data points, and >= 3 alternative architectures with pros/cons/links —
+ * designed to make polished hallucination harder — and validateReport() below
+ * is the enforcement backstop since the provider can't guarantee the shape.
  * Persists the report to voice_architecture_reports and emits
  * voice.healing.investigation.completed.
  *
  * The recommendation is NEVER auto-executed. Architectural pivots remain
- * a human decision (review in Healing dashboard, PR #8).
- *
- * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off Vertex Gemini to Claude Sonnet
- * 4.6 via the direct Anthropic API. Note: the INVESTIGATED SYSTEM (the ORB
- * voice pipeline itself) still runs on Vertex Gemini Live — only the model
- * doing the investigating changed.
+ * a human decision (Command Hub → Voice → Self-Healing).
  *
  * v2 (post-canary): swap for Claude Managed Agents with web_search and
  * web_fetch tools — see Incident Triage Agent in memory.
@@ -38,11 +32,23 @@
 import { emitOasisEvent } from './oasis-event-service';
 import { getVoiceSpecHint } from './voice-spec-hints';
 import { notifyGChat } from './self-healing-snapshot-service';
-import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const INVESTIGATOR_MODEL = process.env.VOICE_INVESTIGATOR_MODEL || CLAUDE_SONNET_4_6;
+
+/**
+ * VTID-04626: the investigator runs on the `triage` routing stage through
+ * callViaRouter — the DB-backed llm_routing_policy picks the model, a primary
+ * outage degrades to the stage's own fallback, and every call is logged to
+ * llm.call.* with usage and cost. Until this change it called Bedrock
+ * directly with whatever BEDROCK_MODEL_ID the task def carried
+ * (`eu.anthropic.claude-opus-4-7`, a profile this account is not subscribed
+ * to), so every spawn since at least 2026-09-01 failed with "not available
+ * for this account" and wrote an empty v1-stub report.
+ */
+export const VOICE_INVESTIGATOR_STAGE = 'triage' as const;
+export const VOICE_INVESTIGATOR_SERVICE = 'voice-architecture-investigator';
+export const VOICE_INVESTIGATOR_MAX_TOKENS = 8192;
 
 // =============================================================================
 // Pre-vetted alternative architectures (v1 — agent picks the relevant subset
@@ -273,13 +279,28 @@ function summarizeEvidence(input: InvestigatorInput, ev: EvidenceBundle): {
 }
 
 // =============================================================================
-// Vertex prompt
+// Prompt
 // =============================================================================
 
-function buildPrompt(input: InvestigatorInput, ev: EvidenceBundle, summary: ReturnType<typeof summarizeEvidence>): string {
-  return `You are an Architecture Investigator for the Vitana ORB voice-to-voice pipeline (Vertex AI Gemini Live + Cloud TTS).
+/**
+ * VTID-04626: what the ORB voice pipeline actually runs on today. The prompt
+ * used to tell the model the pipeline was "Vertex AI Gemini Live + Cloud
+ * TTS" — GCP was decommissioned 2026-08-16 — so every report recommended
+ * instrumenting a Gemini Live session that no longer exists.
+ */
+export const VOICE_PIPELINE_DESCRIPTION =
+  'Amazon Nova Sonic (bidirectional speech-to-speech on AWS Bedrock) for en/de/fr/es/it and most sessions; ' +
+  'a cascade of Amazon Transcribe (speech-to-text) -> Claude on Bedrock (reply) -> Amazon Polly or Fish Audio (text-to-speech) ' +
+  'for languages Nova cannot speak (ru, pl, tr, zh, ar, ...); and a narrow Vertex Gemini Live bridge on a dedicated GCP project ' +
+  'for Serbian only. The browser widget streams microphone audio over WebSocket/SSE to the gateway (AWS ECS), which relays it upstream. ' +
+  'Full-duplex barge-in is enabled on staging: the mic stays open while the model speaks, with echo gated to digital silence.';
 
-Context: the Recurrence Sentinel or the Spec Memory Gate has flagged a persistent failure pattern. Your job is to produce a STRUCTURED REPORT that helps a human operator decide whether to keep patching the existing stack, redesign the pipeline, or replace the vendor (Vertex Live).
+function buildPrompt(input: InvestigatorInput, ev: EvidenceBundle, summary: ReturnType<typeof summarizeEvidence>): string {
+  return `You are an Architecture Investigator for the Vitana ORB voice-to-voice pipeline.
+
+Current pipeline: ${VOICE_PIPELINE_DESCRIPTION}
+
+Context: the Recurrence Sentinel, the Spec Memory Gate or the session quality classifier has flagged a failure pattern. Your job is to produce a STRUCTURED REPORT that helps a human operator decide whether to keep patching the existing stack, redesign the pipeline, or replace a vendor. Ground every hypothesis in the evidence below; say so plainly when the evidence is too thin.
 
 The report is NEVER auto-executed. Polish without substance is worse than honesty about uncertainty.
 
@@ -305,7 +326,7 @@ ${ev.recent_oasis
   .join('\n')}
 
 === DETERMINISTIC SPEC (if any) ===
-${ev.deterministic_spec ? ev.deterministic_spec.slice(0, 4000) : '(class has no deterministic spec — Gemini fallback)'}
+${ev.deterministic_spec ? ev.deterministic_spec.slice(0, 4000) : '(class has no deterministic spec)'}
 
 === ALTERNATIVE ARCHITECTURES REFERENCE (v1 pre-vetted; pick relevant subset) ===
 ${ALTERNATIVE_ARCHITECTURES_REFERENCE}
@@ -490,24 +511,17 @@ const RESPONSE_SCHEMA = {
   ],
 };
 
-/**
- * BOOTSTRAP-GEMINI-TO-CLAUDE: calls Claude Sonnet 4.6 directly via
- * claude-text-client.ts. Claude Sonnet 4.6 has no native structured-output
- * enforcement, so the schema is embedded as a textual instruction in the
- * prompt and validateReport() below is the real enforcement backstop.
- * (VTID-02002 history: this previously went through a multi-provider router
- * whose fallback model didn't exist, silently failing every automatic
- * investigator spawn — bypassing the router in favor of a direct call is
- * what fixed that, and this migration keeps the direct-call shape.)
- */
 interface ClaudeInvestigatorResult {
   report: InvestigatorReport | null;
   error: string | null;
   raw_text?: string;
+  provider?: string;
+  model?: string;
+  fallback_used?: boolean;
 }
 
 /** Pull the first balanced JSON object out of a model response, tolerating fences/prose. */
-function extractJsonObject(raw: string): string {
+export function extractJsonObject(raw: string): string {
   const cleaned = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
   if (cleaned.startsWith('{')) return cleaned;
   const start = cleaned.indexOf('{');
@@ -515,31 +529,43 @@ function extractJsonObject(raw: string): string {
   return start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
 }
 
-async function callClaudeInvestigator(prompt: string): Promise<ClaudeInvestigatorResult> {
+/**
+ * VTID-04626: one call on the `triage` routing stage. The schema travels as a
+ * textual instruction and validateReport() is the enforcement backstop.
+ * Never throws — every failure comes back as `error` with the real reason.
+ */
+async function callClaudeInvestigator(prompt: string, vtid?: string | null): Promise<ClaudeInvestigatorResult> {
   try {
-    const text = await callClaudeText({
-      model: INVESTIGATOR_MODEL,
-      system:
+    const { callViaRouter } = await import('./llm-router');
+    const r = await callViaRouter(VOICE_INVESTIGATOR_STAGE, prompt, {
+      vtid: vtid || null,
+      service: VOICE_INVESTIGATOR_SERVICE,
+      systemPrompt:
         'Return ONE JSON object only — no markdown fences, no prose before or after — ' +
         `conforming exactly to this JSON Schema:\n${JSON.stringify(RESPONSE_SCHEMA)}`,
-      prompt,
-      maxTokens: 8192,
-      temperature: 0.4,
+      maxTokens: VOICE_INVESTIGATOR_MAX_TOKENS,
+      allowFallback: true,
     });
-    if (!text) {
-      return { report: null, error: 'claude_no_text_in_response' };
+    const meta = {
+      provider: r.provider ? String(r.provider) : undefined,
+      model: r.model ? String(r.model) : undefined,
+      fallback_used: Boolean(r.fallbackUsed),
+    };
+    if (!r.ok || !r.text) {
+      return { report: null, error: `llm_call_failed: ${r.error || 'empty response'}`, ...meta };
     }
     try {
-      return { report: JSON.parse(extractJsonObject(text)) as InvestigatorReport, error: null, raw_text: text };
+      return { report: JSON.parse(extractJsonObject(r.text)) as InvestigatorReport, error: null, raw_text: r.text, ...meta };
     } catch (parseErr: any) {
       return {
         report: null,
-        error: `claude_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
-        raw_text: text.slice(0, 4000),
+        error: `llm_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
+        raw_text: r.text.slice(0, 4000),
+        ...meta,
       };
     }
   } catch (err: any) {
-    const detail = `claude_threw: ${err?.message ?? String(err)}`;
+    const detail = `llm_threw: ${err?.message ?? String(err)}`;
     console.warn(`[voice-architecture-investigator] ${detail}`);
     return { report: null, error: detail };
   }
@@ -618,10 +644,12 @@ async function persistFailureStub(
   reason: string,
   detail: string,
   evidenceSummary: ReturnType<typeof summarizeEvidence>,
+  llm?: Record<string, unknown>,
 ): Promise<string | null> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return null;
   const stubReport = {
     investigator_status: 'failed',
+    _llm: llm ?? null,
     failure_reason: reason,
     failure_detail: detail.slice(0, 4000),
     class: input.class,
@@ -655,6 +683,12 @@ async function persistFailureStub(
   }
 }
 
+/** VTID-04626: categorical failure reason from the call's error string. */
+export function investigatorFailureReason(error: string): string {
+  const m = /^(llm_call_failed|llm_json_parse_failed|llm_threw)/.exec(error || '');
+  return m ? m[1] : 'llm_no_response';
+}
+
 // =============================================================================
 // Public entry point
 // =============================================================================
@@ -676,28 +710,55 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   const summary = summarizeEvidence(input, ev);
 
   const prompt = buildPrompt(input, ev, summary);
-  const callResult = await callClaudeInvestigator(prompt);
+  const callResult = await callClaudeInvestigator(prompt, input.related_vtid);
+  const llm = {
+    stage: VOICE_INVESTIGATOR_STAGE,
+    provider: callResult.provider ?? null,
+    model: callResult.model ?? null,
+    fallback_used: callResult.fallback_used ?? false,
+  };
 
   if (!callResult.report) {
     // VTID-01996: persist a failure stub so ops sees WHY the investigator
-    // didn't produce a report. Without this, 5 quality-failure spawns
-    // produced 0 visible rows and the gap was invisible.
-    const stubId = await persistFailureStub(
-      input,
-      'claude_no_response',
-      callResult.error ?? 'Claude returned no parseable JSON and no error captured.',
-      summary,
-    );
+    // didn't produce a report. VTID-04626: the reason is now the real
+    // category (llm_call_failed / llm_json_parse_failed / llm_threw) instead
+    // of a blanket 'claude_no_response'.
+    const error = callResult.error ?? 'model returned no parseable JSON and no error captured';
+    const reason = investigatorFailureReason(error);
+    const stubId = await persistFailureStub(input, reason, error, summary, llm);
+    // VTID-04626: a failed investigation is a state change too — make it
+    // visible in OASIS instead of only as a stub row.
+    try {
+      await emitOasisEvent({
+        vtid: input.related_vtid ?? 'VTID-VOICE-HEALING',
+        type: 'voice.healing.investigation.completed',
+        source: 'voice-architecture-investigator',
+        status: 'error',
+        message: `Architecture Investigator failed for ${input.class} (${input.trigger_reason}): ${error.slice(0, 200)}`,
+        payload: {
+          report_id: stubId,
+          class: input.class,
+          normalized_signature: input.normalized_signature,
+          trigger_reason: input.trigger_reason,
+          failure_reason: reason,
+          llm_provider: llm.provider,
+          llm_model: llm.model,
+        },
+      });
+    } catch {
+      /* best-effort emit */
+    }
     return {
       ok: false,
       report_id: stubId,
-      validation: { ok: false, reason: 'claude_no_response' },
+      validation: { ok: false, reason },
       vertex_responded: false,
-      detail: `Claude no usable response: ${callResult.error ?? 'unknown'}`,
+      detail: `Investigator produced no usable report: ${error}`,
     };
   }
 
   const report = callResult.report;
+  (report as any)._llm = llm;
   const validation = validateReport(report);
   if (!validation.ok) {
     // Persist anyway — schema-violating reports are still useful for ops to

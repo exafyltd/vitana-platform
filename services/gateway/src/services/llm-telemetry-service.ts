@@ -13,6 +13,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import type { CicdOasisEvent } from '../types/cicd';
 import { buildGenAISpan } from './llm-genai-semconv';
 import { estimateCost } from '../constants/llm-defaults';
 import { VITANA_ENV } from '../env';
@@ -61,7 +62,7 @@ export interface LLMCallContext {
 /**
  * Start an LLM call - emits llm.call.started event
  */
-export async function startLLMCall(params: {
+export interface StartLLMCallParams {
   vtid: string | null;
   threadId?: string;
   service: string;
@@ -71,7 +72,17 @@ export async function startLLMCall(params: {
   model: string;
   prompt: string;
   agentConfigVersion?: string;
-}): Promise<LLMCallContext> {
+}
+
+/**
+ * VTID-04546: pure builder for the llm.call.started event. Produces exactly
+ * the context + event `startLLMCall` has always emitted; split out so the
+ * router can emit it without awaiting the insert.
+ */
+export function buildLLMCallStarted(params: StartLLMCallParams): {
+  context: LLMCallContext;
+  event: CicdOasisEvent;
+} {
   const traceId = generateTraceId();
   const promptHash = hashPrompt(params.prompt);
   const startTime = Date.now();
@@ -116,33 +127,50 @@ export async function startLLMCall(params: {
     }),
   };
 
-  await emitOasisEvent({
-    vtid: params.vtid || 'VTID-01208',
-    type: 'llm.call.started',
-    source: params.service,
-    status: 'info',
-    message: `LLM call started: ${params.stage} using ${params.provider}/${params.model}`,
-    payload: payload as unknown as Record<string, unknown>,
-  });
+  return {
+    context,
+    event: {
+      vtid: params.vtid || 'VTID-01208',
+      type: 'llm.call.started',
+      source: params.service,
+      status: 'info',
+      message: `LLM call started: ${params.stage} using ${params.provider}/${params.model}`,
+      payload: payload as unknown as Record<string, unknown>,
+    },
+  };
+}
 
+/**
+ * Start an LLM call - emits llm.call.started event (awaited).
+ */
+export async function startLLMCall(params: StartLLMCallParams): Promise<LLMCallContext> {
+  const { context, event } = buildLLMCallStarted(params);
+  await emitOasisEvent(event);
   return context;
 }
 
 /**
  * Complete an LLM call - emits llm.call.completed event
  */
-export async function completeLLMCall(
+export interface CompleteLLMCallResult {
+  inputTokens?: number;
+  outputTokens?: number;
+  requestId?: string;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string;
+  fallbackTo?: string;
+  retryCount?: number;
+}
+
+/**
+ * VTID-04546: pure builder for the llm.call.completed event. Latency, cost
+ * and created_at are all captured at the moment this is called, so an
+ * emission that happens later still carries the same payload.
+ */
+export function buildLLMCallCompleted(
   context: LLMCallContext,
-  result: {
-    inputTokens?: number;
-    outputTokens?: number;
-    requestId?: string;
-    fallbackUsed?: boolean;
-    fallbackFrom?: string;
-    fallbackTo?: string;
-    retryCount?: number;
-  }
-): Promise<void> {
+  result: CompleteLLMCallResult
+): CicdOasisEvent {
   const latencyMs = Date.now() - context.startTime;
 
   const costEstimate = result.inputTokens && result.outputTokens
@@ -192,30 +220,46 @@ export async function completeLLMCall(
     }),
   };
 
-  await emitOasisEvent({
+  return {
     vtid: context.vtid || 'VTID-01208',
     type: 'llm.call.completed',
     source: context.service,
     status: 'success',
     message: `LLM call completed: ${context.stage} in ${latencyMs}ms${result.fallbackUsed ? ' (fallback)' : ''}`,
     payload: payload as unknown as Record<string, unknown>,
-  });
+  };
+}
+
+/**
+ * Complete an LLM call - emits llm.call.completed event (awaited).
+ */
+export async function completeLLMCall(
+  context: LLMCallContext,
+  result: CompleteLLMCallResult
+): Promise<void> {
+  await emitOasisEvent(buildLLMCallCompleted(context, result));
 }
 
 /**
  * Fail an LLM call - emits llm.call.failed event
  */
-export async function failLLMCall(
+export interface FailLLMCallError {
+  code?: string;
+  message: string;
+  retryCount?: number;
+  fallbackUsed?: boolean;
+  fallbackFrom?: string;
+  fallbackTo?: string;
+}
+
+/**
+ * VTID-04546: pure builder for the llm.call.failed event (see
+ * buildLLMCallCompleted — values captured at call time).
+ */
+export function buildLLMCallFailed(
   context: LLMCallContext,
-  error: {
-    code?: string;
-    message: string;
-    retryCount?: number;
-    fallbackUsed?: boolean;
-    fallbackFrom?: string;
-    fallbackTo?: string;
-  }
-): Promise<void> {
+  error: FailLLMCallError
+): CicdOasisEvent {
   const latencyMs = Date.now() - context.startTime;
 
   const payload: LLMTelemetryPayload = {
@@ -253,14 +297,130 @@ export async function failLLMCall(
     }),
   };
 
-  await emitOasisEvent({
+  return {
     vtid: context.vtid || 'VTID-01208',
     type: 'llm.call.failed',
     source: context.service,
     status: 'error',
     message: `LLM call failed: ${context.stage} - ${error.message}`,
     payload: payload as unknown as Record<string, unknown>,
-  });
+  };
+}
+
+/**
+ * Fail an LLM call - emits llm.call.failed event (awaited).
+ */
+export async function failLLMCall(
+  context: LLMCallContext,
+  error: FailLLMCallError
+): Promise<void> {
+  await emitOasisEvent(buildLLMCallFailed(context, error));
+}
+
+// =============================================================================
+// VTID-04546: detached (non-blocking) emission for latency-sensitive callers.
+//
+// The LLM router used to AWAIT the llm.call.started insert before the provider
+// call and the llm.call.completed insert after it. Each is a Supabase POST
+// with no timeout, so a slow oasis_events write added its full latency to
+// every routed LLM call — on the voice cascade, directly to the time before
+// the member hears a reply.
+//
+// These variants build the event synchronously (same payload, values captured
+// at the same moment as before) and emit it in the background:
+//   * Nothing is awaited on the caller's path.
+//   * The started insert is always ISSUED before the completed/failed insert
+//     of the same call: the terminal event is chained after the started emit
+//     settles, so the ledger ordering is unchanged.
+//   * Correlation needs no returned row: trace_id is generated client-side
+//     (randomUUID) and carried on the context, exactly as before.
+//   * No error ever reaches the caller; failures are logged.
+// =============================================================================
+
+const startedEmits = new WeakMap<LLMCallContext, Promise<void>>();
+
+function emitDetached(event: CicdOasisEvent): Promise<void> {
+  let p: Promise<unknown>;
+  try {
+    p = emitOasisEvent(event);
+  } catch (err) {
+    p = Promise.reject(err);
+  }
+  return p.then(
+    () => undefined,
+    (err) => {
+      console.warn(
+        `[LLM Telemetry] non-blocking ${event.type} emit failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    },
+  );
+}
+
+/**
+ * Non-blocking twin of startLLMCall. Returns the context synchronously; the
+ * llm.call.started insert runs in the background.
+ */
+export function startLLMCallDetached(params: StartLLMCallParams): LLMCallContext {
+  let built: { context: LLMCallContext; event: CicdOasisEvent };
+  try {
+    built = buildLLMCallStarted(params);
+  } catch (err) {
+    console.warn(
+      `[LLM Telemetry] could not build llm.call.started: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return {
+      traceId: generateTraceId(),
+      vtid: params.vtid,
+      threadId: params.threadId,
+      service: params.service,
+      stage: params.stage,
+      domain: params.domain,
+      provider: params.provider,
+      model: params.model,
+      promptHash: '',
+      agentConfigVersion: params.agentConfigVersion,
+      startTime: Date.now(),
+    };
+  }
+  startedEmits.set(built.context, emitDetached(built.event));
+  return built.context;
+}
+
+function chainAfterStarted(context: LLMCallContext, build: () => CicdOasisEvent): Promise<void> {
+  let event: CicdOasisEvent;
+  try {
+    event = build();
+  } catch (err) {
+    console.warn(
+      `[LLM Telemetry] could not build terminal event: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return Promise.resolve();
+  }
+  const after = startedEmits.get(context) ?? Promise.resolve();
+  return after.then(() => emitDetached(event));
+}
+
+/**
+ * Non-blocking twin of completeLLMCall. The payload (latency, cost,
+ * created_at) is captured now; the insert is issued after the call's
+ * started insert has settled. The returned promise never rejects and is
+ * only for tests — production callers do not await it.
+ */
+export function completeLLMCallDetached(
+  context: LLMCallContext,
+  result: CompleteLLMCallResult
+): Promise<void> {
+  return chainAfterStarted(context, () => buildLLMCallCompleted(context, result));
+}
+
+/**
+ * Non-blocking twin of failLLMCall (same contract as completeLLMCallDetached).
+ */
+export function failLLMCallDetached(
+  context: LLMCallContext,
+  error: FailLLMCallError
+): Promise<void> {
+  return chainAfterStarted(context, () => buildLLMCallFailed(context, error));
 }
 
 /**

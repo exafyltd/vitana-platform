@@ -30,6 +30,25 @@ function getGitHubToken(override?: string): string {
 }
 
 /**
+ * VTID-04633: the thrown message keeps the `GitHub API error: <status> - <text>`
+ * prefix callers match on, and appends GitHub's own `message` (e.g. "Resource
+ * not accessible by personal access token"), so a 403 in the Command Hub says
+ * why. Before this, PUBLISH showed a bare "403 - Forbidden".
+ */
+export function formatGitHubApiError(status: number, statusText: string, body: string): string {
+  const base = `GitHub API error: ${status} - ${statusText || 'error'}`;
+  let detail = '';
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown };
+    if (typeof parsed?.message === 'string') detail = parsed.message.trim();
+  } catch {
+    // Non-JSON body (HTML error page, empty) — no detail to add.
+  }
+  if (!detail || detail === statusText) return base;
+  return `${base}: ${detail.slice(0, 300)}`;
+}
+
+/**
  * Make an authenticated request to GitHub API
  */
 async function githubRequest<T>(
@@ -54,7 +73,7 @@ async function githubRequest<T>(
   if (!response.ok) {
     const errorBody = await response.text();
     console.error(`GitHub API error: ${response.status} - ${errorBody}`);
-    throw new Error(`GitHub API error: ${response.status} - ${response.statusText}`);
+    throw new Error(formatGitHubApiError(response.status, response.statusText, errorBody));
   }
 
   // Handle empty responses (like 204 No Content)
@@ -497,6 +516,32 @@ export async function getBehindBy(repo: string, base: string, headSha: string): 
 }
 
 /**
+ * VTID-04612: the commits `base` gained since `headSha` branched off, and the
+ * files they touched. `compare/{head}...{base}` diffs the merge base against
+ * base, so `files` is exactly what a branch update would bring in. GitHub caps
+ * `files` at 300 — `truncated` tells the caller the list is incomplete.
+ */
+export async function getBaseChangesSince(
+  repo: string,
+  base: string,
+  headSha: string,
+): Promise<{ behindBy: number; files: string[]; truncated: boolean }> {
+  const r = await githubRequest<{ ahead_by?: number; files?: Array<{ filename: string; previous_filename?: string }> }>(
+    `/repos/${repo}/compare/${encodeURIComponent(headSha)}...${encodeURIComponent(base)}`,
+  );
+  const files: string[] = [];
+  for (const f of r.files || []) {
+    files.push(f.filename);
+    if (f.previous_filename) files.push(f.previous_filename);
+  }
+  return {
+    behindBy: typeof r.ahead_by === 'number' ? r.ahead_by : 0,
+    files,
+    truncated: !Array.isArray(r.files) || r.files.length >= 300,
+  };
+}
+
+/**
  * VTID-04379: merge the base branch into the PR head (GitHub "Update branch",
  * a merge commit — never a rebase, so no history is rewritten). expected_head_sha
  * makes GitHub refuse if the head moved since we looked.
@@ -664,7 +709,8 @@ export async function getWorkflowRuns(
  */
 export async function getWorkflowRunJobs(
   repo: string,
-  runId: number
+  runId: number,
+  tokenOverride?: string
 ): Promise<{
   jobs: Array<{
     id: number;
@@ -684,7 +730,31 @@ export async function getWorkflowRunJobs(
       started_at: string;
       completed_at: string | null;
     }>;
-  }>(`/repos/${repo}/actions/runs/${runId}/jobs`);
+  }>(`/repos/${repo}/actions/runs/${runId}/jobs?per_page=100`, {}, tokenOverride);
+}
+
+/**
+ * VTID-04641: one page (100) of completed workflow runs created at or after
+ * `since`, newest first, across every workflow in the repository. The Testing
+ * & QA results store filters them against the test catalog.
+ */
+export async function listCompletedWorkflowRuns(
+  repo: string,
+  since: string,
+  page: number,
+  tokenOverride?: string
+): Promise<Array<Record<string, any>>> {
+  const q = new URLSearchParams({
+    status: 'completed',
+    created: `>=${since}`,
+    per_page: '100',
+    page: String(page),
+    exclude_pull_requests: 'true',
+  });
+  const body = await githubRequest<{ workflow_runs?: Array<Record<string, any>> }>(
+    `/repos/${repo}/actions/runs?${q.toString()}`, {}, tokenOverride,
+  );
+  return body.workflow_runs || [];
 }
 
 /**
@@ -876,6 +946,7 @@ export function detectServiceFromFiles(files: string[]): string | null {
 
 export const githubService = {
   getBehindBy,
+  getBaseChangesSince,
   updatePullRequestBranch,
   branchExists,
   findPrForBranch,

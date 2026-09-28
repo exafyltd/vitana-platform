@@ -146,13 +146,21 @@ interface CheckRunLike {
   html_url?: string | null;
 }
 
-async function githubGet<T>(path: string, token: string, accept = 'application/vnd.github+json'): Promise<T> {
+/**
+ * VTID-04621: the Accept header is always the REST media type. The job-log
+ * endpoint answers 415 to `Accept: text/plain` (verified live 2026-09-26) and
+ * 302 to the JSON media type, whose redirect target is the plain-text log —
+ * so `as` decides only how the body is read, never what is asked for.
+ */
+export const GITHUB_REST_ACCEPT = 'application/vnd.github+json';
+
+async function githubGet<T>(path: string, token: string, as: 'json' | 'text' = 'json'): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(`${GITHUB_API_BASE}${path}`, {
       headers: {
-        Accept: accept,
+        Accept: GITHUB_REST_ACCEPT,
         Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': '2022-11-28',
       },
@@ -160,7 +168,7 @@ async function githubGet<T>(path: string, token: string, accept = 'application/v
       redirect: 'follow',
     });
     if (!res.ok) throw new Error(`GitHub ${res.status} on ${path}`);
-    if (accept === 'application/vnd.github+json') return (await res.json()) as T;
+    if (as === 'json') return (await res.json()) as T;
     return (await res.text()) as unknown as T;
   } finally {
     clearTimeout(t);
@@ -193,7 +201,7 @@ export async function collectCiFailureEvidence(input: {
       ?? (async (o: string, r: string, sha: string) =>
         (await githubGet<{ check_runs: CheckRunLike[] }>(`/repos/${o}/${r}/commits/${sha}/check-runs?per_page=100`, token)).check_runs);
     const fetchJobLog = input.fetchJobLog
-      ?? ((o: string, r: string, jobId: number) => githubGet<string>(`/repos/${o}/${r}/actions/jobs/${jobId}/logs`, token, 'text/plain'));
+      ?? ((o: string, r: string, jobId: number) => githubGet<string>(`/repos/${o}/${r}/actions/jobs/${jobId}/logs`, token, 'text'));
 
     const runs = await fetchCheckRuns(input.owner, input.repo, input.headSha);
     const failing = runs.filter((cr) => wanted.has(cr.name) && cr.conclusion && cr.conclusion !== 'success' && cr.conclusion !== 'neutral' && cr.conclusion !== 'skipped');

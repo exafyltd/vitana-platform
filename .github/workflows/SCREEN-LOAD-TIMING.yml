@@ -3,15 +3,17 @@ run-name: VTID-SCREEN-LOAD-01 — Screen Load Timing
 
 # VTID-SCREEN-LOAD-01 — standard basic test for Command Hub Overview.
 #
-# Runs the mobile screen-load-timing spec against production on a schedule
-# and reports every result to the gateway, which turns it into the
+# Runs the mobile screen-load-timing spec against STAGING on a schedule
+# and reports every result to the staging gateway, which turns it into the
 # "Screen Load Time" entry in Command Hub's Overview service-health grid
 # (see fetchServiceHealth in services/gateway/src/frontend/command-hub/app.js).
 #
-# This is deliberately independent of the RUM beacon pipe (vitana-v1
-# src/lib/rum.ts), which is still staging-only — this gives Command Hub a
-# real, always-fresh signal on production screen load times without waiting
-# on that flag to graduate.
+# VTID-04648: this used to drive a real browser through production as the
+# test user. A browser suite is a test, and tests run on staging only (owner
+# rule 2026-09-26, CLAUDE.md rule 48); production gets read-only health
+# checks. The run is read-only: E2E_READONLY=1 skips the test-user
+# provisioning in e2e/global-setup.ts, the service-role key is not passed at
+# all, and a production URL given to the dispatch input is refused.
 
 on:
   schedule:
@@ -20,10 +22,10 @@ on:
   workflow_dispatch:
     inputs:
       community_url:
-        description: 'Community app URL to test against'
+        description: 'Community app URL to test against (staging only; production is refused)'
         required: false
         type: string
-        default: 'https://vitanaland.com'
+        default: 'https://preview-aws.vitanaland.com'
 
 concurrency:
   group: screen-load-timing
@@ -48,15 +50,21 @@ jobs:
         working-directory: e2e
         run: npx playwright install chromium --with-deps
 
-      - name: Run screen load timing
+      - name: Run screen load timing (staging, read-only)
         working-directory: e2e
-        run: npx playwright test --project=mobile-shared screen-load-timing.spec.ts
+        run: |
+          case "$COMMUNITY_URL" in
+            https://vitanaland.com*|https://www.vitanaland.com*|https://dr-app.vitanaland.com*)
+              echo "::error::Refusing to run a browser suite against production ($COMMUNITY_URL). Tests run on staging only (rule 48)."
+              exit 1 ;;
+          esac
+          npx playwright test --project=mobile-shared screen-load-timing.spec.ts
         env:
-          COMMUNITY_URL: ${{ inputs.community_url || 'https://vitanaland.com' }}
+          COMMUNITY_URL: ${{ inputs.community_url || 'https://preview-aws.vitanaland.com' }}
           GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
-          SCREEN_LOAD_ENV: production
+          SCREEN_LOAD_ENV: staging
+          E2E_READONLY: '1'
           SCREEN_LOAD_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}

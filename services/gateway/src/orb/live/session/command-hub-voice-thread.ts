@@ -37,7 +37,7 @@ export interface VoiceThreadSession {
 }
 
 export function isCommandHubVoiceSession(session: Pick<VoiceThreadSession, 'current_route'>): boolean {
-  return resolveOrbSurface({ currentRoute: session.current_route ?? null }) === 'command-hub';
+  return ((session as any).assistantProfile ? (session as any).assistantProfile.surface : resolveOrbSurface({ currentRoute: session.current_route ?? null })) === 'command-hub';
 }
 
 /**

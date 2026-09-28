@@ -211,6 +211,9 @@ export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
   // these at peak hours and offers a cheaper cache-hit input tier not
   // modeled here.
   'deepseek-flash': { input: 0.15, output: 0.60 },        // DeepSeek-V4.1-Flash published rates (2026-09)
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. Input only; output
+  // is free. Never a router provider — priced here for the jev.decision.* cost.
+  'jev-1.13.0': { input: 0.042, output: 0 },
   'deepseek-reasoner': { input: 0.55, output: 2.19 },     // retired R1 alias — published rates
   'deepseek-chat': { input: 0.14, output: 0.28 },         // retired V3 alias — published rates
 

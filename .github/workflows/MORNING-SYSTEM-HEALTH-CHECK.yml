@@ -408,7 +408,9 @@ jobs:
           echo "| 19 | Maxina STAGING reachability | $R | HTTP $CODE |" >> "$REPORT"
 
       # 20 — Screen Load Timing spot-check (reuses the e2e spec that already
-      # feeds Command Hub's Overview grid)
+      # feeds Command Hub's Overview grid). VTID-04648: on STAGING, read-only —
+      # a browser suite is a test and tests never target production (rule 48).
+      # E2E_READONLY=1 skips test-user provisioning; no service-role key.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -418,22 +420,22 @@ jobs:
       - name: Install Playwright chromium
         working-directory: e2e
         run: npx playwright install chromium --with-deps
-      - name: '20. Screen Load Timing spot-check'
+      - name: '20. Screen Load Timing spot-check (staging)'
         working-directory: e2e
         env:
-          COMMUNITY_URL: https://vitanaland.com
-          GATEWAY_URL: https://gateway.vitanaland.com
-          SCREEN_LOAD_ENV: production
+          COMMUNITY_URL: ${{ env.COMMUNITY_STAGING_URL }}
+          GATEWAY_URL: ${{ env.STAGING_GATEWAY_URL }}
+          SCREEN_LOAD_ENV: staging
+          E2E_READONLY: '1'
           SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: |
           set +e
           npx playwright test --project=mobile-shared screen-load-timing.spec.ts
           if [ $? -eq 0 ]; then R=PASS; D="within threshold"; else R=FAIL; D="see e2e/playwright-report"; fi
-          echo "| 20 | Screen Load Timing spot-check | $R | $D |" >> "$REPORT"
+          echo "| 20 | Screen Load Timing spot-check (staging) | $R | $D |" >> "$REPORT"
 
       # 21 — Scheduled-workflow self-audit: catches exactly the failure mode
       # that motivated this workflow (crons quietly failing every run for

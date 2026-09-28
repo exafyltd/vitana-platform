@@ -124,7 +124,7 @@ describe('triggerOperatorExecution (VTID-03820)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('creates the recommendation + plan rows, calls approveAutoExecute, and stamps the DeepSeek override on success', async () => {
+  it('creates the recommendation + plan rows, calls approveAutoExecute, and stamps the coding agent model override on success', async () => {
     mockedSupa
       .mockResolvedValueOnce({ ok: true, data: [{ spec_status: 'approved', is_terminal: false }] }) // governance read
       .mockResolvedValueOnce({ ok: true, data: [] }); // final metadata PATCH (via supa)
@@ -165,8 +165,9 @@ describe('triggerOperatorExecution (VTID-03820)', () => {
     const patchInit = patchCall![2];
     expect(patchInit.method).toBe('PATCH');
     const patchBody = JSON.parse(patchInit.body);
-    expect(patchBody.metadata.llm_on_ramp).toBe('deepseek');
-    expect(patchBody.metadata.llm_on_ramp_override).toEqual({ provider: 'deepseek', model: 'deepseek-flash' });
+    // VTID-04593: the coding agent's model is Bedrock Claude Sonnet 4.6.
+    expect(patchBody.metadata.llm_on_ramp).toBe('bedrock');
+    expect(patchBody.metadata.llm_on_ramp_override).toEqual({ provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' });
     expect(typeof patchBody.execute_after).toBe('string');
 
     expect(mockedEmit).toHaveBeenCalled();

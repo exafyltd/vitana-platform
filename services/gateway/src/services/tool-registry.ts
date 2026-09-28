@@ -59,7 +59,7 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     'autopilot_execute_task',
     {
       name: 'autopilot_execute_task',
-      description: 'Execute an already-approved VTID via the DeepSeek-powered execution on-ramp (writes code, opens a PR). Requires the target VTID to have spec_status=approved. Disabled by default — gated on OPERATOR_EXECUTION_ONRAMP_ENABLED.',
+      description: 'Execute an already-approved VTID via the execution on-ramp (writes code, opens a PR). Requires the target VTID to have spec_status=approved. Disabled by default — gated on OPERATOR_EXECUTION_ONRAMP_ENABLED.',
       parameters_schema: {
         type: 'object',
         properties: {
@@ -423,14 +423,11 @@ const TOOL_REGISTRY: Map<string, ToolDefinition> = new Map([
     'autopilot_get_recommendations',
     {
       name: 'autopilot_get_recommendations',
-      description: `Fetch recommended next actions from Autopilot for the current context.
+      description: `Fetch the Dev Autopilot backlog: open developer findings with the gate holding each one, executions in flight and awaiting approval, and supervisor alerts (VTID-04582).
+Never returns community member recommendations.
 Call this tool BEFORE giving "next steps" advice when:
-- User asks "what next", "what should I do", "what do we do now"
-- A VTID is selected or being discussed
-- A pipeline/deploy is in progress
-
-Returns prioritized recommendations with rationale, suggested commands, and verification steps.
-Autopilot is the single source of truth for "what to do next".`,
+- User asks "what next", "what should we work on", "what is the priority"
+- A VTID is selected or being discussed`,
       parameters_schema: {
         type: 'object',
         properties: {

@@ -360,12 +360,23 @@ const ROLE_DEFAULT_SCREENS = {
  * VTID-01230: Community and Admin redirect to vitanaland.com (external app).
  */
 // External redirect targets per role (roles not listed stay in Command Hub)
+// VTID-04561: environment-aware — the staging Command Hub switches into the
+// staging community app, never into production (it used to hardcode
+// vitanaland.com on every host).
+function communityAppOriginForHost(hostname) {
+    var h = String(hostname || '').toLowerCase();
+    if (h.indexOf('preview-aws-gateway') === 0 || h.indexOf('preview-gateway') === 0) return 'https://preview-aws.vitanaland.com';
+    return 'https://vitanaland.com';
+}
+var COMMUNITY_APP_ORIGIN = communityAppOriginForHost(typeof window !== 'undefined' && window.location ? window.location.hostname : '');
 var ROLE_EXTERNAL_REDIRECTS = {
-    'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
-    'admin': 'https://vitanaland.com/admin/dashboard',
-    'professional': 'https://vitanaland.com/professional/dashboard',
-    'staff': 'https://vitanaland.com/staff/dashboard',
-    'patient': 'https://vitanaland.com/patient/dashboard'
+    'community': COMMUNITY_APP_ORIGIN + '/comm/events-meetups?tab=hot',
+    'admin': COMMUNITY_APP_ORIGIN + '/admin/dashboard',
+    'professional': COMMUNITY_APP_ORIGIN + '/professional/dashboard',
+    'staff': COMMUNITY_APP_ORIGIN + '/staff/dashboard',
+    'patient': COMMUNITY_APP_ORIGIN + '/patient/dashboard',
+    // VTID-04561: BackOffice lives in the community app too.
+    'backoffice': COMMUNITY_APP_ORIGIN + '/backoffice/dashboard'
 };
 
 function navigateToRoleDefaultScreen(role) {
@@ -3788,11 +3799,11 @@ const NAVIGATION_CONFIG = [
         "section": "testing-qa",
         "basePath": "/command-hub/testing-qa/",
         "tabs": [
-            { "key": "unit-tests", "path": "/command-hub/testing-qa/unit-tests/" },
-            { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
-            { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
-            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
+            { "key": "overview", "path": "/command-hub/testing-qa/overview/" },
+            { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
+            { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
+            { "key": "run-tests", "path": "/command-hub/testing-qa/run-tests/" },
+            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
         ]
     },
     {
@@ -4839,6 +4850,19 @@ const state = {
     // Testing & QA — E2E runs + suites
     testingE2e: { runs: [], suites: [], loading: false, error: null, fetched: false, runningId: null },
     // Testing & QA — Unit Tests
+    // Testing & QA — Overview / Catalog / Runs (VTID-04642)
+    testingQa: {
+        summary: { data: null, loading: false, error: null },
+        catalog: { data: null, loading: false, error: null },
+        runs: { data: null, loading: false, error: null },
+        launchable: { data: null, loading: false, error: null },
+        launches: { data: null, loading: false, error: null },
+        launchForms: {},
+        catalogFilters: { environment: '', q: '' },
+        runsFilters: { environment: '', conclusion: '', repo: '' },
+        expandedSuite: null,
+        suiteFiles: {}
+    },
     testingUnit: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Integration Tests
     testingIntegration: { runs: [], loading: false, error: null, fetched: false },
@@ -4887,7 +4911,6 @@ const state = {
         error: null,
         fetched: false,
     },
-    cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -8392,8 +8415,14 @@ function renderModuleContent(moduleKey, tab) {
         // provider switches + TTS voice/language/speed.
         container.appendChild(renderVoiceProvidersView());
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
-        // Voice slice extracted from autonomy/self-healing
-        container.appendChild(renderVoiceSelfHealingPanel());
+        // VTID-04626: rebuilt screen, lives in voice-self-healing.js.
+        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
+            container.appendChild(window.renderVoiceSelfHealingScreen());
+        } else {
+            var vshMissing = document.createElement('p');
+            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
+            container.appendChild(vshMissing);
+        }
     } else if (moduleKey === 'voice' && tab === 'test-contracts') {
         // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
         container.appendChild(renderTestContractsPanel());
@@ -8617,16 +8646,16 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderModelsPlaygroundView());
 
     // ──── Testing & QA Module ────
-    } else if (moduleKey === 'testing-qa' && tab === 'unit-tests') {
-        container.appendChild(renderTestingUnitView());
-    } else if (moduleKey === 'testing-qa' && tab === 'integration-tests') {
-        container.appendChild(renderTestingIntegrationView());
-    } else if (moduleKey === 'testing-qa' && tab === 'validator-tests') {
-        container.appendChild(renderTestingValidatorView());
+    } else if (moduleKey === 'testing-qa' && tab === 'overview') {
+        container.appendChild(renderTestingOverviewView());
+    } else if (moduleKey === 'testing-qa' && tab === 'catalog') {
+        container.appendChild(renderTestingCatalogView());
+    } else if (moduleKey === 'testing-qa' && tab === 'runs') {
+        container.appendChild(renderTestingRunsView());
+    } else if (moduleKey === 'testing-qa' && tab === 'run-tests') {
+        container.appendChild(renderTestingRunTestsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
-    } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
-        container.appendChild(renderTestingCiReportsView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -12319,6 +12348,11 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
     '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
     '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
+    // VTID-04642: the Testing & QA rebuild replaced four stale tabs; old links land on the new ones.
+    '/command-hub/testing-qa/unit-tests/':        { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/integration-tests/': { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/validator-tests/':   { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/ci-reports/':        { section: 'testing-qa', tab: 'runs' },
 };
 
 // VTID-02856: Apply optional `subtab` field from a redirect entry to the
@@ -12372,6 +12406,7 @@ function formatTabLabel(key) {
     // DEV-COMHU-2025-0010: Special case handling for VTID labels
     if (key === 'vtid-ledger') return 'VTID Ledger';
     if (key === 'vtids') return 'VTID´s';
+    if (key === 'e2e') return 'E2E'; // VTID-04642
     return key.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
@@ -25845,6 +25880,49 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-04667: recommendation types with an executor ---
+// Mirrors MANUALLY_BRIDGEABLE_SOURCE_TYPES in
+// services/gateway/src/services/autopilot-executable-source-types.ts
+// (EXECUTABLE_RECOMMENDATION_SOURCE_TYPES + community + health). Keep in step —
+// test/vtid-04667-executable-source-types-drift.test.ts fails on drift.
+var EXECUTABLE_REC_SOURCE_TYPES = [
+    'missing-test-scanner',
+    'test-contract-failure-scanner',
+    'dev_autopilot',
+    'dev_autopilot_impact',
+    'operator_onramp',
+    'community',
+    'health'
+];
+
+// "Create task" for a type nothing executes yet (oasis, roadmap, behavior, …);
+// "Activate" otherwise, and when the listing did not say (older gateway).
+function recActivateLabel(rec) {
+    var t = rec && rec.source_type;
+    if (!t) return 'Activate';
+    return EXECUTABLE_REC_SOURCE_TYPES.indexOf(t) === -1 ? 'Create task' : 'Activate';
+}
+
+// --- VTID-04657: what Activate actually did to the execution ---
+function describeActivationOutcome(data) {
+    var vtid = data.vtid || '';
+    var ex = data.execution;
+    if (!ex) return 'Activated. VTID: ' + vtid;
+    if (ex.state === 'queued') return 'Activated ' + vtid + ' — execution ' + String(ex.execution_id || '').slice(0, 8) + ' queued.';
+    if (ex.state === 'pending') return 'Activated ' + vtid + ' — plan still being prepared; execution follows.';
+    if (ex.state === 'not_executable') return 'Activated ' + vtid + ' — no automated executor for this type; spec draft created for a person.';
+    var why = ex.error || 'unknown reason';
+    if (ex.violations && ex.violations.length) why += ' (' + ex.violations.join(', ') + ')';
+    return 'Activated ' + vtid + ' but execution did NOT start: ' + why;
+}
+
+function activationToastLevel(data) {
+    var ex = data.execution;
+    if (!ex || ex.state === 'queued') return 'success';
+    if (ex.state === 'failed') return 'error';
+    return 'info';
+}
+
 // --- VTID-01180: Autopilot Recommendations Modal ---
 
 /**
@@ -26154,7 +26232,9 @@ function createRecommendationCard(rec) {
     // Activate button
     var activateBtn = document.createElement('button');
     activateBtn.className = 'btn btn-primary';
-    activateBtn.textContent = 'Activate';
+    // VTID-04667: "Create task" when this type has no executor.
+    var activateIdleLabel = recActivateLabel(rec);
+    activateBtn.textContent = activateIdleLabel;
     activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
     activateBtn.onclick = async function () {
         activateBtn.disabled = true;
@@ -26173,13 +26253,18 @@ function createRecommendationCard(rec) {
                 card.remove();
                 updateRecommendationModalFooter();
                 await fetchTasks();
-                showToast('Activated! VTID: ' + data.vtid, 'success');
+                // VTID-04657: report what happened to the execution, not just the VTID.
+                showToast(describeActivationOutcome(data), activationToastLevel(data));
             } else {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
+                activateBtn.disabled = false;
+                activateBtn.textContent = activateIdleLabel;
                 try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
+            activateBtn.disabled = false;
+            activateBtn.textContent = activateIdleLabel;
             state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
             try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
@@ -30102,7 +30187,9 @@ function renderOverviewSystemView() {
             cardActions.className = 'rec-actions';
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-sm btn-primary';
-            activateBtn.textContent = 'Activate';
+            // VTID-04667: "Create task" when this type has no executor.
+            var activateIdleLabel = recActivateLabel(rec);
+            activateBtn.textContent = activateIdleLabel;
             activateBtn.onclick = async function (e) {
                 e.stopPropagation();
                 activateBtn.disabled = true;
@@ -30116,15 +30203,15 @@ function renderOverviewSystemView() {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
                         await fetchTasks();
-                        showToast('Recommendation activated!', 'success');
+                        showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
                         activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
+                        activateBtn.textContent = activateIdleLabel;
                         showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (err) {
                     activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
+                    activateBtn.textContent = activateIdleLabel;
                     showToast('Activation error: ' + err.message, 'error');
                 }
             };
@@ -35388,193 +35475,619 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
-// BOOTSTRAP-TEST-COVERAGE: static phase summary, see docs/TEST_COVERAGE_PLAN.md
-// for the full narrative (bugs found, follow-ups surfaced per phase). Update
-// this array when a new phase completes.
-var GATEWAY_COVERAGE_PHASES = [
-    { phase: '1', name: 'Un-quarantine sweep', suites: 11, tests: null, bugs: 1, status: 'done' },
-    { phase: '2', name: 'Tenancy & RBAC', suites: 24, tests: 381, bugs: 0, status: 'done' },
-    { phase: '3', name: 'Memory & intelligence stack', suites: 22, tests: 625, bugs: 2, status: 'done' },
-    { phase: '5', name: 'Autopilot subsystem', suites: 16, tests: 676, bugs: 1, status: 'done' },
-    { phase: '6', name: 'Vitana Brain + awareness engines', suites: 15, tests: 689, bugs: 3, status: 'done' },
-    { phase: '7', name: 'Voice/ORB tools (Nova-prioritized)', suites: 26, tests: 765, bugs: 2, status: 'done' },
-    { phase: '8', name: 'Frontend domain logic (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '9', name: 'Sibling services & packages', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '10', name: 'Edge functions (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '11', name: 'Coverage ratchet (make CI checks required)', suites: null, tests: null, bugs: 0, status: 'pending' },
+// ─── Testing & QA: Overview / Catalog / Runs (VTID-04642) ───────────────
+// The supervisor's view of every automated test in both repositories:
+//   Overview — health per environment, what is failing or flaky, the latest
+//              STAGING-VERIFY verdict per service, and the coverage gaps.
+//   Catalog  — every suite and workflow from the generated test catalog
+//              (VTID-04637): where it runs, how often, and whether it ran.
+//   Runs     — every CI run of a test / gate / monitor / e2e workflow, from
+//              the results store (VTID-04641).
+// All three read exafy_admin routes. Styling lives in styles.css (tq-*).
+
+var TQ_ENVIRONMENTS = [
+    { key: 'dev_pr', label: 'Development / PR', note: 'Every pull request and push to main' },
+    { key: 'nightly', label: 'Nightly', note: 'Scheduled full suites' },
+    { key: 'staging', label: 'Staging', note: 'Tests against the staging deployment' },
+    { key: 'production', label: 'Production', note: 'Read-only monitors and health checks' }
 ];
+var TQ_HEALTH_LABEL = { failing: 'Failing', flaky: 'Flaky', passing: 'Passing', no_recent_runs: 'No runs in 30 days' };
 
-function renderGatewayCoveragePhasesTable() {
-    var wrap = document.createElement('div');
-    wrap.style.marginBottom = '1.5rem';
+function tqEnvLabel(key) {
+    for (var i = 0; i < TQ_ENVIRONMENTS.length; i++) if (TQ_ENVIRONMENTS[i].key === key) return TQ_ENVIRONMENTS[i].label;
+    return key;
+}
 
-    var titleRow = document.createElement('div');
-    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">Coverage Bootstrap — Phase Structure</h3>' +
-        '<span class="status-badge status-active" style="font-size:0.75rem;">593 suites / 11,716 tests (gateway)</span>';
-    wrap.appendChild(titleRow);
+function tqRepoShort(repo) {
+    return repo === 'exafyltd/vitana-v1' || repo === 'frontend' ? 'vitana-v1' : 'platform';
+}
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.style.marginTop = 0;
-    subtitle.textContent = 'BOOTSTRAP-TEST-COVERAGE — full narrative (bugs found, findings surfaced per phase) in docs/TEST_COVERAGE_PLAN.md.';
-    wrap.appendChild(subtitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Phase</th><th>Scope</th><th>Suites</th><th>Tests</th><th>Bugs Found</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    GATEWAY_COVERAGE_PHASES.forEach(function (p) {
-        var row = document.createElement('tr');
-        row.innerHTML =
-            '<td style="font-weight:600;">' + escapeHtml(p.phase) + '</td>' +
-            '<td>' + escapeHtml(p.name) + '</td>' +
-            '<td style="text-align:center;">' + (p.suites == null ? '—' : p.suites) + '</td>' +
-            '<td style="text-align:center;">' + (p.tests == null ? '—' : p.tests) + '</td>' +
-            '<td style="text-align:center;' + (p.bugs > 0 ? 'color:#f59e0b;font-weight:600;' : '') + '">' + p.bugs + '</td>' +
-            '<td><span class="status-badge status-' + (p.status === 'done' ? 'active' : 'pending') + '">' + (p.status === 'done' ? 'Done' : 'Pending') + '</span></td>';
-        tbody.appendChild(row);
+function tqFetchJson(url, opts) {
+    var init = opts || {};
+    init.headers = buildContextHeaders(init.headers || {});
+    return fetch(url, init).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+            if (!r.ok || body.ok === false) {
+                var msg = body.message || body.error || ('HTTP ' + r.status);
+                if (r.status === 401 || r.status === 403) msg = 'Sign in as an exafy admin to see test results (' + msg + ').';
+                throw new Error(msg);
+            }
+            return body;
+        });
     });
+}
+
+function tqLoad(key, url) {
+    var slot = state.testingQa[key];
+    if (slot.loading || slot.data || slot.error) return;
+    slot.loading = true;
+    tqFetchJson(url).then(function (body) {
+        slot.data = body; slot.loading = false; renderApp();
+    }).catch(function (err) {
+        slot.error = err.message; slot.loading = false; renderApp();
+    });
+}
+
+function tqReload(key) {
+    state.testingQa[key] = { data: null, loading: false, error: null };
+}
+
+function tqEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = text;
+    return el;
+}
+
+function tqStatusBlock(slot, what) {
+    if (slot.loading || (!slot.data && !slot.error)) return tqEl('div', 'placeholder-content', 'Loading ' + what + '…');
+    if (slot.error) return tqEl('div', 'placeholder-content error-text', 'Could not load ' + what + ': ' + slot.error);
+    return null;
+}
+
+function tqHeader(title, subtitle) {
+    var box = tqEl('div', 'tq-header');
+    box.appendChild(tqEl('h2', null, title));
+    box.appendChild(tqEl('p', 'section-subtitle', subtitle));
+    return box;
+}
+
+// Full class names, spelled out: find-dead-css-classes.mjs only sees literal
+// class strings, so a concatenated 'tq-pill-' + kind reads as dead CSS.
+var TQ_PILL_CLASS = {
+    ok: 'tq-pill tq-pill-ok',
+    bad: 'tq-pill tq-pill-bad',
+    warn: 'tq-pill tq-pill-warn',
+    neutral: 'tq-pill tq-pill-neutral',
+    env: 'tq-pill tq-pill-env'
+};
+
+function tqPill(text, kind) {
+    return tqEl('span', TQ_PILL_CLASS[kind] || TQ_PILL_CLASS.neutral, text);
+}
+
+function tqConclusionKind(conclusion) {
+    if (conclusion === 'success') return 'ok';
+    if (conclusion === 'failure' || conclusion === 'timed_out') return 'bad';
+    if (conclusion === 'cancelled' || conclusion === 'skipped') return 'neutral';
+    return 'warn';
+}
+
+function tqHealthKind(health) {
+    return { passing: 'ok', failing: 'bad', flaky: 'warn', no_recent_runs: 'neutral' }[health] || 'neutral';
+}
+
+function tqPct(v) {
+    return v === null || v === undefined ? '—' : v + '%';
+}
+
+function tqLink(href, text) {
+    var a = tqEl('a', 'tq-link', text);
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    return a;
+}
+
+function tqTable(headers) {
+    var wrap = tqEl('div', 'tq-table-wrap');
+    var table = tqEl('table', 'list-table tq-table');
+    var thead = document.createElement('thead');
+    var tr = document.createElement('tr');
+    headers.forEach(function (h) { tr.appendChild(tqEl('th', null, h)); });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
     table.appendChild(tbody);
     wrap.appendChild(table);
-    return wrap;
+    return { wrap: wrap, tbody: tbody };
 }
 
-function renderTestingUnitView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Vitest (frontend) / Jest (gateway).</p>';
+function tqCell(row, content, className) {
+    var td = tqEl('td', className || null);
+    if (content && content.nodeType) td.appendChild(content);
+    else td.textContent = content === undefined || content === null ? '—' : String(content);
+    row.appendChild(td);
+    return td;
+}
 
-    // Info card
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Test Framework</h3><ul>' +
-        '<li><strong>Frontend:</strong> Vitest — <code>temp_vitana_v1/src/__tests__/</code></li>' +
-        '<li><strong>Gateway:</strong> Jest — <code>services/gateway/tests/</code></li>' +
-        '<li><strong>Coverage:</strong> c8/istanbul</li>' +
-        '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
-    container.appendChild(info);
+function tqEnvPills(envs) {
+    var box = tqEl('span', 'tq-pill-row');
+    (envs || []).forEach(function (e) { box.appendChild(tqPill(tqEnvLabel(e), 'env')); });
+    if (!envs || envs.length === 0) box.appendChild(tqPill('none', 'neutral'));
+    return box;
+}
 
-    // BOOTSTRAP-TEST-COVERAGE: phase-by-phase breakdown of the gateway unit
-    // test coverage bootstrap project (docs/TEST_COVERAGE_PLAN.md). Static
-    // summary — updated as new phases land — so testers/reviewers can see
-    // what's covered without reading the full plan doc.
-    container.appendChild(renderGatewayCoveragePhasesTable());
+function tqGoToTab(tabKey) {
+    handleTabClick(tabKey);
+}
 
-    // Quick run buttons
-    container.appendChild(renderTestingQuickRunButtons('unit', [
-        { label: 'Gateway Tests (Jest)', projects: ['gateway-jest'] },
-        { label: 'Frontend Tests (Vitest)', projects: ['frontend-vitest'] },
-    ]));
+// ─── Overview ─────────────────────────────────────────────────────────────
 
-    // Runs history
-    fetchTestingRuns('unit', 'testingUnit');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
+function renderTestingOverviewView() {
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Testing & QA', 'Every automated test in vitana-platform and vitana-v1: where it runs, how it did in the last 30 days, and what is missing.'));
 
-    if (state.testingUnit.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingUnit.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingUnit.error; container.appendChild(e);
+    var s = state.testingQa.summary;
+    var status = tqStatusBlock(s, 'test results');
+    if (status) {
+        container.appendChild(status);
     } else {
-        container.appendChild(renderTestRunsTable(state.testingUnit.runs));
+        var sum = s.data;
+        // Environments
+        var grid = tqEl('div', 'tq-env-grid');
+        TQ_ENVIRONMENTS.forEach(function (env) {
+            var e = (sum.environments || []).filter(function (x) { return x.environment === env.key; })[0] || {};
+            var card = tqEl('div', 'tq-env-card' + (e.failing ? ' tq-env-card-bad' : e.flaky ? ' tq-env-card-warn' : ''));
+            card.appendChild(tqEl('div', 'tq-env-title', env.label));
+            card.appendChild(tqEl('div', 'tq-env-note', env.note));
+            card.appendChild(tqEl('div', 'tq-env-rate', tqPct(e.pass_rate_7d)));
+            card.appendChild(tqEl('div', 'tq-env-sub', 'pass rate, last 7 days · ' + (e.runs_7d || 0) + ' runs'));
+            var pills = tqEl('div', 'tq-pill-row');
+            pills.appendChild(tqPill((e.workflows || 0) + ' workflows', 'neutral'));
+            if (e.failing) pills.appendChild(tqPill(e.failing + ' failing', 'bad'));
+            if (e.flaky) pills.appendChild(tqPill(e.flaky + ' flaky', 'warn'));
+            if (e.no_recent_runs) pills.appendChild(tqPill(e.no_recent_runs + ' idle', 'neutral'));
+            card.appendChild(pills);
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+
+        // Staging verification
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Staging verification'));
+        container.appendChild(tqEl('p', 'tq-muted', 'After every staging deploy, STAGING-VERIFY runs the smoke suite and each change\'s own suite. Production is only offered after it passes.'));
+        var sv = sum.staging_verify || [];
+        if (sv.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'No staging verification recorded yet.'));
+        } else {
+            var svGrid = tqEl('div', 'tq-sv-grid');
+            sv.forEach(function (v) {
+                var card = tqEl('div', 'tq-sv-card');
+                var top = tqEl('div', 'tq-sv-top');
+                top.appendChild(tqEl('strong', null, v.service));
+                top.appendChild(tqPill(v.outcome, v.outcome === 'passed' ? 'ok' : v.outcome === 'failed' ? 'bad' : 'neutral'));
+                card.appendChild(top);
+                card.appendChild(tqEl('div', 'tq-muted', 'commit ' + String(v.commit || '').slice(0, 7) + ' · ' + formatRelativeTime(v.at) + ' · ' + (v.tests || 0) + ' tests'));
+                (v.failed || []).slice(0, 5).forEach(function (f) {
+                    card.appendChild(tqEl('div', 'tq-sv-fail', (f.suite ? f.suite + ' › ' : '') + f.name + (f.problems && f.problems[0] ? ' — ' + String(f.problems[0]).slice(0, 160) : '')));
+                });
+                if (v.run_url) card.appendChild(tqLink(v.run_url, 'Open run'));
+                svGrid.appendChild(card);
+            });
+            container.appendChild(svGrid);
+        }
+
+        // Needs attention
+        var attention = (sum.workflows || []).filter(function (w) { return w.health === 'failing' || w.health === 'flaky'; });
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Needs attention (' + attention.length + ')'));
+        if (attention.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'Nothing failing or flaky in the last 30 days.'));
+        } else {
+            var t = tqTable(['Health', 'Workflow', 'Repo', 'Environments', 'Failing streak', 'Last success', 'Last run']);
+            attention.forEach(function (w) {
+                var row = document.createElement('tr');
+                tqCell(row, tqPill(TQ_HEALTH_LABEL[w.health] || w.health, tqHealthKind(w.health)));
+                tqCell(row, w.workflow_name || w.workflow_file);
+                tqCell(row, tqRepoShort(w.repo));
+                tqCell(row, tqEnvPills(w.environments));
+                tqCell(row, w.failing_streak ? w.failing_streak + ' runs' : (w.flaky_commits_30d + ' flaky commits'));
+                tqCell(row, w.last_success_at ? formatRelativeTime(w.last_success_at) : 'never (30 days)');
+                tqCell(row, w.last_run && w.last_run.html_url ? tqLink(w.last_run.html_url, (w.last_run.conclusion || '') + ' · ' + formatRelativeTime(w.last_run.run_created_at)) : '—');
+                t.tbody.appendChild(row);
+            });
+            container.appendChild(t.wrap);
+        }
+
+        // Sync state
+        var sync = sum.sync || {};
+        var syncLine = tqEl('div', 'tq-sync');
+        var states = (sync.state || []).map(function (x) {
+            return tqRepoShort(x.repo) + ': ' + (x.last_synced_at ? 'synced ' + formatRelativeTime(x.last_synced_at) : 'never synced') + (x.last_error ? ' (error: ' + x.last_error + ')' : '');
+        });
+        syncLine.appendChild(tqEl('span', 'tq-muted', (sum.runs || 0) + ' runs in the last 30 days. ' + (states.join(' · ') || 'Not synced yet.') + (sync.pending ? ' Sync in progress.' : '') + (sync.sync_error ? ' Sync error: ' + sync.sync_error : '')));
+        var syncBtn = tqEl('button', 'task-spec-pipeline-btn', 'Sync from GitHub now');
+        syncBtn.onclick = function () {
+            syncBtn.disabled = true; syncBtn.textContent = 'Syncing…';
+            tqFetchJson('/api/v1/testing/results/sync', { method: 'POST' }).then(function () {
+                tqReload('summary'); tqReload('runs'); renderApp();
+            }).catch(function (err) {
+                syncBtn.disabled = false; syncBtn.textContent = 'Sync failed: ' + err.message;
+            });
+        };
+        syncLine.appendChild(syncBtn);
+        container.appendChild(syncLine);
+    }
+
+    // Coverage snapshot from the catalog
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Coverage'));
+    var c = state.testingQa.catalog;
+    var cStatus = tqStatusBlock(c, 'the test catalog');
+    if (cStatus) {
+        container.appendChild(cStatus);
+    } else {
+        var cs = c.data.summary || {};
+        var stats = tqEl('div', 'tq-stat-row');
+        [['Test files', cs.files], ['Test cases', cs.cases], ['Suites', cs.suites], ['Scheduled runs / day', cs.scheduled_runs_per_day],
+         ['Suites never run in CI', (cs.never_run_suites || []).length], ['Workflows flagged', (cs.flagged_workflows || []).length]].forEach(function (p) {
+            var st = tqEl('div', 'tq-stat');
+            st.appendChild(tqEl('div', 'tq-stat-value', p[1] === undefined || p[1] === null ? '—' : typeof p[1] === 'number' ? Math.round(p[1]).toLocaleString('en-US') : String(p[1])));
+            st.appendChild(tqEl('div', 'tq-stat-label', p[0]));
+            stats.appendChild(st);
+        });
+        container.appendChild(stats);
+        var gaps = cs.never_run_suites || [];
+        if (gaps.length) {
+            var gapBox = tqEl('div', 'databases-arch-note');
+            gapBox.appendChild(tqEl('h3', null, 'Suites no workflow runs'));
+            var ul = document.createElement('ul');
+            gaps.forEach(function (g) { ul.appendChild(tqEl('li', null, g)); });
+            gapBox.appendChild(ul);
+            container.appendChild(gapBox);
+        }
+        var btn = tqEl('button', 'task-spec-pipeline-btn', 'Open the full catalog');
+        btn.onclick = function () { tqGoToTab('catalog'); };
+        container.appendChild(btn);
+        container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + ' from the code on main.'));
     }
     return container;
 }
 
-function renderTestingIntegrationView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Cross-service integration test results.</p>';
+// ─── Catalog ──────────────────────────────────────────────────────────────
 
-    // Scope info
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Integration Test Scope</h3><ul>' +
-        '<li><strong>Gateway \u2192 OASIS Operator:</strong> Event emission, projection sync</li>' +
-        '<li><strong>Gateway \u2192 Worker Runner:</strong> Task claiming, execution callbacks</li>' +
-        '<li><strong>Gateway \u2192 Verification Engine:</strong> Governance evaluation flow</li>' +
-        '<li><strong>Gateway \u2192 Supabase:</strong> RLS enforcement, data persistence</li>' +
-        '<li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>';
-    container.appendChild(info);
-
-    // Quick run buttons
-    container.appendChild(renderTestingQuickRunButtons('integration', [
-        { label: 'Full Integration Suite', projects: ['integration-full'] },
-    ]));
-
-    // Runs history
-    fetchTestingRuns('integration', 'testingIntegration');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
-
-    if (state.testingIntegration.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingIntegration.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingIntegration.error; container.appendChild(e);
-    } else {
-        container.appendChild(renderTestRunsTable(state.testingIntegration.runs));
-    }
-    return container;
+function tqWorkflowHealthIndex() {
+    var s = state.testingQa.summary.data;
+    var index = {};
+    ((s && s.workflows) || []).forEach(function (w) { index[tqRepoShort(w.repo) + '|' + w.workflow_file] = w; });
+    return index;
 }
 
-function renderTestingValidatorView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance validator agent test scenarios.</p>';
+function renderTestingCatalogView() {
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test catalog', 'Generated from the code on every merge: every suite, the workflows that run it, where and how often. Suites nothing runs are gaps.'));
 
-    // Quick run button
-    container.appendChild(renderTestingQuickRunButtons('validator', [
-        { label: 'Run All Validator Tests', projects: ['validator-governance'] },
-    ]));
+    var c = state.testingQa.catalog;
+    var status = tqStatusBlock(c, 'the test catalog');
+    if (status) { container.appendChild(status); return container; }
 
-    // Scenarios table
-    var scenarios = [
-        { name: 'Deploy Gate - Clean Build', expected: 'ALLOW', rule: 'GOV-001' },
-        { name: 'Deploy Gate - Failing Tests', expected: 'BLOCK', rule: 'GOV-001' },
-        { name: 'Spec Validation - Complete Spec', expected: 'APPROVE', rule: 'GOV-003' },
-        { name: 'Spec Validation - Missing Criteria', expected: 'REJECT', rule: 'GOV-003' },
-        { name: 'Resource Limit - Within Budget', expected: 'ALLOW', rule: 'GOV-005' },
-        { name: 'Resource Limit - Over Budget', expected: 'BLOCK', rule: 'GOV-005' }
-    ];
-    var scenariosTitle = document.createElement('h3');
-    scenariosTitle.textContent = 'Test Scenarios';
-    container.appendChild(scenariosTitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Scenario</th><th>Expected</th><th>Rule</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    scenarios.forEach(function (s) {
-        var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + s.name + '</td>' +
-            '<td><span class="status-badge status-' + (s.expected === 'ALLOW' || s.expected === 'APPROVE' ? 'active' : 'blocked') + '">' + s.expected + '</span></td>' +
-            '<td style="font-family:monospace;">' + s.rule + '</td>' +
-            '<td><span class="status-badge status-pending">Not Run</span></td>';
-        tbody.appendChild(row);
+    var f = state.testingQa.catalogFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    var envSel = document.createElement('select');
+    envSel.className = 'tq-select';
+    envSel.setAttribute('aria-label', 'Environment');
+    [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })).concat([['never_run', 'Never run in CI']]).forEach(function (o) {
+        var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+        if (f.environment === o[0]) opt.selected = true;
+        envSel.appendChild(opt);
     });
-    table.appendChild(tbody);
-    container.appendChild(table);
+    envSel.onchange = function () { f.environment = envSel.value; renderApp(); };
+    bar.appendChild(envSel);
+    var search = document.createElement('input');
+    search.type = 'search'; search.className = 'tq-input'; search.placeholder = 'Search suites and workflows';
+    search.setAttribute('aria-label', 'Search suites and workflows');
+    search.value = f.q;
+    search.oninput = function () { f.q = search.value; clearTimeout(tqSearchTimer); tqSearchTimer = setTimeout(renderApp, 250); };
+    bar.appendChild(search);
+    container.appendChild(bar);
 
-    // Runs history
-    fetchTestingRuns('validator', 'testingValidator');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1.5rem';
-    container.appendChild(runsTitle);
+    var q = (f.q || '').toLowerCase();
+    var health = tqWorkflowHealthIndex();
+    var suites = (c.data.suites || []).filter(function (s) {
+        var envOk = !f.environment || (f.environment === 'never_run' ? s.never_run : (s.environments || []).indexOf(f.environment) >= 0);
+        return envOk && (!q || (s.name + ' ' + s.id).toLowerCase().indexOf(q) >= 0);
+    });
 
-    if (state.testingValidator.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingValidator.error) {
-        var e2 = document.createElement('div'); e2.className = 'placeholder-content error-text'; e2.textContent = 'Error: ' + state.testingValidator.error; container.appendChild(e2);
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Suites (' + suites.length + ')'));
+    var t = tqTable(['Suite', 'Repo', 'Runner', 'Files', 'Cases', 'Environments', 'Runs', 'Latest result']);
+    suites.forEach(function (s) {
+        var row = document.createElement('tr');
+        row.className = 'tq-row-click';
+        makeClickable(row, function () {
+            state.testingQa.expandedSuite = state.testingQa.expandedSuite === s.id ? null : s.id;
+            renderApp();
+        }, { label: 'Show files of ' + s.name });
+        var nameCell = tqCell(row, s.name);
+        if (s.never_run) { nameCell.appendChild(document.createTextNode(' ')); nameCell.appendChild(tqPill('never run', 'bad')); }
+        tqCell(row, tqRepoShort(s.repo));
+        tqCell(row, s.runner);
+        tqCell(row, s.files);
+        tqCell(row, s.cases);
+        tqCell(row, tqEnvPills(s.environments));
+        tqCell(row, (s.schedules || []).length ? s.schedules.map(function (x) { return x.human; }).join(', ') : (s.runs_in || []).length ? 'on PR / push' : '—');
+        var worst = null;
+        (s.runs_in || []).forEach(function (file) {
+            var w = health[tqRepoShort(s.repo) + '|' + file];
+            if (w && (!worst || ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(w.health) < ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(worst.health))) worst = w;
+        });
+        tqCell(row, worst ? tqPill((TQ_HEALTH_LABEL[worst.health] || worst.health) + ' · ' + worst.workflow_file, tqHealthKind(worst.health)) : '—');
+        t.tbody.appendChild(row);
+        if (state.testingQa.expandedSuite === s.id) t.tbody.appendChild(renderTestingSuiteFilesRow(s, 8));
+    });
+    container.appendChild(t.wrap);
+
+    var workflows = (c.data.workflows || []).filter(function (w) {
+        return (!f.environment || f.environment === 'never_run' || (w.environments || []).indexOf(f.environment) >= 0) &&
+            (!q || (w.file + ' ' + w.name).toLowerCase().indexOf(q) >= 0);
+    });
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Workflows (' + workflows.length + ')'));
+    var wt = tqTable(['Workflow', 'Repo', 'Kind', 'Schedule', 'Environments', 'Pass rate 7d', 'Latest result', 'Flags']);
+    workflows.forEach(function (w) {
+        var row = document.createElement('tr');
+        tqCell(row, w.file);
+        tqCell(row, tqRepoShort(w.repo));
+        tqCell(row, w.kind);
+        tqCell(row, (w.schedules || []).map(function (x) { return x.human; }).join(', ') || (w.manual_trigger ? 'on demand / on events' : 'on events'));
+        tqCell(row, tqEnvPills(w.environments));
+        var h = health[tqRepoShort(w.repo) + '|' + w.file];
+        tqCell(row, h ? tqPct(h.pass_rate_7d) : '—');
+        tqCell(row, h && h.last_run ? (h.last_run.html_url ? tqLink(h.last_run.html_url, (h.last_run.conclusion || '') + ' · ' + formatRelativeTime(h.last_run.run_created_at)) : h.last_run.conclusion) : 'no run recorded');
+        var flags = tqEl('span', 'tq-pill-row');
+        (w.flags || []).forEach(function (fl) { flags.appendChild(tqPill(fl.replace(/_/g, ' '), 'bad')); });
+        tqCell(row, (w.flags || []).length ? flags : '—');
+        wt.tbody.appendChild(row);
+    });
+    container.appendChild(wt.wrap);
+    container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + '. Sources: ' + Object.keys(c.data.sources || {}).map(function (k) {
+        var src = c.data.sources[k]; return tqRepoShort(src.repo || k) + (src.missing ? ' (missing)' : ' @' + String(src.sha || '').slice(0, 7));
+    }).join(', ') + '.'));
+    return container;
+}
+
+var tqSearchTimer = null;
+
+function renderTestingSuiteFilesRow(suite, colspan) {
+    var tr = tqEl('tr', 'tq-detail-row');
+    var td = tqEl('td');
+    td.colSpan = colspan;
+    var slot = state.testingQa.suiteFiles[suite.id];
+    if (!slot) {
+        slot = state.testingQa.suiteFiles[suite.id] = { loading: true, data: null, error: null };
+        tqFetchJson('/api/v1/testing/catalog/suite?id=' + encodeURIComponent(suite.id)).then(function (b) {
+            slot.data = b; slot.loading = false; renderApp();
+        }).catch(function (e) { slot.error = e.message; slot.loading = false; renderApp(); });
+    }
+    if (slot.loading) td.appendChild(tqEl('div', 'tq-muted', 'Loading files…'));
+    else if (slot.error) td.appendChild(tqEl('div', 'error-text', slot.error));
+    else {
+        var ul = tqEl('ul', 'tq-file-list');
+        (slot.data.files || []).forEach(function (file) {
+            ul.appendChild(tqEl('li', null, file.path + ' — ' + file.cases + ' cases' + (file.domain ? ' · ' + file.domain : '')));
+        });
+        td.appendChild(ul);
+    }
+    tr.appendChild(td);
+    return tr;
+}
+
+// ─── Runs ─────────────────────────────────────────────────────────────────
+
+function tqRunsUrl() {
+    var f = state.testingQa.runsFilters;
+    var params = ['limit=100'];
+    if (f.environment) params.push('environment=' + encodeURIComponent(f.environment));
+    if (f.conclusion) params.push('conclusion=' + encodeURIComponent(f.conclusion));
+    if (f.repo) params.push('repo=' + encodeURIComponent(f.repo));
+    return '/api/v1/testing/results/runs?' + params.join('&');
+}
+
+function renderTestingRunsView() {
+    tqLoad('runs', tqRunsUrl());
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test runs', 'Every CI run of a test, gate, monitor or end-to-end workflow in both repositories, newest first.'));
+
+    var f = state.testingQa.runsFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    function select(label, key, options) {
+        var sel = document.createElement('select');
+        sel.className = 'tq-select';
+        sel.setAttribute('aria-label', label);
+        options.forEach(function (o) {
+            var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+            if (f[key] === o[0]) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = function () { f[key] = sel.value; tqReload('runs'); renderApp(); };
+        bar.appendChild(sel);
+    }
+    select('Environment', 'environment', [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })));
+    select('Result', 'conclusion', [['', 'All results'], ['failure', 'Failed'], ['success', 'Passed'], ['cancelled', 'Cancelled'], ['timed_out', 'Timed out']]);
+    select('Repository', 'repo', [['', 'Both repositories'], ['exafyltd/vitana-platform', 'vitana-platform'], ['exafyltd/vitana-v1', 'vitana-v1']]);
+    var runBtn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', 'Run gateway tests now');
+    runBtn.title = 'Dispatches TEST-SUITE.yml on main';
+    runBtn.onclick = function () { triggerTestRun('unit', ['gateway-jest'], runBtn); };
+    bar.appendChild(runBtn);
+    container.appendChild(bar);
+
+    var r = state.testingQa.runs;
+    var status = tqStatusBlock(r, 'runs');
+    if (status) { container.appendChild(status); return container; }
+    var runs = r.data.runs || [];
+    if (r.data.sync_error) container.appendChild(tqEl('div', 'placeholder-content error-text', 'Sync from GitHub failed: ' + r.data.sync_error + '. Showing stored runs.'));
+    if (runs.length === 0) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No runs match these filters yet.'));
+        return container;
+    }
+    var t = tqTable(['When', 'Result', 'Workflow', 'Repo', 'Environments', 'Trigger', 'Commit', 'Duration', 'Failed jobs']);
+    runs.forEach(function (run) {
+        var row = document.createElement('tr');
+        tqCell(row, formatRelativeTime(run.run_created_at));
+        tqCell(row, tqPill(run.conclusion || 'unknown', tqConclusionKind(run.conclusion)));
+        tqCell(row, run.html_url ? tqLink(run.html_url, run.workflow_name || run.workflow_file) : (run.workflow_name || run.workflow_file));
+        tqCell(row, tqRepoShort(run.repo));
+        tqCell(row, tqEnvPills(run.environments));
+        tqCell(row, (run.event || '') + (run.branch ? ' · ' + run.branch : ''));
+        tqCell(row, String(run.head_sha || '').slice(0, 7), 'tq-mono');
+        tqCell(row, run.duration_s !== null && run.duration_s !== undefined ? (run.duration_s >= 60 ? Math.round(run.duration_s / 60) + ' min' : run.duration_s + ' s') : '—');
+        var failed = (run.jobs || []).filter(function (j) { return j.conclusion === 'failure' || j.conclusion === 'timed_out'; });
+        tqCell(row, failed.length ? failed.map(function (j) { return j.name; }).join(', ') : '—');
+        t.tbody.appendChild(row);
+    });
+    container.appendChild(t.wrap);
+    return container;
+}
+
+// ─── Testing & QA: Run Tests (VTID-04643) ────────────────────────────────
+// Starts a reviewed test workflow (the gateway's launch list): development and
+// staging tests, and read-only production health checks. Deploys are never
+// started here. Every launch asks why and is recorded in OASIS.
+
+function renderTestingRunTestsView() {
+    tqLoad('launchable', '/api/v1/testing/launchable');
+    tqLoad('launches', '/api/v1/testing/launches');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Run tests', 'Start a reviewed test workflow. Development and staging tests run against code or staging; production only gets read-only health checks. Deploys go through PUBLISH, never through here.'));
+
+    var l = state.testingQa.launchable;
+    var status = tqStatusBlock(l, 'the launch list');
+    if (status) { container.appendChild(status); return container; }
+
+    var groups = [
+        { env: 'dev_pr', title: 'Development / PR', note: 'Runs on a GitHub runner against the code on main. Touches no deployment.' },
+        { env: 'staging', title: 'Staging', note: 'Runs read-only against the staging deployment.' },
+        { env: 'production', title: 'Production (read-only health checks)', note: 'Reads only. Nothing here writes to production.' }
+    ];
+    groups.forEach(function (g) {
+        var items = (l.data.launchable || []).filter(function (x) { return x.environment === g.env; });
+        if (!items.length) return;
+        container.appendChild(tqEl('h3', 'tq-section-title', g.title));
+        container.appendChild(tqEl('p', 'tq-muted', g.note));
+        var grid = tqEl('div', 'tq-launch-grid');
+        items.forEach(function (item) { grid.appendChild(renderTestingLaunchCard(item, l.data.e2e_projects || [])); });
+        container.appendChild(grid);
+    });
+
+    var not = l.data.not_launchable || [];
+    if (not.length) {
+        var det = tqEl('details', 'tq-details');
+        det.appendChild(tqEl('summary', null, 'Not launchable from here (' + not.length + ')'));
+        var t = tqTable(['Workflow', 'Repo', 'Kind', 'Why not']);
+        not.forEach(function (w) {
+            var row = document.createElement('tr');
+            tqCell(row, w.file);
+            tqCell(row, tqRepoShort(w.repo));
+            tqCell(row, w.kind);
+            tqCell(row, w.reason);
+            t.tbody.appendChild(row);
+        });
+        det.appendChild(t.wrap);
+        container.appendChild(det);
+    }
+
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Recent manual runs'));
+    var rl = state.testingQa.launches;
+    var rs = tqStatusBlock(rl, 'recent runs');
+    if (rs) { container.appendChild(rs); return container; }
+    var launches = rl.data.launches || [];
+    if (!launches.length) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No manual runs yet.'));
     } else {
-        container.appendChild(renderTestRunsTable(state.testingValidator.runs));
+        var lt = tqTable(['When', 'Who', 'Workflow', 'Environment', 'Why']);
+        launches.forEach(function (x) {
+            var row = document.createElement('tr');
+            tqCell(row, formatRelativeTime(x.at));
+            tqCell(row, x.by || '—');
+            tqCell(row, x.label || x.workflow);
+            tqCell(row, tqPill(tqEnvLabel(x.environment), 'env'));
+            tqCell(row, x.reason);
+            lt.tbody.appendChild(row);
+        });
+        container.appendChild(lt.wrap);
     }
     return container;
+}
+
+function renderTestingLaunchCard(item, e2eProjects) {
+    var key = item.repo + '|' + item.file;
+    var form = state.testingQa.launchForms[key] || (state.testingQa.launchForms[key] = { reason: '', projects: [], busy: false, result: null, error: null });
+    var card = tqEl('div', 'tq-launch-card');
+    var top = tqEl('div', 'tq-sv-top');
+    top.appendChild(tqEl('strong', null, item.label));
+    top.appendChild(tqPill(tqRepoShort(item.repo), 'neutral'));
+    card.appendChild(top);
+    card.appendChild(tqEl('div', 'tq-mono tq-muted', item.file));
+    card.appendChild(tqEl('div', 'tq-launch-effect', item.effect));
+    if (!item.in_catalog) card.appendChild(tqEl('div', 'tq-sv-fail', 'Not found in the current test catalog; the workflow may have been renamed.'));
+
+    if (item.inputs === 'e2e_projects') {
+        var box = tqEl('fieldset', 'tq-projects');
+        box.appendChild(tqEl('legend', null, 'Playwright projects'));
+        e2eProjects.forEach(function (p) {
+            var lab = tqEl('label', 'tq-check');
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = form.projects.indexOf(p.project) >= 0;
+            cb.onchange = function () {
+                var i = form.projects.indexOf(p.project);
+                if (cb.checked && i < 0) form.projects.push(p.project);
+                if (!cb.checked && i >= 0) form.projects.splice(i, 1);
+            };
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode(' ' + p.label));
+            box.appendChild(lab);
+        });
+        card.appendChild(box);
+    }
+    if (item.inputs === 'staging_verify_gateway') {
+        card.appendChild(tqEl('div', 'tq-muted', 'Runs against the commit the staging gateway reports at start.'));
+    }
+
+    var reason = document.createElement('input');
+    reason.type = 'text';
+    reason.className = 'tq-input tq-reason';
+    reason.placeholder = 'Why are you running this? (recorded)';
+    reason.setAttribute('aria-label', 'Reason for running ' + item.label);
+    reason.value = form.reason;
+    reason.oninput = function () { form.reason = reason.value; };
+    card.appendChild(reason);
+
+    var btn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', form.busy ? 'Starting…' : 'Start');
+    btn.disabled = form.busy;
+    btn.onclick = function () {
+        form.busy = true; form.error = null; form.result = null; renderApp();
+        tqFetchJson('/api/v1/testing/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo: item.repo, workflow: item.file, reason: form.reason, projects: form.projects })
+        }).then(function (body) {
+            form.busy = false; form.result = body; form.reason = '';
+            tqReload('launches');
+            renderApp();
+        }).catch(function (err) {
+            form.busy = false; form.error = err.message; renderApp();
+        });
+    };
+    card.appendChild(btn);
+    if (form.error) card.appendChild(tqEl('div', 'tq-sv-fail', form.error));
+    if (form.result) {
+        var ok = tqEl('div', 'tq-launch-ok');
+        ok.appendChild(tqPill('started', 'ok'));
+        ok.appendChild(document.createTextNode(' '));
+        ok.appendChild(tqLink(form.result.actions_url, 'Follow in GitHub Actions'));
+        ok.appendChild(tqEl('span', 'tq-muted', ' · the result appears in Runs when it finishes.'));
+        card.appendChild(ok);
+    }
+    return card;
 }
 
 function renderTestingE2eView() {
@@ -35584,73 +36097,27 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">272+ routes</span>';
+    var e2eTitle = document.createElement('h2');
+    e2eTitle.className = 'testing-e2e-title';
+    e2eTitle.textContent = 'E2E Tests';
+    var e2eBadge = document.createElement('span');
+    e2eBadge.className = 'status-badge status-active testing-e2e-badge';
+    e2eBadge.textContent = 'staging';
+    titleRow.appendChild(e2eTitle);
+    titleRow.appendChild(e2eBadge);
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) \u00d7 6 roles.';
+    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) and 5 roles, on staging.';
     container.appendChild(subtitle);
 
-    // ─── Cloud Run Migration Testing Banner ─────────────────────────
-    var cloudRunBanner = document.createElement('div');
-    cloudRunBanner.style.cssText = 'background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(168,85,247,0.08));border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;';
-
-    var bannerTitle = document.createElement('div');
-    bannerTitle.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
-    bannerTitle.innerHTML = '<span style="font-size:1.1rem;">&#9729;</span><strong style="font-size:0.95rem;">Cloud Run Migration Testing</strong>';
-    cloudRunBanner.appendChild(bannerTitle);
-
-    var bannerDesc = document.createElement('div');
-    bannerDesc.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
-    bannerDesc.textContent = 'Run smoke tests against the Cloud Run community-app deployment to verify all 272 routes work before decommissioning Lovable CDN.';
-    cloudRunBanner.appendChild(bannerDesc);
-
-    var bannerBtnRow = document.createElement('div');
-    bannerBtnRow.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;';
-
-    var critBtn = document.createElement('button');
-    critBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    critBtn.style.fontSize = '0.8rem';
-    critBtn.textContent = 'Cloud Run \u2014 Critical Path';
-    critBtn.title = 'Runs desktop-community + mobile-community against Cloud Run URL';
-    critBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], critBtn, state.cloudRunUrl || '');
-    };
-    bannerBtnRow.appendChild(critBtn);
-
-    var fullBtn = document.createElement('button');
-    fullBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    fullBtn.style.fontSize = '0.8rem';
-    fullBtn.textContent = 'Cloud Run \u2014 Full Suite';
-    fullBtn.title = 'Runs all desktop + mobile projects against Cloud Run URL';
-    fullBtn.onclick = function () {
-        triggerTestRun('e2e',
-            ['desktop-community', 'desktop-patient', 'desktop-professional', 'desktop-staff', 'desktop-admin', 'desktop-shared',
-             'mobile-community', 'mobile-patient', 'mobile-professional', 'mobile-staff', 'mobile-admin', 'mobile-shared'],
-            fullBtn, state.cloudRunUrl || ''
-        );
-    };
-    bannerBtnRow.appendChild(fullBtn);
-
-    var lovableBtn = document.createElement('button');
-    lovableBtn.className = 'task-spec-pipeline-btn';
-    lovableBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
-    lovableBtn.textContent = 'Lovable CDN \u2014 Critical Path';
-    lovableBtn.title = 'Runs desktop-community + mobile-community against Lovable (baseline)';
-    lovableBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], lovableBtn);
-    };
-    bannerBtnRow.appendChild(lovableBtn);
-    cloudRunBanner.appendChild(bannerBtnRow);
-
-    // Cloud Run URL display
-    var urlRow = document.createElement('div');
-    urlRow.style.cssText = 'margin-top:0.6rem;font-size:0.75rem;color:var(--color-text-secondary);';
-    urlRow.innerHTML = '<strong>Cloud Run URL:</strong> <code style="background:var(--color-bg-primary);padding:0.15rem 0.4rem;border-radius:3px;">' +
-        (state.cloudRunUrl || 'Not configured \u2014 set in state after first deploy') + '</code>';
-    cloudRunBanner.appendChild(urlRow);
-
-    container.appendChild(cloudRunBanner);
+    // VTID-04635: E2E runs target staging only. The gateway sends the staging
+    // community app URL itself and refuses any other host; production is
+    // never tested (CLAUDE.md rule 48).
+    var stagingNote = document.createElement('div');
+    stagingNote.className = 'databases-arch-note';
+    stagingNote.innerHTML = '<h3>Runs against staging</h3><p>Every E2E run here targets <code>https://preview-aws.vitanaland.com</code> (community app) and <code>https://preview-aws-gateway.vitanaland.com</code> (Command Hub). Production is never tested. Runs are dispatched to <code>E2E-TEST-RUN.yml</code>; results appear in GitHub Actions until the rebuilt Runs tab records them.</p>';
+    container.appendChild(stagingNote);
 
     // Fetch suites + runs
     fetchTestingSuites();
@@ -38349,60 +38816,6 @@ function renderLivekitTestView() {
     return container;
 }
 
-function renderTestingCiReportsView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    var title = document.createElement('h2');
-    title.textContent = 'CI Reports';
-    container.appendChild(title);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Cloud Build CI/CD pipeline execution reports.';
-    container.appendChild(subtitle);
-
-    if (!state.testingCi.fetched && !state.testingCi.loading) {
-        state.testingCi.loading = true;
-        renderApp();
-        fetch('/api/v1/cicd/health', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.testingCi.runs = data.builds || data.data || (Array.isArray(data) ? data : [data]);
-                state.testingCi.fetched = true;
-                state.testingCi.loading = false;
-                renderApp();
-            }).catch(function (err) { state.testingCi.error = err.message; state.testingCi.loading = false; renderApp(); });
-    }
-    if (state.testingCi.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
-    if (state.testingCi.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingCi.error; container.appendChild(e); return container; }
-
-    var items = state.testingCi.runs;
-    if (!Array.isArray(items) || items.length === 0) {
-        var info = document.createElement('div');
-        info.className = 'databases-arch-note';
-        info.innerHTML = '<h3>CI/CD Pipeline</h3><p>' + (typeof items === 'object' ? '<pre>' + escapeHtml(JSON.stringify(items, null, 2)) + '</pre>' : 'No CI reports available.') + '</p>';
-        container.appendChild(info);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'list-table';
-        table.innerHTML = '<thead><tr><th>Build ID</th><th>Status</th><th>Branch</th><th>Started</th><th>Duration</th></tr></thead>';
-        var tbody = document.createElement('tbody');
-        items.forEach(function (b) {
-            var row = document.createElement('tr');
-            var st = (b.status || 'unknown').toLowerCase();
-            row.innerHTML = '<td style="font-family:monospace;">' + (b.id || b.build_id || '-') + '</td>' +
-                '<td><span class="status-badge status-' + st + '">' + st + '</span></td>' +
-                '<td>' + (b.branch || b.source || '-') + '</td>' +
-                '<td>' + formatEventTimestamp(b.started_at || b.created_at) + '</td>' +
-                '<td>' + (b.duration || '-') + '</td>';
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        container.appendChild(table);
-    }
-    autoAddLoadMore(container, 'testingCi');
-    return container;
-}
-
 // ===========================================================================
 // Admin Analytics — Render Function
 // ===========================================================================
@@ -39727,6 +40140,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showFab: false, // Command Hub has its own sidebar trigger
                 initialContext: {
                     current_route: window.location.pathname,
+                    // VTID-04560: this screen is the developer's Command Hub, so the
+                    // developer Vitana answers — declared, then verified server-side.
+                    surface: 'command-hub',
+                    view_role: 'developer',
                     // VTID-04309: voice turns land in this Operator Console thread.
                     operator_thread_id: state.operatorActiveThreadId || ''
                 },
@@ -43239,514 +43656,8 @@ function autonomyTraceFormatTs(iso) {
     } catch (_e) { return iso; }
 }
 
-// VTID-01991: Voice Self-Healing panel state. Polls live-monitor + summary
-// every 10s. State pinned to window so polling survives view re-renders.
-if (!state.voiceHealing) {
-    state.voiceHealing = {
-        mode: null,
-        modeLoading: false,
-        summary: null,
-        liveMonitor: null,
-        loading: true,
-        error: null,
-        pollingTimer: null,
-        lastFetchAt: 0,
-    };
-}
-
-async function fetchVoiceHealingPanel() {
-    var vh = state.voiceHealing;
-    vh.lastFetchAt = Date.now();
-    try {
-        var [modeRes, summaryRes, liveRes] = await Promise.all([
-            fetch('/api/v1/voice-lab/healing/mode').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-            fetch('/api/v1/voice-lab/healing/summary').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-            fetch('/api/v1/voice-lab/healing/live-monitor').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-        ]);
-        vh.mode = modeRes && modeRes.mode ? modeRes.mode : null;
-        vh.summary = summaryRes && summaryRes.ok ? summaryRes : null;
-        vh.liveMonitor = liveRes && liveRes.ok ? liveRes : null;
-        vh.loading = false;
-        vh.error = null;
-    } catch (err) {
-        vh.error = err && err.message ? err.message : String(err);
-        vh.loading = false;
-    }
-    // Re-render the panel in place (queryselector to find existing node).
-    var existing = document.querySelector('.vh-panel');
-    if (existing && existing.parentNode) {
-        var fresh = renderVoiceSelfHealingPanel();
-        existing.parentNode.replaceChild(fresh, existing);
-    }
-}
-
-function startVoiceHealingPolling() {
-    var vh = state.voiceHealing;
-    if (vh.pollingTimer) return;
-    vh.pollingTimer = setInterval(function() {
-        // Only poll if the panel is currently in the DOM
-        if (document.querySelector('.vh-panel')) {
-            fetchVoiceHealingPanel();
-        } else {
-            clearInterval(vh.pollingTimer);
-            vh.pollingTimer = null;
-        }
-    }, 10_000);
-}
-
-function flipVoiceHealingMode(nextMode, allocatedVtid) {
-    var vh = state.voiceHealing;
-    vh.modeLoading = true;
-    fetch('/api/v1/voice-lab/healing/mode', {
-        method: 'POST',
-        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ mode: nextMode, vtid: allocatedVtid || 'VTID-VOICE-HEALING' }),
-    }).then(function(r) { return r.json(); }).then(function(r) {
-        vh.modeLoading = false;
-        if (r && r.ok) {
-            showToast('Mode flipped: ' + (r.previous || '?') + ' → ' + r.new, 'success');
-            fetchVoiceHealingPanel();
-        } else {
-            showToast('Mode flip failed: ' + (r && r.error ? r.error : 'unknown'), 'error');
-        }
-    }).catch(function(err) {
-        vh.modeLoading = false;
-        showToast('Mode flip error: ' + err.message, 'error');
-    });
-}
-
-// =============================================================================
-// VTID-01999: Voice Healing Report Drawer
-// =============================================================================
-// Slide-in side drawer that renders an Architecture Investigator report
-// inline, with decision actions (Acknowledge / Accept / Reject + notes).
-// No navigation away from the Self-Healing screen.
-
-function _vhEsc(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/[&<>"']/g, function(c) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
-    });
-}
-
-function closeVoiceHealingReportDrawer() {
-    var existing = document.getElementById('vh-report-drawer-root');
-    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-    if (typeof _vhStopExecPoll === 'function') _vhStopExecPoll();
-}
-
-// VTID-02021: Execution Progress polling state. Lives outside the drawer
-// render so it survives re-renders. Cleared when drawer closes.
-var _vhExecPollTimer = null;
-function _vhStopExecPoll() {
-    if (_vhExecPollTimer) { clearInterval(_vhExecPollTimer); _vhExecPollTimer = null; }
-}
-async function _vhFetchAndRenderExecution(reportId) {
-    var section = document.getElementById('vh-execution-progress');
-    if (!section) { _vhStopExecPoll(); return; }
-    var resp;
-    try {
-        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId) + '/execution');
-    } catch (err) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#f87171;font-size:0.82rem;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
-        return;
-    }
-    if (!resp.ok) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#f87171;font-size:0.82rem;">HTTP ' + resp.status + '</div>';
-        return;
-    }
-    var data = await resp.json();
-    var vtids = (data && data.vtids) || [];
-    var statusColor = function(s, t) {
-        if (t === true) return '#4ade80';
-        if (s === 'in_progress') return '#fbbf24';
-        if (s === 'failed' || s === 'blocked' || s === 'cancelled') return '#f87171';
-        if (s === 'completed') return '#4ade80';
-        return '#94a3b8';
-    };
-    if (vtids.length === 0) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.82rem;">No work items linked to this report yet.</div>';
-        return;
-    }
-    var done = vtids.filter(function(v) { return v.is_terminal; }).length;
-    var rowsHtml = vtids.map(function(v) {
-        var color = statusColor(v.status, v.is_terminal);
-        var stepIdx = v.metadata && v.metadata.step_index;
-        var stepLabel = (typeof stepIdx === 'number') ? ('#' + (stepIdx + 1) + ' ') : '';
-        var statusLabel = v.is_terminal ? (v.terminal_outcome || v.status) : v.status;
-        var titleClean = (v.title || '').replace(/^INVESTIGATOR:\s*/, '');
-        return '<a href="/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(v.vtid) + '" target="_blank" rel="noopener" style="display:block;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:4px;margin-bottom:6px;color:#e2e8f0;text-decoration:none;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.8rem;">' +
-                '<span style="color:#cbd5e1;">' + _vhEsc(stepLabel) + '<code style="color:#60a5fa;">' + _vhEsc(v.vtid) + '</code></span>' +
-                '<span style="color:' + color + ';font-weight:bold;font-size:0.7rem;letter-spacing:0.05em;text-transform:uppercase;">' + _vhEsc(statusLabel) + '</span>' +
-            '</div>' +
-            '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;">' + _vhEsc(titleClean.slice(0, 160)) + (titleClean.length > 160 ? '…' : '') + '</div>' +
-            (v.claimed_by ? '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">claimed by ' + _vhEsc(v.claimed_by) + '</div>' : '') +
-            '</a>';
-    }).join('');
-    section.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-            '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.74rem;">' + done + '/' + vtids.length + ' done · auto-refresh 10s · ' + new Date().toLocaleTimeString() + '</div>' +
-        '</div>' +
-        rowsHtml +
-        '<div style="margin-top:6px;color:#94a3b8;font-size:0.72rem;">Click a row to open the standard VTID Ledger detail view in a new tab.</div>';
-}
-function loadVoiceHealingExecution(reportId) {
-    _vhStopExecPoll();
-    _vhFetchAndRenderExecution(reportId);
-    _vhExecPollTimer = setInterval(function() {
-        if (!document.getElementById('vh-execution-progress')) {
-            _vhStopExecPoll();
-            return;
-        }
-        _vhFetchAndRenderExecution(reportId);
-    }, 10000);
-}
-
-async function openVoiceHealingReportDrawer(reportId) {
-    _vhStopExecPoll();
-    closeVoiceHealingReportDrawer();
-
-    var root = document.createElement('div');
-    root.id = 'vh-report-drawer-root';
-    root.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;justify-content:flex-end;';
-
-    var backdrop = document.createElement('div');
-    backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.55);';
-    backdrop.onclick = closeVoiceHealingReportDrawer;
-    root.appendChild(backdrop);
-
-    var drawer = document.createElement('div');
-    drawer.style.cssText = 'position:relative;width:min(720px,90vw);height:100%;background:#0f172a;border-left:1px solid #1e293b;color:#e2e8f0;overflow-y:auto;box-shadow:-8px 0 24px rgba(0,0,0,0.5);';
-    drawer.innerHTML = '<div style="padding:18px 22px;color:#94a3b8;">Loading report ' + _vhEsc(reportId) + '…</div>';
-    root.appendChild(drawer);
-    document.body.appendChild(root);
-
-    var resp;
-    try {
-        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId));
-    } catch (err) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
-        return;
-    }
-    if (!resp.ok) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">HTTP ' + resp.status + ' — ' + _vhEsc(await resp.text()) + '</div>';
-        return;
-    }
-    var body = await resp.json();
-    if (!body.ok || !body.report) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Report not available.</div>';
-        return;
-    }
-    drawer.innerHTML = '';
-    drawer.appendChild(_vhRenderReportContent(body.report));
-}
-
-function _vhRenderReportContent(row) {
-    var c = document.createElement('div');
-    c.style.cssText = 'padding:0;display:flex;flex-direction:column;height:100%;';
-
-    var report = row.report || {};
-    var isStub = row.schema_version === 'v1-stub' || report.investigator_status === 'failed';
-    var rec = report.recommendation || {};
-    var hyps = (report.internal_findings && report.internal_findings.hypotheses) || [];
-    var alts = report.alternatives || [];
-    var ev = report.evidence || {};
-
-    // ── Sticky header ──
-    var header = document.createElement('div');
-    header.style.cssText = 'position:sticky;top:0;background:#0f172a;border-bottom:1px solid #1e293b;padding:18px 22px 14px 22px;z-index:1;';
-    var statusColor = row.status === 'open' ? '#fbbf24' :
-                      row.status === 'accepted' ? '#4ade80' :
-                      row.status === 'rejected' ? '#f87171' :
-                      row.status === 'acknowledged' ? '#60a5fa' : '#94a3b8';
-    header.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
-            '<div>' +
-                '<div style="font-size:0.7rem;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">Architecture Investigator Report' + (isStub ? ' — STUB (investigator failed)' : '') + '</div>' +
-                '<div style="font-size:1.05rem;font-weight:bold;color:#e2e8f0;">' + _vhEsc(row.class) + '</div>' +
-                '<div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">' +
-                    'signature: <code style="color:#cbd5e1;">' + _vhEsc(row.normalized_signature || '—') + '</code>' +
-                    ' · trigger: <code style="color:#cbd5e1;">' + _vhEsc(row.trigger_reason) + '</code>' +
-                    ' · ' + new Date(row.generated_at).toLocaleString() +
-                '</div>' +
-            '</div>' +
-            '<button id="vh-drawer-close" style="background:transparent;border:1px solid #334155;color:#94a3b8;padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.85rem;">✕ Close</button>' +
-        '</div>' +
-        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
-            '<span style="padding:3px 8px;border:1px solid ' + statusColor + ';color:' + statusColor + ';border-radius:3px;font-size:0.7rem;letter-spacing:0.05em;">STATUS: ' + (row.status || 'open').toUpperCase() + '</span>' +
-            (row.acknowledged_by ? '<span style="font-size:0.72rem;color:#94a3b8;">by ' + _vhEsc(row.acknowledged_by) + ' at ' + new Date(row.acknowledged_at).toLocaleString() + '</span>' : '') +
-        '</div>';
-    c.appendChild(header);
-
-    var body = document.createElement('div');
-    body.style.cssText = 'padding:18px 22px;flex:1;font-size:0.85rem;line-height:1.55;';
-
-    if (isStub) {
-        body.innerHTML =
-            '<div style="background:#7c2d12;border:1px solid #ea580c;color:#fed7aa;padding:12px 14px;border-radius:6px;margin-bottom:16px;">' +
-                '<strong>Investigator could not produce a structured report.</strong><br>' +
-                '<span style="font-size:0.8rem;">Reason: <code>' + _vhEsc(report.failure_reason) + '</code></span>' +
-            '</div>' +
-            '<div style="margin-bottom:14px;"><strong>Failure detail:</strong></div>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.78rem;color:#cbd5e1;overflow-x:auto;white-space:pre-wrap;">' + _vhEsc(report.failure_detail || '(none)') + '</pre>' +
-            '<div style="margin-top:18px;margin-bottom:8px;"><strong>Evidence at failure:</strong></div>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.74rem;color:#94a3b8;overflow-x:auto;">' + _vhEsc(JSON.stringify(report.evidence_at_failure || {}, null, 2)) + '</pre>';
-    } else {
-        // ── Recommendation (lead) ──
-        var trackColor = rec.track === 'replace_vendor' ? '#f87171' :
-                         rec.track === 'redesign_pipeline' ? '#fbbf24' :
-                         rec.track === 'patch_around' ? '#fbbf24' :
-                         rec.track === 'stay_and_patch' ? '#4ade80' :
-                         '#94a3b8';
-        var recHtml =
-            '<div style="background:#1e293b;border:1px solid ' + trackColor + ';border-radius:6px;padding:14px;margin-bottom:18px;">' +
-                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                    '<strong style="color:' + trackColor + ';font-size:0.95rem;">RECOMMENDATION: ' + _vhEsc(rec.track || '?').toUpperCase().replace(/_/g, ' ') + '</strong>' +
-                    '<span style="color:#94a3b8;font-size:0.78rem;">confidence: <strong style="color:' + (rec.confidence >= 0.7 ? '#4ade80' : rec.confidence >= 0.5 ? '#fbbf24' : '#f87171') + ';">' + (typeof rec.confidence === 'number' ? rec.confidence.toFixed(2) : '?') + '</strong></span>' +
-                '</div>' +
-                '<div style="color:#e2e8f0;margin-bottom:8px;font-weight:500;">' + _vhEsc(rec.summary || '') + '</div>' +
-                '<div style="color:#cbd5e1;font-size:0.82rem;margin-bottom:8px;"><strong>Rationale:</strong> ' + _vhEsc(rec.rationale || '') + '</div>' +
-                (rec.contradiction_check ? '<div style="color:#94a3b8;font-size:0.78rem;font-style:italic;border-top:1px dashed #334155;padding-top:8px;margin-top:8px;"><strong>What would change my mind:</strong> ' + _vhEsc(rec.contradiction_check) + '</div>' : '') +
-            '</div>';
-
-        // ── Proposed next steps ──
-        if (rec.proposed_next_steps && rec.proposed_next_steps.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Proposed next steps</div>' +
-                '<ul style="margin:0;padding-left:20px;">' +
-                rec.proposed_next_steps.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
-                '</ul></div>';
-        }
-
-        // ── Required human decisions ──
-        if (rec.required_human_decisions && rec.required_human_decisions.length) {
-            recHtml += '<div style="margin-bottom:18px;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;">' +
-                '<div style="color:#fbbf24;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">⚠ Required human decisions</div>' +
-                '<ul style="margin:0;padding-left:20px;">' +
-                rec.required_human_decisions.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
-                '</ul></div>';
-        }
-
-        // ── Hypotheses ──
-        if (hyps.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Top hypotheses (' + hyps.length + ')</div>';
-            hyps.slice(0, 4).forEach(function(h) {
-                var hConf = typeof h.confidence === 'number' ? h.confidence : 0;
-                var hConfColor = hConf >= 0.7 ? '#4ade80' : hConf >= 0.5 ? '#fbbf24' : '#f87171';
-                recHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;margin-bottom:8px;">' +
-                    '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;"><strong style="color:#cbd5e1;font-size:0.85rem;">' + _vhEsc(h.hypothesis) + '</strong><span style="color:' + hConfColor + ';font-size:0.78rem;flex-shrink:0;">' + hConf.toFixed(2) + '</span></div>';
-                if (h.top_3_disconfirming_data_points && h.top_3_disconfirming_data_points.length) {
-                    recHtml += '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;"><strong>Disconfirming evidence:</strong></div>' +
-                        '<ul style="margin:2px 0 0 0;padding-left:18px;color:#94a3b8;font-size:0.74rem;">' +
-                        h.top_3_disconfirming_data_points.map(function(d) { return '<li>' + _vhEsc(d) + '</li>'; }).join('') +
-                        '</ul>';
-                }
-                recHtml += '</div>';
-            });
-            recHtml += '</div>';
-        }
-
-        // ── Alternatives ──
-        if (alts.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Alternative architectures (' + alts.length + ')</div>' +
-                '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">' +
-                '<thead><tr style="text-align:left;color:#94a3b8;border-bottom:1px solid #334155;"><th style="padding:4px 6px;">Name</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Latency</th><th style="padding:4px 6px;">Effort</th></tr></thead><tbody>';
-            alts.forEach(function(a) {
-                recHtml += '<tr style="border-bottom:1px solid #1e293b;"><td style="padding:5px 6px;">' + _vhEsc(a.name) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.vendor_or_oss) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.latency_profile) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.integration_effort) + '</td></tr>';
-                if (a.pros && a.pros.length) {
-                    recHtml += '<tr><td colspan="4" style="padding:0 6px 6px 12px;color:#cbd5e1;font-size:0.74rem;"><strong>Pros:</strong> ' + a.pros.map(_vhEsc).join('; ') + (a.cons && a.cons.length ? ' · <strong>Cons:</strong> ' + a.cons.map(_vhEsc).join('; ') : '') + (a.links && a.links.length ? ' · <strong>Links:</strong> ' + a.links.map(function(l) { return '<a href="' + _vhEsc(l) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + _vhEsc(l) + '</a>'; }).join(' ') : '') + '</td></tr>';
-                }
-            });
-            recHtml += '</tbody></table></div>';
-        }
-
-        // ── Raw evidence ──
-        recHtml += '<details style="margin-bottom:18px;">' +
-            '<summary style="cursor:pointer;color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Raw evidence</summary>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.72rem;color:#94a3b8;margin-top:8px;overflow-x:auto;">' + _vhEsc(JSON.stringify(ev, null, 2)) + '</pre>' +
-            '</details>';
-
-        body.innerHTML = recHtml;
-    }
-    c.appendChild(body);
-
-    // ── VTID-02021: Execution Progress section (only for accepted reports) ──
-    // After Accept & Execute, this section appears showing the live status of
-    // every VTID created from the report's proposed_next_steps. Polls every
-    // 10s. Each row is a click-through to the standard VTID Ledger detail
-    // view.
-    if (row.status === 'accepted' || row.status === 'acknowledged') {
-        var execSection = document.createElement('div');
-        execSection.id = 'vh-execution-progress';
-        execSection.style.cssText = 'padding:14px 22px;border-top:1px solid #1e293b;background:#0b1220;';
-        execSection.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.82rem;">Loading…</div>';
-        c.appendChild(execSection);
-        // Kick off fetch + poll
-        loadVoiceHealingExecution(row.id);
-    }
-
-    // ── Decision footer (sticky) ──
-    var footer = document.createElement('div');
-    footer.style.cssText = 'position:sticky;bottom:0;background:#0f172a;border-top:1px solid #1e293b;padding:14px 22px;';
-    if (row.decision_notes) {
-        var prevNotes = document.createElement('div');
-        prevNotes.style.cssText = 'color:#94a3b8;font-size:0.78rem;margin-bottom:8px;';
-        prevNotes.innerHTML = '<strong>Prior notes:</strong> ' + _vhEsc(row.decision_notes);
-        footer.appendChild(prevNotes);
-    }
-    var notesArea = document.createElement('textarea');
-    notesArea.placeholder = 'Decision notes (optional) — will be saved with status change';
-    notesArea.style.cssText = 'width:100%;min-height:48px;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:0.82rem;box-sizing:border-box;resize:vertical;';
-    footer.appendChild(notesArea);
-
-    var actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap;';
-    // VTID-02021: three buttons with distinct semantics.
-    //   Acknowledge — "I read it" (no work created). PATCH only.
-    //   Accept & Execute — "I approve, schedule the work." POSTs /execute,
-    //     creates one VTID per proposed_next_step, opens the Execution
-    //     Progress section, polls live status. ONLY available for non-stub
-    //     reports with at least one proposed step.
-    //   Reject — "Don't act on this." PATCH only.
-    // VTID-02032: once a report has been decided (accepted/rejected/
-    // acknowledged) the action buttons must not reappear. Show a clear
-    // "already processed" notice instead of re-actionable buttons. The
-    // backend /execute endpoint also returns 409 to defend against races.
-    var alreadyDecided = row.status && row.status !== 'open';
-    if (alreadyDecided) {
-        var processedNotice = document.createElement('div');
-        processedNotice.style.cssText = 'padding:10px 14px;margin-top:8px;background:rgba(74,222,128,0.08);' +
-            'border:1px solid rgba(74,222,128,0.30);border-radius:6px;color:#86efac;font-size:0.85rem;line-height:1.5;';
-        var processedTitle = document.createElement('strong');
-        processedTitle.textContent = 'Report already ' + row.status;
-        if (row.acknowledged_by) {
-            processedTitle.textContent += ' by ' + row.acknowledged_by;
-        }
-        processedNotice.appendChild(processedTitle);
-        var processedHint = document.createElement('div');
-        processedHint.style.cssText = 'margin-top:4px;color:rgba(229,231,235,0.78);font-style:italic;';
-        processedHint.textContent = row.status === 'accepted'
-            ? 'The proposed steps were scheduled. See Execution Progress above for live status.'
-            : 'No action will be taken on this recommendation.';
-        processedNotice.appendChild(processedHint);
-        footer.appendChild(processedNotice);
-        c.appendChild(footer);
-        setTimeout(function() {
-            var closeBtn = document.getElementById('vh-drawer-close');
-            if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
-        }, 0);
-        return c;
-    }
-    var hasExecutableSteps =
-        !isStub &&
-        rec.proposed_next_steps &&
-        Array.isArray(rec.proposed_next_steps) &&
-        rec.proposed_next_steps.length > 0;
-    var actionDefs = [
-        { kind: 'patch', status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
-    ];
-    if (hasExecutableSteps) {
-        actionDefs.push({
-            kind: 'execute',
-            label: 'Accept & Execute (' + rec.proposed_next_steps.length + ' step' + (rec.proposed_next_steps.length === 1 ? '' : 's') + ')',
-            color: '#4ade80',
-        });
-    } else {
-        actionDefs.push({ kind: 'patch', status: 'accepted', label: 'Accept (no executable steps)', color: '#4ade80' });
-    }
-    actionDefs.push({ kind: 'patch', status: 'rejected', label: 'Reject', color: '#f87171' });
-    actionDefs.forEach(function(def) {
-        var btn = document.createElement('button');
-        btn.textContent = def.label;
-        btn.style.cssText = 'padding:8px 14px;background:' + def.color + '22;border:1px solid ' + def.color + ';color:' + def.color + ';cursor:pointer;border-radius:4px;font-size:0.82rem;';
-        btn.onclick = async function() {
-            btn.disabled = true;
-            btn.textContent = def.kind === 'execute' ? 'Scheduling…' : 'Saving…';
-            try {
-                var url, method, body;
-                if (def.kind === 'execute') {
-                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id) + '/execute';
-                    method = 'POST';
-                    body = JSON.stringify({ decision_notes: notesArea.value || null });
-                } else {
-                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id);
-                    method = 'PATCH';
-                    body = JSON.stringify({ status: def.status, decision_notes: notesArea.value || null });
-                }
-                var r = await fetch(url, {
-                    method: method,
-                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-                    body: body,
-                });
-                var data = await r.json();
-                if (data && data.ok) {
-                    if (def.kind === 'execute') {
-                        var n = data.executed_vtids ? data.executed_vtids.length : 0;
-                        showToast(
-                            'Scheduled ' + n + ' work item(s) — track them in Self-Healing History',
-                            'success',
-                        );
-                    } else {
-                        showToast('Report ' + (def.status || 'updated'), 'success');
-                    }
-                    // VTID-02032: regardless of action kind, close the drawer
-                    // and refresh the panel. The report row now has status
-                    // != 'open' so it drops out of the open-list naturally;
-                    // re-opening would just show the "already processed"
-                    // notice — closing is the cleaner outcome.
-                    closeVoiceHealingReportDrawer();
-                    fetchVoiceHealingPanel();
-                    if (typeof state !== 'undefined' && state.actionRequired) {
-                        // Bump the Action Required panel so the closed
-                        // report drops off promptly.
-                        state.actionRequired.fetched = false;
-                        if (typeof fetchActionRequired === 'function') fetchActionRequired(true);
-                    }
-                } else if (r.status === 409 && data && data.status) {
-                    // VTID-02032: backend reports the row was already decided
-                    // by someone else (or a duplicate click). Don't error —
-                    // close the drawer and treat as a no-op, since the
-                    // intended outcome (status != 'open') is already true.
-                    showToast(
-                        'Report was already ' + data.status +
-                        (data.acknowledged_by ? ' by ' + data.acknowledged_by : '') +
-                        ' — no duplicate action created',
-                        'info',
-                    );
-                    closeVoiceHealingReportDrawer();
-                    fetchVoiceHealingPanel();
-                } else {
-                    showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
-                    btn.disabled = false;
-                    btn.textContent = def.label;
-                }
-            } catch (err) {
-                showToast('Error: ' + err.message, 'error');
-                btn.disabled = false;
-                btn.textContent = def.label;
-            }
-        };
-        actions.appendChild(btn);
-    });
-    footer.appendChild(actions);
-    c.appendChild(footer);
-
-    // Close button binding (delegated within drawer DOM)
-    setTimeout(function() {
-        var closeBtn = document.getElementById('vh-drawer-close');
-        if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
-    }, 0);
-
-    return c;
-}
+// VTID-04626: the Voice Self-Healing panel, its report drawer and polling
+// moved to voice-self-healing.js (window.renderVoiceSelfHealingScreen).
 
 // ─── VTID-02856: Voice section helpers ──────────────────────────────────
 
@@ -46321,341 +46232,6 @@ function renderJourneyContextNextActionInspectorPanel(insp) {
                     String(r.detail || ''),
                 ));
             });
-        }
-    });
-
-    return panel;
-}
-
-// VTID-02867: Inline expandable "Open architecture reports (N)" section.
-// Fetches voice_architecture_reports where status='open' and lets the
-// operator Accept (via /healing/reports/:id/execute) or Reject (via
-// PATCH /healing/reports/:id { status:'rejected' }) without leaving
-// the Self-Healing tab.
-function renderInlineArchitectureReports() {
-    var wrap = document.createElement('div');
-    wrap.style.cssText = 'margin-bottom:12px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
-
-    if (!state.voiceArchReports) {
-        state.voiceArchReports = { loaded: false, loading: false, error: null, rows: [], expanded: false, busy: {} };
-    }
-    var ar = state.voiceArchReports;
-
-    if (!ar.loaded && !ar.loading) {
-        ar.loading = true;
-        // Endpoint doesn't yet take a status filter, so we fetch up to 50 and
-        // client-side filter to status='open' (typically a small set).
-        fetch('/api/v1/voice-lab/healing/reports?limit=50', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (resp) {
-                ar.loading = false;
-                if (resp && (resp.ok || Array.isArray(resp.reports))) {
-                    var all = resp.reports || resp.rows || [];
-                    ar.rows = all.filter(function (r) { return r.status === 'open'; });
-                    ar.loaded = true;
-                } else {
-                    ar.error = (resp && resp.error) || 'failed';
-                }
-                renderApp();
-            })
-            .catch(function (err) {
-                ar.loading = false;
-                ar.error = err.message || String(err);
-                renderApp();
-            });
-    }
-
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:10px;cursor:pointer;';
-    var caret = ar.expanded ? '▼' : '▶';
-    var count = ar.rows.length;
-    header.innerHTML = '<span style="color:#94a3b8;">' + caret + '</span>'
-        + '<strong style="color:#e2e8f0;">Open architecture reports</strong>'
-        + '<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + (ar.loading ? '…' : count) + '</span>';
-    header.onclick = function () { ar.expanded = !ar.expanded; renderApp(); };
-    wrap.appendChild(header);
-
-    if (ar.error) {
-        var e = document.createElement('div');
-        e.style.cssText = 'color:#dc2626;font-size:0.75rem;margin-top:8px;';
-        e.textContent = 'Error: ' + ar.error;
-        wrap.appendChild(e);
-        return wrap;
-    }
-
-    if (!ar.expanded) return wrap;
-    if (ar.loading) {
-        var l = document.createElement('div');
-        l.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
-        l.textContent = 'Loading…';
-        wrap.appendChild(l);
-        return wrap;
-    }
-    if (!count) {
-        var none = document.createElement('div');
-        none.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
-        none.textContent = 'No open architecture reports.';
-        wrap.appendChild(none);
-        return wrap;
-    }
-
-    ar.rows.forEach(function (rpt) {
-        var row = document.createElement('div');
-        row.style.cssText = 'margin-top:8px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;';
-        if (ar.busy[rpt.id]) row.style.opacity = '0.55';
-        var rec = (rpt.report && rpt.report.recommendation) || {};
-        var track = rec.track || '?';
-        var conf = typeof rec.confidence === 'number' ? (rec.confidence * 100).toFixed(0) + '%' : '?';
-        var summary = (rec.summary || '').slice(0, 220);
-        row.innerHTML = '<div style="color:#e2e8f0;font-size:0.8rem;"><strong>' + escapeHtml(rpt.class) + '</strong>'
-            + ' <span style="background:rgba(168,85,247,.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:0.65rem;">' + escapeHtml(track) + '</span>'
-            + ' <span style="color:#94a3b8;font-size:0.7rem;">' + conf + ' confidence</span></div>'
-            + '<div style="color:#94a3b8;font-size:0.72rem;margin-top:4px;">' + escapeHtml(summary) + '</div>';
-        var btnRow = document.createElement('div');
-        btnRow.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
-        var acceptBtn = document.createElement('button');
-        acceptBtn.textContent = 'Accept & Execute';
-        acceptBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid #22c55e;border-radius:4px;cursor:pointer;';
-        acceptBtn.disabled = ar.busy[rpt.id];
-        acceptBtn.onclick = function () { handleArchReportAction(rpt, 'accept'); };
-        var rejectBtn = document.createElement('button');
-        rejectBtn.textContent = 'Reject';
-        rejectBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(220,38,38,.12);color:#dc2626;border:1px solid #dc2626;border-radius:4px;cursor:pointer;';
-        rejectBtn.disabled = ar.busy[rpt.id];
-        rejectBtn.onclick = function () { handleArchReportAction(rpt, 'reject'); };
-        btnRow.appendChild(acceptBtn);
-        btnRow.appendChild(rejectBtn);
-        row.appendChild(btnRow);
-        wrap.appendChild(row);
-    });
-
-    return wrap;
-}
-
-function handleArchReportAction(rpt, action) {
-    var ar = state.voiceArchReports;
-    ar.busy[rpt.id] = true;
-    renderApp();
-    var url, opts;
-    if (action === 'accept') {
-        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id) + '/execute';
-        opts = { method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({}) };
-    } else {
-        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id);
-        opts = { method: 'PATCH', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ status: 'rejected' }) };
-    }
-    fetch(url, opts).then(function (r) { return r.json(); }).then(function (resp) {
-        ar.busy[rpt.id] = false;
-        if (resp && resp.ok) {
-            ar.loaded = false; // refetch
-            renderApp();
-            showToast(action === 'accept' ? ('Accepted: ' + (resp.executed_vtids || []).join(', ')) : 'Rejected', 'success');
-        } else {
-            renderApp();
-            showToast(resp.error || (action + ' failed'), 'error');
-        }
-    }).catch(function (err) {
-        ar.busy[rpt.id] = false;
-        renderApp();
-        showToast(err.message || (action + ' failed'), 'error');
-    });
-}
-
-function renderVoiceSelfHealingPanel() {
-    var panel = document.createElement('section');
-    panel.className = 'vh-panel';
-    panel.style.cssText = 'margin-bottom:24px;padding:16px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;';
-
-    var vh = state.voiceHealing;
-
-    // ── Header ──
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;';
-    var titleDiv = document.createElement('div');
-    titleDiv.innerHTML = '<h3 style="margin:0;color:#e2e8f0;">ORB Voice Self-Healing</h3>' +
-        '<p style="margin:4px 0 0 0;color:#94a3b8;font-size:0.85rem;">Live monitor + healing loop state. VTID-01984 watchdog fix verification + VTID-01956..01965 self-healing infrastructure.</p>';
-    header.appendChild(titleDiv);
-
-    // Mode badge + flip control
-    var modeWrap = document.createElement('div');
-    modeWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
-    var modeColor = vh.mode === 'live' ? '#4ade80' : (vh.mode === 'shadow' ? '#fbbf24' : '#94a3b8');
-    var modeBadge = document.createElement('span');
-    modeBadge.style.cssText = 'padding:4px 10px;background:' + modeColor + '22;color:' + modeColor + ';border:1px solid ' + modeColor + ';border-radius:4px;font-size:0.75rem;font-weight:bold;letter-spacing:0.05em;';
-    modeBadge.textContent = 'MODE: ' + (vh.mode || '...').toUpperCase();
-    modeWrap.appendChild(modeBadge);
-
-    if (vh.mode && !vh.modeLoading) {
-        var nextMap = { off: 'shadow', shadow: 'live', live: 'off' };
-        var nextMode = nextMap[vh.mode];
-        var flipBtn = document.createElement('button');
-        flipBtn.className = 'infra-btn infra-btn--small';
-        flipBtn.textContent = 'Flip → ' + nextMode;
-        flipBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
-        flipBtn.onclick = function() {
-            var promptVtid = window.prompt(
-                'Allocate a fresh VTID first (Vitana governance), then paste it here. ' +
-                'Format: VTID-NNNNN.\\n\\n' +
-                'Or click OK to use the placeholder VTID-VOICE-HEALING.',
-                'VTID-VOICE-HEALING'
-            );
-            if (promptVtid === null) return; // cancelled
-            if (!confirm('Flip voice self-healing mode: ' + vh.mode + ' → ' + nextMode + '?')) return;
-            flipVoiceHealingMode(nextMode, promptVtid.trim());
-        };
-        modeWrap.appendChild(flipBtn);
-    }
-    header.appendChild(modeWrap);
-    panel.appendChild(header);
-
-    if (vh.loading) {
-        var loading = document.createElement('div');
-        loading.style.cssText = 'color:#94a3b8;padding:8px 0;font-size:0.85rem;';
-        loading.textContent = 'Loading voice healing state...';
-        panel.appendChild(loading);
-        if (!vh.lastFetchAt) {
-            fetchVoiceHealingPanel();
-            startVoiceHealingPolling();
-        }
-        return panel;
-    }
-
-    // ── VTID-02867: Open Architecture Reports inline ──
-    panel.appendChild(renderInlineArchitectureReports());
-
-    // ── Watchdog Fix Verification (VTID-01984) ──
-    var lm = vh.liveMonitor;
-    if (lm) {
-        var watchdogBox = document.createElement('div');
-        watchdogBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
-        var fixWorking = lm.watchdog_skipped_24h > 0 && lm.rollup_24h.bad_pct < 50;
-        var verdictColor = fixWorking ? '#4ade80' : (lm.watchdog_skipped_24h > 0 ? '#fbbf24' : '#94a3b8');
-        watchdogBox.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                '<strong style="color:#e2e8f0;font-size:0.9rem;">Watchdog Fix Verification (VTID-01984)</strong>' +
-                '<span style="color:' + verdictColor + ';font-size:0.8rem;">' +
-                    (fixWorking ? '✓ Fix is working' : (lm.watchdog_skipped_24h > 0 ? '~ Partial — monitoring' : '⏳ No data yet')) +
-                '</span>' +
-            '</div>' +
-            '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.8rem;color:#cbd5e1;">' +
-                '<span>Watchdog skipped (24h): <strong style="color:#4ade80;">' + lm.watchdog_skipped_24h + '</strong></span>' +
-                '<span>Watchdog fired forwarding (24h): <strong style="color:' + (lm.watchdog_fired_forwarding_24h > 5 ? '#f87171' : '#cbd5e1') + ';">' + lm.watchdog_fired_forwarding_24h + '</strong></span>' +
-                '<span>Watchdog fired any (24h): ' + lm.watchdog_fired_any_24h + '</span>' +
-                '<span>BAD-ratio sessions (24h): <strong style="color:' + (lm.rollup_24h.bad_pct > 30 ? '#f87171' : '#4ade80') + ';">' + lm.rollup_24h.bad_count + '/' + lm.rollup_24h.total_sessions + ' (' + lm.rollup_24h.bad_pct + '%)</strong></span>' +
-            '</div>';
-        panel.appendChild(watchdogBox);
-    }
-
-    // ── Per-class summary table ──
-    var summary = vh.summary;
-    if (summary && summary.per_class) {
-        var summaryBox = document.createElement('div');
-        summaryBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
-        var debt = summary.unknown_class_debt;
-        var debtColor = debt && debt.slo_band === 'over_slo' ? '#f87171' : (debt && debt.slo_band === 'week1' ? '#fbbf24' : '#4ade80');
-        summaryBox.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                '<strong style="color:#e2e8f0;font-size:0.9rem;">Per-Class Status</strong>' +
-                '<span style="color:#94a3b8;font-size:0.75rem;">' +
-                    'Unknown debt: <span style="color:' + debtColor + ';">' + (debt ? debt.unknown_pct_24h + '% (' + debt.slo_band + ')' : '-') +
-                    '</span></span>' +
-            '</div>';
-        var tbl = document.createElement('table');
-        tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;color:#cbd5e1;';
-        tbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
-            '<th style="padding:4px 6px;">Class</th>' +
-            '<th style="padding:4px 6px;text-align:right;">24h</th>' +
-            '<th style="padding:4px 6px;text-align:right;">7d</th>' +
-            '<th style="padding:4px 6px;text-align:right;">30d</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Success</th>' +
-            '<th style="padding:4px 6px;">Quarantine</th>' +
-            '<th style="padding:4px 6px;">Investigation</th>' +
-            '</tr></thead>';
-        var tbody = document.createElement('tbody');
-        summary.per_class.forEach(function(c) {
-            var tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
-            var qColor = c.quarantine_status === 'quarantined' ? '#f87171' :
-                         c.quarantine_status === 'probation' ? '#fbbf24' :
-                         c.quarantine_status === 'released' ? '#94a3b8' : '#cbd5e1';
-            tr.innerHTML =
-                '<td style="padding:4px 6px;font-family:monospace;">' + escapeHtml(c.class) + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_24h + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_7d + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_30d + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + (c.fix_success_rate_7d !== null ? c.fix_success_rate_7d + '%' : '-') + '</td>' +
-                '<td style="padding:4px 6px;color:' + qColor + ';">' + c.quarantine_status + '</td>' +
-                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" data-vh-report="' + c.latest_investigation_report_id + '">view</a>' : '-') + '</td>';
-            tbody.appendChild(tr);
-        });
-        tbl.appendChild(tbody);
-        summaryBox.appendChild(tbl);
-        panel.appendChild(summaryBox);
-    }
-
-    // ── Recent ORB sessions (live monitor) ──
-    if (lm && lm.recent_sessions && lm.recent_sessions.length > 0) {
-        var sessionsBox = document.createElement('div');
-        sessionsBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
-        var headLine = document.createElement('div');
-        headLine.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
-        headLine.innerHTML =
-            '<strong style="color:#e2e8f0;font-size:0.9rem;">Recent ORB Sessions (last 20)</strong>' +
-            '<span style="color:#94a3b8;font-size:0.75rem;">Auto-refresh every 10s — last updated ' + new Date(lm.generated_at).toLocaleTimeString() + '</span>';
-        sessionsBox.appendChild(headLine);
-        var stbl = document.createElement('table');
-        stbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.78rem;color:#cbd5e1;';
-        stbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
-            '<th style="padding:4px 6px;">Ended</th>' +
-            '<th style="padding:4px 6px;">Session</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Audio in</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Audio out</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Ratio</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Turns</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Dur</th>' +
-            '<th style="padding:4px 6px;">Health</th>' +
-            '</tr></thead>';
-        var stbody = document.createElement('tbody');
-        lm.recent_sessions.forEach(function(s) {
-            var tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
-            var hColor = s.health === 'bad' ? '#f87171' : (s.health === 'warn' ? '#fbbf24' : '#4ade80');
-            var ended = new Date(s.ended_at).toLocaleTimeString();
-            var sid = s.session_id.length > 16 ? s.session_id.substring(0, 16) + '…' : s.session_id;
-            tr.innerHTML =
-                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;color:#94a3b8;">' + escapeHtml(ended) + '</td>' +
-                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;">' + escapeHtml(sid) + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.audio_in_chunks + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.audio_out_chunks + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;color:' + hColor + ';">' + s.ratio + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.turn_count + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + Math.round(s.duration_ms / 1000) + 's</td>' +
-                '<td style="padding:4px 6px;color:' + hColor + ';font-weight:bold;text-transform:uppercase;font-size:0.7rem;">' + s.health + '</td>';
-            stbody.appendChild(tr);
-        });
-        stbl.appendChild(stbody);
-        sessionsBox.appendChild(stbl);
-        panel.appendChild(sessionsBox);
-    } else if (lm) {
-        var emptyMsg = document.createElement('div');
-        emptyMsg.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.85rem;';
-        emptyMsg.textContent = 'No recent ORB sessions in the last 24h.';
-        panel.appendChild(emptyMsg);
-    }
-
-    // Start polling on first render
-    if (!vh.pollingTimer) {
-        startVoiceHealingPolling();
-    }
-
-    // VTID-01999: Delegated click handler so [data-vh-report="<id>"] links open
-    // the inline drawer instead of switching screens.
-    panel.addEventListener('click', function(e) {
-        var t = e.target;
-        if (t && t.getAttribute && t.getAttribute('data-vh-report')) {
-            e.preventDefault();
-            var rid = t.getAttribute('data-vh-report');
-            openVoiceHealingReportDrawer(rid);
         }
     });
 
@@ -49642,7 +49218,15 @@ function renderAutopilotLiveView() {
             reasons.slice(0, 5).forEach(function (r) {
                 var line = document.createElement('div');
                 line.className = 'ap-live-reason';
-                line.textContent = r.count + '\u00D7  ' + r.reason;
+                var main = document.createElement('span');
+                main.textContent = r.count + '\u00D7  ' + r.reason;
+                line.appendChild(main);
+                if (r.count_24h != null && r.last_seen_at != null) {
+                    var meta = document.createElement('span');
+                    meta.className = 'ap-live-reason-meta';
+                    meta.textContent = r.count_24h + ' in last 24h \u00B7 last seen ' + autopilotSupervisorAgo(r.last_seen_at);
+                    line.appendChild(meta);
+                }
                 pipe.appendChild(line);
             });
         }

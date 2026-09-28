@@ -22,6 +22,8 @@ import express from 'express';
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: jest.fn((req, res, next) => res.status(401).json({ ok: false, error: 'Unauthorized' })),
   optionalAuth: jest.fn((req, res, next) => next()),
+  // VTID-04626: the voice self-healing actions are exafy_admin only.
+  requireExafyAdmin: jest.fn((req, res, next) => next()),
 }));
 
 import voiceLabRouter from '../../src/routes/voice-lab';

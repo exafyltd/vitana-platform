@@ -1,0 +1,23 @@
+# VTID-04560..04565 — commands run for verification (2026-09-25)
+
+# Allocation (allocate_global_vtid via Supabase MCP): VTID-04560, 04561, 04562, 04563, 04564, 04565
+# Live migration (Supabase MCP apply_migration): vtid_04561_one_role_truth
+#   + read-only checks before/after: role_preferences vs user_active_roles per user
+
+# Gateway (services/gateway)
+npx tsc --noEmit -p .
+npm run test:roles                                  # role-separation suite (all phases)
+npx jest test/orb/latency -u                        # VTID-04542 guard, admin + command-hub scenarios regenerated on purpose
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts   # standing rule 42e
+npx jest test/vtid-04456-customer-support-pipeline-regression.test.ts   # standing rule 42c
+npx jest                                            # full gateway suite, before and after merging origin/main
+
+# Mutation checks
+#   remove tryWorkSurfaceRung from computeGreetingDecision  -> 6 failures
+#   revert engineeringContextAllowed gating                 -> 2 failures
+
+# Frontend (exafyltd/vitana-v1)
+npx vitest run                                      # full suite
+npx eslint src/lib/orb-view-profile.ts src/hooks/useOrbVoiceWidget.ts
+npx tsc --noEmit -p tsconfig.app.json               # 166 pre-existing errors before and after, none in changed files
+npm run build

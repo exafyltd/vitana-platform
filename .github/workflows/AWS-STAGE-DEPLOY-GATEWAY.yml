@@ -229,6 +229,43 @@ jobs:
                    {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
             sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
           cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
+      # VTID-04473: Jev (TypeSafe System One) typed decisions, internal roles
+      # only. Rides on connected-apps.json so the task-definition step stays
+      # unchanged. The key is wired only when the secret exists
+      # (scripts/aws/setup-typesafe-secret.sh); JEV_DECISIONS_ENABLED is
+      # always written - 'true' with the key, 'false' without - so a stale
+      # value can never outlive its key. JEV_COMMUNITY_ENABLED is never set.
+      - name: Resolve Jev decision config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/typesafe-api-key"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            echo "  $NAME absent - Jev stays inert (VTID-04473)"
+            jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"JEV_DECISIONS_ENABLED", value:"true"}] | .sec += [{name:"TYPESAFE_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
+      # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
+      # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
+      # (04550), mobile lead on the first burst only (04552), tool acknowledgement
+      # intent (04553). ORB_PREWARM_FULL_CONTEXT_ENABLED (04554) is deliberately NOT
+      # pinned: it would stop the blind prewarm claim, losing its latency gain. Rollback: one value to 'false'.
+      # (VTID-04624: moved out of the run: block below to stay under the 20,000-char limit, VTID-03788.)
+      # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
+      # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
+      # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
+      # untouched on the task definition and the gateway keeps reporting the
+      # bridge as not_configured. It must never fail a gateway deploy.
+      # VTID-04133: Operator Console machine-to-machine auth token — optional,
+      # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
+      # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
+      # task def, never forced off); present => enabled + wired as a secret.
       - name: Register task-definition revision + roll the service
         id: roll
         env:
@@ -626,6 +663,17 @@ jobs:
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
         #
+        # VTID-04573 -- vitana/github/token (last set 2026-08-26 09:54 UTC)
+        # returns 401 from GitHub since ~2026-09-25 10:00 UTC, consistent with
+        # a 30-day fine-grained token expiring; every GitHub call from the
+        # staging gateway failed (PR open on approve, operator repo reads).
+        # Staging now reads vitana/github/pat -- the secret the autopilot
+        # executor already uses successfully under the same execution role.
+        # Production was repointed the same day (env-only run 332). Owner
+        # decision 2026-09-25 (VTID-04583): vitana/github/pat is the permanent
+        # GitHub token for both gateways and the executor. vitana/github/token
+        # is retired -- do not point anything back at it.
+        #
         # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
 # consumer, an Operator-chat-created task (metadata.source='operator-chat')
 # sat at status=scheduled/spec_status=missing forever -- confirmed live
@@ -668,11 +716,12 @@ jobs:
 #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
 #     memory through the broker; falls back to the legacy read on failure.
 #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
-# Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
-# if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
-# gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
-# nothing is wired and the tool keeps reporting not_configured. It must
-# never fail a gateway deploy. Rollback for any of these is the value ->
+# Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
+# readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
+# the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
+# ENABLED=true + OPERATOR_SQL_READONLY_BACKEND=supabase: the live DB through
+# public.operator_readonly_query (service_role only, read-only transaction).
+# It must never fail a gateway deploy. Rollback for any of these is the value ->
 # "false" (or removal), no code revert.
 #
 # VTID-04225 -- three credentials the starved autopilot/self-healing loops
@@ -826,7 +875,7 @@ jobs:
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
-            "SEC_GITHUB_TOKEN:vitana/github/token" \
+            "SEC_GITHUB_TOKEN:vitana/github/pat" \
             "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
@@ -838,11 +887,6 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
-          # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
-          # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
-          # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
-          # untouched on the task definition and the gateway keeps reporting the
-          # bridge as not_configured. It must never fail a gateway deploy.
           ERP_BRIDGE_URL="http://erp-bridge.vitana.internal:8080"
           SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_ERP_BRIDGE" ] || [ "$SEC_ERP_BRIDGE" = "None" ]; then
@@ -854,17 +898,13 @@ jobs:
           SEC_SQL_RO=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-sql-readonly-url --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_SQL_RO" ] || [ "$SEC_SQL_RO" = "None" ]; then
             SEC_SQL_RO=""
-            echo "  operator sql read-only secret absent - dev_run_sql_readonly stays not_configured (VTID-04037; run scripts/aws/setup-operator-sql-readonly-secret.sh)"
+            echo "  operator sql read-only secret absent - dev_run_sql_readonly reads the live DB via operator_readonly_query (VTID-04624)"
           else
             echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
           SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
           [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
           [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
-          # VTID-04133: Operator Console machine-to-machine auth token — optional,
-          # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
-          # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
-          # task def, never forced off); present => enabled + wired as a secret.
           SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_MACHINE_AUTH" ] || [ "$SEC_MACHINE_AUTH" = "None" ]; then
             SEC_MACHINE_AUTH=""
@@ -914,7 +954,7 @@ jobs:
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
-                                                "ORB_FULL_DUPLEX_ENABLED",
+                                                "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
                                                 "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -935,7 +975,7 @@ jobs:
                                                 "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
-                                                "OPERATOR_SQL_READONLY_ENABLED",
+                                                "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH",
@@ -963,7 +1003,7 @@ jobs:
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
-                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"}, {name:"ORB_DEVON_PRECONNECT_ENABLED", value:"true"}, {name:"ORB_CASCADE_STREAMING_ENABLED", value:"true"}, {name:"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED", value:"true"}, {name:"ORB_TOOL_ACK_INTENT_ENABLED", value:"true"},
                           {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
                           {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
@@ -1054,7 +1094,9 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_DATABASE_URL") | not) ]
                             + [ {name:"OPERATOR_SQL_READONLY_DATABASE_URL", valueFrom:$SEC_SQL_RO} ] ) )
-                    else . end )
+                    else ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND") | not) ]
+                            + [ {name:"OPERATOR_SQL_READONLY_ENABLED", value:"true"}, {name:"OPERATOR_SQL_READONLY_BACKEND", value:"supabase"} ] ) ) end )
                 | ( if $SEC_MACHINE_AUTH != "" then
                       ( .containerDefinitions[0].environment |=
                           ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_ENABLED") | not) ]

@@ -52,7 +52,28 @@ jest.mock('../../src/lib/supabase', () => ({
   getSupabase: (...args: unknown[]) => mockGetSupabase(...args),
 }));
 
-import router, { pollGatewayUnitRunCompletion } from '../../src/routes/testing';
+// VTID-04635: the run routes require an authenticated exafy_admin. The auth
+// middleware is replaced by a stand-in that reads mockIdentity, so each test
+// states who is calling.
+let mockIdentity: { user_id: string; exafy_admin: boolean } | null = { user_id: 'admin-1', exafy_admin: true };
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    if (!mockIdentity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    req.identity = mockIdentity;
+    next();
+  },
+  requireExafyAdmin: (req: any, res: any, next: any) => {
+    if (!req.identity?.exafy_admin) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+    next();
+  },
+}));
+
+import fs from 'fs';
+import router, {
+  pollGatewayUnitRunCompletion,
+  resolveE2eCommunityUrl,
+  E2E_STAGING_COMMUNITY_URL,
+} from '../../src/routes/testing';
 
 const app = express();
 app.use(express.json());
@@ -60,6 +81,7 @@ app.use('/api/v1/testing', router);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockIdentity = { user_id: 'admin-1', exafy_admin: true };
   tableChain = createChain();
   mockGetSupabase.mockReturnValue({ from: jest.fn(() => tableChain) });
   mockTriggerWorkflow.mockResolvedValue(undefined);
@@ -159,5 +181,86 @@ describe('pollGatewayUnitRunCompletion', () => {
     expect(tableChain.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'failed', error_message: expect.stringContaining('failure') }),
     );
+  });
+});
+
+describe('VTID-04635: run routes require an exafy_admin', () => {
+  const startRoutes: Array<[string, Record<string, unknown>]> = [
+    ['/api/v1/testing/run', { projects: ['gateway-jest'] }],
+    ['/api/v1/testing/cycles', { name: 'x', projects: ['hub-shared'] }],
+    ['/api/v1/testing/cycles/c-1/run', {}],
+    ['/api/v1/testing/orb-monitor/trigger', {}],
+  ];
+
+  it.each(startRoutes)('POST %s answers 401 without a session and dispatches nothing', async (path, body) => {
+    mockIdentity = null;
+    const res = await request(app).post(path).send(body);
+    expect(res.status).toBe(401);
+    expect(mockTriggerWorkflow).not.toHaveBeenCalled();
+  });
+
+  it.each(startRoutes)('POST %s answers 403 for a signed-in non-admin and dispatches nothing', async (path, body) => {
+    mockIdentity = { user_id: 'member-1', exafy_admin: false };
+    const res = await request(app).post(path).send(body);
+    expect(res.status).toBe(403);
+    expect(mockTriggerWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('read routes stay open (suites list)', async () => {
+    mockIdentity = null;
+    const res = await request(app).get('/api/v1/testing/suites');
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('VTID-04635: E2E runs target staging only', () => {
+  it('defaults to the staging community app when no URL is given', () => {
+    expect(resolveE2eCommunityUrl(undefined)).toBe(E2E_STAGING_COMMUNITY_URL);
+    expect(resolveE2eCommunityUrl('')).toBe(E2E_STAGING_COMMUNITY_URL);
+  });
+
+  it('accepts the staging host in any casing, with a path or trailing dot', () => {
+    expect(resolveE2eCommunityUrl('https://PREVIEW-AWS.vitanaland.com/maxina')).toBe(E2E_STAGING_COMMUNITY_URL);
+    expect(resolveE2eCommunityUrl('https://preview-aws.vitanaland.com./')).toBe(E2E_STAGING_COMMUNITY_URL);
+  });
+
+  it.each([
+    'https://vitanaland.com',
+    'https://www.vitanaland.com',
+    'https://dr-app.vitanaland.com',
+    'https://community-app-86804897789.us-central1.run.app',
+    'http://preview-aws.vitanaland.com',
+    'https://preview-aws.vitanaland.com.evil.example',
+    'not a url',
+    42,
+  ])('refuses %p', (url) => {
+    expect(resolveE2eCommunityUrl(url)).toBeNull();
+  });
+
+  it('POST /run answers 400 for a production community_url and dispatches nothing', async () => {
+    const res = await request(app)
+      .post('/api/v1/testing/run')
+      .send({ type: 'e2e', projects: ['desktop-community'], community_url: 'https://vitanaland.com' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('staging only');
+    expect(mockTriggerWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('POST /run always passes the staging URL to E2E-TEST-RUN.yml', async () => {
+    const exists = jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    try {
+      const res = await request(app)
+        .post('/api/v1/testing/run')
+        .send({ type: 'e2e', projects: ['hub-shared'] });
+      expect(res.status).toBe(200);
+      expect(mockTriggerWorkflow).toHaveBeenCalledWith(
+        'exafyltd/vitana-platform',
+        'E2E-TEST-RUN.yml',
+        'main',
+        { projects: 'hub-shared', community_url: E2E_STAGING_COMMUNITY_URL },
+      );
+    } finally {
+      exists.mockRestore();
+    }
   });
 });

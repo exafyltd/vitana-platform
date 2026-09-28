@@ -145,6 +145,22 @@ describe('sseHeaders', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  it.each([
+    '/command-hub/oasis/events/',
+    '/command-hub/oasis/streams/',
+    '/command-hub/command-hub/events/',
+    '/command-hub/events.js',
+  ])('does NOT set SSE headers on Command Hub page %s (VTID-04615)', (path) => {
+    const { res, next } = run('GET', path);
+    expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('still sets SSE headers on the API stream the Command Hub opens', () => {
+    const { res } = run('GET', '/api/v1/events/stream');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+  });
+
   it('does NOT set SSE headers on unrelated GET paths', () => {
     const { res, next } = run('GET', '/api/v1/tasks');
     expect(res.setHeader).not.toHaveBeenCalled();

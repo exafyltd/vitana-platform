@@ -55,6 +55,31 @@ export function getSqlReadonlyUrl(env: NodeJS.ProcessEnv = process.env): string 
   return v || null;
 }
 
+/**
+ * VTID-04624: which database the tool reads.
+ *   'pool'     — OPERATOR_SQL_READONLY_DATABASE_URL is set (the original
+ *                dedicated read-only login role); always preferred.
+ *   'supabase' — OPERATOR_SQL_READONLY_BACKEND is exactly 'supabase' and the
+ *                gateway has its Supabase service credentials: the statement
+ *                runs through public.operator_readonly_query (migration
+ *                20260926110000), which switches the transaction to read-only
+ *                before executing and is callable by service_role only. This
+ *                reads the LIVE database; Aurora has had no replication since
+ *                the 2026-09-21 full load, so the pool path would answer from
+ *                a stale copy.
+ *   null       — neither: the tool reports not_configured.
+ */
+export type SqlReadonlyBackend = 'pool' | 'supabase';
+
+export function sqlReadonlyBackend(env: NodeJS.ProcessEnv = process.env): SqlReadonlyBackend | null {
+  if (getSqlReadonlyUrl(env)) return 'pool';
+  if (env.OPERATOR_SQL_READONLY_BACKEND === 'supabase' && env.SUPABASE_URL && env.SUPABASE_SERVICE_ROLE) return 'supabase';
+  return null;
+}
+
+/** PostgREST's login role (authenticator) caps every request at 8 s. */
+export const SQL_SUPABASE_MAX_TIMEOUT_MS = 8_000;
+
 // ---------------------------------------------------------------------------
 // Statement validation (pure)
 // ---------------------------------------------------------------------------
@@ -235,14 +260,17 @@ export interface RunSqlResult extends BoundedRows {
  */
 export async function runReadonlySql(
   input: RunSqlInput,
-  opts: { pool?: RoPool | null; env?: NodeJS.ProcessEnv; now?: () => number; threadId?: string } = {},
+  opts: { pool?: RoPool | null; env?: NodeJS.ProcessEnv; now?: () => number; threadId?: string; fetchImpl?: typeof fetch } = {},
 ): Promise<RunSqlResult> {
   const env = opts.env || process.env;
   const v = validateReadonlySql(input.sql);
   const maxRows = clampRows(input.max_rows);
   const timeoutMs = clampTimeoutMs(input.timeout_ms);
+  if (opts.pool === undefined && sqlReadonlyBackend(env) === 'supabase') {
+    return runViaSupabaseRpc(v, maxRows, timeoutMs, { env, now: opts.now, threadId: opts.threadId, fetchImpl: opts.fetchImpl });
+  }
   const p = opts.pool === undefined ? getReadonlyPool(env) : opts.pool;
-  if (!p) throw new Error('not_configured: OPERATOR_SQL_READONLY_DATABASE_URL is not set — the owner provisions a read-only role on the Aurora reader and wires it into the task definition');
+  if (!p) throw new Error('not_configured: neither OPERATOR_SQL_READONLY_DATABASE_URL nor OPERATOR_SQL_READONLY_BACKEND=supabase is set on this stack');
   const now = opts.now || Date.now;
   const fp = sqlFingerprint(v.sql);
   const started = now();
@@ -265,5 +293,62 @@ export async function runReadonlySql(
   } finally {
     try { await client.query('ROLLBACK'); } catch { /* connection may already be gone */ }
     client.release();
+  }
+}
+
+/**
+ * VTID-04624: run one validated statement through
+ * public.operator_readonly_query on the live database. The function switches
+ * the transaction to read-only before executing (a write fails, and it cannot
+ * be switched back), sets lock_timeout 2 s, and only service_role may call it;
+ * the PostgREST login role caps the request at 8 s. EXPLAIN cannot run as the
+ * subquery the function wraps the statement in, so it is refused here.
+ */
+async function runViaSupabaseRpc(
+  v: ValidatedSql,
+  maxRows: number,
+  timeoutMs: number,
+  opts: { env: NodeJS.ProcessEnv; now?: () => number; threadId?: string; fetchImpl?: typeof fetch },
+): Promise<RunSqlResult> {
+  if (v.kind === 'explain') {
+    throw new Error('EXPLAIN is not available on the live-database backend — run the SELECT itself with a LIMIT, or aggregate');
+  }
+  const now = opts.now || Date.now;
+  const fp = sqlFingerprint(v.sql);
+  const started = now();
+  const budget = Math.min(timeoutMs, SQL_SUPABASE_MAX_TIMEOUT_MS);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), budget + 1_000);
+  const doFetch = opts.fetchImpl || fetch;
+  try {
+    const res = await doFetch(`${opts.env.SUPABASE_URL}/rest/v1/rpc/operator_readonly_query`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: String(opts.env.SUPABASE_SERVICE_ROLE),
+        Authorization: `Bearer ${opts.env.SUPABASE_SERVICE_ROLE}`,
+      },
+      body: JSON.stringify({ q: boundStatement(v, maxRows) }),
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = text;
+      try { const j = JSON.parse(text); msg = [j.message, j.details, j.hint].filter(Boolean).join(' — ') || text; } catch { /* keep raw text */ }
+      throw new Error(`database refused the statement (HTTP ${res.status}): ${msg.slice(0, 600)}`);
+    }
+    const parsed = JSON.parse(text);
+    const rawRows: Array<Record<string, unknown>> = Array.isArray(parsed) ? parsed : [];
+    const bounded = boundRows(rawRows, maxRows);
+    const duration = now() - started;
+    console.log(`[VTID-04624] dev_run_sql_readonly backend=supabase thread=${opts.threadId || '-'} fp=${fp} kind=${v.kind} rows=${bounded.row_count}${bounded.truncated ? '+' : ''} ms=${duration}`);
+    return { ...bounded, kind: v.kind, statement_fingerprint: fp, duration_ms: duration, read_only_transaction: true };
+  } catch (err) {
+    const duration = now() - started;
+    const msg = (err as Error)?.name === 'AbortError' ? `timed out after ${budget} ms` : (err instanceof Error ? err.message : String(err));
+    console.warn(`[VTID-04624] dev_run_sql_readonly backend=supabase thread=${opts.threadId || '-'} fp=${fp} failed after ${duration}ms: ${msg}`);
+    throw new Error(msg);
+  } finally {
+    clearTimeout(timer);
   }
 }

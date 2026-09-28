@@ -1,0 +1,7 @@
+# read-only production queries (Supabase MCP execute_sql)
+select voice_language, count(*) from chat_messages where message_type='voice_transcript' and direction='vitana_to_user' and created_at > now()-'3 days' group by 1
+select day, count(*), count(push_sent_at) from user_notifications where type='new_chat_message' and title='Vitana' and created_at > now()-'7 days' group by 1
+(join of those notifications to chat_messages by user and ±10 s -> voice_language)
+# local
+cd services/gateway && npx tsc --noEmit -p .          # clean
+cd services/gateway && npx jest test/orb/live/session  # 31 suites, 556 tests passed

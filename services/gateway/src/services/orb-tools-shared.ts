@@ -107,6 +107,8 @@ import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLA
 import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
 import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
 import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
+// VTID-04562: developer knowledge tools (live snapshot + domain atlas).
+import { DEVELOPER_KNOWLEDGE_TOOL_HANDLERS, DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS } from './orb-tools/developer-knowledge-tools';
 // WAVE-MVA-1 — Marketplace Voice Assistant (expansion v3, plan sections
 // A17–A30): guided-shopping orchestrators + intent/preferences, and the
 // discovery/recommendation/explanation/compare/suitability/cart-confirm
@@ -360,6 +362,102 @@ async function _runRetrievalSearch(
     result: { items: knowledgeHits },
     text: `Found ${knowledgeHits.length} relevant knowledge entries:\n${formatted}`,
   };
+}
+
+/**
+ * VTID-04581: save a fact the member just stated, and report what is already
+ * stored (profile field, same value, or a conflicting value) so the model
+ * can answer truthfully in the same turn. See services/memory/remember-fact-tool.ts.
+ */
+/**
+ * VTID-04588/04591: the readers and writer remember_fact uses — shared by the
+ * tool and by the gateway backstop that runs it when the model does not.
+ */
+export async function buildRememberFactDeps(sb: SupabaseClient) {
+  const { profileColumnFor } = await import('./memory/remember-fact-tool');
+  const { rememberFact } = await import('./memory/remember');
+  return {
+    async readCurrentFact(tenantId: string, userId: string, factKey: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(1);
+      const row = Array.isArray(data) ? data[0] : null;
+      return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
+    },
+    async supersedeOthers(tenantId: string, userId: string, factKey: string, keepId: string) {
+      const { data, error } = await sb
+        .from('memory_facts')
+        .update({ superseded_at: new Date().toISOString(), superseded_by: keepId })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .neq('id', keepId)
+        .select('id');
+      if (error) throw new Error(error.message);
+      return Array.isArray(data) ? data.length : 0;
+    },
+    async listCurrentFacts(tenantId: string, userId: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_key, fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(500);
+      return (Array.isArray(data) ? data : []).map((r: any) => ({
+        fact_key: String(r.fact_key),
+        fact_value: String(r.fact_value),
+        extracted_at: r.extracted_at ?? null,
+      }));
+    },
+    async readProfileValue(userId: string, key: Parameters<typeof profileColumnFor>[0]) {
+      const column = profileColumnFor(key);
+      if (!column) return null;
+      const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
+      const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+      return typeof value === 'string' && value.trim() ? value.trim() : null;
+    },
+    async write(...args: Parameters<typeof rememberFact>) {
+      const result = await rememberFact(...args);
+      if (result.ok) {
+        // VTID-04627: a fact saved now must be in the next session's snapshot.
+        const { refreshSnapshotAfterMemoryEdit } = await import('./conversation/brain-core-snapshot');
+        refreshSnapshotAfterMemoryEdit({ tenantId: args[0].tenant_id, userId: args[0].user_id });
+      }
+      return result;
+    },
+  };
+}
+
+export async function tool_remember_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'remember_fact requires a tenant_id on the session.' };
+  const { runRememberFact, formatRememberFactResult } = await import('./memory/remember-fact-tool');
+  const result = await runRememberFact(
+    {
+      tenant_id: id.tenant_id,
+      user_id: id.user_id,
+      fact_key: String(args.fact_key ?? ''),
+      fact_value: String(args.fact_value ?? ''),
+      about: typeof args.about === 'string' ? args.about : undefined,
+      confirm_replace: args.confirm_replace === true || args.confirm_replace === 'true',
+      thread_id: id.thread_id ?? id.session_id ?? null,
+    },
+    await buildRememberFactDeps(sb),
+  );
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
+  return { ok: true, result, text: formatRememberFactResult(result) };
 }
 
 export async function tool_search_memory(
@@ -723,10 +821,17 @@ export async function tool_search_events(
   // which the frontend orb widget already knows how to open as a drawer.
   // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
   // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  //
+  // VTID-04533: auto-redirect ALSO requires `open_event === true`. Opening the
+  // drawer closes the voice session, and before this a question that happened
+  // to match one event ("are there any other events except these two?")
+  // opened that event and ended the conversation instead of being answered.
   const EVENT_AUTONAV_GAP = 0.15;
+  const wantsOpen = args.open_event === true;
   const top = sr?.best?.[0];
   const second = sr?.best?.[1];
   const dominant =
+    wantsOpen &&
     !!top &&
     !hasRooms &&
     (
@@ -3202,7 +3307,9 @@ export async function tool_navigate_to_screen(
         // the model said it wanted instead of fuzzy-matching the id string.
         const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
         const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-        const r = await nav.navigateByRequest(query, 'open', navCtx);
+        // VTID-04629: the member's own words first, as navigate does.
+        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
         if (r) return r;
       }
     }
@@ -3668,6 +3775,7 @@ export async function tool_navigate(
         : undefined;
       const r = await nav.navigateByRequest(question, intent, {
         lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+        memberWords: transcriptExcerpt,
       });
       if (r) return r;
     }
@@ -5725,6 +5833,7 @@ type OrbToolHandler = (
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
+  remember_fact: tool_remember_fact,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
@@ -5864,6 +5973,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
   ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
+  ...DEVELOPER_KNOWLEDGE_TOOL_HANDLERS,
   // WAVE-MVA-1 (Marketplace Voice Assistant)
   ...MARKETPLACE_GUIDE_TOOL_HANDLERS,
   ...MARKETPLACE_JOURNEY_TOOL_HANDLERS,
@@ -5927,6 +6037,8 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   // WAVE-6-VOICE-CATALOG-V2
   ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
+  // VTID-04562
+  ...DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by

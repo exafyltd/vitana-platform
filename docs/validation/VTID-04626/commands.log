@@ -1,0 +1,31 @@
+# VTID-04626 — commands run in this session
+# Read-only live queries (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select status, schema_version, report->>'investigator_status', count(*) from voice_architecture_reports group by 1,2,3;   # 24 open v1, 17 open v1-stub
+select report->>'failure_detail' from voice_architecture_reports where schema_version='v1-stub' order by generated_at desc;  # opus-4-7 not available / Operation not allowed
+select ... from oasis_events where topic='voice.healing.dispatched' ...;   # ws-/live- duplicate pairs, lesson-shaped low_turn hits
+select status, count(*) from vtid_ledger where metadata->>'source'='voice-investigator-execute' group by 1;   # 11 completed / 47 rejected, last 2026-05-30
+curl https://preview-aws-gateway.vitanaland.com/api/v1/voice-lab/healing/{mode,summary,live-monitor}   # 401 without token
+
+# Build + tests (services/gateway)
+npx tsc --noEmit -p .                                  # exit 0
+npx jest test/vtid-04626-voice-self-healing.test.ts test/voice-architecture-investigator.test.ts test/voice-failure-taxonomy.test.ts   # 3 suites green
+npx jest test/command-hub test/routes/voice-lab test/voice- test/routes/command-hub   # 38 suites, 554 tests green
+npx jest --silent                                      # 1309 passed, 1 skipped; 21030 tests passed, 0 failed
+node --check src/frontend/command-hub/app.js && node --check src/frontend/command-hub/voice-self-healing.js
+
+# Visual verification: local harness (command-hub statics + fixture built from the live report rows), Playwright chromium
+# 1400x900 and 390x844; horizontal overflow 0 px; tab switch, drawer, stale-accept confirm exercised.
+
+# 2026-09-26 post-merge (80bc79a on staging)
+# Unversioned /command-hub/app.js is served from Cloudflare cache (cf-cache-status: HIT, age: 8716)
+# and still holds the pre-merge file; the versioned URL index.html references
+# (/command-hub/app.js?v=20261014-vtid-04626) serves the new code. The staging check now
+# fetches the versioned URL - the one a browser actually loads.
+
+# 2026-09-26 staging check of 80bc79a (read-only, test user sign-in only, all non-GET requests blocked)
+# - 7/7 staging-tests.json http checks PASS against preview-aws-gateway
+# - GET /healing/overview as test user: 200, mode=shadow, fetch_errors=[], all sections populated
+# - Screen rendered with live data at 1400x900; found the Quarantine card showing IDLE while 3
+#   patterns were quarantined (client inverted the count) -> now reads pipeline.sentinel.status
+# - oasis_events llm.call.* stage=triage, last 3 days: 42/42 completed on bedrock
+#   eu.anthropic.claude-sonnet-4-6, fallback_used=false -> the investigator's new route is healthy

@@ -10,12 +10,19 @@ jest.mock('../src/services/vitana-brain', () => ({
   buildBrainSystemInstruction: jest.fn(),
 }));
 
+// VTID-04556: the cache-mechanics tests below run with no memory store (the
+// freshness probe answers null = "cannot know", the pre-04556 behaviour).
+// The probe itself has its own tests at the end of this file.
+const mockGetSupabase = jest.fn((): any => null);
+jest.mock('../src/lib/supabase', () => ({ getSupabase: () => mockGetSupabase() }));
+
 import { buildBrainSystemInstruction } from '../src/services/vitana-brain';
 import {
   buildBrainSystemInstructionCached,
   warmBrainCache,
   _resetBrainCacheForTests,
   brainCacheSize,
+  memoryChangedSince,
 } from '../src/services/vitana-brain-cache';
 
 const mockBuild = buildBrainSystemInstruction as jest.Mock;
@@ -167,4 +174,67 @@ describe('vitana-brain-cache', () => {
       await Promise.all([a, b]);
     });
   });
+
+  describe('VTID-04556 — memory freshness on a cache hit', () => {
+    it('rebuilds when the member\'s memory changed after the cached build', async () => {
+      process.env[FLAG] = 'staging+prod';
+      const changed = jest.fn().mockResolvedValue(true);
+      await buildBrainSystemInstructionCached(baseInput, { memoryChangedSince: changed });
+      await buildBrainSystemInstructionCached(baseInput, { memoryChangedSince: changed });
+      expect(mockBuild).toHaveBeenCalledTimes(2);
+      expect(changed).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves the cached build while memory is unchanged', async () => {
+      process.env[FLAG] = 'staging+prod';
+      const unchanged = jest.fn().mockResolvedValue(false);
+      const a = await buildBrainSystemInstructionCached(baseInput, { memoryChangedSince: unchanged });
+      const b = await buildBrainSystemInstructionCached(baseInput, { memoryChangedSince: unchanged });
+      expect(mockBuild).toHaveBeenCalledTimes(1);
+      expect(a).toBe(b);
+    });
+
+    it('asks about writes after the time the cached build started', async () => {
+      process.env[FLAG] = 'staging+prod';
+      let t = 50_000;
+      const probe = jest.fn().mockResolvedValue(false);
+      await buildBrainSystemInstructionCached(baseInput, { now: () => t, memoryChangedSince: probe });
+      t += 10_000;
+      await buildBrainSystemInstructionCached(baseInput, { now: () => t, memoryChangedSince: probe });
+      expect(probe).toHaveBeenCalledWith(baseInput, 50_000);
+    });
+  });
+
+  describe('memoryChangedSince (store probe)', () => {
+    const client = (facts: any, items: any) => ({
+      from: (table: string) => {
+        const res = table === 'memory_facts' ? facts : items;
+        const q: any = { select: () => q, eq: () => q, gt: () => q, limit: () => (res instanceof Promise ? res : Promise.resolve(res)) };
+        return q;
+      },
+    });
+    afterEach(() => mockGetSupabase.mockImplementation(() => null));
+
+    it('null when no store is configured', async () => {
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBeNull();
+    });
+    it('true when a fact or an item was written after the build', async () => {
+      mockGetSupabase.mockImplementation(() => client({ data: [], error: null }, { data: [{ id: 'x' }], error: null }));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(true);
+    });
+    it('false when nothing newer exists', async () => {
+      mockGetSupabase.mockImplementation(() => client({ data: [], error: null }, { data: [], error: null }));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(false);
+    });
+    it('true (rebuild) when the probe errors', async () => {
+      mockGetSupabase.mockImplementation(() => client({ data: null, error: { message: 'x' } }, { data: [], error: null }));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(true);
+    });
+    it('true (rebuild) when the probe is slower than its timeout', async () => {
+      const never = new Promise(() => {});
+      mockGetSupabase.mockImplementation(() => client(never, never));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(true);
+    });
+  });
 });
+

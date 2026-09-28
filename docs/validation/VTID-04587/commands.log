@@ -1,0 +1,11 @@
+# Root cause (read-only, oasis_events): tool calls always follow user input; the
+# server sends 'thinking' on input transcription and on tool calls; no
+# turn_complete precedes the answer — the Listening flip is client-side.
+node scripts/orb/verify-thinking-display.mjs                      # after: 7/7 PASS
+WIDGET=<main orb-widget.js> node scripts/orb/verify-thinking-display.mjs   # before: 3 FAIL (2 bug scenarios + new fallback)
+SHOTS=docs/validation/VTID-04587/outputs node scripts/orb/verify-thinking-display.mjs
+cd services/gateway && node --check src/frontend/command-hub/orb-widget.js
+cd services/gateway && CI=true node node_modules/.bin/jest --ci test/frontend/vtid-04587-thinking-after-playback.test.ts   # 8/8
+# mutation: removing `if (msg.data_b64) _clearPendingThinking();` fails the suite (1 failed)
+cd services/gateway && CI=true node node_modules/.bin/jest --ci --silent   # 1292 suites passed, 20730 tests passed, 0 failed
+cd vitana-v1 && npx vitest run src/hooks/useOrbVoiceWidget.vtid-04099-load-path.test.ts   # 9/9 (preload/script ?v= identical)

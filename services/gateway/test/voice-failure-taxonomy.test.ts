@@ -408,6 +408,29 @@ describe('VTID-01958: Voice Failure Taxonomy', () => {
       expect(r?.class).toBe('voice.low_turn_progression');
     });
 
+    test('VTID-04626: long session, few turns, model did most of the talking (a lesson) → null', () => {
+      // Live 2026-09-18: 177 in / 503 out / 1 turn / 64 s — a guided lesson.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 177,
+        audio_in_forwarded: 177,
+        audio_out_chunks: 503,
+        duration_ms: 64364,
+        turn_count: 1,
+      });
+      expect(r).toBeNull();
+    });
+
+    test('VTID-04626: long session, few turns, model spoke less than the user → still low_turn_progression', () => {
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 400,
+        audio_in_forwarded: 400,
+        audio_out_chunks: 120,
+        duration_ms: 90000,
+        turn_count: 2,
+      });
+      expect(r?.class).toBe('voice.low_turn_progression');
+    });
+
     test('healthy ratio session → null (no quality failure)', () => {
       const r = classifyQualityFromSessionStop({
         audio_in_chunks: 200,

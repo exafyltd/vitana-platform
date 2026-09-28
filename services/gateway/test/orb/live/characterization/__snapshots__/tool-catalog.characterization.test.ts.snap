@@ -224,7 +224,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -236,12 +236,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },
@@ -297,13 +326,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",
@@ -345,7 +377,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -364,6 +396,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -10669,6 +10705,31 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
         },
       },
       {
+        "description": "DEVELOPER ONLY. Live system snapshot: which build staging and production serve, the Dev Autopilot state (kill switch, provider outage, executions in flight and waiting for approval, 7-day success rate, alerts) and the last hour of error events and voice sessions. Pass fresh:true to bypass the 90-second cache.",
+        "name": "dev_system_status",
+        "parameters": {
+          "properties": {
+            "fresh": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs.",
+        "name": "dev_domain_atlas",
+        "parameters": {
+          "properties": {
+            "domain": {
+              "description": "A domain key or a topic, e.g. "voice" or "knowledge graph".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
         "description": "ADMIN ONLY. Find a user by name, email, or vitana_id.",
         "name": "admin_lookup_user",
         "parameters": {
@@ -13188,7 +13249,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -13200,12 +13261,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },
@@ -13261,13 +13351,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",
@@ -13309,7 +13402,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -13328,6 +13421,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",

@@ -9,6 +9,7 @@ import * as path from 'path';
 const mockBridge = jest.fn();
 jest.mock('../src/services/dev-autopilot-execute', () => ({
   bridgeActivationToExecution: (...a: unknown[]) => mockBridge(...a),
+  isUuidString: jest.requireActual('../src/services/dev-autopilot-execute').isUuidString,
 }));
 const mockAlloc = jest.fn();
 jest.mock('../src/services/dev-autopilot-vtid-allocate', () => ({
