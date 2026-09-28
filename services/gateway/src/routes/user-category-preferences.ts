@@ -5,6 +5,9 @@
  * - GET /    — Get user's notification categories with preference state
  * - PUT /:categoryId — Toggle a category on/off
  *
+ * VTID-04674: only categories holding an admin-enabled type are listed; a
+ * category members may not switch off comes back `locked` and refuses PUT false.
+ *
  * Security:
  * - All endpoints require Bearer token (standard user auth)
  */
@@ -19,6 +22,7 @@ import { createClient } from '@supabase/supabase-js';
 import { tt, type GatewayI18nKey, type GatewayLocale, GATEWAY_LOCALES } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './user-category-preferences-repository';
+import { NOTIFICATION_CATALOG, type NotificationAudience } from '../services/notification-controls/notification-catalog';
 
 const router = Router();
 
@@ -71,6 +75,18 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     return res.status(500).json({ ok: false, error: prefError.message });
   }
 
+  // VTID-04674: a category is shown only if the admin has switched on at
+  // least one of its types — a switch for something that is never sent is
+  // noise. If the switches cannot be read, every category is shown.
+  const { data: enabledRows, error: enabledError } = await repo.fetchEnabledNotificationTypes(
+    supabase,
+    identity.tenant_id,
+  );
+  if (enabledError) {
+    console.error('[USER-CAT-PREFS] GET / admin switches unreadable, showing every category:', enabledError.message);
+  }
+  const enabledTypes = enabledError ? null : new Set((enabledRows || []).map((r: any) => r.type as string));
+
   // Build a lookup map for user preferences
   const prefMap = new Map<string, boolean>();
   for (const pref of userPrefs || []) {
@@ -90,8 +106,15 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
   // newly-added categories never break the UI.
   const grouped: Record<string, any[]> = { chat: [], calendar: [], community: [] };
   for (const cat of categories || []) {
+    const mappedTypes: string[] = Array.isArray(cat.mapped_types) ? cat.mapped_types : [];
+    const liveTypes = enabledTypes ? mappedTypes.filter((t) => enabledTypes.has(t)) : mappedTypes;
+    if (enabledTypes && liveTypes.length === 0) continue;
+
+    // A category members may not switch off (account and security notices)
+    // is always on, whatever an old preference row says.
+    const locked = cat.member_can_disable === false;
     const userPref = prefMap.get(cat.id);
-    const enabled = userPref !== undefined ? userPref : cat.default_enabled;
+    const enabled = locked ? true : userPref !== undefined ? userPref : cat.default_enabled;
 
     const labelKey = `notif.category.${cat.type}.${cat.slug}.label` as GatewayI18nKey;
     const descKey = `notif.category.${cat.type}.${cat.slug}.desc` as GatewayI18nKey;
@@ -107,6 +130,8 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
       description: translatedDesc === descKey ? cat.description : translatedDesc,
       icon: cat.icon,
       enabled,
+      locked,
+      types: liveTypes,
     };
 
     if (grouped[cat.type]) {
@@ -114,7 +139,21 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     }
   }
 
-  return res.json({ ok: true, data: grouped });
+  // VTID-04676: admins, developers and staff also see the notifications their
+  // role receives (switched on by the admin). They are not member categories,
+  // so they come without a switch.
+  let roleNotifications: Array<{ type: string; label: { en: string; de: string }; description: { en: string; de: string } }> = [];
+  const { data: roleRow } = await repo.fetchActiveRole(supabase, identity.user_id, identity.tenant_id);
+  const role = (roleRow as any)?.active_role as string | undefined;
+  const audience: NotificationAudience | null =
+    role === 'admin' ? 'admin' : role === 'developer' ? 'developer' : role === 'staff' ? 'staff' : null;
+  if (audience && enabledTypes) {
+    roleNotifications = [...NOTIFICATION_CATALOG.values()]
+      .filter((e) => e.audience === audience && enabledTypes.has(e.type))
+      .map((e) => ({ type: e.type, label: e.label, description: e.description }));
+  }
+
+  return res.json({ ok: true, data: grouped, role: audience, role_notifications: roleNotifications });
 });
 
 // ── PUT /:categoryId — Toggle a category on/off ────────────
@@ -136,6 +175,9 @@ router.put('/:categoryId', requireAuth, requireTenant, async (req: Request, res:
 
   if (catError || !category) {
     return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
+  }
+  if (!enabled && (category as any).member_can_disable === false) {
+    return res.status(409).json({ ok: false, error: 'CATEGORY_LOCKED', message: 'This category cannot be switched off' });
   }
 
   // Upsert the user's preference
