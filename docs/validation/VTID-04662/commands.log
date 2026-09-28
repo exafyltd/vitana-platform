@@ -1,3 +1,8 @@
 cd services/gateway
 node node_modules/.bin/jest test/vtid-04662-service-health-registered-routes.test.ts test/vtid-04661-service-health-panel.test.ts test/routes/admin-health-registry.test.ts test/command-hub/t12-health-registry-backend-fed.test.ts   # 91/91
 curl each staging-tests.json http path against https://preview-aws-gateway.vitanaland.com   # 18/18 PASS (13 x 200 JSON, 5 x 401 JSON)
+# STAGING-VERIFY for VTID-04661 (runs 44/45/47) failed its two app.js body checks although staging
+# serves both functions: run.mjs cut every body at 1 MB and app.js is 2,534,820 bytes (functions at
+# byte 1,201,087 / 1,202,342). Cap raised to 8 MB here; the VTID-04661 suite re-runs on this deploy.
+curl -s "https://preview-aws-gateway.vitanaland.com/command-hub/app.js?v=20261017-vtid-04661" | grep -o "function orderedHealthGroups(items, preferred)"  # -> found
+node --test scripts/ci/staging-verify/lib.test.cjs   # 16 pass, 0 fail
