@@ -1647,6 +1647,21 @@ router.post('/:id/draft', async (req: Request, res: Response) => {
       supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
       action, override: text, regenerate: req.body?.regenerate === true,
     });
+    // OASIS audit: record draft update (fire-and-forget)
+    emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'autopilot.recommendation.draft_updated',
+      source: 'autopilot-recommendations',
+      status: 'info',
+      message: `Draft ${out.generated ? 'generated' : 'saved'} for recommendation ${id.slice(0, 8)}`,
+      payload: {
+        recommendation_id: id,
+        user_id: userId,
+        kind: out.action.kind,
+        generated: out.generated,
+        channel: 'app',
+      },
+    }).catch(() => {});
     return res.json({
       ok: true,
       recommendation_id: id,
