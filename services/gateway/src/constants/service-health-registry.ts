@@ -40,6 +40,9 @@ export const SERVICE_HEALTH_GROUPS: string[] = [
   'Domain & Context',
   'Visual & VTID',
   'Frontend & Performance',
+  'Self-Healing & Ops',
+  'Data & Memory',
+  'Commerce',
 ];
 
 export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
@@ -104,4 +107,25 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   // budget) or the last report is 3-12h old — GitHub runs the 30-minute
   // cron every 3-5h in practice (VTID-04661).
   { name: 'Screen Load Time', url: '/api/v1/frontend/screen-load/health', group: 'Frontend & Performance' },
+  // VTID-04662 (Phase 1): health routes that already existed but were never
+  // registered. Admin-gated ones answer through the summary, which forwards the
+  // caller's admin token.
+  { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+  { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+  { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+  { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+  { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+  { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+  { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
+  { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+  { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+  { name: 'Memory Broker', url: '/api/v1/admin/memory/health', group: 'Data & Memory' },
+  { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+  { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+  { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+  { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+  { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+  { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+  { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+  { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
 ];

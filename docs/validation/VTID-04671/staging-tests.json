@@ -4,7 +4,7 @@
   "tests": [
     { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
     { "kind": "http", "name": "Command Hub shell is served", "path": "/command-hub/", "expect_status": 200 },
-    { "kind": "http", "name": "Command Hub app.js is served", "path": "/command-hub/app.js?v=20261017-vtid-04671", "expect_status": 200 },
+    { "kind": "http", "name": "Command Hub app.js is served", "path": "/command-hub/app.js?v=20261019-vtid-04671", "expect_status": 200 },
     { "kind": "http", "name": "pending approvals listing exists and requires a login", "path": "/api/v1/dev-autopilot/pending-approvals", "expect_status": 401 },
     { "kind": "existing", "ref": "npx jest test/vtid-04671-recommendation-card.test.ts", "cwd": "services/gateway",
       "reason": "Dismiss and Activate write to the recommendation row; staging writes to the production database, so the card's actions are proven by the suite, not by a staging click" }

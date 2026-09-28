@@ -31,7 +31,7 @@ not see whether anything ran.
   per-execution SSE tail (VTID-03897). Closing the popup closes the streams
   and resets the modal flag.
 - CSS classes only (no inline styles; CSP gate). Cache-bust bumped to
-  `20261017-vtid-04671`. VTID-04671 added to the ownership guard.
+  `20261019-vtid-04671`. VTID-04671 added to the ownership guard.
 
 ## Acceptance criteria
 

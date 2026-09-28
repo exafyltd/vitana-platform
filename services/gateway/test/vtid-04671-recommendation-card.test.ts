@@ -148,8 +148,8 @@ describe('VTID-04671 CSP, styling, cache-bust, ownership', () => {
   });
 
   it('cache-bust bumped and the guard allows both VTIDs', () => {
-    expect(INDEX_HTML).toContain('app.js?v=20261017-vtid-04671');
-    expect(INDEX_HTML).toContain('styles.css?v=20261017-vtid-04671');
+    expect(INDEX_HTML).toContain('app.js?v=20261019-vtid-04671');
+    expect(INDEX_HTML).toContain('styles.css?v=20261019-vtid-04671');
     expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/VTID-04671\|VTID-04670\|/);
   });
 });
