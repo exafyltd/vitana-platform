@@ -66,7 +66,7 @@ import {
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
-import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop, maybeRunForgetBackstop } from './remember-backstop-hook';
+import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop, maybeRunForgetBackstop, maybeRunRecallBackstop } from './remember-backstop-hook';
 import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
@@ -1838,6 +1838,7 @@ export function handleTranscript(
       // VTID-04591: a new member utterance starts a new remember_fact window.
       (session as any).rememberFactCalledThisTurn = false;
       (session as any).rememberFactAlreadyKnownThisTurn = false;
+      (session as any).memoryWriteToolCalledThisTurn = false;
     }
     ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
     if (session.sseResponse) {
@@ -1988,6 +1989,10 @@ export function handleToolCall(
   if (toolNames.includes('remember_fact')) (session as any).rememberFactCalledThisTurn = true;
   // VTID-04684: same for a forget request.
   if (toolNames.includes('forget_fact') || toolNames.includes('forget_memory')) (session as any).forgetFactCalledThisTurn = true;
+  // VTID-04692: a remember/forget turn is a write, never a recall question.
+  if (toolNames.some((n) => n === 'remember_fact' || n === 'forget_fact' || n === 'forget_memory')) {
+    (session as any).memoryWriteToolCalledThisTurn = true;
+  }
   session.consecutiveToolCalls++;
   console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}): ${toolNames.join(',')}`);
   ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
@@ -2488,6 +2493,9 @@ export function handleTurnComplete(
     maybeRunRememberBackstop(ctx, session, userText);
     // VTID-04684: a forget request the model answered without calling forget_fact.
     maybeRunForgetBackstop(ctx, session, userText);
+    // VTID-04692: the member asked about something stored ("Wie heißt mein
+    // Hund?") and the reply said it is not stored, with the fact present.
+    maybeRunRecallBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
 
     // VTID-04619: Vitana said she is opening a page but never called navigate
     // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no
