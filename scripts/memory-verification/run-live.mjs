@@ -241,6 +241,23 @@ export function claims(reply, word) {
     .some((s) => s.includes(w) && !NEGATION.test(s));
 }
 
+const words = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 4);
+// First turn whose recognised transcript holds under half of the spoken
+// line's content words, as a confound reason; null when every turn was heard.
+export function misheardTurn(sc, sessions) {
+  for (let s = 0; s < sc.sessions.length; s++) {
+    const turns = sc.sessions[s].turns;
+    for (let i = 0; i < turns.length; i++) {
+      const said = words(turns[i].say);
+      if (said.length < 2) continue;
+      const heard = new Set(words(sessions[s]?.heard?.[i]));
+      const kept = said.filter((w) => heard.has(w)).length;
+      if (kept / said.length < 0.5) return `speech recognition heard "${sessions[s]?.heard?.[i] || ''}" for "${turns[i].say}" — re-run`;
+    }
+  }
+  return null;
+}
+
 function normalizeDate(value) {
   const v = String(value).trim().toLowerCase();
   let m = v.match(/^--(\d{1,2})-(\d{1,2})$/);
@@ -343,6 +360,15 @@ async function runScenario(sc, baselineIds, runNo) {
   const judged = [...(sc.expect_facts || []), ...(sc.absent_facts || [])].map((x) => x.value).filter((v) => v != null && !seeded.has(String(v)));
   const hit = judged.find((v) => priorDeleted.some((d) => valuesMatch(d, v)));
   if (hit) out.confounded = `"${hit}" was deleted earlier in this invocation (forgotten marker) — purge markers and re-run alone`;
+  // The suite tests memory, not speech recognition. When a failed run's
+  // transcript does not carry the line that was spoken (B-CONF-02, pass 3:
+  // "Mein Bruder Paul hat … am siebten Mai Geburtstag" was heard as "mein
+  // buddha hat übrigens am mittwoch einen neuen putztag"), the input never
+  // reached memory, so the run is confounded — re-run it, never count it.
+  if (!out.pass && !out.confounded) {
+    const misheard = misheardTurn(sc, out.sessions);
+    if (misheard) out.confounded = misheard;
+  }
   return out;
 }
 
