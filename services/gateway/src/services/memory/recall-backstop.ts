@@ -70,6 +70,15 @@ const DENIES_OR_DEFERS = new RegExp(
     'one moment',
     'no (tengo|lo sé|encontr)',
     'nemam|ne znam|nisam (našla|pronašla)',
+    // VTID-04700: a counter-question instead of the answer. Live B-REC-05:
+    // "ich brauche ein paar Informationen. Kannst du mir sagen, ob Paul ein
+    // Mitglied der Maxina-Community ist …" with paul_birthday stored.
+    'brauche (noch )?(ein paar |ein bisschen |etwas |mehr |weitere )*(informationen|angaben|details)',
+    'kannst du mir (bitte )?(sagen|verraten|mitteilen|genauer)',
+    '(need|needs) (a few |some |more )*(information|details|info)',
+    'can you (please )?tell me (whether|if|which|who|more)',
+    'necesito (más |algunos? )?(información|datos|detalles)',
+    'trebam (više |još )?(informacija|podataka|detalja)',
   ].join('|'),
   'i',
 );

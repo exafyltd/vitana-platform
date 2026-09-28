@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04700",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory", "cwd": "services/gateway",
+      "reason": "the change is in the recall backstop's deferral detector and is pinned by unit tests built from the model's own reply; a read-only staging suite cannot speak to the voice model (the live voice suite, scripts/memory-verification/run-live.mjs, is run by hand on staging)" }
+  ]
+}
