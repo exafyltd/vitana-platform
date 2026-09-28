@@ -11,15 +11,15 @@ message for every later commit whose range includes VTID-04661.
 
 ## Acceptance
 
-- AC-1: a body check finds a marker placed after the first megabyte.
+AC-1: a body check finds a marker placed after the first megabyte.
   TEST: scripts/ci/staging-verify/lib.test.cjs › a body check finds code served past the first megabyte
-- AC-2: the cap is large enough for every Command Hub asset (≥ 8,000,000).
+AC-2: the cap is large enough for every Command Hub asset (≥ 8,000,000).
   TEST: scripts/ci/staging-verify/lib.test.cjs › the body cap is large enough for every Command Hub asset
-- AC-3: a body that hits the cap is reported as cut off, never as a plain miss.
+AC-3: a body that hits the cap is reported as cut off, never as a plain miss.
   TEST: scripts/ci/staging-verify/lib.test.cjs › a body past the cap is reported as cut off, not as a plain miss
-- AC-4: the runner reads bodies through `clipBody`, never a fixed `.slice()`.
+AC-4: the runner reads bodies through `clipBody`, never a fixed `.slice()`.
   TEST: scripts/ci/staging-verify/lib.test.cjs › the runner reads response bodies through clipBody, never a fixed slice
-- AC-5: on staging, both VTID-04661 markers are found in the real served app.js.
+AC-5: on staging, both VTID-04661 markers are found in the real served app.js.
   CURL: docs/validation/VTID-04688/staging-tests.json
 
 Mutation check: with the cap set back to 1,000,000, AC-1 and AC-2 fail (18/20).
