@@ -56,6 +56,10 @@ AC-12: members get "Posts & reactions" and "Tips & updates from Vitana". `new_fo
   TEST: services/gateway/test/routes/user-category-preferences-vtid-04674.test.ts
 AC-15: an admin can mark a category as one members may not switch off (`member_can_disable`), on create and on update; a non-boolean is refused.
   TEST: services/gateway/test/routes/admin-notification-categories.test.ts
+AC-16: quiet hours are checked in the member's timezone (profiles.timezone; unset/'UTC' → Europe/Berlin), not the gateway's UTC clock — in notifyUser, /push-dispatch and the reminders push.
+  TEST: services/gateway/test/vtid-04674-notification-controls.test.ts
+AC-17: admins, developers and staff see the notifications their role receives (switched on by the admin) on Settings › Notifications, without a switch.
+  TEST: services/gateway/test/routes/user-category-preferences-vtid-04674.test.ts
 AC-13: the migration applies cleanly twice (idempotent).
   TEST: docs/validation/VTID-04674/outputs/sql-guard-test.txt
 AC-14: on staging, the new routes are mounted and refuse anonymous callers.

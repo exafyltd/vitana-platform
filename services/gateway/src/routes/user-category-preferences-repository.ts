@@ -58,3 +58,8 @@ export async function fetchEnabledNotificationTypes(sb: SupabaseClient, tenantId
     .eq('source_key', '')
     .eq('enabled', true);
 }
+
+/** VTID-04676: the caller's active role in this tenant (decides which role notifications they see). */
+export async function fetchActiveRole(sb: SupabaseClient, userId: string, tenantId: string | null) {
+  return sb.from('user_tenants').select('active_role').eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
+}

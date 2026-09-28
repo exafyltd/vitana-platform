@@ -78,3 +78,7 @@ export function countTenantMembers(sb: Sb, tenantId: string, activeRole?: string
   if (activeRole) q = q.eq('active_role', activeRole);
   return q;
 }
+
+export function fetchProfileTimezone(sb: Sb, userId: string) {
+  return sb.from('profiles').select('timezone').eq('user_id', userId).maybeSingle();
+}

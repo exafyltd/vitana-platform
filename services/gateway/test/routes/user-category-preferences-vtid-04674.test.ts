@@ -23,6 +23,7 @@ const mockRepo = {
   fetchActiveNotificationCategoryById: jest.fn(),
   upsertUserCategoryPreference: jest.fn(),
   fetchEnabledNotificationTypes: jest.fn(),
+  fetchActiveRole: jest.fn(),
 };
 jest.mock('../../src/routes/user-category-preferences-repository', () => mockRepo);
 
@@ -51,6 +52,7 @@ beforeEach(() => {
     error: null,
   });
   mockRepo.upsertUserCategoryPreference.mockResolvedValue({ data: {}, error: null });
+  mockRepo.fetchActiveRole.mockResolvedValue({ data: { active_role: 'community' }, error: null });
 });
 
 test('only categories holding an admin-enabled type are listed, with those types', async () => {
@@ -87,4 +89,22 @@ test('switching off a normal category is saved', async () => {
   const r = await request(app).put('/prefs/c-posts').send({ enabled: false });
   expect(r.status).toBe(200);
   expect(mockRepo.upsertUserCategoryPreference).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ category_id: 'c-posts', enabled: false }));
+});
+
+test('a member gets no role notifications', async () => {
+  const r = await request(app).get('/prefs');
+  expect(r.body.role).toBeNull();
+  expect(r.body.role_notifications).toEqual([]);
+});
+
+test('an admin also sees the admin notifications that are switched on', async () => {
+  mockRepo.fetchActiveRole.mockResolvedValue({ data: { active_role: 'admin' }, error: null });
+  mockRepo.fetchEnabledNotificationTypes.mockResolvedValue({
+    data: [{ type: 'new_chat_message' }, { type: 'admin_insight_urgent' }],
+    error: null,
+  });
+  const r = await request(app).get('/prefs');
+  expect(r.body.role).toBe('admin');
+  expect(r.body.role_notifications.map((n: any) => n.type)).toEqual(['admin_insight_urgent']);
+  expect(r.body.role_notifications[0].label.de).toBeTruthy();
 });

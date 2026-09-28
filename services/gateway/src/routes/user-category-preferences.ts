@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js';
 import { tt, type GatewayI18nKey, type GatewayLocale, GATEWAY_LOCALES } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './user-category-preferences-repository';
+import { NOTIFICATION_CATALOG, type NotificationAudience } from '../services/notification-controls/notification-catalog';
 
 const router = Router();
 
@@ -138,7 +139,21 @@ router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) 
     }
   }
 
-  return res.json({ ok: true, data: grouped });
+  // VTID-04676: admins, developers and staff also see the notifications their
+  // role receives (switched on by the admin). They are not member categories,
+  // so they come without a switch.
+  let roleNotifications: Array<{ type: string; label: { en: string; de: string }; description: { en: string; de: string } }> = [];
+  const { data: roleRow } = await repo.fetchActiveRole(supabase, identity.user_id, identity.tenant_id);
+  const role = (roleRow as any)?.active_role as string | undefined;
+  const audience: NotificationAudience | null =
+    role === 'admin' ? 'admin' : role === 'developer' ? 'developer' : role === 'staff' ? 'staff' : null;
+  if (audience && enabledTypes) {
+    roleNotifications = [...NOTIFICATION_CATALOG.values()]
+      .filter((e) => e.audience === audience && enabledTypes.has(e.type))
+      .map((e) => ({ type: e.type, label: e.label, description: e.description }));
+  }
+
+  return res.json({ ok: true, data: grouped, role: audience, role_notifications: roleNotifications });
 });
 
 // ── PUT /:categoryId — Toggle a category on/off ────────────

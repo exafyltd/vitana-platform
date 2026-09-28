@@ -21,7 +21,7 @@ import {
   isMemberCategoryAllowed,
   recordNotificationBlock,
   normalizeSourceKey,
-  isInQuietHours,
+  isMemberInQuietHours,
 } from './notification-controls/notification-controls-service';
 
 // Initialize Firebase Admin (once)
@@ -700,7 +700,7 @@ export async function notifyUser(
   }
 
   // ── 2. DND check (only blocks push, not inapp) ──────────
-  const isDnd = isInQuietHours(prefs);
+  const isDnd = await isMemberInQuietHours(supabase, userId, prefs);
   // P0 (critical) notifications bypass DND
   const pushBlockedByDnd = isDnd && meta.priority !== 'p0';
 

@@ -32,6 +32,7 @@ import {
 } from './notification-catalog';
 import { getAutomation } from '../automation-registry';
 import { emitOasisEvent } from '../oasis-event-service';
+import { resolveUserTimezone } from '../guide/user-timezone';
 
 type Sb = SupabaseClient<any, any, any>;
 
@@ -61,6 +62,7 @@ function cacheKey(tenantId: string, type: string, sourceKey: string): string {
 export function clearNotificationControlCache(tenantId?: string, type?: string): void {
   if (!tenantId) {
     allowedCache.clear();
+    tzCache.clear();
     return;
   }
   for (const key of allowedCache.keys()) {
@@ -155,14 +157,65 @@ export interface PushPrefs {
   dnd_end_time?: string | null;
 }
 
-/** Quiet hours as "HH:MM" strings; spans past midnight (22:00–07:00) are handled. */
-export function isInQuietHours(prefs: PushPrefs | null | undefined, now: Date = new Date()): boolean {
+/**
+ * Quiet hours as "HH:MM" strings in the member's own timezone; spans past
+ * midnight (22:00–07:00) are handled. `timeZone` is the member's IANA zone;
+ * missing or 'UTC' (the profiles default nobody ever set) resolves to the
+ * platform default, Europe/Berlin (guide/user-timezone). Before VTID-04674
+ * this compared against the gateway's own clock (UTC), so a German member's
+ * quiet hours started and ended one or two hours late.
+ */
+export function isInQuietHours(
+  prefs: PushPrefs | null | undefined,
+  now: Date = new Date(),
+  timeZone?: string | null,
+): boolean {
   if (!prefs?.dnd_enabled || !prefs.dnd_start_time || !prefs.dnd_end_time) return false;
-  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const hhmm = localHHMM(now, resolveUserTimezone(timeZone));
   const start = prefs.dnd_start_time.slice(0, 5);
   const end = prefs.dnd_end_time.slice(0, 5);
+  if (start === end) return false;
   if (start > end) return hhmm >= start || hhmm < end;
   return hhmm >= start && hhmm < end;
+}
+
+function localHHMM(now: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
+  } catch {
+    logThrottled(`tz:${timeZone}`, `[notification-controls] invalid timezone "${timeZone}" — quiet hours checked in UTC`);
+    return `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
+  }
+}
+
+const tzCache = new Map<string, { tz: string | null; expires: number }>();
+const TZ_CACHE_TTL_MS = 5 * 60_000;
+
+/** The member's saved timezone (profiles.timezone), cached; null when unknown. */
+export async function getUserTimeZone(sb: Sb, userId: string): Promise<string | null> {
+  const hit = tzCache.get(userId);
+  if (hit && hit.expires > Date.now()) return hit.tz;
+  try {
+    const { data, error } = await repo.fetchProfileTimezone(sb, userId);
+    if (error) throw new Error(error.message);
+    const tz = (data as any)?.timezone ?? null;
+    tzCache.set(userId, { tz, expires: Date.now() + TZ_CACHE_TTL_MS });
+    return tz;
+  } catch (err: any) {
+    logThrottled(`tzread:${err?.message}`, `[notification-controls] timezone read failed (default used): ${err?.message}`);
+    return null;
+  }
+}
+
+/** Quiet hours for this member right now — reads the timezone only when quiet hours are on. */
+export async function isMemberInQuietHours(
+  sb: Sb,
+  userId: string,
+  prefs: PushPrefs | null | undefined,
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (!prefs?.dnd_enabled || !prefs.dnd_start_time || !prefs.dnd_end_time) return false;
+  return isInQuietHours(prefs, now, await getUserTimeZone(sb, userId));
 }
 
 export type PushBlockReason = 'admin_disabled' | 'member_category_off' | 'push_disabled' | 'quiet_hours';
@@ -204,7 +257,9 @@ export async function decidePushDelivery(
     prefs = (data as PushPrefs | null) ?? null;
   }
   if (prefs?.push_enabled === false) return { send: false, reason: 'push_disabled' };
-  if (input.priority !== 'p0' && isInQuietHours(prefs)) return { send: false, reason: 'quiet_hours' };
+  if (input.priority !== 'p0' && (await isMemberInQuietHours(sb, input.userId, prefs))) {
+    return { send: false, reason: 'quiet_hours' };
+  }
   return { send: true };
 }
 

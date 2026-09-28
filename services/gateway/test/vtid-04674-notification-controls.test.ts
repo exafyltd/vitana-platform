@@ -111,17 +111,36 @@ describe('isMemberCategoryAllowed', () => {
 
 describe('isInQuietHours', () => {
   const prefs = { dnd_enabled: true, dnd_start_time: '22:00', dnd_end_time: '07:00' };
-  test('overnight span', () => {
-    expect(isInQuietHours(prefs, new Date(2026, 0, 1, 23, 30))).toBe(true);
-    expect(isInQuietHours(prefs, new Date(2026, 0, 1, 6, 59))).toBe(true);
-    expect(isInQuietHours(prefs, new Date(2026, 0, 1, 12, 0))).toBe(false);
+  const utc = (h: number, m = 0) => new Date(Date.UTC(2026, 0, 15, h, m));
+  test('overnight span, in the given timezone', () => {
+    expect(isInQuietHours(prefs, utc(23, 30), 'Etc/UTC')).toBe(true);
+    expect(isInQuietHours(prefs, utc(6, 59), 'Etc/UTC')).toBe(true);
+    expect(isInQuietHours(prefs, utc(12, 0), 'Etc/UTC')).toBe(false);
+  });
+  test('checks the member\'s local clock, not the server\'s UTC clock', () => {
+    // 21:30 UTC in January is 22:30 in Berlin: inside a 22:00–07:00 window there, outside it in UTC.
+    expect(isInQuietHours(prefs, utc(21, 30), 'Europe/Berlin')).toBe(true);
+    expect(isInQuietHours(prefs, utc(21, 30), 'Etc/UTC')).toBe(false);
+    // 06:30 UTC is 07:30 Berlin: the window has ended there.
+    expect(isInQuietHours(prefs, utc(6, 30), 'Europe/Berlin')).toBe(false);
+  });
+  test('an unset or "UTC" timezone (the profiles default) means Europe/Berlin', () => {
+    expect(isInQuietHours(prefs, utc(21, 30), 'UTC')).toBe(true);
+    expect(isInQuietHours(prefs, utc(21, 30), null)).toBe(true);
+  });
+  test('an invalid timezone falls back to UTC, loudly', () => {
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect(isInQuietHours(prefs, utc(23, 0), 'Not/AZone')).toBe(true);
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('invalid timezone'));
+    err.mockRestore();
   });
   test('HH:MM:SS values from Postgres time columns', () => {
-    expect(isInQuietHours({ dnd_enabled: true, dnd_start_time: '13:00:00', dnd_end_time: '14:00:00' }, new Date(2026, 0, 1, 13, 30))).toBe(true);
+    expect(isInQuietHours({ dnd_enabled: true, dnd_start_time: '13:00:00', dnd_end_time: '14:00:00' }, utc(13, 30), 'Etc/UTC')).toBe(true);
   });
-  test('off or incomplete → never quiet', () => {
-    expect(isInQuietHours({ ...prefs, dnd_enabled: false })).toBe(false);
+  test('off, incomplete or an empty window → never quiet', () => {
+    expect(isInQuietHours({ ...prefs, dnd_enabled: false }, utc(23), 'Etc/UTC')).toBe(false);
     expect(isInQuietHours(null)).toBe(false);
+    expect(isInQuietHours({ dnd_enabled: true, dnd_start_time: '22:00', dnd_end_time: '22:00' }, utc(22), 'Etc/UTC')).toBe(false);
   });
 });
 
@@ -154,13 +173,16 @@ describe('decidePushDelivery', () => {
       .resolves.toEqual({ send: false, reason: 'push_disabled' });
   });
 
-  test('quiet hours hold a normal push but not a P0', async () => {
-    const { sb } = fakeSb({ rpc: allOn });
+  test('quiet hours hold a normal push but not a P0 — in the member\'s saved timezone', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(Date.UTC(2026, 0, 15, 12, 0)));
+    const { sb, calls } = fakeSb({ rpc: allOn, tables: { profiles: { data: { timezone: 'Etc/UTC' }, error: null } } });
     const quiet = { push_enabled: true, dnd_enabled: true, dnd_start_time: '00:00', dnd_end_time: '23:59' };
     await expect(decidePushDelivery(sb, { userId: USER, tenantId: TENANT, type: 'reminder_due', prefs: quiet }))
       .resolves.toEqual({ send: false, reason: 'quiet_hours' });
     await expect(decidePushDelivery(sb, { userId: USER, tenantId: TENANT, type: 'reminder_due', priority: 'p0', prefs: quiet }))
       .resolves.toEqual({ send: true });
+    expect(calls.from.find((c) => c.table === 'profiles')?.ops).toContainEqual(['eq', 'user_id', USER]);
+    jest.useRealTimers();
   });
 
   test('loads the member prefs when not given', async () => {

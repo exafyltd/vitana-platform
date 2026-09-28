@@ -31,7 +31,7 @@ import {
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
 import * as repo from './scheduled-notifications-repository';
-import { isNotificationTypeAllowed, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
+import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
 
@@ -1184,18 +1184,12 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         continue;
       }
 
-      // DND check — p0 bypasses DND
-      if (prefs?.dnd_enabled && prefs.dnd_start_time && prefs.dnd_end_time && notif.priority !== 'p0') {
-        const now = new Date();
-        const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        const start = prefs.dnd_start_time;
-        const end = prefs.dnd_end_time;
-        const inDnd = start > end ? (hhmm >= start || hhmm < end) : (hhmm >= start && hhmm < end);
-        if (inDnd) {
-          await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
-          skipped++;
-          continue;
-        }
+      // DND check — p0 bypasses DND. VTID-04674: in the member's timezone,
+      // not the gateway's UTC clock.
+      if (notif.priority !== 'p0' && (await isMemberInQuietHours(supa, notif.user_id, prefs))) {
+        await repo.markNotificationPushSent(supa, notif.id, new Date().toISOString());
+        skipped++;
+        continue;
       }
 
       // Send push. Mirror notifyUser()'s dispatch policy
