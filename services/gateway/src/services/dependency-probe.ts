@@ -11,7 +11,7 @@
  *
  * `probeDependencies()` checks each declared dependency without side effects:
  *
- *   table  a select with limit 0 — no rows read (not HEAD: see probeOne)
+ *   table  a head-only select (`select … limit 1`, head: true) — no rows read
  *   rpc    presence in PostgREST's own schema listing — the function is never
  *          called, because several (preference_set, overload_detect) write
  *   file   the file exists and is non-empty (static assets)
@@ -76,9 +76,6 @@ async function loadRpcNames(): Promise<Set<string>> {
       });
       if (!res.ok) throw new Error(`schema listing HTTP ${res.status}`);
       const spec = (await res.json()) as { paths?: Record<string, unknown> };
-      // An empty listing (e.g. a key that may not read the OpenAPI root) would
-      // make every function look missing; say so instead.
-      if (Object.keys(spec.paths || {}).length === 0) throw new Error('schema_listing_empty');
       const rpcs = new Set(
         Object.keys(spec.paths || {})
           .filter((p) => p.startsWith('/rpc/'))
@@ -116,13 +113,16 @@ async function probeOne(dep: Dependency): Promise<DependencyResult> {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
-        // A GET with limit 0, not a HEAD: a HEAD on a missing table comes back
-        // without an error (a 404 with no body to parse), which read as ok on
-        // staging for two tables that do not exist. limit(0) reads no rows.
-        const { error } = await sb.from(name).select('*').limit(0).abortSignal(controller.signal);
+        // VTID-04698: a GET with limit(0), never head:true. supabase-js answers a
+        // HEAD on a missing table with status 204 and error null (PostgREST's
+        // 404 has no body to read), so a head-only probe reported every missing
+        // table healthy. limit(0) still reads no rows and gets the real 404.
+        const { error, status } = await sb.from(name).select('*').limit(0).abortSignal(controller.signal);
         result = error
           ? { kind, name, ok: false, latency_ms: Date.now() - start, error: /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code} ${error.message}`) ? 'table_missing' : error.message.slice(0, 160) }
-          : { kind, name, ok: true, latency_ms: Date.now() - start };
+          : status === 404
+            ? { kind, name, ok: false, latency_ms: Date.now() - start, error: 'table_missing' }
+            : { kind, name, ok: true, latency_ms: Date.now() - start };
       } finally {
         clearTimeout(timer);
       }

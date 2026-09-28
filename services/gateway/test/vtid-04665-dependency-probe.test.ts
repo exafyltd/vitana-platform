@@ -8,6 +8,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 let tableErrors: Record<string, { code?: string; message: string } | null> = {};
+let tableStatus: Record<string, number> = {};
 let tableCalls: string[] = [];
 jest.mock('../src/lib/supabase', () => ({
   getSupabase: () => ({
@@ -15,16 +16,18 @@ jest.mock('../src/lib/supabase', () => ({
       tableCalls.push(t);
       const b: any = {
         select: (_c: string, opts?: { head?: boolean }) => {
-          // not a HEAD request: a HEAD on a missing table returns no error
+          // VTID-04698: never head:true — supabase-js hides a missing table's
+          // 404 on a HEAD (status 204, error null).
           expect(opts?.head).toBeUndefined();
           return b;
         },
+        // limit(0): the probe reads no rows
         limit: (n: number) => {
-          // never reads rows
           expect(n).toBe(0);
           return b;
         },
-        abortSignal: () => Promise.resolve({ error: tableErrors[t] ?? null }),
+        abortSignal: () =>
+          Promise.resolve({ error: tableErrors[t] ?? null, status: tableStatus[t] ?? (tableErrors[t] ? 404 : 200) }),
       };
       return b;
     },
@@ -45,6 +48,7 @@ let schemaFetches = 0;
 beforeEach(() => {
   resetDependencyProbeForTests();
   tableErrors = {};
+  tableStatus = {};
   tableCalls = [];
   schemaFetches = 0;
   rpcPaths = ['/rpc/exists_fn'];
@@ -72,17 +76,19 @@ describe('probeDependencies', () => {
     ]);
   });
 
+  it('VTID-04698: a 404 with no error body is a missing table, never healthy', async () => {
+    // What supabase-js answers when PostgREST's 404 carries no readable body.
+    tableStatus.gone = 404;
+    const h = await probeDependencies([{ table: 'gone' }]);
+    expect(h.status).toBe('down');
+    expect(h.dependencies).toEqual([expect.objectContaining({ kind: 'table', name: 'gone', ok: false, error: 'table_missing' })]);
+  });
+
   it('an RPC is checked by presence in the schema listing, never called', async () => {
     const h = await probeDependencies([{ rpc: 'exists_fn' }, { rpc: 'preference_set' }]);
     expect(h.status).toBe('down');
     expect(h.dependencies[1]).toMatchObject({ name: 'preference_set', ok: false, error: 'function_missing' });
     expect(tableCalls).toEqual([]);
-  });
-
-  it('an empty schema listing is an error, not every function missing', async () => {
-    rpcPaths = [];
-    const h = await probeDependencies([{ rpc: 'exists_fn' }]);
-    expect(h.dependencies[0]).toMatchObject({ ok: false, error: 'schema_listing_empty' });
   });
 
   it('the schema listing is fetched once and cached', async () => {

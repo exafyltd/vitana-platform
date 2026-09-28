@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-04698",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "a health route whose table is missing reads down (risk_mitigations does not exist)",
+      "path": "/api/v1/mitigation/health",
+      "expect_status": 200,
+      "expect_json": { "ok": false, "status": "down" },
+      "expect_body_contains": "\"error\":\"table_missing\""
+    },
+    {
+      "kind": "http",
+      "name": "a health route whose table exists still reads healthy (capacity_rules, capacity_state)",
+      "path": "/api/v1/capacity/health",
+      "expect_status": 200,
+      "expect_json": { "ok": true }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04665-dependency-probe.test.ts test/d48-opportunity-surfacing.test.ts test/d39-taste-alignment.test.ts test/routes/voice-feedback.test.ts test/routes/voice-lab.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the table probe reads zero rows, never uses head:true, and treats a bare 404 as a missing table; the suites that mock the probe still pass"
+    }
+  ]
+}
