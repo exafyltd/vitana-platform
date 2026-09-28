@@ -106,6 +106,11 @@ describe('evaluators', () => {
     expect(evalOrbSessionLedger({ table_exists: false }).status).toBe('down');
     expect(evalOrbSessionLedger({ table_exists: true, acks_failed_24h: 2 }).status).toBe('degraded');
     expect(evalOrbSessionLedger({ table_exists: true, acks_failed_24h: 0 }).status).toBe('ok');
+    // ALERT-ORB-SESSION-STATE-HEALTH rule: traffic with no state writes is a failure
+    expect(evalOrbSessionLedger({ table_exists: true, session_starts_24h: 5, state_writes_24h: 0, acks_failed_24h: 0 }))
+      .toMatchObject({ status: 'down', reason: 'no_state_writes' });
+    expect(evalOrbSessionLedger({ table_exists: true, session_starts_24h: 4, state_writes_24h: 0 }).status).toBe('ok');
+    expect(evalOrbSessionLedger({ table_exists: true, session_starts_24h: 50, state_writes_24h: 12 }).status).toBe('ok');
   });
   it('push dispatch: stale over 15 min or backlog over 25 is degraded, over 60 min is down', () => {
     const now = Date.parse('2026-09-26T12:00:00Z');

@@ -134,8 +134,16 @@ describe('evaluators', () => {
     expect(evalOasisLag(null, NOW).status).toBe('down');
     expect(evalScheduledWorkflows([{ workflow: 'A.yml', conclusion: 'success' }]).status).toBe('ok');
     expect(evalScheduledWorkflows([{ workflow: 'A.yml', conclusion: 'failure' }])).toMatchObject({ status: 'degraded', failing: ['A.yml'] });
+    for (const c of ['action_required', 'cancelled', 'startup_failure', 'stale']) {
+      expect(evalScheduledWorkflows([{ workflow: 'A.yml', conclusion: c }]).status).toBe('degraded');
+    }
+    expect(evalScheduledWorkflows([{ workflow: 'A.yml', conclusion: null }]).status).toBe('ok');
     expect(evalStuckTickets([{ created_at: ago(60), status: 'new' }], NOW).status).toBe('ok');
     expect(evalStuckTickets([{ created_at: ago(8 * 24 * 60), status: 'triaged' }], NOW).status).toBe('degraded');
+    // every non-terminal status of the feedback_tickets CHECK constraint is queried
+    const { OPEN_TICKET_STATUSES } = jest.requireActual('../src/routes/ops-runtime-health');
+    for (const s of ['spec_pending', 'answer_pending', 'approved', 'reopened']) expect(OPEN_TICKET_STATUSES).toContain(s);
+    for (const s of ['resolved', 'user_confirmed', 'duplicate', 'rejected', 'wont_fix']) expect(OPEN_TICKET_STATUSES).not.toContain(s);
     expect(parseTargets('staging=https://s/x,prod=https://p/x')).toEqual({ staging: 'https://s/x', prod: 'https://p/x' });
   });
 });

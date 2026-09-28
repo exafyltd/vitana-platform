@@ -23,7 +23,6 @@ const P1: Array<[string, string, string, string]> = [
   ['Aurora Memory', '/api/v1/admin/aurora-memory/health', 'Data & Memory', "admin-aurora-memory-health.ts|'/admin/aurora-memory/health'"],
   ['Aurora RLS', '/api/v1/admin/aurora-rls-health', 'Data & Memory', "admin-health.ts|'/aurora-rls-health'"],
   ['ORB Session State', '/api/v1/admin/orb-session-state-health', 'Data & Memory', "admin-health.ts|'/orb-session-state-health'"],
-  ['Memory Broker', '/api/v1/admin/memory/health', 'Data & Memory', "admin-memory-broker.ts|'/admin/memory/health'"],
   ['Reminders', '/api/v1/reminders/_health/check', 'Automation & Scheduling', "reminders.ts|'/_health/check'"],
   ['Calendar', '/api/v1/calendar/health', 'Automation & Scheduling', "calendar.ts|'/health'"],
   ['Integrations', '/api/v1/integrations/health', 'Domain & Context', "integrations.ts|'/health'"],
@@ -46,9 +45,18 @@ describe('VTID-04662: existing health routes are registered', () => {
     expect(src).toMatch(new RegExp(`\\.get\\(\\s*${path.replace(/[/.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
-  it('the panel now carries 118 checks (after Phase 3) and no duplicate URL or name', () => {
-    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(118);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(118);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(118);
+  it('the panel now carries 117 checks and no duplicate URL or name', () => {
+    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(117);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(117);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(117);
+  });
+
+  it('the Memory Broker dashboard feed is not polled as a health check (15 table counts per call)', () => {
+    expect(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).not.toContain('/api/v1/admin/memory/health');
+  });
+
+  it('the Nova Sonic route reports a status that follows readiness, not its always-true ok', () => {
+    const src = readFileSync(join(__dirname, '../src/routes/orb-livekit.ts'), 'utf8');
+    expect(src).toMatch(/status: payload\.ready \? 'ok' : payload\.enabled \? 'down' : 'not_configured'/);
   });
 });
