@@ -1000,6 +1000,23 @@ export function buildResumeThreadOpenTrigger(): string {
     `Open with one to three short spoken sentences, as audio. ` +
     `INTENT: The member closed this voice conversation and has just reopened it; its earlier turns are in the conversation history in your instructions. ` +
     `Continue that conversation from where it stopped: name the topic you were on in a few words and carry it forward. ` +
+    // VTID-04724 — this rung had NO language nudge at all, and it is the one
+    // that tells the model to continue from the conversation history. That
+    // history is German for most members (DE is the source of truth), so on a
+    // non-German session the model continued in the history's language and the
+    // session's own "Respond ONLY in X" lost to the immediate task. Measured
+    // live on 2026-09-27: one member, nine `lang:'ru'` sessions in ten minutes,
+    // 4 of 6 `resume_thread` opens answered in German while `safe_fast_proactive`
+    // (0/5) and `legacy_default` (0/1) answered in Russian.
+    //
+    // Deliberately GENERIC — it does not name the target language. Naming it
+    // was measured WORSE and reverted (VTID-04010 follow-up #1/#2, see rung 4
+    // below: 2/11 authenticated trials, the rest 1007-closed); `override_v2`'s
+    // proven 24/24 wording only ever says "in the user's own language" and
+    // leaves language SELECTION to the system prompt. This says the same, and
+    // names the history only as the thing NOT to mirror — exactly how rung 4
+    // names English.
+    `Speak in the user's own language for this session, even when the earlier turns in that history are in another language — carry the topic across, not its wording. ` +
     `When their last question is still unanswered, answer it now; otherwise offer the next step on that same topic and ask whether to go ahead. ` +
     `${PHRASING_RULE} Then stop and listen.`
   );
