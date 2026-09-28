@@ -1,0 +1,10 @@
+# VTID-04670 — commands run (cwd services/gateway unless noted)
+# Built on dc589553e (P1–P4). Nothing written to any database; every PostgREST
+# and OASIS call in the tests is mocked.
+
+npx tsc --noEmit -p .                                   # clean
+node node_modules/.bin/jest test/vtid-04670             # 1 suite, 19 tests passed (outputs/vtid-04670-suite.txt)
+node node_modules/.bin/jest test/vtid-04670 test/vtid-0466 test/routes/autopilot-recommendations.test.ts \
+  test/vtid-04281-dev-autopilot-supervisor.test.ts      # 15 suites, 270 tests passed
+npm run test:operator                                   # 1 suite, 30 tests passed (rules 42e/42f)
+npm run test:support                                    # 4 suites, 82 tests passed (rules 42c/42d)
