@@ -43,6 +43,14 @@ on:
         description: 'Reason for this AWS staging gateway deploy'
         required: false
         default: 'manual deploy'
+      # VTID-04709: deploy a specific commit that is already on main instead of
+      # main HEAD. Lets staging be put back on an earlier, already-tested build
+      # so AWS-PROD-DEPLOY-GATEWAY.yml (promote-staging) can ship exactly that
+      # build and nothing newer. EMPTY = main HEAD, the unchanged default.
+      commit_sha:
+        description: 'Full 40-char commit SHA already on main to deploy instead of main HEAD (EMPTY = main HEAD)'
+        required: false
+        default: ''
       gateway_url:
         description: 'Public gateway URL for post-deploy verification'
         required: false
@@ -106,6 +114,26 @@ jobs:
           # codeintel staging step below can give RepoWise real git-tier
           # data for this repo (bug-fix/churn history, not just a snapshot).
           fetch-depth: 0
+          # VTID-04709: a pinned commit_sha when dispatched with one, else the
+          # triggering commit exactly as before.
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Pinned commit must already be on main (VTID-04709)
+        if: ${{ inputs.commit_sha != '' }}
+        env:
+          PIN: ${{ inputs.commit_sha }}
+        run: |
+          set -e
+          if ! echo "$PIN" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::commit_sha must be a full 40-character lowercase SHA, got '$PIN'"
+            exit 1
+          fi
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$PIN" origin/main; then
+            echo "::error::commit_sha $PIN is not on main — only commits that already landed on main may be deployed"
+            exit 1
+          fi
+          echo "Deploying pinned commit $PIN (main HEAD is $(git rev-parse origin/main))"
 
       - name: Checkout vitana-v1 (read-only, for codeintel indexing)
         id: checkout_v1
@@ -145,16 +173,19 @@ jobs:
       - name: Resolve commit metadata + refresh BUILD_INFO
         id: commit
         run: |
+          # VTID-04709: the commit actually checked out (equals GITHUB_SHA
+          # unless commit_sha pinned an earlier one).
+          SHA="$(git rev-parse HEAD)"
           SHORT="$(git rev-parse --short=12 HEAD)"
           {
-            echo "sha=$GITHUB_SHA"
+            echo "sha=$SHA"
             echo "short=$SHORT"
           } >> "$GITHUB_OUTPUT"
           # The gateway Dockerfile COPYs BUILD_INFO into the image; refresh
           # it so the baked file reflects this build, not the last commit
           # that happened to touch it.
           {
-            echo "$GITHUB_SHA"
+            echo "$SHA"
             echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > services/gateway/BUILD_INFO
 
