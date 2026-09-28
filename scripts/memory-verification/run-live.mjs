@@ -30,6 +30,7 @@ import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { claims } from './reply-match.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATEWAY = process.env.MEMORY_VERIFY_GATEWAY || 'https://preview-aws-gateway.vitanaland.com';
@@ -228,18 +229,7 @@ async function cleanupSuiteFacts(baselineIds) {
 
 // ---------------------------------------------------------------- matching (mirrors remember-fact-tool.ts)
 const MONTHS = { jan: 1, january: 1, januar: 1, feb: 2, february: 2, februar: 2, mar: 3, march: 3, märz: 3, maerz: 3, apr: 4, april: 4, may: 5, mai: 5, jun: 6, june: 6, juni: 6, jul: 7, july: 7, juli: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, okt: 10, oktober: 10, nov: 11, november: 11, dec: 12, december: 12, dez: 12, dezember: 12 };
-// A reply_none word only counts when a sentence asserts it. "Ich kann dein
-// Geburtsdatum nicht speichern … kann nicht direkt gespeichert werden" is the
-// correct refusal, not a claim that it was saved (B-PROF-01, pass 3). A word
-// that is itself a negation ("nicht speichern") is matched as written.
-const NEGATION = /\b(nicht|kein|keine|keinen|nie|niemals|not|no|never|cannot|can't|won't|didn't|don't|ne|nemoj|no puedo)\b/i;
-export function claims(reply, word) {
-  const w = word.toLowerCase();
-  if (NEGATION.test(w)) return reply.includes(w);
-  return reply
-    .split(/(?<=[.!?])\s*|\n+/)
-    .some((s) => s.includes(w) && !NEGATION.test(s));
-}
+export { claims };
 
 const words = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 4);
 // First turn whose recognised transcript holds under half of the spoken
