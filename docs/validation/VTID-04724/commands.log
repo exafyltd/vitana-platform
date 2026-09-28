@@ -62,3 +62,12 @@ FULL GATEWAY SUITE (with these changes, missing package installed locally):
   Tests:       29 skipped, 6 todo, 22307 passed, 22342 total
   Snapshots:   109 passed, 109 total
   0 FAIL
+
+CI FIX — change-suite (run 36485395848) failed:
+  "PR changes gateway deploy paths but has no docs/validation/<VTID>/
+   staging-tests.json for VTID-04724 ... no suite, no merge (CLAUDE.md rule 47)"
+  A gate added after this session's earlier work. Added the manifest, validated
+  it against the real validator, and reproduced the check both ways locally:
+    node -e validateManifest(...)                     -> { ok: true, errors: [] }
+    run.mjs check-pr  (manifest present)              -> exit 0, "✓ change suite present and valid"
+    run.mjs check-pr  (manifest moved away)           -> exit 1, the original error
