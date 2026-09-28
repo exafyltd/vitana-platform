@@ -20,18 +20,18 @@ OASIS events, because both callbacks hardcoded it.
 
 ## Acceptance criteria
 
-- AC-1: a Shopify state signed for `partner_onboarding` decodes to that surface; the merchant surface keeps a three-part token.
+AC-1: a Shopify state signed for `partner_onboarding` decodes to that surface; the merchant surface keeps a three-part token.
   TEST: services/gateway/test/services/shopify-oauth.test.ts
-- AC-2: swapping the surface inside a signed Shopify state is rejected; an unknown surface in a validly signed state falls back to the merchant surface.
+AC-2: swapping the surface inside a signed Shopify state is rejected; an unknown surface in a validly signed state falls back to the merchant surface.
   TEST: services/gateway/test/services/shopify-oauth.test.ts
-- AC-3: the encrypted FHIR state carries the surface; a state without one decodes with none.
+AC-3: the encrypted FHIR state carries the surface; a state without one decodes with none.
   TEST: services/gateway/test/services/smart-fhir-oauth.test.ts
-- AC-4: both callbacks record the surface from state, and the merchant surface when state has none.
+AC-4: both callbacks record the surface from state, and the merchant surface when state has none.
   TEST: services/gateway/test/routes/shopify-oauth-callback.test.ts
   TEST: services/gateway/test/routes/fhir-oauth-callback.test.ts
-- AC-5: a Shopify authorize started from the org-scoped route mints a `partner_onboarding` state.
+AC-5: a Shopify authorize started from the org-scoped route mints a `partner_onboarding` state.
   TEST: services/gateway/test/partner-onboarding-connections.test.ts
-- AC-6: the merchant surface is unchanged.
+AC-6: the merchant surface is unchanged.
   TEST: services/gateway/test/routes/vcaop-portal-my.test.ts
 
 ## Staging
