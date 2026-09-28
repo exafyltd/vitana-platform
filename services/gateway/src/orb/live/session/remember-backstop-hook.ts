@@ -256,6 +256,8 @@ export function maybeRunRecallBackstop(
       replyContainsStoredValue,
       buildRecallBackstopNote,
       replyCitesPrivacy,
+      replyDeflectsToProfile,
+      asksAboutApp,
       asksForDate,
       extractDayMonths,
       replyNamesUnstoredDate,
@@ -268,7 +270,11 @@ export function maybeRunRecallBackstop(
     // date — checked against the stored facts below.
     const aboutMe = detectAboutMeQuestion(userText);
     const recallQ = detectRecallQuestion(userText);
-    const denied = recallQ && replyDeniesOrDefers(replyText);
+    // VTID-04704: "look it up in your profile" is a denial too — but not when
+    // the member asked where something in the app is.
+    const deflected = recallQ && !asksAboutApp(userText) && replyDeflectsToProfile(replyText);
+    const privacy = recallQ && replyCitesPrivacy(replyText);
+    const denied = recallQ && (replyDeniesOrDefers(replyText) || deflected);
     const namedDate = recallQ && !denied && asksForDate(userText) && extractDayMonths(replyText).size > 0;
     if (!aboutMe && !denied && !namedDate) return 0;
     let deps = depsOverride;
@@ -301,11 +307,13 @@ export function maybeRunRecallBackstop(
       buildRecallBackstopNote(facts, userText, trigger) ??
       (trigger === 'unstored_date'
         ? buildNothingStoredNote('unstored_date')
-        : trigger === 'denied' && replyCitesPrivacy(replyText)
+        : trigger === 'denied' && privacy
           ? buildNothingStoredNote('privacy_refusal')
-          : null);
+          : trigger === 'denied' && deflected
+            ? buildNothingStoredNote('deflected')
+            : null);
     ctx.deps.emitDiag(session, 'recall_backstop', {
-      trigger: trigger === 'denied' && replyCitesPrivacy(replyText) ? 'privacy_refusal' : trigger,
+      trigger: trigger === 'denied' && privacy ? 'privacy_refusal' : trigger === 'denied' && deflected ? 'deflected' : trigger,
       facts_offered: note ? facts.length : 0,
       injected: Boolean(note && session.active),
     });

@@ -108,20 +108,22 @@ const DENIES_OR_DEFERS = new RegExp(
 // heißt meine Frau" with no matching fact stored: "Tut mir leid, aber ich
 // kann diese persönliche Information nicht preisgeben." Nothing a member
 // told Vitana about themselves or their own people is private from them.
+// Only a REFUSAL counts — a bare "Datenschutz" / "Privatsphäre" is also how
+// Vitana names the privacy settings page when asked where it is (staging
+// bf6360e: "… wo du alles zu Erinnerungen und Privatsphäre verwalten kannst").
 const CITES_PRIVACY = new RegExp(
   [
-    'datenschutz',
-    'privatsphäre',
-    'preisgeben',
-    'persönliche (information|informationen|daten|angaben|details)',
-    'vertraulich',
-    'privacy',
-    'personal (information|data|details)',
-    'confidential',
-    'privacidad',
-    'datos personales',
-    'privatnost',
-    '(lični|lične|osobni|osobne) (podaci|podatke|informacije)',
+    'nicht (preisgeben|verraten|weitergeben|herausgeben|mitteilen|teilen)',
+    '(aus|wegen|aufgrund) (von )?(des |der |dem )?(datenschutz|privatsphäre)',
+    'datenschutz(gründen|richtlinie|richtlinien|bestimmungen|regeln|vorgaben)',
+    '(kann|darf|dürfen) .{0,40}(persönliche|private|vertrauliche|sensible)n? (information|informationen|daten|angaben|details)',
+    "(can't|cannot|can not|am not able to|am not allowed to|not permitted to) (share|disclose|reveal|give out|tell you)",
+    '(for|due to|because of) (privacy|data protection)',
+    'privacy (reasons|polic)',
+    'por (motivos de |razones de )?privacidad',
+    'no puedo (compartir|revelar|divulgar)',
+    'zbog (privatnosti|zaštite podataka)',
+    'ne mogu (da )?(podelim|podijelim|otkrijem|kažem)',
   ].join('|'),
   'i',
 );
@@ -132,6 +134,35 @@ export function replyCitesPrivacy(reply: string): boolean {
 
 export function replyDeniesOrDefers(reply: string): boolean {
   return Boolean(reply) && (DENIES_OR_DEFERS.test(reply) || CITES_PRIVACY.test(reply));
+}
+
+// VTID-04704: sends the member to their profile instead of answering. Staging
+// bf6360e, "wie heißt meine frau" with nothing stored: "ich muss auf deine
+// Profileinstellungen zugreifen … Möchtest du, dass ich dich zu deinen
+// Profileinstellungen führe, wo du diese Details einsehen kannst?" Not used
+// for a question about the app's own settings or screens (see asksAboutApp).
+const DEFLECTS_TO_PROFILE = new RegExp(
+  [
+    'muss (erst |zuerst )?auf dein(e|en)? (profil|profileinstellungen|einstellungen|daten)\\w* zugreifen',
+    'wo du (diese|die|deine) (details|informationen|daten|angaben) (einsehen|nachsehen|finden)',
+    '(in|zu) dein(em|en|er)? profil\\w* .{0,40}(einsehen|nachsehen|nachschauen|findest|finden)',
+    '(check|look it up|find it|see it) in your (profile|settings)',
+    'need to access your (profile|settings)',
+  ].join('|'),
+  'i',
+);
+
+export function replyDeflectsToProfile(reply: string): boolean {
+  return Boolean(reply) && DEFLECTS_TO_PROFILE.test(reply);
+}
+
+// A question about the app itself — where a setting or screen is — is not a
+// question about what the member told Vitana.
+const APP_QUESTION =
+  /(einstellung|settings?\b|seite\b|page\b|bildschirm|screen|menü|menu|\bapp\b|profil|profile|konto|account|ajustes|configuraci|podešavanj|postavk)/i;
+
+export function asksAboutApp(question: string): boolean {
+  return APP_QUESTION.test(question || '');
 }
 
 // VTID-04704: a date named in answer to a birthday / anniversary question
@@ -304,10 +335,12 @@ export function buildRecallBackstopNote(
  * grounds or named a date. "Not stored" was the honest answer; the model is
  * told to give that instead. Intent only, never a sentence to speak.
  */
-export function buildNothingStoredNote(reason: 'privacy_refusal' | 'unstored_date'): string {
+export function buildNothingStoredNote(reason: 'privacy_refusal' | 'unstored_date' | 'deflected'): string {
   const what =
     reason === 'unstored_date'
       ? 'your answer named a date, but nothing about it is stored — the date was a guess'
-      : 'your answer refused on privacy grounds, but what the member told you about themselves or their own people is never private from them — and nothing about it is stored yet';
+      : reason === 'deflected'
+        ? 'your answer sent them to look it up in their profile or settings, but it is not there — nothing about it is stored yet'
+        : 'your answer refused on privacy grounds, but what the member told you about themselves or their own people is never private from them — and nothing about it is stored yet';
   return `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and ${what}. Correct your answer now in one short sentence, in the member's language: say plainly that you do not have it yet, and ask the member for it so you can remember it. Never guess, and never cite privacy.`;
 }
