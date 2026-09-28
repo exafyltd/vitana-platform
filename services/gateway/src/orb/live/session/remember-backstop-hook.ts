@@ -249,12 +249,27 @@ export function maybeRunRecallBackstop(
   if (detectRememberIntent(userText)) return null;
 
   const run = (async () => {
-    const { detectRecallQuestion, detectAboutMeQuestion, replyDeniesOrDefers, replyContainsStoredValue, buildRecallBackstopNote } =
-      await import('../../../services/memory/recall-backstop');
+    const {
+      detectRecallQuestion,
+      detectAboutMeQuestion,
+      replyDeniesOrDefers,
+      replyContainsStoredValue,
+      buildRecallBackstopNote,
+      replyCitesPrivacy,
+      asksForDate,
+      extractDayMonths,
+      replyNamesUnstoredDate,
+      buildNothingStoredNote,
+    } = await import('../../../services/memory/recall-backstop');
     // "Was weißt du über mich?" answered without naming a single stored fact
-    // (live B-REC-06), or a specific question answered with "not stored".
+    // (live B-REC-06), or a specific question answered with "not stored" or
+    // a privacy refusal, or (VTID-04704) a birthday question answered with a
+    // date — checked against the stored facts below.
     const aboutMe = detectAboutMeQuestion(userText);
-    if (!aboutMe && !(detectRecallQuestion(userText) && replyDeniesOrDefers(replyText))) return 0;
+    const recallQ = detectRecallQuestion(userText);
+    const denied = recallQ && replyDeniesOrDefers(replyText);
+    const namedDate = recallQ && !denied && asksForDate(userText) && extractDayMonths(replyText).size > 0;
+    if (!aboutMe && !denied && !namedDate) return 0;
     let deps = depsOverride;
     if (!deps) {
       const { getSupabase } = await import('../../../lib/supabase');
@@ -266,10 +281,25 @@ export function maybeRunRecallBackstop(
       deps = { listCurrentFacts: base.listCurrentFacts.bind(base) };
     }
     const facts = await deps.listCurrentFacts(tenantId, userId).catch(() => []);
-    if (replyContainsStoredValue(replyText, facts)) return 0;
-    const note = buildRecallBackstopNote(facts, userText, aboutMe ? 'about_me_vague' : 'denied');
+    let trigger: 'about_me_vague' | 'denied' | 'unstored_date';
+    if (aboutMe) trigger = 'about_me_vague';
+    else if (denied) trigger = 'denied';
+    else trigger = 'unstored_date';
+    if (trigger === 'unstored_date') {
+      // The date came from memory: it answered.
+      if (!replyNamesUnstoredDate(replyText, facts)) return 0;
+    } else if (replyContainsStoredValue(replyText, facts)) return 0;
+    // With nothing usable stored, "not stored" was the honest answer — only a
+    // privacy refusal or a guessed date needs correcting (VTID-04704).
+    const note =
+      buildRecallBackstopNote(facts, userText, trigger) ??
+      (trigger === 'unstored_date'
+        ? buildNothingStoredNote('unstored_date')
+        : trigger === 'denied' && replyCitesPrivacy(replyText)
+          ? buildNothingStoredNote('privacy_refusal')
+          : null);
     ctx.deps.emitDiag(session, 'recall_backstop', {
-      trigger: aboutMe ? 'about_me_vague' : 'denied',
+      trigger: trigger === 'denied' && replyCitesPrivacy(replyText) ? 'privacy_refusal' : trigger,
       facts_offered: note ? facts.length : 0,
       injected: Boolean(note && session.active),
     });
