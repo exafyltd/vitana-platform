@@ -28,8 +28,8 @@ without it, earlier scenarios' summaries reached later ones.
 AC-1: forgetting deletes the value from memory_items, memory_transcript_turns and user_session_summaries.
 TEST: services/gateway/test/services/memory/vtid-04701-forget-reaches-summaries.test.ts
 
-AC-2: the live forget-session summary is recognised as naming the forgotten value and is not stored; a summary without it is stored.
-TEST: services/gateway/test/services/memory/vtid-04701-forget-reaches-summaries.test.ts
+AC-2: the live forget-session summary is recognised as naming the forgotten value and is not stored; a summary without it is stored, and so is every summary when the marker read fails.
+TEST: services/gateway/test/services/guide/session-summaries-forgotten-value.test.ts
 
 AC-3: live B-FORG-01 passes on staging after deploy.
 TEST: scripts/memory-verification/run-live.mjs
