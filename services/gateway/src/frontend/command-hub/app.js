@@ -27512,7 +27512,8 @@ let cicdHealthPollInterval = null;
 // panel used to drop such groups, which is how 'Screen Load Time' was
 // counted in "54/55" but never shown.
 var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance'];
+    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce'];
 
 /**
  * VTID-04661: every group present in `items`, the known ones first in
@@ -27665,7 +27666,26 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     // here. 'down' means either a screen failed to load or the
     // scheduled job itself hasn't reported in 3h+; 'degraded' means
     // it's reporting but slow (p75 over budget).
-    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' },
+    // VTID-04662: existing health routes, now registered.
+    { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+    { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+    { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+    { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+    { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+    { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+    { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
+    { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+    { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+    { name: 'Memory Broker', url: '/api/v1/admin/memory/health', group: 'Data & Memory' },
+    { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+    { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+    { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+    { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+    { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+    { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+    { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' }
 ];
 
 /**
