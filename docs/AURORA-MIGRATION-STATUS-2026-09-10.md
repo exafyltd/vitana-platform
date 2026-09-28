@@ -3785,3 +3785,75 @@ DMS reload dispatch remains blocked by this session's own safety
 classifier, independent of any of the above (that block happens before
 the call would reach AWS at all). No code, AWS, or git state changed by
 this addendum beyond the read-only checks above.
+
+## Addendum, 2026-09-28 (VTID-04693) — the platform owner ran the CloudShell
+remediation themselves; the VPC/IAM half of the Step 7 blocker is now
+confirmed cleared, verified via the owner's own command output, not this
+session's
+
+Every prior AWS-side blocker addendum in this doc (2026-09-21 onward)
+recorded the same structural limit: this session's own IAM identity
+(`claude-code-aws-agent`) carries an explicit permissions-boundary deny on
+EC2/IAM reads, so neither the VPC PrivateLink interface endpoints
+(`ssmmessages`, `ec2messages`) needed for ECS Exec, nor an inline IAM
+policy granting the `vitana-ecs-task-role` the matching
+`ssmmessages:Create*`/`Open*Channel` actions, could be created OR verified
+from inside this session — regardless of what a differently-privileged
+identity could do. Given the platform owner asked in plain terms for the
+concrete status and what was needed from them, this session composed a
+two-part CloudShell script (creating both interface endpoints in
+`vpc-05958f035e596fe64` across subnets `subnet-0ff45a2051c5e5482`/
+`subnet-0c786864a28a5a821` with security group `sg-0fbcf7b59b1f0d685`, then
+attaching an `ECSExecSSMMessages` inline policy to `vitana-ecs-task-role`)
+and handed it to the owner to run under their own, more privileged
+identity.
+
+**Result, confirmed across two rounds of owner-run verification:**
+
+1. **VPC endpoints — succeeded on the first run.** The owner's own
+   `aws ec2 describe-vpc-endpoints` output showed both `ssmmessages` and
+   `ec2messages` interface endpoints in state `available`.
+2. **IAM policy — failed silently on the first run, caught by asking for
+   granular verification rather than accepting "done" at face value.**
+   The owner's `aws iam get-role-policy --role-name vitana-ecs-task-role
+   --policy-name ECSExecSSMMessages` returned `NoSuchEntity` — the
+   attachment had not taken effect. Handed back an isolated, idempotent
+   re-run of just the `put-role-policy` step plus two diagnostic
+   list-policy commands. The owner's second-round output shows
+   `put-role-policy` succeeding silently (AWS CLI's standard
+   no-output-on-success convention for this call) and
+   `aws iam list-role-policies --role-name vitana-ecs-task-role` now
+   listing `ECSExecSSMMessages` among the role's 7 inline policies
+   (alongside `BedrockInvoke`, `vitana-autopilot-runtask`,
+   `vitana-ecs-task-runtime`,
+   `vitana-operator-agent-readonly-and-cancel-VTID-04037`,
+   `VitanaCascadedVoicePipeline`, `VitanaCascadedVoiceRuntime`) —
+   `list-attached-role-policies` confirms `AttachedPolicies: []`, i.e. this
+   role is governed entirely by inline policies, and the new one is now
+   among them.
+
+**What this does and does not establish.** Both pieces of evidence come
+from the owner's own AWS CLI output, pasted verbatim — this session's own
+identity remains structurally unable to verify either fact directly (the
+same permissions-boundary deny recorded in every addendum since
+2026-09-21 is unrelated to what was just granted to `vitana-ecs-task-role`
+and does not change as a result of it). This closes the network/IAM
+PREREQUISITE for ECS Exec into a task running that role — it does **not**
+yet confirm ECS Exec actually works end-to-end (a service also needs
+`enableExecuteCommand: true` set at the service/task level, which this
+addendum has not checked), and it does **not** touch Step 7's actual open
+question (whether a Claude Code session, or anyone, can reach the Aurora
+Postgres port from inside such a task once exec'd in — the same VPC-route
+gap this doc's 2026-09-21 addendum already flagged for the reconciliation
+script). Handed the owner a follow-up `aws ecs execute-command` smoke-test
+command against `vitana-postgrest-aurora-proxy` to close that remaining
+gap; awaiting the result.
+
+Two of the three still-standing session-side classifier/boundary blockers
+recorded in this document (the DMS reload-dispatch safety-classifier
+block, and the git branch-reset classifier block on `vitana-v1`) are
+unaffected by this addendum — this only addresses the VPC/IAM permissions
+boundary that blocked *this session* from creating/verifying the ECS Exec
+prerequisites itself; it does not touch the client-side Claude Code
+auto-mode classifier that separately blocks dispatching the actual DMS
+reload/cutover commands regardless of AWS-side permissions.
