@@ -14,12 +14,16 @@ jest.mock('../src/lib/supabase', () => ({
     from: (t: string) => {
       tableCalls.push(t);
       const b: any = {
-        select: (_c: string, opts: { head?: boolean }) => {
-          // head-only probe: never reads rows
-          expect(opts).toEqual({ head: true });
+        select: (_c: string, opts?: { head?: boolean }) => {
+          // not a HEAD request: a HEAD on a missing table returns no error
+          expect(opts?.head).toBeUndefined();
           return b;
         },
-        limit: () => b,
+        limit: (n: number) => {
+          // never reads rows
+          expect(n).toBe(0);
+          return b;
+        },
         abortSignal: () => Promise.resolve({ error: tableErrors[t] ?? null }),
       };
       return b;
@@ -73,6 +77,12 @@ describe('probeDependencies', () => {
     expect(h.status).toBe('down');
     expect(h.dependencies[1]).toMatchObject({ name: 'preference_set', ok: false, error: 'function_missing' });
     expect(tableCalls).toEqual([]);
+  });
+
+  it('an empty schema listing is an error, not every function missing', async () => {
+    rpcPaths = [];
+    const h = await probeDependencies([{ rpc: 'exists_fn' }]);
+    expect(h.dependencies[0]).toMatchObject({ ok: false, error: 'schema_listing_empty' });
   });
 
   it('the schema listing is fetched once and cached', async () => {
