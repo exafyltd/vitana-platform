@@ -129,3 +129,21 @@ describe('Risk Mitigation (VTID-04717)', () => {
     expect(code(risk)).not.toMatch(/CREATE TRIGGER/);
   });
 });
+
+describe('hardening after the security advisor (VTID-04716)', () => {
+  const hard = read('20260928200500_vtid_04716');
+  it('takes EXECUTE away from anon/PUBLIC and keeps it for members', () => {
+    expect(hard).toContain("REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon");
+    expect(hard).toContain("GRANT EXECUTE ON FUNCTION %s TO authenticated, service_role");
+    for (const fn of ['caller_tenant_id', 'overload_detect', 'taste_profile_get', 'preference_set', 'preference_get_audit']) {
+      expect(hard).toContain(`'${fn}'`);
+    }
+  });
+  it('never re-grants the service-only prompt helpers to members', () => {
+    expect(hard).not.toContain("'count_prompts_today'");
+    expect(hard).not.toContain("'get_user_prompt_prefs'");
+  });
+  it('pins is_in_quiet_hours search_path', () => {
+    expect(hard).toContain('ALTER FUNCTION public.is_in_quiet_hours(JSONB, TIME) SET search_path = public;');
+  });
+});

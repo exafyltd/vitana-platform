@@ -86,6 +86,15 @@ All 18 tables exist with RLS on. `public.user_preferences` is unchanged (36 colu
 
 On staging, before this code deployed, 4 of 5 health routes already read `ok: true, status: healthy`.
 
+## Security advisor
+After the apply, the Supabase security advisor flagged two things on the new objects:
+- 25 SECURITY DEFINER functions were executable by `anon` (Supabase's default grant);
+- `is_in_quiet_hours` had a mutable `search_path`.
+
+`20260928200500` revokes `anon`/`PUBLIC` EXECUTE and pins the path. It was applied twice locally, then
+live. Live result: 0 of 28 executable by anon, 26 by members, and the two prompt helpers are
+`service_role` only.
+
 ## Not done here
 - `matches_daily` (VTID-01088) does not exist, so Autopilot Prompts has its tables but no source of
   matches yet.

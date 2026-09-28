@@ -2987,6 +2987,10 @@ Service Health (VTID-04665) showed five features down because their tables or
 functions had never existed live. Each migration below is idempotent and was
 executed against Postgres 16 twice before it was applied.
 
+Hardening (`20260928200500`, applied): anon and PUBLIC cannot execute any of these functions; members
+(authenticated) execute the member-facing ones, which are scoped to `auth.uid()`. `is_in_quiet_hours`
+has a fixed `search_path`.
+
 ### `public.caller_tenant_id()` (VTID-04718)
 SECURITY DEFINER, STABLE. Returns the caller's tenant in this order:
 1. `current_tenant_id()`, from the explicit request context or JWT claim;
