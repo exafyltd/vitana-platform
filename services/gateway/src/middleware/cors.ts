@@ -87,7 +87,14 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // browser would not render HTML served as text/event-stream. No SSE route
   // lives under /command-hub; its streams are all under /api/v1.
   if (req.path === '/command-hub' || req.path.startsWith('/command-hub/')) return next();
-  if (req.method === 'GET' && (req.path.includes("/stream") || req.path.includes("/events"))) {
+  // VTID-04695: "/events" alone is not a stream. Every GET under /events is
+  // a JSON route (calendar list/window/today, universal-cart, product
+  // analytics, voice-lab debug) and res.json() keeps a Content-Type already
+  // set, so they were served as text/event-stream (STAGING-VERIFY, calendar
+  // window 401). A path under /events is treated as a stream only when the
+  // client asks for one — EventSource always sends that Accept header.
+  const wantsStream = String(req.headers.accept || '').includes('text/event-stream');
+  if (req.method === 'GET' && (req.path.includes("/stream") || (req.path.includes("/events") && wantsStream))) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
