@@ -272,7 +272,12 @@
         ]
        ],
        "reply_none": [
-        "gespeichert",
+        "habe ich gespeichert",
+        "hab ich gespeichert",
+        "habe es gespeichert",
+        "habe ihn gespeichert",
+        "ist gespeichert",
+        "ist jetzt gespeichert",
         "notiert",
         "gemerkt",
         "merke ich mir",
@@ -306,7 +311,12 @@
         ]
        ],
        "reply_none": [
-        "gespeichert",
+        "habe ich gespeichert",
+        "hab ich gespeichert",
+        "habe es gespeichert",
+        "habe ihn gespeichert",
+        "ist gespeichert",
+        "ist jetzt gespeichert",
         "notiert",
         "gemerkt",
         "merke ich mir",
