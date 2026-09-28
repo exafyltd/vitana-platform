@@ -35,6 +35,11 @@
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
+// VTID-04669: with the quality review on, the developer listings show only
+// reviewed-keep rows. This suite pins the listing's query/sort/count
+// behaviour underneath that filter, so it runs with the review off
+// (the review filter itself: test/vtid-04669-quality-review.test.ts).
+process.env.AUTOPILOT_QUALITY_REVIEW_ENABLED = 'false';
 delete process.env.DEFAULT_TENANT_ID;
 
 import supertestBase from 'supertest';

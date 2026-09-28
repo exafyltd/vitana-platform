@@ -73,6 +73,11 @@ const SCAN_TOKEN = 'test-scan-token-xyz';
 process.env.DEV_AUTOPILOT_SCAN_TOKEN = SCAN_TOKEN;
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
+// VTID-04669: with the quality review on, the developer listings show only
+// reviewed-keep rows. This suite pins the listing's query/sort/count
+// behaviour underneath that filter, so it runs with the review off
+// (the review filter itself: test/vtid-04669-quality-review.test.ts).
+process.env.AUTOPILOT_QUALITY_REVIEW_ENABLED = 'false';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const router = require('../../src/routes/dev-autopilot').default;

@@ -82,6 +82,7 @@ import {
 } from './dev-autopilot-approval-gates';
 import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
 import { rescoreTick } from './recommendation-quality/scoring-service';
+import { qualityReviewTick } from './recommendation-quality/quality-review';
 // VTID-04467: agent runs are requeued, never run in-process without a toolchain.
 import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
 
@@ -4336,6 +4337,11 @@ export function startBackgroundExecutor(): void {
     // VTID-04668: keep developer recommendation priority current (self-throttled to 30 min).
     rescoreTick(Date.now(), { loadIndex: loadPlanIndex }).catch((err) => {
       console.error(`${LOG_PREFIX} recommendation rescore tick error:`, err);
+    });
+    // VTID-04669: one bounded quality review per card before it is shown
+    // (self-throttled to 15 min, <= 5 rows, daily cap, kill switch).
+    qualityReviewTick().catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation quality-review tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }
