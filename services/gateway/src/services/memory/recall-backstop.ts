@@ -104,8 +104,89 @@ const DENIES_OR_DEFERS = new RegExp(
   'i',
 );
 
+// VTID-04704: a refusal on privacy grounds. Live staging 2026-09-28, "wie
+// heißt meine Frau" with no matching fact stored: "Tut mir leid, aber ich
+// kann diese persönliche Information nicht preisgeben." Nothing a member
+// told Vitana about themselves or their own people is private from them.
+const CITES_PRIVACY = new RegExp(
+  [
+    'datenschutz',
+    'privatsphäre',
+    'preisgeben',
+    'persönliche (information|informationen|daten|angaben|details)',
+    'vertraulich',
+    'privacy',
+    'personal (information|data|details)',
+    'confidential',
+    'privacidad',
+    'datos personales',
+    'privatnost',
+    '(lični|lične|osobni|osobne) (podaci|podatke|informacije)',
+  ].join('|'),
+  'i',
+);
+
+export function replyCitesPrivacy(reply: string): boolean {
+  return Boolean(reply) && CITES_PRIVACY.test(reply);
+}
+
 export function replyDeniesOrDefers(reply: string): boolean {
-  return Boolean(reply) && DENIES_OR_DEFERS.test(reply);
+  return Boolean(reply) && (DENIES_OR_DEFERS.test(reply) || CITES_PRIVACY.test(reply));
+}
+
+// VTID-04704: a date named in answer to a birthday / anniversary question
+// that no stored fact carries. Live staging 2026-09-28, "erinnerst du dich
+// an den Geburtstag meiner Frau" with no spouse fact stored: "… am 23.
+// April". A made-up date is worse than "I don't know": the member acts on it.
+const DATE_QUESTION =
+  /\b(geburtstag|geboren|jahrestag|hochzeitstag|birthday|born|anniversary|cumpleaños|aniversario|rođendan|rodjendan|godišnjica)\b/i;
+
+const MONTHS: Array<[RegExp, number]> = [
+  [/^(januar|jänner|january|jan|enero|siječanj|januara)\.?$/i, 1],
+  [/^(februar|feber|february|feb|febrero|veljača|februara)\.?$/i, 2],
+  [/^(märz|maerz|march|mar|marzo|mart|ožujak|marta)\.?$/i, 3],
+  [/^(april|apr|abril|travanj|aprila)\.?$/i, 4],
+  [/^(mai|may|mayo|maj|svibanj|maja)\.?$/i, 5],
+  [/^(juni|june|jun|junio|lipanj|juna)\.?$/i, 6],
+  [/^(juli|july|jul|julio|srpanj|jula)\.?$/i, 7],
+  [/^(august|aug|agosto|avgust|kolovoz|avgusta)\.?$/i, 8],
+  [/^(september|sept|sep|septiembre|septembar|rujan|septembra)\.?$/i, 9],
+  [/^(oktober|october|oct|okt|octubre|oktobar|listopad|oktobra)\.?$/i, 10],
+  [/^(november|nov|noviembre|novembar|studeni|novembra)\.?$/i, 11],
+  [/^(dezember|december|dec|dez|diciembre|decembar|prosinac|decembra)\.?$/i, 12],
+];
+
+function monthOf(word: string): number | null {
+  for (const [re, m] of MONTHS) if (re.test(word)) return m;
+  return null;
+}
+
+/** Day-month pairs ("12-3") named in a text: "12. März", "March 12th", "12.03.", "1985-03-12". */
+export function extractDayMonths(text: string): Set<string> {
+  const out = new Set<string>();
+  const s = String(text || '');
+  const add = (d: number, m: number | null) => {
+    if (m && d >= 1 && d <= 31) out.add(`${d}-${m}`);
+  };
+  for (const x of s.matchAll(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g)) add(Number(x[3]), Number(x[2]));
+  for (const x of s.matchAll(/\b(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/g)) add(Number(x[1]), Number(x[2]) <= 12 ? Number(x[2]) : null);
+  for (const x of s.matchAll(/\b(\d{1,2})(?:\.|st|nd|rd|th)?\s+(?:de\s+|of\s+)?(\p{L}{3,})/gu)) add(Number(x[1]), monthOf(x[2]));
+  for (const x of s.matchAll(/(\p{L}{3,})\s+(\d{1,2})(?:st|nd|rd|th)?\b/gu)) add(Number(x[2]), monthOf(x[1]));
+  return out;
+}
+
+export function asksForDate(question: string): boolean {
+  return DATE_QUESTION.test(question || '');
+}
+
+/** True when the reply names a day and month that no stored fact carries. */
+export function replyNamesUnstoredDate(reply: string, facts: RecallFact[]): boolean {
+  const named = extractDayMonths(reply);
+  if (named.size === 0) return false;
+  const stored = new Set<string>();
+  for (const f of facts) for (const dm of extractDayMonths(String(f.fact_value ?? ''))) stored.add(dm);
+  for (const dm of named) if (!stored.has(dm)) return true;
+  return false;
 }
 
 export interface RecallFact {
@@ -186,7 +267,7 @@ export function recallScore(question: string, fact: RecallFact): number {
 export function buildRecallBackstopNote(
   facts: RecallFact[],
   question = '',
-  reason: 'denied' | 'about_me_vague' = 'denied',
+  reason: 'denied' | 'about_me_vague' | 'unstored_date' = 'denied',
 ): string | null {
   const usable = facts
     .filter((f) => f && f.fact_key && !SYSTEM_KEY.test(f.fact_key) && String(f.fact_value ?? '').trim())
@@ -204,9 +285,29 @@ export function buildRecallBackstopNote(
       "Now answer the question: name two or three of the first facts briefly and concretely, in the member's language — a key names the meaning in English (user_pet_name is the member's pet). Do not read out keys, and do not list everything.",
     ].join('\n');
   }
+  if (reason === 'unstored_date') {
+    return [
+      `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked for a date and your answer named a date that none of their stored facts carries. These are the member's current stored facts (key: value):`,
+      ...lines,
+      "If one of them answers the question, correct your answer now in one short sentence, in the member's language — <name>_birthday is that person's birthday, spouse_birthday the partner's. If none of them answers it, say plainly that you got it wrong, that you do not have that date yet, and ask the member for it. Never guess a date.",
+    ].join('\n');
+  }
   return [
-    `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and your answer said you do not know it or only promised to look. These are the member's current stored facts (key: value):`,
+    `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and your answer said you do not know it, refused it, or only promised to look. These are the member's current stored facts (key: value):`,
     ...lines,
-    'If one of them answers the question, give the answer now in one short sentence, in the member\'s language, and correct your previous answer plainly — a key names the meaning in English (user_pet_name is the member\'s pet, <name>_birthday is that person\'s birthday). If none of them answers it, say plainly that it is not stored. Do not list the other facts.',
+    'If one of them answers the question, give the answer now in one short sentence, in the member\'s language, and correct your previous answer plainly — a key names the meaning in English (user_pet_name is the member\'s pet, <name>_birthday is that person\'s birthday). If none of them answers it, say plainly that it is not stored yet and ask the member for it. Never cite privacy for what the member told you about themselves or their own people. Do not list the other facts.',
   ].join('\n');
+}
+
+/**
+ * VTID-04704: nothing usable is stored, but the reply refused on privacy
+ * grounds or named a date. "Not stored" was the honest answer; the model is
+ * told to give that instead. Intent only, never a sentence to speak.
+ */
+export function buildNothingStoredNote(reason: 'privacy_refusal' | 'unstored_date'): string {
+  const what =
+    reason === 'unstored_date'
+      ? 'your answer named a date, but nothing about it is stored — the date was a guess'
+      : 'your answer refused on privacy grounds, but what the member told you about themselves or their own people is never private from them — and nothing about it is stored yet';
+  return `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and ${what}. Correct your answer now in one short sentence, in the member's language: say plainly that you do not have it yet, and ask the member for it so you can remember it. Never guess, and never cite privacy.`;
 }

@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04709",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the workflow change", "path": "/alive" },
+    { "kind": "http", "name": "build-info reports staging and a commit stamp", "path": "/api/v1/admin/health",
+      "expect_json": { "env": "staging" } },
+    { "kind": "existing", "ref": "npx jest test/vtid-04709-staging-deploy-pinned-commit.test.ts", "cwd": "services/gateway",
+      "reason": "the change is to the staging deploy workflow only; the pinned-commit input, the on-main guard and the checked-out commit stamp are pinned by this suite, and a pinned dispatch is exercised on staging after merge (acceptance AC-6)" }
+  ]
+}

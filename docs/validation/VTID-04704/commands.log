@@ -1,0 +1,10 @@
+# staging voice harness (scratchpad drive2.mjs), 2026-09-28 16:22–16:30 UTC, staging 72e8e2f
+X_name_1  (spouse facts not yet in session context) -> privacy refusal
+X_name_2  (facts in context) -> denial, recall backstop injected, "Deine Frau heißt Anna."
+X_bday_1  -> "… am 12. März Geburtstag"
+X_name_3  -> "… Ihrer Frau Anna …"
+X_bday_2  -> "Ihr Geburtstag ist am 12. März"
+# local
+cd services/gateway && npx tsc --noEmit -p .                       # clean
+node node_modules/.bin/jest test/services/memory test/orb/live/session test/vtid-04683-own-people-direct-questions.test.ts
+# -> Test Suites: 69 passed; Tests: 1062 passed
