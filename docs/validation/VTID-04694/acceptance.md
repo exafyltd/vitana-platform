@@ -12,11 +12,14 @@ and synonym entries that are already English are never rewritten.
 
 ## Acceptance
 
-- AC-1: `lieblingsessen` → `favorite_food`, `mutter_name` → `mother_name`,
-  `zahnarzttermin` → `dentist_appointment`; English keys unchanged.
-  TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
-- AC-2: a new German-named fact is written under the English key.
-  TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
-- AC-3: a fact that already exists keeps its stored key (conflict path unchanged).
-  TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
-- AC-4: live B-SELF-01 passes on staging (scripts/memory-verification/run-live.mjs).
+AC-1: `lieblingsessen` → `favorite_food`, `mutter_name` → `mother_name`, `zahnarzttermin` → `dentist_appointment`; English keys unchanged.
+TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
+
+AC-2: a new German-named fact is written under the English key.
+TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
+
+AC-3: a fact that already exists keeps its stored key (conflict path unchanged).
+TEST: services/gateway/test/services/memory/vtid-04694-english-fact-key.test.ts
+
+AC-4: live B-SELF-01 passes on staging (scripts/memory-verification/run-live.mjs).
+TEST: scripts/memory-verification/run-live.mjs
