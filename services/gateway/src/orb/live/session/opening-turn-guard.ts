@@ -79,13 +79,21 @@ export function pcmChunkDurationMs(dataB64: string, mimeType?: string): number {
   return (bytes / 2 / rate) * 1000;
 }
 
-export type BackendLeakKind = 'json' | 'snake_case_key' | 'uuid' | 'screen_id';
+export type BackendLeakKind = 'json' | 'snake_case_key' | 'uuid' | 'screen_id' | 'reasoning';
 
 const LEAK_PATTERNS: Array<{ kind: BackendLeakKind; re: RegExp }> = [
   { kind: 'json', re: /[{}]|"[A-Za-z_][A-Za-z0-9_]*"\s*:/ },
   { kind: 'uuid', re: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i },
   { kind: 'screen_id', re: /\b[A-Z]{3,}(?:\.[A-Z][A-Z0-9_]{1,}){1,}\b/ },
   { kind: 'snake_case_key', re: /\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]*[A-Za-z0-9]\b/ },
+  // VTID-04714: the model speaking its own reasoning. Live B-CONF-05 (pass 7):
+  // "Der Benutzer hat gesagt: … In den strukturierten Fakten steht … Dafür gibt
+  // es die Funktion remember_fact." Vitana talks TO the member, never about
+  // "der Benutzer"/"the user", and never names functions or the fact store.
+  {
+    kind: 'reasoning',
+    re: /\b(der|die) (benutzer|nutzer)(in)? (hat|sagt|sagte|möchte|will|fragt|fragte|korrigiert|erwähnt|meint|wünscht)\b|\bthe user (said|says|wants|asked|is asking|has|mentioned|corrects|corrected)\b|\b(strukturierten fakten|benutzerkontext|structured facts|user context)\b|\b(funktion|function|tool) (remember|forget|recall|search|navigate|list|get|set|create|update|delete)[ _][a-z]+|\b(ich rufe|rufe ich) (jetzt )?(die |eine )?funktion\b|\bi('ll| will) (now )?call (the )?(function|tool)\b/i,
+  },
 ];
 
 /**

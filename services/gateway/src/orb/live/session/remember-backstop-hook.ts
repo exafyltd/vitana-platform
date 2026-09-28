@@ -134,6 +134,7 @@ export function maybeRunRememberBackstop(
       session.upstreamClient.sendTextTurn(note, true);
       // VTID-04702: the held reply is replaced only when Nova was told the result.
       (session as any).rememberNoteSentAt = Date.now();
+      (session as any).backstopNoteSentAt = Date.now();
     }
     return results;
   })().catch((err: any) => {
@@ -203,6 +204,7 @@ export function maybeRunForgetBackstop(
         ].join('\n'),
         true,
       );
+      (session as any).backstopNoteSentAt = Date.now();
     }
     return result;
   })().catch((err: any) => {
@@ -318,7 +320,10 @@ export function maybeRunRecallBackstop(
       injected: Boolean(note && session.active),
     });
     console.log(`[VTID-04692] recall backstop ${session.sessionId}: ${note ? `${facts.length} facts offered` : 'nothing stored'}`);
-    if (note && session.active && session.upstreamClient) session.upstreamClient.sendTextTurn(note, true);
+    if (note && session.active && session.upstreamClient) {
+      session.upstreamClient.sendTextTurn(note, true);
+      (session as any).backstopNoteSentAt = Date.now();
+    }
     return note ? facts.length : 0;
   })().catch((err: any) => {
     console.warn(`[VTID-04692] recall backstop failed (non-blocking): ${err?.message ?? err}`);
