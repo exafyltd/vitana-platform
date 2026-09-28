@@ -12,7 +12,8 @@
  * gespeichert, du hast aber gerade den 7. Mai genannt" names what is stored —
  * true — while "den 7. Mai gespeichert" would claim the new date was saved.
  * The expression runs on the whole reply; `[^.!?]` in it keeps a match inside
- * one sentence, and a period after a digit ("7. Mai") is not a sentence end.
+ * one sentence (commas do not end it), and a period after a digit ("7. Mai")
+ * is not a sentence end. A negation earlier in that sentence denies the claim.
  */
 const NEGATION = /\b(nicht|kein|keine|keinen|nie|niemals|not|no|never|cannot|can't|won't|didn't|don't|ne|nemoj|no puedo)\b/i;
 
@@ -21,7 +22,10 @@ export function claims(reply, word) {
   if (word.startsWith('re:')) {
     const re = new RegExp(word.slice(3), 'giu');
     for (const m of text.matchAll(re)) {
-      if (!NEGATION.test(m[0])) return true;
+      // Codex review on #3802: a negation earlier in the same sentence
+      // ("Ich habe nicht gespeichert: 7. Mai") denies the claim. One after
+      // the match ("… gespeichert, nicht den 5.") does not.
+      if (!NEGATION.test(sentencePrefix(text, m.index) + m[0])) return true;
     }
     return false;
   }
@@ -30,4 +34,18 @@ export function claims(reply, word) {
   return text
     .split(/(?<=[.!?])\s*|\n+/)
     .some((s) => s.includes(w) && !NEGATION.test(s));
+}
+
+/** The text from the start of the sentence containing `index` up to `index`.
+ *  A period after a digit ("7. Mai") is not a sentence end. */
+function sentencePrefix(text, index) {
+  let start = 0;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const c = text[i];
+    if (c === '!' || c === '?' || c === '\n' || (c === '.' && !/\d/.test(text[i - 1] || ''))) {
+      start = i + 1;
+      break;
+    }
+  }
+  return text.slice(start, index);
 }

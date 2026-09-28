@@ -52,9 +52,15 @@ export function detectAboutMeQuestion(text: string): boolean {
 const OWN_SUBJECT =
   /\b(habe|hab|bin|war|heiße|heisse|wohne|arbeite|mag|esse|trinke|lebe)\s+ich\b|\b(am|was|do|did)\s+i\b|\b(tengo|soy|vivo)\b|\b(imam|sam|živim)\s+ja\b/i;
 
+// Codex review on #3802: a yes/no question opens with the verb and has no
+// question word — "Do I have any allergies?", "Bin ich allergisch?".
+const LEADING_OWN_SUBJECT =
+  /^\s*(?:(?:und|also|sag mal|okay|ok|and|so)[,\s]+)?(?:(?:habe|hab|bin|war|wohne|arbeite|mag|esse|trinke|lebe)\s+ich\b|(?:am|was|do|did|have)\s+i\b|(?:imam|sam|živim)\s+ja\b)/i;
+
 export function detectRecallQuestion(text: string): boolean {
   if (!text || text.startsWith(REMEMBER_BACKSTOP_MARKER)) return false;
   if (ASK_MEMORY.test(text)) return true;
+  if (LEADING_OWN_SUBJECT.test(text)) return true;
   return QUESTION_WORD.test(text) && (OWN_POSSESSIVE.test(text) || OWN_SUBJECT.test(text));
 }
 

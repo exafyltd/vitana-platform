@@ -35,6 +35,8 @@ test('B-CONF-02: a claim that the new date was saved still fails', () => {
     'Ich habe Pauls Geburtstag auf den 7. Mai geändert.',
     'Ich habe gespeichert: 7. Mai.',
     'Ich habe Pauls Geburtstag aktualisiert.',
+    'Ich habe bisher den 5. Mai gespeichert. Den 7. Mai habe ich, wie von dir gesagt, gespeichert. Welcher stimmt?', // Codex #3802
+    'Den 7. Mai habe ich gespeichert, nicht den 5. Mai.',
   ]) {
     assert.equal(failsConf02(reply), true, reply);
   }
@@ -42,6 +44,7 @@ test('B-CONF-02: a claim that the new date was saved still fails', () => {
 
 test('B-CONF-02: a negated claim about the new date is not a claim', () => {
   assert.equal(failsConf02('Den 7. Mai habe ich nicht gespeichert, welcher stimmt?'), false);
+  assert.equal(failsConf02('Ich habe nicht gespeichert: 7. Mai. Welcher stimmt?'), false); // Codex #3802
 });
 
 test('plain words keep their sentence-and-negation behaviour', () => {

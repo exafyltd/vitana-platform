@@ -11,12 +11,12 @@ import { maybeRunRecallBackstop } from '../../../src/orb/live/session/remember-b
 const LIVE_REPLY = 'Ich überprüfe das für dich.  einen Moment bitte.';
 
 describe('VTID-04705 first-person recall questions', () => {
-  it.each(['wann habe ich geburtstag', 'Wann habe ich Geburtstag?', 'Wo wohne ich?', 'Wie alt bin ich?', 'When was I born?', 'Where do I work?'])(
+  it.each(['wann habe ich geburtstag', 'Wann habe ich Geburtstag?', 'Wo wohne ich?', 'Wie alt bin ich?', 'When was I born?', 'Where do I work?', 'Do I have any allergies?', 'Am I allergic to peanuts?', 'Bin ich allergisch?', 'Habe ich ein Haustier?'])(
     'a question about the member: %s',
     (q) => expect(detectRecallQuestion(q)).toBe(true),
   );
 
-  it.each(['Wie geht es dir?', 'Was kann ich heute machen?', 'Ich habe Hunger.', 'Merk dir, ich habe am 9. September Geburtstag'])(
+  it.each(['Wie geht es dir?', 'Was kann ich heute machen?', 'Ich habe Hunger.', 'Merk dir, ich habe am 9. September Geburtstag', 'Was ich dir sagen wollte, ich habe heute frei.', 'Ich bin müde.'])(
     'not a recall question: %s',
     (q) => expect(detectRecallQuestion(q)).toBe(false),
   );
