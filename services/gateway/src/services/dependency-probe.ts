@@ -113,10 +113,16 @@ async function probeOne(dep: Dependency): Promise<DependencyResult> {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       try {
-        const { error } = await sb.from(name).select('*', { head: true }).limit(1).abortSignal(controller.signal);
+        // VTID-04698: a GET with limit(0), never head:true. supabase-js answers a
+        // HEAD on a missing table with status 204 and error null (PostgREST's
+        // 404 has no body to read), so a head-only probe reported every missing
+        // table healthy. limit(0) still reads no rows and gets the real 404.
+        const { error, status } = await sb.from(name).select('*').limit(0).abortSignal(controller.signal);
         result = error
           ? { kind, name, ok: false, latency_ms: Date.now() - start, error: /does not exist|schema cache|PGRST205|42P01/i.test(`${error.code} ${error.message}`) ? 'table_missing' : error.message.slice(0, 160) }
-          : { kind, name, ok: true, latency_ms: Date.now() - start };
+          : status === 404
+            ? { kind, name, ok: false, latency_ms: Date.now() - start, error: 'table_missing' }
+            : { kind, name, ok: true, latency_ms: Date.now() - start };
       } finally {
         clearTimeout(timer);
       }

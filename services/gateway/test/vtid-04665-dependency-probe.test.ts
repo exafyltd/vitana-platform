@@ -8,19 +8,26 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 let tableErrors: Record<string, { code?: string; message: string } | null> = {};
+let tableStatus: Record<string, number> = {};
 let tableCalls: string[] = [];
 jest.mock('../src/lib/supabase', () => ({
   getSupabase: () => ({
     from: (t: string) => {
       tableCalls.push(t);
       const b: any = {
-        select: (_c: string, opts: { head?: boolean }) => {
-          // head-only probe: never reads rows
-          expect(opts).toEqual({ head: true });
+        select: (_c: string, opts?: { head?: boolean }) => {
+          // VTID-04698: never head:true — supabase-js hides a missing table's
+          // 404 on a HEAD (status 204, error null).
+          expect(opts?.head).toBeUndefined();
           return b;
         },
-        limit: () => b,
-        abortSignal: () => Promise.resolve({ error: tableErrors[t] ?? null }),
+        // limit(0): the probe reads no rows
+        limit: (n: number) => {
+          expect(n).toBe(0);
+          return b;
+        },
+        abortSignal: () =>
+          Promise.resolve({ error: tableErrors[t] ?? null, status: tableStatus[t] ?? (tableErrors[t] ? 404 : 200) }),
       };
       return b;
     },
@@ -41,6 +48,7 @@ let schemaFetches = 0;
 beforeEach(() => {
   resetDependencyProbeForTests();
   tableErrors = {};
+  tableStatus = {};
   tableCalls = [];
   schemaFetches = 0;
   rpcPaths = ['/rpc/exists_fn'];
@@ -66,6 +74,14 @@ describe('probeDependencies', () => {
       expect.objectContaining({ kind: 'table', name: 'here', ok: true }),
       expect.objectContaining({ kind: 'table', name: 'gone', ok: false, error: 'table_missing' }),
     ]);
+  });
+
+  it('VTID-04698: a 404 with no error body is a missing table, never healthy', async () => {
+    // What supabase-js answers when PostgREST's 404 carries no readable body.
+    tableStatus.gone = 404;
+    const h = await probeDependencies([{ table: 'gone' }]);
+    expect(h.status).toBe('down');
+    expect(h.dependencies).toEqual([expect.objectContaining({ kind: 'table', name: 'gone', ok: false, error: 'table_missing' })]);
   });
 
   it('an RPC is checked by presence in the schema listing, never called', async () => {
