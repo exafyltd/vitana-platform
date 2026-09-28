@@ -43,6 +43,7 @@ import {
 } from './vcaop-portal';
 import * as repo from '../services/vcaop-portal/vcaop-portal-repository';
 import { detectPlatform } from '../services/platform-detect';
+import { resolveConnectionSurface } from '../services/vcaop-portal/connection-surface';
 import { isShopifyOAuthConfigured, isValidShopDomain, signState, buildAuthorizeUrl } from '../services/shopify-oauth';
 import {
   isFhirOAuthConfigured,
@@ -264,7 +265,7 @@ export function registerConnectionRoutes(r: Router, scope: ConnectionScope): voi
     if (!isValidShopDomain(shop)) {
       return res.status(400).json({ ok: false, error: 'shop must be a valid *.myshopify.com domain' });
     }
-    const state = signState(rec.id);
+    const state = signState(rec.id, resolveConnectionSurface(scope.surface));
     const authorizeUrl = buildAuthorizeUrl(shop, state, redirectUri);
     if (!authorizeUrl) return res.status(503).json({ ok: false, error: 'not_configured' });
     res.json({ ok: true, data: { authorize_url: authorizeUrl } });
@@ -320,6 +321,7 @@ export function registerConnectionRoutes(r: Router, scope: ConnectionScope): voi
       clientSecret: client_secret || undefined,
       codeVerifier,
       tokenEndpoint: discovery.config.token_endpoint,
+      surface: resolveConnectionSurface(scope.surface),
     });
     const authorizeUrl = buildFhirAuthorizeUrl({
       authorizationEndpoint: discovery.config.authorization_endpoint,

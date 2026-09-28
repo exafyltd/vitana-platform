@@ -70,6 +70,7 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { ssrfGuardedFetch, assertPublicHost } from './platform-detect';
+import type { ConnectionSurface } from './vcaop-portal/connection-surface';
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the OAuth round trip
 const GCM_IV_BYTES = 12;
@@ -162,6 +163,8 @@ interface StatePayload {
   clientSecret?: string;
   codeVerifier: string;
   tokenEndpoint: string;
+  /** VTID-04711: the surface that started the flow; absent on pre-04711 tokens. */
+  surface?: ConnectionSurface;
   expires: number;
 }
 

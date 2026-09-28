@@ -119,6 +119,14 @@ describe('encrypted state', () => {
     expect(decoded).toMatchObject(payload);
   });
 
+  test('carries the initiating surface (VTID-04711)', async () => {
+    setConfigured();
+    const mod = await freshModule();
+    const state = mod.signState({ ...payload, surface: 'partner_onboarding' });
+    expect(mod.decodeAndVerifyState(state)?.surface).toBe('partner_onboarding');
+    expect(mod.decodeAndVerifyState(mod.signState(payload))?.surface).toBeUndefined();
+  });
+
   test('round-trips an optional client_secret without leaking it in plaintext', async () => {
     setConfigured();
     const mod = await freshModule();

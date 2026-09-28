@@ -82,7 +82,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   if (upsertError) {
     await emitOasisEvent(supabase, 'vcaop.portal.connection.shopify_credential_persist_failed', 'error',
       `connection ${rec.id}: shopify OAuth code exchanged but credential write failed: ${upsertError.message ?? 'unknown error'}`, {
-        connection_id: rec.id, shop_domain: shop, surface: 'merchant_self_service',
+        connection_id: rec.id, shop_domain: shop, surface: decoded.surface,
       });
     return res.status(502).json({ ok: false, error: 'credential_persist_failed' });
   }
@@ -96,7 +96,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
 
   await emitOasisEvent(supabase, 'vcaop.portal.connection.shopify_authorized', 'success',
     `connection ${rec.id}: shopify OAuth completed for ${shop}${advanced ? ` (${rec.status} -> mapping)` : ''}`, {
-      connection_id: rec.id, shop_domain: shop, from: rec.status, to: advanced ? 'mapping' : rec.status, surface: 'merchant_self_service',
+      connection_id: rec.id, shop_domain: shop, from: rec.status, to: advanced ? 'mapping' : rec.status, surface: decoded.surface,
     });
 
   res.json({ ok: true, data: { connection_id: rec.id, shop_domain: shop } });
