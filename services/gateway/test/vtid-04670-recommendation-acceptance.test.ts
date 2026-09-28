@@ -80,7 +80,8 @@ describe('VTID-04670 acceptance stats', () => {
     expect(t).toMatchObject({ activated: 2, completed: 1, rejected: 3, auto_archived: 4, decided: 6, accepted: 3, acceptance_rate: 0.5 });
     expect(t.rejected_by_reason).toEqual({ not_worth_it: 3 });
     expect(stats.get('impact:R-7')!.noise_rejections).toBe(1);
-    expect(stats.get('oasis')!.rejected_by_reason).toEqual({ unspecified: 1 });
+    // A rejection without a dismiss record is not a proven human decision.
+    expect(stats.get('oasis')!).toMatchObject({ rejected: 0, rejected_unattributed: 1, decided: 0, rejected_by_reason: {} });
     expect(stats.has('community')).toBe(false);
     expect(stats.has('operator_onramp')).toBe(false);
   });
@@ -181,8 +182,8 @@ describe('VTID-04670 supervisor and weekly summary', () => {
 
   it('buildWeeklySummary counts by source/key and slices the last 7 days', () => {
     const decided = [
-      ...rows({ scanner: 'a' }, { activated: 1, rejected: 1 }),
-      { source_type: 'oasis', status: 'rejected', updated_at: new Date(NOW - 20 * 86400000).toISOString() },
+      ...rows({ scanner: 'a' }, { activated: 1, rejected: 1 }, 'not_worth_it'),
+      { source_type: 'oasis', status: 'rejected', dismiss_reason: 'duplicate', updated_at: new Date(NOW - 20 * 86400000).toISOString() },
     ];
     const out = buildWeeklySummary({
       stats: computeAcceptanceStats(decided),
@@ -225,6 +226,32 @@ describe('VTID-04670 supervisor and weekly summary', () => {
     lastSummaryAt = new Date(NOW + 2 * 3600000 - 86400000).toISOString();
     expect(await weeklySummaryTick(NOW + 2 * 3600000, { query: query as any, emit })).toEqual({ emitted: false, reason: 'not_due' });
     expect(emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('system-resolved and expired rows (status rejected, no dismiss record) never demote a producer', () => {
+    // autonomous-engine.ts writes status=rejected for resolved and expired
+    // recommendations; ten of them must not read as a 0 % acceptance rate.
+    const stats = computeAcceptanceStats(rows({ scanner: 'fixed-a-lot' }, { rejected: 12 }));
+    expect(stats.get('fixed-a-lot')!).toMatchObject({ decided: 0, rejected_unattributed: 12, demoted: false, demotion_factor: 1 });
+    const mixed = computeAcceptanceStats([
+      ...rows({ scanner: 'm' }, { rejected: 20 }),
+      ...rows({ scanner: 'm' }, { activated: 1, rejected: 9 }, 'not_worth_it'),
+    ]);
+    expect(mixed.get('m')!).toMatchObject({ decided: 10, accepted: 1, rejected: 9, rejected_unattributed: 20, demoted: false });
+  });
+
+  it('reports emit_failed (and retries next hour) when the OASIS insert returns ok:false', async () => {
+    resetAcceptanceState();
+    const emit = jest.fn().mockResolvedValue({ ok: false, error: 'insert failed: 500' });
+    const query = jest.fn(async (p: string) => {
+      if (p.startsWith('/rest/v1/oasis_events')) return { ok: true, data: [] };
+      if (p.includes('status=in.(')) return { ok: true, data: rows({ scanner: 'x' }, { activated: 1 }) };
+      return { ok: true, data: [] };
+    });
+    expect(await weeklySummaryTick(NOW, { query: query as any, emit })).toEqual({ emitted: false, reason: 'emit_failed' });
+    expect(emit).toHaveBeenCalledTimes(1);
+    emit.mockResolvedValue({ ok: true });
+    expect(await weeklySummaryTick(NOW + 2 * 3600000, { query: query as any, emit })).toEqual({ emitted: true, reason: 'due' });
   });
 
   it('sends nothing when the last-summary read fails', async () => {

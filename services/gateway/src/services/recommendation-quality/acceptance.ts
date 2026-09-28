@@ -102,6 +102,13 @@ export interface AcceptanceStat {
   completed: number;
   rejected: number;
   rejected_by_reason: Record<string, number>;
+  /**
+   * `rejected` rows with no dismiss record. The status is also written by
+   * automated flows — autonomous-engine.ts marks resolved and expired
+   * recommendations `rejected` — and by pre-P5 dismissals, so these are not
+   * provably a human decision: counted for visibility, never used to demote.
+   */
+  rejected_unattributed: number;
   auto_archived: number;
   decided: number;
   accepted: number;
@@ -113,7 +120,7 @@ export interface AcceptanceStat {
 
 function blank(key: string): AcceptanceStat {
   return {
-    key, activated: 0, completed: 0, rejected: 0, rejected_by_reason: {}, auto_archived: 0,
+    key, activated: 0, completed: 0, rejected: 0, rejected_by_reason: {}, rejected_unattributed: 0, auto_archived: 0,
     decided: 0, accepted: 0, acceptance_rate: null, noise_rejections: 0, demoted: false, demotion_factor: 1,
   };
 }
@@ -130,10 +137,12 @@ export function computeAcceptanceStats(rows: AcceptanceRow[]): Map<string, Accep
       case 'activated': s.activated++; break;
       case 'completed': s.completed++; break;
       case 'rejected': {
+        // Only a dismiss that recorded a reason is a proven human decision.
+        if (!isDismissReasonCode(r.dismiss_reason)) { s.rejected_unattributed++; break; }
+        const reason = r.dismiss_reason;
         s.rejected++;
-        const reason = isDismissReasonCode(r.dismiss_reason) ? r.dismiss_reason : 'unspecified';
         s.rejected_by_reason[reason] = (s.rejected_by_reason[reason] || 0) + 1;
-        if (NOISE_REASON_CODES.has(reason as DismissReasonCode)) s.noise_rejections++;
+        if (NOISE_REASON_CODES.has(reason)) s.noise_rejections++;
         break;
       }
       case 'auto_archived': s.auto_archived++; break;
@@ -187,6 +196,7 @@ export function summarizeAcceptance(stats: Map<string, AcceptanceStat>, ok = tru
       accepted: s.accepted,
       rate: s.acceptance_rate,
       rejected: s.rejected,
+      rejected_unattributed: s.rejected_unattributed,
       auto_archived: s.auto_archived,
       top_dismiss_reasons: topDismissReasons(s),
       demoted: s.demoted,
@@ -339,7 +349,7 @@ export async function weeklySummaryTick(
     const payload = buildWeeklySummary({ stats: loaded.stats, decidedRows: loaded.rows, createdRows: created.data, nowMs });
     const createdTotal = Object.values(payload.created_by_source).reduce((a, b) => a + b, 0);
     const rate = payload.week.rate === null ? 'n/a' : `${Math.round(payload.week.rate * 100)}%`;
-    await emit({
+    const written = await emit({
       vtid: ACCEPTANCE_VTID,
       type: WEEKLY_SUMMARY_TOPIC,
       source: 'recommendation-quality',
@@ -347,6 +357,12 @@ export async function weeklySummaryTick(
       message: `Developer recommendations this week: ${createdTotal} created, ${payload.week.decided} decided, ${rate} accepted; ${payload.demoted_keys.length} producer(s) demoted`,
       payload,
     });
+    // emitOasisEvent resolves { ok:false } on a failed insert instead of
+    // throwing; report it so the next hourly check retries.
+    if (written && typeof written === 'object' && (written as { ok?: boolean }).ok === false) {
+      console.warn(`${LOG_PREFIX} weekly summary not written: ${(written as { error?: string }).error || 'unknown error'}`);
+      return { emitted: false, reason: 'emit_failed' };
+    }
     return { emitted: true, reason: 'due' };
   } catch (err) {
     console.warn(`${LOG_PREFIX} weekly summary failed: ${err instanceof Error ? err.message : String(err)}`);
