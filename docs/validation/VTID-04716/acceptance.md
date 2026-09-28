@@ -71,7 +71,8 @@ AC-2: The dependency-probe contract still holds with the renamed table.
 TEST: services/gateway/test/vtid-04665-dependency-probe.test.ts
 
 AC-3 (staging): after the migrations are applied and the commit is deployed, all five health routes
-report `ok: true` (each route keeps its own status word, e.g. `healthy`) (`staging-tests.json`).
+report `ok: true` (each route keeps its own status word, e.g. `healthy`)
+CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/{autopilot/prompts,mitigation,overload,taste-alignment,user-preferences}/health -> 200 application/json, ok: true (docs/validation/VTID-04716/staging-tests.json) (`staging-tests.json`).
 
 ## Applied live (2026-09-28)
 `RUN-MIGRATION.yml` could not be used: its `SUPABASE_ACCESS_TOKEN` returns `401 Unauthorized`
