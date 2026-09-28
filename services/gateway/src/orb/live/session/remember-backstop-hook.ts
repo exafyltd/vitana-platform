@@ -260,6 +260,7 @@ export function maybeRunRecallBackstop(
       extractDayMonths,
       replyNamesUnstoredDate,
       buildNothingStoredNote,
+      memberStatedFacts,
     } = await import('../../../services/memory/recall-backstop');
     // "Was weißt du über mich?" answered without naming a single stored fact
     // (live B-REC-06), or a specific question answered with "not stored" or
@@ -280,7 +281,12 @@ export function maybeRunRecallBackstop(
       if (!base.listCurrentFacts) return 0;
       deps = { listCurrentFacts: base.listCurrentFacts.bind(base) };
     }
-    const facts = await deps.listCurrentFacts(tenantId, userId).catch(() => []);
+    const all = await deps.listCurrentFacts(tenantId, userId).catch(() => []);
+    // VTID-04707: "what do you know about me" is answered when the reply names
+    // something the member told Vitana — not the profile name or context data.
+    // Those facts go first in the note.
+    const stated = aboutMe ? memberStatedFacts(all) : [];
+    const facts = stated.length ? [...stated, ...all.filter((f) => !stated.includes(f))] : all;
     let trigger: 'about_me_vague' | 'denied' | 'unstored_date';
     if (aboutMe) trigger = 'about_me_vague';
     else if (denied) trigger = 'denied';
@@ -288,7 +294,7 @@ export function maybeRunRecallBackstop(
     if (trigger === 'unstored_date') {
       // The date came from memory: it answered.
       if (!replyNamesUnstoredDate(replyText, facts)) return 0;
-    } else if (replyContainsStoredValue(replyText, facts)) return 0;
+    } else if (replyContainsStoredValue(replyText, stated.length ? stated : facts)) return 0;
     // With nothing usable stored, "not stored" was the honest answer — only a
     // privacy refusal or a guessed date needs correcting (VTID-04704).
     const note =

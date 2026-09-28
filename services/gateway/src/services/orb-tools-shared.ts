@@ -406,7 +406,7 @@ export async function buildRememberFactDeps(sb: SupabaseClient) {
     async listCurrentFacts(tenantId: string, userId: string) {
       const { data } = await sb
         .from('memory_facts')
-        .select('fact_key, fact_value, extracted_at')
+        .select('fact_key, fact_value, extracted_at, provenance_source')
         .eq('tenant_id', tenantId)
         .eq('user_id', userId)
         .is('superseded_at', null)
@@ -416,6 +416,8 @@ export async function buildRememberFactDeps(sb: SupabaseClient) {
         fact_key: String(r.fact_key),
         fact_value: String(r.fact_value),
         extracted_at: r.extracted_at ?? null,
+        // VTID-04707: the about-me answer is judged on what the member stated.
+        provenance_source: r.provenance_source ?? null,
       }));
     },
     async readProfileValue(userId: string, key: Parameters<typeof profileColumnFor>[0]) {

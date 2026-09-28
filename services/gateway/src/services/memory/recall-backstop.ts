@@ -45,10 +45,23 @@ export function detectAboutMeQuestion(text: string): boolean {
   return ABOUT_ME.test(text);
 }
 
+// VTID-04705: the member asks about themself with "ich", not "mein" — live
+// B-PROF-03: "Wann habe ich Geburtstag?" got "Ich überprüfe das für dich.
+// einen Moment bitte." and nothing else. A verb directly followed by the
+// pronoun is the question word order ("habe ich", "bin ich", "am I").
+const OWN_SUBJECT =
+  /\b(habe|hab|bin|war|heiße|heisse|wohne|arbeite|mag|esse|trinke|lebe)\s+ich\b|\b(am|was|do|did)\s+i\b|\b(tengo|soy|vivo)\b|\b(imam|sam|živim)\s+ja\b/i;
+
+// Codex review on #3802: a yes/no question opens with the verb and has no
+// question word — "Do I have any allergies?", "Bin ich allergisch?".
+const LEADING_OWN_SUBJECT =
+  /^\s*(?:(?:und|also|sag mal|okay|ok|and|so)[,\s]+)?(?:(?:habe|hab|bin|war|wohne|arbeite|mag|esse|trinke|lebe)\s+ich\b|(?:am|was|do|did|have)\s+i\b|(?:imam|sam|živim)\s+ja\b)/i;
+
 export function detectRecallQuestion(text: string): boolean {
   if (!text || text.startsWith(REMEMBER_BACKSTOP_MARKER)) return false;
   if (ASK_MEMORY.test(text)) return true;
-  return QUESTION_WORD.test(text) && OWN_POSSESSIVE.test(text);
+  if (LEADING_OWN_SUBJECT.test(text)) return true;
+  return QUESTION_WORD.test(text) && (OWN_POSSESSIVE.test(text) || OWN_SUBJECT.test(text));
 }
 
 // The reply said it does not know, cannot show it, or only promised to look.
@@ -179,6 +192,26 @@ export function replyNamesUnstoredDate(reply: string, facts: RecallFact[]): bool
 export interface RecallFact {
   fact_key: string;
   fact_value: string;
+  provenance_source?: string | null;
+}
+
+// VTID-04707: live B-REC-06 — "Was weißt du alles über mich?" with Lasagne and
+// Bello stored got the member's name, language, goals, follows and matches,
+// none of what the member had told Vitana. The reply named "E2E" (the profile
+// name), so "names a stored value" held and the backstop stood down. An
+// about-me answer is judged on the facts the member stated themself; profile
+// basics do not count.
+const PROFILE_BASIC_KEY = /^(user_name|user_first_name|user_last_name|user_birthday|user_birthdate|user_date_of_birth|user_hometown|user_city|user_location)$/i;
+
+/** Facts the member stated themself (by voice or in the Garden), profile basics and system keys excluded. */
+export function memberStatedFacts(facts: RecallFact[]): RecallFact[] {
+  return facts.filter(
+    (f) =>
+      f &&
+      /^user_stated/i.test(String(f.provenance_source || '')) &&
+      !SYSTEM_KEY.test(f.fact_key) &&
+      !PROFILE_BASIC_KEY.test(f.fact_key),
+  );
 }
 
 /** Keys the gateway writes for itself; never member knowledge. */
@@ -247,9 +280,9 @@ export function buildRecallBackstopNote(
   const lines = usable.map((f) => `- ${f.fact_key}: ${String(f.fact_value).trim().slice(0, MAX_VALUE_CHARS)}`);
   if (reason === 'about_me_vague') {
     return [
-      `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked what you know about them and your answer named none of their stored facts. These are the member's current stored facts (key: value):`,
+      `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked what you know about them and your answer named none of the things they told you. These are the member's current stored facts, the ones they told you first (key: value):`,
       ...lines,
-      "Now answer the question: name two or three of these facts briefly and concretely, in the member's language — a key names the meaning in English (user_pet_name is the member's pet). Do not read out keys, and do not list everything.",
+      "Now answer the question: name two or three of the first facts briefly and concretely, in the member's language — a key names the meaning in English (user_pet_name is the member's pet). Do not read out keys, and do not list everything.",
     ].join('\n');
   }
   if (reason === 'unstored_date') {

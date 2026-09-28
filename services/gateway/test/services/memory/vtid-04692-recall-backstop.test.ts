@@ -68,7 +68,7 @@ describe('VTID-04692 note', () => {
     expect(buildRecallBackstopNote([{ fact_key: 'locale', fact_value: 'de' }])).toBeNull();
   });
   it('the about-me note asks for a few concrete facts, not keys', () => {
-    expect(buildRecallBackstopNote(facts, 'Was weißt du über mich?', 'about_me_vague')).toMatch(/name two or three of these facts/);
+    expect(buildRecallBackstopNote(facts, 'Was weißt du über mich?', 'about_me_vague')).toMatch(/name two or three of the first facts/);
   });
 });
 
@@ -103,7 +103,7 @@ describe('VTID-04692 live hook', () => {
       'Ich kann dir gerne einen Überblick über die Informationen geben, die ich über dich gespeichert habe.',
       deps,
     );
-    expect(s.upstreamClient.sendTextTurn.mock.calls[0][0]).toMatch(/named none of their stored facts/);
+    expect(s.upstreamClient.sendTextTurn.mock.calls[0][0]).toMatch(/named none of the things they told you/);
   });
   it('stays silent when the reply already answered', async () => {
     const s = session();
