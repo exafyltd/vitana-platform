@@ -8,6 +8,16 @@ const scenarios = JSON.parse(readFileSync(new URL('./scenarios.live.json', impor
 const list = Array.isArray(scenarios) ? scenarios : scenarios.scenarios;
 const conf02 = list.find((s) => s.id === 'B-CONF-02').sessions[0].turns[0].reply_none;
 const failsConf02 = (reply) => conf02.some((w) => claims(reply, w));
+const conf05 = list.find((s) => s.id === 'B-CONF-05').sessions[0].turns[0].reply_none;
+
+test('B-CONF-05: the pass-6 reply names the stored date and asks — not a claim; a new-date claim still fails', () => {
+  const fails = (reply) => conf05.some((w) => claims(reply, w));
+  assert.equal(
+    fails('Ich habe im Moment den 5. Mai als Pauls Geburtstag gespeichert. Du hast gerade den 7. Mai genannt. Welcher ist der richtige Geburtstag?'),
+    false,
+  );
+  assert.equal(fails('Okay, ich habe Pauls Geburtstag auf den siebten Mai geändert.'), true);
+});
 
 test('B-CONF-02: the pass-6 reply names the stored date and asks — not a claim', () => {
   assert.equal(

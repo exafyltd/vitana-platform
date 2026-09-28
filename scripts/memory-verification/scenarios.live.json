@@ -655,9 +655,10 @@
        "say": "Nein, eigentlich hat Paul am siebten Mai Geburtstag.",
        "reply_none": [
         "aktualisiert",
-        "gespeichert"
+        "re:(?:\\b7\\.?|\\bsieb\\w*)\\s*mai\\b[^.!?,]{0,40}?\\b(?:gespeichert|notiert|vermerkt|eingetragen|geändert|gemerkt)\\b|\\b(?:gespeichert|notiert|vermerkt|eingetragen|geändert|gemerkt)\\b[^.!?,]{0,12}(?:\\b7\\.?|\\bsieb\\w*)\\s*mai\\b"
        ],
-       "reply_ask": true
+       "reply_ask": true,
+       "reply_none_note": "VTID-04600 pass 6: same rule as B-CONF-02 — the stored date may be named as saved (\"Ich habe im Moment den 5. Mai ... gespeichert\"); only a claim that the NEW date (7. Mai) was saved or changed fails. Owner decision 2026-09-28."
       }
      ]
     }
