@@ -1206,6 +1206,7 @@ CREATE TABLE my_new_table (
 | 2026-01-03 | Added d44_predictive_signals, d44_signal_evidence, d44_intervention_history for proactive signal detection | Claude | VTID-01138 |
 | 2026-01-03 | Added contextual_opportunities table for D48 opportunity surfacing | Claude | VTID-01142 |
 | 2026-01-03 | Added risk_mitigations table for D49 Proactive Health & Lifestyle Risk Mitigation Layer | Claude | VTID-01143 |
+| 2026-09-28 | Five feature data layers that were documented/declared but never existed live, now APPLIED: autopilot_prompts + autopilot_prompt_prefs, risk_mitigations, overload_*, taste_*/user_*_profiles, preference modeling (explicit table renamed user_explicit_preferences; public.user_preferences is the settings table). New `caller_tenant_id()`. See the section at the end of this file. | Claude | VTID-04716 / 04717 / 04718 / 04719 / 04720 |
 | 2026-04-19 | Added ai_provider_policies, ai_assistant_credentials, ai_consent_log + extended connector_registry.category to include 'ai_assistant' | Claude | VTID-02403 |
 | 2026-04-27 | Added routines + routine_runs tables for daily Claude Code remote-agent catalog and run history | Claude | VTID-01981 |
 | 2026-04-28 | Added `pillar` + `contribution_vector` columns to `calendar_events` for typed Vitana Index linkage (replaces `pillar:*` wellness_tag heuristic on the frontend) | Claude | claude/vitana-index-navigation-VdSEQ |
@@ -1429,6 +1430,8 @@ CREATE TABLE contextual_opportunities (
 ---
 
 ### risk_mitigations
+> **Superseded 2026-09-28:** this definition was never applied. The table that exists live is the VTID-04717 one described in "Feature data layers applied 2026-09-28" at the end of this file.
+
 **Purpose:** D49 Proactive Health & Lifestyle Risk Mitigation Layer - stores generated mitigation suggestions (VTID-01143)
 **Used by:**
 - `services/gateway/src/services/d49-risk-mitigation-engine.ts` (CRUD operations)
@@ -2976,3 +2979,89 @@ Indexes: `(repo, workflow_file, run_created_at desc)`, `(run_created_at desc)`.
 One row per repository: `synced_through` (newest stored `run_created_at`; the
 next sync re-reads 6 h before it), `last_synced_at`, `last_error`,
 `last_ingested`, `updated_at`.
+
+
+## Feature data layers applied 2026-09-28 (VTID-04716 / 04717 / 04718 / 04719 / 04720) — APPLIED to the live project
+
+Service Health (VTID-04665) showed five features down because their tables or
+functions had never existed live. Each migration below is idempotent and was
+executed against Postgres 16 twice before it was applied.
+
+### `public.caller_tenant_id()` (VTID-04718)
+SECURITY DEFINER, STABLE. Returns the caller's tenant in this order:
+1. `current_tenant_id()`, from the explicit request context or JWT claim;
+2. the JWT `app_metadata.active_tenant_id`;
+3. the caller's primary `user_tenants` row;
+4. otherwise their oldest membership.
+
+Only the D39/D51/preference-modeling functions and policies use it.
+`current_tenant_id()` is unchanged, because it backs RLS on many other tables
+and returns NULL for plain Supabase JWTs.
+
+### autopilot_prompts, autopilot_prompt_prefs (VTID-04716; design VTID-01089)
+Columns are as in `20251231000001_vtid_01089_autopilot_prompts.sql`, except
+that the foreign keys point at `tenants(tenant_id)`; the original `tenants(id)`
+reference is why it never applied.
+- **RLS:** members read and update their own rows and insert their own prefs.
+- **Functions:** `count_prompts_today` and `get_user_prompt_prefs` are
+  `service_role` only, because they take any user id. `is_in_quiet_hours` is a
+  pure function.
+- **Writes:** the prompt service writes with the service role.
+- **Still missing:** `matches_daily` (VTID-01088) does not exist, so no prompts
+  are generated yet.
+
+### risk_mitigations (VTID-04717; engine VTID-01143)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK (the engine supplies `mitigation_id`) |
+| `tenant_id` | uuid | FK `tenants(tenant_id)` |
+| `user_id` | uuid | |
+| `risk_window_id` | uuid | |
+| `domain` | text | sleep, nutrition, movement, mental, routine, social |
+| `confidence` | numeric | 0-100 |
+| `suggested_adjustment`, `why_this_helps` | text | |
+| `effort_level` | text | low, medium, high (default low) |
+| `source_signals` | uuid[] | |
+| `precedent_type` | text | user_history, general_safety |
+| `disclaimer` | text | |
+| `status` | text | active, dismissed, acknowledged, expired, superseded |
+| `expires_at`, `dismissed_at`, `acknowledged_at` | timestamptz | |
+| `dismiss_reason` | text | |
+| `generated_by_version`, `input_hash`, `suggestion_hash` | text | |
+| `created_at`, `updated_at` | timestamptz | |
+
+- **RLS:** a member reads and updates only their own rows. They insert only
+  their own rows, into a tenant they belong to (`caller_is_tenant_member()`).
+- **Notifications:** `trg_notify_risk_mitigation` is **not** attached. It would
+  push to members, so turning it on is a product decision.
+
+### overload_detections, overload_baselines, overload_patterns (VTID-04718; design VTID-01145)
+Columns are as in `20260103000000_vtid_01145_overload_detection.sql`.
+`overload_patterns.created_at` is now declared in the table; the original only
+added it after the index that needs it.
+
+Functions: `overload_compute_baselines`, `overload_get_baselines`,
+`overload_detect`, `overload_get_detections`, `overload_dismiss`,
+`overload_record_pattern`, `overload_explain`. They read `capacity_state`.
+
+### Taste alignment (VTID-04719; design VTID-01133)
+Tables: `user_taste_profiles`, `user_lifestyle_profiles`, `taste_signals`,
+`taste_reactions`, `taste_alignment_bundles`, `taste_alignment_audit`.
+
+Functions: `taste_profile_get/set`, `lifestyle_profile_get/set`,
+`taste_alignment_bundle_get`, `taste_reaction_record`,
+`taste_alignment_audit_get`. Audit pagination now runs in a subquery; the
+original failed at runtime.
+
+### Preference modeling (VTID-04720; design VTID-01119)
+Tables: `preference_categories` (seeded), `user_explicit_preferences`,
+`user_preference_inferences`, `user_constraints`, `user_preference_bundles`,
+`user_preference_audit`.
+
+The explicit-preference table is called **`user_explicit_preferences`**:
+`public.user_preferences` already exists as the per-user settings table
+(autopilot/STT/TTS/AI columns) and is untouched.
+
+Functions: `preference_set/delete`, `constraint_set/delete`,
+`preference_bundle_get`, `preference_confirm`, `inference_reinforce/downgrade`,
+`preference_get_audit` (pagination fixed as above).

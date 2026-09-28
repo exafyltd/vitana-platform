@@ -1,0 +1,27 @@
+-- expected: every line ok; the two risk inserts for another user/tenant-less member are REJECTED by RLS
+pref_set|true
+pref_set2|preference_updated
+constraint_set|true
+bundle|1
+audit|true|3
+taste_get|true
+taste_set|{"ok": true, "profile_id": "85b83bfd-3fc1-4b05-a185-564ab585b995", "profile_type": "taste", "new_confidence": 100, "updated_fields": ["simplicity_pref
+lifestyle_get|true
+taste_bundle|true
+taste_react|true
+taste_audit|true
+ol_baselines|true
+ol_get_baselines|true
+ol_detect|true
+ol_pattern|true
+ol_list|true
+ap_prefs_service|1
+ap_count_service|1
+ap_member_sees_own|1
+risk_own|1
+risk_dismissed|dismissed
+psql:smoke.sql:38: ERROR:  new row violates row-level security policy for table "risk_mitigations"
+psql:smoke.sql:42: ERROR:  new row violates row-level security policy for table "risk_mitigations"
+isolation_prefs|0
+isolation_risk|0
+isolation_prompts|0

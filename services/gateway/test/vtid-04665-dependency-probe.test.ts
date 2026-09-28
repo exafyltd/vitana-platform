@@ -140,7 +140,7 @@ describe('the previously static routes now declare a dependency', () => {
     ['scheduler.ts', /withDependencyHealth\(\[\{ table: 'daily_recompute_runs' \}\]/],
     ['scheduled-notifications.ts', /withDependencyHealth\(\[\{ table: 'user_notifications' \}\]/],
     ['voice-feedback.ts', /withDependencyHealth\(\[\{ table: 'user_feedback_reports' \}\]/],
-    ['user-preferences.ts', /withDependencyHealth\(\[\{ table: 'user_preferences' \}, \{ rpc: 'preference_set' \}/],
+    ['user-preferences.ts', /withDependencyHealth\(\[\{ table: 'user_explicit_preferences' \}, \{ rpc: 'preference_set' \}/],
     ['taste-alignment.ts', /withDependencyHealth\(\[\{ rpc: 'taste_profile_get' \}/],
     ['overload-detection.ts', /withDependencyHealth\(\[\{ rpc: 'overload_detect' \}/],
     ['risk-mitigation.ts', /withDependencyHealth\(\[\{ table: 'risk_mitigations' \}\]/],
