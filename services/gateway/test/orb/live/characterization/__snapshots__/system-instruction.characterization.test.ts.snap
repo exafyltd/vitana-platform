@@ -78,7 +78,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -261,7 +261,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -3078,7 +3078,10 @@ the user says "check my basket", "is everything in my cart okay?",
 Explain why a specific basket item is there (added by the user, the
 shopping agent, a reorder — with the recorded rationale). CALL WHEN the
 user asks "why is this in my basket?", "warum ist das in meinem
-Warenkorb?"."
+Warenkorb?".
+
+### forget_fact
+Forget a stored fact the member asks you to forget; reply per STATUS."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -3156,7 +3159,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -5972,5 +5975,8 @@ the user says "check my basket", "is everything in my cart okay?",
 Explain why a specific basket item is there (added by the user, the
 shopping agent, a reorder — with the recorded rationale). CALL WHEN the
 user asks "why is this in my basket?", "warum ist das in meinem
-Warenkorb?"."
+Warenkorb?".
+
+### forget_fact
+Forget a stored fact the member asks you to forget; reply per STATUS."
 `;
