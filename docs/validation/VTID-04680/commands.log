@@ -3,3 +3,12 @@ Test Suites: 19 passed, 19 total
 Tests:       390 passed, 390 total
 $ npx tsc --noEmit -p .
 (clean)
+
+# 2026-09-28 fix forward for STAGING-VERIFY run 36425369554 (73b78eb): 124/125, one failure:
+#   "calendar window requires auth (route exists): content-type text/event-stream, expected application/json"
+# Live: GET /api/v1/calendar/events/window unauthenticated -> 401 {"ok":false,"error":"UNAUTHENTICATED"}
+#   but Content-Type: text/event-stream. Cause: middleware/cors.ts sseHeaders labels every GET whose path
+#   contains "/events" as SSE. The calendar API has no stream -> excluded /api/v1/calendar from sseHeaders.
+npx jest test/middleware/cors.test.ts      # 35 passed (3 new calendar cases)
+npm run test:calendar                      # 390 passed
+npx tsc --noEmit                           # clean
