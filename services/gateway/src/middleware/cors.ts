@@ -87,6 +87,11 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // browser would not render HTML served as text/event-stream. No SSE route
   // lives under /command-hub; its streams are all under /api/v1.
   if (req.path === '/command-hub' || req.path.startsWith('/command-hub/')) return next();
+  // VTID-04680: the calendar API serves JSON on GET /api/v1/calendar/events...
+  // (list, window, one event) and has no stream; "/events" in its path is not
+  // an SSE route. Labelling those replies text/event-stream failed the
+  // STAGING-VERIFY content-type check on the calendar window route.
+  if (req.path === '/api/v1/calendar' || req.path.startsWith('/api/v1/calendar/')) return next();
   if (req.method === 'GET' && (req.path.includes("/stream") || req.path.includes("/events"))) {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
