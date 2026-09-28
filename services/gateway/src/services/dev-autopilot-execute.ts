@@ -81,6 +81,7 @@ import {
   isPlanFileCheckEnabled,
 } from './dev-autopilot-approval-gates';
 import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
+import { rescoreTick } from './recommendation-quality/scoring-service';
 // VTID-04467: agent runs are requeued, never run in-process without a toolchain.
 import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
 
@@ -4331,6 +4332,10 @@ export function startBackgroundExecutor(): void {
     });
     closedPrReconcileTick().catch((err) => {
       console.error(`${LOG_PREFIX} closed-PR reconcile tick error:`, err);
+    });
+    // VTID-04668: keep developer recommendation priority current (self-throttled to 30 min).
+    rescoreTick(Date.now(), { loadIndex: loadPlanIndex }).catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation rescore tick error:`, err);
     });
   }, BACKGROUND_TICK_MS);
 }
