@@ -151,6 +151,7 @@ export async function runRememberBackstop(
 export function buildRememberBackstopNote(
   results: RememberFactToolResult[],
   reason: 'no_call' | 'stored_value_echoed' | 'claimed_without_call' = 'no_call',
+  previousReplyHeld = false,
 ): string | null {
   if (results.length === 0) return null;
   // VTID-04690: after the model's own remember_fact came back already_known,
@@ -166,7 +167,11 @@ export function buildRememberBackstopNote(
   return [
     `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: ${lead}`,
     ...lines,
-    'Now tell the member the real outcome in one or two short sentences, in their language. If your previous answer said something different, correct it plainly. Do not call remember_fact for these facts again unless the member answers a question you ask.',
+    // VTID-04702: a held reply was never heard — the member gets the outcome
+    // as the answer, not as a correction of something they did not hear.
+    previousReplyHeld
+      ? 'Now tell the member the real outcome in one or two short sentences, in their language. The member did not hear your previous answer, so give the outcome as your answer to them; do not mention a correction. Do not call remember_fact for these facts again unless the member answers a question you ask.'
+      : 'Now tell the member the real outcome in one or two short sentences, in their language. If your previous answer said something different, correct it plainly. Do not call remember_fact for these facts again unless the member answers a question you ask.',
   ].join('\n');
 }
 

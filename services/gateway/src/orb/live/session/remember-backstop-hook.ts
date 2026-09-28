@@ -117,7 +117,11 @@ export function maybeRunRememberBackstop(
       const conflicts = openConflictsFrom(results, abouts);
       if (conflicts.length) session.openRememberConflicts = [...(session.openRememberConflicts ?? []), ...conflicts];
     }
-    const note = buildRememberBackstopNote(results, recheck ? 'stored_value_echoed' : claimed && !openConflict ? 'claimed_without_call' : 'no_call');
+    const note = buildRememberBackstopNote(
+      results,
+      recheck ? 'stored_value_echoed' : claimed && !openConflict ? 'claimed_without_call' : 'no_call',
+      (session as any).rememberReplyHeld === true,
+    );
     ctx.deps.emitDiag(session, 'remember_backstop', {
       trigger: openConflict ? 'conflict_answer' : recheck ? 'stored_value_echoed' : claimed ? 'claimed_without_call' : 'remember_request',
       statuses: results.map((r) => `${r.fact_key}:${r.status}`),
@@ -126,7 +130,11 @@ export function maybeRunRememberBackstop(
     console.log(
       `[VTID-04591] remember backstop ${session.sessionId}: ${results.map((r) => `${r.fact_key}->${r.status}`).join(', ') || 'no fact extracted'}`,
     );
-    if (note && session.active && session.upstreamClient) session.upstreamClient.sendTextTurn(note, true);
+    if (note && session.active && session.upstreamClient) {
+      session.upstreamClient.sendTextTurn(note, true);
+      // VTID-04702: the held reply is replaced only when Nova was told the result.
+      (session as any).rememberNoteSentAt = Date.now();
+    }
     return results;
   })().catch((err: any) => {
     console.warn(`[VTID-04591] remember backstop failed (non-blocking): ${err?.message ?? err}`);
