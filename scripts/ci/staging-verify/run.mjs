@@ -308,18 +308,20 @@ async function verify(args) {
 
   const prodStamp = await productionStamp(service);
   const prodSha = prodStamp ? git(repoRoot, ['rev-parse', '--verify', `${prodStamp}^{commit}`], { allowFail: true }) : null;
-  const rangeFrom = prodSha && prodSha !== sha && isAncestor(repoRoot, prodSha, sha) ? prodSha : null;
   // Fail closed: without a known production baseline the run cannot say
   // what a PUBLISH would ship, so it cannot approve anything. The head
   // commit's suites still run, for information, but the outcome is failed.
-  const baselineProblem = !prodStamp
-    ? 'the production version stamp could not be read'
-    : !prodSha
-      ? `production commit ${prodStamp} is not in this repository's history`
-      : prodSha !== sha && !rangeFrom
-        ? `production commit ${prodStamp} is not an ancestor of ${sha.slice(0, 12)} (histories diverged)`
-        : null;
-  const commits = prodSha === sha ? [] : commitsBetween(repoRoot, rangeFrom, sha);
+  // Production already past the commit (VTID-04715) fails too: nothing to
+  // ship, and promoting it would roll production back.
+  const distinct = prodSha && prodSha !== sha;
+  const baseline = lib.describeBaseline({
+    sha,
+    prodStamp,
+    prodSha,
+    prodIsAncestor: Boolean(distinct && isAncestor(repoRoot, prodSha, sha)),
+    shaIsAncestorOfProd: Boolean(distinct && isAncestor(repoRoot, sha, prodSha)),
+  });
+  const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : commitsBetween(repoRoot, baseline.rangeFrom, sha);
   const manifests = {};
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
   const plan = lib.planRange({ service, commits, manifests });
@@ -328,8 +330,8 @@ async function verify(args) {
 
   let results = [];
   let superseded = before.state === 'superseded';
-  if (baselineProblem) {
-    results.push({ suite: 'deploy', name: 'production baseline known', kind: 'http', ok: false, problems: [`${baselineProblem} — cannot list what would ship, so nothing can be approved`], ms: 0 });
+  if (baseline.problem) {
+    results.push({ suite: 'deploy', name: baseline.check, kind: 'http', ok: false, problems: [baseline.problem], ms: 0 });
   }
   if (before.state === 'mismatch') {
     results.push({ suite: 'deploy', name: 'staging serves the deployed commit', kind: 'http', ok: false, problems: [`staging reports ${before.stamp || 'nothing'}, not ${sha}`], ms: 0 });

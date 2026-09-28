@@ -70,10 +70,44 @@ jobs:
     timeout-minutes: 45
     env:
       SERVICE: ${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
-      SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.event.workflow_run.head_sha }}
+      # The commit the event names. For a gateway deploy this is the deploy
+      # run's head_sha — main HEAD even when a commit_sha pin (VTID-04709)
+      # deployed an older commit; the next two steps replace it with the
+      # commit the deploy recorded. SHA itself is set once, in GITHUB_ENV.
+      EVENT_SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.event.workflow_run.head_sha }}
     outputs:
       outcome: ${{ steps.verify.outputs.outcome }}
     steps:
+      # VTID-04715: deploys since then upload `deployed-commit`; an older
+      # deploy run has none, and its head_sha is what it deployed.
+      - name: Fetch the commit the deploy recorded (VTID-04715)
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: deployed-commit
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/deployed-commit
+
+      - name: Resolve commit under test (VTID-04715)
+        env:
+          RECORDED: ${{ runner.temp }}/deployed-commit/sha
+        run: |
+          SHA="$EVENT_SHA"
+          if [ -f "$RECORDED" ]; then
+            DEPLOYED=$(tr -d '[:space:]' < "$RECORDED")
+            if echo "$DEPLOYED" | grep -Eq '^[0-9a-f]{40}$'; then
+              if [ "$DEPLOYED" != "$EVENT_SHA" ]; then
+                echo "::notice::deploy recorded $DEPLOYED (pinned), not its head_sha $EVENT_SHA — verifying $DEPLOYED"
+              fi
+              SHA="$DEPLOYED"
+            else
+              echo "::error::deployed-commit artifact holds '$DEPLOYED', not a full sha"; exit 1
+            fi
+          fi
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
       - name: Validate inputs
         run: |
           case "$SERVICE" in gateway|community-app) ;; *) echo "::error::unknown service '$SERVICE'"; exit 1;; esac
