@@ -110,6 +110,21 @@ export async function recordSessionSummary(
   }
   const themes = extractThemes(input.transcript_turns);
 
+  // VTID-04701: a summary that names a value the member asked to forget is
+  // not stored — it would bring the value back in the next session's context.
+  // A failed marker read stores the summary (logged): losing every summary
+  // because a side table is unreachable is the larger harm.
+  try {
+    const { listForgottenValueHashes, textNamesForgottenValue } = await import('../memory/forgotten');
+    const hashes = await listForgottenValueHashes(supabase, input.user_id);
+    if (textNamesForgottenValue(summary, hashes)) {
+      console.log(`${LOG_PREFIX} summary for session=${input.session_id.substring(0, 12)} names a forgotten value — not stored`);
+      return { success: false, error: 'names_forgotten_value' };
+    }
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+  }
+
   const { error } = await repo.upsertSessionSummary(supabase, {
     user_id: input.user_id,
     session_id: input.session_id,

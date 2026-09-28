@@ -297,6 +297,8 @@ function resetSql(since, baselineIds) {
 delete from memory_fact_forgotten where user_id='${TEST_USER}' and forgotten_at >= '${since}';
 delete from memory_facts where user_id='${TEST_USER}' and id not in (${keep}) and fact_key !~* '${SYSTEM_KEY.source}';
 delete from memory_items where user_id='${TEST_USER}' and created_at >= '${since}';
+delete from memory_transcript_turns where user_id='${TEST_USER}' and created_at >= '${since}';
+delete from user_session_summaries where user_id='${TEST_USER}' and created_at >= '${since}';
 `;
 }
 async function waitForReset(sc) {
@@ -434,7 +436,9 @@ writeFileSync(join(OUT, 'report.json'), JSON.stringify({ env, runStarted, result
 const purge = `-- VTID-04600 layer B cleanup: the test user's own rows written since ${runStarted}
 delete from memory_fact_forgotten where user_id='${TEST_USER}' and forgotten_at >= '${runStarted}';
 delete from memory_facts where user_id='${TEST_USER}' and extracted_at >= '${runStarted}' and fact_key !~* '${SYSTEM_KEY.source}';
-delete from memory_items where user_id='${TEST_USER}' and created_at >= '${runStarted}';`;
+delete from memory_items where user_id='${TEST_USER}' and created_at >= '${runStarted}';
+delete from memory_transcript_turns where user_id='${TEST_USER}' and created_at >= '${runStarted}';
+delete from user_session_summaries where user_id='${TEST_USER}' and created_at >= '${runStarted}';`;
 writeFileSync(join(OUT, 'cleanup.sql'), purge + '\n');
 const failed = results.filter((r) => !r.confounded && !r.pass && !r.gap).length;
 console.log(`\n${results.filter((r) => r.pass).length}/${results.length} passed, ${results.filter((r) => !r.pass && r.gap).length} known gaps, ${failed} failed.\nReport: ${join(OUT, 'report.md')}\nRun ${join(OUT, 'cleanup.sql')} to remove the run's remaining rows.`);

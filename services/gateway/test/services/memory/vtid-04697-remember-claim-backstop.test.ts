@@ -19,7 +19,23 @@ const LIVE_REPLY =
   'Danke für die Info! Ich merke mir den Geburtstag deines Bruders Paul am siebten Mai. Möchtest du, dass ich dich daran erinnere?';
 
 describe('VTID-04697 detectRememberClaim', () => {
-  it.each([LIVE_REPLY, 'Alles klar, das habe ich notiert.', 'Okay, ist gespeichert.', "Got it, I'll remember that.", "I've noted that your brother's birthday is May 7."])(
+  it.each([
+    LIVE_REPLY,
+    'Alles klar, das habe ich notiert.',
+    'Okay, ist gespeichert.',
+    "Got it, I'll remember that.",
+    "I've noted that your brother's birthday is May 7.",
+    // VTID-04699: pass 4 on staging 5e30d7b — words between verb and participle.
+    'Vielen Dank für die Information. Ich habe den Geburtstag von Paul am siebten Mai notiert.',
+    'Ich habe dein Geburtsdatum notiert: 9 September 1969.',
+    // Two turns glued together without a space.
+    'Möchtest du, dass ich dich erinnere?Ich habe es gespeichert.',
+    "I have saved your brother's birthday.",
+    // Codex review on #3797: a date's period stays inside the sentence.
+    'Ich habe den Geburtstag am 7. Mai notiert.',
+    'Alles klar. Ich habe den 9. September 1969 gespeichert.',
+    'Danke!Ich habe es notiert.Möchtest du eine Erinnerung?',
+  ])(
     'a save claim: %s',
     (r) => expect(detectRememberClaim(r)).toBe(true),
   );
@@ -28,6 +44,11 @@ describe('VTID-04697 detectRememberClaim', () => {
     "I can't save that, it belongs in your profile.",
     'Wann hat Paul Geburtstag?',
     'Möchtest du, dass ich dich daran erinnere?',
+    'Soll ich das für dich notieren?',
+    'Hast du das schon notiert?',
+    'Das wird in deinem Profil gespeichert, damit alle Teile es nutzen.',
+    'Ich habe das leider nicht gespeichert.',
+    'Hast du am 7. Mai Zeit? Soll ich das notieren?',
     '',
   ])('not a save claim: %s', (r) => expect(detectRememberClaim(r)).toBe(false));
 });

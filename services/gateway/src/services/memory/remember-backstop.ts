@@ -66,11 +66,14 @@ export function detectRememberIntent(text: string): boolean {
 const REMEMBER_CLAIM = new RegExp(
   [
     '\\b(ich )?merke? (ich )?(mir|es mir|das mir)\\b',
-    '\\b(hab|habe) (ich )?(mir )?(das |es |ihn |sie )?(gemerkt|notiert|gespeichert|vermerkt)\\b',
+    // VTID-04699: words may stand between the verb and the participle —
+    // "Ich habe den Geburtstag von Paul am siebten Mai notiert" (pass 4).
+    '\\b(hab|habe|hat|haben)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(gemerkt|notiert|gespeichert|vermerkt|aufgeschrieben)\\b',
+    '\\b(notiere|speichere|merke) ich (mir )?\\b',
     '\\bich (notiere|speichere|vermerke)\\b',
     '\\b(ist|wurde) (jetzt )?(notiert|gespeichert|vermerkt)\\b',
     "\\bi('ll| will) remember\\b",
-    "\\bi('ve| have) (noted|saved|stored|made a note)\\b",
+    "\\bi('ve| have)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(noted|saved|stored|made a note)\\b",
     '\\b(got it|noted)[,.!]',
     '\\b(lo )?(recordaré|he guardado|he anotado)\\b',
     '\\b(zapamtila|zapamtiću|zabeležila)\\b',
@@ -79,12 +82,20 @@ const REMEMBER_CLAIM = new RegExp(
 );
 const CLAIM_NEGATION = /\b(nicht|kein|keine|keinen|nie|not|can't|cannot|won't|don't|no puedo|ne mogu|ne)\b/i;
 
-/** True when a sentence of the reply claims a save; negated sentences do not count. */
+/**
+ * True when a sentence of the reply claims a save; negated sentences and
+ * questions ("Soll ich das notieren?") do not count. Sentences split even
+ * without a space after the mark: two turns reach the transcript glued
+ * together ("…erinnere?Diese…", pass 4). A period after a digit never splits.
+ */
 export function detectRememberClaim(reply: string): boolean {
   if (!reply) return false;
+  // A period after a digit is part of a date or ordinal ("am 7. Mai"), never a
+  // sentence end (Codex review, #3797); ? and ! always end a sentence.
   return reply
-    .split(/(?<=[.!?])\s+|\n+/)
-    .some((sentence) => REMEMBER_CLAIM.test(sentence) && !CLAIM_NEGATION.test(sentence));
+    .split(/\n+|(?<=[!?])|(?<=[^\d\s]\.)(?=\s|\p{Lu}|$)/u)
+    .map((sentence) => sentence.trim())
+    .some((sentence) => !sentence.endsWith('?') && REMEMBER_CLAIM.test(sentence) && !CLAIM_NEGATION.test(sentence));
 }
 
 export interface BackstopFact {
