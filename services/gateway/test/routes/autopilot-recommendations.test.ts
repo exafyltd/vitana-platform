@@ -527,11 +527,14 @@ describe('GET /api/v1/autopilot/recommendations/count', () => {
     expect(res.status).toBe(400);
   });
 
-  it('role-based: returns count derived from the content-range header', async () => {
+  // VTID-04668: the developer lineup is filtered by the quality floor in JS,
+  // so its count is the number of listed rows in the window, not the
+  // PostgREST content-range total (contract changed on purpose).
+  it('role-based: developer count is the number of listed rows', async () => {
     stubFetch(
       and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')),
-      [],
-      { contentRange: '0-0/42' },
+      Array.from({ length: 42 }, (_, i) => ({ id: `r${i}`, status: 'new' })),
+      { contentRange: '0-41/42' },
     );
 
     const app = mountApp();
@@ -1697,8 +1700,8 @@ describe('VTID-04523 lineup cap (owner decision 3)', () => {
     expect(res.body.count).toBe(3);
   });
 
-  it('GET /count role=developer: unchanged', async () => {
-    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')), [], { contentRange: '0-0/15' });
+  it('GET /count role=developer: unchanged (VTID-04668: counted from the listed rows)', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')), Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, status: 'new' })), { contentRange: '0-14/15' });
     const app = mountApp();
     const res = await request(app).get('/api/v1/autopilot/recommendations/count?role=developer');
     expect(res.body.count).toBe(15);
