@@ -1,0 +1,9 @@
+# VTID-04683 — commands run
+cd services/gateway
+npx tsc --noEmit -p .                                   # exit 0
+npx jest test/orb/latency                               # 1 snapshot failed as expected (authenticated community de context hash)
+npx jest test/orb/latency -u                            # regenerated on purpose: one context_instruction_sha256 changed
+npx jest test/vtid-04683-own-people-direct-questions.test.ts test/vtid-04618-memory-owned-by-user.test.ts test/services/context-pack-builder.test.ts test/intelligence-stack-e2e.test.ts test/inline-fact-extractor.test.ts  # 61/61
+npm run test:roles                                      # 105/105
+# Staging (before, b3bf5f1): "wie heißt meine frau" -> refused citing privacy, session live-e473632e-c1f5-4127-82a7-667c6a5b6e4e
+# Staging (after merge): expected "Anna"
