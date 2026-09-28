@@ -1,0 +1,1 @@
+{"vtid":"VTID-04691","unit_tests":{"pass":7,"fail":0},"mutation":{"guard_removed":{"pass":5,"fail":2}},"live_read_probe":"VTID-04633 left (already terminal), no write"}
