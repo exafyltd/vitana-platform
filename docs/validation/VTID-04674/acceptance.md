@@ -54,6 +54,8 @@ AC-11: the old Admin › Notifications API (compose / sent / stats) authenticate
 AC-12: members get "Posts & reactions" and "Tips & updates from Vitana". `new_follower` and `message_reaction` join existing categories. Members see only categories holding an admin-enabled type. A category marked `member_can_disable=false` stays on and refuses to be switched off.
   TEST: docs/validation/VTID-04674/sql-guard-test.sql
   TEST: services/gateway/test/routes/user-category-preferences-vtid-04674.test.ts
+AC-15: an admin can mark a category as one members may not switch off (`member_can_disable`), on create and on update; a non-boolean is refused.
+  TEST: services/gateway/test/routes/admin-notification-categories.test.ts
 AC-13: the migration applies cleanly twice (idempotent).
   TEST: docs/validation/VTID-04674/outputs/sql-guard-test.txt
 AC-14: on staging, the new routes are mounted and refuse anonymous callers.
