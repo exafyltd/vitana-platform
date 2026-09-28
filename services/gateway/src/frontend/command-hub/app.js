@@ -24213,6 +24213,27 @@ function renderOperatorChat() {
             sendChatMessage();
         }
     };
+    // VTID-04679: clipboard paste support — Ctrl+V / Cmd+V an image directly
+    // into the chat textarea. If the clipboard contains an image item, prevent
+    // the raw data URL from landing in the text field and route the file
+    // through the existing upload path instead. Non-image pastes (plain text,
+    // rich text) are left untouched so normal text paste still works.
+    textarea.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    uploadOperatorFile(file, 'image');
+                }
+                return;
+            }
+        }
+        // No image found — allow default text paste behaviour.
+    });
     textarea.onblur = () => {
         // Only reset typing flag when user leaves the input
         state.chatIsTyping = false;

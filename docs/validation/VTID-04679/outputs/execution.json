@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-04679",
+  "execution_id": "e55dd720-5660-451e-a386-d2e790396c26",
+  "finding_id": "ac24f5ba-5e3a-4cd6-bdcf-a7bbc09e1349",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e55dd720",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04679-operator-chat-paste-image.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-28T09:10:26.689Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
