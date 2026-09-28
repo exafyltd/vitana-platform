@@ -59,6 +59,34 @@ export function detectRememberIntent(text: string): boolean {
   return REMEMBER_INTENT.test(text);
 }
 
+// VTID-04697: the reply says it saved or will remember something. Live
+// B-CONF-02: "Mein Bruder Paul hat übrigens am siebten Mai Geburtstag" — no
+// "merk dir", so the request detector stayed quiet — and Nova answered "Ich
+// merke mir den Geburtstag … am siebten Mai" without calling remember_fact.
+const REMEMBER_CLAIM = new RegExp(
+  [
+    '\\b(ich )?merke? (ich )?(mir|es mir|das mir)\\b',
+    '\\b(hab|habe) (ich )?(mir )?(das |es |ihn |sie )?(gemerkt|notiert|gespeichert|vermerkt)\\b',
+    '\\bich (notiere|speichere|vermerke)\\b',
+    '\\b(ist|wurde) (jetzt )?(notiert|gespeichert|vermerkt)\\b',
+    "\\bi('ll| will) remember\\b",
+    "\\bi('ve| have) (noted|saved|stored|made a note)\\b",
+    '\\b(got it|noted)[,.!]',
+    '\\b(lo )?(recordaré|he guardado|he anotado)\\b',
+    '\\b(zapamtila|zapamtiću|zabeležila)\\b',
+  ].join('|'),
+  'i',
+);
+const CLAIM_NEGATION = /\b(nicht|kein|keine|keinen|nie|not|can't|cannot|won't|don't|no puedo|ne mogu|ne)\b/i;
+
+/** True when a sentence of the reply claims a save; negated sentences do not count. */
+export function detectRememberClaim(reply: string): boolean {
+  if (!reply) return false;
+  return reply
+    .split(/(?<=[.!?])\s+|\n+/)
+    .some((sentence) => REMEMBER_CLAIM.test(sentence) && !CLAIM_NEGATION.test(sentence));
+}
+
 export interface BackstopFact {
   fact_key: string;
   fact_value: string;
@@ -111,7 +139,7 @@ export async function runRememberBackstop(
  */
 export function buildRememberBackstopNote(
   results: RememberFactToolResult[],
-  reason: 'no_call' | 'stored_value_echoed' = 'no_call',
+  reason: 'no_call' | 'stored_value_echoed' | 'claimed_without_call' = 'no_call',
 ): string | null {
   if (results.length === 0) return null;
   // VTID-04690: after the model's own remember_fact came back already_known,
@@ -119,7 +147,9 @@ export function buildRememberBackstopNote(
   if (reason === 'stored_value_echoed' && results.every((r) => r.status === 'already_known')) return null;
   const lines = results.map((r) => `- ${r.fact_key}: ${formatRememberFactResult(r)}`);
   const lead =
-    reason === 'stored_value_echoed'
+    reason === 'claimed_without_call'
+      ? 'your answer said you saved or will remember what the member just said, but you did not call remember_fact, so nothing was saved. The gateway ran it:'
+      : reason === 'stored_value_echoed'
       ? 'you called remember_fact with the value that was already stored, not the value the member just said. The gateway ran it with the member\'s own words:'
       : 'the member asked you to remember something and you answered without calling remember_fact. The gateway ran it:';
   return [
