@@ -7,8 +7,8 @@
  *     would mean one row per staff member per event, kept in sync forever;
  *   - the source table stays the only truth, so there is nothing to drift.
  *
- * Developer lens: gateway deploys (staging + production) and Dev Autopilot
- * executions held for review. Admin lens: member-ticket SLA deadlines and
+ * Developer lens: Dev Autopilot executions held for review. (Deploys were
+ * shown here until VTID-04680 — about ten a day, none of them a to-do.) Admin lens: member-ticket SLA deadlines and
  * pending BackOffice approvals.
  *
  * All of it is platform-wide operations data, so it is shown only to Exafy
@@ -262,15 +262,8 @@ export async function listWorkItems(
   const jobs: Array<Promise<WorkWindowItem[]>> = [];
 
   if (lenses.includes('developer')) {
-    jobs.push(
-      read<any>(
-        `${rest}/oasis_events?select=id,topic,service,created_at,metadata` +
-          `&topic=in.(staging.deploy.completed,prod.deploy.completed)` +
-          `&created_at=gte.${from}&created_at=lt.${to}&order=created_at.asc&${lim}`,
-        config.key,
-        'deploys',
-      ).then((rows) => deployItems(userId, rows)),
-    );
+    // VTID-04680: deploys are not shown. They are not things anyone has to
+    // do, and ~10 a day buried every developer's calendar.
     // A held execution needs someone now, whatever the window: it shows on
     // the day it was staged when that day is in view.
     jobs.push(

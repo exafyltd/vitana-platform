@@ -44,7 +44,7 @@
       "kind": "http",
       "name": "served screen script is the rebuilt one",
       "target": "gateway",
-      "path": "/command-hub/voice-self-healing.js",
+      "path": "/command-hub/voice-self-healing.js?v=20261014-vtid-04626-2",
       "expect_status": 200,
       "expect_content_type": "application/javascript",
       "expect_body_contains": "renderVoiceSelfHealingScreen"

@@ -1,0 +1,144 @@
+{
+  "vtid": "VTID-04662",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Nova Sonic answers 200 JSON",
+      "path": "/api/v1/orb/nova-sonic/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "LLM Providers answers 200 JSON",
+      "path": "/api/v1/llm/providers/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Voice Tools Catalog answers 200 JSON",
+      "path": "/api/v1/voice-tools/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Self-Healing answers 200 JSON",
+      "path": "/api/v1/self-healing/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Worker Orchestrator answers 200 JSON",
+      "path": "/api/v1/worker/orchestrator/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Reminders answers 200 JSON",
+      "path": "/api/v1/reminders/_health/check",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Calendar answers 200 JSON",
+      "path": "/api/v1/calendar/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Integrations answers 200 JSON",
+      "path": "/api/v1/integrations/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Pillar Agents answers 200 JSON",
+      "path": "/api/v1/pillar-agents/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Catalog Ingest answers 200 JSON",
+      "path": "/api/v1/catalog/ingest/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Shop Feed answers 200 JSON",
+      "path": "/api/v1/shop-feed/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Shopping Agent answers 200 JSON",
+      "path": "/api/v1/shopping-agent/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Universal Cart answers 200 JSON",
+      "path": "/api/v1/universal-cart/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Watcher exists and is admin-gated (401 JSON, not an HTML 404)",
+      "path": "/api/v1/watcher/health",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Aurora Memory exists and is admin-gated (401 JSON, not an HTML 404)",
+      "path": "/api/v1/admin/aurora-memory/health",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Aurora RLS exists and is admin-gated (401 JSON, not an HTML 404)",
+      "path": "/api/v1/admin/aurora-rls-health",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "ORB Session State exists and is admin-gated (401 JSON, not an HTML 404)",
+      "path": "/api/v1/admin/orb-session-state-health",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "Memory Broker exists and is admin-gated (401 JSON, not an HTML 404)",
+      "path": "/api/v1/admin/memory/health",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "registry lists the Phase 1 checks",
+      "path": "/api/v1/admin/health-registry",
+      "expect_body_contains": "Universal Cart"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04662-service-health-registered-routes.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pins the 18 registry entries and that each URL is declared by its router file"
+    }
+  ]
+}

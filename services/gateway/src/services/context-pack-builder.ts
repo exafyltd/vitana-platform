@@ -1439,7 +1439,10 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
   const structuredFactHits = pack.memory_hits.filter(h => h.category_key.startsWith('fact:'));
   if (structuredFactHits.length > 0) {
     context += `<structured_facts>\n`;
-    context += `The following are verified structured facts about the user:\n\n`;
+    // VTID-04683: say where these facts came from. A bare "facts about the
+    // user" list that includes a spouse's name read to the model like third-
+    // party personal data, and it refused on privacy grounds.
+    context += `The following are facts the user told you about themselves and their own people (partner, family, friends). They belong to the user: use them whenever the user asks about them.\n\n`;
     for (const hit of structuredFactHits) {
       context += `- ${hit.content}\n`;
     }

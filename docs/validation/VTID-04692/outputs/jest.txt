@@ -1,0 +1,60 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-04692] recall backstop s1: 12 facts offered
+
+      at src/orb/live/session/remember-backstop-hook.ts:257:13
+
+  console.log
+    [VTID-04692] recall backstop s1: 12 facts offered
+
+      at src/orb/live/session/remember-backstop-hook.ts:257:13
+
+  console.log
+    [VTID-04692] recall backstop s1: nothing stored
+
+      at src/orb/live/session/remember-backstop-hook.ts:257:13
+
+PASS test/services/memory/vtid-04692-recall-backstop.test.ts
+  VTID-04692 detection
+    ✓ a question about own details: Wie heißt mein Hund? (6 ms)
+    ✓ a question about own details: Wann feiert mein Bruder Paul eigentlich? (1 ms)
+    ✓ a question about own details: Wann hat mein Bruder Paul Geburtstag? (1 ms)
+    ✓ a question about own details: What is my favourite colour?
+    ✓ a question about own details: Weißt du noch, wie mein Hund heißt? (1 ms)
+    ✓ not a recall question: Wie geht es dir?
+    ✓ not a recall question: Was kann ich heute machen?
+    ✓ not a recall question: Merk dir, mein Hund heißt Bello (1 ms)
+    ✓ not a recall question: [memory-check] Wie heißt mein Hund? (1 ms)
+    ✓ every live failing reply is a denial or deferral: Ich sehe, dass du nach dem Namen deines Hundes fragst. Leider habe ich diese Information nicht in deinen gespeicherten Daten. (1 ms)
+    ✓ every live failing reply is a denial or deferral: Ich kann dir leider nicht den Namen deines Hundes sagen, da diese Information nicht in deinem Profil gespeichert ist. (1 ms)
+    ✓ every live failing reply is a denial or deferral: Ich habe in deinen Informationen nachgeschaut, aber ich konnte den Namen deines Hundes nicht finden.
+    ✓ every live failing reply is a denial or deferral: Ich kann dir gerne helfen, aber ich muss erst in deinen Informationen nachsehen. Einen Moment bitte.
+    ✓ every live failing reply is a denial or deferral: Ich habe deine Anfrage notiert, aber ich kann keine persönlichen Daten wie Geburtstage von Familienmitgliedern anzeigen oder verwalten.
+    ✓ every live failing reply is a denial or deferral: Leider kann ich keine relevanten Details für Ihre Frage finden. (1 ms)
+    ✓ a real answer is not a denial
+    ✓ "Was weißt du eigentlich alles über mich?" is an about-me question (live B-REC-06) (1 ms)
+  VTID-04692 note
+    ✓ lists the facts with the matching one first and never the system keys (6 ms)
+    ✓ ranks by the asked person and topic (6 ms)
+    ✓ is null when nothing is stored (1 ms)
+    ✓ the about-me note asks for a few concrete facts, not keys
+  VTID-04692 live hook
+    ✓ injects the facts after a live B-REC-01 denial (18 ms)
+    ✓ injects after a vague about-me answer (live B-REC-06) (3 ms)
+    ✓ stays silent when the reply already answered (2 ms)
+    ✓ stands down on a remember/forget turn, a remember request, or a non-Nova session (1 ms)
+    ✓ stays silent when nothing is stored (2 ms)
+    ✓ is wired at turn_complete and the write-tool flag is set and cleared (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       27 passed, 27 total
+Snapshots:   0 total
+Time:        0.926 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04692-recall-backstop.test.ts/i.

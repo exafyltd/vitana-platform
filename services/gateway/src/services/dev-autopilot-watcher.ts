@@ -30,6 +30,7 @@ import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-l
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
+import { isVerificationNoiseTopic } from './oasis-noise-topics';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -394,29 +395,10 @@ export function verificationMinExcess(env: NodeJS.ProcessEnv = process.env): num
   return Number.isFinite(n) && n >= 1 ? n : 3;
 }
 
-/**
- * VTID-04377: topics that are never production blast radius of THIS merge —
- * autopilot/self-heal/CI bookkeeping (VTID-02699), ledger lifecycle and
- * on-ramp events about other VTIDs (VTID-04043), and deploy results, which
- * the deploy watcher already judged before the row reached `verifying`.
- */
-export function isVerificationNoiseTopic(type: string | undefined): boolean {
-  if (typeof type !== 'string') return false;
-  return (
-    type.startsWith('dev_autopilot.') ||
-    type.startsWith('self_healing.') ||
-    type.startsWith('cicd.') ||
-    type.startsWith('vtid.lifecycle.') ||
-    type.startsWith('operator.execution_onramp.') ||
-    type.startsWith('deploy.') ||
-    type.startsWith('staging.deploy.') ||
-    type.startsWith('prod.deploy.') ||
-    // VTID-04625: telemetry, not runtime errors — a latency measurement of a
-    // member voice session that errored, and an operator-console turn record.
-    type.startsWith('voice.latency.') ||
-    type === 'assistant.turn'
-  );
-}
+// VTID-04377 / VTID-04625: isVerificationNoiseTopic now lives in
+// oasis-noise-topics.ts (VTID-04666) so the recommendation engine applies the
+// same list. Re-exported here unchanged for existing importers.
+export { isVerificationNoiseTopic };
 
 export function analyzeVerificationWindow(
   events: Array<{ type: string; vtid?: string; status?: string; created_at?: string }>,

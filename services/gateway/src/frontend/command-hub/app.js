@@ -4707,7 +4707,7 @@ const state = {
     // ──── New Module States (51-screen build) ────
 
     // Shared service health (feeds both header pill and dashboard grid)
-    serviceHealth: { items: [], loading: false, fetched: false, lastRefreshed: null },
+    serviceHealth: { items: [], groups: null, source: null, loading: false, fetched: false, lastRefreshed: null },
 
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
@@ -6508,14 +6508,17 @@ function renderHeader() {
     // Compute service health score (shared with dashboard grid)
     let capsTotal = 0;
     let capsHealthy = 0;
+    let capsNoAccess = 0;
     if (state.serviceHealth.items.length > 0) {
-        capsTotal = state.serviceHealth.items.length;
-        capsHealthy = state.serviceHealth.items.filter(function (s) { return s.healthy; }).length;
+        const shCounts = serviceHealthCounts(state.serviceHealth.items);
+        capsTotal = shCounts.total;
+        capsHealthy = shCounts.healthy;
+        capsNoAccess = shCounts.noAccess;
     } else if (state.cicdHealth?.capabilities) {
         // Fallback while service health loads
         for (const v of Object.values(state.cicdHealth.capabilities)) { capsTotal++; if (v) capsHealthy++; }
     }
-    const capsFailing = capsTotal - capsHealthy;
+    const capsFailing = capsTotal - capsHealthy - capsNoAccess;
 
     // Score-based pill: shows green/red counts at a glance
     const statusPill = document.createElement('button');
@@ -6536,7 +6539,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6562,9 +6565,13 @@ function renderHeader() {
         var hmHeader = document.createElement('div');
         hmHeader.className = 'modal-header';
         hmHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
-        var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
+        // VTID-04661: colour via class, not an inline style (CSP gate).
+        var titleClass = capsFailing > 0 ? 'health-modal__title health-modal__title--bad' : 'health-modal__title health-modal__title--ok';
         hmHeader.innerHTML =
-            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
+            '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
+            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
+            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' not checked</span>' : '') +
+            '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
@@ -6584,7 +6591,10 @@ function renderHeader() {
 
         if (state.serviceHealth.items.length > 0) {
             // Group items by their group field (preserved from endpoint definition)
-            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling', 'Community & Social', 'Domain & Context', 'Visual & VTID'];
+            // VTID-04661: every group present is drawn — known groups first in
+            // registry order, then any other. The old hardcoded list silently
+            // dropped 'Frontend & Performance' (Screen Load Time).
+            var groupOrder = orderedHealthGroups(state.serviceHealth.items, state.serviceHealth.groups);
             var grouped = {};
             for (var gi = 0; gi < state.serviceHealth.items.length; gi++) {
                 var grp = state.serviceHealth.items[gi].group || 'Other';
@@ -6605,11 +6615,13 @@ function renderHeader() {
                 });
 
                 // Group header
-                var groupFailed = groupItems.filter(function (s) { return !s.healthy; }).length;
+                var groupDown = groupItems.filter(function (s) { return serviceHealthDot(s) === 'red'; }).length;
+                var groupDegraded = groupItems.filter(function (s) { return serviceHealthDot(s) === 'yellow'; }).length;
                 var grpHeader = document.createElement('div');
                 grpHeader.className = 'health-grid__group-header';
                 grpHeader.innerHTML = groupName +
-                    (groupFailed > 0 ? ' <span class="health-grid__group-badge--bad">' + groupFailed + ' down</span>' : '');
+                    (groupDown > 0 ? ' <span class="health-grid__group-badge--bad">' + groupDown + ' down</span>' : '') +
+                    (groupDegraded > 0 ? ' <span class="health-grid__group-badge--warn">' + groupDegraded + ' degraded</span>' : '');
                 hmBody.appendChild(grpHeader);
 
                 // Grid for this group
@@ -6618,20 +6630,18 @@ function renderHeader() {
 
                 for (var shi = 0; shi < groupItems.length; shi++) {
                     (function (svc) {
-                        var dot = 'green';
-                        if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
-                        if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
-                        if (!svc.healthy && dot === 'green') dot = 'red';
+                        var dot = serviceHealthDot(svc);
+                        var dotClass = SERVICE_HEALTH_DOT_CLASS[dot];
 
                         var cell = document.createElement('div');
                         cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
                         cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                         cell.innerHTML =
-                            '<span class="health-dot health-dot-' + dot + '"></span>' +
+                            '<span class="health-dot ' + dotClass + '"></span>' +
                             '<span class="health-grid__cell-name">' + svc.name + '</span>';
                         cell.onclick = function () {
                             var detailHTML = '<div class="health-detail__header">' +
-                                '<span class="health-dot health-dot-' + dot + '"></span>' +
+                                '<span class="health-dot ' + dotClass + '"></span>' +
                                 '<strong>' + svc.name + '</strong>' +
                                 '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
                                 (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
@@ -25880,6 +25890,29 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-04667: recommendation types with an executor ---
+// Mirrors MANUALLY_BRIDGEABLE_SOURCE_TYPES in
+// services/gateway/src/services/autopilot-executable-source-types.ts
+// (EXECUTABLE_RECOMMENDATION_SOURCE_TYPES + community + health). Keep in step —
+// test/vtid-04667-executable-source-types-drift.test.ts fails on drift.
+var EXECUTABLE_REC_SOURCE_TYPES = [
+    'missing-test-scanner',
+    'test-contract-failure-scanner',
+    'dev_autopilot',
+    'dev_autopilot_impact',
+    'operator_onramp',
+    'community',
+    'health'
+];
+
+// "Create task" for a type nothing executes yet (oasis, roadmap, behavior, …);
+// "Activate" otherwise, and when the listing did not say (older gateway).
+function recActivateLabel(rec) {
+    var t = rec && rec.source_type;
+    if (!t) return 'Activate';
+    return EXECUTABLE_REC_SOURCE_TYPES.indexOf(t) === -1 ? 'Create task' : 'Activate';
+}
+
 // --- VTID-04657: what Activate actually did to the execution ---
 function describeActivationOutcome(data) {
     var vtid = data.vtid || '';
@@ -26209,7 +26242,9 @@ function createRecommendationCard(rec) {
     // Activate button
     var activateBtn = document.createElement('button');
     activateBtn.className = 'btn btn-primary';
-    activateBtn.textContent = 'Activate';
+    // VTID-04667: "Create task" when this type has no executor.
+    var activateIdleLabel = recActivateLabel(rec);
+    activateBtn.textContent = activateIdleLabel;
     activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
     activateBtn.onclick = async function () {
         activateBtn.disabled = true;
@@ -26234,12 +26269,12 @@ function createRecommendationCard(rec) {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
                 activateBtn.disabled = false;
-                activateBtn.textContent = 'Activate';
+                activateBtn.textContent = activateIdleLabel;
                 try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
             activateBtn.disabled = false;
-            activateBtn.textContent = 'Activate';
+            activateBtn.textContent = activateIdleLabel;
             state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
             try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
@@ -27471,6 +27506,107 @@ let cicdHealthPollInterval = null;
 // service-health-registry.ts) can't be reached. That route is now the
 // canonical source — keep this list in sync when adding/removing a check,
 // but a routine change belongs there first, not here.
+// VTID-04661: display order of the Service Health groups. The registry
+// route serves the canonical copy (SERVICE_HEALTH_GROUPS); this is the
+// fallback. Any group NOT listed here is still drawn, after these — the
+// panel used to drop such groups, which is how 'Screen Load Time' was
+// counted in "54/55" but never shown.
+var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity',
+    'Deploy & Release', 'AWS Runtime', 'Dev Autopilot', 'Voice & Media', 'Data & Scheduling', 'Business & Support'];
+
+/**
+ * VTID-04661: every group present in `items`, the known ones first in
+ * `preferred` order, then the rest alphabetically. Never drops a group.
+ */
+function orderedHealthGroups(items, preferred) {
+    var order = (preferred && preferred.length) ? preferred : FALLBACK_HEALTH_GROUPS;
+    var present = {};
+    for (var i = 0; i < items.length; i++) present[items[i].group || 'Other'] = true;
+    var out = order.filter(function (g) { return present[g]; });
+    Object.keys(present).sort().forEach(function (g) { if (out.indexOf(g) < 0) out.push(g); });
+    return out;
+}
+
+/**
+ * VTID-04661: browser copy of classifyHealthResponse()
+ * (services/gateway/src/services/service-health-probe.ts) — a parity test
+ * keeps the two in step. Used only when the server-side summary is
+ * unavailable and the panel probes each check itself.
+ *   - no response            -> down
+ *   - 401/403                -> no_access (could not look; not an outage)
+ *   - 2xx + body.status      -> that status (healthy only if ok/healthy/ok_governance_limited)
+ *   - 2xx + {ok:false}       -> down (used to read as healthy)
+ *   - 2xx otherwise          -> healthy
+ *   - other + known bad body.status -> that status, else down
+ */
+var HEALTHY_PROBE_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
+var KNOWN_BAD_PROBE_STATUSES = ['down', 'degraded', 'warning', 'error', 'unhealthy', 'unavailable', 'misconfigured'];
+function classifyHealthProbe(httpStatus, body) {
+    if (httpStatus === null || httpStatus === undefined) return { status: 'down', healthy: false };
+    if (httpStatus === 401 || httpStatus === 403) return { status: 'no_access', healthy: false };
+    var obj = (body && typeof body === 'object' && !Array.isArray(body)) ? body : null;
+    var reported = (obj && typeof obj.status === 'string') ? obj.status.toLowerCase() : null;
+    if (httpStatus >= 200 && httpStatus < 300) {
+        if (obj && obj.ok === false && (!reported || HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0)) return { status: 'down', healthy: false };
+        if (reported) return { status: reported, healthy: HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0 };
+        return { status: 'healthy', healthy: true };
+    }
+    if (reported && KNOWN_BAD_PROBE_STATUSES.indexOf(reported) >= 0) return { status: reported, healthy: false };
+    return { status: 'down', healthy: false };
+}
+
+/** VTID-04661: probe one check from the browser and classify it. */
+function probeHealthEndpointInBrowser(ep, headers, timeoutMs) {
+    var start = Date.now();
+    return fetchWT(ep.url, { headers: headers }, timeoutMs || 6000)
+        .then(function (r) {
+            var latency = Date.now() - start;
+            return r.json().catch(function () { return null; }).then(function (body) {
+                var c = classifyHealthProbe(r.status, body);
+                return { name: ep.name, url: ep.url, group: ep.group, status: c.status, healthy: c.healthy, http_status: r.status, latency_ms: latency, details: body };
+            });
+        })
+        .catch(function () {
+            return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, http_status: null, latency_ms: -1, details: null };
+        });
+}
+
+/**
+ * VTID-04661: panel counts. `failing` excludes no_access — a check the
+ * probe could not look at is shown grey and counted separately, never as
+ * an outage and never as healthy.
+ */
+function serviceHealthCounts(items) {
+    var healthy = 0, noAccess = 0;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].healthy) healthy++;
+        else if (items[i].status === 'no_access' || items[i].status === 'not_configured') noAccess++;
+    }
+    return { total: items.length, healthy: healthy, noAccess: noAccess, failing: items.length - healthy - noAccess };
+}
+
+/** VTID-04661: dot colour for one check. */
+function serviceHealthDot(svc) {
+    if (svc.healthy) return 'green';
+    // VTID-04664: not_configured = deliberately off on this stack — grey, not red.
+    if (svc.status === 'no_access' || svc.status === 'not_configured') return 'grey';
+    if (svc.status === 'degraded' || svc.status === 'warning') return 'yellow';
+    return 'red';
+}
+
+/**
+ * VTID-04661: literal class names, so styles.css's dead-rule checker
+ * (scripts/find-dead-css-classes.mjs) can see every dot class in use.
+ */
+var SERVICE_HEALTH_DOT_CLASS = {
+    green: 'health-dot-green',
+    yellow: 'health-dot-yellow',
+    red: 'health-dot-red',
+    grey: 'health-dot-grey'
+};
+
 var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
     { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
@@ -27532,7 +27668,73 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     // here. 'down' means either a screen failed to load or the
     // scheduled job itself hasn't reported in 3h+; 'degraded' means
     // it's reporting but slow (p75 over budget).
-    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' },
+    // VTID-04662: existing health routes, now registered.
+    { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+    { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+    { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+    { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+    { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+    { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+    { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
+    { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+    { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+    { name: 'Memory Broker', url: '/api/v1/admin/memory/health', group: 'Data & Memory' },
+    { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+    { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+    { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+    { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+    { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+    { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+    { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
+    // VTID-04663: database-computed signals.
+    { name: 'LLM Routing Policy', url: '/api/v1/ops/health/llm-routing', group: 'AI & Assistant' },
+    { name: 'Anthropic Credit Failures', url: '/api/v1/ops/health/anthropic-credit', group: 'AI & Assistant' },
+    { name: 'Google LLM Fallback', url: '/api/v1/ops/health/google-fallback', group: 'AI & Assistant' },
+    { name: 'Locale Coverage', url: '/api/v1/ops/health/locale-coverage', group: 'Governance & Integrity' },
+    { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
+    { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
+    { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
+    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-04664: systems that had no check.
+    { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
+    { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
+    { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
+    { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release' },
+    { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
+    { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
+    { name: 'ECS Community App Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Community App Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Operator', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Projector', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector', group: 'AWS Runtime' },
+    { name: 'ECS Worker Runner', url: '/api/v1/ops/runtime/aws/ecs/vitana-worker-runner', group: 'AWS Runtime' },
+    { name: 'ECS Verification Engine', url: '/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine', group: 'AWS Runtime' },
+    { name: 'ECS ORB Agent', url: '/api/v1/ops/runtime/aws/ecs/vitana-orb-agent', group: 'AWS Runtime' },
+    { name: 'Autopilot Kill Switch', url: '/api/v1/ops/runtime/autopilot/kill-switch', group: 'Dev Autopilot' },
+    { name: 'Autopilot Stuck Runs', url: '/api/v1/ops/runtime/autopilot/stuck-runs', group: 'Dev Autopilot' },
+    { name: 'Autopilot Approval Backlog', url: '/api/v1/ops/runtime/autopilot/approval-backlog', group: 'Dev Autopilot' },
+    { name: 'Autopilot Success Rate', url: '/api/v1/ops/runtime/autopilot/success-rate', group: 'Dev Autopilot' },
+    { name: 'Autopilot Scan Freshness', url: '/api/v1/ops/runtime/autopilot/scan-freshness', group: 'Dev Autopilot' },
+    { name: 'Autopilot Dispatch', url: '/api/v1/ops/runtime/autopilot/dispatch-failures', group: 'Dev Autopilot' },
+    { name: 'Polly TTS', url: '/api/v1/ops/runtime/voice/polly', group: 'Voice & Media' },
+    { name: 'Fish TTS', url: '/api/v1/ops/runtime/voice/fish', group: 'Voice & Media' },
+    { name: 'Serbian Voice Bridge', url: '/api/v1/ops/runtime/voice/serbian-bridge', group: 'Voice & Media' },
+    { name: 'Voice Session Errors', url: '/api/v1/ops/runtime/voice/session-errors', group: 'Voice & Media' },
+    { name: 'Bedrock', url: '/api/v1/ops/runtime/ai/bedrock', group: 'Voice & Media' },
+    { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
+    { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
+    { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
+    { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling' },
+    { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
+    { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
+    { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },
+    { name: 'Support Tickets', url: '/api/v1/ops/runtime/support/stuck-tickets', group: 'Business & Support' },
+    { name: 'ERP Bridge', url: '/api/v1/ops/runtime/business/erp-bridge', group: 'Business & Support' },
+    { name: 'Jev Decisions', url: '/api/v1/ops/runtime/business/jev', group: 'Business & Support' }
 ];
 
 /**
@@ -27545,53 +27747,58 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    // VTID-04087: fetch the endpoint list from the gateway's own registry
-    // (GET /api/v1/admin/health-registry) so a new health check can be
-    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
-    // is only the last-resort copy used when that fetch fails (offline,
-    // route down, malformed response) — keep it in sync when adding/removing
-    // a check, but the registry route is the canonical source now.
-    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    // VTID-01982: send the operator's bearer token so admin-gated health
+    // routes answer instead of returning 401.
+    var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
     try {
-        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
-        if (registryResp.ok) {
-            var registryBody = await registryResp.json();
-            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
-                healthEndpoints = registryBody.endpoints;
-            }
-        }
-    } catch (registryError) {
-        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
-    }
-    try {
-        // VTID-01982: send the operator's bearer token so health probes against
-        // routers gated by requireAuth/requireExafyAdmin (diary, automations,
-        // capacity, alignment, routing, situational, availability, mobility,
-        // user-prefs, taste, overload, mitigation, opportunities,
-        // vtid-terminalize) don't return 401 and trip a false "down" badge.
-        var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
-        var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: probeHeaders }, 6000)
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        var rawStatus = ok ? (body.status || 'healthy') : 'degraded';
-                        var isHealthy = (rawStatus === 'ok' || rawStatus === 'healthy' || rawStatus === 'ok_governance_limited');
-                        return { name: ep.name, url: ep.url, group: ep.group, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, group: ep.group, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, latency_ms: -1, details: null };
-                });
-        }));
+        var items = null;
 
-        var items = results.map(function (r) {
-            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
-        });
+        // VTID-04661: preferred path — the gateway probes every check once,
+        // server side, and serves a cached, classified summary
+        // (GET /api/v1/admin/health/summary). One request instead of one per
+        // check. Admin-only; any failure falls through to the browser path.
+        try {
+            var summaryResp = await fetchWT('/api/v1/admin/health/summary', { headers: probeHeaders }, 15000);
+            if (summaryResp.ok) {
+                var summaryBody = await summaryResp.json();
+                if (summaryBody && Array.isArray(summaryBody.items) && summaryBody.items.length > 0) {
+                    items = summaryBody.items;
+                    if (Array.isArray(summaryBody.groups)) state.serviceHealth.groups = summaryBody.groups;
+                    state.serviceHealth.source = 'server';
+                }
+            }
+        } catch (summaryError) {
+            console.warn('[ServiceHealth] Summary fetch failed, probing from the browser:', summaryError);
+        }
+
+        if (!items) {
+            // VTID-04087: fetch the endpoint list from the gateway's own registry
+            // (GET /api/v1/admin/health-registry) so a new health check can be
+            // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+            // is only the last-resort copy used when that fetch fails (offline,
+            // route down, malformed response) — keep it in sync when adding/removing
+            // a check, but the registry route is the canonical source now.
+            var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+            try {
+                var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+                if (registryResp.ok) {
+                    var registryBody = await registryResp.json();
+                    if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                        healthEndpoints = registryBody.endpoints;
+                    }
+                    if (registryBody && Array.isArray(registryBody.groups)) state.serviceHealth.groups = registryBody.groups;
+                }
+            } catch (registryError) {
+                console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+            }
+            var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
+                return probeHealthEndpointInBrowser(ep, probeHeaders, 6000);
+            }));
+            items = results.map(function (r) {
+                return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
+            });
+            state.serviceHealth.source = 'browser';
+        }
 
         state.serviceHealth.items = items;
         state.serviceHealth.fetched = true;
@@ -27627,8 +27834,9 @@ function updateServiceHealthPill() {
     var items = state.serviceHealth.items;
     if (!items || items.length === 0) return;
 
-    var healthy = items.filter(function (s) { return s.healthy; }).length;
-    var failing = items.length - healthy;
+    var counts = serviceHealthCounts(items);
+    var healthy = counts.healthy;
+    var failing = counts.failing;
 
     pill.className = 'header-pill';
     if (failing === 0) {
@@ -27643,7 +27851,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**
@@ -29003,7 +29211,7 @@ async function fetchOverviewDashboard() {
         healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
     } else {
         var healthEndpoints = state.serviceHealth.items.length > 0
-            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url }; })
+            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
             : [
                 { name: 'Gateway', url: '/health' },
                 { name: 'CI/CD',   url: '/api/v1/cicd/health' },
@@ -29017,21 +29225,9 @@ async function fetchOverviewDashboard() {
             ];
         // VTID-01982: pass the operator's bearer token to /health probes
         var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
+        // VTID-04661: same classification as the Service Health panel.
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: dashHeaders })
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        return { name: ep.name, url: ep.url, status: ok ? (body.status || 'healthy') : 'degraded', latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, status: 'down', latency_ms: -1, details: null };
-                });
+            return probeHealthEndpointInBrowser(ep, dashHeaders);
         }));
     }
 
@@ -29668,8 +29864,7 @@ function renderOverviewSystemView() {
             var hasGroups = services.some(function (s) { return s.group; });
             if (hasGroups) {
                 // Build group buckets preserving group order from the endpoint list
-                var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-                                  'Community & Social', 'Domain & Context', 'Visual & VTID'];
+                var groupOrder = orderedHealthGroups(services, state.serviceHealth.groups);
                 var groupMap = {};
                 services.forEach(function (s) {
                     var g = s.group || 'Other';
@@ -29701,7 +29896,9 @@ function renderOverviewSystemView() {
                     var svcList = document.createElement('div');
                     svcList.className = 'overview-health-chip-row';
                     svcs.forEach(function (s) {
-                        var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                        // VTID-04661: a check the probe could not look at is grey, not red.
+                        var dotClass = (s.status === 'no_access' || s.status === 'not_configured') ? 'grey'
+                            : (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                             : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                             : 'red';
                         var chip = document.createElement('span');
@@ -30162,7 +30359,9 @@ function renderOverviewSystemView() {
             cardActions.className = 'rec-actions';
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-sm btn-primary';
-            activateBtn.textContent = 'Activate';
+            // VTID-04667: "Create task" when this type has no executor.
+            var activateIdleLabel = recActivateLabel(rec);
+            activateBtn.textContent = activateIdleLabel;
             activateBtn.onclick = async function (e) {
                 e.stopPropagation();
                 activateBtn.disabled = true;
@@ -30179,12 +30378,12 @@ function renderOverviewSystemView() {
                         showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
                         activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
+                        activateBtn.textContent = activateIdleLabel;
                         showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (err) {
                     activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
+                    activateBtn.textContent = activateIdleLabel;
                     showToast('Activation error: ' + err.message, 'error');
                 }
             };

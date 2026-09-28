@@ -380,8 +380,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20007,
-  "instruction_sha256": "a16cc8927fd1df38e6514114cf5f86c638cf9521bc22d7f34709447cad4748f1",
+  "instruction_bytes": 20163,
+  "instruction_sha256": "ad076cec28f7a6d61b43045dd5a4db9653654db2977b52dff7c2bd4abf398dcb",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -472,7 +472,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -662,8 +662,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 21054,
-  "instruction_sha256": "5058cd7918effbd51e547592f829642892ee028f4312c4ac80118b00bf60a9dd",
+  "instruction_bytes": 21210,
+  "instruction_sha256": "e95224c1144d44c0ea1b2cbd4b3aaa6106825d12f01b0db6e559d235c08fe1a9",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -754,7 +754,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -964,12 +964,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 19788,
-  "instruction_sha256": "6c5a6c5d132817795d562f2f1243d79c4a9799c430b710cde8d9fdd3d586a13a",
+  "instruction_bytes": 19944,
+  "instruction_sha256": "d691e23f50d98441094239d5b304c2cdc47b1c2a3dc6f146fc9342c49bf9c31f",
   "provider": "cascaded",
-  "tool_count": 295,
-  "tools_bytes": 228598,
-  "tools_sha256": "e2275a68691c15548b5cadb32e815f12f1d0936c1b26d056eeb2efe05d738378",
+  "tool_count": 296,
+  "tools_bytes": 228798,
+  "tools_sha256": "f9b5f9d07533e1f39b35d4aeab391fc06dc1274ca1c38b2d5a33a9c969dc8a61",
   "voice": "polly:ru",
 }
 `;
@@ -1056,7 +1056,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -1484,6 +1484,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
   "add_selected_option_to_cart",
   "review_cart_suitability",
   "explain_cart_item",
+  "forget_fact",
   "__google_search__",
 ]
 `;
@@ -1874,8 +1875,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 21416,
-  "instruction_sha256": "1ebd33f3ffe42c9f94f8e416303f66b8236bf7baed4bbeac032d1187f14d6f48",
+  "instruction_bytes": 21572,
+  "instruction_sha256": "21726f9f4fb456629fbf30cf342fdf86f4e72864111766ef9ac37ff598636834",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -1958,7 +1959,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -2195,8 +2196,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 19804,
-  "instruction_sha256": "68fcd4c5af000aacb829a30c3ea74a96d406716891dac1037e61de4616470b54",
+  "instruction_bytes": 19960,
+  "instruction_sha256": "97cd00c3e7cd7dd8436e6f6672c0abd08e67b294aac80c05cbde326a722f2c85",
   "provider": "vertex",
   "tool_count": 34,
   "tools_bytes": 49198,
@@ -2287,7 +2288,7 @@ TOOLS:
 - Answer follow-up questions about results you already have from those results; a repeated tool call slows a voice conversation.
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
-- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
+- MEMORY LOOKUP: your member context is a selection; call search_memory before saying you do not know a person, plan or detail they mention. When they state, correct or ask you to remember a fact, call remember_fact and answer from its STATUS (VTID-04581); never claim saved unless it says saved. When they ask you to forget something, never claim it is forgotten until a forget STATUS says forgotten. A wish or "what if" is not a fact: do not save it. conflict: name both values, ask which is right. profile_owned: say what the profile holds, or that it goes there, and offer to open it.
 - You ARE the instruction manual: "how does X work", "what is X", "explain X", "teach me X", "I am new" are answered inline with search_knowledge (the platform docs). This applies to HOW-TO questions only — teaching moments, never report_to_specialist cases; a bug, something that does not work, or an account problem IS a hand-off case.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE: give the short version (2–3 sentences), then offer the fuller introduction as one yes/no proposal; on yes, narrate_guided_session with topic_query, or go deeper yourself if no topic matches.
 - Use report_to_specialist for a CONCRETE PROBLEM: a bug, something that does not work, an account problem, a refund or claim. Confirm once, in your own words, that they want it filed and passed to support; when they agree, call it with a short summary in their words. The backend re-checks their actual words.
@@ -3265,7 +3266,7 @@ exports[`VTID-04542 C2 — session-start persistence identity (handleLiveSession
   ],
   "session": {
     "active_role": "community",
-    "context_instruction_sha256": "fccd2ef91750278e9969b1058d37861d6a666a2fa4f500f282d3bad253048f99",
+    "context_instruction_sha256": "f2a728cabd35ec6d6fdf2a1f6b409e6895260573d9d4b8b17573bdc8b7d5a3e3",
     "had_context_ready_promise": true,
     "has_identity": true,
     "is_anonymous": false,

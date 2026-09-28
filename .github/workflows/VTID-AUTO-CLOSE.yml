@@ -1,0 +1,53 @@
+# VTID-AUTO-CLOSE — close a VTID in the ledger when its PR merges (VTID-04691).
+#
+# On a PR merged into main, every VTID named in the PR TITLE that is still
+# open in vtid_ledger is closed through the governed completion endpoint
+# (POST /api/v1/oasis/tasks/:vtid/complete, terminal_outcome=success), which
+# also emits the vtid.lifecycle.completed OASIS event.
+#
+# Left alone: rows already terminal (a cancelled/rejected decision is never
+# overwritten), Dev Autopilot PRs (dev-autopilot/* — that pipeline closes its
+# own VTIDs after verification), and PRs that opt out for multi-PR work with
+# the `vtid-keep-open` label or a `VTID_AUTO_CLOSE: no` line in the body.
+# Logic and tests: scripts/ci/vtid-auto-close.cjs (+ .test.cjs).
+#
+# Never fails the merged PR: a close that does not happen is reported as a
+# warning and in the job summary.
+
+name: VTID-AUTO-CLOSE
+
+run-name: 'VTID-AUTO-CLOSE #${{ github.event.pull_request.number }}'
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vtid-auto-close-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  close:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          sparse-checkout: scripts/ci
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Close the PR's VTIDs in the ledger
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          PR_REF: ${{ github.repository }}#${{ github.event.pull_request.number }}
+        run: node scripts/ci/vtid-auto-close.cjs

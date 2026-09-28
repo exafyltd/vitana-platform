@@ -109,11 +109,21 @@ export async function runRememberBackstop(
  * The system note for the model, or null when there is nothing to tell
  * (no fact could be extracted — the model's own reply stands).
  */
-export function buildRememberBackstopNote(results: RememberFactToolResult[]): string | null {
+export function buildRememberBackstopNote(
+  results: RememberFactToolResult[],
+  reason: 'no_call' | 'stored_value_echoed' = 'no_call',
+): string | null {
   if (results.length === 0) return null;
+  // VTID-04690: after the model's own remember_fact came back already_known,
+  // only a result that differs from that is news; otherwise its reply stands.
+  if (reason === 'stored_value_echoed' && results.every((r) => r.status === 'already_known')) return null;
   const lines = results.map((r) => `- ${r.fact_key}: ${formatRememberFactResult(r)}`);
+  const lead =
+    reason === 'stored_value_echoed'
+      ? 'you called remember_fact with the value that was already stored, not the value the member just said. The gateway ran it with the member\'s own words:'
+      : 'the member asked you to remember something and you answered without calling remember_fact. The gateway ran it:';
   return [
-    `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked you to remember something and you answered without calling remember_fact. The gateway ran it:`,
+    `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: ${lead}`,
     ...lines,
     'Now tell the member the real outcome in one or two short sentences, in their language. If your previous answer said something different, correct it plainly. Do not call remember_fact for these facts again unless the member answers a question you ask.',
   ].join('\n');

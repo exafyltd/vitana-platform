@@ -460,6 +460,71 @@ export async function tool_remember_fact(
   return { ok: true, result, text: formatRememberFactResult(result) };
 }
 
+/**
+ * VTID-04684: the readers and writers forget_fact uses — shared by the tool
+ * and by the gateway backstop that runs it when the model does not.
+ */
+export async function buildForgetFactDeps(sb: SupabaseClient) {
+  const { deleteGardenEntry } = await import('./memory/garden');
+  return {
+    async listCurrentFacts(tenantId: string, userId: string) {
+      const { data, error } = await sb
+        .from('memory_facts')
+        .select('id, fact_key, fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(500);
+      if (error) throw new Error(error.message);
+      return (Array.isArray(data) ? data : []).map((r: any) => ({
+        id: String(r.id),
+        fact_key: String(r.fact_key),
+        fact_value: String(r.fact_value),
+        extracted_at: r.extracted_at ?? null,
+      }));
+    },
+    async forgetFact(tenantId: string, userId: string, factId: string) {
+      const r = await deleteGardenEntry(sb, { tenant_id: tenantId, user_id: userId }, 'fact', factId);
+      return { ok: r.ok, error: r.ok ? undefined : r.error };
+    },
+    async deleteItemsMentioning(tenantId: string, userId: string, value: string) {
+      const v = String(value || '').trim();
+      if (v.length < 3) return 0;
+      const pattern = `%${v.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const { data, error } = await sb
+        .from('memory_items')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .ilike('content', pattern)
+        .select('id');
+      if (error) throw new Error(error.message);
+      return Array.isArray(data) ? data.length : 0;
+    },
+    refreshSnapshot(tenantId: string, userId: string) {
+      void import('./conversation/brain-core-snapshot')
+        .then((m) => m.refreshSnapshotAfterMemoryEdit({ tenantId, userId }))
+        .catch(() => {});
+    },
+  };
+}
+
+export async function tool_forget_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'forget_fact requires a tenant_id on the session.' };
+  const { runForgetFact, formatForgetFactResult } = await import('./memory/forget-fact');
+  const result = await runForgetFact(
+    { tenant_id: id.tenant_id, user_id: id.user_id, request: String(args.what ?? args.fact_key ?? '') },
+    await buildForgetFactDeps(sb),
+  );
+  console.log(`[VTID-04684] forget_fact -> ${result.status} ${result.forgotten.map((f) => f.fact_key).join(',')}`);
+  return { ok: true, result, text: formatForgetFactResult(result) };
+}
+
 export async function tool_search_memory(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -5834,6 +5899,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
   remember_fact: tool_remember_fact,
+  forget_fact: tool_forget_fact,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),

@@ -25,7 +25,7 @@
  *   MEMORY_VERIFY_TOKEN=<test user JWT> node scripts/memory-verification/run-live.mjs \
  *     [--only B-CONF-02,B-REC-01] [--runs 2] [--out <dir>]
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import { dirname, join } from 'path';
@@ -34,7 +34,11 @@ import { fileURLToPath } from 'url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATEWAY = process.env.MEMORY_VERIFY_GATEWAY || 'https://preview-aws-gateway.vitanaland.com';
 const ORIGIN = process.env.MEMORY_VERIFY_ORIGIN || 'https://preview-aws.vitanaland.com';
-const TOKEN = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+const TOKEN_ENV = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+// A full run outlasts one access token (60 min). With MEMORY_VERIFY_TOKEN_FILE
+// the token is re-read on every call, so an operator can refresh the file.
+const TOKEN_FILE = process.env.MEMORY_VERIFY_TOKEN_FILE ?? '';
+const token = () => (TOKEN_FILE ? readFileSync(TOKEN_FILE, 'utf8').trim() : TOKEN_ENV);
 const TEST_USER = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 
 const args = process.argv.slice(2);
@@ -51,13 +55,21 @@ const SETTLE_MS = Number(process.env.MEMORY_VERIFY_SETTLE_MS || 12000);
 // A member does not speak within a second of editing the Garden, so the run
 // waits for that rebuild before opening the session.
 const SEED_SETTLE_MS = Number(process.env.MEMORY_VERIFY_SEED_SETTLE_MS || 10000);
+const QUIET_MS = Number(process.env.MEMORY_VERIFY_QUIET_MS || 8000);
+// --pause-reset: before each scenario, write reset.sql (the test user's own
+// rows written since the run began: transcripts, facts, forget markers) and
+// wait for <out>/reset.done. Earlier scenarios' transcripts otherwise leak
+// into later ones ("Paul: 7 Mai" answering a scenario that seeded 5 Mai).
+// The runner has no database access, so an operator applies the SQL.
+const PAUSE_RESET = args.includes('--pause-reset');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` });
+const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${token()}` });
 
 // ---------------------------------------------------------------- guards
 async function guard() {
-  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN (the test user JWT) is required');
+  const TOKEN = token();
+  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN or MEMORY_VERIFY_TOKEN_FILE (the test user JWT) is required');
   const payload = JSON.parse(Buffer.from(TOKEN.split('.')[1], 'base64url').toString());
   if (payload.sub !== TEST_USER) throw new Error(`token is not the test user (${payload.sub})`);
   const h = await (await fetch(`${GATEWAY}/api/v1/admin/health`)).json();
@@ -87,8 +99,8 @@ async function runSession(lang, utterances) {
   if (!sb.ok) return { ...log, error: `start ${start.status}` };
   log.session_id = sb.session_id;
   fetch(`${GATEWAY}/api/v1/orb/session/${sb.session_id}/audio-ready`, { method: 'POST', headers: headers(), body: '{}' }).catch(() => {});
-  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(TOKEN)}`,
-    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` } });
+  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(token())}`,
+    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${token()}` } });
   const reader = sse.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -98,15 +110,28 @@ async function runSession(lang, utterances) {
   let sending = null;
   const deadline = Date.now() + 60000 + utterances.length * 45000;
 
+  const sendChunk = (chunk) => fetch(`${GATEWAY}/api/v1/orb/live/stream/send`, { method: 'POST', headers: headers(),
+    body: JSON.stringify({ session_id: sb.session_id, type: 'audio', data_b64: chunk.toString('base64'), mime: 'audio/pcm;rate=16000' }) })
+    .catch(() => { log.sendErrors = (log.sendErrors || 0) + 1; });
   const send = async (pcm) => {
     const stream = Buffer.concat([pcm, Buffer.alloc(32000 * 2)]); // 2 s of silence ends the turn
     for (let off = 0; off < stream.length; off += 3200) {
-      await fetch(`${GATEWAY}/api/v1/orb/live/stream/send`, { method: 'POST', headers: headers(),
-        body: JSON.stringify({ session_id: sb.session_id, type: 'audio', data_b64: stream.subarray(off, off + 3200).toString('base64'), mime: 'audio/pcm;rate=16000' }) })
-        .catch(() => { log.sendErrors = (log.sendErrors || 0) + 1; });
+      await sendChunk(stream.subarray(off, off + 3200));
       await sleep(100);
     }
   };
+  // The app's microphone never stops: between lines it streams silence, which
+  // is what arms the gateway's no-response watchdog after a tool call. A
+  // runner that goes quiet after each line would test a client that does
+  // not exist.
+  let pumping = true;
+  const SILENCE = Buffer.alloc(3200);
+  const pump = (async () => {
+    while (pumping) {
+      if (!sending && sent >= 0) await sendChunk(SILENCE);
+      await sleep(100);
+    }
+  })();
 
   let pendingRead = reader.read();
   while (Date.now() < deadline) {
@@ -130,13 +155,18 @@ async function runSession(lang, utterances) {
           lastActivity = Date.now();
         }
         if (t === 'input_transcript' && m.text && sent >= 0) log.heard[sent] += m.text;
-        if (t === 'error') log.error = m.message || m.code || 'error';
+        // An error the gateway recovers from (a 'reconnected' follows) is what a
+        // member experiences as a short pause, not a failure; it is kept as a
+        // note. Only an error nothing recovers from fails the session.
+        if (t === 'error') { log.pendingError = m.message || m.code || 'error'; (log.recoveredErrors ||= []); }
+        if (t === 'reconnected' && log.pendingError) { log.recoveredErrors.push(log.pendingError); log.pendingError = null; }
         if (t === 'turn_complete') turnDoneAt = Date.now();
       }
     }
     // Send the next line once the assistant has finished and stayed quiet for
-    // 4 s — a gateway note can trigger a second reply to the same line.
-    const quiet = turnDoneAt && Date.now() - Math.max(turnDoneAt, lastActivity) > 4000;
+    // QUIET_MS — a tool result or a gateway note can bring a second reply to
+    // the same line (a lookup answer arrives after the "let me check" turn).
+    const quiet = turnDoneAt && Date.now() - Math.max(turnDoneAt, lastActivity) > QUIET_MS;
     if (quiet && !sending) {
       if (sent + 1 >= utterances.length) break;
       sent++;
@@ -145,10 +175,13 @@ async function runSession(lang, utterances) {
     }
   }
   if (sending) await sending.catch(() => {});
+  pumping = false;
+  await pump.catch(() => {});
   reader.cancel().catch(() => {});
   await fetch(`${GATEWAY}/api/v1/orb/live/session/stop`, { method: 'POST', headers: headers(), body: JSON.stringify({ session_id: sb.session_id }) }).catch(() => {});
   log.ended = new Date().toISOString();
   log.completed_all = sent === utterances.length - 1;
+  if (log.pendingError) log.error = log.pendingError;
   return log;
 }
 
@@ -175,6 +208,7 @@ const SYSTEM_KEY = /^(preferred_language|stt_language|user_timezone|timezone|loc
 // A Garden delete removes every row of that key, so a key the account held
 // before the run is never deleted (that would erase the baseline too).
 let baselineKeys = new Set();
+let BASELINE_IDS = new Set();
 // Values removed by cleanup during this invocation. Each left a "forgotten"
 // marker; a later scenario that expects the same value to be written (or not)
 // by an inferred write would be decided by the marker, not by the code under
@@ -194,6 +228,36 @@ async function cleanupSuiteFacts(baselineIds) {
 
 // ---------------------------------------------------------------- matching (mirrors remember-fact-tool.ts)
 const MONTHS = { jan: 1, january: 1, januar: 1, feb: 2, february: 2, februar: 2, mar: 3, march: 3, märz: 3, maerz: 3, apr: 4, april: 4, may: 5, mai: 5, jun: 6, june: 6, juni: 6, jul: 7, july: 7, juli: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, oct: 10, october: 10, okt: 10, oktober: 10, nov: 11, november: 11, dec: 12, december: 12, dez: 12, dezember: 12 };
+// A reply_none word only counts when a sentence asserts it. "Ich kann dein
+// Geburtsdatum nicht speichern … kann nicht direkt gespeichert werden" is the
+// correct refusal, not a claim that it was saved (B-PROF-01, pass 3). A word
+// that is itself a negation ("nicht speichern") is matched as written.
+const NEGATION = /\b(nicht|kein|keine|keinen|nie|niemals|not|no|never|cannot|can't|won't|didn't|don't|ne|nemoj|no puedo)\b/i;
+export function claims(reply, word) {
+  const w = word.toLowerCase();
+  if (NEGATION.test(w)) return reply.includes(w);
+  return reply
+    .split(/(?<=[.!?])\s*|\n+/)
+    .some((s) => s.includes(w) && !NEGATION.test(s));
+}
+
+const words = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/).filter((w) => w.length >= 4);
+// First turn whose recognised transcript holds under half of the spoken
+// line's content words, as a confound reason; null when every turn was heard.
+export function misheardTurn(sc, sessions) {
+  for (let s = 0; s < sc.sessions.length; s++) {
+    const turns = sc.sessions[s].turns;
+    for (let i = 0; i < turns.length; i++) {
+      const said = words(turns[i].say);
+      if (said.length < 2) continue;
+      const heard = new Set(words(sessions[s]?.heard?.[i]));
+      const kept = said.filter((w) => heard.has(w)).length;
+      if (kept / said.length < 0.5) return `speech recognition heard "${sessions[s]?.heard?.[i] || ''}" for "${turns[i].say}" — re-run`;
+    }
+  }
+  return null;
+}
+
 function normalizeDate(value) {
   const v = String(value).trim().toLowerCase();
   let m = v.match(/^--(\d{1,2})-(\d{1,2})$/);
@@ -225,10 +289,32 @@ function keyLike(pattern, key) {
 }
 
 // ---------------------------------------------------------------- one scenario run
+function resetSql(since, baselineIds) {
+  const keep = [...baselineIds].map((id) => `'${id}'`).join(',') || `'00000000-0000-0000-0000-000000000000'`;
+  return `-- VTID-04600 layer B: reset the test user's own rows written since ${since}
+delete from memory_fact_forgotten where user_id='${TEST_USER}' and forgotten_at >= '${since}';
+delete from memory_facts where user_id='${TEST_USER}' and id not in (${keep}) and fact_key !~* '${SYSTEM_KEY.source}';
+delete from memory_items where user_id='${TEST_USER}' and created_at >= '${since}';
+`;
+}
+async function waitForReset(sc) {
+  const done = join(OUT, 'reset.done');
+  writeFileSync(join(OUT, 'reset.sql'), resetSql(runStarted, BASELINE_IDS));
+  console.log(`RESET_NEEDED ${sc.id} ${join(OUT, 'reset.sql')}`);
+  while (!existsSync(done)) await sleep(2000);
+  rmSync(done);
+  // The SQL bypasses the product, so nothing rebuilt the voice snapshot. A
+  // Garden add + delete of a probe key does (VTID-04627), from the purged state.
+  await gardenAdd('verify_reset_probe', String(Date.now()));
+  for (const f of await gardenFacts()) if (f.fact_key === 'verify_reset_probe') await gardenDelete(f.id);
+  deletedValues.length = 0;
+  await sleep(SEED_SETTLE_MS);
+}
 async function runScenario(sc, baselineIds, runNo) {
   const out = { id: sc.id, run: runNo, failures: [], sessions: [] };
   // Clean slate: remove facts this suite created earlier (never the baseline).
-  await cleanupSuiteFacts(baselineIds);
+  if (PAUSE_RESET) await waitForReset(sc);
+  else await cleanupSuiteFacts(baselineIds);
   const priorDeleted = deletedValues.slice();
   for (const s of sc.seed_facts || []) await gardenAdd(s.key, s.value);
   if ((sc.seed_facts || []).length) await sleep(SEED_SETTLE_MS);
@@ -242,6 +328,7 @@ async function runScenario(sc, baselineIds, runNo) {
     const log = await runSession(sess.lang, pcm);
     out.sessions.push(log);
     if (log.error) out.failures.push(`session error: ${log.error}`);
+    if (log.recoveredErrors?.length) (out.notes ||= []).push(`recovered after: ${log.recoveredErrors.join('; ')}`);
     if (!log.completed_all) out.failures.push('session ended before every line was spoken');
     sess.turns.forEach((t, i) => {
       const reply = (log.replies[i] || '').toLowerCase();
@@ -249,7 +336,7 @@ async function runScenario(sc, baselineIds, runNo) {
         if (!group.some((w) => reply.includes(w.toLowerCase()))) out.failures.push(`reply ${i + 1} lacks one of [${group.join(', ')}]: "${log.replies[i]}"`);
       }
       for (const w of t.reply_none || []) {
-        if (reply.includes(w.toLowerCase())) out.failures.push(`reply ${i + 1} says "${w}": "${log.replies[i]}"`);
+        if (claims(reply, w)) out.failures.push(`reply ${i + 1} says "${w}": "${log.replies[i]}"`);
       }
       if (t.reply_ask && !reply.includes('?')) out.failures.push(`reply ${i + 1} does not ask: "${log.replies[i]}"`);
     });
@@ -273,6 +360,15 @@ async function runScenario(sc, baselineIds, runNo) {
   const judged = [...(sc.expect_facts || []), ...(sc.absent_facts || [])].map((x) => x.value).filter((v) => v != null && !seeded.has(String(v)));
   const hit = judged.find((v) => priorDeleted.some((d) => valuesMatch(d, v)));
   if (hit) out.confounded = `"${hit}" was deleted earlier in this invocation (forgotten marker) — purge markers and re-run alone`;
+  // The suite tests memory, not speech recognition. When a failed run's
+  // transcript does not carry the line that was spoken (B-CONF-02, pass 3:
+  // "Mein Bruder Paul hat … am siebten Mai Geburtstag" was heard as "mein
+  // buddha hat übrigens am mittwoch einen neuen putztag"), the input never
+  // reached memory, so the run is confounded — re-run it, never count it.
+  if (!out.pass && !out.confounded) {
+    const misheard = misheardTurn(sc, out.sessions);
+    if (misheard) out.confounded = misheard;
+  }
   return out;
 }
 
@@ -284,6 +380,7 @@ mkdirSync(OUT, { recursive: true });
 const runStarted = new Date().toISOString();
 const baseline = await gardenFacts();
 const baselineIds = new Set(baseline.map((f) => f.id));
+BASELINE_IDS = baselineIds;
 baselineKeys = new Set(baseline.map((f) => f.fact_key));
 console.log(`staging ${env.commit} · ${scenarios.length} scenarios × ${RUNS} runs · baseline ${baseline.length} facts kept untouched`);
 
@@ -319,6 +416,7 @@ for (const r of results) {
   for (const run of r.runs) {
     lines.push(`- run ${run.run}: ${run.pass ? 'pass' : 'fail'} · sessions ${run.sessions.map((s) => s.session_id).join(', ')}`);
     run.sessions.forEach((s, si) => s.replies?.forEach((rep, i) => lines.push(`  - s${si + 1} line ${i + 1} heard "${s.heard[i]}" → "${rep}"`)));
+    for (const n of run.notes || []) lines.push(`  - note: ${n}`);
     for (const f of run.failures) lines.push(`  - ✗ ${f}`);
   }
   lines.push('');

@@ -1423,7 +1423,7 @@ router.get('/pipeline/summary', async (_req: Request, res: Response) => {
 
       // Recommendations: pending, limit 5
       fetch(
-        `${supabaseUrl}/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at`,
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at,source_type`, // VTID-04667: source_type drives "Create task" vs "Activate"
         { headers }
       ).catch(() => null),
 
