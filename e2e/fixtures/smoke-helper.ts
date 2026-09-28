@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
+import { test, expect } from './readonly-test';
 
 /**
  * VTID-04515: the app is a client-rendered SPA. At `domcontentloaded` the

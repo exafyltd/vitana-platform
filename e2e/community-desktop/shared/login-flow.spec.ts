@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 
 // Login flow tests must run unauthenticated — override the project-level storageState
 test.use({ storageState: { cookies: [], origins: [] } });

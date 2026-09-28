@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 
 test.describe('Command Hub — Auth Gate', () => {
   test('shows login form when not authenticated', async ({ page }) => {

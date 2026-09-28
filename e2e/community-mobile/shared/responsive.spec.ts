@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 import { COMMUNITY_ROUTES_BY_ROLE } from '../../fixtures/routes';
 
 const keyRoutes = ['/', '/community', '/discover', '/messages', '/settings'];
