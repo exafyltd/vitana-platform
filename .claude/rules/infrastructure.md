@@ -1,9 +1,13 @@
 ---
 paths:
   - .github/workflows/**
+  - .github/actions/**
   - scripts/aws/**
+  - scripts/aws-staging-validation/**
   - scripts/deploy/**
   - docs/AWS-*.md
+  - infra/**
+  - "**/Dockerfile*"
 ---
 
 # Infrastructure reference — vitana-platform

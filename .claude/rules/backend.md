@@ -1,6 +1,7 @@
 ---
 paths:
   - services/gateway/src/**
+  - services/gateway/test/**
   - services/agents/**
   - services/oasis-operator/**
   - services/oasis-projector/**
@@ -8,7 +9,11 @@ paths:
   - services/vcaop/**
   - services/vcaop-mcp/**
   - services/erp-bridge/**
+  - services/mcp/**
+  - services/mcp-gateway/**
+  - services/validators/**
   - supabase/migrations/**
+  - database/migrations/**
 ---
 
 # Backend reference — vitana-platform
