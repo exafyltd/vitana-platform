@@ -144,7 +144,15 @@ jobs:
           if [ -n "$DEPLOYED" ] && [ "${EXPECTED:0:${#DEPLOYED}}" = "$DEPLOYED" ]; then
             R=PASS; D="staging=$DEPLOYED matches latest gateway-touching commit"
           elif [ -n "$DEPLOYED" ]; then
-            R=FAIL; D="staging=$DEPLOYED, latest gateway commit=$EXPECTED (drift — check STAGE-DEPLOY.yml)"
+            # VTID-04721: a staging deploy takes ~9 min, so a gateway commit
+            # merged just before this run is still rolling out. Under 25 min
+            # old that is a deploy in flight, not drift.
+            AGE_MIN=$(( ( $(date +%s) - $(git log -1 --format=%ct "$EXPECTED" 2>/dev/null || echo 0) ) / 60 ))
+            if [ "$AGE_MIN" -lt 25 ]; then
+              R=PASS; D="staging=$DEPLOYED, deploy of $EXPECTED in flight (${AGE_MIN}min old)"
+            else
+              R=FAIL; D="staging=$DEPLOYED, latest gateway commit=$EXPECTED (${AGE_MIN}min old — check AWS-STAGE-DEPLOY-GATEWAY.yml)"
+            fi
           else
             R=FAIL; D="could not read build-info: $(echo "$BODY" | head -c 200)"
           fi
@@ -430,7 +438,11 @@ jobs:
           SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          # VTID-04721: the staging gateway's GATEWAY_SERVICE_TOKEN is the
+          # Supabase service-role key (AWS-STAGE-DEPLOY-GATEWAY.yml maps it to
+          # vitana/supabase/prod/service-role-key); the repo secret of the same
+          # name is a different value, so every report came back 401.
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SCREEN_LOAD_REPORT_STATUS_FILE: ${{ runner.temp }}/morning-screen-load-report-status.txt
         run: |
           set +e
