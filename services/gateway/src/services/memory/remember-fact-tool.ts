@@ -258,6 +258,34 @@ const KEY_SYNONYMS: Record<string, string> = {
   wohnort: 'city', stadt: 'city',
 };
 
+// Synonym entries whose source word is already English: never rewritten into
+// the English key (rewriting "work_address" to "job_address" would change it).
+const ENGLISH_SYNONYM_SOURCES = new Set([
+  'bday', 'birth', 'dob', 'sibling', 'wife', 'husband', 'partner', 'fiancee', 'mom', 'dad',
+  'kids', 'children', 'favourite', 'allergies', 'allergic', 'work', 'occupation',
+]);
+
+/**
+ * VTID-04694: the English form of a NEW fact's key. Live suite B-SELF-01:
+ * "Merk dir, mein Lieblingsessen ist Lasagne" was stored as
+ * `lieblingsessen = lasagne`, next to Garden facts named `user_favorite_food`.
+ * Words of the member's language that the synonym table knows are replaced by
+ * their English word ("lieblingsessen" → "favorite_food", "mutter_name" →
+ * "mother_name"); every other word is kept. Keys already in English are
+ * unchanged.
+ */
+export function canonicalFactKey(factKey: string): string {
+  const parts = normalizeFactKey(factKey).split('_').filter(Boolean);
+  let changed = false;
+  const out = parts.map((w) => {
+    const mapped = KEY_SYNONYMS[w];
+    if (!mapped || ENGLISH_SYNONYM_SOURCES.has(w) || mapped === w) return w;
+    changed = true;
+    return mapped;
+  });
+  return changed ? out.join('_') : normalizeFactKey(factKey);
+}
+
 export function keyTokens(factKey: string): Set<string> {
   const out = new Set<string>();
   for (const raw of normalizeFactKey(factKey).split('_')) {
@@ -352,6 +380,9 @@ export async function runRememberFact(
       stored = { fact_value: related.fact_value, extracted_at: related.extracted_at };
     }
   }
+  // A new fact is stored under its English key (VTID-04694); a fact that
+  // already exists keeps the key it was stored under.
+  if (!stored) factKey = canonicalFactKey(factKey);
   base.fact_key = factKey;
   if (stored && valuesMatch(stored.fact_value, newValue)) {
     return {
