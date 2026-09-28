@@ -56,17 +56,29 @@ export interface FindingSpend { cost_usd: number; input_tokens: number; runs: nu
  * execution_id. agent_runs[] is capped at 20 entries per row, so the row's
  * own agent_cost_usd_total is also taken into account (the larger wins).
  */
-export function summarizeFindingSpend(rows: Array<{ metadata: unknown }> | null | undefined): FindingSpend {
+export interface RecordedAgentRun {
+  execution_id: string | null;
+  cost_usd: number;
+  input_tokens: number;
+}
+
+function outcomeMeta(row: { metadata: unknown } | null | undefined): Record<string, unknown> | null {
+  return row && row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    ? (row.metadata as Record<string, unknown>) : null;
+}
+
+/**
+ * Every agent run recorded on the given dev_autopilot_outcomes rows
+ * (metadata.agent_runs[], VTID-04017), deduplicated by execution_id.
+ * Shared by the per-finding budget below and the VTID-04668 priority score
+ * (median cost per execution for a scanner).
+ */
+export function extractAgentRuns(rows: Array<{ metadata: unknown }> | null | undefined): RecordedAgentRun[] {
   const seen = new Set<string>();
-  let runCost = 0;
-  let tokens = 0;
-  let runs = 0;
-  let totalsCost = 0;
+  const out: RecordedAgentRun[] = [];
   for (const row of rows || []) {
-    const meta = row && row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
-      ? (row.metadata as Record<string, unknown>) : null;
+    const meta = outcomeMeta(row);
     if (!meta) continue;
-    totalsCost += Number(meta.agent_cost_usd_total) || 0;
     const list = Array.isArray(meta.agent_runs) ? meta.agent_runs : [];
     for (const raw of list) {
       if (!raw || typeof raw !== 'object') continue;
@@ -76,12 +88,22 @@ export function summarizeFindingSpend(rows: Array<{ metadata: unknown }> | null 
         if (seen.has(id)) continue;
         seen.add(id);
       }
-      runCost += Number(r.cost_usd) || 0;
-      tokens += Number(r.input_tokens) || 0;
-      runs += 1;
+      out.push({ execution_id: id, cost_usd: Number(r.cost_usd) || 0, input_tokens: Number(r.input_tokens) || 0 });
     }
   }
-  return { cost_usd: Math.round(Math.max(runCost, totalsCost) * 1_000_000) / 1_000_000, input_tokens: tokens, runs };
+  return out;
+}
+
+export function summarizeFindingSpend(rows: Array<{ metadata: unknown }> | null | undefined): FindingSpend {
+  let totalsCost = 0;
+  for (const row of rows || []) {
+    const meta = outcomeMeta(row);
+    if (meta) totalsCost += Number(meta.agent_cost_usd_total) || 0;
+  }
+  const runs = extractAgentRuns(rows);
+  const runCost = runs.reduce((s, r) => s + r.cost_usd, 0);
+  const tokens = runs.reduce((s, r) => s + r.input_tokens, 0);
+  return { cost_usd: Math.round(Math.max(runCost, totalsCost) * 1_000_000) / 1_000_000, input_tokens: tokens, runs: runs.length };
 }
 
 export function isOverFindingBudget(spend: FindingSpend, budget: FindingBudget = resolveFindingBudget()): boolean {

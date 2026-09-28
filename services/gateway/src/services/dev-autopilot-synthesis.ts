@@ -11,6 +11,7 @@
  * that both stages share.
  */
 
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from './recommendation-quality/scoring-service';
 import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import {
@@ -628,6 +629,13 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
       }),
     });
     if (inserted.ok) newCount++;
+  }
+
+  // VTID-04668: score the rows this run created (priority_score + quality,
+  // legacy impact/effort mapped back). PATCH after insert; never throws, so
+  // a scoring failure can never fail the scan.
+  if (newCount > 0) {
+    await scoreNewDeveloperRecommendations(new Date(nowMs - SCORING_CLOCK_SKEW_MS).toISOString());
   }
 
   // 4. Finalize run. Previously fired without checking the result, so a
