@@ -96,8 +96,8 @@
   },
   "greeting:conv_resume": {
     "wake_opener": "conv_resume",
-    "directive_sha256": "85e7bce5bcbf3e046db08e0187c8e42f2b96278bcbc6bbe235c3dc5dcb9003cb",
-    "directive_bytes": 3976
+    "directive_sha256": "1bfbca316e8233f872980856b341137c4b569cefdf3dfbe5e042e0bf060be084",
+    "directive_bytes": 4275
   },
   "greeting:day_close (full)": {
     "wake_opener": "day_close",

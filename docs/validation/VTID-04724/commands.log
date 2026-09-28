@@ -1,0 +1,64 @@
+VTID-04724 — what was actually run, in order.
+
+INVESTIGATION (read-only; no writes to any live system)
+  curl https://gateway.vitanaland.com/api/v1/orb/nova-sonic/health
+    -> cascade.enabled=true, effective=true, ru="cascade:ru-RU"
+       (the earlier Nova-German-voice fault is gone; ru now runs the cascade)
+  curl https://gateway.vitanaland.com/api/v1/admin/build-info
+    -> production git_commit 2ae96e05
+  Supabase (read-only) oasis_events: ru sessions over 10 days, joining each
+    session's greeting_sent wake_opener to its turn_complete output_preview.
+    -> outputs/telemetry-ru-sessions.txt  (resume_thread 4/6 German; siblings 0/11)
+
+  Node + @aws-sdk/client-polly DescribeVoices(ru-RU) in eu-central-1 (read-only)
+    -> outputs/polly-ru-voices.txt  (Tatyana + Maxim, standard engine only)
+
+WRONG TURNS, RECORDED
+  1. First grep for `resume_thread` found nothing and I briefly concluded
+     production emitted a value with no source. That was wrong: I was grepping
+     the stale feature branch, not main. The rung exists (VTID-04575).
+  2. First fix targeted buildResumeDirective only — the WRONG function for the
+     reported symptom. resume_thread uses buildResumeThreadOpenTrigger.
+  3. First fix added "Respond ONLY in ${langName}". Withdrawn: rung 4's own
+     recorded comment shows that shape was measured at 2/11 and reverted
+     (VTID-04010 follow-up #1/#2 / VTID-04015). Both fixes are now generic.
+  4. First cut rendered "Respond ONLY in German. Do NOT switch to German." for a
+     de session. Caught by reading the golden diff, not by accepting it.
+  5. After restarting the branch from main (its prior PR was merged), the edited
+     file was replayed from the older base and silently reverted three unrelated
+     newer main changes to it. Caught in the snapshot diff; edits re-applied onto
+     main's real file and the diff re-checked until clean.
+
+CHANGES
+  services/gateway/src/services/conversation/compute-greeting-decision.ts
+    buildResumeThreadOpenTrigger(): added a generic language nudge (no named
+    target language) + the reasoning comment.
+  services/gateway/src/services/conversation/decide-opening.ts
+    buildResumeDirective(): bare ISO code -> generic nudge; three German-only
+    worked examples -> language-neutral intent.
+
+VERIFICATION
+  npx tsc --noEmit                                              -> clean
+  npx jest .../vtid-04724-resume-directive-language.test.ts      -> 11/11
+  mutation A (remove resume_thread nudge)                       -> 2 fail
+  mutation B (restore bare ISO code)                            -> 3 fail
+  npx jest .../vtid-04575-resume-thread-rung.test.ts            -> 12/12
+      (the changed function's own suite, incl. its positive-intent guard)
+  npx jest test/services/conversation test/conversation-flow-v3 -> 658/658
+  golden snapshots re-recorded deliberately and diffed:
+      compute-greeting-decision.golden            6 updated, diff = the 4 edits
+      vtid-04542-voice-payload-identity + hashes  1 updated, diff = the 4 edits
+  full gateway suite                                            -> see below
+
+NOTE ON THE LOCAL ENVIRONMENT
+  @aws-sdk/client-cloudwatch-logs is declared in package.json but was not
+  installed in this container, which made 5 suites fail to run at all (the
+  documented pre-existing gap). Installed with `npm install --no-save` so the
+  changed function's own suite could actually run; package.json and
+  package-lock.json are untouched (verified via git status).
+
+FULL GATEWAY SUITE (with these changes, missing package installed locally):
+  Test Suites: 1 skipped, 1389 passed, 1389 of 1390 total
+  Tests:       29 skipped, 6 todo, 22307 passed, 22342 total
+  Snapshots:   109 passed, 109 total
+  0 FAIL
