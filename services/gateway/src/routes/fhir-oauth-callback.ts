@@ -19,6 +19,7 @@ import { getSupabase } from '../lib/supabase';
 import { canTransition } from './vcaop-portal';
 import { isFhirOAuthConfigured, decodeAndVerifyState, exchangeCodeForToken } from '../services/smart-fhir-oauth';
 import * as repo from './fhir-oauth-callback-repository';
+import { resolveConnectionSurface } from '../services/vcaop-portal/connection-surface';
 
 async function emitOasisEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
@@ -51,6 +52,8 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   if (!decoded) {
     return res.status(401).json({ ok: false, error: 'invalid_or_expired_state' });
   }
+  // VTID-04711: the surface that started the flow, carried in the encrypted state.
+  const surface = resolveConnectionSurface(decoded.surface);
 
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'database unavailable' });
@@ -92,7 +95,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
   if (upsertError) {
     await emitOasisEvent(supabase, 'vcaop.portal.connection.fhir_credential_persist_failed', 'error',
       `connection ${rec.id}: SMART on FHIR OAuth code exchanged but credential write failed: ${upsertError.message ?? 'unknown error'}`, {
-        connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl, surface: 'merchant_self_service',
+        connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl, surface,
       });
     return res.status(502).json({ ok: false, error: 'credential_persist_failed' });
   }
@@ -106,7 +109,7 @@ router.get('/callback', async (req: Request, res: Response) => { // public-route
 
   await emitOasisEvent(supabase, 'vcaop.portal.connection.fhir_authorized', 'success',
     `connection ${rec.id}: SMART on FHIR OAuth completed for ${decoded.fhirBaseUrl}${advanced ? ` (${rec.status} -> mapping)` : ''}`, {
-      connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl, from: rec.status, to: advanced ? 'mapping' : rec.status, surface: 'merchant_self_service',
+      connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl, from: rec.status, to: advanced ? 'mapping' : rec.status, surface,
     });
 
   res.json({ ok: true, data: { connection_id: rec.id, fhir_base_url: decoded.fhirBaseUrl } });

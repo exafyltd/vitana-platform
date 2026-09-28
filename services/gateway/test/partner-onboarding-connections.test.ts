@@ -343,6 +343,24 @@ describe('per-connection routes, org-scoped (VTID-04527)', () => {
     });
   });
 
+  it('a Shopify authorize started here carries the onboarding surface in its state (VTID-04711)', async () => {
+    const saved = { ...process.env };
+    process.env.SHOPIFY_CLIENT_ID = 'cid';
+    process.env.SHOPIFY_CLIENT_SECRET = 'csecret';
+    process.env.SHOPIFY_OAUTH_REDIRECT_URI = 'https://gw.example/api/v1/vcaop/shopify-oauth/callback';
+    try {
+      wire({ manifests: [{ ...CONN, status: 'authorization_required' }] });
+      const r = await request(app()).post(`${BASE}/c-1/shopify/authorize`)
+        .set('Authorization', 'Bearer admin-2').send({ shop: 'acme.myshopify.com' });
+      expect(r.status).toBe(200);
+      const state = new URL(r.body.data.authorize_url).searchParams.get('state')!;
+      const { decodeAndVerifyState } = await import('../src/services/shopify-oauth');
+      expect(decodeAndVerifyState(state)).toEqual({ manifestId: 'c-1', surface: 'partner_onboarding' });
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('an illegal transition is a 409 and changes nothing', async () => {
     const w = wire({ manifests: [{ ...CONN, status: 'revoked' }] });
     const r = await request(app()).post(`${BASE}/c-1/resume`).set('Authorization', 'Bearer owner-1');
