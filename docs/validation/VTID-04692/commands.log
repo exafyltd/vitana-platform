@@ -1,0 +1,5 @@
+cd services/gateway
+npx tsc --noEmit -p .                       # clean
+npx jest test/services/memory               # 28 suites, 383 tests passed
+npx jest test/services/memory/vtid-04692-recall-backstop.test.ts   # 27 passed
+npx jest test/orb                           # see outputs/jest-orb.txt

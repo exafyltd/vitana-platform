@@ -37,6 +37,13 @@ export interface HealthProbeResult {
 /** Status strings that count as healthy. */
 export const HEALTHY_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
 
+/**
+ * VTID-04664: statuses meaning "not checked" rather than "broken" — the probe
+ * could not look (no_access) or the capability is deliberately off on this
+ * stack (not_configured). Shown grey, counted apart from failures.
+ */
+export const NOT_CHECKED_STATUSES = ['no_access', 'not_configured'];
+
 /** Status strings a check may report that are not failures of the check. */
 const KNOWN_BAD_STATUSES = ['down', 'degraded', 'warning', 'error', 'unhealthy', 'unavailable', 'misconfigured'];
 
@@ -138,7 +145,7 @@ export interface HealthSummary {
 
 export function summarize(items: HealthProbeResult[], groups: string[], checkedAt: string): Omit<HealthSummary, 'cached'> {
   const healthy = items.filter((i) => i.healthy).length;
-  const noAccess = items.filter((i) => i.status === 'no_access').length;
+  const noAccess = items.filter((i) => NOT_CHECKED_STATUSES.includes(i.status)).length;
   return {
     ok: true,
     checked_at: checkedAt,

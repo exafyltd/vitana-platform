@@ -1,0 +1,20 @@
+    ✓ llm routing: a stage on a forbidden provider is down (146 ms)
+    ✓ anthropic credit failures are down, Google completions are degraded (9 ms)
+    ✓ locale coverage and the test-account guard (1 ms)
+    ✓ ledger integrity and the ORB session ledger (3 ms)
+    ✓ push dispatch: stale over 15 min or backlog over 25 is degraded, over 60 min is down (3 ms)
+    ✓ /llm-routing answers 200 JSON that the panel reads as healthy (34 ms)
+    ✓ /anthropic-credit answers 200 JSON that the panel reads as healthy (14 ms)
+    ✓ /google-fallback answers 200 JSON that the panel reads as healthy (5 ms)
+    ✓ /locale-coverage answers 200 JSON that the panel reads as healthy (5 ms)
+    ✓ /test-actor-guard answers 200 JSON that the panel reads as healthy (4 ms)
+    ✓ /vtid-ledger answers 200 JSON that the panel reads as healthy (7 ms)
+    ✓ /orb-session-ledger answers 200 JSON that the panel reads as healthy (5 ms)
+    ✓ /push-dispatch answers 200 JSON that the panel reads as healthy (5 ms)
+    ✓ the five vital checks share one cached RPC call (17 ms)
+    ✓ push dispatch reads only the dispatcher 48 h window of push-eligible unsent rows (4 ms)
+    ✓ a failing RPC is reported as down with its reason, never green (3 ms)
+    ✓ the ledger check calls ci_ledger_integrity_check with a 7-day window (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+pre-merge GET /api/v1/ops/health/llm-routing on staging: 404 text/html; charset=utf-8
