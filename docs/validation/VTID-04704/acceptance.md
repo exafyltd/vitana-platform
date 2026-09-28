@@ -29,3 +29,26 @@ TEST: services/gateway/test/services/memory/vtid-04692-recall-backstop.test.ts
 Mutation-checked: dropping the privacy clause fails 4 tests; skipping the date check fails 2.
 
 Live check after merge: on staging, with no spouse fact, "wie heißt meine frau" and the birthday question must answer "not stored yet" and ask, with no privacy wording and no date. With the facts stored, they must still answer "Anna" / "12. März".
+
+## Follow-up after the staging check on `bf6360e` (2026-09-28 18:50 UTC)
+
+No spouse facts were stored for this check.
+
+What passed:
+- Birthday: the backstop fired as `unstored_date` and the model corrected itself ("Ich habe mich geirrt — … nicht gespeichert. Kannst du mir ihr Geburtsdatum sagen?").
+- Birthday: an honest "not found, tell me".
+- Name #2: the backstop fired as `denied`.
+- Navigation → `/settings/privacy`.
+- "schluss" → `end_conversation`.
+
+Two gaps, fixed here:
+1. **A deflection instead of a refusal.** "ich muss auf deine Profileinstellungen zugreifen … Möchtest du, dass ich dich zu deinen Profileinstellungen führe" was not detected. `replyDeflectsToProfile` now catches it. It does not apply when the member asked about the app itself (`asksAboutApp`).
+2. **False-positive risk in this VTID's own privacy pattern.** The live navigation reply contains "Privatsphäre". A bare privacy word no longer counts: only a refusal does ("nicht preisgeben", "aus Datenschutzgründen", "can't share …").
+
+AC-4: The live profile deflection is detected and corrected. The live navigation answer about privacy settings never triggers the backstop.
+TEST: services/gateway/test/services/memory/vtid-04704-recall-privacy-and-dates.test.ts
+
+Mutation-checked:
+- Restoring a bare "Privatsphäre" pattern fails 2 tests.
+- Dropping the deflection trigger fails 2.
+- Dropping the app-question exemption fails 1.

@@ -9,7 +9,9 @@ import {
   asksForDate,
   buildNothingStoredNote,
   extractDayMonths,
+  asksAboutApp,
   replyCitesPrivacy,
+  replyDeflectsToProfile,
   replyDeniesOrDefers,
   replyNamesUnstoredDate,
 } from '../../../src/services/memory/recall-backstop';
@@ -19,6 +21,12 @@ import { maybeRunRecallBackstop } from '../../../src/orb/live/session/remember-b
 const LIVE_PRIVACY_REFUSAL =
   'Tut mir leid, aber ich kann diese persönliche Information nicht preisgeben. Solche Daten können nur in deinem Profil bearbeitet werden. Möchtest du, dass ich dich zu deinen Profileinstellungen bringe?';
 const LIVE_INVENTED_DATE = 'Ja, natürlich erinnere ich mich. Der Geburtstag deiner Frau ist am 23. April. Soll ich dich daran erinnern?';
+// Staging bf6360e, nothing stored: a deflection to the profile page.
+const LIVE_DEFLECTION =
+  'Ich kann dir dabei helfen, aber ich muss auf deine Profileinstellungen zugreifen, um diese Information zu finden.  Möchtest du, dass ich dich zu deinen Profileinstellungen führe, wo du diese Details einsehen kannst?';
+// Staging bf6360e, the navigation test — must never trigger the backstop.
+const NAV_Q = 'wo kann ich meine einstellungen für erinnerungen und privatsphäreändern';
+const LIVE_NAV_REPLY = 'Ich öffne jetzt deine Datenschutzeinstellungen, wo du alles zu Erinnerungen und Privatsphäre verwalten kannst.';
 const BIRTHDAY_Q = 'erinnerst du dich an den geburtstag meiner frau';
 const NAME_Q = 'wie heißt meine frau';
 
@@ -31,6 +39,18 @@ describe('VTID-04704 detection', () => {
     expect(replyDeniesOrDefers(LIVE_PRIVACY_REFUSAL)).toBe(true);
     expect(replyCitesPrivacy('Aus Datenschutzgründen kann ich das nicht sagen.')).toBe(true);
     expect(replyCitesPrivacy("I can't share personal information.")).toBe(true);
+  });
+  it('naming the privacy page is not a privacy refusal', () => {
+    expect(replyCitesPrivacy(LIVE_NAV_REPLY)).toBe(false);
+    expect(replyDeniesOrDefers(LIVE_NAV_REPLY)).toBe(false);
+    expect(replyCitesPrivacy('Deine Datenschutzeinstellungen findest du unter Einstellungen.')).toBe(false);
+  });
+  it('the live profile deflection is detected; a question about the app is exempt', () => {
+    expect(replyDeflectsToProfile(LIVE_DEFLECTION)).toBe(true);
+    expect(replyDeflectsToProfile('Deine Frau heißt Anna.')).toBe(false);
+    expect(asksAboutApp(NAV_Q)).toBe(true);
+    expect(asksAboutApp(NAME_Q)).toBe(false);
+    expect(asksAboutApp(BIRTHDAY_Q)).toBe(false);
   });
   it('a plain answer does not cite privacy', () => {
     expect(replyCitesPrivacy('Deine Frau heißt Anna.')).toBe(false);
@@ -114,6 +134,23 @@ describe('VTID-04704 live hook', () => {
     const s = session();
     await maybeRunRecallBackstop(ctx, s, BIRTHDAY_Q, LIVE_INVENTED_DATE, facts([]));
     expect(s.upstreamClient.sendTextTurn.mock.calls[0][0]).toMatch(/the date was a guess/);
+  });
+  it('the live profile deflection with nothing about the spouse stored: told to say so and ask', async () => {
+    const s = session();
+    await maybeRunRecallBackstop(ctx, s, NAME_Q, LIVE_DEFLECTION, facts(BASELINE));
+    expect(s.upstreamClient.sendTextTurn.mock.calls[0][0]).toMatch(/not stored yet and ask the member for it/);
+    expect(diag).toHaveBeenCalledWith(s, 'recall_backstop', expect.objectContaining({ trigger: 'deflected' }));
+  });
+  it('the live profile deflection with nothing stored at all: the nothing-stored note', async () => {
+    const s = session();
+    await maybeRunRecallBackstop(ctx, s, NAME_Q, LIVE_DEFLECTION, facts([]));
+    expect(s.upstreamClient.sendTextTurn.mock.calls[0][0]).toMatch(/look it up in their profile/);
+  });
+  it('the live navigation answer about privacy settings never triggers it', async () => {
+    const s = session();
+    expect(await maybeRunRecallBackstop(ctx, s, NAV_Q, LIVE_NAV_REPLY, facts(WITH_SPOUSE))).toBe(0);
+    expect(await maybeRunRecallBackstop(ctx, s, NAV_Q, 'Das findest du in deinem Profil unter Einstellungen, dort kannst du es nachsehen.', facts(WITH_SPOUSE))).toBe(0);
+    expect(s.upstreamClient.sendTextTurn).not.toHaveBeenCalled();
   });
   it('the right date from memory stays silent, in any format', async () => {
     for (const reply of ['Ja, deine Frau Anna hat am 12. März Geburtstag.', 'Her birthday is on March 12th.']) {
