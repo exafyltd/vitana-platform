@@ -34,7 +34,11 @@ import { fileURLToPath } from 'url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATEWAY = process.env.MEMORY_VERIFY_GATEWAY || 'https://preview-aws-gateway.vitanaland.com';
 const ORIGIN = process.env.MEMORY_VERIFY_ORIGIN || 'https://preview-aws.vitanaland.com';
-const TOKEN = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+const TOKEN_ENV = process.env.MEMORY_VERIFY_TOKEN ?? ''; // local runner input only; empty fails loudly in guard()
+// A full run outlasts one access token (60 min). With MEMORY_VERIFY_TOKEN_FILE
+// the token is re-read on every call, so an operator can refresh the file.
+const TOKEN_FILE = process.env.MEMORY_VERIFY_TOKEN_FILE ?? '';
+const token = () => (TOKEN_FILE ? readFileSync(TOKEN_FILE, 'utf8').trim() : TOKEN_ENV);
 const TEST_USER = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 
 const args = process.argv.slice(2);
@@ -60,11 +64,12 @@ const QUIET_MS = Number(process.env.MEMORY_VERIFY_QUIET_MS || 8000);
 const PAUSE_RESET = args.includes('--pause-reset');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` });
+const headers = () => ({ 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${token()}` });
 
 // ---------------------------------------------------------------- guards
 async function guard() {
-  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN (the test user JWT) is required');
+  const TOKEN = token();
+  if (!TOKEN) throw new Error('MEMORY_VERIFY_TOKEN or MEMORY_VERIFY_TOKEN_FILE (the test user JWT) is required');
   const payload = JSON.parse(Buffer.from(TOKEN.split('.')[1], 'base64url').toString());
   if (payload.sub !== TEST_USER) throw new Error(`token is not the test user (${payload.sub})`);
   const h = await (await fetch(`${GATEWAY}/api/v1/admin/health`)).json();
@@ -94,8 +99,8 @@ async function runSession(lang, utterances) {
   if (!sb.ok) return { ...log, error: `start ${start.status}` };
   log.session_id = sb.session_id;
   fetch(`${GATEWAY}/api/v1/orb/session/${sb.session_id}/audio-ready`, { method: 'POST', headers: headers(), body: '{}' }).catch(() => {});
-  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(TOKEN)}`,
-    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${TOKEN}` } });
+  const sse = await fetch(`${GATEWAY}/api/v1/orb/live/stream?session_id=${sb.session_id}&token=${encodeURIComponent(token())}`,
+    { headers: { Accept: 'text/event-stream', Origin: ORIGIN, Authorization: `Bearer ${token()}` } });
   const reader = sse.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
