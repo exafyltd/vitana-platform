@@ -507,6 +507,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const contentModerationRouter = require('./routes/tenant-admin/content-moderation').default;
   // Community Admin — admin-scoped reads of meetups, groups, live rooms, creators
   const communityAdminRouter = require('./routes/tenant-admin/community-admin').default;
+  // VTID-04674: Admin › Notifications — on/off switch per notification type
+  const adminNotificationControlsRouter = require('./routes/admin-notification-controls').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // BOOTSTRAP-CMDHUB-I18N-OPS: Localization operations — locale status + workflow dispatch
@@ -538,6 +540,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
   // VTID-04663: Service Health checks for signals the database already computes.
   const { opsHealthChecksRouter } = require('./routes/ops-health-checks');
+  // VTID-04664: Service Health checks for systems that had none.
+  const { opsRuntimeHealthRouter } = require('./routes/ops-runtime-health');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -1350,6 +1354,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // VTID-04674: notification type switches (tenant admin / exafy_admin)
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/notification-controls', adminNotificationControlsRouter, { owner: 'admin-notification-controls' });
   // BOOTSTRAP-PRODUCT-ANALYTICS: admin product analytics reads (summary,
   // assistant, journeys, features, interests, raw event feed)
   const tenantProductAnalyticsRouter = require('./routes/tenant-admin/product-analytics').default;
@@ -1393,6 +1399,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
   // VTID-04663: GET /api/v1/ops/health/* — Command Hub Service Health checks (public, cached, read-only)
   mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
+  // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks
+  mountRouterSync(app, '/api/v1/ops/runtime', opsRuntimeHealthRouter, { owner: 'ops-runtime-health' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

@@ -87,9 +87,14 @@ export function sseHeaders(req: Request, res: Response, next: NextFunction) {
   // browser would not render HTML served as text/event-stream. No SSE route
   // lives under /command-hub; its streams are all under /api/v1.
   if (req.path === '/command-hub' || req.path.startsWith('/command-hub/')) return next();
+  // VTID-04680: the calendar API serves JSON on GET /api/v1/calendar/events...
+  // (list, window, one event) and has no stream; "/events" in its path is not
+  // an SSE route. Labelling those replies text/event-stream failed the
+  // STAGING-VERIFY content-type check on the calendar window route.
+  if (req.path === '/api/v1/calendar' || req.path.startsWith('/api/v1/calendar/')) return next();
   // VTID-04695: "/events" alone is not a stream. Every GET under /events is
-  // a JSON route (calendar list/window/today, universal-cart, product
-  // analytics, voice-lab debug) and res.json() keeps a Content-Type already
+  // a JSON route (OASIS events, universal-cart, product analytics,
+  // voice-lab debug; calendar is exempted above) and res.json() keeps a Content-Type already
   // set, so they were served as text/event-stream (STAGING-VERIFY, calendar
   // window 401). A path under /events is treated as a stream only when the
   // client asks for one — EventSource always sends that Accept header.

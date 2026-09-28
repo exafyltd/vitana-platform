@@ -173,6 +173,16 @@ describe('sseHeaders', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
   });
 
+  it.each([
+    '/api/v1/calendar/events',
+    '/api/v1/calendar/events/window',
+    '/api/v1/calendar/events/abc-123',
+  ])('does NOT set SSE headers on the calendar JSON API: %s (VTID-04680)', (path) => {
+    const { res, next } = run('GET', path);
+    expect(res.setHeader).not.toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+    expect(next).toHaveBeenCalled();
+  });
+
   it('does NOT set SSE headers on unrelated GET paths', () => {
     const { res, next } = run('GET', '/api/v1/tasks');
     expect(res.setHeader).not.toHaveBeenCalled();

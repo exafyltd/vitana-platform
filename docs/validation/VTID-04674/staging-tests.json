@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-04674",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "switch list route is mounted and refuses an anonymous caller",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/notification-controls", "expect_status": 401 },
+    { "kind": "http", "name": "activity route is mounted and refuses an anonymous caller",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/notification-controls/activity", "expect_status": 401 },
+    { "kind": "http", "name": "switching a type refuses an anonymous caller", "method": "PATCH", "rejected_probe": true,
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/notification-controls/post_like", "expect_status": 401 },
+    { "kind": "http", "name": "member category list is mounted and refuses an anonymous caller",
+      "path": "/api/v1/notifications/category-preferences", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04674-notification-controls.test.ts test/vtid-04674-notification-controls-wiring.test.ts test/routes/admin-notification-controls.test.ts test/routes/user-category-preferences-vtid-04674.test.ts test/routes/admin-notifications.test.ts", "cwd": "services/gateway",
+      "reason": "pins the admin switch on every send path (notifyUser, push-dispatch, reminders, automations), the switch API and its access rules, and the member category filter/lock; writes are proven here, never on staging" }
+  ]
+}
