@@ -75,6 +75,8 @@ Rules:
 - If no facts are present, return an empty array: []
 - Do NOT invent facts. Only extract what the conversation clearly supports.
 - Keep fact_value concise (1-8 words)
+- A hypothetical, wish or "what if" is NOT a fact ("if I had a dog it would be called Max", "wenn ich einen Hund hätte, würde er Max heißen") — return nothing for it
+- A request to FORGET something is not a statement of it ("forget that my dog is called Bello") — return nothing for it
 - For preferences, use "user_favorite_X" or "user_preference_X" as the key
 
 Example input:
@@ -358,7 +360,16 @@ export async function extractAndPersistFacts(input: {
     // shows inline-fact-extractor as healthy whenever it's actually called.
     recordAgentHeartbeat('inline-fact-extractor').catch(() => {});
 
-    const facts = await callLlmForExtraction(input.conversationText);
+    const extracted = await callLlmForExtraction(input.conversationText);
+    // VTID-04684/04685: a value the member only said inside a forget request
+    // or a hypothetical is not a fact they told us ("vergiss, dass mein Hund
+    // Bello heißt", "wenn ich einen Hund hätte, würde er Max heißen").
+    const { valueOnlyInNonStatements } = await import('./memory/memory-intent');
+    const facts = extracted.filter((f) => {
+      const skip = valueOnlyInNonStatements(f.fact_value, input.conversationText);
+      if (skip) console.log(`[VTID-04685] skipped ${f.fact_key}: said only in a forget request or a hypothetical`);
+      return !skip;
+    });
 
     if (facts.length === 0) {
       console.debug(`[VTID-01225-inline] No facts extracted from turn (${input.session_id})`);

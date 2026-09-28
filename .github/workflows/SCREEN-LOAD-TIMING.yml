@@ -68,3 +68,23 @@ jobs:
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          SCREEN_LOAD_REPORT_STATUS_FILE: ${{ runner.temp }}/screen-load-report-status.txt
+
+      # VTID-04661: a rejected report used to leave this job green while the
+      # Command Hub showed "no recent runs" — two weeks of green runs stored
+      # nothing. Fail loudly when the gateway did not accept the results.
+      - name: Check the report was accepted
+        if: always()
+        env:
+          STATUS_FILE: ${{ runner.temp }}/screen-load-report-status.txt
+        run: |
+          if [ ! -f "$STATUS_FILE" ]; then
+            echo "::error::No report was sent (no results collected, or GATEWAY_SERVICE_TOKEN unset)."
+            exit 1
+          fi
+          code=$(head -1 "$STATUS_FILE")
+          echo "Report response: $(cat "$STATUS_FILE")"
+          case "$code" in
+            2??) echo "Report accepted (HTTP $code)." ;;
+            *) echo "::error::Screen-load report rejected by the gateway: $(cat "$STATUS_FILE" | tr '\n' ' ')"; exit 1 ;;
+          esac

@@ -1,0 +1,5 @@
+$ cd services/gateway && npm run test:calendar
+Test Suites: 19 passed, 19 total
+Tests:       390 passed, 390 total
+$ npx tsc --noEmit -p .
+(clean)

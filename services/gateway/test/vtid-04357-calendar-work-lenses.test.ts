@@ -124,19 +124,15 @@ describe('listWorkItems', () => {
     expect(urls).toHaveLength(0);
   });
 
-  it('developer lens reads deploys + held executions only, never writes', async () => {
-    respondBy((url) =>
-      url.includes('oasis_events')
-        ? { status: 200, body: [{ id: 'e1', topic: 'prod.deploy.completed', created_at: '2026-09-22T10:00:00Z', metadata: {} }] }
-        : { status: 200, body: [{ id: 'x1', updated_at: '2026-09-22T05:00:00Z', metadata: {} }, { id: 'x2', updated_at: '2026-09-01T05:00:00Z', metadata: {} }] },
-    );
+  it('developer lens reads held executions only — never deploys (VTID-04680), never writes', async () => {
+    respondBy(() => ({ status: 200, body: [{ id: 'x1', updated_at: '2026-09-22T05:00:00Z', metadata: {} }, { id: 'x2', updated_at: '2026-09-01T05:00:00Z', metadata: {} }] }));
     const items = await listWorkItems(U, ['developer'], W);
-    expect(urls).toHaveLength(2);
-    expect(urls.some((u) => u.includes('topic=in.(staging.deploy.completed,prod.deploy.completed)'))).toBe(true);
-    expect(urls.some((u) => u.includes('dev_autopilot_executions') && u.includes('status=eq.awaiting_approval'))).toBe(true);
-    expect(urls.some((u) => u.includes('feedback_tickets') || u.includes('erp_approvals') || u.includes('calendar_events'))).toBe(false);
-    // the held execution outside the window is dropped; order is by start
-    expect(items.map((i) => i.work.kind)).toEqual(['autopilot_review', 'deploy_prod']);
+    expect(urls).toHaveLength(1);
+    expect(urls.some((u) => u.includes('oasis_events'))).toBe(false);
+    expect(urls[0]).toContain('dev_autopilot_executions');
+    expect(urls[0]).toContain('status=eq.awaiting_approval');
+    // the held execution outside the window is dropped
+    expect(items.map((i) => i.work.kind)).toEqual(['autopilot_review']);
     expect((global.fetch as jest.Mock).mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true);
   });
 
@@ -153,12 +149,14 @@ describe('listWorkItems', () => {
   it('a failing source is logged and skipped, the others still come back', async () => {
     const err = jest.spyOn(console, 'error').mockImplementation(() => undefined);
     respondBy((url) =>
-      url.includes('oasis_events')
+      url.includes('feedback_tickets')
         ? { status: 500, body: { message: 'boom' } }
-        : { status: 200, body: [{ id: 'x1', updated_at: '2026-09-22T05:00:00Z', metadata: {} }] },
+        : url.includes('erp_approvals')
+          ? { status: 200, body: [] }
+          : { status: 200, body: [{ id: 'x1', updated_at: '2026-09-22T05:00:00Z', metadata: {} }] },
     );
-    const items = await listWorkItems(U, ['developer'], W);
-    expect(items.map((i) => i.work.kind)).toEqual(['autopilot_review']);
+    const items = await listWorkItems(U, ['developer', 'admin'], W);
+    expect(items.some((i) => i.work.kind === 'autopilot_review')).toBe(true);
     expect(err).toHaveBeenCalled();
     err.mockRestore();
   });
@@ -194,7 +192,8 @@ describe('route wiring', () => {
 
   it('grants work lenses from the verified claim, never from the header alone', () => {
     expect(route).toContain('workLensesFor(role, (req as AuthenticatedRequest).identity?.exafy_admin === true)');
-    expect(route).toContain("req.query.include_work === 'false'");
+    // VTID-04680: work items are opt-in.
+    expect(route).toContain("req.query.include_work !== 'true'");
     expect(route).toContain('work_lenses: lenses');
   });
 

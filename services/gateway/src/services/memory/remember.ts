@@ -16,7 +16,9 @@
  *   3. the `write_fact` RPC. The database decides whether to insert,
  *      supersede, or keep the existing row (VTID-04341);
  *   4. a Titan embedding for the written row, fire-and-forget.
- *      AP-0910 re-embeds any row this step misses.
+ *      AP-0910 re-embeds any row this step misses;
+ *   5. every other current row of the key is retired (VTID-04686), so one
+ *      key never holds two current values.
  *
  * The transport is the caller's choice: pass `client` to use a supplied
  * Supabase client (the automation handlers do), or leave it out to use a
@@ -58,6 +60,11 @@ export interface RememberFactOptions {
   embed?: boolean;
   /** Override the forgotten-marker store (tests). Defaults to `client`, else REST. */
   forgottenStore?: ForgottenStore | null;
+  /**
+   * VTID-04686: after the write, retire every other current row of the key
+   * (other entities included). Defaults to true.
+   */
+  retireOthers?: boolean;
 }
 
 export interface RememberFactResult {
@@ -182,5 +189,60 @@ export async function rememberFact(
   if (result.error) return { ok: false, error: result.error };
 
   if (result.id && options.embed !== false) embedAsync(result.id, input.fact_key, input.fact_value);
+  if (result.id && options.retireOthers !== false) {
+    // VTID-04686: a key names one thing, whoever wrote it. write_fact keeps
+    // one current row per (key, entity), so a value added in the Memory
+    // Garden (self) and the same fact inferred from speech (disclosed) both
+    // stayed current — live suite B-CONF-04 read "May 5th" and "May 5".
+    try {
+      const retire = options.client ? retireViaClient : retireViaRest;
+      await retire(options.client as SupabaseClient, input.tenant_id, input.user_id, input.fact_key, result.id);
+    } catch (err: any) {
+      console.warn(`[VTID-04686] retiring other rows of ${input.fact_key} failed: ${err?.message || String(err)}`);
+    }
+  }
   return { ok: true, fact_id: result.id ?? undefined };
+}
+
+async function retireViaClient(
+  client: SupabaseClient,
+  tenantId: string,
+  userId: string,
+  factKey: string,
+  keepId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('memory_facts')
+    .update({ superseded_at: new Date().toISOString(), superseded_by: keepId })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+    .eq('fact_key', factKey)
+    .is('superseded_at', null)
+    .neq('id', keepId);
+  if (error) throw new Error(error.message || String(error));
+}
+
+async function retireViaRest(
+  _client: SupabaseClient,
+  tenantId: string,
+  userId: string,
+  factKey: string,
+  keepId: string,
+): Promise<void> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return;
+  const q = new URLSearchParams({
+    tenant_id: `eq.${tenantId}`,
+    user_id: `eq.${userId}`,
+    fact_key: `eq.${factKey}`,
+    superseded_at: 'is.null',
+    id: `neq.${keepId}`,
+  });
+  const response = await fetch(`${url}/rest/v1/memory_facts?${q.toString()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=minimal' },
+    body: JSON.stringify({ superseded_at: new Date().toISOString(), superseded_by: keepId }),
+  });
+  if (!response.ok) throw new Error(`${response.status} ${(await response.text().catch(() => '')).slice(0, 200)}`);
 }

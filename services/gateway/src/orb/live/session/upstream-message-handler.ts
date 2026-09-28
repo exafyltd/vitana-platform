@@ -66,7 +66,7 @@ import {
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
-import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop } from './remember-backstop-hook';
+import { REMEMBER_BACKSTOP_MARKER, maybeRunRememberBackstop, maybeRunForgetBackstop } from './remember-backstop-hook';
 import { maybeRunExplicitOpenBackstop } from './explicit-open-backstop';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
@@ -1985,6 +1985,8 @@ export function handleToolCall(
   // VTID-04591: the member's remember request was handled by the tool — the
   // turn_complete backstop stands down for this turn.
   if (toolNames.includes('remember_fact')) (session as any).rememberFactCalledThisTurn = true;
+  // VTID-04684: same for a forget request.
+  if (toolNames.includes('forget_fact') || toolNames.includes('forget_memory')) (session as any).forgetFactCalledThisTurn = true;
   session.consecutiveToolCalls++;
   console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}): ${toolNames.join(',')}`);
   ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
@@ -2478,6 +2480,8 @@ export function handleTurnComplete(
     // VTID-04591: a remember request the model answered without calling
     // remember_fact is run by the gateway, and the model is told the result.
     maybeRunRememberBackstop(ctx, session, userText);
+    // VTID-04684: a forget request the model answered without calling forget_fact.
+    maybeRunForgetBackstop(ctx, session, userText);
 
     // VTID-04619: Vitana said she is opening a page but never called navigate
     // (production 2026-09-26: three "ich öffne jetzt die Seite" turns, no
