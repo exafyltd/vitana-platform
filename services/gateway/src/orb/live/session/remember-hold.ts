@@ -54,7 +54,7 @@ export const REMEMBER_HOLD_MAX_MS = 15_000;
 export const REMEMBER_HOLD_BACKSTOP_WAIT_MS = 6_000;
 
 export function isRememberHoldEnabled(): boolean {
-  return process.env.ORB_REMEMBER_HOLD_ENABLED !== 'false';
+  return (process.env.ORB_REMEMBER_HOLD_ENABLED ?? 'true') !== 'false';
 }
 
 function eligible(session: any): boolean {
