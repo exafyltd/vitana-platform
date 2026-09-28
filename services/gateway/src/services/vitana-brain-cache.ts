@@ -129,7 +129,8 @@ export function brainCacheSize(): number {
  * earlier, before session A saved five facts and a session summary, and the
  * model said it knew nothing about them. The gateway runs several tasks, so an
  * in-process invalidation on the task that wrote the memory is not enough;
- * this asks the store instead (two indexed `limit 1` reads).
+ * this asks the store instead (three indexed `limit 1` reads: new facts, new
+ * items, and — VTID-04708 — new forget markers).
  *
  * Returns true (changed), false (unchanged) or null (no store configured, so
  * nothing can be known — the old behaviour). A failed or slow probe resolves
@@ -146,12 +147,17 @@ export async function memoryChangedSince(
   if (!supabase || !input.user_id) return null;
   const since = new Date(sinceMs).toISOString();
   const probe = (async () => {
-    const [facts, items] = await Promise.all([
+    // VTID-04708: a forget writes no new fact or item — it deletes them and
+    // leaves a `memory_fact_forgotten` marker. Live B-FORG-01 (staging,
+    // 2026-09-28): the member forgot the dog's name, the next session reused
+    // the build cached before the forget, and Vitana said the name again.
+    const [facts, items, forgotten] = await Promise.all([
       supabase.from('memory_facts').select('id').eq('user_id', input.user_id).gt('extracted_at', since).limit(1),
       supabase.from('memory_items').select('id').eq('user_id', input.user_id).gt('created_at', since).limit(1),
+      supabase.from('memory_fact_forgotten').select('id').eq('user_id', input.user_id).gt('forgotten_at', since).limit(1),
     ]);
-    if (facts.error || items.error) return true;
-    return (facts.data?.length ?? 0) > 0 || (items.data?.length ?? 0) > 0;
+    if (facts.error || items.error || forgotten.error) return true;
+    return (facts.data?.length ?? 0) > 0 || (items.data?.length ?? 0) > 0 || (forgotten.data?.length ?? 0) > 0;
   })();
   const timeout = new Promise<boolean>((resolve) => {
     const t = setTimeout(() => resolve(true), MEMORY_FRESHNESS_PROBE_TIMEOUT_MS);

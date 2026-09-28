@@ -206,9 +206,10 @@ describe('vitana-brain-cache', () => {
   });
 
   describe('memoryChangedSince (store probe)', () => {
-    const client = (facts: any, items: any) => ({
+    const empty = { data: [], error: null };
+    const client = (facts: any, items: any, forgotten: any = empty) => ({
       from: (table: string) => {
-        const res = table === 'memory_facts' ? facts : items;
+        const res = table === 'memory_facts' ? facts : table === 'memory_fact_forgotten' ? forgotten : items;
         const q: any = { select: () => q, eq: () => q, gt: () => q, limit: () => (res instanceof Promise ? res : Promise.resolve(res)) };
         return q;
       },
@@ -225,6 +226,15 @@ describe('vitana-brain-cache', () => {
     it('false when nothing newer exists', async () => {
       mockGetSupabase.mockImplementation(() => client({ data: [], error: null }, { data: [], error: null }));
       await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(false);
+    });
+    it('true when the member forgot something after the build (VTID-04708)', async () => {
+      // Live B-FORG-01: the forget deleted the fact and wrote only a marker.
+      mockGetSupabase.mockImplementation(() => client(empty, empty, { data: [{ id: 'm' }], error: null }));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(true);
+    });
+    it('true (rebuild) when the forget-marker read errors (VTID-04708)', async () => {
+      mockGetSupabase.mockImplementation(() => client(empty, empty, { data: null, error: { message: 'x' } }));
+      await expect(memoryChangedSince(baseInput, 0)).resolves.toBe(true);
     });
     it('true (rebuild) when the probe errors', async () => {
       mockGetSupabase.mockImplementation(() => client({ data: null, error: { message: 'x' } }, { data: [], error: null }));

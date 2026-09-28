@@ -105,6 +105,26 @@ export function replyDeniesOrDefers(reply: string): boolean {
 export interface RecallFact {
   fact_key: string;
   fact_value: string;
+  provenance_source?: string | null;
+}
+
+// VTID-04707: live B-REC-06 — "Was weißt du alles über mich?" with Lasagne and
+// Bello stored got the member's name, language, goals, follows and matches,
+// none of what the member had told Vitana. The reply named "E2E" (the profile
+// name), so "names a stored value" held and the backstop stood down. An
+// about-me answer is judged on the facts the member stated themself; profile
+// basics do not count.
+const PROFILE_BASIC_KEY = /^(user_name|user_first_name|user_last_name|user_birthday|user_birthdate|user_date_of_birth|user_hometown|user_city|user_location)$/i;
+
+/** Facts the member stated themself (by voice or in the Garden), profile basics and system keys excluded. */
+export function memberStatedFacts(facts: RecallFact[]): RecallFact[] {
+  return facts.filter(
+    (f) =>
+      f &&
+      /^user_stated/i.test(String(f.provenance_source || '')) &&
+      !SYSTEM_KEY.test(f.fact_key) &&
+      !PROFILE_BASIC_KEY.test(f.fact_key),
+  );
 }
 
 /** Keys the gateway writes for itself; never member knowledge. */
@@ -173,9 +193,9 @@ export function buildRecallBackstopNote(
   const lines = usable.map((f) => `- ${f.fact_key}: ${String(f.fact_value).trim().slice(0, MAX_VALUE_CHARS)}`);
   if (reason === 'about_me_vague') {
     return [
-      `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked what you know about them and your answer named none of their stored facts. These are the member's current stored facts (key: value):`,
+      `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked what you know about them and your answer named none of the things they told you. These are the member's current stored facts, the ones they told you first (key: value):`,
       ...lines,
-      "Now answer the question: name two or three of these facts briefly and concretely, in the member's language — a key names the meaning in English (user_pet_name is the member's pet). Do not read out keys, and do not list everything.",
+      "Now answer the question: name two or three of the first facts briefly and concretely, in the member's language — a key names the meaning in English (user_pet_name is the member's pet). Do not read out keys, and do not list everything.",
     ].join('\n');
   }
   return [
