@@ -6554,7 +6554,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' failing' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6584,7 +6584,7 @@ function renderHeader() {
         var titleClass = capsFailing > 0 ? 'health-modal__title health-modal__title--bad' : 'health-modal__title health-modal__title--ok';
         hmHeader.innerHTML =
             '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
-            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' down</span>' : '') +
+            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' failing</span>' : '') +
             (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' not checked</span>' : '') +
             '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
@@ -6649,7 +6649,8 @@ function renderHeader() {
                         var dotClass = SERVICE_HEALTH_DOT_CLASS[dot];
 
                         var cell = document.createElement('div');
-                        cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
+                        // VTID-04664: a not-checked cell (grey) is muted, not styled as a failure.
+                        cell.className = svc.healthy ? 'health-grid__cell' : (dot === 'grey' ? 'health-grid__cell health-grid__cell--muted' : 'health-grid__cell health-grid__cell--bad');
                         cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                         cell.innerHTML =
                             '<span class="health-dot ' + dotClass + '"></span>' +
@@ -28161,7 +28162,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' failing' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**

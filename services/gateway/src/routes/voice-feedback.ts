@@ -17,6 +17,7 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from '../services/voice-feedback/voice-feedback-repository';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // =============================================================================
@@ -318,8 +319,9 @@ router.post('/reports/:id/reject', requireAdminAuth, async (req: AuthenticatedRe
 /**
  * GET /health — Health check
  */
-router.get('/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, service: 'voice-feedback', timestamp: new Date().toISOString() });
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ table: 'user_feedback_reports' }], { ok: true, service: 'voice-feedback', timestamp: new Date().toISOString() }));
 });
 
 export default router;

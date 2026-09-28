@@ -71,6 +71,7 @@ import { getVoiceConfig } from '../services/voice-config';
 // cascaded_language_rescue for pl/pt/ru/ar/zh/tr/fr/es.
 import { isCascadeEnabled, isCascadeLanguageSupported } from '../orb/live/upstream/cascaded-config';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // VTID-VOICE-LAB-HEALTH-PUBLIC: register the health endpoint BEFORE
@@ -84,13 +85,14 @@ const router = Router();
 // `public-route` marker comment was always intended to be public;
 // gating it under `requireAuth` was the bug. That now-shadowed
 // duplicate has been removed.
-router.get('/health', (_req: Request, res: Response) => {
-  return res.json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.json(await withDependencyHealth([{ table: 'voice_architecture_reports' }], {
     ok: true,
     service: 'voice-lab',
     vtid: 'VTID-01218A',
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 // =============================================================================

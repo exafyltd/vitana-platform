@@ -10,6 +10,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { withDependencyHealth } from '../services/dependency-probe';
 import {
   processDailyRecomputeBatch,
   getDailyRecomputeStatus,
@@ -163,13 +164,14 @@ router.get('/daily-recompute/status', async (req: Request, res: Response) => {
  *
  * Health check endpoint for the scheduler routes.
  */
-router.get('/health', (_req: Request, res: Response) => {
-  res.json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ table: 'daily_recompute_runs' }], {
     ok: true,
     service: 'scheduler',
     vtid: VTID,
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 export default router;

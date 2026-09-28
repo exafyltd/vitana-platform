@@ -24,6 +24,7 @@
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './health-capacity-repository';
+import { withDependencyHealth } from '../services/dependency-probe';
 import {
   computeCapacity,
   getCurrentCapacity,
@@ -79,14 +80,15 @@ function isDevSandbox(): boolean {
 // GET /health
 // =============================================================================
 
-router.get('/health', (_req: Request, res: Response) => {
-  res.json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ table: 'capacity_rules' }, { table: 'capacity_state' }], {
     ok: true,
     service: 'health-capacity-awareness',
     vtid: VTID,
     version: 'v1',
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 // =============================================================================

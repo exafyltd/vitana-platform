@@ -2,6 +2,12 @@ import request from 'supertest';
 import express from 'express';
 
 // Mock the authentication middleware
+// VTID-04665: the dependency probe has its own suite (vtid-04665-dependency-probe);
+// here it passes the route's own body through so this suite tests the route.
+jest.mock('../../src/services/dependency-probe', () => ({
+  withDependencyHealth: async (_deps: unknown, body: unknown) => body,
+}));
+
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: jest.fn((req, res, next) => {
     // Allow public route to pass through (simulating scanner/bypass rules)
