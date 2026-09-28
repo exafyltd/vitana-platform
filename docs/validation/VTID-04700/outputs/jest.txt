@@ -8,17 +8,22 @@ ts-jest[config] (WARN)
       at src/orb/live/session/remember-backstop-hook.ts:268:13
 PASS test/services/memory/vtid-04700-recall-counter-question.test.ts
   VTID-04700 counter-question instead of the answer
-    ✓ the live B-REC-05 question and reply trigger the backstop (10 ms)
+    ✓ the live B-REC-05 question and reply trigger the backstop (7 ms)
     ✓ counts as a deferral: Ich brauche noch mehr Details, um dir zu helfen. (2 ms)
     ✓ counts as a deferral: Kannst du mir bitte sagen, welchen Paul du meinst? (1 ms)
-    ✓ counts as a deferral: I need some more information about Paul first. (1 ms)
+    ✓ counts as a deferral: I need some more information about Paul first.
     ✓ counts as a deferral: Can you tell me which Paul you mean?
     ✓ counts as a deferral: Necesito más información sobre Paul. (1 ms)
+    ✓ a promise to look counts as a deferral: Ich überprüfe deinen Kalender, um den genauen Zeitpunkt deines Zahnarzttermins zu finden. (1 ms)
+    ✓ a promise to look counts as a deferral: Ich schaue mal nach. (1 ms)
+    ✓ a promise to look counts as a deferral: I'm checking your calendar now.
+    ✓ a promise to look counts as a deferral: Voy a revisar tu calendario.
     ✓ a real answer is still not a deferral: Paul hat am fünften Mai Geburtstag. (1 ms)
     ✓ a real answer is still not a deferral: Your brother Paul celebrates on May 5.
-    ✓ injects the stored facts after the live reply (23 ms)
+    ✓ a real answer is still not a deferral: Dein Zahnarzttermin ist nächsten Dienstag um zehn. (1 ms)
+    ✓ injects the stored facts after the live reply (13 ms)
 Test Suites: 1 passed, 1 total
-Tests:       9 passed, 9 total
+Tests:       14 passed, 14 total
 Snapshots:   0 total
-Time:        0.951 s, estimated 1 s
+Time:        0.73 s, estimated 1 s
 Ran all test suites matching /test\/services\/memory\/vtid-04700-recall-counter-question.test.ts/i.

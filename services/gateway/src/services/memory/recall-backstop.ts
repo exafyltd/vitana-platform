@@ -79,6 +79,14 @@ const DENIES_OR_DEFERS = new RegExp(
     'can you (please )?tell me (whether|if|which|who|more)',
     'necesito (más |algunos? )?(información|datos|detalles)',
     'trebam (više |još )?(informacija|podataka|detalja)',
+    // VTID-04700: a promise to look that ends the turn. Live B-TIME-02: the
+    // appointment was a stored fact, search_calendar found nothing, and the
+    // reply was only "Ich überprüfe deinen Kalender, um … zu finden."
+    '\\bich (über)?prüfe\\b',
+    '\\bich (schaue|schau|sehe|guck|gucke|suche) (mal |kurz |gleich )?(nach|in|im|deine|dein)\\b',
+    "\\bi('m| am) (checking|looking)\\b",
+    '\\b(voy a|déjame) (revisar|comprobar|mirar|buscar)\\b',
+    '\\b(proveriću|proveravam|provjerit ću|provjeravam)\\b',
   ].join('|'),
   'i',
 );

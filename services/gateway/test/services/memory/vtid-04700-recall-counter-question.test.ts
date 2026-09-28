@@ -27,7 +27,19 @@ describe('VTID-04700 counter-question instead of the answer', () => {
     'Necesito más información sobre Paul.',
   ])('counts as a deferral: %s', (r) => expect(replyDeniesOrDefers(r)).toBe(true));
 
-  it.each(['Paul hat am fünften Mai Geburtstag.', 'Your brother Paul celebrates on May 5.'])(
+  // Live B-TIME-02: the appointment was a stored fact, the calendar search
+  // found nothing, and this was the whole reply.
+  it.each([
+    'Ich überprüfe deinen Kalender, um den genauen Zeitpunkt deines Zahnarzttermins zu finden.',
+    'Ich schaue mal nach.',
+    "I'm checking your calendar now.",
+    'Voy a revisar tu calendario.',
+  ])('a promise to look counts as a deferral: %s', (r) => {
+    expect(detectRecallQuestion('Wann ist mein Zahnarzttermin?')).toBe(true);
+    expect(replyDeniesOrDefers(r)).toBe(true);
+  });
+
+  it.each(['Paul hat am fünften Mai Geburtstag.', 'Your brother Paul celebrates on May 5.', 'Dein Zahnarzttermin ist nächsten Dienstag um zehn.'])(
     'a real answer is still not a deferral: %s',
     (r) => expect(replyDeniesOrDefers(r)).toBe(false),
   );
