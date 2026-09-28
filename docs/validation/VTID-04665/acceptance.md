@@ -42,3 +42,10 @@ AC-2: Each of the 18 routes declares its dependency.
 TEST: services/gateway/test/vtid-04665-dependency-probe.test.ts
 
 OASIS_PROOF: none. Read-only probes.
+
+## Route mount evidence
+No route is added. The 18 existing `/health` handlers are rewritten in place (now `async`, wrapping
+their body in `withDependencyHealth`), which the route gate reads as a registration line.
+ROUTE_MOUNT: unchanged — each handler stays on its router's existing mount in services/gateway/src/index.ts (e.g. riskMitigationRouter at /api/v1/mitigation, overloadDetectionRouter at /api/v1/overload, autopilotPromptsRouter at /api/v1/autopilot/prompts)
+FINAL_URL: the 18 existing URLs listed in staging-tests.json, e.g. GET /api/v1/mitigation/health
+CURL_PROOF: pre-merge on staging each answers 200 application/json, e.g. `curl -s https://preview-aws-gateway.vitanaland.com/api/v1/mitigation/health` → `{"ok":true,...,"status":"healthy"}` (outputs/jest-vtid-04665.txt). After merge STAGING-VERIFY expects the same URLs to carry `"dependencies":[` and /mitigation/health to read `{"ok":false,"status":"down"}`.
