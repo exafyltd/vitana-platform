@@ -1,0 +1,6 @@
+$ node --test scripts/ci/staging-verify/lib.test.cjs          # 20 pass, 0 fail
+$ (cap reverted to 1_000_000) node --test ...                  # 18 pass, 2 fail
+$ node --check scripts/ci/staging-verify/run.mjs               # ok
+$ curl .../command-hub/app.js?v=20261017-vtid-04661 → 2,518,880 chars;
+  orderedHealthGroups @ 1,197,696, classifyHealthProbe @ 1,198,949
+$ evaluateHttp on the real served file with the new clipBody   # both ok:true

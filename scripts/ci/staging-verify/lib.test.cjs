@@ -155,3 +155,36 @@ test('ready message asks the question only on a pass and lists what ships', () =
   assert.match(failed, /FAILED/);
   assert.match(failed, /status 500/);
 });
+
+// VTID-04688: the 2.5 MB Command Hub app.js carries code past the first MB;
+// a check for it must see the whole body, not the first 1,000,000 characters.
+test('a body check finds code served past the first megabyte', () => {
+  const marker = 'function classifyHealthProbe(httpStatus, body)';
+  const text = 'x'.repeat(1_197_000) + marker + 'y'.repeat(1_300_000);
+  const { body, truncated } = lib.clipBody(text);
+  assert.equal(truncated, false);
+  const r = lib.evaluateHttp(
+    { kind: 'http', path: '/command-hub/app.js?v=1', expect_body_contains: marker },
+    { status: 200, contentType: 'application/javascript', body, truncated },
+  );
+  assert.deepEqual(r, { ok: true, problems: [] });
+});
+
+test('the body cap is large enough for every Command Hub asset', () => {
+  assert.ok(lib.MAX_HTTP_BODY_CHARS >= 8_000_000, `cap ${lib.MAX_HTTP_BODY_CHARS} is too small`);
+});
+
+test('a body past the cap is reported as cut off, not as a plain miss', () => {
+  const { body, truncated } = lib.clipBody('a'.repeat(lib.MAX_HTTP_BODY_CHARS + 10) + 'needle');
+  assert.equal(truncated, true);
+  assert.equal(body.length, lib.MAX_HTTP_BODY_CHARS);
+  const r = lib.evaluateHttp({ kind: 'http', path: '/x', expect_body_contains: 'needle' }, { status: 200, contentType: 'text/plain', body, truncated });
+  assert.equal(r.ok, false);
+  assert.match(r.problems[0], /only the first \d+ characters were read/);
+});
+
+test('the runner reads response bodies through clipBody, never a fixed slice', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'run.mjs'), 'utf8');
+  assert.match(src, /lib\.clipBody\(await res\.text\(\)\)/);
+  assert.doesNotMatch(src, /\.text\(\)\)\.slice\(/);
+});

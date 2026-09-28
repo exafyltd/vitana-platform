@@ -69,14 +69,14 @@ async function httpGet(url, init = {}, { allowProduction = false } = {}) {
     if (hop >= 5) throw new Error(`too many redirects from ${url}`);
     current = new URL(location, current).toString();
   }
-  const body = (await res.text()).slice(0, 1_000_000);
+  const { body, truncated } = lib.clipBody(await res.text());
   let json;
   try {
     json = JSON.parse(body);
   } catch {
     json = undefined;
   }
-  return { status: res.status, contentType: res.headers.get('content-type') || '', body, json };
+  return { status: res.status, contentType: res.headers.get('content-type') || '', body, truncated, json };
 }
 
 // ── Version stamps ───────────────────────────────────────────────────────
