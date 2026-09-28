@@ -431,10 +431,18 @@ jobs:
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          SCREEN_LOAD_REPORT_STATUS_FILE: ${{ runner.temp }}/morning-screen-load-report-status.txt
         run: |
           set +e
           npx playwright test --project=mobile-shared screen-load-timing.spec.ts
-          if [ $? -eq 0 ]; then R=PASS; D="within threshold"; else R=FAIL; D="see e2e/playwright-report"; fi
+          RC=$?
+          # VTID-04661: a report the gateway rejected fails this check too.
+          STATUS_FILE="$SCREEN_LOAD_REPORT_STATUS_FILE"
+          CODE=$(head -1 "$STATUS_FILE" 2>/dev/null)
+          if [ $RC -ne 0 ]; then R=FAIL; D="see e2e/playwright-report"
+          elif [ -z "$CODE" ]; then R=FAIL; D="no report sent (no results, or GATEWAY_SERVICE_TOKEN unset)"
+          else case "$CODE" in 2??) R=PASS; D="within threshold, report accepted (HTTP $CODE)" ;; *) R=FAIL; D="report rejected by the gateway (HTTP $CODE)" ;; esac
+          fi
           echo "| 20 | Screen Load Timing spot-check (staging) | $R | $D |" >> "$REPORT"
 
       # 21 — Scheduled-workflow self-audit: catches exactly the failure mode
