@@ -1,4 +1,4 @@
-import { test as setup } from '@playwright/test';
+import { test as setup } from '../fixtures/readonly-test'; // VTID-04730: login setup runs under the read-only role guard
 import { loginAsRole, validateTestCredentials } from '../fixtures/test-users';
 
 setup('authenticate as developer role', async ({ page }) => {

@@ -1,0 +1,6 @@
+$ grep -L "from '../fixtures/readonly-test'" e2e/auth/*.setup.ts
+(no output)
+$ cd e2e && E2E_READONLY=1 npx playwright test --list --project=auth-developer --project=auth-community
+  [auth-community] › auth/community-role.setup.ts:4:6 › authenticate as community role
+  [auth-developer] › auth/developer-role.setup.ts:4:6 › authenticate as developer role
+Total: 2 tests in 2 files
