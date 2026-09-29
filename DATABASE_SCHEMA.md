@@ -1234,6 +1234,8 @@ CREATE TABLE my_new_table (
 | 2026-09-24 | Added nullable `autopilot_recommendations.action` jsonb (`{kind, params}`, closed registry in `services/community-autopilot/action-registry.ts`; NULL = informational). Executing an action writes one `agent_runs` row (`plane='community_autopilot'`, `agent_id='community-autopilot'`, `idempotency_key='community_autopilot:<rec>:<kind>'`). Applied live. | Claude | VTID-04503 |
 | 2026-09-24 | Unique partial indexes `uq_referrals_referred_id` on `referrals(referred_id) WHERE referred_id IS NOT NULL` (one referral per member; the invite claim is idempotent on it) and `uq_sharing_links_member_invite` on `sharing_links(user_id) WHERE target_type='member_invite'` (one reusable personal invite link per member). Both tables had no duplicates. Migration `20260924200000_vtid_04508_invite_attribution.sql`. Applied live. | Claude | VTID-04508 |
 | 2026-09-24 | **Pending drop, not yet applied:** `autopilot_actions`, `autopilot_action_templates`, `automation_executions`, `autopilot_feedback` — 0 rows each (measured live), no dependent view or function, only FK into them is `autopilot_feedback → autopilot_actions`. Never written; Autopilot state is `autopilot_recommendations`, automation runs are `automation_runs`. Readers removed from the `fetch-user-context`, `get-proactive-context`, `analyze-patterns` and `request-account-deletion` edge functions (`exafyltd/vitana-v1`). Guarded migration `vitana-v1/supabase/migrations/20260924220000_vtid_04514_drop_dead_autopilot_tables.sql` refuses a table with rows; apply it only after those edge functions are deployed. `automation_rules` and `tenant_autopilot_runs` are kept (still read). | Claude | VTID-04514 |
+| 2026-09-29 | `product_clicks` gains `referrer_user_id` (recommender of the validated referral, stored on the click) and `attribution_rejected_reason` (why a `?rec_id=` was dropped, or `unverified`), plus partial index `idx_product_clicks_referrer`. `product_orders.user_id` becomes nullable so a signed-out buyer's sale can be attributed (RLS `user_id = auth.uid()` never matches NULL). Migration `20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | `recommendation_commissions.status` CHECK widened to `pending`/`credited`/`skipped_ineligible`/`failed`/`reversed`; new `confirm_after`, `confirmed_at`, `reversed_at`, `reversal_reason` and partial index `idx_recommendation_commissions_due`. A conversion the network has not approved is held `pending` until `confirm_after` (window from `admin_settings.recommendation_commission_return_window_days`, seeded `{"days":30}`), then credited or reversed; network-approved conversions (Awin) confirm at once. Migration `20260929120100_vtid_04741_recommendation_commission_hold.sql`. | Claude | VTID-04741 |
 
 ---
 
@@ -2107,6 +2109,14 @@ CREATE TABLE product_recommendations (
   UNIQUE (user_id, product_id)
 );
 ```
+
+**Commission lifecycle (VTID-04741):** `recommendation_commissions.status`
+is `pending` (held until `confirm_after`) → `credited` (paid to the wallet,
+`confirmed_at`), or `reversed` (order refunded/cancelled/charged back before
+payment, `reversed_at`/`reversal_reason`); `skipped_ineligible` and `failed`
+as before. Network-approved conversions confirm at once. A reversal after
+payment is reported as `marketplace.recommendation.commission_reversal_after_payout`,
+not clawed back (clawback policy is open, architecture D-11).
 
 **Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
 service-role full access. **All gateway routes use the service-role client,

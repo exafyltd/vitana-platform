@@ -1,0 +1,6 @@
+# 2026-09-29, read-only after apply_migration vtid_04741_recommendation_commission_hold
+rc_check: CHECK ((status = ANY (ARRAY['pending','credited','skipped_ineligible','failed','reversed'])))
+rc_cols: ["confirm_after","confirmed_at","reversal_reason","reversed_at"]
+window_setting: {"days":30}
+index: idx_recommendation_commissions_due present
+live data before: 0 recommendation_commissions rows

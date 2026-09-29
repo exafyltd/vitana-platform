@@ -34,6 +34,9 @@ const mockFetchMerchantCommissionEligibility = jest.fn();
 const mockFetchRecommenderWalletAccount = jest.fn();
 const mockInsertRecommendationCommission = jest.fn();
 const mockIncrementProductRecommendationStats = jest.fn();
+const mockFetchReturnWindowSetting = jest.fn();
+const mockFetchDuePendingCommissions = jest.fn();
+const mockUpdateCommissionIfStatus = jest.fn();
 
 jest.mock('../../src/services/recommendation-commissions/credit-recommender-repository', () => ({
   fetchProductOrderForCommission: (...args: unknown[]) => mockFetchProductOrderForCommission(...args),
@@ -44,6 +47,9 @@ jest.mock('../../src/services/recommendation-commissions/credit-recommender-repo
   insertRecommendationCommission: (...args: unknown[]) => mockInsertRecommendationCommission(...args),
   insertCommissionSkippedIneligibleEvent: (...args: unknown[]) => mockInsertEvent(...args),
   incrementProductRecommendationStats: (...args: unknown[]) => mockIncrementProductRecommendationStats(...args),
+  fetchReturnWindowSetting: (...args: unknown[]) => mockFetchReturnWindowSetting(...args),
+  fetchDuePendingCommissions: (...args: unknown[]) => mockFetchDuePendingCommissions(...args),
+  updateCommissionIfStatus: (...args: unknown[]) => mockUpdateCommissionIfStatus(...args),
 }));
 
 const mockFetchExcluded = jest.fn();
@@ -53,7 +59,15 @@ jest.mock('../../src/lib/excluded-test-service-accounts', () => ({
 
 const mockInsertEvent = jest.fn();
 
-import { creditRecommenderForOrder } from '../../src/services/recommendation-commissions/credit-recommender';
+import {
+  confirmDueRecommendationCommissions,
+  creditRecommenderForOrder,
+  reverseRecommendationCommissionForOrder,
+} from '../../src/services/recommendation-commissions/credit-recommender';
+
+// VTID-04741: the pre-existing tests exercise the immediate-payment path, which
+// is now the network-approved one (e.g. Awin approved).
+const NET = { networkConfirmed: true };
 
 const SB: any = {};
 const ORDER = {
@@ -98,7 +112,7 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
     });
     mockInsertRecommendationCommission.mockResolvedValue({ error: null });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('fetchExistingRecommendationCommission error for order=order-1: connection terminated unexpectedly'),
@@ -114,7 +128,7 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
       error: { message: 'duplicate key value violates unique constraint' },
     });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('insertRecommendationCommission (credited) error for order=order-1: duplicate key value violates unique constraint'),
@@ -126,7 +140,7 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
     mockInsertRecommendationCommission.mockResolvedValue({ error: null });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(warnSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
@@ -135,7 +149,7 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
   it('already_credited short-circuits before any wallet credit attempt (unchanged)', async () => {
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'existing-1' }, error: null });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(warnSpy).not.toHaveBeenCalled();
     expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
@@ -174,7 +188,7 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
       error: { message: 'connection terminated unexpectedly' },
     });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('fetchProductRecommendationForCommission error for order=order-1: connection terminated unexpectedly'),
@@ -190,7 +204,7 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
       error: { message: 'connection terminated unexpectedly' },
     });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('fetchMerchantCommissionEligibility error for order=order-1: connection terminated unexpectedly'),
@@ -205,7 +219,7 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
       error: { message: 'connection terminated unexpectedly' },
     });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('fetchRecommenderWalletAccount error for order=order-1: connection terminated unexpectedly'),
@@ -217,7 +231,7 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
   it('fetchRecommenderWalletAccount genuinely-not-found (no error) still reports RECOMMENDER_WALLET_NOT_FOUND (unchanged)', async () => {
     mockFetchRecommenderWalletAccount.mockResolvedValue({ data: null, error: null });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(errorSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' });
@@ -252,7 +266,7 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
 
   it.each(cases)('%s: no wallet credit, a permanent skipped row with payout 0, and an OASIS event', async (_name, arrange, reason) => {
     arrange();
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(result).toEqual({ ok: true, status: 'skipped_invalid_referral', message: reason });
     expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
@@ -270,7 +284,7 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockFetchExcluded.mockResolvedValue({ ok: false, error: 'connection terminated unexpectedly' });
 
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(result).toEqual({ ok: false, status: 'failed', message: 'EXCLUSION_LOOKUP_FAILED' });
     expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
@@ -281,8 +295,131 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
 
   it('an anonymous buyer (no user on the order) is not a self-referral: the valid referral is credited', async () => {
     mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, user_id: null }, error: null });
-    const result = await creditRecommenderForOrder('order-1');
+    const result = await creditRecommenderForOrder('order-1', NET);
     expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
     expect(mockCreditWalletForEarning).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VTID-04741: hold until the return window, then confirm or reverse', () => {
+  const PENDING_ROW = {
+    id: 'rc-1', product_order_id: 'order-1', product_recommendation_id: 'rec-1', recommender_user_id: 'recommender-1',
+    payout_amount_minor: 500, currency: 'EUR', rate_applied: 0.5, vitana_commission_cents: 1000,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSupabase.mockReturnValue(SB);
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
+    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
+    mockFetchExcluded.mockResolvedValue({ ok: true, ids: new Set() });
+    mockFetchMerchantCommissionEligibility.mockResolvedValue({
+      data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
+      error: null,
+    });
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 30 } }, error: null });
+    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
+    mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
+    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertEvent.mockResolvedValue({ error: null });
+    mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
+    mockUpdateCommissionIfStatus.mockResolvedValue({ data: [{ id: 'rc-1' }], error: null });
+  });
+
+  it('a conversion the network has not approved is held as pending: nothing reaches the wallet', async () => {
+    const before = Date.now();
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, status: 'pending', payout_minor: 500 }));
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
+    const row = mockInsertRecommendationCommission.mock.calls[0][1];
+    expect(row).toMatchObject({ status: 'pending', payout_amount_minor: 500, product_order_id: 'order-1' });
+    const confirmAfter = Date.parse(row.confirm_after);
+    expect(confirmAfter - before).toBeGreaterThanOrEqual(30 * 86400000 - 1000);
+    expect(confirmAfter - before).toBeLessThanOrEqual(30 * 86400000 + 5000);
+  });
+
+  it('the return window comes from admin_settings and falls back to 30 days on a bad value', async () => {
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 14 } }, error: null });
+    await creditRecommenderForOrder('order-1');
+    const d14 = Date.parse(mockInsertRecommendationCommission.mock.calls[0][1].confirm_after) - Date.now();
+    expect(Math.round(d14 / 86400000)).toBe(14);
+
+    mockInsertRecommendationCommission.mockClear();
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: -3 } }, error: null });
+    await creditRecommenderForOrder('order-1');
+    const dDefault = Date.parse(mockInsertRecommendationCommission.mock.calls[0][1].confirm_after) - Date.now();
+    expect(Math.round(dDefault / 86400000)).toBe(30);
+  });
+
+  it('a network-approved conversion is paid at once and records confirmed_at', async () => {
+    const result = await creditRecommenderForOrder('order-1', NET);
+    expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
+    expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ status: 'credited', confirmed_at: expect.any(String) }));
+  });
+
+  it('confirm: a due pending commission on a still-converted order is paid and moved to credited, guarded on status', async () => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    const r = await confirmDueRecommendationCommissions();
+
+    expect(r).toEqual({ ok: true, examined: 1, credited: 1, reversed: 0, failed: 0 });
+    expect(mockCreditWalletForEarning).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: 'acct-1', amount_minor: 500, reference_type: 'recommendation_commission', reference_id: 'order-1',
+    }));
+    expect(mockUpdateCommissionIfStatus).toHaveBeenCalledWith(SB, 'rc-1', 'pending', expect.objectContaining({
+      status: 'credited', wallet_ledger_entry_id: 'ledger-1',
+    }));
+    expect(mockIncrementProductRecommendationStats).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['refunded', 'cancelled', 'chargeback'])('confirm: an order %s during the window is reversed, never paid', async (state) => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state }, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
+
+    const r = await confirmDueRecommendationCommissions();
+
+    expect(r).toEqual({ ok: true, examined: 1, credited: 0, reversed: 1, failed: 0 });
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockUpdateCommissionIfStatus).toHaveBeenCalledWith(SB, 'rc-1', 'pending', expect.objectContaining({
+      status: 'reversed', reversal_reason: `order_${state}`,
+    }));
+  });
+
+  it('confirm: a recommender without a wallet stays pending for the next run', async () => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: null, error: null });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const r = await confirmDueRecommendationCommissions();
+
+    expect(r).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('reverse: a pending commission becomes reversed with an OASIS event', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
+    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'reversed' });
+    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({ type: 'marketplace.recommendation.commission_reversed' }));
+  });
+
+  it('reverse: an already-paid commission is not silently kept — it raises the after-payout exception event', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'credited' }, error: null });
+    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'paid_needs_clawback' });
+    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
+    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({
+      type: 'marketplace.recommendation.commission_reversal_after_payout', status: 'warning',
+    }));
+  });
+
+  it('reverse: nothing to reverse, or a row another run already moved', async () => {
+    expect(await reverseRecommendationCommissionForOrder('order-1', 'x')).toEqual({ ok: true, status: 'none' });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
+    mockUpdateCommissionIfStatus.mockResolvedValue({ data: [], error: null });
+    expect(await reverseRecommendationCommissionForOrder('order-1', 'x')).toEqual({ ok: true, status: 'already_final' });
   });
 });

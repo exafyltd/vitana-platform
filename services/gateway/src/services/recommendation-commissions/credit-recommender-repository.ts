@@ -31,6 +31,32 @@ export async function fetchProductOrderForCommission(sb: SupabaseClient, orderId
     .maybeSingle();
 }
 
+/** VTID-04741: return window for conversions the network has not approved. */
+export async function fetchReturnWindowSetting(sb: SupabaseClient) {
+  return sb.from('admin_settings').select('value').eq('key', 'recommendation_commission_return_window_days').maybeSingle();
+}
+
+/** VTID-04741: pending commissions whose return window has passed, oldest first. */
+export async function fetchDuePendingCommissions(sb: SupabaseClient, nowIso: string, limit: number) {
+  return sb
+    .from('recommendation_commissions')
+    .select('id, product_order_id, product_recommendation_id, recommender_user_id, payout_amount_minor, currency, rate_applied, vitana_commission_cents')
+    .eq('status', 'pending')
+    .lte('confirm_after', nowIso)
+    .order('confirm_after', { ascending: true })
+    .limit(limit);
+}
+
+/** VTID-04741: moves a commission out of `expected` only if it is still there (no double transition). */
+export async function updateCommissionIfStatus(
+  sb: SupabaseClient,
+  id: string,
+  expected: string,
+  patch: Record<string, unknown>,
+) {
+  return sb.from('recommendation_commissions').update(patch).eq('id', id).eq('status', expected).select('id');
+}
+
 export async function fetchExistingRecommendationCommission(sb: SupabaseClient, orderId: string) {
   return sb.from('recommendation_commissions').select('id, status').eq('product_order_id', orderId).maybeSingle();
 }
