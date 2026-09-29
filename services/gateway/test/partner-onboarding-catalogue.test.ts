@@ -356,6 +356,9 @@ describe('POST /:orgId/catalogue/products/import (VTID-04731)', () => {
       .send({ csv: 'title,price,currency,affilate_url,origin_country\nA,1,EUR,https://x.example,DE' });
     expect(typo.status).toBe(400);
     expect(typo.body.message).toMatch(/unknown column\(s\): affilate_url/);
+    // VTID-04746: a stable code + params the portal translates.
+    expect(typo.body.code).toBe('unknown_columns');
+    expect(typo.body.params).toEqual({ columns: 'affilate_url' });
     expect(inserts()).toHaveLength(0);
   });
 
@@ -392,7 +395,9 @@ describe('POST /:orgId/catalogue/products/import (VTID-04731)', () => {
     expect(r.status).toBe(400);
     expect(r.body.error).toBe('invalid_rows');
     expect(r.body.valid_rows).toBe(2);
-    expect(r.body.errors).toEqual([{ line: 4, field: 'price', message: 'not a money amount: abc' }]);
+    expect(r.body.errors).toEqual([
+      { line: 4, field: 'price', message: 'not a money amount: abc', code: 'not_money', params: { value: 'abc' } },
+    ]);
     expect(inserts()).toHaveLength(0);
     expect(w.products).toHaveLength(0);
     expect(stepUpserts()).toHaveLength(0);

@@ -364,7 +364,15 @@ router.post('/:orgId/catalogue/products/import', requireAuth, requireOrgAdmin(),
 
   const parsed = parseCatalogueCsv(body.csv);
   if (parsed.fileError) {
-    return res.status(400).json({ ok: false, error: 'invalid_csv', message: parsed.fileError, columns: parsed.columns });
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_csv',
+      message: parsed.fileError,
+      // VTID-04746: translatable in the portal.
+      code: parsed.fileErrorCode,
+      params: parsed.fileErrorParams ?? {},
+      columns: parsed.columns,
+    });
   }
   const report = { valid_rows: parsed.rows.length, errors: parsed.errors };
   if (dryRun) return res.json({ ok: true, dry_run: true, ...report });

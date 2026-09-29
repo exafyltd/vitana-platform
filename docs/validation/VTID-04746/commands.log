@@ -1,0 +1,2 @@
+$ node -e "ts.transpileModule(...)" services/gateway/src/services/partner-catalogue-csv.ts src/routes/partner-onboarding-catalogue.ts and both test files
+no diagnostics (npm install is blocked in this sandbox; jest runs in CI)
