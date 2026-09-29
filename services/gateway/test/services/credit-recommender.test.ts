@@ -36,10 +36,9 @@ const mockInsertRecommendationCommission = jest.fn();
 const mockIncrementProductRecommendationStats = jest.fn();
 const mockFetchReturnWindowSetting = jest.fn();
 const mockFetchDuePendingCommissions = jest.fn();
-const mockUpdateCommissionIfStatus = jest.fn();
-const mockFetchCommissionWalletEntry = jest.fn();
+const mockConfirmRpc = jest.fn();
+const mockReverseRpc = jest.fn();
 const mockFetchClickReferrer = jest.fn();
-const mockMarkCommissionClawbackReported = jest.fn();
 
 jest.mock('../../src/services/recommendation-commissions/credit-recommender-repository', () => ({
   fetchProductOrderForCommission: (...args: unknown[]) => mockFetchProductOrderForCommission(...args),
@@ -52,10 +51,9 @@ jest.mock('../../src/services/recommendation-commissions/credit-recommender-repo
   incrementProductRecommendationStats: (...args: unknown[]) => mockIncrementProductRecommendationStats(...args),
   fetchReturnWindowSetting: (...args: unknown[]) => mockFetchReturnWindowSetting(...args),
   fetchDuePendingCommissions: (...args: unknown[]) => mockFetchDuePendingCommissions(...args),
-  updateCommissionIfStatus: (...args: unknown[]) => mockUpdateCommissionIfStatus(...args),
-  fetchCommissionWalletEntry: (...args: unknown[]) => mockFetchCommissionWalletEntry(...args),
+  confirmRecommendationCommissionRpc: (...args: unknown[]) => mockConfirmRpc(...args),
+  reverseRecommendationCommissionRpc: (...args: unknown[]) => mockReverseRpc(...args),
   fetchClickReferrer: (...args: unknown[]) => mockFetchClickReferrer(...args),
-  markCommissionClawbackReported: (...args: unknown[]) => mockMarkCommissionClawbackReported(...args),
 }));
 
 const mockFetchExcluded = jest.fn();
@@ -386,9 +384,8 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     mockInsertRecommendationCommission.mockResolvedValue({ error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
-    mockUpdateCommissionIfStatus.mockResolvedValue({ data: [{ id: 'rc-1' }], error: null });
-    mockFetchCommissionWalletEntry.mockResolvedValue({ data: null, error: null });
-    mockMarkCommissionClawbackReported.mockResolvedValue({ data: [{ id: 'rc-1' }], error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited', ledger_entry_id: 'ledger-1' }, error: null });
+    mockReverseRpc.mockResolvedValue({ data: { ok: true, status: 'reversed' }, error: null });
   });
 
   it('a conversion the network has not approved is held as pending: nothing reaches the wallet', async () => {
@@ -424,150 +421,94 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ status: 'credited', confirmed_at: expect.any(String) }));
   });
 
-  it('confirm: a due pending commission is claimed (pending -> credited, guarded) BEFORE the wallet is paid, then gets its ledger id', async () => {
+  it('confirm: a due commission on a still-converted order is confirmed by the single-transaction DB function', async () => {
     mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+
     const r = await confirmDueRecommendationCommissions();
 
     expect(r).toEqual({ ok: true, examined: 1, credited: 1, reversed: 0, failed: 0 });
-    expect(mockCreditWalletForEarning).toHaveBeenCalledWith(expect.objectContaining({
-      account_id: 'acct-1', amount_minor: 500, reference_type: 'recommendation_commission', reference_id: 'order-1',
-    }));
-    const calls = mockUpdateCommissionIfStatus.mock.calls;
-    expect(calls[0]).toEqual([SB, 'rc-1', 'pending', expect.objectContaining({ status: 'credited', confirmed_at: expect.any(String) })]);
-    expect(calls[1]).toEqual([SB, 'rc-1', 'credited', { wallet_ledger_entry_id: 'ledger-1' }]);
-    expect(mockUpdateCommissionIfStatus.mock.invocationCallOrder[0]).toBeLessThan(mockCreditWalletForEarning.mock.invocationCallOrder[0]);
-    expect(mockIncrementProductRecommendationStats).toHaveBeenCalledTimes(1);
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-1');
+    // The wallet, the status and the stats move inside that transaction, not from here.
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
   });
 
   it.each(['refunded', 'cancelled', 'chargeback'])('confirm: an order %s during the window is reversed, never paid', async (state) => {
     mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
     mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state }, error: null });
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
 
     const r = await confirmDueRecommendationCommissions();
 
     expect(r).toEqual({ ok: true, examined: 1, credited: 0, reversed: 1, failed: 0 });
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-    expect(mockUpdateCommissionIfStatus).toHaveBeenCalledWith(SB, 'rc-1', 'pending', expect.objectContaining({
-      status: 'reversed', reversal_reason: `order_${state}`,
-    }));
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
+    expect(mockReverseRpc).toHaveBeenCalledWith(SB, 'order-1', `order_${state}`);
   });
 
-  it('confirm: a failed claim pays nothing and counts nothing; the next run pays and counts once', async () => {
+  it('confirm: an order that is not final yet is left for the next run', async () => {
     mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
-    mockUpdateCommissionIfStatus.mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } });
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
-
-    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 1, reversed: 0, failed: 0 });
-    expect(mockCreditWalletForEarning).toHaveBeenCalledTimes(1);
-    expect(mockIncrementProductRecommendationStats).toHaveBeenCalledTimes(1);
-    errorSpy.mockRestore();
-  });
-
-  it('confirm: a row a concurrent reversal (or run) already moved is never paid', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
-    mockUpdateCommissionIfStatus.mockResolvedValue({ data: [], error: null });
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state: 'pending' }, error: null });
 
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
   });
 
-  it('confirm: a failed wallet credit releases the claim back to pending for the next run', async () => {
+  it('confirm: a commitment the DB function refused (no wallet yet) or an RPC error counts as failed; the row stays pending and the next run pays it', async () => {
     mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
-    mockCreditWalletForEarning.mockResolvedValue({ ok: false, error: 'RPC_FAILED' });
+    mockConfirmRpc
+      .mockResolvedValueOnce({ data: { ok: false, error: 'RECOMMENDER_WALLET_NOT_FOUND' }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } });
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
-    expect(mockUpdateCommissionIfStatus).toHaveBeenLastCalledWith(SB, 'rc-1', 'credited', { status: 'pending', confirmed_at: null });
-    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 1, reversed: 0, failed: 0 });
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('RECOMMENDER_WALLET_NOT_FOUND'));
     errorSpy.mockRestore();
+  });
+
+  it('confirm: a row a concurrent reversal already moved is not counted', async () => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'not_pending', current_status: 'reversed' }, error: null });
+
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
   });
 
   it('confirm: pages past rows that stay pending, so they never hide later due commissions', async () => {
-    const stuck = { ...PENDING_ROW, id: 'rc-a', recommender_user_id: 'no-wallet' };
+    const stuck = { ...PENDING_ROW, id: 'rc-a' };
     const payable = { ...PENDING_ROW, id: 'rc-b', product_order_id: 'order-2' };
     mockFetchDuePendingCommissions
       .mockResolvedValueOnce({ data: [stuck], error: null })
       .mockResolvedValueOnce({ data: [payable], error: null })
       .mockResolvedValueOnce({ data: [], error: null });
-    mockFetchRecommenderWalletAccount.mockImplementation(async (_sb: unknown, userId: string) =>
-      ({ data: userId === 'no-wallet' ? null : { id: 'acct-1' }, error: null }));
+    mockConfirmRpc.mockImplementation(async (_sb: unknown, id: string) =>
+      ({ data: id === 'rc-a' ? { ok: false, error: 'RECOMMENDER_WALLET_NOT_FOUND' } : { ok: true, status: 'credited' }, error: null }));
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const r = await confirmDueRecommendationCommissions(1);
 
     expect(r).toEqual({ ok: true, examined: 2, credited: 1, reversed: 0, failed: 1 });
     expect(mockFetchDuePendingCommissions.mock.calls.map((c) => c[3])).toEqual([null, 'rc-a', 'rc-b']);
-    expect(mockCreditWalletForEarning).toHaveBeenCalledWith(expect.objectContaining({ reference_id: 'order-2' }));
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-b');
     errorSpy.mockRestore();
   });
 
-  it('confirm: a recommender without a wallet stays pending for the next run', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
-    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: null, error: null });
+  it('confirm: a failed page read reports the error', async () => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: null, error: { message: 'timeout' } });
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: false, examined: 0, credited: 0, reversed: 0, failed: 0, error: 'timeout' });
+  });
+
+  it.each([
+    ['reversed'], ['none'], ['already_final'], ['paid_needs_clawback'],
+  ])('reverse: passes the single-transaction DB function outcome through (%s)', async (status) => {
+    mockReverseRpc.mockResolvedValue({ data: { ok: true, status }, error: null });
+    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status });
+    expect(mockReverseRpc).toHaveBeenCalledWith(SB, 'order-1', 'network_declined');
+  });
+
+  it('reverse: an RPC error is reported as failed, never as done', async () => {
+    mockReverseRpc.mockResolvedValue({ data: null, error: { message: 'timeout' } });
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-
-    const r = await confirmDueRecommendationCommissions();
-
-    expect(r).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
-    errorSpy.mockRestore();
-  });
-
-  it('reverse: a pending commission becomes reversed with an OASIS event', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'reversed' });
-    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({ type: 'marketplace.recommendation.commission_reversed' }));
-  });
-
-  it('reverse: an already-paid commission is not silently kept — it raises the after-payout exception event', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'credited' }, error: null });
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'paid_needs_clawback' });
-    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
-    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({
-      type: 'marketplace.recommendation.commission_reversal_after_payout', status: 'warning',
-    }));
-  });
-
-  it('reverse: a row still pending but already paid to the wallet is treated as paid, never reversed', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
-    mockFetchCommissionWalletEntry.mockResolvedValue({ data: { id: 'ledger-1' }, error: null });
-
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'paid_needs_clawback' });
-    expect(mockFetchCommissionWalletEntry).toHaveBeenCalledWith(SB, 'order-1');
-    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
-    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({
-      type: 'marketplace.recommendation.commission_reversal_after_payout',
-    }));
-  });
-
-  it('reverse: fails (does not reverse) when the wallet lookup errors', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
-    mockFetchCommissionWalletEntry.mockResolvedValue({ data: null, error: { message: 'timeout' } });
-
     expect(await reverseRecommendationCommissionForOrder('order-1', 'x')).toEqual({ ok: false, status: 'failed' });
-    expect(mockUpdateCommissionIfStatus).not.toHaveBeenCalled();
-  });
-
-  it('reverse: the after-payout exception is reported once, not on every re-pull of the declined transaction', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'credited' }, error: null });
-    mockMarkCommissionClawbackReported.mockResolvedValue({ data: [], error: null });
-
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status: 'paid_needs_clawback' });
-    expect(mockMarkCommissionClawbackReported).toHaveBeenCalledWith(SB, 'rc-1', 'network_declined');
-    expect(mockInsertEvent).not.toHaveBeenCalled();
-  });
-
-  it('reverse: nothing to reverse, or a row another run already moved', async () => {
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'x')).toEqual({ ok: true, status: 'none' });
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-1', status: 'pending' }, error: null });
-    mockUpdateCommissionIfStatus.mockResolvedValue({ data: [], error: null });
-    expect(await reverseRecommendationCommissionForOrder('order-1', 'x')).toEqual({ ok: true, status: 'already_final' });
+    errorSpy.mockRestore();
   });
 });

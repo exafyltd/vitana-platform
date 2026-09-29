@@ -1237,6 +1237,7 @@ CREATE TABLE my_new_table (
 | 2026-09-29 | `product_clicks` gains `referrer_user_id` (recommender of the validated referral, stored on the click) and `attribution_rejected_reason` (why a `?rec_id=` was dropped, or `unverified`), plus partial index `idx_product_clicks_referrer`. `product_orders.user_id` becomes nullable so a signed-out buyer's sale can be attributed (RLS `user_id = auth.uid()` never matches NULL). Migration `20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql`. | Claude | VTID-04740 |
 | 2026-09-29 | `product_orders.tenant_id` becomes nullable: a signed-out buyer's click records no tenant, and the Awin order sync copies the click's tenant onto the order, so without this the anonymous sale's upsert failed. NULL is the honest value for an unknown buyer's tenant; RLS on `product_orders` does not use `tenant_id`. Migration `20260929120200_vtid_04740_product_orders_tenant_nullable.sql`. | Claude | VTID-04740 |
 | 2026-09-29 | `recommendation_commissions.status` CHECK widened to `pending`/`credited`/`skipped_ineligible`/`failed`/`reversed`; new `confirm_after`, `confirmed_at`, `reversed_at`, `reversal_reason` and partial index `idx_recommendation_commissions_due`. A conversion the network has not approved is held `pending` until `confirm_after` (window from `admin_settings.recommendation_commission_return_window_days`, seeded `{"days":30}`), then credited or reversed; network-approved conversions (Awin) confirm at once. Migration `20260929120100_vtid_04741_recommendation_commission_hold.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | New functions `confirm_recommendation_commission(p_commission_id uuid)` and `reverse_recommendation_commission(p_order_id uuid, p_reason text)` (SECURITY DEFINER, `service_role` only, return `jsonb`). Each confirms or reverses a held commission in ONE transaction under a row lock. Confirm: re-check the order, `credit_wallet_for_earning`, status and stats. Reverse: `pending → reversed`, or a paid commission reported once, with its OASIS event in the same commit. No table changes. Migration `20260929120300_vtid_04741_commission_confirm_reverse_functions.sql`. | Claude | VTID-04741 |
 
 ---
 
@@ -2117,7 +2118,12 @@ is `pending` (held until `confirm_after`) → `credited` (paid to the wallet,
 payment, `reversed_at`/`reversal_reason`); `skipped_ineligible` and `failed`
 as before. Network-approved conversions confirm at once. A reversal after
 payment is reported as `marketplace.recommendation.commission_reversal_after_payout`,
-not clawed back (clawback policy is open, architecture D-11).
+not clawed back (clawback policy is open, architecture D-11), and only once
+(marked by `reversal_reason` on the `credited` row). Confirm and reverse each
+run as one transaction under a row lock (`confirm_recommendation_commission`,
+`reverse_recommendation_commission`), so a crash never leaves a commission
+marked paid without money, and a confirm and a reversal of the same order
+serialize.
 
 **Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
 service-role full access. **All gateway routes use the service-role client,

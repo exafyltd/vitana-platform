@@ -332,12 +332,12 @@ type DueCommissionRow = {
  * Pays every `pending` commission whose return window has passed, provided its
  * order is still a sale; reverses the ones whose order was undone meanwhile.
  *
- * The row is CLAIMED (`pending → credited`, status-guarded) before the wallet
- * is touched, so a concurrent reversal either wins the claim (nothing is paid)
- * or finds the row `credited` and reports it as paid — a paid commission is
- * never left recorded as reversed. If the wallet credit then fails, the claim
- * is released back to `pending` for the next run. The wallet credit itself is
- * keyed on the order (ledger UNIQUE), so a retry never pays twice.
+ * Each commission is confirmed by confirm_recommendation_commission(), one DB
+ * transaction that locks the row, re-checks the order, credits the wallet and
+ * marks the row `credited` together: a crash leaves it `pending` for the next
+ * run, never "paid" without money, and a concurrent reversal of the same order
+ * waits on the row lock and sees the outcome. The wallet credit is keyed on
+ * the order (ledger UNIQUE), so nothing is ever paid twice.
  *
  * Due rows are keyset-paged, so rows that stay pending (no wallet yet) never
  * hide the ones behind them; `maxRows` bounds one run.
@@ -379,76 +379,30 @@ async function confirmOne(
   }
   if (order.state !== 'converted') return; // not final yet; examined again next run
 
-  const currency = String(row.currency).toUpperCase();
-  if (currency !== 'EUR' && currency !== 'USD') {
-    result.failed++;
-    return;
-  }
-  const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, row.recommender_user_id, currency);
-  if (accountErr || !account) {
-    // Stays pending: retried on the next run once the wallet exists.
-    console.error(`[credit-recommender] confirm: no wallet for recommender=${row.recommender_user_id} order=${row.product_order_id}`);
-    result.failed++;
-    return;
-  }
-
-  // Claim before paying (see the function header).
-  const { data: claimed, error: claimErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'pending', {
-    status: 'credited',
-    confirmed_at: new Date().toISOString(),
-  });
-  if (claimErr) {
-    console.error(`[credit-recommender] confirm: claim failed for ${row.id}: ${claimErr.message}`);
-    result.failed++;
-    return;
-  }
-  if (!claimed || (Array.isArray(claimed) && claimed.length === 0)) return; // reversed or claimed elsewhere
-
-  const credit = await creditWalletForEarning({
-    account_id: account.id,
-    amount_minor: row.payout_amount_minor,
-    currency: currency as 'EUR' | 'USD',
-    reference_type: 'recommendation_commission',
-    reference_id: row.product_order_id,
-    description: 'Recommendation commission',
-    metadata: {
-      product_recommendation_id: row.product_recommendation_id,
-      rate_applied: row.rate_applied,
-      vitana_commission_cents: row.vitana_commission_cents,
-    },
-  });
-  if (!credit.ok) {
-    // Release the claim so the next run retries. If even that fails the row
-    // reads `credited` with no ledger entry: logged loudly, never silent.
-    const { error: releaseErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'credited', {
-      status: 'pending',
-      confirmed_at: null,
-    });
+  const { data, error } = await repo.confirmRecommendationCommissionRpc(supabase, row.id);
+  const outcome = data as { ok?: boolean; status?: string; error?: string } | null;
+  if (error || !outcome?.ok) {
+    // Nothing was committed: the row stays pending and is retried next run
+    // (e.g. RECOMMENDER_WALLET_NOT_FOUND until the wallet exists).
     console.error(
-      `[credit-recommender] confirm: wallet credit failed for ${row.id} (${credit.error})` +
-        (releaseErr ? `; RELEASE FAILED, row is credited without a ledger entry: ${releaseErr.message}` : '; released to pending'),
+      `[credit-recommender] confirm failed for ${row.id} order=${row.product_order_id}: ${error?.message ?? outcome?.error ?? 'unknown'}`,
     );
     result.failed++;
     return;
   }
-  const { error: ledgerErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'credited', {
-    wallet_ledger_entry_id: credit.ledger_entry_id ?? null,
-  });
-  if (ledgerErr) console.warn(`[credit-recommender] confirm: ledger id not recorded for ${row.id}: ${ledgerErr.message}`);
-  await repo.incrementProductRecommendationStats(supabase, {
-    p_recommendation_id: row.product_recommendation_id,
-    p_commission_earned_minor: row.payout_amount_minor,
-  });
-  result.credited++;
+  if (outcome.status === 'credited') result.credited++;
 }
 
 export type ReverseCommissionStatus = 'reversed' | 'none' | 'already_final' | 'paid_needs_clawback' | 'failed';
 
 /**
  * Undoes the commission of an order that was refunded, cancelled or charged
- * back. A `pending` commission is reversed (never paid). One that was already
- * paid is NOT clawed back here — that needs the clawback policy (architecture
- * D-11) — it is reported as an exception event so it is never silent.
+ * back, in one DB transaction (reverse_recommendation_commission). A `pending`
+ * commission is reversed (never paid). One that was already paid is NOT clawed
+ * back here — that needs the clawback policy (architecture D-11) — it is
+ * reported once as `marketplace.recommendation.commission_reversal_after_payout`
+ * (warning), the marker and the event committed together, so it is never
+ * silent and never repeated on each re-pull of the declined transaction.
  */
 export async function reverseRecommendationCommissionForOrder(
   orderId: string,
@@ -457,59 +411,11 @@ export async function reverseRecommendationCommissionForOrder(
   const supabase = getSupabase();
   if (!supabase) return { ok: false, status: 'failed' };
 
-  const { data: existing, error } = await repo.fetchExistingRecommendationCommission(supabase, orderId);
-  if (error) return { ok: false, status: 'failed' };
-  if (!existing) return { ok: true, status: 'none' };
-
-  if (existing.status === 'pending') {
-    // A pending row whose wallet credit landed but whose status update did not
-    // has been paid: treat it as paid, never reverse it as if it were not.
-    const { data: paid, error: paidErr } = await repo.fetchCommissionWalletEntry(supabase, orderId);
-    if (paidErr) return { ok: false, status: 'failed' };
-    if (paid) return reportPaidNeedsClawback(supabase, orderId, existing.id, reason);
-    const { data: updated, error: updErr } = await repo.updateCommissionIfStatus(supabase, existing.id, 'pending', {
-      status: 'reversed',
-      reversed_at: new Date().toISOString(),
-      reversal_reason: reason,
-    });
-    if (updErr) return { ok: false, status: 'failed' };
-    if (!updated || (Array.isArray(updated) && updated.length === 0)) return { ok: true, status: 'already_final' };
-    await repo.insertCommissionSkippedIneligibleEvent(supabase, {
-      service: 'discover', source: 'recommendation-commissions',
-      type: 'marketplace.recommendation.commission_reversed',
-      topic: 'marketplace.recommendation.commission_reversed',
-      status: 'info', message: `recommendation commission reversed before payment: ${reason}`,
-      metadata: { orderId, commissionId: existing.id, reason },
-      created_at: new Date().toISOString(),
-    }).then(() => {}, () => {});
-    return { ok: true, status: 'reversed' };
+  const { data, error } = await repo.reverseRecommendationCommissionRpc(supabase, orderId, reason);
+  const outcome = data as { ok?: boolean; status?: ReverseCommissionStatus } | null;
+  if (error || !outcome?.ok || !outcome.status) {
+    console.error(`[credit-recommender] reverse failed for order=${orderId}: ${error?.message ?? 'unexpected result'}`);
+    return { ok: false, status: 'failed' };
   }
-
-  if (existing.status === 'credited') return reportPaidNeedsClawback(supabase, orderId, existing.id, reason);
-
-  return { ok: true, status: 'already_final' };
-}
-
-async function reportPaidNeedsClawback(
-  supabase: NonNullable<ReturnType<typeof getSupabase>>,
-  orderId: string,
-  commissionId: string,
-  reason: string,
-): Promise<{ ok: boolean; status: ReverseCommissionStatus }> {
-  // Awin re-pulls a declined transaction on every sync in its lookback
-  // window: the exception is reported once per commission, marked by
-  // reversal_reason. A failed mark still reports (a duplicate beats silence).
-  const { data: marked, error: markErr } = await repo.markCommissionClawbackReported(supabase, commissionId, reason);
-  if (!markErr && (!marked || (Array.isArray(marked) && marked.length === 0))) {
-    return { ok: true, status: 'paid_needs_clawback' }; // already reported
-  }
-  await repo.insertCommissionSkippedIneligibleEvent(supabase, {
-    service: 'discover', source: 'recommendation-commissions',
-    type: 'marketplace.recommendation.commission_reversal_after_payout',
-    topic: 'marketplace.recommendation.commission_reversal_after_payout',
-    status: 'warning', message: `order undone after the commission was paid: ${reason}`,
-    metadata: { orderId, commissionId, reason },
-    created_at: new Date().toISOString(),
-  }).then(() => {}, () => {});
-  return { ok: true, status: 'paid_needs_clawback' };
+  return { ok: true, status: outcome.status };
 }

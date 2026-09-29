@@ -24,9 +24,10 @@ This is plan step 4 of `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (
   - reverses on a later decline;
   - confirms due held commissions at the end of each run.
 - **Daily scheduled sync** (`POST /api/v1/internal/marketplace/sync/all`, run by `MARKETPLACE-SYNC-CRON.yml`) also confirms due held commissions. The Awin order sync is admin-triggered only, and checkout orders have no network to confirm them, so the scheduled run is what pays them.
-- **Claim before paying.** The confirmer moves the row `pending → credited` (status-guarded) BEFORE the wallet credit. A concurrent reversal either wins that claim, so nothing is paid, or finds the row `credited` and reports it as paid, so a paid commission is never recorded as reversed. A failed wallet credit releases the claim back to `pending`. Recommendation totals are counted only after a claimed row is paid.
+- **One transaction per step.** `confirm_recommendation_commission()` locks the commission row, re-checks that the order is still converted, credits the wallet (`credit_wallet_for_earning`), and marks the row `credited` and updates the stats, all in one transaction. A crash leaves the row `pending` for the next run. `reverse_recommendation_commission()` locks the same row, so a confirm and a reversal of one order serialize. A paid commission is never recorded as reversed.
 - **Due rows are keyset-paged**, so rows that stay pending (no wallet yet) never hide the due commissions behind them.
-- **The after-payout exception is reported once per commission** (marked by `reversal_reason`), even though Awin re-pulls a declined transaction on every sync in its lookback window.
+- **The after-payout exception is reported once per commission.** The `reversal_reason` marker and the OASIS event are written in the same transaction, so the warning can't be marked as sent while the event is lost.
+- **Commission OASIS events are actually written.** `oasis_events` has no `type` column and requires `role`, so the helper's inserts had been rejected and swallowed. None had ever been recorded. The helper now writes a valid row.
 
 ## Acceptance criteria
 
@@ -40,15 +41,17 @@ AC-4: an order refunded, cancelled or charged back during the window is reversed
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-5: a reversal after payment raises the after-payout warning event instead of being silent; a missing wallet stays pending.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-7: the row is claimed before the wallet is paid; a failed claim pays nothing and the next run pays once; a row a concurrent reversal moved is never paid; a failed wallet credit releases the claim; a pending row already paid to the wallet is reported for clawback, not reversed.
+AC-7: a due commission is confirmed by the single-transaction DB function; a refused confirm (no wallet yet) or an RPC error leaves it pending and the next run pays it; a row a concurrent reversal moved is not counted; an order not yet final is left alone.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-8: the daily all-networks scheduled sync confirms due held commissions, and a failure there does not fail the catalogue sync.
   TEST: services/gateway/test/routes/internal-marketplace-sync.test.ts
 AC-9: due rows are keyset-paged past rows that stay pending, so a recommender without a wallet never blocks later payouts.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-10: the after-payout exception is reported once per commission, not on every re-pull of the declined transaction.
+AC-10: reversal goes through the single-transaction DB function (reversed / none / already_final / paid_needs_clawback passed through; an RPC error is `failed`, never done); the after-payout event is written once, together with its marker.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-6: the schema and setting are live (checked read-only after applying, see `outputs/live-schema.txt`).
+AC-11: commission OASIS events are written as rows `oasis_events` accepts (no `type`, `role` set).
+  TEST: services/gateway/test/services/credit-recommender-repository-events.test.ts
+AC-6: the schema, the setting and the two functions are live (functions: SECURITY DEFINER, execute for `service_role` only) (checked read-only after applying, see `outputs/live-schema.txt`).
   TEST: services/gateway/test/services/credit-recommender.test.ts
 
 ## Staging

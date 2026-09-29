@@ -51,43 +51,27 @@ export async function fetchDuePendingCommissions(sb: SupabaseClient, nowIso: str
   return q.order('id', { ascending: true }).limit(limit);
 }
 
-/** VTID-04741: moves a commission out of `expected` only if it is still there (no double transition). */
-export async function updateCommissionIfStatus(
-  sb: SupabaseClient,
-  id: string,
-  expected: string,
-  patch: Record<string, unknown>,
-) {
-  return sb.from('recommendation_commissions').update(patch).eq('id', id).eq('status', expected).select('id');
+/**
+ * VTID-04741: confirm one held commission in a single DB transaction
+ * (confirm_recommendation_commission): row lock, order-still-converted check,
+ * wallet credit, status and stats together. Returns { ok, status, error? }.
+ */
+export async function confirmRecommendationCommissionRpc(sb: SupabaseClient, commissionId: string) {
+  return sb.rpc('confirm_recommendation_commission', { p_commission_id: commissionId });
 }
 
-/** The wallet credit for an order's commission, if one was made (reference is the order id). */
-export async function fetchCommissionWalletEntry(sb: SupabaseClient, orderId: string) {
-  return sb
-    .from('wallet_ledger_entries')
-    .select('id')
-    .eq('reference_type', 'recommendation_commission')
-    .eq('reference_id', orderId)
-    .limit(1)
-    .maybeSingle();
+/**
+ * VTID-04741: reverse an order's commission in a single DB transaction
+ * (reverse_recommendation_commission): pending -> reversed, or a paid one
+ * reported once for clawback, each with its OASIS event in the same commit.
+ */
+export async function reverseRecommendationCommissionRpc(sb: SupabaseClient, orderId: string, reason: string) {
+  return sb.rpc('reverse_recommendation_commission', { p_order_id: orderId, p_reason: reason });
 }
 
 /** VTID-04740: the referrer frozen on the click at redirect time. */
 export async function fetchClickReferrer(sb: SupabaseClient, clickId: string) {
   return sb.from('product_clicks').select('referrer_user_id').eq('click_id', clickId).maybeSingle();
-}
-
-/**
- * Records, once, that a paid commission's order was undone. Returns a row only
- * the first time, so the after-payout exception is reported once per order.
- */
-export async function markCommissionClawbackReported(sb: SupabaseClient, id: string, reason: string) {
-  return sb
-    .from('recommendation_commissions')
-    .update({ reversal_reason: reason })
-    .eq('id', id)
-    .is('reversal_reason', null)
-    .select('id');
 }
 
 export async function fetchExistingRecommendationCommission(sb: SupabaseClient, orderId: string) {
@@ -111,8 +95,15 @@ export async function insertRecommendationCommission(sb: SupabaseClient, row: Re
   return sb.from('recommendation_commissions').insert(row);
 }
 
+/**
+ * oasis_events has no `type` column and requires `role`: callers pass `type`
+ * (same value as `topic`), so it is dropped here and `role` is set, otherwise
+ * PostgREST rejects the insert and the event is lost.
+ */
 export async function insertCommissionSkippedIneligibleEvent(sb: SupabaseClient, row: Record<string, unknown>) {
-  return sb.from('oasis_events').insert(row);
+  const event: Record<string, unknown> = { role: 'GATEWAY', ...row };
+  delete event.type;
+  return sb.from('oasis_events').insert(event);
 }
 
 export async function fetchRecommenderWalletAccount(sb: SupabaseClient, userId: string, currency: string) {
