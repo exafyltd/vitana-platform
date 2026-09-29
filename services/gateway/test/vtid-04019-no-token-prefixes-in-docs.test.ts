@@ -42,7 +42,7 @@ export function findTokenShapes(text: string): Array<{ name: string; excerpt: st
 }
 
 describe('VTID-04019: no token-shaped strings in CLAUDE.md, README.md or docs/', () => {
-  const files = [path.join(REPO_ROOT, 'CLAUDE.md'), path.join(REPO_ROOT, 'README.md'), ...markdownFiles(path.join(REPO_ROOT, 'docs'))]
+  const files = [path.join(REPO_ROOT, 'CLAUDE.md'), path.join(REPO_ROOT, 'README.md'), ...markdownFiles(path.join(REPO_ROOT, 'docs')), ...markdownFiles(path.join(REPO_ROOT, '.claude/rules'))]
     .filter((f) => fs.existsSync(f));
 
   it('scans a non-trivial set of files', () => {
@@ -54,8 +54,9 @@ describe('VTID-04019: no token-shaped strings in CLAUDE.md, README.md or docs/',
     expect(hits).toEqual([]);
   });
 
-  it('CLAUDE.md §16 explains where the tokens live instead of printing them', () => {
-    const text = fs.readFileSync(path.join(REPO_ROOT, 'CLAUDE.md'), 'utf8');
+  // VTID-04253 moved §16 from CLAUDE.md into .claude/rules/infrastructure.md.
+  it('§16 (.claude/rules/infrastructure.md) explains where the tokens live instead of printing them', () => {
+    const text = fs.readFileSync(path.join(REPO_ROOT, '.claude/rules/infrastructure.md'), 'utf8');
     expect(text).toContain('### GitHub access for API operations (VTID-04019 — no token material in this file)');
     expect(text).not.toContain('### GitHub PATs for API Access');
     expect(text).toMatch(/GITHUB_SAFE_MERGE_TOKEN`\)\*\* — AWS Secrets Manager/);

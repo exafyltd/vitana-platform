@@ -12,7 +12,8 @@
  *                        has no CLAUDE.md), bounded
  *   service path map   — config/service-path-map.json (repo root, GitHub)
  *   schema table index — DATABASE_SCHEMA.md `### table` headings
- *   recent change log  — the last N CHANGE LOG rows of CLAUDE.md, compressed
+ *   recent change log  — the last N CHANGE LOG rows of docs/CHANGELOG.md
+ *                        (moved out of CLAUDE.md by VTID-04253), compressed
  *   live build-info    — the gateways named in OPERATOR_BOOTSTRAP_BUILD_INFO_URLS
  *   open PRs           — both repos, with the platform repo's CI state
  *   recent events      — the last N deploy.* / dev_autopilot.* OASIS events
@@ -347,7 +348,9 @@ export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackS
   const claudeMd = deps.readRepoFile('CLAUDE.md');
   const [rules, changelog, pathMap, schema, buildInfo, prs, events] = await Promise.all([
     section(BOOTSTRAP_RULES_SECTION_TITLE, SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
-    section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => extractChangelogRows(await claudeMd).join('\n')),
+    // VTID-04729: VTID-04253 moved the CHANGE LOG table out of CLAUDE.md into
+    // docs/CHANGELOG.md; reading CLAUDE.md left this section empty.
+    section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => extractChangelogRows(await deps.readRepoFile('docs/CHANGELOG.md')).join('\n')),
     section('Service path map (config/service-path-map.json)', SOURCE_TIMEOUT_MS, async () => renderServicePathMap(await deps.readRepoFile('config/service-path-map.json'))),
     section('Database tables (DATABASE_SCHEMA.md index)', SOURCE_TIMEOUT_MS, async () => extractSchemaTableIndex(await deps.readRepoFile('DATABASE_SCHEMA.md'))),
     section('Live build-info', SOURCE_TIMEOUT_MS, async () => {
