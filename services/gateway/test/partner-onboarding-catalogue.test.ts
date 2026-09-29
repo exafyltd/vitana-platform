@@ -133,7 +133,11 @@ function wire(over: Partial<World> = {}): World {
     return { data: w.legacy ? { id: w.legacy.id } : null, error: null };
   };
   handlers.products = (c) => {
-    if (c.op === 'insert') { w.products.push({ ...c.args[0] }); return { data: { ...c.args[0] }, error: null }; }
+    if (c.op === 'insert') {
+      if (Array.isArray(c.args[0])) { w.products.push(...c.args[0].map((p: any) => ({ ...p }))); return { data: c.args[0], error: null }; }
+      w.products.push({ ...c.args[0] });
+      return { data: { ...c.args[0] }, error: null };
+    }
     if (c.op === 'update') {
       const id = c.filters.find(([k]) => k === 'id')?.[1];
       const p = w.products.find((x) => x.id === id);
@@ -303,6 +307,107 @@ describe('products', () => {
     const r = await request(app()).patch(`${BASE}/products/p-1`).set('Authorization', 'Bearer owner-1').send({ ships_to_countries: [] });
     expect(r.status).toBe(400);
     expect(calls.some((c) => c.table === 'products' && c.op === 'update')).toBe(false);
+  });
+});
+
+describe('POST /:orgId/catalogue/products/import (VTID-04731)', () => {
+  const IMPORT = `${BASE}/products/import`;
+  const CSV = [
+    'title,price,currency,affiliate_url,origin_country,ships_to_countries,images',
+    'Omega 3,19.99,eur,https://acme.example/p/omega,de,de|at,https://acme.example/a.jpg|https://acme.example/b.jpg',
+    '"Magnesium, 400 mg",9,EUR,https://acme.example/p/mag,DE,DE,',
+  ].join('\n');
+  const inserts = () => calls.filter((c) => c.table === 'products' && c.op === 'insert');
+
+  it('401 JSON without a token', async () => {
+    const r = await request(app()).post(IMPORT).send({ csv: CSV });
+    expect(r.status).toBe(401);
+    expect(r.type).toBe('application/json');
+  });
+
+  it('is org_admin only', async () => {
+    wire({ admin: false, merchant: { id: 'm-1', partner_organization_id: 'org-1' } });
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer other-1').send({ csv: CSV });
+    expect(r.status).toBe(403);
+    expect(inserts()).toHaveLength(0);
+  });
+
+  it('409 NO_MERCHANT before the merchant exists', async () => {
+    wire();
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({ csv: CSV });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('NO_MERCHANT');
+  });
+
+  it('409 CATALOGUE_LOCKED for a suspended org', async () => {
+    const w = wire({ merchant: { id: 'm-1', partner_organization_id: 'org-1' } });
+    w.org.lifecycle_state = 'suspended';
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({ csv: CSV });
+    expect(r.status).toBe(409);
+    expect(inserts()).toHaveLength(0);
+  });
+
+  it('400 invalid_csv when csv is not a string, or the header is wrong', async () => {
+    wire({ merchant: { id: 'm-1', partner_organization_id: 'org-1' } });
+    const noCsv = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({});
+    expect(noCsv.status).toBe(400);
+    expect(noCsv.body.error).toBe('invalid_csv');
+    const typo = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1')
+      .send({ csv: 'title,price,currency,affilate_url,origin_country\nA,1,EUR,https://x.example,DE' });
+    expect(typo.status).toBe(400);
+    expect(typo.body.message).toMatch(/unknown column\(s\): affilate_url/);
+    expect(inserts()).toHaveLength(0);
+  });
+
+  it('imports every row as a hidden draft in one insert and completes the catalogue step', async () => {
+    const w = wire({ merchant: { id: 'm-1', partner_organization_id: 'org-1' }, priorStep: 'in_progress' });
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({ csv: CSV });
+    expect(r.status).toBe(201);
+    expect(r.body.imported).toBe(2);
+    expect(inserts()).toHaveLength(1);
+    expect(w.products).toHaveLength(2);
+    expect(w.products[0]).toMatchObject({
+      title: 'Omega 3', price_cents: 1999, currency: 'EUR', origin_country: 'DE',
+      ships_to_countries: ['DE', 'AT'], images: ['https://acme.example/a.jpg', 'https://acme.example/b.jpg'],
+      merchant_id: 'm-1', source_network: 'supplier_referral', is_active: false,
+    });
+    expect(w.products[1]).toMatchObject({ title: 'Magnesium, 400 mg', price_cents: 900, images: [], is_active: false });
+    expect(w.products[0].source_product_id).toMatch(/^supplier_referral:m-1:/);
+    expect(w.products[0].id).not.toBe(w.products[1].id);
+    // PGRST102: every object in a bulk insert must have the same keys.
+    const [a, b] = inserts()[0].args[0];
+    expect(Object.keys(a).sort()).toEqual(Object.keys(b).sort());
+    expect(a).toMatchObject({ description: null, brand: null, compare_at_price_cents: null, category: null, ships_to_regions: null });
+    expect(stepUpserts()[0].args[0]).toMatchObject({ status: 'done', detail: { product_count: 2 } });
+    const types = emitOasisEventMock.mock.calls.map((c) => c[0].type);
+    expect(types).toEqual(['partner_org.catalogue_imported', 'partner_org.catalogue_step_changed']);
+    expect(emitOasisEventMock.mock.calls[0][0].payload).toMatchObject({ partner_organization_id: 'org-1', merchant_id: 'm-1', imported: 2 });
+    expect(r.body.checklist.steps.find((s: any) => s.key === 'catalogue').status).toBe('done');
+  });
+
+  it('is all or nothing: one bad row writes nothing and every error names its line', async () => {
+    const w = wire({ merchant: { id: 'm-1', partner_organization_id: 'org-1' } });
+    const csv = `${CSV}\nBad,abc,EUR,not-a-url,DE,,`;
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({ csv });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('invalid_rows');
+    expect(r.body.valid_rows).toBe(2);
+    expect(r.body.errors).toEqual([{ line: 4, field: 'price', message: 'not a money amount: abc' }]);
+    expect(inserts()).toHaveLength(0);
+    expect(w.products).toHaveLength(0);
+    expect(stepUpserts()).toHaveLength(0);
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
+  });
+
+  it('dry_run reports without writing anything', async () => {
+    const w = wire({ merchant: { id: 'm-1', partner_organization_id: 'org-1' } });
+    const r = await request(app()).post(IMPORT).set('Authorization', 'Bearer owner-1').send({ csv: CSV, dry_run: true });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ ok: true, dry_run: true, valid_rows: 2, errors: [] });
+    expect(inserts()).toHaveLength(0);
+    expect(w.products).toHaveLength(0);
+    expect(stepUpserts()).toHaveLength(0);
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
   });
 });
 
