@@ -20,7 +20,7 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { creditWalletForEarning } from '../wallet/spend-earning-service';
-import { fetchExcludedTestServiceAccountIds } from '../../lib/excluded-test-service-accounts';
+import { fetchExcludedTestServiceAccountIdsStrict } from '../../lib/excluded-test-service-accounts';
 import * as repo from './credit-recommender-repository';
 import { validateReferral } from './referral-validation';
 
@@ -106,7 +106,14 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   // click-time check can be skipped (an order may carry a rec id the click
   // never validated, or one that became invalid since). A referral that does
   // not count is recorded as skipped for good: none of these reasons can
-  // change for this order.
+  // change for this order. The test/service-account list fails CLOSED: if it
+  // cannot be read, nothing is paid and nothing permanent is written, so the
+  // order is re-processed on the next pull.
+  const excluded = await fetchExcludedTestServiceAccountIdsStrict(supabase);
+  if (!excluded.ok) {
+    console.error(`[credit-recommender] excluded-account lookup failed for order=${orderId}: ${excluded.error}`);
+    return { ok: false, status: 'failed', message: 'EXCLUSION_LOOKUP_FAILED' };
+  }
   const verdict = validateReferral({
     recommendation: {
       id: recommendation.id,
@@ -116,7 +123,7 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
     },
     productId: order.product_id,
     buyerUserId: order.user_id ?? null,
-    excludedUserIds: await fetchExcludedTestServiceAccountIds(supabase),
+    excludedUserIds: excluded.ids,
   });
   if (!verdict.ok) {
     await repo.insertRecommendationCommission(supabase, {

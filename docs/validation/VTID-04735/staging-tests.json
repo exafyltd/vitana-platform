@@ -3,7 +3,7 @@
   "service": "gateway",
   "tests": [
     { "kind": "http", "name": "click redirect answers for an unknown product (no click logged)", "path": "/r/00000000-0000-4000-8000-000000000000", "expect_status": 404 },
-    { "kind": "existing", "ref": "npx jest test/services/referral-validation.test.ts test/routes/click-redirect-referral.test.ts test/services/credit-recommender.test.ts", "cwd": "services/gateway",
+    { "kind": "existing", "ref": "npx jest test/services/referral-validation.test.ts test/routes/click-redirect-referral.test.ts test/services/credit-recommender.test.ts test/lib/excluded-test-service-accounts.test.ts", "cwd": "services/gateway",
       "reason": "a real click or conversion writes to the shared production database, so referral validation is proven by these suites, not on staging" }
   ]
 }

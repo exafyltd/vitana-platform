@@ -17,7 +17,8 @@ Plan step 3 of `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (ยง9.2, ย
   - an invalid referral writes a permanent `skipped_ineligible` row with payout 0;
   - it emits `marketplace.recommendation.commission_skipped_invalid_referral` with the reason;
   - it returns `skipped_invalid_referral`;
-  - no wallet credit happens.
+  - no wallet credit happens;
+  - the test/service-account list is read fail-closed (`fetchExcludedTestServiceAccountIdsStrict`), so a failed lookup stops the credit instead of treating everyone as eligible. The click path keeps the fail-open read, because the credit re-checks.
 - The repositories now select the fields the rule needs: product and buyer on the order, and product and status on the referral.
 
 Not in this change, because they need a migration go-ahead: storing the referrer on the click, and making `product_orders.user_id` nullable for anonymous buyers.
@@ -32,6 +33,9 @@ AC-3: a failed referral lookup keeps the click's referral as `unverified` instea
   TEST: services/gateway/test/routes/click-redirect-referral.test.ts
 AC-4: the credit never pays an invalid referral. It records a permanent skip with payout 0 and emits an OASIS event with the reason.
   TEST: services/gateway/test/services/credit-recommender.test.ts
+AC-7: the credit reads the test/service-account list fail-closed: if either table cannot be read, nothing is paid and nothing permanent is written (`EXCLUSION_LOOKUP_FAILED`). This came from the Codex review.
+  TEST: services/gateway/test/services/credit-recommender.test.ts
+  TEST: services/gateway/test/lib/excluded-test-service-accounts.test.ts
 AC-5: valid referrals are still credited exactly as before; the existing credit tests pass with the new fields.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-6: on staging the click route still answers for an unknown product (read-only probe, no click is logged).

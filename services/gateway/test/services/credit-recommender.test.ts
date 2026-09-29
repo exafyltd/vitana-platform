@@ -48,7 +48,7 @@ jest.mock('../../src/services/recommendation-commissions/credit-recommender-repo
 
 const mockFetchExcluded = jest.fn();
 jest.mock('../../src/lib/excluded-test-service-accounts', () => ({
-  fetchExcludedTestServiceAccountIds: (...args: unknown[]) => mockFetchExcluded(...args),
+  fetchExcludedTestServiceAccountIdsStrict: (...args: unknown[]) => mockFetchExcluded(...args),
 }));
 
 const mockInsertEvent = jest.fn();
@@ -76,7 +76,7 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
     mockGetSupabase.mockReturnValue(SB);
     mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
     mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
-    mockFetchExcluded.mockResolvedValue(new Set());
+    mockFetchExcluded.mockResolvedValue({ ok: true, ids: new Set() });
     mockFetchMerchantCommissionEligibility.mockResolvedValue({
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
@@ -152,7 +152,7 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
     mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
     mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
-    mockFetchExcluded.mockResolvedValue(new Set());
+    mockFetchExcluded.mockResolvedValue({ ok: true, ids: new Set() });
     mockFetchMerchantCommissionEligibility.mockResolvedValue({
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
@@ -231,7 +231,7 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
     mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
     mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
-    mockFetchExcluded.mockResolvedValue(new Set());
+    mockFetchExcluded.mockResolvedValue({ ok: true, ids: new Set() });
     mockFetchMerchantCommissionEligibility.mockResolvedValue({
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
@@ -247,7 +247,7 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
     ['self-referral (the recommender bought it)', () => mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, user_id: 'recommender-1' }, error: null }), 'self_referral'],
     ['a referral for another product', () => mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { ...REC, product_id: 'prod-other' }, error: null }), 'product_mismatch'],
     ['a disabled referral', () => mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { ...REC, status: 'disabled' }, error: null }), 'disabled'],
-    ['a test or service account as recommender', () => mockFetchExcluded.mockResolvedValue(new Set(['recommender-1'])), 'excluded_account'],
+    ['a test or service account as recommender', () => mockFetchExcluded.mockResolvedValue({ ok: true, ids: new Set(['recommender-1']) }), 'excluded_account'],
   ];
 
   it.each(cases)('%s: no wallet credit, a permanent skipped row with payout 0, and an OASIS event', async (_name, arrange, reason) => {
@@ -264,6 +264,19 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
       type: 'marketplace.recommendation.commission_skipped_invalid_referral',
       metadata: expect.objectContaining({ reason }),
     }));
+  });
+
+  it('fails closed when the test/service-account list cannot be read: no credit, nothing permanent written', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockFetchExcluded.mockResolvedValue({ ok: false, error: 'connection terminated unexpectedly' });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(result).toEqual({ ok: false, status: 'failed', message: 'EXCLUSION_LOOKUP_FAILED' });
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('excluded-account lookup failed for order=order-1'));
+    errorSpy.mockRestore();
   });
 
   it('an anonymous buyer (no user on the order) is not a self-referral: the valid referral is credited', async () => {
