@@ -114,6 +114,34 @@ describe('runAwinOrderSync — fetchProductClickByClickId error handling', () =>
   });
 });
 
+describe('runAwinOrderSync — anonymous buyers (VTID-04740)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSupabase.mockReturnValue(SB);
+    mockConfirmDueRecommendationCommissions.mockResolvedValue({ ok: true, examined: 0, credited: 0, reversed: 0, failed: 0 });
+    mockFetchActiveAwinSourceConfig.mockResolvedValue({
+      data: { config: { api_token: 'tok', publisher_id: 'pub-1' } },
+      error: null,
+    });
+  });
+
+  it('a signed-out buyer\'s click (no user, no tenant) is recorded as an order with both NULL and still credits the referral', async () => {
+    mockAwinTransactionsFetch([{ id: 'tx-9', clickRef: 'click-anon', commissionAmount: { amount: 10, currency: 'EUR' }, commissionStatus: 'approved' }]);
+    mockFetchProductClickByClickId.mockResolvedValue({
+      data: { click_id: 'click-anon', user_id: null, tenant_id: null, product_id: 'p1', merchant_id: 'm1', attribution_recommendation_id: 'rec-1' },
+      error: null,
+    });
+    mockUpsertProductOrder.mockResolvedValue({ data: { id: 'order-9' }, error: null });
+    mockCreditRecommenderForOrder.mockResolvedValue(undefined);
+
+    const result = await runAwinOrderSync(7);
+
+    expect(result.attributed).toBe(1);
+    expect(mockUpsertProductOrder).toHaveBeenCalledWith(SB, expect.objectContaining({ user_id: null, tenant_id: null, click_id: 'click-anon' }));
+    expect(mockCreditRecommenderForOrder).toHaveBeenCalledWith('order-9', { networkConfirmed: true });
+  });
+});
+
 describe('runAwinOrderSync — source-config lookup error handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();

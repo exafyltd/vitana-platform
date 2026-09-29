@@ -3,3 +3,8 @@ click_cols: ["attribution_rejected_reason","referrer_user_id"]
 orders_user_nullable: YES
 index: idx_product_clicks_referrer present
 live data before: 0 product_orders, 49 product_clicks (0 carrying a referral)
+
+# 2026-09-29, read-only after apply_migration vtid_04740_product_orders_tenant_nullable
+orders_tenant_nullable: YES
+orders_user_nullable: YES
+product_orders RLS: product_orders_select_own (user_id = auth.uid()), product_orders_service (true); neither uses tenant_id
