@@ -37,9 +37,11 @@ TEST: services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.test.t
 
 On staging, with no spouse fact stored, "wie heißt meine Frau" must answer first time with "I don't know it yet, tell me", with no privacy, profile or settings wording. The `recall_backstop` diag should no longer fire as `privacy_refusal` or `deflected` for these sessions. With the facts stored, the answers must still be "Anna" / "12. März".
 
-## Ported fix: `main` red after the CLAUDE.md split (VTID-04253, `8490e09`)
+## Note: main was red after the CLAUDE.md split (VTID-04253)
 
-The gateway Jest job failed on this PR with two failures. `main` itself carries both of them; no fix PR existed, so this PR fixes them:
+Two gateway tests failed on this PR. They came from `main` after the `CLAUDE.md` split in `8490e09`, not from this change:
 
-- **`vtid-04019-no-token-prefixes-in-docs`** looked for §16 in `CLAUDE.md`. It moved to `.claude/rules/infrastructure.md`, so the test now reads it there. The token scan now also covers `.claude/rules/*.md`, the path-scoped rule files every session can load.
-- **`vtid-04018-operator-bootstrap-pack`** exposed a real regression. The Operator Console's bootstrap pack read its "Recent change log" rows from `CLAUDE.md`, which no longer holds the CHANGE LOG table, so the section went empty in production. It now reads `docs/CHANGELOG.md`, and the test fixtures follow suit: one file read more per build.
+- `vtid-04019`: §16 moved to `.claude/rules/`.
+- `vtid-04018`: the bootstrap pack's change log moved to `docs/CHANGELOG.md`.
+
+A fix was pushed here first. `main` then fixed the same four files independently, so the merge of `main` takes `main`'s versions. This PR no longer changes them, and its diff is the prompt change alone.

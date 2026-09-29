@@ -26,7 +26,7 @@ export async function fetchDefaultCommissionRateSetting(sb: SupabaseClient) {
 export async function fetchProductOrderForCommission(sb: SupabaseClient, orderId: string) {
   return sb
     .from('product_orders')
-    .select('id, state, commission_cents, currency, attribution_recommendation_id, merchant_id')
+    .select('id, state, commission_cents, currency, attribution_recommendation_id, merchant_id, product_id, user_id')
     .eq('id', orderId)
     .maybeSingle();
 }
@@ -36,7 +36,7 @@ export async function fetchExistingRecommendationCommission(sb: SupabaseClient, 
 }
 
 export async function fetchProductRecommendationForCommission(sb: SupabaseClient, recommendationId: string) {
-  return sb.from('product_recommendations').select('id, user_id').eq('id', recommendationId).maybeSingle();
+  return sb.from('product_recommendations').select('id, user_id, product_id, status').eq('id', recommendationId).maybeSingle();
 }
 
 export async function fetchMerchantCommissionEligibility(sb: SupabaseClient, merchantId: string) {

@@ -32,7 +32,7 @@
  *      changes.
  */
 
-import { shouldEndConversationAfterTurn } from './end-conversation-intent';
+import { detectUserStopIntent, shouldEndConversationAfterTurn } from './end-conversation-intent';
 import { maybeRunNavigateBackstop, noteNavigateToolCall } from './navigate-backstop-hook';
 import { buildContinuationDirective } from '../../../navigation/nav-continuation';
 import { recordCommandHubVoiceTurn } from './command-hub-voice-thread';
@@ -1745,6 +1745,8 @@ export function handleAudioOutput(
     console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
     ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
     ctx.deps.emitDiag(session, 'model_start_speaking');
+    // VTID-04738: speech that starts after a tool result is its answer.
+    (session as any).toolAnswerAwaitedSince = undefined;
 
     const gateGreeting = !!session.greetingSent;
     const gateTurnZero = session.turn_count === 0;
@@ -2206,6 +2208,8 @@ export function handleToolCall(
           // 15:05:40, result delivered, then silence. Without this reset the
           // turn still reads "alive" from the pre-tool-call model audio.
           session.modelRespondedThisTurn = false;
+          // VTID-04738: the answer to this result has not started yet.
+          (session as any).toolAnswerAwaitedSince = Date.now();
         }
         // BOOTSTRAP-ORB-TOOL-CARRYOVER: same contract as the Vertex send site —
         // record only what actually reached the model, clear at turn_complete.
@@ -2517,9 +2521,15 @@ export function handleTurnComplete(
     // the exact same client-side close the end_conversation TOOL would have
     // triggered. Idempotent per session so a stray extra turn can't double-
     // dispatch.
+    // VTID-04737: "Bist du noch da?" is also what a member asks after a
+    // silence or a dropped connection — production live-cbda9130
+    // (2026-09-29) asked it after an audio stall and the session was closed
+    // on them. It is a complaint only once they have asked Vitana to stop.
+    if (detectUserStopIntent(userText)) (session as any).memberAskedToStop = true;
     if (
       session.active &&
       !(session as any).stillHereEndDispatched &&
+      (session as any).memberAskedToStop === true &&
       ctx.deps.detectStillHereComplaint(userText)
     ) {
       (session as any).stillHereEndDispatched = true;
@@ -2962,6 +2972,28 @@ export function handleTurnComplete(
     });
   }
   ctx.callbacks.onTurnComplete?.();
+  sendThinkingIfToolAnswerPending(ctx);
+}
+
+/**
+ * VTID-04738: a turn that ends on a filler line ("let me check…") spoken
+ * around a tool call is not the end of the reply — the answer to the tool
+ * result is still coming. turn_complete makes the widget show Listening and
+ * open the mic, so tell it again that Vitana is thinking. Production
+ * live-cbda9130 (2026-09-29): Listening for 10 s while search_memory's answer
+ * was generated.
+ */
+export function sendThinkingIfToolAnswerPending(ctx: UpstreamSessionHandlerContext): boolean {
+  const { session } = ctx;
+  const since = (session as any).toolAnswerAwaitedSince;
+  if (!since || !session.active) return false;
+  const msg = { type: 'thinking', reason: 'tool_answer_pending' };
+  if (session.sseResponse) writeSseEvent(session.sseResponse, msg);
+  if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+    try { ctx.deps.sendWsMessage(session.clientWs, msg); } catch (_e) { /* WS closed */ }
+  }
+  ctx.deps.emitDiag(session, 'tool_answer_pending_thinking', { waited_ms: Date.now() - since });
+  return true;
 }
 
 /**

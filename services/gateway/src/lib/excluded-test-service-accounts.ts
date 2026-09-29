@@ -38,3 +38,30 @@ export async function fetchExcludedTestServiceAccountIds(sb: SupabaseClient): Pr
   }
   return ids;
 }
+
+/**
+ * VTID-04735 — the same exclusion set, failing CLOSED. For money paths (a
+ * commission credit), "could not tell" must never mean "not excluded": a
+ * lookup error or a `{ error }` result from either table returns `ok:false`,
+ * and the caller stops without paying. Use the fail-open variant above only
+ * for read/display surfaces.
+ */
+export async function fetchExcludedTestServiceAccountIdsStrict(
+  sb: SupabaseClient,
+): Promise<{ ok: true; ids: Set<string> } | { ok: false; error: string }> {
+  try {
+    const [serviceBots, testActors] = await Promise.all([
+      sb.from('service_bot_accounts').select('user_id'),
+      sb.from('notification_test_actors').select('user_id'),
+    ]);
+    const failed = serviceBots.error ?? testActors.error;
+    if (failed) return { ok: false, error: failed.message };
+    const ids = new Set<string>();
+    for (const r of [...((serviceBots.data as any[]) || []), ...((testActors.data as any[]) || [])]) {
+      if (r?.user_id) ids.add(String(r.user_id));
+    }
+    return { ok: true, ids };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? 'exclusion lookup failed' };
+  }
+}

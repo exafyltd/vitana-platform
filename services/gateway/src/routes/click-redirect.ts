@@ -9,10 +9,13 @@
  *      friendly HTML interstitial instead of redirecting, and emit
  *      `marketplace.offer.geo_mismatch` so product-sourcing gaps surface in
  *      the admin Coverage view.
- *   3. Log the click to `product_clicks` with a stable `click_id`.
- *   4. Stamp the affiliate URL with `click_id` + user hash sub-IDs.
- *   5. Emit `marketplace.click.outbound` for the reward system.
- *   6. 302 redirect to the stamped affiliate URL.
+ *   3. Validate the referral (`?rec_id=`) server-side and drop it when it
+ *      does not count — unknown, disabled, for another product, a
+ *      self-referral, or a test/service account (VTID-04735).
+ *   4. Log the click to `product_clicks` with a stable `click_id`.
+ *   5. Stamp the affiliate URL with `click_id` + user hash sub-IDs.
+ *   6. Emit `marketplace.click.outbound` for the reward system.
+ *   7. 302 redirect to the stamped affiliate URL.
  *
  * Notes:
  *   - Mounted at the root ('/r/:product_id'), not '/api/v1/...', because this
@@ -29,7 +32,49 @@ import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
 import { emitClickOutbound, emitGeoMismatch } from '../services/reward-events';
 import type { AttributionSurface } from '../types/catalog-ingest';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
+import {
+  isReferralId,
+  validateReferral,
+  type ReferralRejection,
+} from '../services/recommendation-commissions/referral-validation';
 import * as repo from './click-redirect-repository';
+
+type ClickReferralOutcome = { recommendationId: string | null; rejected: ReferralRejection | 'unverified' | null };
+
+/**
+ * Resolves the click's `?rec_id=` against the database (VTID-04735).
+ *
+ * A referral that does not count is dropped from the click, with the reason
+ * recorded, so it can never be credited later. If the lookup itself fails the
+ * referral is kept but marked `unverified`: the redirect must not depend on
+ * the database, and the crediting step re-validates strictly before paying.
+ */
+export async function resolveClickReferral(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  rawRecId: string | null,
+  productId: string,
+  clickerUserId: string | null,
+): Promise<ClickReferralOutcome> {
+  if (!rawRecId) return { recommendationId: null, rejected: null };
+  if (!isReferralId(rawRecId)) return { recommendationId: null, rejected: 'malformed_id' };
+  try {
+    const [{ data, error }, excluded] = await Promise.all([
+      repo.fetchRecommendationForReferral(supabase, rawRecId),
+      fetchExcludedTestServiceAccountIds(supabase),
+    ]);
+    if (error) return { recommendationId: rawRecId, rejected: 'unverified' };
+    const verdict = validateReferral({
+      recommendation: (data as { id: string; user_id: string; product_id: string; status: string } | null) ?? null,
+      productId,
+      buyerUserId: clickerUserId,
+      excludedUserIds: excluded,
+    });
+    return verdict.ok ? { recommendationId: rawRecId, rejected: null } : { recommendationId: null, rejected: verdict.reason };
+  } catch {
+    return { recommendationId: rawRecId, rejected: 'unverified' };
+  }
+}
 
 const router = Router();
 
@@ -265,8 +310,7 @@ router.get('/:product_id', async (req: Request, res: Response) => {
   const attribution_surface = getAttributionSurface(
     typeof req.query.surface === 'string' ? req.query.surface : undefined
   );
-  const attribution_recommendation_id =
-    typeof req.query.rec_id === 'string' && req.query.rec_id.length > 0 ? req.query.rec_id : null;
+  const rawRecId = typeof req.query.rec_id === 'string' && req.query.rec_id.length > 0 ? req.query.rec_id : null;
   const ipRaw = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? null;
   const userAgent = req.headers['user-agent'];
 
@@ -289,6 +333,9 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     );
     return;
   }
+
+  const referral = await resolveClickReferral(supabase, rawRecId, product.id, user_id);
+  const attribution_recommendation_id = referral.recommendationId;
 
   // Log click + generate stable click_id. Compact (no dashes, 32 hex chars) so
   // it fits comfortably inside affiliate networks' sub-id length limits (Awin's
@@ -335,6 +382,7 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     click_id: clickId,
     attribution_surface,
     attribution_recommendation_id,
+    attribution_rejected_reason: referral.rejected,
     origin_country: product.origin_country,
     ships_to_countries: product.ships_to_countries,
     target_url: stampedUrl,

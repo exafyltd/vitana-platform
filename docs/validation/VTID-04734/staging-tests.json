@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04734",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04734-ranking-commission-free.test.ts", "cwd": "services/gateway",
+      "reason": "test-only change: a build-time guard over source files, with no runtime behaviour to probe on staging" }
+  ]
+}

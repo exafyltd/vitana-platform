@@ -20,9 +20,17 @@
 
 import { getSupabase } from '../../lib/supabase';
 import { creditWalletForEarning } from '../wallet/spend-earning-service';
+import { fetchExcludedTestServiceAccountIdsStrict } from '../../lib/excluded-test-service-accounts';
 import * as repo from './credit-recommender-repository';
+import { validateReferral } from './referral-validation';
 
-export type CreditRecommenderStatus = 'credited' | 'skipped_ineligible' | 'skipped_no_recommendation' | 'already_credited' | 'failed';
+export type CreditRecommenderStatus =
+  | 'credited'
+  | 'skipped_ineligible'
+  | 'skipped_invalid_referral'
+  | 'skipped_no_recommendation'
+  | 'already_credited'
+  | 'failed';
 
 export interface CreditRecommenderResult {
   ok: boolean;
@@ -93,6 +101,51 @@ export async function creditRecommenderForOrder(orderId: string): Promise<Credit
   const currency = (order.currency ?? 'EUR').toUpperCase();
   const rate = merchant?.recommendation_commission_rate_override ?? (await loadDefaultRate(supabase));
   const payoutMinor = Math.round(order.commission_cents * rate);
+
+  // VTID-04735: the referral must count before anyone is paid for it — the
+  // click-time check can be skipped (an order may carry a rec id the click
+  // never validated, or one that became invalid since). A referral that does
+  // not count is recorded as skipped for good: none of these reasons can
+  // change for this order. The test/service-account list fails CLOSED: if it
+  // cannot be read, nothing is paid and nothing permanent is written, so the
+  // order is re-processed on the next pull.
+  const excluded = await fetchExcludedTestServiceAccountIdsStrict(supabase);
+  if (!excluded.ok) {
+    console.error(`[credit-recommender] excluded-account lookup failed for order=${orderId}: ${excluded.error}`);
+    return { ok: false, status: 'failed', message: 'EXCLUSION_LOOKUP_FAILED' };
+  }
+  const verdict = validateReferral({
+    recommendation: {
+      id: recommendation.id,
+      user_id: recommendation.user_id,
+      product_id: recommendation.product_id,
+      status: recommendation.status,
+    },
+    productId: order.product_id,
+    buyerUserId: order.user_id ?? null,
+    excludedUserIds: excluded.ids,
+  });
+  if (!verdict.ok) {
+    await repo.insertRecommendationCommission(supabase, {
+      product_recommendation_id: recommendation.id,
+      product_order_id: orderId,
+      recommender_user_id: recommendation.user_id,
+      vitana_commission_cents: order.commission_cents,
+      rate_applied: rate,
+      payout_amount_minor: 0,
+      currency,
+      status: 'skipped_ineligible',
+    });
+    await repo.insertCommissionSkippedIneligibleEvent(supabase, {
+      service: 'discover', source: 'recommendation-commissions',
+      type: 'marketplace.recommendation.commission_skipped_invalid_referral',
+      topic: 'marketplace.recommendation.commission_skipped_invalid_referral',
+      status: 'info', message: `referral does not count: ${verdict.reason}`,
+      metadata: { orderId, recommendationId: recommendation.id, recommenderId: recommendation.user_id, reason: verdict.reason },
+      created_at: new Date().toISOString(),
+    }).then(() => {}, () => {});
+    return { ok: true, status: 'skipped_invalid_referral', message: verdict.reason };
+  }
 
   if (!merchant?.recommendation_commission_eligible) {
     await repo.insertRecommendationCommission(supabase, {

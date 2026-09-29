@@ -50,4 +50,5 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           PR_REF: ${{ github.repository }}#${{ github.event.pull_request.number }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
         run: node scripts/ci/vtid-auto-close.cjs

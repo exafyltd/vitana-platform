@@ -78,10 +78,15 @@ async function readRow(gateway, vtid, fetchImpl) {
   return res.json();
 }
 
-async function closeRow(gateway, vtid, prRef, fetchImpl) {
+function authHeader(token) {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function closeRow(gateway, vtid, prRef, fetchImpl, token) {
   const res = await fetchImpl(`${gateway}/api/v1/oasis/tasks/${vtid}/complete`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // VTID-04727: the completion route requires the gateway service token.
+    headers: { 'Content-Type': 'application/json', ...authHeader(token) },
     body: JSON.stringify({ terminal_outcome: 'success', reason: `${CLOSE_REASON} (${prRef})` }),
     signal: AbortSignal.timeout(30000),
   });
@@ -96,7 +101,7 @@ async function closeRow(gateway, vtid, prRef, fetchImpl) {
  * Close the VTIDs of one merged PR. Returns one result line per VTID; never
  * throws for a per-VTID failure.
  */
-async function autoClose({ gateway, pr, fetchImpl = fetch, log = console.log }) {
+async function autoClose({ gateway, pr, token = '', fetchImpl = fetch, log = console.log }) {
   const vtids = extractTitleVtids(pr.title);
   const results = [];
   if (vtids.length === 0) {
@@ -116,7 +121,7 @@ async function autoClose({ gateway, pr, fetchImpl = fetch, log = console.log }) 
         results.push({ vtid, outcome: 'left', detail: action.why });
         continue;
       }
-      await closeRow(gateway, vtid, pr.ref, fetchImpl);
+      await closeRow(gateway, vtid, pr.ref, fetchImpl, token);
       results.push({ vtid, outcome: 'closed', detail: action.why });
     } catch (err) {
       results.push({ vtid, outcome: 'error', detail: err.message });
@@ -135,7 +140,9 @@ async function main() {
     labels: JSON.parse(process.env.PR_LABELS || '[]'),
     ref: process.env.PR_REF || 'unknown PR',
   };
-  const results = await autoClose({ gateway, pr });
+  const token = process.env.GATEWAY_SERVICE_TOKEN || '';
+  if (!token) console.log('::warning::GATEWAY_SERVICE_TOKEN is not set — the completion route will reject the close once LEDGER_WRITE_AUTH_MODE=enforce.');
+  const results = await autoClose({ gateway, pr, token });
   const summary = process.env.GITHUB_STEP_SUMMARY;
   if (summary && results.length) {
     const lines = ['| VTID | Result | Detail |', '|---|---|---|'];

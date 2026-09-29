@@ -67,6 +67,10 @@ const AUTH_NAMES = [
   // scheduler's X-Gateway-Internal token or a verified exafy_admin session,
   // the same contract as test-contracts-scheduled.ts. It IS auth.
   'requireInternalOrAdmin',
+  // requireLedgerWriteAuth (middleware/ledger-write-auth, VTID-04727): the VTID
+  // ledger's write gate — GATEWAY_SERVICE_TOKEN or an exafy_admin JWT, same rule
+  // as requireServiceOrAdmin, with a log-only rollout mode.
+  'requireLedgerWriteAuth',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

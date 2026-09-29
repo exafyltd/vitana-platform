@@ -1,0 +1,4 @@
+# VTID-04735
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate ... -> VTID-04735 (ledger in_progress/approved)
+typescript transpileModule on the 9 changed/added files -> 0 diagnostics each
+# no jest in the sandbox; CI Gateway Jest runs the suites

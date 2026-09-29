@@ -138,7 +138,11 @@ async function fetchRow(id: string): Promise<SourceRow | null> {
 async function allocateNewVtid(): Promise<string> {
   const resp = await fetch(`${GATEWAY_URL}/api/v1/vtid/allocate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // VTID-04727: allocation requires the service token (or an admin JWT).
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.GATEWAY_SERVICE_TOKEN ? { Authorization: `Bearer ${process.env.GATEWAY_SERVICE_TOKEN}` } : {}),
+    },
     body: JSON.stringify({
       source: 'backlog-conversion-v1',
       layer: 'DEV',

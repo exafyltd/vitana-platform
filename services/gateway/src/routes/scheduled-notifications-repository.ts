@@ -158,6 +158,15 @@ export function markFeatureAnnouncementNotified(sb: any, args: { announcementId:
     .eq('id', args.announcementId);
 }
 
+/** Announcements this tenant already got from the What's New job (VTID-04733): created_by carries the entry id. */
+export function fetchWhatsNewPublished(sb: any, args: { tenantId: string; createdByPrefix: string }) {
+  return sb
+    .from('feature_announcements')
+    .select('created_by, created_at')
+    .eq('tenant_id', args.tenantId)
+    .like('created_by', `${args.createdByPrefix}%`);
+}
+
 // ---------------------------------------------------------------------------
 // /upcoming-events
 // ---------------------------------------------------------------------------

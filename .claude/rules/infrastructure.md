@@ -237,6 +237,12 @@ ORCHESTRATOR_DELEGATION_PERSIST_ENABLED=true
 # 20260923210000_vtid_04446_run_leases.sql first. TTL clamps to 2-30 min.
 ORCHESTRATOR_RUN_LEASE_ENABLED=true
 ORCHESTRATOR_RUN_LEASE_TTL_MS=300000
+# VTID ledger write routes (VTID-04727): POST/PATCH/DELETE /api/v1/oasis/tasks…,
+# POST /api/v1/oasis/tasks/:vtid/complete, POST /api/v1/vtid/allocate|create
+# need GATEWAY_SERVICE_TOKEN or an exafy_admin JWT. 'enforce' rejects; 'off'
+# skips the check; anything else (the default) is 'log': allowed, and every
+# call that would be rejected is logged. Staging pins 'enforce'.
+LEDGER_WRITE_AUTH_MODE=log
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

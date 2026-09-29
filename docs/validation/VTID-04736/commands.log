@@ -1,0 +1,14 @@
+# Read-only production evidence (Supabase, oasis_events), 2026-09-29
+select ... from oasis_events where right(metadata->>'session_id',8)='2abf9cae' and created_at between '11:26:20' and '11:29:15'
+  -> tool_call search_memory 11:26:45.366, model_start_speaking 45.515, tool result 45.852,
+     turn_complete 46.892, model_start_speaking 55.836 (no turn_complete), watchdog_fired audio_stall 11:27:22.686,
+     input "bist du noch da" 11:27:37.120, conversation_ended still_here_complaint_detected 11:27:39.203
+# audio_stall watchdogs in 7 days, and how many followed a tool call within 90 s
+  2026-09-25 2/2, 2026-09-26 1/1, 2026-09-28 4/0, 2026-09-29 1/1
+
+# Local verification (services/gateway)
+npx tsc --noEmit -p .                                   -> exit 0
+npx jest test/orb/live/upstream/vtid-04736-tool-answer-turn-complete.test.ts test/orb/live/upstream/nova-sonic-protocol.test.ts -> 29 passed
+npx jest test/orb/live/session/still-here-complaint-backstop.test.ts test/orb/live/detect-still-here-complaint.test.ts test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts -> 36 passed
+npx jest test/orb/live/session/vtid-04738-tool-answer-thinking.test.ts -> 4 passed
+npx jest --silent                                       -> 1398 suites passed (1 skipped), 22503 tests passed

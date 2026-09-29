@@ -19,9 +19,9 @@ import {
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const REAL_CLAUDE_MD = fs.readFileSync(path.join(REPO_ROOT, 'CLAUDE.md'), 'utf8');
-const REAL_SCHEMA = fs.readFileSync(path.join(REPO_ROOT, 'DATABASE_SCHEMA.md'), 'utf8');
-// VTID-04253 moved the change log out of CLAUDE.md.
+// VTID-04728: the change log lives in docs/CHANGELOG.md since VTID-04253.
 const REAL_CHANGELOG = fs.readFileSync(path.join(REPO_ROOT, 'docs/CHANGELOG.md'), 'utf8');
+const REAL_SCHEMA = fs.readFileSync(path.join(REPO_ROOT, 'DATABASE_SCHEMA.md'), 'utf8');
 const REAL_PATH_MAP = fs.readFileSync(path.join(REPO_ROOT, 'config/service-path-map.json'), 'utf8');
 
 function deps(overrides: Partial<BootstrapDeps> = {}): BootstrapDeps {

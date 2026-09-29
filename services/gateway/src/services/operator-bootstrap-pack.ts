@@ -12,8 +12,7 @@
  *                        has no CLAUDE.md), bounded
  *   service path map   — config/service-path-map.json (repo root, GitHub)
  *   schema table index — DATABASE_SCHEMA.md `### table` headings
- *   recent change log  — the last N CHANGE LOG rows of docs/CHANGELOG.md
- *                        (moved out of CLAUDE.md by VTID-04253), compressed
+ *   recent change log  — the last N CHANGE LOG rows of docs/CHANGELOG.md, compressed
  *   live build-info    — the gateways named in OPERATOR_BOOTSTRAP_BUILD_INFO_URLS
  *   open PRs           — both repos, with the platform repo's CI state
  *   recent events      — the last N deploy.* / dev_autopilot.* OASIS events
@@ -343,14 +342,26 @@ export function warnMissingBuildInfoEnvOnce(env: NodeJS.ProcessEnv = process.env
 /** Test hook — the process-wide flag is intentionally not resettable in prod. */
 export function resetMissingBuildInfoEnvWarning(): void { warnedMissingBuildInfoEnv = false; }
 
+/**
+ * VTID-04728: the CHANGE LOG moved out of CLAUDE.md into docs/CHANGELOG.md
+ * (VTID-04253). Read it there; fall back to CLAUDE.md only if that file is
+ * missing or has no rows, so a future move back does not empty the section.
+ */
+export const CHANGELOG_PATH = 'docs/CHANGELOG.md';
+async function readChangelogRows(deps: BootstrapDeps, claudeMd: Promise<string>): Promise<string[]> {
+  try {
+    const rows = extractChangelogRows(await deps.readRepoFile(CHANGELOG_PATH));
+    if (rows.length) return rows;
+  } catch { /* fall back below */ }
+  return extractChangelogRows(await claudeMd);
+}
+
 export async function buildBootstrapSections(deps: BootstrapDeps): Promise<PackSection[]> {
   const env = deps.env || process.env;
   const claudeMd = deps.readRepoFile('CLAUDE.md');
   const [rules, changelog, pathMap, schema, buildInfo, prs, events] = await Promise.all([
     section(BOOTSTRAP_RULES_SECTION_TITLE, SOURCE_TIMEOUT_MS, async () => extractClaudeMdPart1(await claudeMd)),
-    // VTID-04729: VTID-04253 moved the CHANGE LOG table out of CLAUDE.md into
-    // docs/CHANGELOG.md; reading CLAUDE.md left this section empty.
-    section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => extractChangelogRows(await deps.readRepoFile('docs/CHANGELOG.md')).join('\n')),
+    section('Recent change log (newest first)', SOURCE_TIMEOUT_MS, async () => (await readChangelogRows(deps, claudeMd)).join('\n')),
     section('Service path map (config/service-path-map.json)', SOURCE_TIMEOUT_MS, async () => renderServicePathMap(await deps.readRepoFile('config/service-path-map.json'))),
     section('Database tables (DATABASE_SCHEMA.md index)', SOURCE_TIMEOUT_MS, async () => extractSchemaTableIndex(await deps.readRepoFile('DATABASE_SCHEMA.md'))),
     section('Live build-info', SOURCE_TIMEOUT_MS, async () => {
