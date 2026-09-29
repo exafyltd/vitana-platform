@@ -50,6 +50,13 @@ const REMEMBER_INTENT = new RegExp(
     '\\bno\\s+olvides\\b',
     '\\bzapamti\\b',
     '\\bne\\s+zaboravi\\b',
+    // VTID-04749: a correction is a request to store the new value
+    // ("ich möchte, dass du den Namen meiner Firma korrigierst", production
+    // 2026-09-29 — Vitana said "ich korrigiere" and nothing was stored).
+    '\\bkorrigier(e|en|st|t)?\\b',
+    '(?:^|[^a-zäöüß])(ä|ae)nder(e|n|st|t)?\\b.{0,60}\\b(name|namen|eintrag|gespeichert|gemerkt)\\b',
+    '\\baktualisier(e|en|st|t)?\\b',
+    '\\b(update|correct|change)\\b.{0,40}\\b(name|entry|saved|stored|what you)\\b',
   ].join('|'),
   'i',
 );
@@ -77,6 +84,10 @@ const REMEMBER_CLAIM = new RegExp(
     '\\b(got it|noted)[,.!]',
     '\\b(lo )?(recordaré|he guardado|he anotado)\\b',
     '\\b(zapamtila|zapamtiću|zabeležila)\\b',
+    // VTID-04749: "ich korrigiere den Namen deiner Firma. Deine Firma heißt jetzt Exify."
+    '\\bich (korrigiere|ändere|aendere|aktualisiere)\\b',
+    '\\b(hab|habe|hat|haben)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(korrigiert|geändert|geaendert|aktualisiert)\\b',
+    "\\bi('ve| have)\\b(?:[^.!?]|(?<=\\d)\\.){0,80}?\\b(updated|corrected|changed)\\b",
   ].join('|'),
   'i',
 );

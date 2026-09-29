@@ -32,6 +32,7 @@
  *      changes.
  */
 
+import { armSoftTurnEnd, clearSoftTurnEnd, isEchoOfSoftTurnEnd } from './soft-turn-end';
 import { detectUserStopIntent, shouldEndConversationAfterTurn } from './end-conversation-intent';
 import { maybeRunNavigateBackstop, noteNavigateToolCall } from './navigate-backstop-hook';
 import { buildContinuationDirective } from '../../../navigation/nav-continuation';
@@ -1706,6 +1707,7 @@ export function handleInterrupted(
   const { session } = ctx;
   console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
   session.isModelSpeaking = false;
+  clearSoftTurnEnd(session as any);
   session.outputTranscriptBuffer = '';
   // VTID-04702: a held reply that was cut off is never played afterwards; the
   // member's next words re-arm the hold for the reply that follows.
@@ -1791,6 +1793,14 @@ export function handleAudioOutput(
 
   ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
   session.audioOutChunks++;
+  // VTID-04747: complete the turn ourselves if Nova's END_TURN never comes.
+  if (isNovaProvider(session)) {
+    armSoftTurnEnd(session as any, () => {
+      ctx.deps.emitDiag(session, 'soft_turn_complete', { audio_out: session.audioOutChunks });
+      (session as any)._softTurnEndFiring = true;
+      try { handleTurnComplete(ctx, {} as UpstreamTurnCompleteEvent); } finally { (session as any)._softTurnEndFiring = false; }
+    });
+  }
   // VTID-04480: the reply that follows the loop guard was asked for one
   // short sentence. Past the cap, mute the rest of the turn.
   const guardReply = (session as any).loopGuardReply as { audioMs: number } | undefined;
@@ -2317,6 +2327,13 @@ export function handleTurnComplete(
   _event: UpstreamTurnCompleteEvent,
 ): void {
   const { session } = ctx;
+
+  // VTID-04747: a real END_TURN for a turn the soft end already completed.
+  clearSoftTurnEnd(session as any);
+  if (!(session as any)._softTurnEndFiring && isEchoOfSoftTurnEnd(session as any)) {
+    ctx.deps.emitDiag(session, 'turn_complete_after_soft_end_ignored');
+    return;
+  }
 
   // VTID-04702: detach the held reply (the corrected reply that follows must
   // play live) and decide once the remember backstop below is done.
