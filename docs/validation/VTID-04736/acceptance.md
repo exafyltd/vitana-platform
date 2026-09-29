@@ -55,3 +55,5 @@ TEST: services/gateway/test/orb/live/session/vtid-04738-tool-answer-thinking.tes
 
 AC-5: on staging, a voice question that triggers search_memory is answered without an audio_stall watchdog and the orb shows Thinking while it waits.
 TEST: scripts/memory-verification/run-live.mjs
+
+OASIS_PROOF: the only OASIS change is one new `orb.live.diag` stage, `tool_answer_pending_thinking` (payload `waited_ms`), emitted by `sendThinkingIfToolAnswerPending()` through the existing `emitDiag`. It adds no new topic and changes no existing stage. The call is asserted in `services/gateway/test/orb/live/session/vtid-04738-tool-answer-thinking.test.ts`. Its first live occurrence on staging is part of AC-5.
