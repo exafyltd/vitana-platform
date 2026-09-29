@@ -48,3 +48,12 @@ export function incrementProductRecommendationClick(
 ): PromiseLike<{ error: { message: string } | null }> {
   return sb.rpc('increment_product_recommendation_click', { p_recommendation_id: recommendationId });
 }
+
+/** Referral (product_recommendations row) behind a click's `?rec_id=`. */
+export async function fetchRecommendationForReferral(sb: SupabaseClient, recommendationId: string) {
+  return sb
+    .from('product_recommendations')
+    .select('id, user_id, product_id, status')
+    .eq('id', recommendationId)
+    .maybeSingle();
+}

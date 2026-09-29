@@ -30,6 +30,8 @@ export interface ClickOutboundPayload {
   click_id: string;
   attribution_surface: AttributionSurface;
   attribution_recommendation_id?: string | null;
+  /** VTID-04735: why a `?rec_id=` was dropped, or `unverified` if it could not be checked. */
+  attribution_rejected_reason?: string | null;
   origin_country: string | null;
   ships_to_countries: string[] | null;
   target_url: string;
@@ -51,6 +53,7 @@ export async function emitClickOutbound(p: ClickOutboundPayload): Promise<void> 
         click_id: p.click_id,
         attribution_surface: p.attribution_surface,
         attribution_recommendation_id: p.attribution_recommendation_id ?? null,
+        attribution_rejected_reason: p.attribution_rejected_reason ?? null,
         origin_country: p.origin_country,
         ships_to_countries: p.ships_to_countries,
         target_url: p.target_url,
