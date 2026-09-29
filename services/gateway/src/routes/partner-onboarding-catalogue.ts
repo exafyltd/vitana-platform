@@ -6,6 +6,7 @@
  *   PUT   /:orgId/catalogue/merchant        create or update the org's merchant
  *   POST  /:orgId/catalogue/products        add a product (draft, never live)
  *   PATCH /:orgId/catalogue/products/:id    change one of the org's products
+ *   POST  /:orgId/catalogue/products/import add many products from a CSV (VTID-04731)
  *
  * The rules are the supplier portal's own (routes/vcaop-portal-my-products.ts,
  * VTID-03894): the same merchant and product schemas, the same ships-to rule,
@@ -25,7 +26,12 @@
  * once it has at least one product. It is written to partner_onboarding_steps
  * after every change; an OASIS event is emitted only when that status moves.
  *
- * Not here: CSV upload and feed URLs (their own VTID), and the §7 content scan.
+ * The CSV import (VTID-04731) is all or nothing: every row is judged by the
+ * same ProductSchema first, and one bad row means nothing is written and every
+ * error comes back with its line number. `dry_run: true` answers the same
+ * report without writing, so a partner can check a file before sending it.
+ *
+ * Not here: feed URLs (their own VTID) and the §7 content scan.
  */
 
 import { Router, Request, Response } from 'express';
@@ -33,6 +39,7 @@ import { randomUUID } from 'crypto';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { parseCatalogueCsv } from '../services/partner-catalogue-csv';
 import { isPartnerType, type PartnerType } from '../services/partner-lifecycle';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
 import { loadOrg, respondWithState, type OrgRow, type Supa } from './partner-onboarding';
@@ -323,6 +330,73 @@ router.post('/:orgId/catalogue/products', requireAuth, requireOrgAdmin(), async 
   if (step.changed) await catalogueEvent(org.id, step, callerId);
 
   return respondWithState(res, s, org.id, 201, { product: data });
+});
+
+router.post('/:orgId/catalogue/products/import', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const s = getSupabase();
+  if (!s) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const callerId = getCallerId(req);
+  const org = await loadEditableOrg(s, req, res);
+  if (!org) return;
+
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { csv?: unknown; dry_run?: unknown };
+  if (typeof body.csv !== 'string') {
+    return res.status(400).json({ ok: false, error: 'invalid_csv', message: 'csv must be the file contents as a string' });
+  }
+  const dryRun = body.dry_run === true;
+
+  const found = await findOrgMerchant(s, org.id);
+  if (found.error) return res.status(500).json({ ok: false, error: found.error });
+  if (!found.merchant) {
+    return res.status(409).json({ ok: false, error: 'NO_MERCHANT', message: 'PUT /catalogue/merchant first' });
+  }
+  const merchantId = found.merchant.id;
+
+  const parsed = parseCatalogueCsv(body.csv);
+  if (parsed.fileError) {
+    return res.status(400).json({ ok: false, error: 'invalid_csv', message: parsed.fileError, columns: parsed.columns });
+  }
+  const report = { valid_rows: parsed.rows.length, errors: parsed.errors };
+  if (dryRun) return res.json({ ok: true, dry_run: true, ...report });
+  if (parsed.errors.length > 0) {
+    // All or nothing: a half-imported file is harder to fix than a rejected one.
+    return res.status(400).json({ ok: false, error: 'invalid_rows', ...report });
+  }
+
+  const drafts = parsed.rows.map(({ product }) => ({
+    id: randomUUID(),
+    merchant_id: merchantId,
+    source_network: SUPPLIER_SOURCE_NETWORK,
+    source_product_id: `${SUPPLIER_SOURCE_NETWORK}:${merchantId}:${randomUUID()}`,
+    ...product,
+    // Never live on the partner's own say-so.
+    is_active: false,
+  }));
+  // One statement: PostgREST inserts the array in a single transaction. A bulk
+  // insert sends the union of every row's keys, so a key one row omits goes in
+  // as NULL rather than the column default. That is safe here: the columns a
+  // row can omit (description, brand, compare_at_price_cents, category,
+  // ships_to_*) are nullable with a NULL default, and the NOT NULL ones
+  // (images, attributes, availability) always arrive through the schema's
+  // defaults (checked against the live table 2026-09-29).
+  const { data, error } = await s.from('products').insert(drafts).select(PRODUCT_FIELDS);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  await emitOasisEvent({
+    vtid: 'VTID-04731',
+    type: 'partner_org.catalogue_imported',
+    source: 'partner-onboarding',
+    status: 'success',
+    message: `Partner organization ${org.id}: ${drafts.length} draft products imported from CSV.`,
+    payload: { partner_organization_id: org.id, merchant_id: merchantId, imported: drafts.length },
+    actor_id: callerId ?? undefined,
+  });
+
+  const step = await syncCatalogueStep(s, org.id, merchantId, callerId);
+  if (step.error) return res.status(500).json({ ok: false, error: step.error });
+  if (step.changed) await catalogueEvent(org.id, step, callerId);
+
+  return respondWithState(res, s, org.id, 201, { imported: drafts.length, products: data ?? [] });
 });
 
 router.patch('/:orgId/catalogue/products/:productId', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
