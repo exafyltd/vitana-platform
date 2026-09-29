@@ -1,6 +1,6 @@
 # Vitana External Agent — Architecture, Connector Specs & Cost Model
 
-**VTID-04743** · Draft for owner review · 2026-09-29 · Status: **proposal, nothing built by this doc**
+**VTID-04743** · 2026-09-29 · Status: **proposal, nothing built by this doc** · Owner decisions of 2026-09-29 are in §10 and override earlier sections where they differ
 
 Goal: turn Vitana + Autopilot into an autonomous preventive-health and
 performance agent. It should act **inside Vitanaland and across third-party
@@ -495,7 +495,7 @@ only low-risk actions on the member's own data, and medium risk needs read-back.
 |---|---|---|---|---|---|---|---|
 | 1 | **Oura** | T0 | OAuth2 | read: sleep, readiness, HRV, activity, workouts | webhook-first, 6h poll fallback | 5,000 req / 5 min (per-token and per-app layers). Webhooks strongly recommended. No write API | connector exists (`fetchData`). Add manifest v2 + webhook subscriptions |
 | 2 | **Whoop** | T0 | OAuth2 | read: recovery, strain, sleep, HRV, workouts | webhooks (v2) + poll | **100 req/min, 10,000 req/day per client** by default. At scale we must request an increase from WHOOP up front, and webhooks are mandatory | **new** |
-| 3 | **Apple Health** | T1 now / native later | on-device HealthKit | read: HR, HRV, sleep, VO2max, workouts, steps | device push (background delivery) | **No server API.** HealthKit is unreachable from our WebView, so either Terra/Vital mobile SDK in a thin native companion, or our own Swift companion (`requires_ios_companion` already modeled) | Terra/Vital connectors exist; companion app **does not** |
+| 3 | **Apple Health** | T0 via own native shell (§10.3) | on-device HealthKit | read: HR, HRV, sleep, VO2max, workouts, steps | device push (background delivery) | **No server API.** HealthKit is unreachable from our WebView, so either Terra/Vital mobile SDK in a thin native companion, or our own Swift companion (`requires_ios_companion` already modeled) | Terra/Vital connectors exist; companion app **does not** |
 | 4 | **Android: Health Connect** (+ Fitbit via Google Health API) | T1 / T0 | on-device / OAuth2 | same as above | device push / poll | **Google Fit APIs are deprecated, supported only until end of 2026, and closed to new sign-ups since May 2024.** Do not build on Fit. Health Connect is on-device (same companion need). Fitbit cloud moves to the Google Health API. Our `fitbit` connector must migrate. (This is a user-data connector, not the forbidden Google LLM/infra dependency.) | fitbit connector exists (partly stubbed) |
 | 5 | **Long-tail wearables** (Garmin, Polar, Withings, Coros, Eight Sleep, CGMs …) | T1 | via Terra / Vital | read-only | aggregator webhook (HMAC) | Terra: usage-based, ~200 credits per active user per month (see §7) | exist (`terra.ts`, `vital.ts`) |
 | 6 | **Labs: DoctorBox** (EU, partner #001) | T0 | partner (webhook_only today) | order panel, receive results, status | webhook | Needs order API, not just results webhook. Consent via `data_sharing_consents` | exists (results), **order path new** |
@@ -503,7 +503,7 @@ only low-risk actions on the member's own data, and medium risk needs read-back.
 | 8 | **Google Calendar** | T0 | OAuth2 (`calendar.events`: sensitive scope) | read free/busy, create/update/delete events | push channels + sync token | Google OAuth verification needed. **Neither Google nor Microsoft OAuth client is configured on staging/prod yet** (blocker) | exists (`google` connector, `calendar-google-sync.ts`) |
 | 9 | **Outlook / Microsoft 365** | T0 | OAuth2 (Graph) | calendar + mail | Graph change notifications | rotating refresh tokens (already handled) | exists |
 | 10 | **Email (nudges, reports, confirmations)** | internal | — | send from Vitana's own domain (SES) | — | **Recommendation: do NOT use `gmail.send` for MVP.** Gmail send is a *restricted* scope requiring a yearly CASA security assessment. Nudges and reports from `noreply@vitanaland` need no user scope. Read-only mail (`read_email`) only where users explicitly want it | `google` connector has Gmail. SES path to confirm |
-| 11 | **Stripe** | T0 | platform keys + Connect | charge for Vitana-sold services, SetupIntent for agent spend mandate, Connect payouts to partners | webhooks (signature-verified) | EU SCA: the first payment is on-session. Later agent-initiated charges are merchant-initiated **off-session** under a stored mandate, within `agent_grants` caps. Decision D4 says affiliate products are redirect-only (Vitana doesn't take payment), so the agent **builds the cart and hands off** for affiliate items | wallet/Connect webhooks exist. Agent spend path **new** |
+| 11 | **Stripe** | T0 | platform keys + Connect | Vitana's own subscription; Connect payouts to partners. **Per decision 1 the agent never charges for third-party purchases** (§10.1) | webhooks (signature-verified) | Affiliate products stay redirect-only (D4, confirmed): the agent **builds the cart and the member's own tap hands off**. Stripe does not onboard KSA merchants (§10.2) | wallet/Connect webhooks exist |
 | 12 | **Provider booking** (GPs, clinics, trainers) | T2 / T3 | partner / browser | find slot, book, cancel | — | Few public booking APIs (the big EU platforms are partner-only). MVP: partners via T2, otherwise **prefilled hand-off link** and, later, gated T3 | new |
 
 ---
@@ -677,15 +677,166 @@ Those are covered by per-transaction margin or subscription price.
 
 ---
 
-## 10. Decisions needed from the owner
+## 10. Owner decisions (2026-09-29) and what they change
 
-1. **Merchant of record for agent purchases.** Stay affiliate/hand-off only
-   (D4), or let Vitana charge via Stripe for lab tests and services? This
-   changes compliance and the payment connector scope.
-2. **Launch countries**, which decide the lab partners and booking partners.
-3. **Native companion app** for Apple Health / Health Connect: build our own,
-   or ship the aggregator's mobile SDK?
-4. **Free-tier limits**: passive-only profile, or a small monthly run
-   allowance?
-5. **Browser tier (T3)**: approve a gated pilot, or defer until T2 coverage is
-   measured?
+| # | Decision | Consequence in this design |
+|---|---|---|
+| 1 | **Stay affiliate.** Vitana is not merchant of record, but the integration must be deep enough that commissions are provably earned | §10.1: an attribution evidence chain. Stripe only for Vitana's own subscription |
+| 2 | **Launch DE, AT, CH, ES. Soon after: UAE, KSA** | §10.2: EU stack for launch, a separate in-country data plane for the Gulf |
+| 3 | **Prefer independence** on Apple Health / Health Connect | §10.3: build our own native shell with health plugins. Aggregators stay for the long tail only |
+| 4 | **Free tier = a taste**: a small number of task executions | §10.4: 3 agent runs per month plus a weekly report |
+| 5 | **Pilot the browser tier (T3) at first launch** | §10.5: the pilot moves from P3 into P2, with strict scope |
+
+### 10.1 Affiliate with evidence ("safe commissions")
+
+Affiliate stays the model (decision D4 unchanged). The agent does everything up
+to the purchase: pick the product against the member's limits
+(`applyUserLimitations()`), compare offers, build the cart, explain why. The
+**member's own tap** then opens the retailer, and the member pays the retailer.
+Commissions must survive a network audit, so every conversion carries an
+evidence chain:
+
+| Link in the chain | How | Exists today |
+|---|---|---|
+| **Recommendation record** | Which rule or plan step produced the recommendation, the evidence cited, and the member's limits it was checked against. Stored with the run step | `agent_run_steps` + shopping agent. Link them |
+| **Genuine click by a human** | Tracking link opened only by a member gesture on the member's own device (`/r/:product_id` → network deeplink). Signed click record: member id hash, time, device, product, offer, session | `product_clicks`, `GET /r/:product_id`. Add signature + session binding |
+| **Per-member SubID** | A unique, non-PII SubID per member and click, so a network's conversion report maps back to exactly one click | `monetization.ts` in VCAOP mints SubIDs. Port to gateway |
+| **Server-to-server tracking** | Prefer network S2S / postback over cookies. Cookies fail across devices and in-app browsers, and that is where most lost commissions come from | Awin order pull (`awin-order-sync.ts`), Admitad postback (`vcaop-postback.ts`) |
+| **Reconciliation** | Nightly job matches network conversions ↔ signed clicks ↔ recommendations. Unmatched or reversed conversions raise an OASIS event; a claim pack (click record, disclosure shown, timestamps) is ready for disputes | `product_orders`. Reconciler + claim pack **new** |
+| **Disclosure proof** | The non-dismissible affiliate disclosure (UWG in DE/AT, equivalent in CH/ES) is logged as shown for each click | disclosure exists in VCAOP `cart.ts`. Log it |
+
+**Hard rule, from the networks' own terms:** Awin (and comparable networks)
+forbid bots, automated or incentivised clicks, cookie stuffing and forced
+redirects. So **the agent and the browser tier never open an affiliate link**.
+An automated click would put every commission on the account at risk. The agent
+prepares, the member clicks. This is written into `PolicyGate` as `deny` for
+`affiliate.click` from any non-human actor.
+
+**Health-claim law (DACH and ES).** Supplement recommendations may only use
+the claims authorised under EU Regulation 1924/2006 (Health Claims). In Germany
+and Austria, health advertising law (HWG in DE) restricts how products are
+promoted. The agent's product copy must come from an approved-claims catalogue
+per product, never be free-written by the LLM. That is a new `claims` field on
+`products` and a check in `medical-guard.ts`.
+
+### 10.2 Launch countries
+
+| | DE / AT / ES | CH | UAE | KSA |
+|---|---|---|---|---|
+| **Data law** | GDPR (Art. 9 health data) | revFADP. EU adequacy both ways, so the EU stack serves CH | Federal Law 2/2019 on health data: by default health data stays **in the UAE**. Ministerial Resolution 51/2021 allows exceptions, including wearables and monitoring devices, and time-limited development exemptions | PDPL + health-data localisation expected. Treat as in-country |
+| **Data plane** | AWS `eu-central-1` (existing) | same | AWS UAE region (`me-central-1`). Separate Aurora, S3 and agent workers. Needs legal confirmation which exception applies | AWS Saudi region, announced for **December 2026**. Until then no health data from KSA members |
+| **LLM** | Bedrock EU | Bedrock EU | Bedrock in-region if Claude is offered there. **Verify**; otherwise use the wearables/monitoring exception with a documented transfer | Same question for the new Saudi region |
+| **Language** | `de` (source of truth), `es` | `de` (plus `fr`/`it` later) | `ar` (RTL, already shipped) + `en` | `ar` + `en` |
+| **Affiliate networks** | Awin (strong in DACH and ES), Amazon Associates DE/ES | Awin CH | Admitad (strong in MENA), Amazon.ae | Admitad, Amazon.sa |
+| **Labs** | DoctorBox (partner #001, DE). Add one at-home test partner covering AT and ES | Partner with Swiss lab licence | Local licensed lab partner | Local licensed lab partner |
+| **Booking (browser pilot targets)** | Clinic and practice sites without an API. The big platforms are partner-only | same | Clinic sites | Clinic sites |
+| **Subscription payments** | Stripe | Stripe (CHF) | Stripe (UAE is supported) | **Stripe does not onboard KSA merchants.** Use a local PSP (e.g. Tap, HyperPay, Checkout.com) or bill through the app stores |
+
+**Regional behaviour the agent must know**, all as data, not code:
+- Weekend differs: Sat/Sun in the UAE, Fri/Sat in KSA. Scheduling and nudges
+  use the member's local week.
+- **Ramadan mode** for members who opt in: no daytime food/drink nudges,
+  training suggestions after iftar, sleep advice adjusted to suhoor. Getting
+  this wrong in the Gulf is a trust breaker; getting it right is a
+  differentiator.
+- Units and formats come from `@/lib/locale-format`. Arabic layouts use logical
+  (RTL-safe) properties, as for every screen.
+
+**Architecture change:** everything tenant- or user-scoped gets a
+`data_region` (`eu` | `ae` | `sa`). The gateway routes a member's agent runs,
+sync jobs and storage to their region's plane. Nothing health-related crosses
+planes. Plan for it now even though the Gulf planes come later: adding a region
+column afterwards is a painful migration.
+
+### 10.3 Own companion app: how much work
+
+Today the app runs in the **Appilix** WebView shell, and HealthKit can't be
+reached from it. Two ways to own this:
+
+| Option | What | Effort (estimate) | Keeps |
+|---|---|---|---|
+| **A. Own native shell (recommended)** | Replace Appilix with our own Capacitor shell around the existing web app. Add native health plugins: HealthKit (iOS) with background delivery, Health Connect (Android) with background reads. Move push notifications to the shell | **~12–16 developer-weeks**: shell + push migration 4–5, HealthKit reader + background sync 3–4, Health Connect reader + background sync 3–4, upload queue/ingest API 1–2, store review and release 1. **One senior mobile developer about 3–4 months, plus ~2 weeks of backend** | One app for members, full control, no vendor per-user fee |
+| B. Separate "companion" app | A small native app that only syncs health data, next to the web app | ~8–10 developer-weeks | Two apps to install: worse onboarding |
+| C. Aggregator SDK (Terra/Vital) | Their mobile SDK in a thin shell | ~2–3 weeks | Vendor lock-in and ~$0.60–1.00 per user per month |
+
+Ongoing cost of A: about 20–30% of one mobile developer for OS updates,
+store reviews and HealthKit/Health Connect API changes.
+
+**Break-even:** at 10k members syncing phone health data, option C costs about
+$6–10k per month. Option A costs roughly €50–80k once, plus the maintenance
+share, so it pays back within about a year at that size, and much faster
+beyond it.
+
+Things to know before starting A:
+- Apple requires a clear reason for each HealthKit data type in the store review,
+  and health data may not be used for advertising. That matters because of the
+  affiliate model: recommendations must be kept clearly separate from
+  HealthKit-derived targeting in the privacy description.
+- Android 14+ requires a separate permission to read Health Connect in the
+  background.
+- Aggregators (Terra/Vital) remain for the long tail of devices without their
+  own API (§5 row 5). "Independent" means no dependency for the core phone data,
+  not zero vendors.
+
+With option A, the §7.3 aggregator line falls to about $0.10–0.20 per MAU,
+because phone health data no longer goes through Terra.
+
+### 10.4 Free tier: "a taste"
+
+| | Free | Premium |
+|---|---|---|
+| Connectors | Up to 2 (read-only) | Unlimited |
+| Agent runs (playbook executions) | **3 per month** | Unlimited, within the monthly budget cap (§7.5) |
+| Proactive nudges | Up to 3 per week | As detectors fire |
+| Weekly report | Yes | Yes, with deeper analysis |
+| 12-week plan | One starter plan at onboarding | Unlimited replans |
+| Browser tier | No | Pilot quota, 5 tasks per month |
+| External writes (calendar, orders) | Calendar only, with confirmation | All, per policy matrix |
+
+Cost of a free member: about $0.30 for 3 runs, $0.14 triage, ~$0.10 nudges,
+$0.11 report, plus ~$0.10 infrastructure, so **≈ $0.75 per month**, and $0.28
+once for the starter plan. The starter plan and the first run in week one are
+where conversion happens, so they get the best model. Counting is done by
+`budget-guard.ts` on `agent_runs`; when a free member hits the limit, Vitana
+explains what premium would have done, instead of failing.
+
+### 10.5 Browser tier pilot at first launch
+
+The pilot moves into **P2**. Scope, so it is safe to ship early:
+
+- **Use case: appointment booking only** on clinic and practice sites without
+  an API, in DE and ES first. No shopping, no logins to health portals, and
+  **never affiliate clicks** (§10.1).
+- **Assisted mode:** the agent navigates and fills the form. It stops before
+  the final submit and shows the member a live view or a screenshot of the
+  filled form. The member confirms, then the agent submits. No unattended
+  submits in the pilot.
+- **Site allow-list** with one recipe per site, each checked against the
+  site's terms of use. Automation is disallowed on some sites; those go to a
+  prefilled hand-off link instead. Kill switch per site.
+- **Guardrails carried from VCAOP:** no CAPTCHA solving (a CAPTCHA hands the
+  task to the member), no stored passwords, no account creation, one identity.
+- **Eligibility:** premium members, 5 browser tasks per month.
+- **Metrics that decide go / no-go for general release:** task success rate,
+  how often the member has to take over, time saved vs. doing it by hand, cost
+  per task (target ≤ $0.60), and zero complaints from site operators.
+
+### 10.6 Delivery plan, updated
+
+| Phase | Weeks | Change |
+|---|---|---|
+| P0 | 1–2 | Add `data_region` to user/tenant scope and the attribution evidence tables |
+| P1 | 2–4 | Unchanged. Free-tier counting in `budget-guard.ts` |
+| P2 | 4–8 | Adds the **browser pilot** (§10.5), the affiliate reconciler + claim pack, the approved-claims catalogue for DE/AT/CH/ES |
+| P2b (parallel) | 4–20 | **Own native shell** (§10.3, ~3–4 months with one mobile developer) |
+| P3 | 8–14 | Scale-out as before |
+| P4 Gulf | after legal sign-off; KSA not before the AWS Saudi region (Dec 2026) | UAE data plane, Arabic launch content, Ramadan mode, local lab and PSP partners |
+
+### 10.7 Open follow-ups
+
+- Legal: which UAE Resolution 51/2021 exception covers us, and the KSA
+  health-data position.
+- Verify Claude on Bedrock in the UAE region (and the Saudi region at launch).
+- Pick the AT/ES lab partner and the Swiss lab partner.
+- Confirm with Awin and Admitad in writing that an agent-prepared cart plus a
+  member-initiated click is compliant for our programme.
