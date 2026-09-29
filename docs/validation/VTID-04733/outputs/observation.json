@@ -1,0 +1,6 @@
+{
+  "vtid": "VTID-04733",
+  "locally_executed": ["bash -n on the EventBridge script", "frontend entry validator via node"],
+  "not_executed_locally": ["jest test/scheduled-notifications-whats-new.test.ts", "tsc --noEmit"],
+  "reason": "npm registry blocked in the authoring sandbox (HTTP 403); verification is CI"
+}

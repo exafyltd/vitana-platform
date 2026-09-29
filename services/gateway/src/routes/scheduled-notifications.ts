@@ -16,6 +16,7 @@
  *   POST /api/v1/scheduled-notifications/recommendation-expiry
  *   POST /api/v1/scheduled-notifications/signal-cleanup
  *   POST /api/v1/scheduled-notifications/night-push
+ *   POST /api/v1/scheduled-notifications/whats-new         (VTID-04733)
  */
 
 import { Router, Request, Response } from 'express';
@@ -30,6 +31,10 @@ import {
   type SkipReason,
 } from '../services/daily-pace-service';
 import { FEATURE_TIPS } from '../data/feature-tips';
+import {
+  fetchWhatsNewManifest, parseWhatsNewManifest, selectNextWhatsNewEntry,
+  WHATS_NEW_CREATED_BY_PREFIX, WHATS_NEW_MIN_GAP_HOURS,
+} from '../services/whats-new-publisher';
 import * as repo from './scheduled-notifications-repository';
 import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
@@ -861,6 +866,128 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, tip: tip.key, announcement_id: announcementId, dispatched });
   } catch (err: any) {
     console.error('[Scheduled] daily_feature_tip exception:', err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// =============================================================================
+// POST /whats-new — Daily 16:00 UTC (VTID-04733)
+//
+// Publishes the next "Brand New Feature" News Feed card from the What's New
+// manifest the PRODUCTION frontend ships (/whats-new.json, one entry per
+// user-facing change — see vitana-v1 src/whats-new/README.md). Because it reads
+// the production build, an entry is announced only once members can actually
+// use the feature. Guard rails: one card per WHATS_NEW_MIN_GAP_HOURS, oldest
+// first; entries older than WHATS_NEW_MAX_AGE_DAYS never publish; each entry id
+// is published once per tenant (recorded in created_by). Kill switch:
+// WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
+// =============================================================================
+// public-route — called by EventBridge/Lambda (no JWT), same as the entries above.
+router.post('/whats-new', async (req: Request, res: Response) => { // public-route
+  if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
+    return res.status(200).json({ ok: true, skipped: 'disabled' });
+  }
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    let manifest: unknown;
+    try {
+      manifest = await fetchWhatsNewManifest();
+    } catch (err: any) {
+      // Nothing was published, so a retry is harmless; surface it loudly.
+      console.error('[Scheduled] whats_new manifest fetch failed:', err?.message || err);
+      return res.status(502).json({ ok: false, error: 'MANIFEST_UNAVAILABLE' });
+    }
+    const { entries, skipped } = parseWhatsNewManifest(manifest);
+    if (skipped > 0) console.warn(`[Scheduled] whats_new: skipped ${skipped} malformed manifest entr(y/ies)`);
+
+    const { data: prior, error: priorError } = await repo.fetchWhatsNewPublished(supa, {
+      tenantId,
+      createdByPrefix: WHATS_NEW_CREATED_BY_PREFIX,
+    });
+    if (priorError) {
+      // Without the dedupe list we could re-announce everything: stop, don't guess.
+      console.error('[Scheduled] whats_new published-lookup failed:', priorError.message);
+      return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+    }
+    const rows = (prior || []) as Array<{ created_by: string; created_at: string }>;
+    const publishedIds = new Set(rows.map((r) => r.created_by.slice(WHATS_NEW_CREATED_BY_PREFIX.length)));
+
+    const now = new Date();
+    const lastAt = rows.reduce((m, r) => Math.max(m, Date.parse(r.created_at) || 0), 0);
+    if (lastAt && now.getTime() - lastAt < WHATS_NEW_MIN_GAP_HOURS * 3600 * 1000) {
+      return res.status(200).json({ ok: true, skipped: 'published_recently' });
+    }
+
+    const entry = selectNextWhatsNewEntry(entries, publishedIds, now);
+    if (!entry) return res.status(200).json({ ok: true, skipped: 'nothing_new', entries: entries.length });
+
+    // Insert first: the row is the dedupe record, so a retry after a partial
+    // fan-out can never announce the same entry twice.
+    const { data: inserted, error: insertError } = await repo.insertFeatureAnnouncement(supa, {
+      tenant_id: tenantId,
+      variant: 'brand-new-feature',
+      feature_title: entry.title,
+      description: entry.description,
+      deep_link: entry.deepLink,
+      created_by: `${WHATS_NEW_CREATED_BY_PREFIX}${entry.id}`,
+      target_user_ids: null,
+    });
+    if (insertError || !inserted) {
+      console.error('[Scheduled] whats_new insert error:', insertError?.message);
+      return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+    }
+    const announcementId = inserted.id as string;
+
+    // Awaited Promise.allSettled — never fire-and-forget (see /daily-feature-tip).
+    // Push lands on /home/notif, not the card's own CTA target (same reason).
+    const users = await getActiveUsers(supa, tenantId);
+    const userIds = users.map((u) => u.user_id);
+    const locales = await bulkGetUserLocales(supa, userIds);
+    const results = await Promise.allSettled(
+      userIds.map((uid) => {
+        const lc = locales.get(uid) || 'de';
+        return notifyUser(
+          uid,
+          tenantId,
+          'feature_announcement',
+          {
+            title: tt('notif.feature_announcement.title', lc, { feature: pickTipLocale(entry.title as any, lc) }),
+            body: pickTipLocale(entry.description as any, lc),
+            data: { url: '/home/notif', entity_id: announcementId },
+          },
+          supa,
+        );
+      }),
+    );
+    const dispatched = results.filter((r) => r.status === 'fulfilled').length;
+    if (dispatched < results.length) {
+      console.warn(`[Scheduled] whats_new: ${results.length - dispatched}/${results.length} notifyUser calls rejected`);
+    }
+    await repo.markFeatureAnnouncementNotified(supa, { announcementId, notifiedAt: new Date().toISOString() });
+    console.log(`[Scheduled] whats_new → entry=${entry.id} dispatched=${dispatched} users`);
+
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.whats_new.dispatched' as any,
+        source: 'gateway',
+        vtid: 'VTID-04733',
+        status: 'info',
+        message: `whats_new fan-out: entry=${entry.id} dispatched=${dispatched}`,
+        payload: { tenant_id: tenantId, entry: entry.id, announcement_id: announcementId, dispatched },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[Scheduled] whats_new OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+    }
+
+    return res.status(200).json({ ok: true, entry: entry.id, announcement_id: announcementId, dispatched });
+  } catch (err: any) {
+    console.error('[Scheduled] whats_new exception:', err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
 });
