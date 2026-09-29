@@ -20,7 +20,11 @@
 const DEFAULT_SOFT_TURN_END_MS = 2500;
 
 export function softTurnEndMs(): number {
-  const raw = Number(process.env.ORB_SOFT_TURN_END_MS);
+  // Unset or blank means the default; Number('') is 0, which would switch the
+  // safety net off by accident.
+  const env = (process.env.ORB_SOFT_TURN_END_MS ?? '').trim();
+  if (env === '') return DEFAULT_SOFT_TURN_END_MS;
+  const raw = Number(env);
   if (Number.isFinite(raw) && raw >= 0) return raw;
   return DEFAULT_SOFT_TURN_END_MS;
 }

@@ -1,5 +1,6 @@
 /** VTID-04747: see the describe block below. */
 
+import { softTurnEndMs } from '../../../../src/orb/live/session/soft-turn-end';
 import {
   bindUpstreamSessionHandlers,
   type UpstreamMessageHandlerDeps,
@@ -212,5 +213,14 @@ describe('VTID-04747: soft turn end', () => {
     b.client.emitAudio();
     jest.advanceTimersByTime(5000);
     expect(nova.isModelSpeaking).toBe(true);
+  });
+
+  it('a blank ORB_SOFT_TURN_END_MS keeps the default instead of turning it off', () => {
+    process.env.ORB_SOFT_TURN_END_MS = '  ';
+    expect(softTurnEndMs()).toBe(2500);
+    delete process.env.ORB_SOFT_TURN_END_MS;
+    expect(softTurnEndMs()).toBe(2500);
+    process.env.ORB_SOFT_TURN_END_MS = 'abc';
+    expect(softTurnEndMs()).toBe(2500);
   });
 });
