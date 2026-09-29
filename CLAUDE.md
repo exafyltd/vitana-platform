@@ -653,9 +653,12 @@ one, Claude allocates it itself, first step, no exceptions.
 
 Procedure, in order of preference:
 
-1. **Gateway API** (preferred when the gateway is reachable from the
-   session): `POST /api/v1/vtid/allocate` with `{ source, layer, module }`
-   (see §11 for URL resolution). Returns `{ vtid, num, id }`.
+1. **Gateway API**: `POST /api/v1/vtid/allocate` with `{ source, layer,
+   module }` (see §11 for URL resolution). Returns `{ vtid, num, id }`.
+   **Since VTID-04727 it needs `Authorization: Bearer <GATEWAY_SERVICE_TOKEN>`
+   or an `exafy_admin` JWT** (enforced on staging; production logs
+   unauthenticated calls until it is flipped to enforce). A session without
+   either uses path 2.
 2. **Direct Supabase RPC** (when the gateway isn't reachable, e.g. a
    Claude Code session without a live gateway endpoint): call
    `allocate_global_vtid(p_source, p_layer, p_module)` via the Supabase

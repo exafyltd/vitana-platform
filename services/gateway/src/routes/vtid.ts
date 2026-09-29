@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { timingSafeEqual } from "crypto";
+import { requireLedgerWriteAuth } from "../middleware/ledger-write-auth";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 // VTID-01181: Import system controls service for DB-backed allocator toggle
 import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
@@ -91,7 +92,7 @@ function deriveAllocationTitle(
  * - VTID_ALLOCATOR_ENABLED env var is 'true' (backward compatible), OR
  * - DB control 'vtid_allocator_enabled' is enabled AND not expired
  */
-router.post("/allocate", async (req: Request, res: Response) => {
+router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Response) => {
   // VTID-01181: Check DB-backed control state (with caching and expiry)
   const allocatorEnabled = await isVtidAllocatorEnabled();
   console.log(`[VTID-0542] Allocate request received, env=${VTID_ALLOCATOR_ENABLED_ENV}, dbEnabled=${allocatorEnabled}`);
@@ -496,7 +497,7 @@ interface AtomicCreateResult {
   created_at: string;
 }
 
-router.post("/create", async (req: Request, res: Response) => {
+router.post("/create", requireLedgerWriteAuth, async (req: Request, res: Response) => {
   try {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();

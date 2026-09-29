@@ -97,3 +97,14 @@ test('autoClose: no VTID in the title means no calls', async () => {
   assert.deepEqual(res, []);
   assert.equal(calls.length, 0);
 });
+
+test('autoClose: sends the service token on the close and not on the read (VTID-04727)', async () => {
+  const { impl, calls } = fakeFetch({ 'VTID-00001': { status: 'in_progress', is_terminal: false } });
+  const seen = [];
+  const spy = async (url, opts = {}) => { seen.push(opts.headers || {}); return impl(url, opts); };
+  const pr = { title: 'x (VTID-00001)', headRef: 'claude/x', labels: [], body: '', ref: 'r' };
+  await autoClose({ gateway: GW, pr, token: 'svc', fetchImpl: spy, log: quiet });
+  assert.equal(calls.length, 2);
+  assert.equal(seen[1].Authorization, 'Bearer svc');
+  assert.equal(seen[0].Authorization, undefined);
+});
