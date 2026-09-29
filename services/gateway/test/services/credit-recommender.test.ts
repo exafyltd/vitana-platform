@@ -159,14 +159,18 @@ describe('creditRecommenderForOrder — network-approved path (paid through the 
   });
 
   it('a reversed commission whose order is a sale again is reopened and, network-approved, paid through the transaction', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed', rate_applied: 0.25 }, error: null });
+    // Awin re-approved the sale with a corrected commission and currency.
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, commission_cents: 1600, currency: 'usd' }, error: null });
     mockReopenReversed.mockResolvedValue({ data: [{ id: 'rc-rev' }], error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     const before = Date.now();
 
-    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'credited', payout_minor: undefined });
-    const [, id, confirmAfter] = mockReopenReversed.mock.calls[0];
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'credited', payout_minor: 400 });
+    const [, id, confirmAfter, terms] = mockReopenReversed.mock.calls[0];
     expect(id).toBe('rc-rev');
+    // Amounts follow the corrected order, at the rate recorded originally (0.25), not today's 0.5.
+    expect(terms).toEqual({ payout_amount_minor: 400, currency: 'USD', vitana_commission_cents: 1600 });
     expect(Date.parse(confirmAfter)).toBeGreaterThanOrEqual(before - 1000);
     expect(Date.parse(confirmAfter)).toBeLessThanOrEqual(Date.now());
     expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-rev');
@@ -175,7 +179,7 @@ describe('creditRecommenderForOrder — network-approved path (paid through the 
   });
 
   it('a reopened commission not approved by a network is held again for the return window', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed', rate_applied: 0.5 }, error: null });
     mockReopenReversed.mockResolvedValue({ data: [{ id: 'rc-rev' }], error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 14 } }, error: null });
@@ -188,7 +192,7 @@ describe('creditRecommenderForOrder — network-approved path (paid through the 
   });
 
   it('a reversed commission another caller already reopened is left alone', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed', rate_applied: 0.5 }, error: null });
     mockReopenReversed.mockResolvedValue({ data: [], error: null });
 
     expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'already_credited' });

@@ -78,14 +78,19 @@ export async function reverseRecommendationCommissionRpc(sb: SupabaseClient, ord
 
 /**
  * VTID-04741: a reversed commission whose order is a sale again goes back to
- * `pending` (guarded on `reversed`, so only one caller reopens it). A reversed
- * row was never paid, so no ledger entry is touched; the amount and rate stay
- * as recorded.
+ * `pending` (guarded on `reversed`, so only one caller reopens it), with its
+ * amounts refreshed from the corrected order. A reversed row was never paid,
+ * so no ledger entry is touched.
  */
-export async function reopenReversedCommission(sb: SupabaseClient, id: string, confirmAfter: string) {
+export async function reopenReversedCommission(
+  sb: SupabaseClient,
+  id: string,
+  confirmAfter: string,
+  terms: { payout_amount_minor: number; currency: string; vitana_commission_cents: number },
+) {
   return sb
     .from('recommendation_commissions')
-    .update({ status: 'pending', confirm_after: confirmAfter, reversed_at: null, reversal_reason: null })
+    .update({ status: 'pending', confirm_after: confirmAfter, reversed_at: null, reversal_reason: null, ...terms })
     .eq('id', id)
     .eq('status', 'reversed')
     .select('id');
@@ -97,7 +102,7 @@ export async function fetchClickReferrer(sb: SupabaseClient, clickId: string) {
 }
 
 export async function fetchExistingRecommendationCommission(sb: SupabaseClient, orderId: string) {
-  return sb.from('recommendation_commissions').select('id, status').eq('product_order_id', orderId).maybeSingle();
+  return sb.from('recommendation_commissions').select('id, status, rate_applied').eq('product_order_id', orderId).maybeSingle();
 }
 
 export async function fetchProductRecommendationForCommission(sb: SupabaseClient, recommendationId: string) {

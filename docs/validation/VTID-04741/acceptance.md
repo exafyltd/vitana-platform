@@ -56,7 +56,7 @@ AC-12: the DB function closing or skipping a row (excluded payee, order a cancel
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-13: a reversal whose order is a sale again changes nothing (`order_not_reversing`); each confirmation run starts at a random id and wraps around; the row cap stops a run.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-14: a reversed commission whose order is a sale again is reopened (guarded, one caller) and paid through the transaction when network-approved, else held for the window again; a failed reversal in the confirmation run counts as failed.
+AC-14: a reversed commission whose order is a sale again is reopened (guarded, one caller) with its amounts refreshed from the corrected order at the originally recorded rate, and paid through the transaction when network-approved, else held for the window again; a failed reversal in the confirmation run counts as failed.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-11: commission OASIS events are written as rows `oasis_events` accepts (no `type`, `role` set).
   TEST: services/gateway/test/services/credit-recommender-repository-events.test.ts

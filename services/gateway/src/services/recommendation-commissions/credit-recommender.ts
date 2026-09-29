@@ -93,6 +93,7 @@ async function reopenReversed(
   commissionId: string,
   networkConfirmed: boolean,
   orderId: string,
+  terms: { payout_amount_minor: number; currency: string; vitana_commission_cents: number },
 ): Promise<CreditRecommenderResult> {
   let confirmAfter = new Date().toISOString();
   if (!networkConfirmed) {
@@ -100,7 +101,7 @@ async function reopenReversed(
     if (days === null) return { ok: false, status: 'failed', message: 'RETURN_WINDOW_LOOKUP_FAILED' };
     confirmAfter = new Date(Date.now() + days * DAY_MS).toISOString();
   }
-  const { data: reopened, error } = await repo.reopenReversedCommission(supabase, commissionId, confirmAfter);
+  const { data: reopened, error } = await repo.reopenReversedCommission(supabase, commissionId, confirmAfter, terms);
   if (error) {
     console.error(`[credit-recommender] reopen failed for order=${orderId}: ${error.message}`);
     return { ok: false, status: 'failed', message: 'REOPEN_FAILED' };
@@ -111,11 +112,13 @@ async function reopenReversed(
     type: 'marketplace.recommendation.commission_reopened',
     topic: 'marketplace.recommendation.commission_reopened',
     status: 'info', message: 'reversed commission reopened: the order is a sale again',
-    metadata: { orderId, commissionId, networkConfirmed },
+    metadata: { orderId, commissionId, networkConfirmed, ...terms },
     created_at: new Date().toISOString(),
   }).then(() => {}, () => {});
-  if (!networkConfirmed) return { ok: true, status: 'pending', message: `reopened; confirms after ${confirmAfter}` };
-  return payThroughConfirm(supabase, commissionId, undefined);
+  if (!networkConfirmed) {
+    return { ok: true, status: 'pending', payout_minor: terms.payout_amount_minor, message: `reopened; confirms after ${confirmAfter}` };
+  }
+  return payThroughConfirm(supabase, commissionId, terms.payout_amount_minor);
 }
 
 async function loadDefaultRate(supabase: ReturnType<typeof getSupabase>): Promise<number> {
@@ -174,7 +177,19 @@ export async function creditRecommenderForOrder(
     // A commission reversed while the order was undone, whose order is a sale
     // again (this function runs only for converted orders): reopen it, or the
     // sale stays unpaid for good (one commission per order).
-    if (existing.status === 'reversed') return reopenReversed(supabase, existing.id, !!opts.networkConfirmed, orderId);
+    if (existing.status === 'reversed') {
+      // The order may have been corrected (e.g. Awin re-approves with a new
+      // amount): the amounts follow the current order, at the rate recorded
+      // when the commission was first made (never today's settings).
+      const rate = Number(existing.rate_applied);
+      const terms = {
+        payout_amount_minor: Math.round(order.commission_cents * rate),
+        currency: (order.currency ?? 'EUR').toUpperCase(),
+        vitana_commission_cents: order.commission_cents,
+      };
+      if (!Number.isFinite(rate) || terms.payout_amount_minor <= 0) return { ok: true, status: 'already_credited' };
+      return reopenReversed(supabase, existing.id, !!opts.networkConfirmed, orderId, terms);
+    }
     return { ok: true, status: 'already_credited' };
   }
 
