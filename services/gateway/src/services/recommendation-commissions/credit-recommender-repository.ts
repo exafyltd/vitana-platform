@@ -90,9 +90,9 @@ export async function fetchMerchantCommissionEligibility(sb: SupabaseClient, mer
     .maybeSingle();
 }
 
-/** Reused across the ineligible/failed/credited branches — same table, different row shapes. */
+/** Reused across the skipped and pending branches — same table, different row shapes. Returns the new row's id. */
 export async function insertRecommendationCommission(sb: SupabaseClient, row: Record<string, unknown>) {
-  return sb.from('recommendation_commissions').insert(row);
+  return sb.from('recommendation_commissions').insert(row).select('id').maybeSingle();
 }
 
 /**

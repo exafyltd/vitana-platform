@@ -34,7 +34,7 @@ This is plan step 4 of `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (
 
 AC-1: a conversion the network has not approved is held `pending` for the configured window (30 days by default; an invalid setting falls back to 30), and nothing reaches the wallet.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-2: a network-approved conversion is paid at once with `confirmed_at`; all earlier credit tests still pass on this path.
+AC-2: a network-approved conversion is recorded `pending`, due now, and paid at once through `confirm_recommendation_commission`, the same locking transaction as held commissions, so no path pays outside that lock. A held commission whose sale the network later approves is confirmed through it too. A failed return-window lookup fails closed and writes nothing.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-3: a due pending commission on a still-converted order is paid and moved to `credited`, guarded on its status.
   TEST: services/gateway/test/services/credit-recommender.test.ts

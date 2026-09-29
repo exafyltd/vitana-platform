@@ -86,8 +86,9 @@ const ORDER = {
 };
 const REC = { id: 'rec-1', user_id: 'recommender-1', product_id: 'prod-1', status: 'active' };
 
-describe('creditRecommenderForOrder — successful-credit path error handling', () => {
+describe('creditRecommenderForOrder — network-approved path (paid through the locking transaction)', () => {
   let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -99,65 +100,79 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
     });
-    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
-    mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
-    mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: { id: 'rc-new' }, error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited', ledger_entry_id: 'ledger-1' }, error: null });
     warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
-  it('on fetchExistingRecommendationCommission returning {error}: logs it, and still proceeds to credit (idempotency guard bypassed, unchanged behavior — protected by the ledger UNIQUE constraint elsewhere)', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({
-      data: null,
-      error: { message: 'connection terminated unexpectedly' },
-    });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+  it('records the commission pending and due now, then pays it only through confirm_recommendation_commission', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
+    const before = Date.now();
+
+    const result = await creditRecommenderForOrder('order-1', NET);
+
+    expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
+    const row = mockInsertRecommendationCommission.mock.calls[0][1];
+    expect(row).toMatchObject({ status: 'pending', payout_amount_minor: 500, recommender_user_id: 'recommender-1' });
+    expect(Date.parse(row.confirm_after)).toBeLessThanOrEqual(Date.now());
+    expect(Date.parse(row.confirm_after)).toBeGreaterThanOrEqual(before - 1000);
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-new');
+    // No wallet call and no stats outside the transaction.
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('on fetchExistingRecommendationCommission returning {error}: logs it and proceeds (the unique order key still prevents a second row)', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: { message: 'connection terminated unexpectedly' } });
 
     const result = await creditRecommenderForOrder('order-1', NET);
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('fetchExistingRecommendationCommission error for order=order-1: connection terminated unexpectedly'),
     );
-    expect(mockCreditWalletForEarning).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
   });
 
-  it('on the final insertRecommendationCommission returning {error}: logs it, but still reports the accurate credited status (unchanged)', async () => {
+  it('a failed pending insert pays nothing', async () => {
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
-    mockInsertRecommendationCommission.mockResolvedValue({
-      data: null,
-      error: { message: 'duplicate key value violates unique constraint' },
-    });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: null, error: { message: 'duplicate key value violates unique constraint' } });
 
-    const result = await creditRecommenderForOrder('order-1', NET);
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('insertRecommendationCommission (credited) error for order=order-1: duplicate key value violates unique constraint'),
-    );
-    expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: false, status: 'failed', message: 'PENDING_INSERT_FAILED' });
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
   });
 
-  it('on a clean run (no errors anywhere): logs nothing', async () => {
+  it('a held commission whose sale the network now approves is confirmed through the transaction', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-held', status: 'pending' }, error: null });
+
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'credited', payout_minor: undefined });
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-held');
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+  });
+
+  it('an existing final commission short-circuits (already_credited)', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'existing-1', status: 'credited' }, error: null });
+
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'already_credited' });
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ data: { ok: false, error: 'RECOMMENDER_WALLET_NOT_FOUND' }, error: null }, { ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' }],
+    [{ data: null, error: { message: 'timeout' } }, { ok: false, status: 'failed', message: 'CONFIRM_FAILED' }],
+    [{ data: { ok: true, status: 'order_not_converted' }, error: null }, { ok: true, status: 'pending', message: 'order_not_converted' }],
+    [{ data: { ok: true, status: 'skipped_excluded_account' }, error: null }, { ok: true, status: 'skipped_invalid_referral', message: 'excluded_account' }],
+  ])('maps the transaction outcome %j (the row stays pending when nothing was committed)', async (rpc, expected) => {
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockConfirmRpc.mockResolvedValue(rpc);
 
-    const result = await creditRecommenderForOrder('order-1', NET);
-
-    expect(warnSpy).not.toHaveBeenCalled();
-    expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
-  });
-
-  it('already_credited short-circuits before any wallet credit attempt (unchanged)', async () => {
-    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'existing-1' }, error: null });
-
-    const result = await creditRecommenderForOrder('order-1', NET);
-
-    expect(warnSpy).not.toHaveBeenCalled();
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-    expect(result).toEqual({ ok: true, status: 'already_credited' });
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual(expected);
   });
 });
 
@@ -177,7 +192,9 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
     });
     mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
     mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: { id: 'rc-new' }, error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited' }, error: null });
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 30 } }, error: null });
     mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
@@ -217,28 +234,11 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
     expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
   });
 
-  it('fetchRecommenderWalletAccount error: reports a distinct DB-failure message rather than RECOMMENDER_WALLET_NOT_FOUND', async () => {
-    mockFetchRecommenderWalletAccount.mockResolvedValue({
-      data: null,
-      error: { message: 'connection terminated unexpectedly' },
-    });
+  it('a failed return-window lookup fails closed: no pending row with a window nobody configured', async () => {
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: null, error: { message: 'timeout' } });
 
-    const result = await creditRecommenderForOrder('order-1', NET);
-
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('fetchRecommenderWalletAccount error for order=order-1: connection terminated unexpectedly'),
-    );
-    expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_LOOKUP_FAILED' });
-    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
-  });
-
-  it('fetchRecommenderWalletAccount genuinely-not-found (no error) still reports RECOMMENDER_WALLET_NOT_FOUND (unchanged)', async () => {
-    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: null, error: null });
-
-    const result = await creditRecommenderForOrder('order-1', NET);
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' });
+    expect(await creditRecommenderForOrder('order-1')).toEqual({ ok: false, status: 'failed', message: 'RETURN_WINDOW_LOOKUP_FAILED' });
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
   });
 });
 
@@ -256,7 +256,8 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
     });
     mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
     mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: { id: 'rc-new' }, error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited' }, error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
   });
@@ -301,7 +302,7 @@ describe('creditRecommenderForOrder — referral must count before anyone is pai
     mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, user_id: null }, error: null });
     const result = await creditRecommenderForOrder('order-1', NET);
     expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
-    expect(mockCreditWalletForEarning).toHaveBeenCalledTimes(1);
+    expect(mockConfirmRpc).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -320,7 +321,8 @@ describe('VTID-04740: the referrer frozen on the click is the payee', () => {
     mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-frozen' }, error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: { id: 'rc-new' }, error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited' }, error: null });
     mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
   });
 
@@ -331,7 +333,6 @@ describe('VTID-04740: the referrer frozen on the click is the payee', () => {
 
     expect(result).toEqual(expect.objectContaining({ ok: true, status: 'credited' }));
     expect(mockFetchClickReferrer).toHaveBeenCalledWith(SB, 'click-1');
-    expect(mockFetchRecommenderWalletAccount).toHaveBeenCalledWith(SB, 'frozen-1', 'EUR');
     expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ recommender_user_id: 'frozen-1' }));
   });
 
@@ -347,7 +348,7 @@ describe('VTID-04740: the referrer frozen on the click is the payee', () => {
   it('a click with no frozen referrer falls back to the recommendation owner', async () => {
     mockFetchClickReferrer.mockResolvedValue({ data: { referrer_user_id: null }, error: null });
     await creditRecommenderForOrder('order-1', NET);
-    expect(mockFetchRecommenderWalletAccount).toHaveBeenCalledWith(SB, 'recommender-1', 'EUR');
+    expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ recommender_user_id: 'recommender-1' }));
   });
 
   it('a failed click lookup pays nothing and writes nothing permanent', async () => {
@@ -381,7 +382,8 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 30 } }, error: null });
     mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
     mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
-    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertRecommendationCommission.mockResolvedValue({ data: { id: 'rc-new' }, error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited' }, error: null });
     mockInsertEvent.mockResolvedValue({ error: null });
     mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
     mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'credited', ledger_entry_id: 'ledger-1' }, error: null });
@@ -415,10 +417,11 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     expect(Math.round(dDefault / 86400000)).toBe(30);
   });
 
-  it('a network-approved conversion is paid at once and records confirmed_at', async () => {
+  it('a network-approved conversion is paid at once, through the locking transaction', async () => {
     const result = await creditRecommenderForOrder('order-1', NET);
     expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
-    expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ status: 'credited', confirmed_at: expect.any(String) }));
+    expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({ status: 'pending' }));
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-new');
   });
 
   it('confirm: a due commission on a still-converted order is confirmed by the single-transaction DB function', async () => {
