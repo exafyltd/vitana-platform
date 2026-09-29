@@ -17,3 +17,7 @@ TEST: npx jest test/scheduled-notifications-whats-new.test.ts (services/gateway)
 Not run against staging: the route writes a card and pushes to real members
 (staging shares the production Supabase project), so per rule 48 it is proven
 by the Jest suite above; staging only checks the gateway is alive.
+
+ROUTE_MOUNT: services/gateway/src/index.ts — mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter) (already mounted; this PR adds a handler to that router, no new mount)
+FINAL_URL: POST https://gateway.vitanaland.com/api/v1/scheduled-notifications/whats-new (staging: preview-aws-gateway.vitanaland.com)
+CURL_PROOF: NOT RUN, deliberately. The route publishes a News Feed card and pushes to real members, and staging shares the production Supabase project, so calling it on any live host is forbidden (rule 48; CLAUDE.md absolute no-test-against-production rule). The route is proven instead by test/scheduled-notifications-whats-new.test.ts, which drives the real router over supertest with a fake Supabase. The first live call is the EventBridge schedule after PUBLISH, observable in CloudWatch logs and the notification.whats_new.dispatched OASIS event.
