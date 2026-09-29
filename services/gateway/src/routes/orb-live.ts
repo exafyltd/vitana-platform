@@ -2058,6 +2058,7 @@ import {
 } from '../orb/live/prewarm/prewarm-fingerprint';
 import { personaVoiceAvailability } from '../orb/live/voice/specialist-voice-availability';
 import { getUserLocale } from '../i18n/server-locale';
+import { registerRuleForLang } from '../i18n/llm-locale';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
@@ -2868,6 +2869,7 @@ export function buildSpecialistLanguageDirective(lang: string | undefined): stri
   return [
     '[LANGUAGE LOCK]',
     `Respond ONLY in ${name}. Match the user's language exactly.`,
+    ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
     'Do NOT switch to English. Do NOT mix languages.',
     'Your greeting, your synthesis, your auto-return question — all in',
     `${name}. The user has been speaking ${name} with Vitana already;`,
@@ -7588,7 +7590,7 @@ function buildAnonymousSystemInstruction(lang: string, voiceStyle: string, ctx?:
 
   return `You are Vitana — the AI voice companion and brand presenter for the Maxina Community on Vitanaland.com.
 
-LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}.${registerRuleForLang(lang) ? `\n${registerRuleForLang(lang)}` : ''}
 
 VOICE STYLE: Enthusiastic, warm, inspiring — like a passionate host welcoming someone to an exclusive experience. Be conversational, not robotic.
 
@@ -13118,7 +13120,7 @@ async function generateMemoryEnhancedSystemInstruction(
           // Extract preferred_language from facts for explicit language directive
           const langFact = facts.find(f => f.fact_key === 'preferred_language');
           if (langFact) {
-            resolvedLanguageDirective = `\nLANGUAGE: Respond ONLY in ${langFact.fact_value}. Do NOT mix languages or switch to English unless the user explicitly asks.`;
+            resolvedLanguageDirective = `\nLANGUAGE: Respond ONLY in ${langFact.fact_value}. Do NOT mix languages or switch to English unless the user explicitly asks.${registerRuleForLang(langFact.fact_value) ? `\n${registerRuleForLang(langFact.fact_value)}` : ''}`;
             console.log(`[LANG-PREF] Resolved language from memory_facts: ${langFact.fact_value}`);
           }
           const factLines = facts.map(f =>

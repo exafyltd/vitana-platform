@@ -46,6 +46,7 @@ import {
   type SocialProvider,
 } from '../social-connect-service';
 import { invalidateUserLocale } from '../../i18n/server-locale';
+import { registerRuleForLang } from '../../i18n/llm-locale';
 import * as repo from './feedback-settings-tools-repository';
 
 type Handler = (
@@ -489,6 +490,7 @@ export async function tool_set_language(
       },
       text:
         `Language saved: ${lang.name}. From this moment on, respond ONLY in ${lang.name}. ` +
+        (registerRuleForLang(short) ? `${registerRuleForLang(short)} ` : '') +
         `Tell the user (in ${lang.name}) that their language is now set — the app screens follow on the next reload.`,
     };
   } catch (err: unknown) {

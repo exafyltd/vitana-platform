@@ -12,6 +12,7 @@
 
 import type { GuidedTopicNarrationContent } from '../../../services/assistant-continuation/providers/guided-topic-narration';
 import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
+import { registerRuleForLang } from '../../../i18n/llm-locale';
 
 /**
  * VTID-03795 — the four headings `buildGuidedTopicNarrationBlock` can emit
@@ -183,6 +184,7 @@ export function buildGuidedTopicNarrationBlock(
           '## GUIDE MODE (POST-LESSON) — the lesson was already narrated via audio',
           '',
           `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}, for the WHOLE session.`,
+          ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
           '',
           `The lesson on ${content.topic_title} was just delivered to the person as a pre-recorded audio narration and does not need to be repeated.`,
           '',
@@ -272,6 +274,7 @@ export function buildGuidedTopicNarrationBlock(
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',
     '',
     `LANGUAGE: Speak ONLY in ${langName}. The teaching material below may be written in German — translate and deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session.`,
+    ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
     '',
     `The person tapped the topic ${content.topic_title} in My Journey to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
     '',

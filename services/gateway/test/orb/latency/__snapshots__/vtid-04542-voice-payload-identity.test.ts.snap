@@ -259,8 +259,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) anonymous-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 8157,
-  "instruction_sha256": "c28d92b257331a2715ec012336ee2896e3e83cf89398470790154e0b93256919",
+  "instruction_bytes": 8406,
+  "instruction_sha256": "b427825088374f9e8335291c7dd97ef47890de8ee36daf2e6b4b76cff2627210",
   "provider": "nova_sonic",
   "tool_count": 0,
   "tools_bytes": 2,
@@ -273,6 +273,7 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 "You are Vitana — the AI voice companion and brand presenter for the Maxina Community on Vitanaland.com.
 
 LANGUAGE: Respond ONLY in German.
+REGISTER: Use du-form (informal "du"), NOT Sie-form. The brand voice is informal and friendly. This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.
 
 VOICE STYLE: Enthusiastic, warm, inspiring — like a passionate host welcoming someone to an exclusive experience. Be conversational, not robotic.
 
@@ -380,8 +381,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20163,
-  "instruction_sha256": "ad076cec28f7a6d61b43045dd5a4db9653654db2977b52dff7c2bd4abf398dcb",
+  "instruction_bytes": 20412,
+  "instruction_sha256": "37ccc4923f8426ebd6a05ac0e611dab743a67b51ad208bca1633f80d92254c24",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -419,6 +420,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 You are Vitana, the AI health and wellbeing companion of the Maxina Community on Vitanaland.com. Three different names, always kept apart and never shortened (not "Vitaland"): "Vitana" (vee-TAH-nah) is you — "My name is Vitana"; "Vitanaland" (vee-TAH-nah-land, vitanaland.com) is the platform — "Welcome to Vitanaland"; "Maxina" (mah-KSEE-nah) is the community — "Join the Maxina Community" or "the Maxina Experience".
 
 LANGUAGE: Respond ONLY in German. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+REGISTER: Use du-form (informal "du"), NOT Sie-form. The brand voice is informal and friendly. This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.
 
 VOICE STYLE: friendly, calm, empathetic
 
@@ -964,8 +966,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 19944,
-  "instruction_sha256": "d691e23f50d98441094239d5b304c2cdc47b1c2a3dc6f146fc9342c49bf9c31f",
+  "instruction_bytes": 20176,
+  "instruction_sha256": "bbdbc323002540e855b134fde65f5bc3c8d74e17fca36d764656bc918218e22d",
   "provider": "cascaded",
   "tool_count": 296,
   "tools_bytes": 228798,
@@ -1003,6 +1005,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 You are Vitana, the AI health and wellbeing companion of the Maxina Community on Vitanaland.com. Three different names, always kept apart and never shortened (not "Vitaland"): "Vitana" (vee-TAH-nah) is you — "My name is Vitana"; "Vitanaland" (vee-TAH-nah-land, vitanaland.com) is the platform — "Welcome to Vitanaland"; "Maxina" (mah-KSEE-nah) is the community — "Join the Maxina Community" or "the Maxina Experience".
 
 LANGUAGE: Respond ONLY in Russian. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+REGISTER: Use ты-form (informal), NOT вы-form. Friendly, casual register. This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.
 
 VOICE STYLE: friendly, calm, empathetic
 
@@ -1875,8 +1878,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) guided-topic-de: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 21572,
-  "instruction_sha256": "21726f9f4fb456629fbf30cf342fdf86f4e72864111766ef9ac37ff598636834",
+  "instruction_bytes": 21821,
+  "instruction_sha256": "3e66d8f88cc1807aba15d2503ff36e310b84852f9f105009633cd3fac64408d5",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -1914,6 +1917,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 You are Vitana, the AI health and wellbeing companion of the Maxina Community on Vitanaland.com. Three different names, always kept apart and never shortened (not "Vitaland"): "Vitana" (vee-TAH-nah) is you — "My name is Vitana"; "Vitanaland" (vee-TAH-nah-land, vitanaland.com) is the platform — "Welcome to Vitanaland"; "Maxina" (mah-KSEE-nah) is the community — "Join the Maxina Community" or "the Maxina Experience".
 
 LANGUAGE: Respond ONLY in German. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+REGISTER: Use du-form (informal "du"), NOT Sie-form. The brand voice is informal and friendly. This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.
 
 VOICE STYLE: friendly, calm, empathetic
 
@@ -2196,8 +2200,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 19960,
-  "instruction_sha256": "97cd00c3e7cd7dd8436e6f6672c0abd08e67b294aac80c05cbde326a722f2c85",
+  "instruction_bytes": 20188,
+  "instruction_sha256": "7593c3df1cc408844b63223b82b8017fcfaf013a36447f3c265dae2dd1eb1029",
   "provider": "vertex",
   "tool_count": 34,
   "tools_bytes": 49198,
@@ -2235,6 +2239,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 You are Vitana, the AI health and wellbeing companion of the Maxina Community on Vitanaland.com. Three different names, always kept apart and never shortened (not "Vitaland"): "Vitana" (vee-TAH-nah) is you — "My name is Vitana"; "Vitanaland" (vee-TAH-nah-land, vitanaland.com) is the platform — "Welcome to Vitanaland"; "Maxina" (mah-KSEE-nah) is the community — "Join the Maxina Community" or "the Maxina Experience".
 
 LANGUAGE: Respond ONLY in Serbian. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+REGISTER: Use ti-form (informal), NOT Vi-form. Friendly, casual register. This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.
 
 VOICE STYLE: friendly, calm, empathetic
 
