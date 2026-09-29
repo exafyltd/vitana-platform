@@ -25,6 +25,8 @@ AC-4: a signed-out buyer's order is recorded with no user and no tenant, and its
   TEST: services/gateway/test/services/awin-order-sync.test.ts
 AC-5: the referrer frozen on the click is the payee (wallet, commission row and self-referral check); orders without a click fall back to the recommendation owner; a failed click lookup pays nothing.
   TEST: services/gateway/test/services/credit-recommender.test.ts
+AC-6: a signed-in client reads only its own clicks. `product_clicks_select_own` is `user_id = auth.uid()` (it had exposed anonymous clicks, which now carry the referrer). Migration `20260929120700_…`, applied live with the owner's go-ahead.
+  TEST: services/gateway/test/vtid-04740-product-clicks-rls.test.ts
 AC-3: the click route still answers on staging (read-only probe, unknown product, no row written).
   CURL: GET https://preview-aws-gateway.vitanaland.com/r/00000000-0000-4000-8000-000000000000
 
