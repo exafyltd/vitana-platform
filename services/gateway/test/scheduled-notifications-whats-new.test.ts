@@ -16,6 +16,7 @@ import {
 let mockSupabase: any;
 const notifyUserMock = jest.fn();
 const bulkGetUserLocalesMock = jest.fn();
+const emitOasisEventMock = jest.fn().mockResolvedValue(undefined);
 let inserted: any = null;
 let updatedAnnouncement: any = null;
 
@@ -29,6 +30,9 @@ jest.mock('../src/services/notification-service', () => ({
 jest.mock('../src/i18n/server-locale', () => ({
   getUserLocale: jest.fn().mockResolvedValue('de'),
   bulkGetUserLocales: (...args: any[]) => bulkGetUserLocalesMock(...args),
+}));
+jest.mock('../src/services/oasis-event-service', () => ({
+  emitOasisEvent: (...args: any[]) => emitOasisEventMock(...args),
 }));
 process.env.SUPABASE_URL = 'https://example.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE = 'service-role-key';
@@ -108,6 +112,7 @@ const realFetch = (global as any).fetch;
 beforeEach(() => {
   delete process.env.WHATS_NEW_AUTOPUBLISH;
   notifyUserMock.mockReset().mockResolvedValue({ pushed: 1, inapp: true });
+  emitOasisEventMock.mockClear();
   bulkGetUserLocalesMock.mockReset().mockResolvedValue(new Map([['u1', 'de'], ['u2', 'en']]));
 });
 afterAll(() => {
@@ -148,6 +153,13 @@ describe('POST /whats-new', () => {
     expect(notifyUserMock).toHaveBeenCalledTimes(2);
     expect(notifyUserMock.mock.calls[0][4]).toBeDefined();
     expect(updatedAnnouncement).toHaveProperty('notified_at');
+    // OASIS: one state-transition event per published card, never per poll.
+    expect(emitOasisEventMock).toHaveBeenCalledTimes(1);
+    expect(emitOasisEventMock.mock.calls[0][0]).toMatchObject({
+      type: 'notification.whats_new.dispatched',
+      vtid: 'VTID-04733',
+      payload: { entry: 'feat-a', announcement_id: 'ann-1', dispatched: 2 },
+    });
   });
 
   it('never re-announces an entry already recorded for the tenant', async () => {
@@ -159,6 +171,7 @@ describe('POST /whats-new', () => {
     expect(r.body).toMatchObject({ ok: true, skipped: 'nothing_new' });
     expect(inserted).toBeNull();
     expect(notifyUserMock).not.toHaveBeenCalled();
+    expect(emitOasisEventMock).not.toHaveBeenCalled();
   });
 
   it('publishes at most one card per gap', async () => {
