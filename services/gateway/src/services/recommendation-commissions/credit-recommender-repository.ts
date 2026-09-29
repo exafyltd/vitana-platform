@@ -76,6 +76,21 @@ export async function reverseRecommendationCommissionRpc(sb: SupabaseClient, ord
   return sb.rpc('reverse_recommendation_commission', { p_order_id: orderId, p_reason: reason });
 }
 
+/**
+ * VTID-04741: a reversed commission whose order is a sale again goes back to
+ * `pending` (guarded on `reversed`, so only one caller reopens it). A reversed
+ * row was never paid, so no ledger entry is touched; the amount and rate stay
+ * as recorded.
+ */
+export async function reopenReversedCommission(sb: SupabaseClient, id: string, confirmAfter: string) {
+  return sb
+    .from('recommendation_commissions')
+    .update({ status: 'pending', confirm_after: confirmAfter, reversed_at: null, reversal_reason: null })
+    .eq('id', id)
+    .eq('status', 'reversed')
+    .select('id');
+}
+
 /** VTID-04740: the referrer frozen on the click at redirect time. */
 export async function fetchClickReferrer(sb: SupabaseClient, clickId: string) {
   return sb.from('product_clicks').select('referrer_user_id').eq('click_id', clickId).maybeSingle();

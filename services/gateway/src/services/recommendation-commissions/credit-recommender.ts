@@ -88,6 +88,36 @@ async function payThroughConfirm(
   return { ok: true, status: 'pending', message: outcome.status };
 }
 
+async function reopenReversed(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  commissionId: string,
+  networkConfirmed: boolean,
+  orderId: string,
+): Promise<CreditRecommenderResult> {
+  let confirmAfter = new Date().toISOString();
+  if (!networkConfirmed) {
+    const days = await loadReturnWindowDays(supabase);
+    if (days === null) return { ok: false, status: 'failed', message: 'RETURN_WINDOW_LOOKUP_FAILED' };
+    confirmAfter = new Date(Date.now() + days * DAY_MS).toISOString();
+  }
+  const { data: reopened, error } = await repo.reopenReversedCommission(supabase, commissionId, confirmAfter);
+  if (error) {
+    console.error(`[credit-recommender] reopen failed for order=${orderId}: ${error.message}`);
+    return { ok: false, status: 'failed', message: 'REOPEN_FAILED' };
+  }
+  if (!reopened || (Array.isArray(reopened) && reopened.length === 0)) return { ok: true, status: 'already_credited' };
+  await repo.insertCommissionSkippedIneligibleEvent(supabase, {
+    service: 'discover', source: 'recommendation-commissions',
+    type: 'marketplace.recommendation.commission_reopened',
+    topic: 'marketplace.recommendation.commission_reopened',
+    status: 'info', message: 'reversed commission reopened: the order is a sale again',
+    metadata: { orderId, commissionId, networkConfirmed },
+    created_at: new Date().toISOString(),
+  }).then(() => {}, () => {});
+  if (!networkConfirmed) return { ok: true, status: 'pending', message: `reopened; confirms after ${confirmAfter}` };
+  return payThroughConfirm(supabase, commissionId, undefined);
+}
+
 async function loadDefaultRate(supabase: ReturnType<typeof getSupabase>): Promise<number> {
   if (!supabase) return DEFAULT_RATE;
   const { data } = await repo.fetchDefaultCommissionRateSetting(supabase);
@@ -141,6 +171,10 @@ export async function creditRecommenderForOrder(
   if (existing) {
     // A held commission whose sale the network has now approved is paid now.
     if (opts.networkConfirmed && existing.status === 'pending') return payThroughConfirm(supabase, existing.id, undefined);
+    // A commission reversed while the order was undone, whose order is a sale
+    // again (this function runs only for converted orders): reopen it, or the
+    // sale stays unpaid for good (one commission per order).
+    if (existing.status === 'reversed') return reopenReversed(supabase, existing.id, !!opts.networkConfirmed, orderId);
     return { ok: true, status: 'already_credited' };
   }
 
@@ -371,6 +405,7 @@ async function confirmOne(
   if (REVERSING_ORDER_STATES.has(order.state)) {
     const r = await reverseRecommendationCommissionForOrder(row.product_order_id, `order_${order.state}`);
     if (r.status === 'reversed') result.reversed++;
+    else if (!r.ok) result.failed++; // still pending, not reversed: never report it as fine
     return;
   }
   if (order.state !== 'converted') return; // not final yet; examined again next run

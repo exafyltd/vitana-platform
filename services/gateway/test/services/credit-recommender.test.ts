@@ -39,6 +39,7 @@ const mockFetchDuePendingCommissions = jest.fn();
 const mockConfirmRpc = jest.fn();
 const mockReverseRpc = jest.fn();
 const mockFetchClickReferrer = jest.fn();
+const mockReopenReversed = jest.fn();
 
 jest.mock('../../src/services/recommendation-commissions/credit-recommender-repository', () => ({
   fetchProductOrderForCommission: (...args: unknown[]) => mockFetchProductOrderForCommission(...args),
@@ -54,6 +55,7 @@ jest.mock('../../src/services/recommendation-commissions/credit-recommender-repo
   confirmRecommendationCommissionRpc: (...args: unknown[]) => mockConfirmRpc(...args),
   reverseRecommendationCommissionRpc: (...args: unknown[]) => mockReverseRpc(...args),
   fetchClickReferrer: (...args: unknown[]) => mockFetchClickReferrer(...args),
+  reopenReversedCommission: (...args: unknown[]) => mockReopenReversed(...args),
 }));
 
 const mockFetchExcluded = jest.fn();
@@ -154,6 +156,43 @@ describe('creditRecommenderForOrder — network-approved path (paid through the 
     expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'credited', payout_minor: undefined });
     expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-held');
     expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+  });
+
+  it('a reversed commission whose order is a sale again is reopened and, network-approved, paid through the transaction', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockReopenReversed.mockResolvedValue({ data: [{ id: 'rc-rev' }], error: null });
+    mockInsertEvent.mockResolvedValue({ error: null });
+    const before = Date.now();
+
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'credited', payout_minor: undefined });
+    const [, id, confirmAfter] = mockReopenReversed.mock.calls[0];
+    expect(id).toBe('rc-rev');
+    expect(Date.parse(confirmAfter)).toBeGreaterThanOrEqual(before - 1000);
+    expect(Date.parse(confirmAfter)).toBeLessThanOrEqual(Date.now());
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-rev');
+    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({ type: 'marketplace.recommendation.commission_reopened' }));
+    expect(mockInsertRecommendationCommission).not.toHaveBeenCalled();
+  });
+
+  it('a reopened commission not approved by a network is held again for the return window', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockReopenReversed.mockResolvedValue({ data: [{ id: 'rc-rev' }], error: null });
+    mockInsertEvent.mockResolvedValue({ error: null });
+    mockFetchReturnWindowSetting.mockResolvedValue({ data: { value: { days: 14 } }, error: null });
+
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, status: 'pending' }));
+    expect(Math.round((Date.parse(mockReopenReversed.mock.calls[0][2]) - Date.now()) / 86400000)).toBe(14);
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
+  });
+
+  it('a reversed commission another caller already reopened is left alone', async () => {
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: { id: 'rc-rev', status: 'reversed' }, error: null });
+    mockReopenReversed.mockResolvedValue({ data: [], error: null });
+
+    expect(await creditRecommenderForOrder('order-1', NET)).toEqual({ ok: true, status: 'already_credited' });
+    expect(mockConfirmRpc).not.toHaveBeenCalled();
   });
 
   it('an existing final commission short-circuits (already_credited)', async () => {
@@ -451,6 +490,16 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     expect(r).toEqual({ ok: true, examined: 1, credited: 0, reversed: 1, failed: 0 });
     expect(mockConfirmRpc).not.toHaveBeenCalled();
     expect(mockReverseRpc).toHaveBeenCalledWith(SB, 'order-1', `order_${state}`);
+  });
+
+  it('confirm: a reversal that fails is counted as failed, never reported as fine', async () => {
+    dueRows([PENDING_ROW]);
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state: 'refunded' }, error: null });
+    mockReverseRpc.mockResolvedValue({ data: null, error: { message: 'timeout' } });
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 1 });
+    errorSpy.mockRestore();
   });
 
   it('confirm: an order that is not final yet is left for the next run', async () => {

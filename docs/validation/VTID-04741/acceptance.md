@@ -56,6 +56,8 @@ AC-12: the DB function closing or skipping a row (excluded payee, order a cancel
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-13: a reversal whose order is a sale again changes nothing (`order_not_reversing`); each confirmation run starts at a random id and wraps around; the row cap stops a run.
   TEST: services/gateway/test/services/credit-recommender.test.ts
+AC-14: a reversed commission whose order is a sale again is reopened (guarded, one caller) and paid through the transaction when network-approved, else held for the window again; a failed reversal in the confirmation run counts as failed.
+  TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-11: commission OASIS events are written as rows `oasis_events` accepts (no `type`, `role` set).
   TEST: services/gateway/test/services/credit-recommender-repository-events.test.ts
 AC-6: the schema, the setting and the two functions are live (functions: SECURITY DEFINER, execute for `service_role` only) (checked read-only after applying, see `outputs/live-schema.txt`).
@@ -65,4 +67,4 @@ AC-6: the schema, the setting and the two functions are live (functions: SECURIT
 
 Commissions and wallet credits write money rows into the shared production database, so nothing is exercised on staging. The staging suite runs the tests.
 
-OASIS_PROOF: new event types `marketplace.recommendation.commission_reversed` and `marketplace.recommendation.commission_reversal_after_payout`, both asserted in `test/services/credit-recommender.test.ts`.
+OASIS_PROOF: new event types `marketplace.recommendation.commission_reversed`, `marketplace.recommendation.commission_reversal_after_payout` and `marketplace.recommendation.commission_reopened`, both asserted in `test/services/credit-recommender.test.ts`.
