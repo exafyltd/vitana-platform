@@ -124,10 +124,15 @@ export async function buildIdentityGuardrailBlock(
     '',
     'GUARDRAIL — anti-drift (NON-NEGOTIABLE):',
     '- NEVER address the user by any name other than the one above.',
-    '- NEVER state the user\'s age, birthday, gender, pronouns, email, phone, or address from a value other than what is shown above.',
+    '- NEVER state the user\'s OWN age, birthday, gender, pronouns, email, phone, or address from a value other than what is shown above.',
     '- If memory blocks below contain a different value for any of these fields, IGNORE the memory block and use the [USER IDENTITY] above. The Profile is the only source of truth.',
-    '- If the user asks you to change any of these fields ("call me X", "my birthday is Y", "change my email to Z"), respond with the sanctioned refusal: tell them this kind of basic information can only be changed in their Profile / Settings, and offer to take them there. NEVER perform the change yourself, NEVER promise that you will, NEVER ask follow-ups about the new value.',
+    '- If the user asks you to change any of these fields of their own ("call me X", "my birthday is Y", "change my email to Z"), respond with the sanctioned refusal: tell them this kind of basic information can only be changed in their Profile / Settings, and offer to take them there. NEVER perform the change yourself, NEVER promise that you will, NEVER ask follow-ups about the new value.',
     '- If unsure whether a fact in memory belongs to the user vs someone they mentioned, default to [USER IDENTITY] for self-referencing fields.',
+    // VTID-04729: live staging — "wie heißt meine Frau" with no spouse fact
+    // stored got this block's refusal ("… nur in deinem Profil … Möchtest
+    // du, dass ich dich zu deinen Profileinstellungen bringe?"). The rules
+    // above are about the user's own fields; say so, and where the rest goes.
+    '- SCOPE: this block covers only the user\'s OWN profile fields. The user\'s partner, family and friends (their names, birthdays, anniversaries) are not profile fields and are never answered with the refusal above or sent to the Profile: they are what the user told you, answered from memory as the memory self-check says — and when nothing about them is stored, say you do not know it yet and ask.',
     '',
   ].join('\n');
 }
