@@ -774,6 +774,11 @@ jobs:
 # (/nav-registry.json on the staging frontend). Falls back to the legacy
 # navigator when the registry resolver cannot run. Rollback: "false".
 #
+# VTID-04727 -- LEDGER_WRITE_AUTH_MODE=enforce, STAGING ONLY: the VTID
+# ledger's write routes require GATEWAY_SERVICE_TOKEN or an exafy_admin JWT.
+# Production runs the code default (log) until its logs show no unknown
+# callers. Rollback: "log" (or "off" in an emergency).
+#
 # VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
 # decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
 # spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
@@ -1004,7 +1009,7 @@ jobs:
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
                                                 "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
-                                                "FEEDBACK_AUTO_DISPATCH_ENABLED",
+                                                "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
                                                 "OPERATOR_MACHINE_AUTH_ENABLED",
@@ -1073,6 +1078,7 @@ jobs:
                           {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
                           {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
+                          {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
                           {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},

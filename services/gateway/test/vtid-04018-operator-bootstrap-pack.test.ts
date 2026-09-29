@@ -19,12 +19,14 @@ import {
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const REAL_CLAUDE_MD = fs.readFileSync(path.join(REPO_ROOT, 'CLAUDE.md'), 'utf8');
+// VTID-04728: the change log lives in docs/CHANGELOG.md since VTID-04253.
+const REAL_CHANGELOG = fs.readFileSync(path.join(REPO_ROOT, 'docs/CHANGELOG.md'), 'utf8');
 const REAL_SCHEMA = fs.readFileSync(path.join(REPO_ROOT, 'DATABASE_SCHEMA.md'), 'utf8');
 const REAL_PATH_MAP = fs.readFileSync(path.join(REPO_ROOT, 'config/service-path-map.json'), 'utf8');
 
 function deps(overrides: Partial<BootstrapDeps> = {}): BootstrapDeps {
   return {
-    readRepoFile: async (p) => (p === 'CLAUDE.md' ? REAL_CLAUDE_MD : p === 'DATABASE_SCHEMA.md' ? REAL_SCHEMA : REAL_PATH_MAP),
+    readRepoFile: async (p) => (p === 'CLAUDE.md' ? REAL_CLAUDE_MD : p === 'docs/CHANGELOG.md' ? REAL_CHANGELOG : p === 'DATABASE_SCHEMA.md' ? REAL_SCHEMA : REAL_PATH_MAP),
     listPlatformOpenPrs: async () => [{ repo: 'exafyltd/vitana-platform', number: 3387, title: 'W2 open-ended intake', branch: 'claude/x', ci: 'passing', mergeable: true }],
     listFrontendOpenPrs: async () => [{ repo: 'exafyltd/vitana-v1', number: 1102, title: 'mobile fix', branch: 'f' }],
     queryRecentEvents: async () => [{ topic: 'dev_autopilot.execution.pr_opened', status: 'success', message: 'Execution 4f5d7ea4 opened https://x', created_at: '2026-09-17T20:15:04.000Z' }],
@@ -45,7 +47,7 @@ describe('VTID-04018 pure renderers', () => {
   });
 
   it('compresses the newest change-log rows to one line each with date + VTID', () => {
-    const rows = extractChangelogRows(REAL_CLAUDE_MD, 5);
+    const rows = extractChangelogRows(REAL_CHANGELOG, 5);
     expect(rows).toHaveLength(5);
     expect(rows[0]).toMatch(/^2026-\d\d-\d\d VTID-\d{5}/);
     for (const r of rows) expect(r.length).toBeLessThanOrEqual(240 + 40);
@@ -148,22 +150,22 @@ describe('VTID-04018 sections, fail-open and cache', () => {
   it('caches the fetched sections for 5 minutes, coalesces concurrent builds, and renders the catalog per call', async () => {
     let now = 1_000_000;
     let reads = 0;
-    const d = deps({ readRepoFile: async (p) => { reads += 1; await new Promise((r) => setTimeout(r, 10)); return p === 'CLAUDE.md' ? REAL_CLAUDE_MD : p === 'DATABASE_SCHEMA.md' ? REAL_SCHEMA : REAL_PATH_MAP; }, now: () => now });
+    const d = deps({ readRepoFile: async (p) => { reads += 1; await new Promise((r) => setTimeout(r, 10)); return p === 'CLAUDE.md' ? REAL_CLAUDE_MD : p === 'docs/CHANGELOG.md' ? REAL_CHANGELOG : p === 'DATABASE_SCHEMA.md' ? REAL_SCHEMA : REAL_PATH_MAP; }, now: () => now });
     const env = d.env!;
     const [a, b] = await Promise.all([
       getOperatorBootstrapPack({ toolDefs: [{ name: 'dev_read_file', description: 'Read a file.' }], deps: d, env }),
       getOperatorBootstrapPack({ toolDefs: [{ name: 'autopilot_run_task', description: 'Run.' }], deps: d, env }),
     ]);
-    expect(reads).toBe(3); // one build: CLAUDE.md, path map, schema — not two
+    expect(reads).toBe(4); // one build: CLAUDE.md, docs/CHANGELOG.md, path map, schema — not two
     expect(a).toContain('- dev_read_file — Read a file.');
     expect(b).toContain('- autopilot_run_task — Run.');
     expect(b).not.toContain('- dev_read_file —');
     now += BOOTSTRAP_TTL_MS - 1;
     await getOperatorBootstrapPack({ toolDefs: [], deps: d, env });
-    expect(reads).toBe(3);
+    expect(reads).toBe(4);
     now += 2;
     await getOperatorBootstrapPack({ toolDefs: [], deps: d, env });
-    expect(reads).toBe(6);
+    expect(reads).toBe(8);
   });
 
   it('never throws — a broken deps set fails open to an empty pack', async () => {
