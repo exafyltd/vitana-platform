@@ -42,8 +42,16 @@ jest.mock('../../src/services/recommendation-commissions/credit-recommender-repo
   fetchMerchantCommissionEligibility: (...args: unknown[]) => mockFetchMerchantCommissionEligibility(...args),
   fetchRecommenderWalletAccount: (...args: unknown[]) => mockFetchRecommenderWalletAccount(...args),
   insertRecommendationCommission: (...args: unknown[]) => mockInsertRecommendationCommission(...args),
+  insertCommissionSkippedIneligibleEvent: (...args: unknown[]) => mockInsertEvent(...args),
   incrementProductRecommendationStats: (...args: unknown[]) => mockIncrementProductRecommendationStats(...args),
 }));
+
+const mockFetchExcluded = jest.fn();
+jest.mock('../../src/lib/excluded-test-service-accounts', () => ({
+  fetchExcludedTestServiceAccountIds: (...args: unknown[]) => mockFetchExcluded(...args),
+}));
+
+const mockInsertEvent = jest.fn();
 
 import { creditRecommenderForOrder } from '../../src/services/recommendation-commissions/credit-recommender';
 
@@ -55,7 +63,10 @@ const ORDER = {
   commission_cents: 1000,
   merchant_id: 'merch-1',
   currency: 'eur',
+  product_id: 'prod-1',
+  user_id: 'buyer-1',
 };
+const REC = { id: 'rec-1', user_id: 'recommender-1', product_id: 'prod-1', status: 'active' };
 
 describe('creditRecommenderForOrder — successful-credit path error handling', () => {
   let warnSpy: jest.SpyInstance;
@@ -64,7 +75,8 @@ describe('creditRecommenderForOrder — successful-credit path error handling', 
     jest.clearAllMocks();
     mockGetSupabase.mockReturnValue(SB);
     mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
-    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { id: 'rec-1', user_id: 'recommender-1' }, error: null });
+    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
+    mockFetchExcluded.mockResolvedValue(new Set());
     mockFetchMerchantCommissionEligibility.mockResolvedValue({
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
@@ -139,7 +151,8 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
     mockGetSupabase.mockReturnValue(SB);
     mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
     mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
-    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { id: 'rec-1', user_id: 'recommender-1' }, error: null });
+    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
+    mockFetchExcluded.mockResolvedValue(new Set());
     mockFetchMerchantCommissionEligibility.mockResolvedValue({
       data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
       error: null,
@@ -208,5 +221,55 @@ describe('creditRecommenderForOrder — swallowed-error fixes (BOOTSTRAP-AURORA-
 
     expect(errorSpy).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_NOT_FOUND' });
+  });
+});
+
+describe('creditRecommenderForOrder — referral must count before anyone is paid (VTID-04735)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetSupabase.mockReturnValue(SB);
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: ORDER, error: null });
+    mockFetchExistingRecommendationCommission.mockResolvedValue({ data: null, error: null });
+    mockFetchProductRecommendationForCommission.mockResolvedValue({ data: REC, error: null });
+    mockFetchExcluded.mockResolvedValue(new Set());
+    mockFetchMerchantCommissionEligibility.mockResolvedValue({
+      data: { recommendation_commission_eligible: true, recommendation_commission_rate_override: 0.5 },
+      error: null,
+    });
+    mockFetchRecommenderWalletAccount.mockResolvedValue({ data: { id: 'acct-1' }, error: null });
+    mockCreditWalletForEarning.mockResolvedValue({ ok: true, ledger_entry_id: 'ledger-1' });
+    mockInsertRecommendationCommission.mockResolvedValue({ error: null });
+    mockInsertEvent.mockResolvedValue({ error: null });
+    mockIncrementProductRecommendationStats.mockResolvedValue({ error: null });
+  });
+
+  const cases: Array<[string, () => void, string]> = [
+    ['self-referral (the recommender bought it)', () => mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, user_id: 'recommender-1' }, error: null }), 'self_referral'],
+    ['a referral for another product', () => mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { ...REC, product_id: 'prod-other' }, error: null }), 'product_mismatch'],
+    ['a disabled referral', () => mockFetchProductRecommendationForCommission.mockResolvedValue({ data: { ...REC, status: 'disabled' }, error: null }), 'disabled'],
+    ['a test or service account as recommender', () => mockFetchExcluded.mockResolvedValue(new Set(['recommender-1'])), 'excluded_account'],
+  ];
+
+  it.each(cases)('%s: no wallet credit, a permanent skipped row with payout 0, and an OASIS event', async (_name, arrange, reason) => {
+    arrange();
+    const result = await creditRecommenderForOrder('order-1');
+
+    expect(result).toEqual({ ok: true, status: 'skipped_invalid_referral', message: reason });
+    expect(mockCreditWalletForEarning).not.toHaveBeenCalled();
+    expect(mockIncrementProductRecommendationStats).not.toHaveBeenCalled();
+    expect(mockInsertRecommendationCommission).toHaveBeenCalledWith(SB, expect.objectContaining({
+      product_order_id: 'order-1', status: 'skipped_ineligible', payout_amount_minor: 0,
+    }));
+    expect(mockInsertEvent).toHaveBeenCalledWith(SB, expect.objectContaining({
+      type: 'marketplace.recommendation.commission_skipped_invalid_referral',
+      metadata: expect.objectContaining({ reason }),
+    }));
+  });
+
+  it('an anonymous buyer (no user on the order) is not a self-referral: the valid referral is credited', async () => {
+    mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, user_id: null }, error: null });
+    const result = await creditRecommenderForOrder('order-1');
+    expect(result).toEqual({ ok: true, status: 'credited', payout_minor: 500 });
+    expect(mockCreditWalletForEarning).toHaveBeenCalledTimes(1);
   });
 });
