@@ -93,6 +93,8 @@ function deriveAllocationTitle(
  * - DB control 'vtid_allocator_enabled' is enabled AND not expired
  */
 router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: pre-existing handler — VTID-04727 only added its auth
+  // middleware. That it emits no OASIS event is an older gap, tracked separately.
   // VTID-01181: Check DB-backed control state (with caching and expiry)
   const allocatorEnabled = await isVtidAllocatorEnabled();
   console.log(`[VTID-0542] Allocate request received, env=${VTID_ALLOCATOR_ENABLED_ENV}, dbEnabled=${allocatorEnabled}`);
@@ -498,6 +500,8 @@ interface AtomicCreateResult {
 }
 
 router.post("/create", requireLedgerWriteAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: pre-existing handler — VTID-04727 only added its auth
+  // middleware. That it emits no OASIS event is an older gap, tracked separately.
   try {
     const body = VtidCreateSchema.parse(req.body);
     const { supabaseUrl, svcKey } = getSupabaseConfig();
