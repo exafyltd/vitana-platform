@@ -249,6 +249,10 @@ const KEY_SYNONYMS: Record<string, string> = {
   mutter: 'mother', mama: 'mother', mom: 'mother', vater: 'father', papa: 'father', dad: 'father',
   sohn: 'son', tochter: 'daughter', kind: 'child', kids: 'child', children: 'child',
   hund: 'dog', katze: 'cat', haustier: 'pet',
+  // VTID-04748: inflected forms the member used live ("den Namen meines
+  // Hundes"), and the company words of VTID-04749.
+  hunde: 'dog', hundes: 'dog', katzen: 'cat', haustiers: 'pet', namen: 'name', vorname: 'first_name',
+  firma: 'company', firmenname: 'company_name', unternehmen: 'company', employer: 'company',
   lieblingsessen: 'favorite_food', lieblingsfarbe: 'favorite_color', lieblings: 'favorite', favourite: 'favorite',
   // VTID-04639: German key words the voice model used live for facts the
   // extractor stored under English keys.
@@ -262,7 +266,7 @@ const KEY_SYNONYMS: Record<string, string> = {
 // the English key (rewriting "work_address" to "job_address" would change it).
 const ENGLISH_SYNONYM_SOURCES = new Set([
   'bday', 'birth', 'dob', 'sibling', 'wife', 'husband', 'partner', 'fiancee', 'mom', 'dad',
-  'kids', 'children', 'favourite', 'allergies', 'allergic', 'work', 'occupation',
+  'kids', 'children', 'favourite', 'allergies', 'allergic', 'work', 'occupation', 'employer',
 ]);
 
 /**

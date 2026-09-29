@@ -357,20 +357,37 @@ export class NovaOutputNormalizer {
    */
   private turnCompleteEmitted = false;
   /**
-   * VTID-04736: set when the gateway sends a tool result. Nova's answer to a
-   * tool result is a new turn, but it opens with an ASSISTANT block, which
-   * (by VTID-03592) never re-arms the latch — so when the model spoke a
-   * filler line ("let me check…") around the tool call, the filler's END_TURN
-   * used the latch and the answer's END_TURN was swallowed. isModelSpeaking
-   * then stayed true and the 20s audio-stall watchdog killed and reconnected
-   * the session (production live-cbda9130, 2026-09-29). The first SPECULATIVE
-   * ASSISTANT block after a tool result starts the answer and re-arms it.
+   * VTID-04736 / VTID-04747: the gateway just sent Nova something it answers —
+   * a tool result, or a text note (a memory backstop, the muted-leak
+   * recovery). That answer is a new turn, but it opens with an ASSISTANT
+   * block, which (VTID-03592) never re-arms the latch. So the answer's
+   * END_TURN was swallowed whenever the latch was already used: by a filler
+   * line spoken around a tool call, or by the turn the note followed.
+   * isModelSpeaking then stayed true — the display said "Vitana spricht"
+   * while she was silent — and the 20s audio-stall watchdog killed and
+   * reconnected the session (production live-cbda9130 and live-11ec418b,
+   * 2026-09-29).
+   *
+   * Re-arm at the first SPECULATIVE assistant block after the send, once.
+   * Never on a FINAL block: that is the tail of the turn in flight. When the
+   * filler's own SPECULATIVE block starts after the send (an instant tool
+   * result) this still misses; the session layer's soft turn end
+   * (VTID-04747, soft-turn-end.ts) covers that and any other lost END_TURN.
    */
-  private awaitingToolAnswer = false;
+  private awaitingAnswer = false;
 
-  /** VTID-04736: the gateway just sent a tool result; see awaitingToolAnswer. */
+  /** The gateway sent a tool result or a text note; see awaitingAnswer. */
+  noteClientTurnSent(): void {
+    this.awaitingAnswer = true;
+  }
+
+  /** @deprecated VTID-04736 name; use noteClientTurnSent. */
   noteToolResultSent(): void {
-    this.awaitingToolAnswer = true;
+    this.noteClientTurnSent();
+  }
+
+  private markTurnComplete(): void {
+    this.turnCompleteEmitted = true;
   }
 
   normalize(raw: unknown): NovaNormalizedEvent[] {
@@ -429,10 +446,10 @@ export class NovaOutputNormalizer {
       // turn is unaffected.
       if ((meta.role ?? '').toUpperCase() !== 'ASSISTANT') {
         this.turnCompleteEmitted = false;
-      } else if (this.awaitingToolAnswer && meta.generationStage === 'SPECULATIVE') {
-        // VTID-04736: the answer to a tool result is a new turn. A FINAL
-        // block is still the tail of the filler, so only SPECULATIVE counts.
-        this.awaitingToolAnswer = false;
+      } else if (this.awaitingAnswer && meta.generationStage === 'SPECULATIVE') {
+        // VTID-04736 / VTID-04747: the answer to a tool result or a text
+        // note is a new turn.
+        this.awaitingAnswer = false;
         this.turnCompleteEmitted = false;
       }
       out.push({ kind: 'ignored', eventName: 'contentStart' });
@@ -511,7 +528,7 @@ export class NovaOutputNormalizer {
         const ceId = (contentEnd.contentId as string) ?? (contentEnd.contentName as string) ?? '';
         const ceMeta = this.contentMeta.get(ceId);
         if (ceMeta?.role === 'ASSISTANT' && !this.turnCompleteEmitted) {
-          this.turnCompleteEmitted = true;
+          this.markTurnComplete();
           out.push({ kind: 'turnComplete' });
         } else {
           out.push({ kind: 'ignored', eventName: 'contentEnd' });
@@ -525,7 +542,7 @@ export class NovaOutputNormalizer {
     if (completionEnd) {
       const stopReason = completionEnd.stopReason as string | undefined;
       if ((!stopReason || stopReason === 'END_TURN') && !this.turnCompleteEmitted) {
-        this.turnCompleteEmitted = true;
+        this.markTurnComplete();
         out.push({ kind: 'turnComplete' });
       } else {
         out.push({ kind: 'ignored', eventName: 'completionEnd' });

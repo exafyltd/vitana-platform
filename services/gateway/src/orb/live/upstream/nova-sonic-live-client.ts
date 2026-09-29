@@ -861,6 +861,9 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     this.queue.push(buildTextInput({ promptName: this.promptName, contentName, content: text }));
     this.queue.push(buildContentEnd({ promptName: this.promptName, contentName }));
     this.markInputAccepted();
+    // VTID-04747: Nova answers a text note as a new turn — let its END_TURN
+    // through even though the turn before it already completed.
+    this.normalizer.noteClientTurnSent();
     return true;
   }
 
@@ -907,7 +910,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     this.markInputAccepted();
     // VTID-04736: the answer to this result is a new turn — let its END_TURN
     // through even if a filler line already completed the previous one.
-    this.normalizer.noteToolResultSent();
+    this.normalizer.noteClientTurnSent();
     return true;
   }
 

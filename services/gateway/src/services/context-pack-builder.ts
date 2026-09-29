@@ -1465,7 +1465,10 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
     const nonFactHits = pack.memory_hits.filter(h => !h.category_key.startsWith('fact:'));
     if (nonFactHits.length > 0) {
       context += `<memory_context>\n`;
-      context += `The following information is from the user's personal memory:\n\n`;
+      // VTID-04750: these are notes and conversation excerpts, some of them
+      // old. Production 2026-09-29: the wife's birthday was stored as 1999
+      // (1997 replaced on 09-25), and Vitana said 1997 from an old excerpt.
+      context += `The following are notes and excerpts from earlier conversations with the user. They can be out of date: when one disagrees with a structured fact above, the structured fact is correct — use it and never the older note.\n\n`;
       for (const hit of nonFactHits) {
         context += `[${hit.category_key}] ${hit.content}\n`;
       }

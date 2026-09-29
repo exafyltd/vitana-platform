@@ -176,8 +176,9 @@ export function maybeRunForgetBackstop(
   if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
 
   const run = (async () => {
-    const { detectForgetIntent } = await import('../../../services/memory/memory-intent');
-    if (!detectForgetIntent(userText)) return null;
+    const { detectForgetIntent, detectLooseForgetIntent } = await import('../../../services/memory/memory-intent');
+    const strict = detectForgetIntent(userText);
+    if (!strict && !detectLooseForgetIntent(userText)) return null;
     const { runForgetFact, formatForgetFactResult } = await import('../../../services/memory/forget-fact');
     let deps = depsOverride;
     if (!deps) {
@@ -188,6 +189,9 @@ export function maybeRunForgetBackstop(
       deps = await buildForgetFactDeps(sb);
     }
     const result = await runForgetFact({ tenant_id: tenantId, user_id: userId, request: userText }, deps);
+    // VTID-04748: a loose "lösch…" that names no stored fact is someone else's
+    // business (a calendar entry, a message) — say nothing.
+    if (!strict && result.status === 'not_found') return null;
     ctx.deps.emitDiag(session, 'forget_backstop', {
       status: result.status,
       keys: result.forgotten.map((f) => f.fact_key),

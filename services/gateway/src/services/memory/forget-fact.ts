@@ -54,6 +54,7 @@ const REQUEST_WORDS = new Set([
   'aus', 'deinem', 'dem', 'gedächtnis', 'gedaechtnis', 'was', 'du', 'über', 'ueber', 'weißt', 'weisst', 'ich', 'habe',
   'hat', 'heißt', 'heisst', 'ist', 'sind', 'forget', 'please', 'that', 'about', 'what', 'you', 'know', 'delete',
   'olvida', 'que', 'zaboravi', 'da', 'moj', 'moja', 'und', 'and', 'wieder', 'auch', 'mal',
+  'löscht', 'löschst', 'loescht', 'speicher', 'komplett', 'entferne', 'entfernen', 'remove', 'erase',
 ]);
 
 const norm = (s: string) => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
@@ -82,6 +83,8 @@ export function matchFactsToForget(request: string, facts: ForgettableFact[]): {
 
   const want = requestTokens(request);
   if (want.size === 0) return { matches: [], ambiguous: false };
+  // VTID-04748: a dog or a cat is a pet — "user_pet_name" is the dog's name.
+  if (want.has('dog') || want.has('cat')) want.add('pet');
   const scored = usable
     .map((f) => {
       const have = keyTokens(f.fact_key);
@@ -93,8 +96,10 @@ export function matchFactsToForget(request: string, facts: ForgettableFact[]): {
   if (scored.length === 0) return { matches: [], ambiguous: false };
   const best = Math.max(...scored.map((x) => x.shared));
   const top = scored.filter((x) => x.shared === best);
-  const keys = new Set(top.map((x) => x.f.fact_key));
-  return { matches: top.map((x) => x.f), ambiguous: keys.size > 1 };
+  // VTID-04748: the same value under two keys ("hunde_name" and
+  // "user_pet_name" = Bello, production 2026-09-29) is one fact — forget both.
+  const values = new Set(top.map((x) => norm(x.f.fact_value)));
+  return { matches: top.map((x) => x.f), ambiguous: values.size > 1 };
 }
 
 export async function runForgetFact(

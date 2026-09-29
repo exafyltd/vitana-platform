@@ -297,15 +297,22 @@ async function _runRetrievalSearch(
         text: 'No relevant memories found for this query.',
       };
     }
-    const top = memoryHits.slice(0, 8);
+    // VTID-04750: stored facts first, and say that they win. Production
+    // 2026-09-29: an old conversation note (1997) beat the current stored
+    // birthday (1999).
+    const isFact = (h: { category_key?: string }) => String(h.category_key || '').startsWith('fact:');
+    const top = [...memoryHits.filter(isFact), ...memoryHits.filter((h) => !isFact(h))].slice(0, 8);
     let formatted = top
       .map((h) => `[${h.category_key || 'memory'}] ${(h.content || '').substring(0, 300)}`)
       .join('\n');
     if (formatted.length > MAX) formatted = formatted.substring(0, MAX) + '\n... (truncated)';
+    const note = top.some(isFact) && top.some((h) => !isFact(h))
+      ? '\n[fact:…] lines are the current stored values; other lines are older notes that can be out of date — when they disagree, the fact is correct.'
+      : '';
     return {
       ok: true,
       result: { items: top },
-      text: `Found ${top.length} relevant memories:\n${formatted}`,
+      text: `Found ${top.length} relevant memories:\n${formatted}${note}`,
     };
   }
 
