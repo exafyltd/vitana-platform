@@ -21,6 +21,7 @@
  */
 
 import type { ClientContext } from '../types';
+import { registerRuleForLang } from '../../../i18n/llm-locale';
 import { getPersonalityConfigSync } from '../../../services/ai-personality-service';
 import { getAwarenessConfigSync } from '../../../services/awareness-registry';
 import {
@@ -731,7 +732,7 @@ context and always answer as yourself. If you drift, re-anchor: "I'm Vitana."
 
   let instruction = `${roleHeader}${vitanaIdHeader}${nameHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
-LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
+LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.${registerRuleForLang(lang) ? `\n${registerRuleForLang(lang)}` : ''}
 
 VOICE STYLE: ${voiceStyle}
 

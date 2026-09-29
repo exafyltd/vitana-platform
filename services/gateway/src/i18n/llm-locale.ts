@@ -112,3 +112,22 @@ export function buildLocalizedSystemPromptForLang(
   if (!resolved) return basePrompt; // unsupported locale → don't constrain
   return buildLocalizedSystemPrompt(basePrompt, resolved);
 }
+
+/**
+ * VTID-04742: the register rule for a spoken or conversational prompt, as one
+ * line to put after its LANGUAGE line. Accepts an ISO code ('de', 'de-DE') or
+ * a language word ('German'). Empty for English and unknown languages.
+ *
+ * The voice prompts said "Respond ONLY in German" and nothing about du, so
+ * Nova chose for itself and often chose Sie — in greetings, and when it put an
+ * English tool result ("No relevant … for this query") into German
+ * ("… für Ihre Frage …"). Production 2026-09-26..29.
+ */
+export function registerRuleForLang(lang: string | null | undefined): string {
+  const resolved = resolveLocaleStrict((lang || '').toLowerCase());
+  const hint = resolved ? REGISTER_HINTS[resolved] : undefined;
+  if (!hint) return '';
+  // No quote marks: quoted exemplars in the guide blocks trip Nova's content
+  // filter (VTID-03674), and guided-topic-narration-prompt.test.ts pins that.
+  return `REGISTER: ${hint.replace(/"/g, '')} This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.`;
+}

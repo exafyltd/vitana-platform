@@ -26,6 +26,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { registerRuleForLang } from '../i18n/llm-locale';
 import {
   ContextPack,
   MemoryHit,
@@ -1681,5 +1682,6 @@ export function extractLanguageFromContextPack(pack: ContextPack): string | null
  */
 export function buildLanguageDirective(languageName: string | null): string {
   if (!languageName) return '';
-  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.\n`;
+  const register = registerRuleForLang(languageName);
+  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.${register ? `\n${register}` : ''}\n`;
 }
