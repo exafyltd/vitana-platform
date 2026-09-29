@@ -143,7 +143,7 @@ describe('VTID-04175 pack wiring', () => {
     });
     const first = await getOperatorBootstrapPack({ toolDefs: [{ name: 'a', description: 'A.' }], deps: d, env: envWithFlags(false, false) });
     const second = await getOperatorBootstrapPack({ toolDefs: [{ name: 'a', description: 'A.' }], deps: d, env: envWithFlags(true, true) });
-    expect(reads).toBe(3); // one build: CLAUDE.md, path map, schema — the flags are not a fetched source
+    expect(reads).toBe(4); // one build: CLAUDE.md, docs/CHANGELOG.md, path map, schema — the flags are not a fetched source
     expect(first).toContain(OFF_ALL);
     expect(second).toContain(ON_ALL);
     // Same cached build, so the rest of the pack is byte-identical.
