@@ -15,3 +15,6 @@ confirm_recommendation_commission: order row FOR UPDATE present, service_bot_acc
 
 # 2026-09-29, read-only after apply_migration vtid_04741_reverse_commission_order_recheck
 reverse_recommendation_commission: order row FOR UPDATE + order_not_reversing present, acl postgres,service_role
+
+# 2026-09-29, read-only after apply_migration vtid_04741_confirm_commission_refresh_terms
+confirm_recommendation_commission: refresh from order + order_no_commission present, acl postgres,service_role
