@@ -12,3 +12,6 @@ oasis_events: no `type` column, `role` NOT NULL; marketplace.recommendation.* ev
 
 # 2026-09-29, read-only after apply_migration vtid_04741_confirm_commission_order_lock_exclusions
 confirm_recommendation_commission: order row FOR UPDATE present, service_bot_accounts/notification_test_actors check present, acl postgres,service_role
+
+# 2026-09-29, read-only after apply_migration vtid_04741_reverse_commission_order_recheck
+reverse_recommendation_commission: order row FOR UPDATE + order_not_reversing present, acl postgres,service_role

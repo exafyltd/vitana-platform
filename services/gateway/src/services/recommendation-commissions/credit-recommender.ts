@@ -18,6 +18,7 @@
  * transaction).
  */
 
+import { randomUUID } from 'crypto';
 import { getSupabase } from '../../lib/supabase';
 import { fetchExcludedTestServiceAccountIdsStrict } from '../../lib/excluded-test-service-accounts';
 import * as repo from './credit-recommender-repository';
@@ -322,24 +323,37 @@ type DueCommissionRow = {
  * the order (ledger UNIQUE), so nothing is ever paid twice.
  *
  * Due rows are keyset-paged, so rows that stay pending (no wallet yet) never
- * hide the ones behind them; `maxRows` bounds one run.
+ * hide the ones behind them. `maxRows` bounds one run; each run starts at a
+ * random id and wraps around (ids above the start, then up to it), so when the
+ * cap is hit the next run covers a different stretch instead of the same
+ * lowest ids every time.
  */
-export async function confirmDueRecommendationCommissions(batchSize = 100, maxRows = 5000): Promise<ConfirmDueResult> {
+export async function confirmDueRecommendationCommissions(
+  batchSize = 100,
+  maxRows = 5000,
+  startId: string = randomUUID(),
+): Promise<ConfirmDueResult> {
   const supabase = getSupabase();
   const result: ConfirmDueResult = { ok: true, examined: 0, credited: 0, reversed: 0, failed: 0 };
   if (!supabase) return { ...result, ok: false, error: 'DB_UNAVAILABLE' };
 
   const nowIso = new Date().toISOString();
-  let afterId: string | null = null;
-  while (result.examined < maxRows) {
-    const { data: due, error } = await repo.fetchDuePendingCommissions(supabase, nowIso, batchSize, afterId);
-    if (error) return { ...result, ok: false, error: error.message };
-    const rows = (due ?? []) as DueCommissionRow[];
-    for (const row of rows) await confirmOne(supabase, row, result);
-    if (rows.length < batchSize) return result;
-    afterId = rows[rows.length - 1].id;
+  // Two passes: (startId, end], then [begin, startId].
+  for (const [firstAfter, upTo] of [[startId, null], [null, startId]] as Array<[string | null, string | null]>) {
+    let afterId = firstAfter;
+    for (;;) {
+      if (result.examined >= maxRows) {
+        console.warn(`[credit-recommender] confirm: stopped after ${maxRows} rows; the next run starts elsewhere`);
+        return result;
+      }
+      const { data: due, error } = await repo.fetchDuePendingCommissions(supabase, nowIso, batchSize, afterId, upTo);
+      if (error) return { ...result, ok: false, error: error.message };
+      const rows = (due ?? []) as DueCommissionRow[];
+      for (const row of rows) await confirmOne(supabase, row, result);
+      if (rows.length < batchSize) break;
+      afterId = rows[rows.length - 1].id;
+    }
   }
-  console.warn(`[credit-recommender] confirm: stopped after ${maxRows} rows; the rest are examined on the next run`);
   return result;
 }
 
@@ -375,7 +389,13 @@ async function confirmOne(
   if (outcome.status === 'credited') result.credited++;
 }
 
-export type ReverseCommissionStatus = 'reversed' | 'none' | 'already_final' | 'paid_needs_clawback' | 'failed';
+export type ReverseCommissionStatus =
+  | 'reversed'
+  | 'none'
+  | 'already_final'
+  | 'paid_needs_clawback'
+  | 'order_not_reversing' // the order is a sale again: nothing reversed
+  | 'failed';
 
 /**
  * Undoes the commission of an order that was refunded, cancelled or charged

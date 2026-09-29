@@ -38,16 +38,23 @@ export async function fetchReturnWindowSetting(sb: SupabaseClient) {
 
 /**
  * VTID-04741: one page of pending commissions whose return window has passed,
- * keyset-paged by id so rows that stay pending (e.g. no wallet yet) never hide
- * the ones behind them.
+ * keyset-paged by id (`afterId` exclusive, `upToId` inclusive) so rows that
+ * stay pending (e.g. no wallet yet) never hide the ones behind them.
  */
-export async function fetchDuePendingCommissions(sb: SupabaseClient, nowIso: string, limit: number, afterId: string | null = null) {
+export async function fetchDuePendingCommissions(
+  sb: SupabaseClient,
+  nowIso: string,
+  limit: number,
+  afterId: string | null = null,
+  upToId: string | null = null,
+) {
   let q = sb
     .from('recommendation_commissions')
     .select('id, product_order_id, product_recommendation_id, recommender_user_id, payout_amount_minor, currency, rate_applied, vitana_commission_cents')
     .eq('status', 'pending')
     .lte('confirm_after', nowIso);
   if (afterId) q = q.gt('id', afterId);
+  if (upToId) q = q.lte('id', upToId);
   return q.order('id', { ascending: true }).limit(limit);
 }
 

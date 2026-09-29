@@ -362,6 +362,12 @@ describe('VTID-04740: the referrer frozen on the click is the payee', () => {
   });
 });
 
+/** Due rows returned by the first pass (above the random start); the wrap-around pass finds none. */
+function dueRows(rows: unknown[]) {
+  mockFetchDuePendingCommissions.mockImplementation(async (_sb: unknown, _now: string, _limit: number, _after: string | null, upTo: string | null) =>
+    ({ data: upTo ? [] : rows, error: null }));
+}
+
 describe('VTID-04741: hold until the return window, then confirm or reverse', () => {
   const PENDING_ROW = {
     id: 'rc-1', product_order_id: 'order-1', product_recommendation_id: 'rec-1', recommender_user_id: 'recommender-1',
@@ -425,7 +431,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it('confirm: a due commission on a still-converted order is confirmed by the single-transaction DB function', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
 
     const r = await confirmDueRecommendationCommissions();
 
@@ -437,7 +443,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it.each(['refunded', 'cancelled', 'chargeback'])('confirm: an order %s during the window is reversed, never paid', async (state) => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
     mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state }, error: null });
 
     const r = await confirmDueRecommendationCommissions();
@@ -448,7 +454,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it('confirm: an order that is not final yet is left for the next run', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
     mockFetchProductOrderForCommission.mockResolvedValue({ data: { ...ORDER, state: 'pending' }, error: null });
 
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
@@ -456,7 +462,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it('confirm: a commitment the DB function refused (no wallet yet) or an RPC error counts as failed; the row stays pending and the next run pays it', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
     mockConfirmRpc
       .mockResolvedValueOnce({ data: { ok: false, error: 'RECOMMENDER_WALLET_NOT_FOUND' }, error: null })
       .mockResolvedValueOnce({ data: null, error: { message: 'connection reset' } });
@@ -470,7 +476,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it('confirm: a row a concurrent reversal already moved is not counted', async () => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
     mockConfirmRpc.mockResolvedValue({ data: { ok: true, status: 'not_pending', current_status: 'reversed' }, error: null });
 
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
@@ -480,7 +486,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     ['skipped_excluded_account', 'a payee registered as a test/service account during the hold'],
     ['order_not_converted', 'an order a cancellation locked first'],
   ])('confirm: the DB function closing or skipping a row (%s: %s) pays and counts nothing', async (status) => {
-    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    dueRows([PENDING_ROW]);
     mockConfirmRpc.mockResolvedValue({ data: { ok: true, status }, error: null });
 
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
@@ -492,17 +498,49 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     mockFetchDuePendingCommissions
       .mockResolvedValueOnce({ data: [stuck], error: null })
       .mockResolvedValueOnce({ data: [payable], error: null })
+      .mockResolvedValueOnce({ data: [], error: null })
       .mockResolvedValueOnce({ data: [], error: null });
     mockConfirmRpc.mockImplementation(async (_sb: unknown, id: string) =>
       ({ data: id === 'rc-a' ? { ok: false, error: 'RECOMMENDER_WALLET_NOT_FOUND' } : { ok: true, status: 'credited' }, error: null }));
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    const r = await confirmDueRecommendationCommissions(1);
+    const r = await confirmDueRecommendationCommissions(1, 5000, 'rc-0');
 
     expect(r).toEqual({ ok: true, examined: 2, credited: 1, reversed: 0, failed: 1 });
-    expect(mockFetchDuePendingCommissions.mock.calls.map((c) => c[3])).toEqual([null, 'rc-a', 'rc-b']);
+    // Pass 1 walks up from the start; pass 2 wraps around to it.
+    expect(mockFetchDuePendingCommissions.mock.calls.map((c) => [c[3], c[4]])).toEqual([
+      ['rc-0', null], ['rc-a', null], ['rc-b', null], [null, 'rc-0'],
+    ]);
     expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-b');
     errorSpy.mockRestore();
+  });
+
+  it('confirm: each run starts somewhere else, so the row cap never pins it to the same lowest ids', async () => {
+    const below = { ...PENDING_ROW, id: 'rc-low' };
+    mockFetchDuePendingCommissions.mockImplementation(async (_sb: unknown, _now: string, _limit: number, _after: string | null, upTo: string | null) =>
+      ({ data: upTo ? [below] : [], error: null }));
+
+    const r = await confirmDueRecommendationCommissions(100, 5000, 'rc-mid');
+
+    expect(r).toEqual({ ok: true, examined: 1, credited: 1, reversed: 0, failed: 0 });
+    expect(mockConfirmRpc).toHaveBeenCalledWith(SB, 'rc-low');
+    const [first] = mockFetchDuePendingCommissions.mock.calls;
+    expect(first[3]).toBe('rc-mid');
+    // Default start is random.
+    mockFetchDuePendingCommissions.mockClear();
+    await confirmDueRecommendationCommissions();
+    await confirmDueRecommendationCommissions();
+    const starts = mockFetchDuePendingCommissions.mock.calls.filter((c) => c[4] === null).map((c) => c[3]);
+    expect(new Set(starts).size).toBe(2);
+  });
+
+  it('confirm: stops at the row cap', async () => {
+    dueRows([{ ...PENDING_ROW, id: 'rc-x' }]);
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const r = await confirmDueRecommendationCommissions(1, 1, 'rc-0');
+    expect(r.examined).toBe(1);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('stopped after 1 rows'));
+    warnSpy.mockRestore();
   });
 
   it('confirm: a failed page read reports the error', async () => {
@@ -511,7 +549,7 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
   });
 
   it.each([
-    ['reversed'], ['none'], ['already_final'], ['paid_needs_clawback'],
+    ['reversed'], ['none'], ['already_final'], ['paid_needs_clawback'], ['order_not_reversing'],
   ])('reverse: passes the single-transaction DB function outcome through (%s)', async (status) => {
     mockReverseRpc.mockResolvedValue({ data: { ok: true, status }, error: null });
     expect(await reverseRecommendationCommissionForOrder('order-1', 'network_declined')).toEqual({ ok: true, status });
