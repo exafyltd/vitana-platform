@@ -883,8 +883,8 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 // WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
 // =============================================================================
 // public-route — called by EventBridge/Lambda (no JWT), same as the entries above.
-router.post('/whats-new', async (req: Request, res: Response) => {
-  if (process.env.WHATS_NEW_AUTOPUBLISH === 'false') {
+router.post('/whats-new', async (req: Request, res: Response) => { // public-route
+  if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
     return res.status(200).json({ ok: true, skipped: 'disabled' });
   }
   const tenantId = getTenantId(req);
