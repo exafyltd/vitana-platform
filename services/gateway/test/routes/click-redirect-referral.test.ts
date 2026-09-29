@@ -28,16 +28,16 @@ beforeEach(() => {
 
 describe('resolveClickReferral', () => {
   it('no rec_id: nothing to resolve, no lookup', async () => {
-    expect(await resolveClickReferral(SB, null, 'prod-1', null)).toEqual({ recommendationId: null, rejected: null });
+    expect(await resolveClickReferral(SB, null, 'prod-1', null)).toEqual({ recommendationId: null, referrerUserId: null, rejected: null });
     expect(mockFetchRec).not.toHaveBeenCalled();
   });
 
   it('keeps a valid referral', async () => {
-    expect(await resolveClickReferral(SB, ID, 'prod-1', 'buyer-1')).toEqual({ recommendationId: ID, rejected: null });
+    expect(await resolveClickReferral(SB, ID, 'prod-1', 'buyer-1')).toEqual({ recommendationId: ID, referrerUserId: 'recommender-1', rejected: null });
   });
 
   it('drops a malformed id without querying the database', async () => {
-    expect(await resolveClickReferral(SB, 'x; drop', 'prod-1', null)).toEqual({ recommendationId: null, rejected: 'malformed_id' });
+    expect(await resolveClickReferral(SB, 'x; drop', 'prod-1', null)).toEqual({ recommendationId: null, referrerUserId: null, rejected: 'malformed_id' });
     expect(mockFetchRec).not.toHaveBeenCalled();
   });
 
@@ -49,13 +49,13 @@ describe('resolveClickReferral', () => {
   ];
   it.each(cases)('drops a referral that does not count: %s', async (reason, arrange, buyer, product) => {
     arrange();
-    expect(await resolveClickReferral(SB, ID, product, buyer)).toEqual({ recommendationId: null, rejected: reason });
+    expect(await resolveClickReferral(SB, ID, product, buyer)).toEqual({ recommendationId: null, referrerUserId: null, rejected: reason });
   });
 
   it('keeps the referral as unverified when the lookup fails, so the redirect never depends on the database', async () => {
     mockFetchRec.mockResolvedValue({ data: null, error: { message: 'timeout' } });
-    expect(await resolveClickReferral(SB, ID, 'prod-1', null)).toEqual({ recommendationId: ID, rejected: 'unverified' });
+    expect(await resolveClickReferral(SB, ID, 'prod-1', null)).toEqual({ recommendationId: ID, referrerUserId: null, rejected: 'unverified' });
     mockFetchRec.mockRejectedValue(new Error('boom'));
-    expect(await resolveClickReferral(SB, ID, 'prod-1', null)).toEqual({ recommendationId: ID, rejected: 'unverified' });
+    expect(await resolveClickReferral(SB, ID, 'prod-1', null)).toEqual({ recommendationId: ID, referrerUserId: null, rejected: 'unverified' });
   });
 });

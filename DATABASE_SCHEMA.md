@@ -1234,6 +1234,14 @@ CREATE TABLE my_new_table (
 | 2026-09-24 | Added nullable `autopilot_recommendations.action` jsonb (`{kind, params}`, closed registry in `services/community-autopilot/action-registry.ts`; NULL = informational). Executing an action writes one `agent_runs` row (`plane='community_autopilot'`, `agent_id='community-autopilot'`, `idempotency_key='community_autopilot:<rec>:<kind>'`). Applied live. | Claude | VTID-04503 |
 | 2026-09-24 | Unique partial indexes `uq_referrals_referred_id` on `referrals(referred_id) WHERE referred_id IS NOT NULL` (one referral per member; the invite claim is idempotent on it) and `uq_sharing_links_member_invite` on `sharing_links(user_id) WHERE target_type='member_invite'` (one reusable personal invite link per member). Both tables had no duplicates. Migration `20260924200000_vtid_04508_invite_attribution.sql`. Applied live. | Claude | VTID-04508 |
 | 2026-09-24 | **Pending drop, not yet applied:** `autopilot_actions`, `autopilot_action_templates`, `automation_executions`, `autopilot_feedback` — 0 rows each (measured live), no dependent view or function, only FK into them is `autopilot_feedback → autopilot_actions`. Never written; Autopilot state is `autopilot_recommendations`, automation runs are `automation_runs`. Readers removed from the `fetch-user-context`, `get-proactive-context`, `analyze-patterns` and `request-account-deletion` edge functions (`exafyltd/vitana-v1`). Guarded migration `vitana-v1/supabase/migrations/20260924220000_vtid_04514_drop_dead_autopilot_tables.sql` refuses a table with rows; apply it only after those edge functions are deployed. `automation_rules` and `tenant_autopilot_runs` are kept (still read). | Claude | VTID-04514 |
+| 2026-09-29 | `product_clicks` gains `referrer_user_id` (recommender of the validated referral, stored on the click) and `attribution_rejected_reason` (why a `?rec_id=` was dropped, or `unverified`), plus partial index `idx_product_clicks_referrer`. `product_orders.user_id` becomes nullable so a signed-out buyer's sale can be attributed (RLS `user_id = auth.uid()` never matches NULL). Migration `20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | `product_orders.tenant_id` becomes nullable: a signed-out buyer's click records no tenant, and the Awin order sync copies the click's tenant onto the order, so without this the anonymous sale's upsert failed. NULL is the honest value for an unknown buyer's tenant; RLS on `product_orders` does not use `tenant_id`. Migration `20260929120200_vtid_04740_product_orders_tenant_nullable.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | RLS `product_clicks_select_own` narrowed to `user_id = auth.uid()`. It had also exposed every anonymous click (`user_id IS NULL`) to every authenticated user, and a click now carries `referrer_user_id`. No client reads the table; gateway reads use the service role. Migration `20260929120700_vtid_04740_product_clicks_select_own_only.sql`. | Claude | VTID-04740 |
+| 2026-09-29 | `recommendation_commissions.status` CHECK widened to `pending`/`credited`/`skipped_ineligible`/`failed`/`reversed`; new `confirm_after`, `confirmed_at`, `reversed_at`, `reversal_reason` and partial index `idx_recommendation_commissions_due`. A conversion the network has not approved is held `pending` until `confirm_after` (window from `admin_settings.recommendation_commission_return_window_days`, seeded `{"days":30}`), then credited or reversed; network-approved conversions (Awin) confirm at once. Migration `20260929120100_vtid_04741_recommendation_commission_hold.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | New functions `confirm_recommendation_commission(p_commission_id uuid)` and `reverse_recommendation_commission(p_order_id uuid, p_reason text)` (SECURITY DEFINER, `service_role` only, return `jsonb`). Each confirms or reverses a held commission in ONE transaction under a row lock. Confirm: re-check the order, `credit_wallet_for_earning`, status and stats. Reverse: `pending → reversed`, or a paid commission reported once, with its OASIS event in the same commit. No table changes. Migration `20260929120300_vtid_04741_commission_confirm_reverse_functions.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | `confirm_recommendation_commission` also locks the `product_orders` row (`FOR UPDATE`) when it re-checks that the order is still a sale, so a decline that commits first prevents payment. It also re-checks the payee against `service_bot_accounts` and `notification_test_actors`: an account registered as one during the hold is closed `skipped_ineligible` (`reversal_reason='excluded_account'`), never paid. CREATE OR REPLACE only. Migration `20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | `reverse_recommendation_commission` also locks the `product_orders` row and reverses or reports only while the order is still `refunded`/`cancelled`/`chargeback`; otherwise it returns `order_not_reversing` and changes nothing. The caller's read can be stale if a later sync has moved the order back to `converted`. CREATE OR REPLACE only. Migration `20260929120500_vtid_04741_reverse_commission_order_recheck.sql`. | Claude | VTID-04741 |
+| 2026-09-29 | At payment, `confirm_recommendation_commission` refreshes `payout_amount_minor`, `currency` and `vitana_commission_cents` from the order's current `commission_cents` and `currency`, at the row's recorded `rate_applied` (never today's settings). A network can correct an order after the pending row was written. It returns `order_no_commission` when the order no longer carries a commission. CREATE OR REPLACE only. Migration `20260929120600_vtid_04741_confirm_commission_refresh_terms.sql`. | Claude | VTID-04741 |
 
 ---
 
@@ -2107,6 +2115,19 @@ CREATE TABLE product_recommendations (
   UNIQUE (user_id, product_id)
 );
 ```
+
+**Commission lifecycle (VTID-04741):** `recommendation_commissions.status`
+is `pending` (held until `confirm_after`) → `credited` (paid to the wallet,
+`confirmed_at`), or `reversed` (order refunded/cancelled/charged back before
+payment, `reversed_at`/`reversal_reason`); `skipped_ineligible` and `failed`
+as before. Network-approved conversions confirm at once. A reversal after
+payment is reported as `marketplace.recommendation.commission_reversal_after_payout`,
+not clawed back (clawback policy is open, architecture D-11), and only once
+(marked by `reversal_reason` on the `credited` row). Confirm and reverse each
+run as one transaction under a row lock (`confirm_recommendation_commission`,
+`reverse_recommendation_commission`), so a crash never leaves a commission
+marked paid without money, and a confirm and a reversal of the same order
+serialize.
 
 **Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
 service-role full access. **All gateway routes use the service-role client,

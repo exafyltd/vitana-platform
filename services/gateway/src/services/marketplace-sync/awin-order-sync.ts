@@ -33,7 +33,11 @@
  */
 
 import { getSupabase } from '../../lib/supabase';
-import { creditRecommenderForOrder } from '../recommendation-commissions/credit-recommender';
+import {
+  confirmDueRecommendationCommissions,
+  creditRecommenderForOrder,
+  reverseRecommendationCommissionForOrder,
+} from '../recommendation-commissions/credit-recommender';
 import * as repo from './awin-order-sync-repository';
 
 const AWIN_API_BASE = 'https://api.awin.com';
@@ -197,11 +201,28 @@ export async function runAwinOrderSync(lookbackDays = 30): Promise<AwinOrderSync
     credited++;
 
     if (state === 'converted' && click.attribution_recommendation_id) {
-      await creditRecommenderForOrder(upserted.id).catch((e) =>
+      // Awin reports approved/confirmed/paid only after the retailer's return
+      // window, so the network has already confirmed this sale (VTID-04741).
+      await creditRecommenderForOrder(upserted.id, { networkConfirmed: true }).catch((e) =>
         console.error('[awin-order-sync] creditRecommenderForOrder failed (non-fatal):', e)
       );
     }
+    if (state === 'cancelled') {
+      // Declined after a conversion was recorded: never pay a held commission.
+      await reverseRecommendationCommissionForOrder(upserted.id, 'network_declined').catch((e) =>
+        console.error('[awin-order-sync] reverseRecommendationCommissionForOrder failed (non-fatal):', e)
+      );
+    }
   }
+
+  // Pay held commissions whose return window has passed (VTID-04741). The
+  // Awin sync is the job that already runs over conversions, so it confirms
+  // them too rather than needing a scheduler of its own.
+  const confirmed = await confirmDueRecommendationCommissions().catch((e) => {
+    console.error('[awin-order-sync] confirmDueRecommendationCommissions failed (non-fatal):', e);
+    return null;
+  });
+  if (confirmed) console.log(`[awin-order-sync] held commissions: examined ${confirmed.examined}, credited ${confirmed.credited}, reversed ${confirmed.reversed}, failed ${confirmed.failed}`);
 
   console.log(
     `[awin-order-sync] done — fetched ${txns.length}, attributed ${attributed}, credited ${credited}, unattributed ${unattributed}`
