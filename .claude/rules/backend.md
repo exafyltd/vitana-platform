@@ -921,6 +921,50 @@ only an engineer running a migration could drive — and flag it explicitly
 when a shortcut adds to the hand-seeded onboarding debt pile, rather than
 silently repeating it.
 
+### 13c-infra. Commerce is Vitanaland's supplier infrastructure (VTID-04732, owner direction 2026-09-29)
+
+Full design: `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (reuse
+map, target model, open legal/accounting decisions D-1..D-16). Commerce has
+four domains that share canonical IDs: **A** Supplier Registry, **B**
+Qualification & Compliance, **C** Offerings & Discover distribution, **D**
+Commercial & Referral Economics. North star: *live better, earn better* —
+make it easier for a trustworthy supplier to join, for a good offering to
+reach the right people, and for a community member to earn legitimately
+from making that connection.
+
+Standing rules for any Commerce change:
+
+1. **One supplier, one Supplier ID** (`partner_organizations` is the root;
+   immutable, sequence-assigned, never a name or email). AI/MCP and manual
+   onboarding are two ingestion channels into the same registry, never two
+   partner systems.
+2. **No "approved" boolean.** Eligibility is derived from configured
+   requirements and evidence; keep legal requirements, third-party
+   certifications, supplier declarations and marketplace standards
+   distinguishable, and never present a declaration as verified.
+   Requirements are data (rules by supplier type × vertical × jurisdiction ×
+   tenant × risk), not code constants.
+3. **AI prepares, rules decide, people decide the rest.** AI never marks
+   evidence verified where human verification is required; uncertainty
+   goes to the exception queue.
+4. **Commission never influences ranking or recommendations** — Discover,
+   search, ORB, autopilot and every health recommendation are computed with
+   no commission/earnings input. Commission never overrides eligibility,
+   safety, tenant policy or regulation.
+5. **Every commission amount states its basis** (percent of gross sale,
+   percent of commission pool, fixed amount); money is integer minor units,
+   rates are basis points; never an ambiguous `commission_percentage`.
+6. **Never recalculate history from current settings.** Store the rule
+   version and calculation snapshot on each commercial event; refunds and
+   changes are new append-only ledger entries.
+7. **Cross-tenant, tenant-aware**, and **no legal conclusions in code**
+   (merchant of record, tax, KYC, payout obligations are configuration set
+   after legal/accounting confirmation). Earning participants are not
+   employees.
+8. **Do not add a fifth wallet.** Member earnings belong in
+   `wallet_accounts`/`wallet_ledger_entries`; the legacy wallets are not
+   extended.
+
 ---
 
 ## 14. MEMORY & INTELLIGENCE ARCHITECTURE (VTID-01225)

@@ -3,6 +3,7 @@
 **VTID:** VTID-04330
 **Status:** Draft for review. Product decisions approved (2026-09-23); legal, compliance and accounting items are open (§14).
 **Scope:** `exafyltd/vitana-platform` (gateway, database) and `exafyltd/vitana-v1` (landing page, partner workspace)
+**Extended by:** `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (VTID-04732) — canonical Supplier ID, configurable qualification and evidence (replaces §7's fixed levels), commission rules and ledger (replaces §9's money model). Where they disagree on those topics, that document wins.
 **Supersedes, when implemented:** the operator-run steps in `docs/MERCHANT_ONBOARDING_RUNBOOK.md` and the manual `partner_registry` seeding pattern (VTID-03885)
 
 ---
