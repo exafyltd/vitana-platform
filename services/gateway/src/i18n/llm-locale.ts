@@ -127,5 +127,7 @@ export function registerRuleForLang(lang: string | null | undefined): string {
   const resolved = resolveLocaleStrict((lang || '').toLowerCase());
   const hint = resolved ? REGISTER_HINTS[resolved] : undefined;
   if (!hint) return '';
-  return `REGISTER: ${hint} This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.`;
+  // No quote marks: quoted exemplars in the guide blocks trip Nova's content
+  // filter (VTID-03674), and guided-topic-narration-prompt.test.ts pins that.
+  return `REGISTER: ${hint.replace(/"/g, '')} This applies to every sentence you say: greetings, answers, questions, and when you put a tool result into words. Never switch register mid-conversation.`;
 }

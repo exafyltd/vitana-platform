@@ -12,8 +12,8 @@
   "connect:anonymous-de": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "b427825088374f9e8335291c7dd97ef47890de8ee36daf2e6b4b76cff2627210",
-    "instruction_bytes": 8406,
+    "instruction_sha256": "9116fec5b23b614ca496b41569cf88e78b1c1285cb5c3ef80e69e6005dc79888",
+    "instruction_bytes": 8404,
     "tools_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "tools_bytes": 2,
     "tool_count": 0,
@@ -22,8 +22,8 @@
   "connect:authenticated-community-de-first-day": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "37ccc4923f8426ebd6a05ac0e611dab743a67b51ad208bca1633f80d92254c24",
-    "instruction_bytes": 20412,
+    "instruction_sha256": "9dd92d096ef1f41d3681baefafea4517b97cf5d758eb503525035ba440e11500",
+    "instruction_bytes": 20410,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -72,8 +72,8 @@
   "connect:guided-topic-de": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "3e66d8f88cc1807aba15d2503ff36e310b84852f9f105009633cd3fac64408d5",
-    "instruction_bytes": 21821,
+    "instruction_sha256": "0459826fdf4d65e7bd4b52a914e678dec361d767d145c899fc41adc1b9a16b78",
+    "instruction_bytes": 22066,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,

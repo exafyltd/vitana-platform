@@ -49,6 +49,9 @@ TEST: services/gateway/test/i18n/vtid-04742-voice-register-rule.test.ts
 AC-2: the live voice instruction carries the du rule right after LANGUAGE for German, and the text and specialist directives carry it too.
 TEST: services/gateway/test/i18n/vtid-04742-voice-register-rule.test.ts
 
+AC-2b: the guided-topic and journey-guide blocks carry it in every language branch, German included; the rule has no quote marks (VTID-03674: quoted exemplars trip Nova's filter).
+TEST: services/gateway/test/orb/live/instruction/vtid-04742-guided-register-instruction.test.ts
+
 AC-3: the voice payload snapshots differ only by the REGISTER line.
 TEST: services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.test.ts
 
