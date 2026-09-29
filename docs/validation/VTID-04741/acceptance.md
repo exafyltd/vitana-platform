@@ -24,7 +24,9 @@ This is plan step 4 of `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (
   - reverses on a later decline;
   - confirms due held commissions at the end of each run.
 - **Daily scheduled sync** (`POST /api/v1/internal/marketplace/sync/all`, run by `MARKETPLACE-SYNC-CRON.yml`) also confirms due held commissions. The Awin order sync is admin-triggered only, and checkout orders have no network to confirm them, so the scheduled run is what pays them.
-- **Bookkeeping follows the status transition.** Recommendation totals are counted only when the guarded `pending → credited` update lands. A pending row whose wallet credit exists is treated as paid on reversal, never reversed.
+- **Claim before paying.** The confirmer moves the row `pending → credited` (status-guarded) BEFORE the wallet credit. A concurrent reversal either wins that claim, so nothing is paid, or finds the row `credited` and reports it as paid, so a paid commission is never recorded as reversed. A failed wallet credit releases the claim back to `pending`. Recommendation totals are counted only after a claimed row is paid.
+- **Due rows are keyset-paged**, so rows that stay pending (no wallet yet) never hide the due commissions behind them.
+- **The after-payout exception is reported once per commission** (marked by `reversal_reason`), even though Awin re-pulls a declined transaction on every sync in its lookback window.
 
 ## Acceptance criteria
 
@@ -38,10 +40,14 @@ AC-4: an order refunded, cancelled or charged back during the window is reversed
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-5: a reversal after payment raises the after-payout warning event instead of being silent; a missing wallet stays pending.
   TEST: services/gateway/test/services/credit-recommender.test.ts
-AC-7: when the status update fails after the wallet credit, nothing is counted and the next run counts it once; a pending row already paid to the wallet is reported for clawback, not reversed.
+AC-7: the row is claimed before the wallet is paid; a failed claim pays nothing and the next run pays once; a row a concurrent reversal moved is never paid; a failed wallet credit releases the claim; a pending row already paid to the wallet is reported for clawback, not reversed.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-8: the daily all-networks scheduled sync confirms due held commissions, and a failure there does not fail the catalogue sync.
   TEST: services/gateway/test/routes/internal-marketplace-sync.test.ts
+AC-9: due rows are keyset-paged past rows that stay pending, so a recommender without a wallet never blocks later payouts.
+  TEST: services/gateway/test/services/credit-recommender.test.ts
+AC-10: the after-payout exception is reported once per commission, not on every re-pull of the declined transaction.
+  TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-6: the schema and setting are live (checked read-only after applying, see `outputs/live-schema.txt`).
   TEST: services/gateway/test/services/credit-recommender.test.ts
 

@@ -26,7 +26,7 @@ export async function fetchDefaultCommissionRateSetting(sb: SupabaseClient) {
 export async function fetchProductOrderForCommission(sb: SupabaseClient, orderId: string) {
   return sb
     .from('product_orders')
-    .select('id, state, commission_cents, currency, attribution_recommendation_id, merchant_id, product_id, user_id')
+    .select('id, state, commission_cents, currency, attribution_recommendation_id, merchant_id, product_id, user_id, click_id')
     .eq('id', orderId)
     .maybeSingle();
 }
@@ -36,15 +36,19 @@ export async function fetchReturnWindowSetting(sb: SupabaseClient) {
   return sb.from('admin_settings').select('value').eq('key', 'recommendation_commission_return_window_days').maybeSingle();
 }
 
-/** VTID-04741: pending commissions whose return window has passed, oldest first. */
-export async function fetchDuePendingCommissions(sb: SupabaseClient, nowIso: string, limit: number) {
-  return sb
+/**
+ * VTID-04741: one page of pending commissions whose return window has passed,
+ * keyset-paged by id so rows that stay pending (e.g. no wallet yet) never hide
+ * the ones behind them.
+ */
+export async function fetchDuePendingCommissions(sb: SupabaseClient, nowIso: string, limit: number, afterId: string | null = null) {
+  let q = sb
     .from('recommendation_commissions')
     .select('id, product_order_id, product_recommendation_id, recommender_user_id, payout_amount_minor, currency, rate_applied, vitana_commission_cents')
     .eq('status', 'pending')
-    .lte('confirm_after', nowIso)
-    .order('confirm_after', { ascending: true })
-    .limit(limit);
+    .lte('confirm_after', nowIso);
+  if (afterId) q = q.gt('id', afterId);
+  return q.order('id', { ascending: true }).limit(limit);
 }
 
 /** VTID-04741: moves a commission out of `expected` only if it is still there (no double transition). */
@@ -66,6 +70,24 @@ export async function fetchCommissionWalletEntry(sb: SupabaseClient, orderId: st
     .eq('reference_id', orderId)
     .limit(1)
     .maybeSingle();
+}
+
+/** VTID-04740: the referrer frozen on the click at redirect time. */
+export async function fetchClickReferrer(sb: SupabaseClient, clickId: string) {
+  return sb.from('product_clicks').select('referrer_user_id').eq('click_id', clickId).maybeSingle();
+}
+
+/**
+ * Records, once, that a paid commission's order was undone. Returns a row only
+ * the first time, so the after-payout exception is reported once per order.
+ */
+export async function markCommissionClawbackReported(sb: SupabaseClient, id: string, reason: string) {
+  return sb
+    .from('recommendation_commissions')
+    .update({ reversal_reason: reason })
+    .eq('id', id)
+    .is('reversal_reason', null)
+    .select('id');
 }
 
 export async function fetchExistingRecommendationCommission(sb: SupabaseClient, orderId: string) {

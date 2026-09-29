@@ -119,6 +119,19 @@ export async function creditRecommenderForOrder(
   }
   if (!recommendation) return { ok: true, status: 'skipped_no_recommendation' };
 
+  // VTID-04740: pay the referrer frozen on the click at redirect time, not
+  // whoever owns the recommendation when the sale is credited. Orders without
+  // a click (e.g. checkout) fall back to the recommendation's owner.
+  let payeeUserId: string = recommendation.user_id;
+  if (order.click_id) {
+    const { data: click, error: clickErr } = await repo.fetchClickReferrer(supabase, order.click_id);
+    if (clickErr) {
+      console.error(`[credit-recommender] fetchClickReferrer error for order=${orderId}: ${clickErr.message}`);
+      return { ok: false, status: 'failed', message: 'CLICK_LOOKUP_FAILED' };
+    }
+    if (click?.referrer_user_id) payeeUserId = click.referrer_user_id;
+  }
+
   const { data: merchant, error: merchantErr } = await repo.fetchMerchantCommissionEligibility(supabase, order.merchant_id);
   if (merchantErr) {
     // A real DB error here must NOT be evaluated as "merchant not eligible" —
@@ -149,7 +162,7 @@ export async function creditRecommenderForOrder(
   const verdict = validateReferral({
     recommendation: {
       id: recommendation.id,
-      user_id: recommendation.user_id,
+      user_id: payeeUserId,
       product_id: recommendation.product_id,
       status: recommendation.status,
     },
@@ -161,7 +174,7 @@ export async function creditRecommenderForOrder(
     await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
-      recommender_user_id: recommendation.user_id,
+      recommender_user_id: payeeUserId,
       vitana_commission_cents: order.commission_cents,
       rate_applied: rate,
       payout_amount_minor: 0,
@@ -173,7 +186,7 @@ export async function creditRecommenderForOrder(
       type: 'marketplace.recommendation.commission_skipped_invalid_referral',
       topic: 'marketplace.recommendation.commission_skipped_invalid_referral',
       status: 'info', message: `referral does not count: ${verdict.reason}`,
-      metadata: { orderId, recommendationId: recommendation.id, recommenderId: recommendation.user_id, reason: verdict.reason },
+      metadata: { orderId, recommendationId: recommendation.id, recommenderId: payeeUserId, reason: verdict.reason },
       created_at: new Date().toISOString(),
     }).then(() => {}, () => {});
     return { ok: true, status: 'skipped_invalid_referral', message: verdict.reason };
@@ -183,7 +196,7 @@ export async function creditRecommenderForOrder(
     await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
-      recommender_user_id: recommendation.user_id,
+      recommender_user_id: payeeUserId,
       vitana_commission_cents: order.commission_cents,
       rate_applied: rate,
       payout_amount_minor: payoutMinor,
@@ -195,7 +208,7 @@ export async function creditRecommenderForOrder(
       type: 'marketplace.recommendation.commission_skipped_ineligible',
       topic: 'marketplace.recommendation.commission_skipped_ineligible',
       status: 'info', message: 'merchant not eligible for recommendation commissions',
-      metadata: { orderId, merchantId: order.merchant_id, recommenderId: recommendation.user_id },
+      metadata: { orderId, merchantId: order.merchant_id, recommenderId: payeeUserId },
       created_at: new Date().toISOString(),
     }).then(() => {}, () => {});
     return { ok: true, status: 'skipped_ineligible' };
@@ -213,7 +226,7 @@ export async function creditRecommenderForOrder(
     const { error: pendingErr } = await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
-      recommender_user_id: recommendation.user_id,
+      recommender_user_id: payeeUserId,
       vitana_commission_cents: order.commission_cents,
       rate_applied: rate,
       payout_amount_minor: payoutMinor,
@@ -228,7 +241,7 @@ export async function creditRecommenderForOrder(
     return { ok: true, status: 'pending', payout_minor: payoutMinor, message: `confirms after ${confirmAfter}` };
   }
 
-  const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, recommendation.user_id, currency);
+  const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, payeeUserId, currency);
   if (accountErr) {
     console.error(`[credit-recommender] fetchRecommenderWalletAccount error for order=${orderId}: ${accountErr.message}`);
     return { ok: false, status: 'failed', message: 'RECOMMENDER_WALLET_LOOKUP_FAILED' };
@@ -251,7 +264,7 @@ export async function creditRecommenderForOrder(
     await repo.insertRecommendationCommission(supabase, {
       product_recommendation_id: recommendation.id,
       product_order_id: orderId,
-      recommender_user_id: recommendation.user_id,
+      recommender_user_id: payeeUserId,
       vitana_commission_cents: order.commission_cents,
       rate_applied: rate,
       payout_amount_minor: payoutMinor,
@@ -264,7 +277,7 @@ export async function creditRecommenderForOrder(
   const { error: recordErr } = await repo.insertRecommendationCommission(supabase, {
     product_recommendation_id: recommendation.id,
     product_order_id: orderId,
-    recommender_user_id: recommendation.user_id,
+    recommender_user_id: payeeUserId,
     vitana_commission_cents: order.commission_cents,
     rate_applied: rate,
     payout_amount_minor: payoutMinor,
@@ -304,94 +317,129 @@ export interface ConfirmDueResult {
   error?: string;
 }
 
+type DueCommissionRow = {
+  id: string;
+  product_order_id: string;
+  product_recommendation_id: string;
+  recommender_user_id: string;
+  payout_amount_minor: number;
+  currency: string;
+  rate_applied: number;
+  vitana_commission_cents: number;
+};
+
 /**
  * Pays every `pending` commission whose return window has passed, provided its
  * order is still a sale; reverses the ones whose order was undone meanwhile.
- * Idempotent: the wallet credit is keyed on the order (ledger UNIQUE), and each
- * row moves out of `pending` with a status-guarded update, so two concurrent
- * runs cannot pay the same commission twice.
+ *
+ * The row is CLAIMED (`pending → credited`, status-guarded) before the wallet
+ * is touched, so a concurrent reversal either wins the claim (nothing is paid)
+ * or finds the row `credited` and reports it as paid — a paid commission is
+ * never left recorded as reversed. If the wallet credit then fails, the claim
+ * is released back to `pending` for the next run. The wallet credit itself is
+ * keyed on the order (ledger UNIQUE), so a retry never pays twice.
+ *
+ * Due rows are keyset-paged, so rows that stay pending (no wallet yet) never
+ * hide the ones behind them; `maxRows` bounds one run.
  */
-export async function confirmDueRecommendationCommissions(limit = 100): Promise<ConfirmDueResult> {
+export async function confirmDueRecommendationCommissions(batchSize = 100, maxRows = 5000): Promise<ConfirmDueResult> {
   const supabase = getSupabase();
   const result: ConfirmDueResult = { ok: true, examined: 0, credited: 0, reversed: 0, failed: 0 };
   if (!supabase) return { ...result, ok: false, error: 'DB_UNAVAILABLE' };
 
-  const { data: due, error } = await repo.fetchDuePendingCommissions(supabase, new Date().toISOString(), limit);
-  if (error) return { ...result, ok: false, error: error.message };
-
-  for (const row of (due ?? []) as Array<{
-    id: string;
-    product_order_id: string;
-    product_recommendation_id: string;
-    recommender_user_id: string;
-    payout_amount_minor: number;
-    currency: string;
-    rate_applied: number;
-    vitana_commission_cents: number;
-  }>) {
-    result.examined++;
-    const { data: order, error: orderErr } = await repo.fetchProductOrderForCommission(supabase, row.product_order_id);
-    if (orderErr || !order) {
-      result.failed++;
-      continue;
-    }
-    if (REVERSING_ORDER_STATES.has(order.state)) {
-      const r = await reverseRecommendationCommissionForOrder(row.product_order_id, `order_${order.state}`);
-      if (r.status === 'reversed') result.reversed++;
-      continue;
-    }
-    if (order.state !== 'converted') continue; // not final yet; examined again next run
-
-    const currency = String(row.currency).toUpperCase();
-    if (currency !== 'EUR' && currency !== 'USD') {
-      result.failed++;
-      continue;
-    }
-    const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, row.recommender_user_id, currency);
-    if (accountErr || !account) {
-      // Stays pending: retried on the next run once the wallet exists.
-      console.error(`[credit-recommender] confirm: no wallet for recommender=${row.recommender_user_id} order=${row.product_order_id}`);
-      result.failed++;
-      continue;
-    }
-    const credit = await creditWalletForEarning({
-      account_id: account.id,
-      amount_minor: row.payout_amount_minor,
-      currency: currency as 'EUR' | 'USD',
-      reference_type: 'recommendation_commission',
-      reference_id: row.product_order_id,
-      description: 'Recommendation commission',
-      metadata: {
-        product_recommendation_id: row.product_recommendation_id,
-        rate_applied: row.rate_applied,
-        vitana_commission_cents: row.vitana_commission_cents,
-      },
-    });
-    if (!credit.ok) {
-      result.failed++;
-      continue;
-    }
-    const { data: updated, error: updErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'pending', {
-      status: 'credited',
-      confirmed_at: new Date().toISOString(),
-      wallet_ledger_entry_id: credit.ledger_entry_id ?? null,
-    });
-    // Bookkeeping follows the status transition, never the wallet call alone.
-    // The wallet credit is idempotent per order, so a row left pending here is
-    // retried next run and counted then, once.
-    if (updErr) {
-      console.error(`[credit-recommender] confirm: status update failed for ${row.id}: ${updErr.message}`);
-      result.failed++;
-      continue;
-    }
-    if (!updated || (Array.isArray(updated) && updated.length === 0)) continue; // another run finalised it
-    await repo.incrementProductRecommendationStats(supabase, {
-      p_recommendation_id: row.product_recommendation_id,
-      p_commission_earned_minor: row.payout_amount_minor,
-    });
-    result.credited++;
+  const nowIso = new Date().toISOString();
+  let afterId: string | null = null;
+  while (result.examined < maxRows) {
+    const { data: due, error } = await repo.fetchDuePendingCommissions(supabase, nowIso, batchSize, afterId);
+    if (error) return { ...result, ok: false, error: error.message };
+    const rows = (due ?? []) as DueCommissionRow[];
+    for (const row of rows) await confirmOne(supabase, row, result);
+    if (rows.length < batchSize) return result;
+    afterId = rows[rows.length - 1].id;
   }
+  console.warn(`[credit-recommender] confirm: stopped after ${maxRows} rows; the rest are examined on the next run`);
   return result;
+}
+
+async function confirmOne(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  row: DueCommissionRow,
+  result: ConfirmDueResult,
+): Promise<void> {
+  result.examined++;
+  const { data: order, error: orderErr } = await repo.fetchProductOrderForCommission(supabase, row.product_order_id);
+  if (orderErr || !order) {
+    result.failed++;
+    return;
+  }
+  if (REVERSING_ORDER_STATES.has(order.state)) {
+    const r = await reverseRecommendationCommissionForOrder(row.product_order_id, `order_${order.state}`);
+    if (r.status === 'reversed') result.reversed++;
+    return;
+  }
+  if (order.state !== 'converted') return; // not final yet; examined again next run
+
+  const currency = String(row.currency).toUpperCase();
+  if (currency !== 'EUR' && currency !== 'USD') {
+    result.failed++;
+    return;
+  }
+  const { data: account, error: accountErr } = await repo.fetchRecommenderWalletAccount(supabase, row.recommender_user_id, currency);
+  if (accountErr || !account) {
+    // Stays pending: retried on the next run once the wallet exists.
+    console.error(`[credit-recommender] confirm: no wallet for recommender=${row.recommender_user_id} order=${row.product_order_id}`);
+    result.failed++;
+    return;
+  }
+
+  // Claim before paying (see the function header).
+  const { data: claimed, error: claimErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'pending', {
+    status: 'credited',
+    confirmed_at: new Date().toISOString(),
+  });
+  if (claimErr) {
+    console.error(`[credit-recommender] confirm: claim failed for ${row.id}: ${claimErr.message}`);
+    result.failed++;
+    return;
+  }
+  if (!claimed || (Array.isArray(claimed) && claimed.length === 0)) return; // reversed or claimed elsewhere
+
+  const credit = await creditWalletForEarning({
+    account_id: account.id,
+    amount_minor: row.payout_amount_minor,
+    currency: currency as 'EUR' | 'USD',
+    reference_type: 'recommendation_commission',
+    reference_id: row.product_order_id,
+    description: 'Recommendation commission',
+    metadata: {
+      product_recommendation_id: row.product_recommendation_id,
+      rate_applied: row.rate_applied,
+      vitana_commission_cents: row.vitana_commission_cents,
+    },
+  });
+  if (!credit.ok) {
+    // Release the claim so the next run retries. If even that fails the row
+    // reads `credited` with no ledger entry: logged loudly, never silent.
+    const { error: releaseErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'credited', {
+      status: 'pending',
+      confirmed_at: null,
+    });
+    console.error(
+      `[credit-recommender] confirm: wallet credit failed for ${row.id} (${credit.error})` +
+        (releaseErr ? `; RELEASE FAILED, row is credited without a ledger entry: ${releaseErr.message}` : '; released to pending'),
+    );
+    result.failed++;
+    return;
+  }
+  const { error: ledgerErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'credited', {
+    wallet_ledger_entry_id: credit.ledger_entry_id ?? null,
+  });
+  if (ledgerErr) console.warn(`[credit-recommender] confirm: ledger id not recorded for ${row.id}: ${ledgerErr.message}`);
+  await repo.incrementProductRecommendationStats(supabase, {
+    p_recommendation_id: row.product_recommendation_id,
+    p_commission_earned_minor: row.payout_amount_minor,
+  });
+  result.credited++;
 }
 
 export type ReverseCommissionStatus = 'reversed' | 'none' | 'already_final' | 'paid_needs_clawback' | 'failed';
@@ -448,6 +496,13 @@ async function reportPaidNeedsClawback(
   commissionId: string,
   reason: string,
 ): Promise<{ ok: boolean; status: ReverseCommissionStatus }> {
+  // Awin re-pulls a declined transaction on every sync in its lookback
+  // window: the exception is reported once per commission, marked by
+  // reversal_reason. A failed mark still reports (a duplicate beats silence).
+  const { data: marked, error: markErr } = await repo.markCommissionClawbackReported(supabase, commissionId, reason);
+  if (!markErr && (!marked || (Array.isArray(marked) && marked.length === 0))) {
+    return { ok: true, status: 'paid_needs_clawback' }; // already reported
+  }
   await repo.insertCommissionSkippedIneligibleEvent(supabase, {
     service: 'discover', source: 'recommendation-commissions',
     type: 'marketplace.recommendation.commission_reversal_after_payout',
