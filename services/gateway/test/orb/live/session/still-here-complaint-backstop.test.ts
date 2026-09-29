@@ -154,6 +154,11 @@ describe('VTID-03824: still-here-complaint backstop fires through the real handl
     const session = makeSession({ clientWs });
     const { deps, client } = makeContext({ session });
 
+    // VTID-04737: a complaint only after the member asked Vitana to stop.
+    client.emitTranscript({ direction: 'input', text: 'hör auf zu reden', isFinal: true });
+    client.emitTurnComplete({});
+    expect(deps.dispatchEndConversationDirective).not.toHaveBeenCalled();
+
     client.emitTranscript({ direction: 'input', text: 'du bist immer noch da', isFinal: true });
     client.emitTurnComplete({});
 
@@ -191,6 +196,11 @@ describe('VTID-03824: still-here-complaint backstop fires through the real handl
     const session = makeSession({ clientWs });
     const { deps, client } = makeContext({ session });
 
+    // VTID-04737: a complaint only after the member asked Vitana to stop.
+    client.emitTranscript({ direction: 'input', text: 'hör auf zu reden', isFinal: true });
+    client.emitTurnComplete({});
+    expect(deps.dispatchEndConversationDirective).not.toHaveBeenCalled();
+
     client.emitTranscript({ direction: 'input', text: 'du bist immer noch da', isFinal: true });
     client.emitTurnComplete({});
     client.emitTranscript({ direction: 'input', text: 'du bist immer noch da', isFinal: true });
@@ -211,6 +221,21 @@ describe('VTID-03824: still-here-complaint backstop fires through the real handl
     client.emitTurnComplete({});
 
     expect(deps.dispatchEndConversationDirective).not.toHaveBeenCalled();
+  });
+
+  it('VTID-04737: "bist du noch da?" with no earlier stop request keeps the conversation open', () => {
+    // Production live-cbda9130 (2026-09-29): asked after an audio stall.
+    const clientWs = { readyState: 1, send: jest.fn() };
+    const session = makeSession({ clientWs });
+    const { deps, client } = makeContext({ session });
+
+    client.emitTranscript({ direction: 'input', text: 'bist du noch da', isFinal: true });
+    client.emitTurnComplete({});
+    client.emitTranscript({ direction: 'input', text: 'hallo, du bist immer noch da?', isFinal: true });
+    client.emitTurnComplete({});
+
+    expect(deps.dispatchEndConversationDirective).not.toHaveBeenCalled();
+    expect(clientWs.send).not.toHaveBeenCalled();
   });
 
   it('does not fire when the session is already inactive', () => {

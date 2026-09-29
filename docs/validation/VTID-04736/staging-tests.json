@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04736",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/live/upstream/vtid-04736-tool-answer-turn-complete.test.ts test/orb/live/session/vtid-04738-tool-answer-thinking.test.ts test/orb/live/session/still-here-complaint-backstop.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pinned by unit tests built from the production session live-cbda9130; a read-only staging suite cannot speak to the voice model (the live voice suite, scripts/memory-verification/run-live.mjs, is run by hand on staging)"
+    }
+  ]
+}

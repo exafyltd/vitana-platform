@@ -356,6 +356,22 @@ export class NovaOutputNormalizer {
    * next content block starts (new generation activity).
    */
   private turnCompleteEmitted = false;
+  /**
+   * VTID-04736: set when the gateway sends a tool result. Nova's answer to a
+   * tool result is a new turn, but it opens with an ASSISTANT block, which
+   * (by VTID-03592) never re-arms the latch — so when the model spoke a
+   * filler line ("let me check…") around the tool call, the filler's END_TURN
+   * used the latch and the answer's END_TURN was swallowed. isModelSpeaking
+   * then stayed true and the 20s audio-stall watchdog killed and reconnected
+   * the session (production live-cbda9130, 2026-09-29). The first SPECULATIVE
+   * ASSISTANT block after a tool result starts the answer and re-arms it.
+   */
+  private awaitingToolAnswer = false;
+
+  /** VTID-04736: the gateway just sent a tool result; see awaitingToolAnswer. */
+  noteToolResultSent(): void {
+    this.awaitingToolAnswer = true;
+  }
 
   normalize(raw: unknown): NovaNormalizedEvent[] {
     const eventObj = (raw as { event?: Record<string, unknown> })?.event;
@@ -412,6 +428,11 @@ export class NovaOutputNormalizer {
       // any non-assistant, e.g. TOOL) blocks still reset, so a genuine next
       // turn is unaffected.
       if ((meta.role ?? '').toUpperCase() !== 'ASSISTANT') {
+        this.turnCompleteEmitted = false;
+      } else if (this.awaitingToolAnswer && meta.generationStage === 'SPECULATIVE') {
+        // VTID-04736: the answer to a tool result is a new turn. A FINAL
+        // block is still the tail of the filler, so only SPECULATIVE counts.
+        this.awaitingToolAnswer = false;
         this.turnCompleteEmitted = false;
       }
       out.push({ kind: 'ignored', eventName: 'contentStart' });
