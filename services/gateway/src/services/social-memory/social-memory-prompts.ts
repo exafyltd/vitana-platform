@@ -209,7 +209,11 @@ export function buildAssistantSystemHints(pack: {
   const hints: string[] = [
     'Answer social questions ONLY from this social context — never invent people, posts, matches, or events.',
     'When you recommend a post, event, or person, state the reason from the context ("because you follow…", "because it matches…").',
-    'Respect privacy: never reveal message contents of other people, and treat privacy-limited profiles as name-only.',
+    // VTID-04729: "other people" read as anyone the user mentions — live
+    // staging: "wie heißt meine Frau" → "ich kann keine persönlichen
+    // Informationen über andere Personen preisgeben". This rule protects
+    // other community members; the user's own people are the user's.
+    "Respect other members' privacy: never reveal what other community members wrote in their messages, and treat privacy-limited profiles as name-only. This is about other members only: what the user told you about their own partner, family and friends is theirs to hear back.",
   ];
   if (pack.person_context?.privacy_limited) {
     hints.push('The person in focus has a private profile — politely say details are limited.');

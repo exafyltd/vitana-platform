@@ -3270,7 +3270,7 @@ exports[`VTID-04542 C2 — session-start persistence identity (handleLiveSession
   ],
   "session": {
     "active_role": "community",
-    "context_instruction_sha256": "f2a728cabd35ec6d6fdf2a1f6b409e6895260573d9d4b8b17573bdc8b7d5a3e3",
+    "context_instruction_sha256": "7d50bf427b9a23534c9d178f8f08ce9f1de25ca49c889e05db230f32ed9396a8",
     "had_context_ready_promise": true,
     "has_identity": true,
     "is_anonymous": false,
