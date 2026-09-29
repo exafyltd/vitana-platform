@@ -371,12 +371,20 @@ export async function confirmDueRecommendationCommissions(limit = 100): Promise<
       result.failed++;
       continue;
     }
-    const { error: updErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'pending', {
+    const { data: updated, error: updErr } = await repo.updateCommissionIfStatus(supabase, row.id, 'pending', {
       status: 'credited',
       confirmed_at: new Date().toISOString(),
       wallet_ledger_entry_id: credit.ledger_entry_id ?? null,
     });
-    if (updErr) console.warn(`[credit-recommender] confirm: status update failed for ${row.id}: ${updErr.message}`);
+    // Bookkeeping follows the status transition, never the wallet call alone.
+    // The wallet credit is idempotent per order, so a row left pending here is
+    // retried next run and counted then, once.
+    if (updErr) {
+      console.error(`[credit-recommender] confirm: status update failed for ${row.id}: ${updErr.message}`);
+      result.failed++;
+      continue;
+    }
+    if (!updated || (Array.isArray(updated) && updated.length === 0)) continue; // another run finalised it
     await repo.incrementProductRecommendationStats(supabase, {
       p_recommendation_id: row.product_recommendation_id,
       p_commission_earned_minor: row.payout_amount_minor,
@@ -406,6 +414,11 @@ export async function reverseRecommendationCommissionForOrder(
   if (!existing) return { ok: true, status: 'none' };
 
   if (existing.status === 'pending') {
+    // A pending row whose wallet credit landed but whose status update did not
+    // has been paid: treat it as paid, never reverse it as if it were not.
+    const { data: paid, error: paidErr } = await repo.fetchCommissionWalletEntry(supabase, orderId);
+    if (paidErr) return { ok: false, status: 'failed' };
+    if (paid) return reportPaidNeedsClawback(supabase, orderId, existing.id, reason);
     const { data: updated, error: updErr } = await repo.updateCommissionIfStatus(supabase, existing.id, 'pending', {
       status: 'reversed',
       reversed_at: new Date().toISOString(),
@@ -424,17 +437,24 @@ export async function reverseRecommendationCommissionForOrder(
     return { ok: true, status: 'reversed' };
   }
 
-  if (existing.status === 'credited') {
-    await repo.insertCommissionSkippedIneligibleEvent(supabase, {
-      service: 'discover', source: 'recommendation-commissions',
-      type: 'marketplace.recommendation.commission_reversal_after_payout',
-      topic: 'marketplace.recommendation.commission_reversal_after_payout',
-      status: 'warning', message: `order undone after the commission was paid: ${reason}`,
-      metadata: { orderId, commissionId: existing.id, reason },
-      created_at: new Date().toISOString(),
-    }).then(() => {}, () => {});
-    return { ok: true, status: 'paid_needs_clawback' };
-  }
+  if (existing.status === 'credited') return reportPaidNeedsClawback(supabase, orderId, existing.id, reason);
 
   return { ok: true, status: 'already_final' };
+}
+
+async function reportPaidNeedsClawback(
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+  orderId: string,
+  commissionId: string,
+  reason: string,
+): Promise<{ ok: boolean; status: ReverseCommissionStatus }> {
+  await repo.insertCommissionSkippedIneligibleEvent(supabase, {
+    service: 'discover', source: 'recommendation-commissions',
+    type: 'marketplace.recommendation.commission_reversal_after_payout',
+    topic: 'marketplace.recommendation.commission_reversal_after_payout',
+    status: 'warning', message: `order undone after the commission was paid: ${reason}`,
+    metadata: { orderId, commissionId, reason },
+    created_at: new Date().toISOString(),
+  }).then(() => {}, () => {});
+  return { ok: true, status: 'paid_needs_clawback' };
 }

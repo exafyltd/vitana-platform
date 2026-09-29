@@ -57,6 +57,17 @@ export async function updateCommissionIfStatus(
   return sb.from('recommendation_commissions').update(patch).eq('id', id).eq('status', expected).select('id');
 }
 
+/** The wallet credit for an order's commission, if one was made (reference is the order id). */
+export async function fetchCommissionWalletEntry(sb: SupabaseClient, orderId: string) {
+  return sb
+    .from('wallet_ledger_entries')
+    .select('id')
+    .eq('reference_type', 'recommendation_commission')
+    .eq('reference_id', orderId)
+    .limit(1)
+    .maybeSingle();
+}
+
 export async function fetchExistingRecommendationCommission(sb: SupabaseClient, orderId: string) {
   return sb.from('recommendation_commissions').select('id, status').eq('product_order_id', orderId).maybeSingle();
 }
