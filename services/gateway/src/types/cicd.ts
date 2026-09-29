@@ -1063,6 +1063,8 @@ export type CicdEventType =
   | 'partner_org.verification_checked'
   // VTID-04488: onboarding catalogue step status
   | 'partner_org.catalogue_step_changed'
+  // VTID-04731: a partner organization imported its catalogue from CSV.
+  | 'partner_org.catalogue_imported'
   // VTID-04499: onboarding connections and mapping step
   | 'partner_org.connection_started'
   | 'partner_org.mapping_step_changed';
