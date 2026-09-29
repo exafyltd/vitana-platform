@@ -25,6 +25,7 @@ This is plan step 4 of `docs/COMMERCE-SUPPLIER-INFRASTRUCTURE-ARCHITECTURE.md` (
   - confirms due held commissions at the end of each run.
 - **Daily scheduled sync** (`POST /api/v1/internal/marketplace/sync/all`, run by `MARKETPLACE-SYNC-CRON.yml`) also confirms due held commissions. The Awin order sync is admin-triggered only, and checkout orders have no network to confirm them, so the scheduled run is what pays them.
 - **One transaction per step.** `confirm_recommendation_commission()` locks the commission row, re-checks that the order is still converted, credits the wallet (`credit_wallet_for_earning`), and marks the row `credited` and updates the stats, all in one transaction. A crash leaves the row `pending` for the next run. `reverse_recommendation_commission()` locks the same row, so a confirm and a reversal of one order serialize. A paid commission is never recorded as reversed.
+- **The order row is locked too, and the payee is re-checked.** At payment, confirm locks the order, so an Awin decline that commits first prevents payment. It also re-checks that the payee is not a test, service or automation account, because the check made when the commission was held can go stale over up to 30 days. Such a commission is closed as `skipped_ineligible` and never paid.
 - **Due rows are keyset-paged**, so rows that stay pending (no wallet yet) never hide the due commissions behind them.
 - **The after-payout exception is reported once per commission.** The `reversal_reason` marker and the OASIS event are written in the same transaction, so the warning can't be marked as sent while the event is lost.
 - **Commission OASIS events are actually written.** `oasis_events` has no `type` column and requires `role`, so the helper's inserts had been rejected and swallowed. None had ever been recorded. The helper now writes a valid row.
@@ -48,6 +49,8 @@ AC-8: the daily all-networks scheduled sync confirms due held commissions, and a
 AC-9: due rows are keyset-paged past rows that stay pending, so a recommender without a wallet never blocks later payouts.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-10: reversal goes through the single-transaction DB function (reversed / none / already_final / paid_needs_clawback passed through; an RPC error is `failed`, never done); the after-payout event is written once, together with its marker.
+  TEST: services/gateway/test/services/credit-recommender.test.ts
+AC-12: the DB function closing or skipping a row (excluded payee, order a cancellation locked first) pays and counts nothing.
   TEST: services/gateway/test/services/credit-recommender.test.ts
 AC-11: commission OASIS events are written as rows `oasis_events` accepts (no `type`, `role` set).
   TEST: services/gateway/test/services/credit-recommender-repository-events.test.ts

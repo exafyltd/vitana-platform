@@ -473,6 +473,16 @@ describe('VTID-04741: hold until the return window, then confirm or reverse', ()
     expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
   });
 
+  it.each([
+    ['skipped_excluded_account', 'a payee registered as a test/service account during the hold'],
+    ['order_not_converted', 'an order a cancellation locked first'],
+  ])('confirm: the DB function closing or skipping a row (%s: %s) pays and counts nothing', async (status) => {
+    mockFetchDuePendingCommissions.mockResolvedValue({ data: [PENDING_ROW], error: null });
+    mockConfirmRpc.mockResolvedValue({ data: { ok: true, status }, error: null });
+
+    expect(await confirmDueRecommendationCommissions()).toEqual({ ok: true, examined: 1, credited: 0, reversed: 0, failed: 0 });
+  });
+
   it('confirm: pages past rows that stay pending, so they never hide later due commissions', async () => {
     const stuck = { ...PENDING_ROW, id: 'rc-a' };
     const payable = { ...PENDING_ROW, id: 'rc-b', product_order_id: 'order-2' };

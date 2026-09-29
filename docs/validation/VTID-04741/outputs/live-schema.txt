@@ -9,3 +9,6 @@ live data before: 0 recommendation_commissions rows
 confirm_recommendation_commission(uuid): SECURITY DEFINER, acl postgres,service_role
 reverse_recommendation_commission(uuid,text): SECURITY DEFINER, acl postgres,service_role
 oasis_events: no `type` column, `role` NOT NULL; marketplace.recommendation.* events recorded to date: 0
+
+# 2026-09-29, read-only after apply_migration vtid_04741_confirm_commission_order_lock_exclusions
+confirm_recommendation_commission: order row FOR UPDATE present, service_bot_accounts/notification_test_actors check present, acl postgres,service_role
