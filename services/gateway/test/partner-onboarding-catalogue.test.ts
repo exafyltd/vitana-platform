@@ -374,6 +374,10 @@ describe('POST /:orgId/catalogue/products/import (VTID-04731)', () => {
     expect(w.products[1]).toMatchObject({ title: 'Magnesium, 400 mg', price_cents: 900, images: [], is_active: false });
     expect(w.products[0].source_product_id).toMatch(/^supplier_referral:m-1:/);
     expect(w.products[0].id).not.toBe(w.products[1].id);
+    // PGRST102: every object in a bulk insert must have the same keys.
+    const [a, b] = inserts()[0].args[0];
+    expect(Object.keys(a).sort()).toEqual(Object.keys(b).sort());
+    expect(a).toMatchObject({ description: null, brand: null, compare_at_price_cents: null, category: null, ships_to_regions: null });
     expect(stepUpserts()[0].args[0]).toMatchObject({ status: 'done', detail: { product_count: 2 } });
     const types = emitOasisEventMock.mock.calls.map((c) => c[0].type);
     expect(types).toEqual(['partner_org.catalogue_imported', 'partner_org.catalogue_step_changed']);

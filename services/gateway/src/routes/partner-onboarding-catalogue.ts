@@ -72,6 +72,16 @@ export const DEFAULT_VERTICAL_BY_TYPE: Readonly<Partial<Record<PartnerType, stri
 
 type CatalogueStatus = 'in_progress' | 'done';
 
+/** The optional product columns; all nullable with a NULL default. */
+const OPTIONAL_PRODUCT_NULLS = {
+  description: null,
+  brand: null,
+  compare_at_price_cents: null,
+  ships_to_countries: null,
+  ships_to_regions: null,
+  category: null,
+} as const;
+
 export function catalogueStepStatus(productCount: number): CatalogueStatus {
   return productCount > 0 ? 'done' : 'in_progress';
 }
@@ -364,6 +374,11 @@ router.post('/:orgId/catalogue/products/import', requireAuth, requireOrgAdmin(),
   }
 
   const drafts = parsed.rows.map(({ product }) => ({
+    // Every draft carries the same keys: a PostgREST bulk insert whose
+    // objects differ in keys is rejected with PGRST102 (VTID-04095). The
+    // optional columns are nullable with a NULL default, so null is what an
+    // omitted value means anyway.
+    ...OPTIONAL_PRODUCT_NULLS,
     id: randomUUID(),
     merchant_id: merchantId,
     source_network: SUPPLIER_SOURCE_NETWORK,
@@ -372,13 +387,9 @@ router.post('/:orgId/catalogue/products/import', requireAuth, requireOrgAdmin(),
     // Never live on the partner's own say-so.
     is_active: false,
   }));
-  // One statement: PostgREST inserts the array in a single transaction. A bulk
-  // insert sends the union of every row's keys, so a key one row omits goes in
-  // as NULL rather than the column default. That is safe here: the columns a
-  // row can omit (description, brand, compare_at_price_cents, category,
-  // ships_to_*) are nullable with a NULL default, and the NOT NULL ones
-  // (images, attributes, availability) always arrive through the schema's
-  // defaults (checked against the live table 2026-09-29).
+  // One statement: PostgREST inserts the array in a single transaction. The
+  // NOT NULL columns (images, attributes, availability) always arrive through
+  // the schema's defaults (checked against the live table 2026-09-29).
   const { data, error } = await s.from('products').insert(drafts).select(PRODUCT_FIELDS);
   if (error) return res.status(500).json({ ok: false, error: error.message });
 

@@ -28,6 +28,8 @@ import type { z } from 'zod';
 
 export const CSV_MAX_CHARS = 1_000_000;
 export const CSV_MAX_ROWS = 500;
+/** products.price_cents and compare_at_price_cents are Postgres `integer`. */
+export const MAX_PRICE_CENTS = 2_147_483_647;
 
 export type ProductDraft = z.infer<typeof ProductSchema>;
 
@@ -127,19 +129,24 @@ function money(
     errors.push({ line, field: cents, message: `give ${major} or ${cents}, not both` });
     return undefined;
   }
+  let value: number | null = null;
+  let field = major;
   if (m) {
-    const v = majorUnitsToCents(m);
-    if (v === null) errors.push({ line, field: major, message: `not a money amount: ${m}` });
-    return v ?? undefined;
+    value = majorUnitsToCents(m);
+    if (value === null) errors.push({ line, field: major, message: `not a money amount: ${m}` });
+  } else if (c) {
+    field = cents;
+    value = /^\d{1,11}$/.test(c) ? Number(c) : null;
+    if (value === null) errors.push({ line, field: cents, message: `not a whole number of cents: ${c}` });
   }
-  if (c) {
-    if (!/^\d{1,11}$/.test(c)) {
-      errors.push({ line, field: cents, message: `not a whole number of cents: ${c}` });
-      return undefined;
-    }
-    return Number(c);
+  if (value === null) return undefined;
+  // Checked here, not left to the insert: a dry run must reject what the
+  // real import would fail on.
+  if (value > MAX_PRICE_CENTS) {
+    errors.push({ line, field, message: `amount too large (max ${MAX_PRICE_CENTS} cents)` });
+    return undefined;
   }
-  return undefined;
+  return value;
 }
 
 export function parseCatalogueCsv(input: string): CsvImportResult {

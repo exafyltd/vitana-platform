@@ -6,6 +6,7 @@
 import {
   CSV_MAX_CHARS,
   CSV_MAX_ROWS,
+  MAX_PRICE_CENTS,
   majorUnitsToCents,
   parseCatalogueCsv,
   parseCsv,
@@ -66,6 +67,16 @@ describe('parseCatalogueCsv', () => {
     expect(ok.rows[0].product.price_cents).toBe(500);
     const both = parseCatalogueCsv(`title,price,price_cents,currency,affiliate_url,origin_country,ships_to_countries\nA,5,500,EUR,https://a.example,DE,DE`);
     expect(both.errors).toEqual([{ line: 2, field: 'price_cents', message: 'give price or price_cents, not both' }]);
+  });
+
+  it('rejects prices the integer column cannot hold, in both forms', () => {
+    const h = 'title,price,price_cents,currency,affiliate_url,origin_country,ships_to_countries';
+    const r = parseCatalogueCsv(`${h}\nA,21474836.47,,EUR,https://a.example,DE,DE\nB,21474836.48,,EUR,https://a.example,DE,DE\nC,,2147483648,EUR,https://a.example,DE,DE`);
+    expect(r.rows.map((x) => x.line)).toEqual([2]);
+    expect(r.errors).toEqual([
+      { line: 3, field: 'price', message: `amount too large (max ${MAX_PRICE_CENTS} cents)` },
+      { line: 4, field: 'price_cents', message: `amount too large (max ${MAX_PRICE_CENTS} cents)` },
+    ]);
   });
 
   it('reports schema errors per line and field, including the ships-to rule', () => {

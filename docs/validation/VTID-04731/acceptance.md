@@ -12,7 +12,9 @@ catalogue route (VTID-04488) deferred CSV upload to its own VTID; this is it.
   major units (`19.99` / `19,99`, converted by string, never a float) or
   `price_cents`, never both. Each row is judged by the supplier portal's own
   `ProductSchema`, so a CSV row can never be something the one-product form
-  refuses. Limits: 1,000,000 characters, 500 product rows.
+  refuses. Limits: 1,000,000 characters, 500 product rows, and prices no
+  larger than the `integer` columns hold (2,147,483,647 cents), checked in
+  validation so a dry run rejects what the real insert would fail on.
 - `POST /api/v1/partner-onboarding/:orgId/catalogue/products/import`
   (org_admin only, body `{ csv, dry_run? }`):
   - 409 `CATALOGUE_LOCKED` (rejected/suspended org), 409 `NO_MERCHANT`;
@@ -22,7 +24,9 @@ catalogue route (VTID-04488) deferred CSV upload to its own VTID; this is it.
     written (all or nothing);
   - otherwise one bulk insert of hidden drafts (`is_active: false`, the
     `supplier_referral` source network and key pattern of the single-product
-    route), a `partner_org.catalogue_imported` OASIS event, the catalogue
+    route; every draft carries the same keys, optional columns as `null`,
+    because PostgREST rejects a bulk insert with differing keys — PGRST102,
+    VTID-04095), a `partner_org.catalogue_imported` OASIS event, the catalogue
     step sync (plus `partner_org.catalogue_step_changed` when it moves), and
     201 with the refreshed onboarding state.
 
