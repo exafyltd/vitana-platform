@@ -1,7 +1,7 @@
 # Vitanaland Commerce — Supplier Infrastructure, Qualification and Referral Economics (Architecture)
 
 **VTID:** VTID-04732
-**Status:** Design for review. Owner direction received 2026-09-29 (sections 13–30 and the "Economic Opportunity & Community Income" mission). Nothing in this document is built yet; every new table below is a proposal. Legal, tax and accounting decisions are listed in §11 and are **not** assumed in any design choice.
+**Status:** Approved by the platform owner 2026-09-29 (direction: sections 13–30 and the "Economic Opportunity & Community Income" mission). Nothing in this document is built yet; each delivery step (§12) gets its own VTID and PR. The decisions in §11 remain open until answered. Legal, tax and accounting decisions are listed in §11 and are **not** assumed in any design choice.
 **Extends:** `docs/COMMERCE-SELF-SERVICE-PARTNER-ONBOARDING-SPEC.md` (VTID-04330). That spec stays the source for the onboarding engine, lifecycle, sales tracking and exception queues. This document adds the canonical Supplier ID, the configurable qualification layer, marketplace eligibility, and the commission and referral economics. Where the two disagree, this document wins for §7 (verification) and §9 (money) of the spec.
 **Method:** a read-only audit of both repositories (`vitana-platform`, `vitana-v1`) on 2026-09-29, `main` @ `1d9d2108`. §2 lists what exists and whether it is reused. New infrastructure is proposed only where §2 shows a genuine gap.
 
