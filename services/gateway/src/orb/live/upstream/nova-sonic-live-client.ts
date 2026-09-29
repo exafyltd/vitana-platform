@@ -905,6 +905,9 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     // matters for long tool round-trips, where a slow tool is the only thing
     // keeping the session from looking idle.
     this.markInputAccepted();
+    // VTID-04736: the answer to this result is a new turn — let its END_TURN
+    // through even if a filler line already completed the previous one.
+    this.normalizer.noteToolResultSent();
     return true;
   }
 
