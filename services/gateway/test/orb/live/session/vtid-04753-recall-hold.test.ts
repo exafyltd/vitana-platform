@@ -415,6 +415,53 @@ describe('VTID-04753 tool calls, fallbacks and switches', () => {
   });
 });
 
+// Staging 87b2483, session live-c1dd1efa: the hold armed but released this
+// after its first sentence — none of its words matched a refusal or detour.
+const LIVE_REFUSAL_87B =
+  'Tut mir leid, aber ich kann diese Information nicht geben, da sie nicht in meinem Speicher steht. Solche persönlichen Informationen kannst du nur in deinem Profil oder deinen Einstellungen ändern. Möchtest du, dass ich dich zu deinem Profil bringe, damit du die Informationen aktualisieren kannst?';
+
+describe('VTID-04753 staging 87b2483: the refusal that got through', () => {
+  it('its first sentence alone is already a refusal (held, whatever is stored)', () => {
+    const first = LIVE_REFUSAL_87B.split('. ')[0] + '.';
+    expect(judgeRecallReply('wie heißt meine frau', first, null)).toBe('suspect');
+    expect(judgeRecallReply('wie heißt meine frau', LIVE_REFUSAL_87B, NOTHING_STORED)).toBe('suspect');
+  });
+  it('each part is caught on its own: "nicht geben", "nicht in meinem Speicher", "im Profil ändern", "zu deinem Profil bringe"', () => {
+    const Q = 'wie heißt meine frau';
+    expect(judgeRecallReply(Q, 'Ich kann dir diese Information nicht geben.', NOTHING_STORED)).toBe('suspect');
+    expect(judgeRecallReply(Q, 'Das steht nicht in meinem Speicher.', OTHER_STORED)).toBe('suspect');
+    expect(judgeRecallReply(Q, 'Das kannst du in deinem Profil ändern.', NOTHING_STORED)).toBe('suspect');
+    expect(judgeRecallReply(Q, 'Soll ich dich zu deinem Profil bringen?', NOTHING_STORED)).toBe('suspect');
+  });
+  it('an apology opener is not released on its first sentence', () => {
+    expect(judgeRecallReply('wie heißt meine frau', 'Tut mir leid, das ist eine gute Frage.', null)).toBe('wait');
+  });
+  it('the full turn: held, dropped, and only the answer to the note is heard', async () => {
+    recallFacts.current = NOTHING_STORED;
+    const { client, callbacks, spokenText, notes, diag } = setup();
+    client.said('wie heißt meine frau');
+    await flush();
+    client.replies('Tut mir leid, aber ich kann diese Information nicht geben, da sie nicht in meinem Speicher steht. ');
+    client.audio(3);
+    client.replies('Solche persönlichen Informationen kannst du nur in deinem Profil oder deinen Einstellungen ändern.');
+    client.audio(3);
+    client.done();
+    await flush();
+    expect(callbacks.onAudioResponse).not.toHaveBeenCalled();
+    expect(spokenText()).not.toMatch(/Profil/);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/did not hear your previous answer/);
+    expect(diag('remember_hold_released')).toHaveLength(0);
+  });
+  it('a question about where the profile settings are still gets its answer live', () => {
+    const { client, callbacks } = setup();
+    client.said('wo kann ich meine einstellungen für erinnerungen und privatsphäre ändern');
+    client.replies('Ich kann dich zu den Datenschutzeinstellungen führen. Möchtest du, dass ich dich dorthin bringe?');
+    client.audio(2);
+    expect(callbacks.onAudioResponse).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('VTID-04753 judgeRecallReply mirrors the recall backstop', () => {
   const Q = 'wie heißt meine frau';
   it('suspect: refusals and detours, whatever is stored', () => {
