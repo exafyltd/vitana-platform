@@ -301,14 +301,24 @@ export function recallScore(question: string, fact: RecallFact): number {
   return score;
 }
 
+/** Facts the note can offer: member knowledge with a value, system keys left out. */
+export function usableRecallFacts(facts: RecallFact[]): RecallFact[] {
+  return (facts || []).filter((f) => f && f.fact_key && !SYSTEM_KEY.test(f.fact_key) && String(f.fact_value ?? '').trim());
+}
+
+// VTID-04753: the member did not hear the reply (the recall hold kept it
+// back), so the note's answer is their first one, not a correction.
+const HELD_REPLY =
+  'The member did not hear your previous answer, so give this as your answer to them; do not mention a correction or a previous answer.';
+
 /** The system note, or null when there is nothing stored to offer. */
 export function buildRecallBackstopNote(
   facts: RecallFact[],
   question = '',
   reason: 'denied' | 'about_me_vague' | 'unstored_date' = 'denied',
+  held = false,
 ): string | null {
-  const usable = facts
-    .filter((f) => f && f.fact_key && !SYSTEM_KEY.test(f.fact_key) && String(f.fact_value ?? '').trim())
+  const usable = usableRecallFacts(facts)
     // Matching facts first (stable: newest-first order is kept within a score).
     .map((f, i) => ({ f, i, s: recallScore(question, f) }))
     .sort((a, b) => b.s - a.s || a.i - b.i)
@@ -327,13 +337,15 @@ export function buildRecallBackstopNote(
     return [
       `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked for a date and your answer named a date that none of their stored facts carries. These are the member's current stored facts (key: value):`,
       ...lines,
-      "If one of them answers the question, correct your answer now in one short sentence, in the member's language — <name>_birthday is that person's birthday, spouse_birthday the partner's. If none of them answers it, say plainly that you got it wrong, that you do not have that date yet, and ask the member for it. Never guess a date.",
+      held
+        ? "If one of them answers the question, answer now in one short sentence, in the member's language — <name>_birthday is that person's birthday, spouse_birthday the partner's. If none of them answers it, say plainly that you do not have that date yet, and ask the member for it. Never guess a date. " + HELD_REPLY
+        : "If one of them answers the question, correct your answer now in one short sentence, in the member's language — <name>_birthday is that person's birthday, spouse_birthday the partner's. If none of them answers it, say plainly that you got it wrong, that you do not have that date yet, and ask the member for it. Never guess a date.",
     ].join('\n');
   }
   return [
     `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and your answer said you do not know it, refused it, or only promised to look. These are the member's current stored facts (key: value):`,
     ...lines,
-    'If one of them answers the question, give the answer now in one short sentence, in the member\'s language, and correct your previous answer plainly — a key names the meaning in English (user_pet_name is the member\'s pet, <name>_birthday is that person\'s birthday). If none of them answers it, say plainly that it is not stored yet and ask the member for it. Never cite privacy for what the member told you about themselves or their own people. Do not list the other facts.',
+    `If one of them answers the question, give the answer now in one short sentence, in the member's language${held ? '' : ', and correct your previous answer plainly'} — a key names the meaning in English (user_pet_name is the member's pet, <name>_birthday is that person's birthday). If none of them answers it, say plainly that it is not stored yet and ask the member for it. Never cite privacy for what the member told you about themselves or their own people. Do not list the other facts.${held ? ` ${HELD_REPLY}` : ''}`,
   ].join('\n');
 }
 
@@ -342,12 +354,15 @@ export function buildRecallBackstopNote(
  * grounds or named a date. "Not stored" was the honest answer; the model is
  * told to give that instead. Intent only, never a sentence to speak.
  */
-export function buildNothingStoredNote(reason: 'privacy_refusal' | 'unstored_date' | 'deflected'): string {
+export function buildNothingStoredNote(reason: 'privacy_refusal' | 'unstored_date' | 'deflected', held = false): string {
   const what =
     reason === 'unstored_date'
       ? 'your answer named a date, but nothing about it is stored — the date was a guess'
       : reason === 'deflected'
         ? 'your answer sent them to look it up in their profile or settings, but it is not there — nothing about it is stored yet'
         : 'your answer refused on privacy grounds, but what the member told you about themselves or their own people is never private from them — and nothing about it is stored yet';
+  if (held) {
+    return `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and ${what}. Answer now in one short sentence, in the member's language: say plainly that you do not have it yet, and ask the member for it so you can remember it. Never guess, and never cite privacy. ${HELD_REPLY}`;
+  }
   return `${REMEMBER_BACKSTOP_MARKER} System result, not said by the member: the member asked about something about themselves and ${what}. Correct your answer now in one short sentence, in the member's language: say plainly that you do not have it yet, and ask the member for it so you can remember it. Never guess, and never cite privacy.`;
 }
