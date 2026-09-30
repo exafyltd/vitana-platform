@@ -253,6 +253,9 @@ export function maybeRunRecallBackstop(
   if (!userText || userText.startsWith(REMEMBER_BACKSTOP_MARKER)) return null;
   // A remember request belongs to the remember backstop, never both.
   if (detectRememberIntent(userText)) return null;
+  // VTID-04753: the recall hold kept the reply back — the member heard none of
+  // it. Read now: the next turn_complete resets it.
+  const held = (session as any).recallReplyHeld === true;
 
   const run = (async () => {
     const {
@@ -310,18 +313,19 @@ export function maybeRunRecallBackstop(
     // With nothing usable stored, "not stored" was the honest answer — only a
     // privacy refusal or a guessed date needs correcting (VTID-04704).
     const note =
-      buildRecallBackstopNote(facts, userText, trigger) ??
+      buildRecallBackstopNote(facts, userText, trigger, held) ??
       (trigger === 'unstored_date'
-        ? buildNothingStoredNote('unstored_date')
+        ? buildNothingStoredNote('unstored_date', held)
         : trigger === 'denied' && privacy
-          ? buildNothingStoredNote('privacy_refusal')
+          ? buildNothingStoredNote('privacy_refusal', held)
           : trigger === 'denied' && deflected
-            ? buildNothingStoredNote('deflected')
+            ? buildNothingStoredNote('deflected', held)
             : null);
     ctx.deps.emitDiag(session, 'recall_backstop', {
       trigger: trigger === 'denied' && privacy ? 'privacy_refusal' : trigger === 'denied' && deflected ? 'deflected' : trigger,
       facts_offered: note ? facts.length : 0,
       injected: Boolean(note && session.active),
+      reply_held: held,
     });
     console.log(`[VTID-04692] recall backstop ${session.sessionId}: ${note ? `${facts.length} facts offered` : 'nothing stored'}`);
     if (note && session.active && session.upstreamClient) {
