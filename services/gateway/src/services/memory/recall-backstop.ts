@@ -72,6 +72,9 @@ const DENIES_OR_DEFERS = new RegExp(
     'nicht (gespeichert|finden|gefunden|hinterlegt|bekannt|vorhanden|notiert)',
     'keine (information|informationen|angabe|angaben|daten|ahnung)',
     'nicht in deine[nm]? ',
+    // VTID-04753: staging 87b2483 — "da sie nicht in meinem Speicher steht".
+    'nicht in meine[mn]? (speicher|aufzeichnungen|daten|gedächtnis|unterlagen|notizen)',
+    "(not|nothing) in my (memory|records|notes)",
     'weiß ich (leider )?nicht',
     'kann (ich )?(dir )?(leider )?(keine|nicht)',
     'leider (nicht|kein)',
@@ -121,6 +124,9 @@ const DENIES_OR_DEFERS = new RegExp(
 const CITES_PRIVACY = new RegExp(
   [
     'nicht (preisgeben|verraten|weitergeben|herausgeben|mitteilen|teilen)',
+    // VTID-04753: staging 87b2483, "wie heißt meine Frau" — "ich kann diese
+    // Information nicht geben".
+    '\\bkann (ich )?(dir )?(leider )?([\\wäöüß]+ ){0,3}nicht (geben|nennen|sagen|herausgeben)\\b',
     '(aus|wegen|aufgrund) (von )?(des |der |dem )?(datenschutz|privatsphäre)',
     'datenschutz(gründen|richtlinie|richtlinien|bestimmungen|regeln|vorgaben)',
     '(kann|darf|dürfen) .{0,40}(persönliche|private|vertrauliche|sensible)n? (information|informationen|daten|angaben|details)',
@@ -153,7 +159,13 @@ const DEFLECTS_TO_PROFILE = new RegExp(
     'muss (erst |zuerst )?auf dein(e|en)? (profil|profileinstellungen|einstellungen|daten)\\w* zugreifen',
     'wo du (diese|die|deine) (details|informationen|daten|angaben) (einsehen|nachsehen|finden)',
     '(in|zu) dein(em|en|er)? profil\\w* .{0,40}(einsehen|nachsehen|nachschauen|findest|finden)',
+    // VTID-04753: staging 87b2483 — "kannst du nur in deinem Profil oder deinen
+    // Einstellungen ändern. Möchtest du, dass ich dich zu deinem Profil bringe".
+    '(in|zu) dein(em|en|er)? (profil|profileinstellungen|einstellungen)\\w* .{0,60}(ändern|aktualisieren|bearbeiten|anpassen|eintragen|hinterlegen)',
+    '(zu|in) dein(em|en|e)? (profil|profileinstellungen|einstellungen)\\w* (zu )?(bringe|bringen|führe|führen|leite|leiten|weiterleite|weiterleiten)',
     '(check|look it up|find it|see it) in your (profile|settings)',
+    '(update|change|add) (it|this|that|them) in your (profile|settings)',
+    'take you to your (profile|settings)',
     'need to access your (profile|settings)',
   ].join('|'),
   'i',

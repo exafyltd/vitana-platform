@@ -86,6 +86,9 @@ export function isHeldRecallQuestion(said: string): boolean {
 }
 
 const SENTENCE_END = /[.!?](\s|$)/g;
+// An answer that opens with an apology is almost always a refusal or a "not
+// stored"; its first sentence alone is not enough to let it through.
+const APOLOGY_OPENER = /^\s*(tut mir leid|leider|entschuldig|sorry|i'?m sorry|unfortunately|lo siento|desafortunadamente|nažalost|izvini)/i;
 
 /**
  * What the recall backstop will make of this reply so far: `suspect` (it will
@@ -113,7 +116,7 @@ export function judgeRecallReply(question: string, reply: string, facts: RecallF
   const ends = (r.match(SENTENCE_END) || []).length;
   // A date question's date often comes in the second sentence ("Natürlich!
   // Sie hat am … Geburtstag.").
-  if (isDateQuestion) return ends >= 2 || r.length >= 160 ? 'clean' : 'wait';
+  if (isDateQuestion || APOLOGY_OPENER.test(r)) return ends >= 2 || r.length >= 160 ? 'clean' : 'wait';
   return (ends >= 1 && r.trim().length >= 20) || r.length >= 140 ? 'clean' : 'wait';
 }
 

@@ -40,3 +40,30 @@ TEST: services/gateway/test/orb/live/session/vtid-04702-remember-hold.test.ts
 1. Nothing stored: "wie heißt meine Frau". The member hears no refusal, profile or privacy wording, only "I don't have it yet, tell me". Expected diags: `remember_hold_armed{reason:recall_question}` → `recall_hold_suspect` → `recall_backstop{reply_held:true}` → `remember_hold_dropped{backstop_answered}`.
 2. Nothing stored: "erinnerst du dich an den Geburtstag meiner Frau". No invented date is heard.
 3. Navigation ("wo kann ich …" / "okay, mach das") and "Schluss" still work.
+
+## Staging run on 87b2483 (2026-09-30 16:10–16:28 UTC, test account, no spouse fact stored)
+
+| Run | Session | What happened | Member heard |
+|---|---|---|---|
+| H_name_1 | live-bb1a959b | armed → `recall_hold_suspect` (0.7 s) → `recall_backstop{denied, reply_held:true}` → dropped (3.0 s) | "Ich habe den Namen deiner Frau nicht gespeichert. Möchtest du ihn mir mitteilen…" |
+| H_bday_1 | live-c8f8183d | Speech-to-text split the question. The full question then armed the hold → suspect → dropped (3.8 s). | "…nicht in meinen Aufzeichnungen gefunden. Kannst du mir bitte den Geburtstag … mitteilen" |
+| H_name_3 | live-4ff265b6 | armed → suspect → dropped (2.9 s) | "Ich habe den Namen deiner Frau nicht gespeichert…" |
+| **H_name_4** | live-c1dd1efa | armed → **released `reply_clean` after 0.7 s**. The backstop did not fire. | **"Tut mir leid, aber ich kann diese Information nicht geben, da sie nicht in meinem Speicher steht. … in deinem Profil oder deinen Einstellungen ändern. Möchtest du, dass ich dich zu deinem Profil bringe…"** |
+| H_name_2, H_bday_2 | — | Speech-to-text garbled the audio ("meine frau", "gott stark meine"), so these runs are not a test of the hold. | — |
+| H_nav | live-dcea35ff | An app question, so the hold did not arm. The reply offered to navigate. | ok |
+| H_stop | live-6ba6b3cb | `end_conversation` | ok |
+
+The hold worked every time its detectors recognised the reply. H_name_4 got through because none of its words matched a refusal or a profile detour, and the backstop's detectors missed it too.
+
+## Follow-up: detectors widened (same VTID)
+
+- **Refusal:** "kann … nicht geben / nennen / sagen / herausgeben".
+- **Denial:** "nicht in meinem Speicher / meinen Aufzeichnungen …".
+- **Profile detour:**
+  - "in deinem Profil … ändern / aktualisieren / bearbeiten …";
+  - "zu deinem Profil bringe / führe …";
+  - the English equivalents.
+- **Apology opener:** a reply that opens with an apology ("Tut mir leid", "Leider" …) is not released on its first sentence alone.
+
+AC-6: The H_name_4 reply is held from its first sentence, dropped at turn_complete, and replaced by the answer to the backstop note. An app-settings question still plays live.
+TEST: services/gateway/test/orb/live/session/vtid-04753-recall-hold.test.ts
