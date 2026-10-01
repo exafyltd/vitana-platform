@@ -161,3 +161,26 @@ export async function fetchVoiceDiagEvents(sb: SupabaseClient, stages: readonly 
     .lt('created_at', untilIso)
     .limit(limit);
 }
+
+/** VTID-04825: Dev Autopilot executions that ended badly in a window (no tokens, no plan bodies). */
+export async function fetchEndedExecutions(sb: SupabaseClient, statuses: readonly string[], sinceIso: string, untilIso: string, limit = 200) {
+  return sb
+    .from('dev_autopilot_executions')
+    .select('id, status, failure_stage, metadata, updated_at')
+    .in('status', statuses as string[])
+    .gte('updated_at', sinceIso)
+    .lt('updated_at', untilIso)
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+}
+
+/** VTID-04825: one gate's rows in a window (verdict only), for the weekly roll-up. */
+export async function fetchShadowRowsByGate(sb: SupabaseClient, gate: string, sinceIso: string, untilIso: string, limit = 2000) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, subject_ref, decision, jev_verdict, created_at')
+    .eq('gate', gate)
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
