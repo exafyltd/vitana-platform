@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04760",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "name": "first-time welcome intent, LiveKit withholding, audiobook naming",
+      "ref": "npx jest test/services/assistant-continuation/providers/first-time-welcome test/nav-guided-journey.test.ts test/journey-modes-prompt.test.ts test/orb/routes/livekit-first-turn-single-source.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins the welcome as an intent rendered compositionally (NEVER-rule 41), never spoken verbatim by LiveKit, its Episode-1 CTA, and the Audiobook/Hörbuch naming in Vitana's knowledge and the navigate mode switch."
+    },
+    {
+      "kind": "existing",
+      "name": "greeting ladders and role matrix",
+      "ref": "npm run test:roles",
+      "cwd": "services/gateway",
+      "reason": "Rung 2 (first-time welcome) of the greeting ladder changed its intent; the role-separation suite pins both ladders."
+    }
+  ]
+}
