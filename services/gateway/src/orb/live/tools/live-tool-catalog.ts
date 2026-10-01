@@ -180,7 +180,9 @@ function applyCommandHubGate(tools: object[]): object[] {
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
         const name = typeof d?.name === 'string' ? d.name : '';
-        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+        // VTID-04814: the registry answers navigate on the Command Hub too,
+        // and its answers say "call navigate_to_screen" — so it is declared here.
+        return isSurfaceNavigationTool(name) || allowed.has(name);
       });
       if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
         kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });

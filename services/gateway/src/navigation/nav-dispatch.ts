@@ -25,7 +25,7 @@
  * (Bedrock unavailable).
  */
 import type { OrbToolResult } from '../services/orb-tools-shared';
-import { getNavRegistry, isVoiceTarget, NavScreen, pageOf } from './nav-registry';
+import { getNavRegistry, isVoiceTarget, NavScreen, NavSurface, pageOf, screenSurface, surfaceForRoute } from './nav-registry';
 import { candidateFor, isReachable, NavCandidate, NavResolveContext, routeFor } from './nav-resolver';
 import { resolveScreenRequest } from './nav-service';
 
@@ -62,6 +62,16 @@ export interface NavCallContext {
    * exactly the words that pick a popup over a page or one tab over another.
    */
   memberWords?: string;
+  /**
+   * VTID-04814: the surface the session is on, when the caller knows it
+   * (the widget declares it). Falls back to the current route.
+   */
+  surface?: NavSurface;
+}
+
+/** The surface a call is on: declared first, then the route. */
+export function callSurface(c: Pick<NavCallContext, 'surface' | 'currentRoute'>): NavSurface {
+  return c.surface ?? surfaceForRoute(c.currentRoute);
 }
 
 /** The member's words, when they add something to the model's question. */
@@ -80,6 +90,7 @@ function resolveContext(c: NavCallContext): NavResolveContext {
     // gets mobile routes and mobile-only screens.
     viewport: c.isMobile ? 'mobile' : undefined,
     excluded: c.excluded,
+    surface: callSurface(c),
   };
 }
 
@@ -88,11 +99,16 @@ async function emit(type: 'orb.navigator.resolved' | 'orb.navigator.requested' |
   emitOasisEvent({ vtid: 'VTID-04517', type, source: 'nav-dispatch', status, message, payload: { resolver: 'registry-v2', ...payload } }).catch(() => {});
 }
 
-/** Look a screen up by id, retired id or alias (case-insensitive). */
-export function findRegistryScreen(idOrAlias: string): NavScreen | null {
+/**
+ * Look a screen up by id, retired id or alias (case-insensitive). With a
+ * surface, aliases and invented ids only match that surface's screens, so
+ * "DEVHUB.OASIS.EVENTS" never lands on the community Events page.
+ */
+export function findRegistryScreen(idOrAlias: string, surface?: NavSurface): NavScreen | null {
   const key = idOrAlias.trim();
   if (!key) return null;
-  const screens = getNavRegistry().registry.screens;
+  const all = getNavRegistry().registry.screens;
+  const screens = surface ? all.filter((s) => screenSurface(s) === surface) : all;
   const upper = key.toUpperCase();
   const lower = key.toLowerCase();
   return (
@@ -144,8 +160,8 @@ export function needsEntity(s: NavScreen): boolean {
  * as the legacy tool_navigate_to_screen so orb-live's dispatch is unchanged.
  */
 export async function openScreen(screenId: string, reason: string, c: NavCallContext, opts: { keepOrbOpen?: boolean } = {}): Promise<OrbToolResult> {
-  const screen = findRegistryScreen(screenId);
   const ctx = resolveContext(c);
+  const screen = findRegistryScreen(screenId, ctx.surface) || findRegistryScreen(screenId);
   const block = async (kind: string, error: string): Promise<OrbToolResult> => {
     await emit('orb.navigator.blocked', 'warning', `open ${screenId}: ${kind}`, { session_id: c.sessionId, attempted_screen_id: screenId, error_kind: kind });
     return { ok: false, error };
@@ -158,6 +174,11 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
   }
   if (!isVoiceTarget(screen)) {
     return block('needs_entity', `${screen.id} needs a specific item to open.`);
+  }
+  if (screenSurface(screen) !== ctx.surface) {
+    return block('wrong_surface', ctx.surface === 'command-hub'
+      ? `${screen.i18n.en.title} is in the member app, not the Command Hub. Call navigate with what the developer asked for to find the Command Hub screen.`
+      : `${screen.i18n.en.title} is a Command Hub screen and cannot be opened in the member app. Answer in voice instead.`);
   }
   if (!isReachable(screen, ctx)) {
     const kind = !ctx.authenticated && screen.access !== 'public' ? 'anonymous_blocked' : ctx.excluded?.has(screen.id) ? 'tenant_excluded' : 'viewport_blocked';
@@ -219,7 +240,7 @@ export async function openScreen(screenId: string, reason: string, c: NavCallCon
 /** Record the offered screen so the continuation bind can open it on "yes". */
 async function holdOffer(c: NavCallContext, screenId: string | undefined): Promise<void> {
   if (!c.recordOffer || !screenId) return;
-  const screen = findRegistryScreen(screenId);
+  const screen = findRegistryScreen(screenId, callSurface(c));
   if (!screen || !isVoiceTarget(screen)) return;
   const ctx = resolveContext(c);
   try {

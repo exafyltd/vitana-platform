@@ -21,7 +21,7 @@
  * registry does not cover. `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
  */
 import WebSocket from 'ws';
-import { isLegacySurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
+import { callSurface, isLegacySurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
 import { recordPendingNavAck, type NavAckSession } from '../../../navigation/nav-ack';
 import { resolveScreenRequest } from '../../../navigation/nav-service';
 
@@ -157,6 +157,8 @@ export function maybeRunExplicitOpenBackstop(
       lang: navCtx.lang,
       authenticated: !navCtx.isAnonymous,
       viewport: navCtx.isMobile ? 'mobile' : undefined,
+      // VTID-04814: on the Command Hub only Command Hub screens.
+      surface: callSurface(navCtx),
     });
     if (r.kind !== 'match') {
       deps.emitDiag(session, 'nav_open_backstop', { outcome: r.kind, candidates: 'candidates' in r ? r.candidates.slice(0, 3).map((c) => c.screen_id) : [] });

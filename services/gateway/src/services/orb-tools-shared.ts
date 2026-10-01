@@ -3380,9 +3380,11 @@ export async function tool_navigate_to_screen(
   const isAnon = (typeof args.is_anonymous === 'boolean' ? args.is_anonymous : id.is_anonymous)
     ?? !id.user_id;
   const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
+  // VTID-04814: tools dispatched without the route in args (dev_open_hub_panel
+  // through the generic dispatcher) still carry it on the identity.
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
-    : null;
+    : (typeof id.current_route === 'string' && id.current_route.length > 0 ? id.current_route : null);
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
 
@@ -3393,7 +3395,7 @@ export async function tool_navigate_to_screen(
     const nav = await import('../navigation/nav-dispatch');
     if (!nav.isLegacySurface(currentRoute)) {
       const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
-      const screen = nav.findRegistryScreen(screenIdArg);
+      const screen = nav.findRegistryScreen(screenIdArg, nav.callSurface({ currentRoute }));
       if (screen && !nav.needsEntity(screen)) {
         return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
       }
@@ -3832,9 +3834,11 @@ export async function tool_navigate(
 
   const lang = (id.lang || 'en') as string;
   const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
+  // VTID-04814: tools dispatched without the route in args (dev_open_hub_panel
+  // through the generic dispatcher) still carry it on the identity.
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
-    : null;
+    : (typeof id.current_route === 'string' && id.current_route.length > 0 ? id.current_route : null);
   const recentRoutes: string[] = Array.isArray(args.recent_routes)
     ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
