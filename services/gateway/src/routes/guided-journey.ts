@@ -6,6 +6,9 @@
  *   POST /api/v1/journey/mode    → { mode: 'guided' | 'full' } applies the
  *                                  lossless switch rules, returns the new state
  *
+ *   GET  /api/v1/journey/audiobook/topics/:topicId/audio → topic narration MP3
+ *                                  (VTID-04761, Audiobook listening mode)
+ *
  * Mode is PRODUCT/UX state. These routes never read or write subscription or
  * feature-permission state. Per-topic progress + practice-completion writes land
  * with the catalog (P5/P7).
@@ -23,6 +26,9 @@ import {
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { JourneyMode } from '../types/guided-journey';
+import { getOrbTopicSeed } from '../services/guided-journey/checklist-service';
+import { synthesizeAudiobookTopicMp3 } from '../services/guided-journey/audiobook-episode-audio';
+import { GATEWAY_LOCALES, type GatewayLocale } from '../i18n/catalog';
 
 const router = Router();
 
@@ -201,6 +207,65 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
     current_session: state.currentSession,
     vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
   });
+});
+
+// VTID-04761 — Audiobook listening mode. The narration of ONE published topic
+// as MP3, read by Polly in the Vitana voice, for the My Journey player (plain
+// <audio>, no live voice session, no microphone).
+// GET /api/v1/journey/audiobook/topics/:topicId/audio?lang=de
+//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no Polly
+//   voice for the language, e.g. sr — the player offers Vitana live instead).
+const AUDIOBOOK_VTID = 'VTID-04761';
+const TOPIC_ID_RE = /^T\d{3,4}$/;
+
+router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: AUDIOBOOK_VTID });
+  }
+  const topicId = String(req.params.topicId || '');
+  if (!TOPIC_ID_RE.test(topicId)) {
+    return res.status(400).json({ ok: false, error: 'invalid_topic_id', vtid: AUDIOBOOK_VTID });
+  }
+  const rawLang = typeof req.query.lang === 'string' ? req.query.lang.toLowerCase().slice(0, 2) : 'de';
+  const lang: GatewayLocale = (GATEWAY_LOCALES as readonly string[]).includes(rawLang)
+    ? (rawLang as GatewayLocale)
+    : 'de';
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: AUDIOBOOK_VTID });
+  }
+  try {
+    const seed = await getOrbTopicSeed(client, topicId, 'v2', lang);
+    if (!seed) {
+      return res.status(404).json({ ok: false, error: 'topic_not_live', vtid: AUDIOBOOK_VTID });
+    }
+    const audio = await synthesizeAudiobookTopicMp3(
+      {
+        topic_id: seed.topicId,
+        topic_title: seed.displayLabel,
+        voice_script: seed.vitanaVoiceScript,
+        explanation: seed.explanation,
+        practice_target: seed.guidedPracticeTarget,
+        source: seed.source,
+        narrationAudio: null,
+      },
+      lang,
+    );
+    if (!audio) {
+      return res.status(422).json({ ok: false, error: 'narration_unavailable', lang, vtid: AUDIOBOOK_VTID });
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', String(audio.mp3.length));
+    // Per-user auth on the request, identical bytes for everyone: let the
+    // member's own browser keep it, never a shared cache.
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('X-Audiobook-Cache', audio.cached ? 'hit' : 'miss');
+    return res.status(200).end(audio.mp3);
+  } catch (err: any) {
+    console.error(`[${AUDIOBOOK_VTID}] audiobook audio failed for ${topicId}/${lang}: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'audiobook_audio_failed', vtid: AUDIOBOOK_VTID });
+  }
 });
 
 export default router;
