@@ -2,8 +2,16 @@
   "vtid": "VTID-04765",
   "service": "gateway",
   "tests": [
-    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
-    { "kind": "existing", "ref": "scripts/ci/sql-tests/run-erase-user-data-test.sh", "cwd": ".",
-      "reason": "erasure deletes rows; it is proven on a throwaway Postgres in CI (SQL-ERASE-USER-DATA.yml), never on the shared database staging writes to" }
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/migrations/vtid-04765-erase-user-data-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "erasure deletes rows, so its behaviour is proven on a throwaway Postgres in CI (scripts/ci/sql-tests, SQL-ERASE-USER-DATA.yml), never on the shared database staging writes to; this suite pins the migration's safety properties"
+    }
   ]
 }

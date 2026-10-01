@@ -17,13 +17,13 @@ Found while testing against the live foreign keys (read-only):
 ## Acceptance
 
 AC-1: A's rows are gone from plain, partitioned and FK-ordered tables, and rows a delete trigger wrote are swept as well. User B is untouched.
-TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql
+TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql (behaviour), services/gateway/test/migrations/vtid-04765-erase-user-data-migration.test.ts (safety properties)
 
 AC-2: retained tables keep their rows and are reported. Auth-cascading tables are not touched. A failing table is reported, not swallowed. A null user is refused.
-TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql
+TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql (behaviour), services/gateway/test/migrations/vtid-04765-erase-user-data-migration.test.ts (safety properties)
 
 AC-3: only service_role can execute; a dry run counts and deletes nothing.
-TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql
+TEST: scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql (behaviour), services/gateway/test/migrations/vtid-04765-erase-user-data-migration.test.ts (safety properties)
 
 AC-4 (vitana-v1): the account is deleted only when erase_user_data reports no errors. The pre-migration PGRST202 case keeps the old behaviour and is logged.
 TEST: vitana-v1 src/lib/erase-user-data.test.ts
