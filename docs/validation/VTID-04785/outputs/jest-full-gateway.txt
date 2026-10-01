@@ -1,0 +1,6 @@
+# npx jest (full gateway suite, branch claude/clever-carson-hq64th + VTID-04785 working tree)
+Test Suites: 1 skipped, 1426 passed, 1426 of 1427 total
+Tests:       29 skipped, 6 todo, 22950 passed, 22985 total
+Snapshots:   109 passed, 109 total
+Time:        233.891 s
+FAIL lines: 0
