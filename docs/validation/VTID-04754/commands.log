@@ -9,3 +9,4 @@ npx jest <every suite reading AWS-PROD/STAGE-DEPLOY-GATEWAY.yml or the ownership
 (root) node scripts/ci/staging-verify/lib.test.cjs                         # pass; manifest validates
 (root) Playwright render of /command-hub/jev.html, 1400x900 and 390x844, mocked stats — no horizontal overflow
 (root) migration applied to the VITANA project (additive), verification in outputs/migration-applied.txt
+npx jest (full gateway suite)                                              # 1413 suites, 22708 tests, 0 failed

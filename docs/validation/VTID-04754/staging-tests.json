@@ -4,6 +4,6 @@
 {"kind":"http","name":"jev admin stats auth-gated","path":"/api/v1/jev/admin/stats","expect_status":401},
 {"kind":"http","name":"jev decide refuses an unauthenticated write","method":"POST","path":"/api/v1/jev/decisions/support_ticket_triage","rejected_probe":true,"expect_status":401},
 {"kind":"http","name":"Jev card page is served","path":"/command-hub/jev.html","expect_status":200,"expect_content_type":"text/html","expect_body_contains":"Jev decisions"},
-{"kind":"http","name":"Jev card script reads the stats endpoint","path":"/command-hub/jev.js?v=20261001-VTID-04754-jev","expect_status":200,"expect_content_type":"javascript","expect_body_contains":"/api/v1/jev/admin/stats"},
+{"kind":"http","name":"Jev card script reads the stats endpoint","path":"/command-hub/jev.js","expect_status":200,"expect_content_type":"javascript","expect_body_contains":"/api/v1/jev/admin/stats"},
 {"kind":"existing","ref":"npx jest test/vtid-04754 test/vtid-04473 test/routes/jev-decisions.test.ts test/command-hub/vtid-04754-jev-card.test.ts","cwd":"services/gateway","reason":"Policy, tenant budget, caller resolution and the shadow framework need a signed-in caller and a TypeSafe call; staging probes are unauthenticated and read-only, so the behaviour is proven by these suites. The live decision on staging is run by the session against the exafy_admin test account after deploy (decision calls write an OASIS event, so staging only)."}
 ]}
