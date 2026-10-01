@@ -104,6 +104,18 @@ export async function fetchRecentDeployEvents(sb: SupabaseClient, topic: string,
     .limit(limit);
 }
 
+/** VTID-04808: open (no outcome yet) shadow rows of a gate whose verdict lists an execution among `others`. */
+export async function fetchOpenShadowRowsNamingOther(sb: SupabaseClient, gate: string, executionId: string, sinceIso: string) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, jev_outcome, jev_verdict')
+    .eq('gate', gate)
+    .is('outcome', null)
+    .contains('jev_verdict', { others: [{ execution_id: executionId }] })
+    .gte('created_at', sinceIso)
+    .limit(10);
+}
+
 /** VTID-04805: stalled voice sessions in a window (metadata only). */
 export async function fetchStallEvents(sb: SupabaseClient, sinceIso: string, untilIso: string, limit = 500) {
   return sb

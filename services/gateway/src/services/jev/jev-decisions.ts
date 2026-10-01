@@ -670,6 +670,37 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ change: { title: i.change_title, files: i.changed_files }, suite: { path: i.test_path, imports: i.imports_changed, titles: i.test_titles } }),
   },
+  {
+    // VTID-04808 (P2 A7): two Dev Autopilot PRs are green at the same time.
+    // If the first merges now, will the second conflict or break?
+    name: 'pr_clash',
+    description: 'Whether merging one green Dev Autopilot change now is likely to make another open one conflict or break.',
+    roles: ENGINEERING,
+    input: z.object({
+      merging_title: text(300),
+      merging_files: z.array(z.string().trim().max(300)).max(40),
+      other_title: text(300),
+      other_files: z.array(z.string().trim().max(300)).max(40),
+      shared_files: z.array(z.string().trim().max(300)).max(40),
+      shared_dirs: z.array(z.string().trim().max(300)).max(20),
+    }),
+    questions: {
+      clash: {
+        type: 'noul',
+        instructions: 'If the first change is merged now, is the second change likely to hit a merge conflict or break (its tests or its behaviour) because of it?',
+      },
+    },
+    primary: 'clash',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      merging: { title: i.merging_title, files: i.merging_files },
+      other: { title: i.other_title, files: i.other_files },
+      overlap: { files: i.shared_files, directories: i.shared_dirs },
+    }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

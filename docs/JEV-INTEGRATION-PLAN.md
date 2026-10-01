@@ -816,6 +816,15 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   Like A1, it runs where the agent runs; the ECS executor task needs the
   TypeSafe secret before it produces rows there.
 
+- **A7 — VTID-04808 (shadow).** `jev/gates/pr-clash-gate.ts`. Right before
+  the watcher merges a green PR, the other open executions (CI or merging,
+  with a PR) that share a file or a directory with it — at most 3, shared
+  files first — go to Jev `pr_clash` in pairs: will merging this one now make
+  the other conflict or break? Never awaited; the merge is unchanged. When one
+  of those others next reports (a dirty CI failure, or CI passed) the row
+  records whether Jev's call for it was right. 18 dirty-merge CI failures in
+  60 days, 13 on one day of parallel runs.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
