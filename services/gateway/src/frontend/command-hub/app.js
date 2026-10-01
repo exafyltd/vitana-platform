@@ -36398,7 +36398,7 @@ function renderLivekitHourlyTestsPanel() {
     titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
     // VTID-04779: retitled — this is a gateway tool-routing dry run (no
     // LiveKit media involved), and there is no hourly schedule.
-    titleRow.innerHTML = '<h3 style="margin:0;">Tool-routing dry run (gateway)</h3>' +
+    titleRow.innerHTML = '<h3 class="vsup-flush-title">Tool-routing dry run (gateway)</h3>' +
         '<span style="font-size:0.75rem;color:var(--color-text-secondary);">' +
         'Layer-A dry-run: each case checks which tool the gateway routes a voice request to · VTID-03025</span>';
     section.appendChild(titleRow);
@@ -37258,11 +37258,11 @@ function renderLivekitTestView() {
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
-        + '<button class="lkt-diagnose" title="Read-only: reads your session, bootstrap and tool lookups; creates nothing" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics (read-only)</button>'
+        + '<button class="lkt-diagnose" title="Read-only: reads your session, bootstrap and tool lookups; creates nothing">⚙ Run Diagnostics (read-only)</button>'
         + '<input type="hidden" class="lkt-mode" value="test-session" />'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
-        + '<a href="/command-hub/voice/sessions/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Voice Sessions</a>';
+        + '<a href="/command-hub/voice/sessions/" class="lkt-sessions-link">→ Voice Sessions</a>';
     container.appendChild(controls);
     var langSelect = controls.querySelector('.lkt-lang');
     langSelect.addEventListener('change', function () {
@@ -37723,7 +37723,7 @@ function renderLivekitTestView() {
         // delete_reminder, post_intent / mark_intent_fulfilled) and the
         // dispatcher tools that send, share, persist or call paid external
         // services are covered by the gateway's CI tests instead.
-        diagAppend('<br><strong style="color:#facc15;">Direct-route tools (read-only):</strong>');
+        diagAppend('<br><strong class="lkt-diag-heading">Direct-route tools (read-only):</strong>');
         var k = await diagFetch('POST', '/api/v1/assistant/knowledge/search', { query: 'autopilot' });
         diagRow('tool', 'search_knowledge', k.ok, k.status + '');
 
@@ -37752,7 +37752,7 @@ function renderLivekitTestView() {
         diagRow('tool', 'view_intent_matches', vm.ok, vm.status + '');
 
         // Phase 4: dispatcher tools — read-only lookups only (VTID-04779).
-        diagAppend('<br><strong style="color:#facc15;">Dispatcher tools (read-only):</strong>');
+        diagAppend('<br><strong class="lkt-diag-heading">Dispatcher tools (read-only):</strong>');
         await diagDispatch('search_memory', { query: 'vitana', limit: 5 });
         await diagDispatch('recall_conversation_at_time', { when: 'yesterday' });
         await diagDispatch('search_events', { query: '' });
