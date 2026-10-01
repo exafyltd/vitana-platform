@@ -214,6 +214,7 @@ import {
   stopEventContext,
   toFactsProvider,
 } from '../services/voice-session-facts';
+import { buildVoiceOutcomeSignals } from '../services/jev/gates/voice-outcome-gate'; // VTID-04775
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
@@ -1530,6 +1531,7 @@ setInterval(() => {
           duration_ms: Date.now() - s.createdAt.getTime(),
           turn_count: s.turn_count,
         },
+        outcomeSignals: buildVoiceOutcomeSignals(s, `idle_sweep_${closeReason}`), // VTID-04775
       });
       s.active = false;
       liveSessions.delete(sid);
@@ -1632,6 +1634,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
         duration_ms: Date.now() - existingSession.createdAt.getTime(),
         turn_count: existingSession.turn_count,
       },
+      outcomeSignals: buildVoiceOutcomeSignals(existingSession, 'superseded_by_new_session'), // VTID-04775
     });
   }
   return terminated;
@@ -16977,6 +16980,8 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         sessionId,
         tenantScope: session.identity?.tenant_id || 'global',
         metadata: { synthetic: (session as any).synthetic === true },
+        // VTID-04775: a fast-fail has no metrics; the flag still earns a Jev row.
+        outcomeSignals: { ...buildVoiceOutcomeSignals(session, 'connection_failed'), connection_failed: true },
       });
 
       // Notify client of connection failure
@@ -17002,6 +17007,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       sessionId,
       tenantScope: session.identity?.tenant_id || 'global',
       metadata: { synthetic: (session as any).synthetic === true },
+      outcomeSignals: { ...buildVoiceOutcomeSignals(session, 'config_missing'), connection_failed: true }, // VTID-04775
     });
   }
 
@@ -19426,6 +19432,7 @@ function handleWsStopSession(clientSession: WsClientSession): void {
         user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
         model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
       },
+      outcomeSignals: buildVoiceOutcomeSignals(liveSession, 'ws_stop_session'), // VTID-04775
     });
 
     liveSessions.delete(sessionId);

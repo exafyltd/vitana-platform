@@ -2977,6 +2977,30 @@ get full access to every `partner_registry` row linked to their org;
 Supabase/gateway credentials were reachable from this session; see
 `docs/validation/VTID-03932/acceptance.md`.
 
+### Supplier go-live lists products (VTID-04769) — APPLIED to the live project 2026-10-01
+
+Migration `20261001120000_vtid_04769_supplier_go_live_lists_products.sql`.
+`products.is_active` stays the one truth every member-facing reader filters
+on; for **supplier** products (merchant linked to a partner organization, or
+owned by a test/service account) the database now maintains it:
+
+- `products.first_listed_at TIMESTAMPTZ` — when a supplier product was first
+  switched on; `NULL` = never-listed draft.
+- `products.listing_hold TEXT` (`org_not_live` | `excluded_account`) — why the
+  gate is holding a product off; `NULL` = not held.
+- Org reaches `lifecycle_state = 'live'` (also via the legacy
+  `POST /partner-orgs/:id/activate` status write) → its waiting products
+  (drafts and held ones) go on. Products added while live go on at once.
+- Org paused/suspended, or its owner registered in `service_bot_accounts` /
+  `notification_test_actors` → its products go off with `listing_hold` set,
+  and come back when that clears.
+- An explicit `is_active` write (admin) is a decision: switch-off is never
+  undone by a go-live; switch-on while the org is not live is held until it is.
+- Network products (no partner org, no owner) are never read or written.
+
+Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
+are service_role only. Scenarios: `docs/validation/VTID-04769/`.
+
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
@@ -3174,3 +3198,26 @@ increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
 (per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
 `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
 (no new column).
+
+## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
+
+`request-account-deletion` (vitana-v1 edge function) deleted 20 hand-listed tables, then the auth user. On 2026-10-01 the live schema had ~200 more public tables whose `user_id` does not cascade from `auth.users` — memory, diary, health, notifications among them — so their rows outlived the account.
+
+Migration `supabase/migrations/20261001120000_vtid_04765_erase_user_data.sql`.
+
+### erasure_registry
+| Column | Type | Notes |
+|---|---|---|
+| `table_name` | text PK | a public table |
+| `action` | text | only `retain` |
+| `reason` | text NOT NULL | the legal reason (bookkeeping retention, allowlists) |
+| `created_at` | timestamptz | |
+
+Seeded with the financial ledgers and order/payment records (HGB §257, AO §147; to be confirmed by counsel) and the two test/service-account allowlists. service_role only.
+
+### `erase_user_data(p_user_id uuid, p_dry_run boolean default false) returns jsonb`
+- Finds every ordinary or partitioned public table with a uuid `user_id` itself; new tables are covered without a list.
+- Skips `retain` tables and tables whose `user_id` cascades from `auth.users`; those go with the auth user as before.
+- Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
+- Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
+- SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).

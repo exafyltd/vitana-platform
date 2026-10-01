@@ -79,3 +79,16 @@ export async function fetchRecentShadowBySubject(sb: SupabaseClient, gate: strin
     .limit(1)
     .maybeSingle();
 }
+
+/** VTID-04774: the newest gate row for a subject, with its verdict (outcome write-back). */
+export async function fetchRecentShadowRow(sb: SupabaseClient, gate: string, subjectRef: string, sinceIso: string) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, jev_outcome, jev_verdict')
+    .eq('gate', gate)
+    .eq('subject_ref', subjectRef)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+}

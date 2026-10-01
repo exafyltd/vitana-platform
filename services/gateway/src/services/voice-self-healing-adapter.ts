@@ -34,6 +34,7 @@ import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
 import { appendShadowLog } from './voice-shadow-mode';
 import { classifyQualityFromSessionStop } from './voice-failure-taxonomy';
+import { isVoiceOutcomeOn, runVoiceOutcomeCheck, VoiceOutcomeSignals } from './jev/gates/voice-outcome-gate';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -122,6 +123,11 @@ export interface DispatchOptions {
     user_turns?: number;
     model_turns?: number;
   };
+  /**
+   * VTID-04775: counters and flags for the Jev voice-outcome gate (C1).
+   * Read by an allow-list in buildVoiceOutcomeSignals(); never a transcript.
+   */
+  outcomeSignals?: VoiceOutcomeSignals;
 }
 
 export type DispatchAction =
@@ -659,10 +665,24 @@ export async function dispatchVoiceFailure(
  * synchronously; never throws. Internal errors are logged at warn level.
  */
 export function dispatchVoiceFailureFireAndForget(opts: DispatchOptions): void {
-  dispatchVoiceFailure(opts).catch((err) => {
-    console.warn(
-      '[voice-self-healing-adapter] fire-and-forget dispatch failed:',
-      err?.message ?? err,
-    );
-  });
+  dispatchVoiceFailure(opts)
+    .then((result) => {
+      // VTID-04775 (Jev C1): one outcome row per session, after the rule
+      // classifier answered. Off unless JEV_VOICE_SESSION_OUTCOME_MODE is set;
+      // a repeat stop report for the same session is not asked again.
+      if (!isVoiceOutcomeOn() || result.action === 'duplicate_session_report') return;
+      void runVoiceOutcomeCheck({
+        sessionId: opts.sessionId,
+        metrics: opts.sessionMetrics,
+        signals: opts.outcomeSignals,
+        ruleClass: result.class ?? null,
+        synthetic: opts.metadata?.synthetic === true,
+      });
+    })
+    .catch((err) => {
+      console.warn(
+        '[voice-self-healing-adapter] fire-and-forget dispatch failed:',
+        err?.message ?? err,
+      );
+    });
 }

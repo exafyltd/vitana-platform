@@ -366,7 +366,9 @@ router.post('/products', async (req: Request, res: Response) => {
     source_product_id: `${SUPPLIER_SOURCE_NETWORK}:${merchant.id}:${randomUUID()}`,
     ...p,
     // Nothing a supplier types goes live on their own say-so. Discover shows
-    // is_active rows; approval flips it, not this endpoint.
+    // is_active rows; the VTID-04769 go-live gate (a products trigger)
+    // switches it on once the merchant's organization is live, not this
+    // endpoint.
     is_active: false,
   }).select('id,title,is_active').maybeSingle();
 

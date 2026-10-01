@@ -65,6 +65,24 @@ export interface AgentLoopOptions {
    * (the runner passes it for the first round of a non-fix run only).
    */
   exploration?: ExplorationThresholds | null;
+  /**
+   * VTID-04764 (Jev P1 A1): called once per completed tool turn with the
+   * loop's state and the action the loop itself chose. Observe-only: it is
+   * not awaited and cannot change the loop; a throw is swallowed.
+   */
+  onTurnSnapshot?: (snapshot: AgentTurnSnapshot) => void;
+}
+
+export type AgentLoopAction = 'continue' | 'replan' | 'handoff' | 'commit' | 'wrap_up';
+
+export interface AgentTurnSnapshot {
+  turn: number;
+  maxTurns: number;
+  toolCalls: number;
+  hasEdited: boolean;
+  idleTurns: number;
+  loopAction: AgentLoopAction;
+  calls: Array<{ name: string; isError?: boolean; passedCheck?: boolean; path?: string }>;
 }
 
 export interface AgentLoopResult {
@@ -324,6 +342,29 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
       prompt = buildWrapUpPrompt(turnsRemaining);
     } else {
       prompt = CONTINUE_PROMPT;
+    }
+    if (o.onTurnSnapshot) {
+      const loopAction: AgentLoopAction =
+        verdict === 'replan' ? 'replan'
+          : explore === 'handoff' ? 'handoff'
+            : explore === 'commit' ? 'commit'
+              : prompt === CONTINUE_PROMPT ? 'continue' : 'wrap_up';
+      try {
+        o.onTurnSnapshot({
+          turn: turns,
+          maxTurns,
+          toolCalls,
+          hasEdited,
+          idleTurns: ledger ? ledger.idleTurns : 0,
+          loopAction,
+          calls: turnCalls.map((c) => ({
+            name: c.name,
+            isError: c.isError,
+            passedCheck: c.passedCheck,
+            path: typeof c.args?.path === 'string' ? (c.args.path as string) : undefined,
+          })),
+        });
+      } catch { /* observe-only: never let the progress check break the loop */ }
     }
   }
   step({ turn: turns, kind: 'error', detail: 'max turns reached', isError: true });

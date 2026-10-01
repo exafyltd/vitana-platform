@@ -283,6 +283,154 @@ const defs: JevDecisionDef[] = [
     pii: 'redact',
     buildState: (i) => ({ client_request: i.request, professional_services: i.services }),
   },
+  {
+    // VTID-04764 (Jev P1 A1): mid-run progress check for the Dev Autopilot
+    // coding agent, asked every N turns in shadow mode. Telemetry only: the
+    // task summary and the agent's own tool activity, never member data.
+    name: 'agent_progress_check',
+    description: 'Is a Dev Autopilot coding run converging, and what should it do next?',
+    roles: ENGINEERING,
+    input: z.object({
+      task: text(2000),
+      turn: z.number().int().min(1).max(500),
+      max_turns: z.number().int().min(1).max(500),
+      tool_calls: z.number().int().min(0).max(5000),
+      has_edited: z.boolean(),
+      idle_turns: z.number().int().min(0).max(500),
+      failed_checks: z.number().int().min(0).max(500),
+      passed_checks: z.number().int().min(0).max(500),
+      recent_activity: z.array(z.string().trim().max(160)).max(40),
+    }),
+    questions: {
+      next_step: {
+        type: 'choice',
+        instructions: 'Given the task and the agent activity so far, what should this coding run do next?',
+        criteria: {
+          continue: 'It is making real progress toward the task (new files read with purpose, edits landing, checks moving towards green); keep going.',
+          commit: 'It already has a usable change for the task; it should run its checks and finish now instead of exploring further.',
+          handoff: 'It is going in circles or blocked on something it cannot resolve itself (unclear task, missing access, repeated identical failures); stop and hand off its findings.',
+          stop: 'The task cannot be completed with these tools in the remaining turns; further turns only spend tokens.',
+        },
+      },
+      will_finish: {
+        type: 'noul',
+        instructions: 'Will this run finish the task with a passing change before it runs out of turns?',
+      },
+    },
+    primary: 'next_step',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      task: i.task,
+      progress: {
+        turn: i.turn,
+        max_turns: i.max_turns,
+        turns_remaining: Math.max(0, i.max_turns - i.turn),
+        tool_calls: i.tool_calls,
+        has_edited: i.has_edited,
+        idle_turns: i.idle_turns,
+        failed_checks: i.failed_checks,
+        passed_checks: i.passed_checks,
+      },
+      recent_activity: i.recent_activity,
+    }),
+  },
+  {
+    // VTID-04774 (Jev P1 A2): before a Dev Autopilot execution is dispatched,
+    // can the agent's tools finish it in one PR? Telemetry only: the
+    // finding's title, plan excerpt and file paths — never file contents.
+    name: 'execution_feasibility',
+    description: 'Can the Dev Autopilot agent finish this execution with its tools, and if not, what blocks it?',
+    roles: ENGINEERING,
+    input: z.object({
+      title: text(300),
+      plan: text(3000),
+      files: z.array(z.string().trim().max(200)).max(40),
+      fix_mode: z.boolean(),
+      prior_failure: optText(800),
+      risk_class: optText(40),
+      source_type: optText(60),
+    }),
+    questions: {
+      feasibility: {
+        type: 'choice',
+        instructions: 'Can a coding agent that can only read, search and edit repository files and run tsc/jest finish this task in one pull request?',
+        criteria: {
+          feasible: 'Yes: the change is in code the agent can reach and the task says clearly what to change.',
+          needs_human: 'It needs a human decision, product choice, approval, credentials or data the agent cannot reach.',
+          needs_infra: 'It needs a change outside the repository: AWS/console, secrets, CI settings, DNS, a provider account or billing.',
+          too_large: 'It is a multi-PR or open-ended effort, far beyond one focused change.',
+          unclear: 'The task is too vague or contradictory to know what to change.',
+        },
+      },
+      will_succeed: {
+        type: 'noul',
+        instructions: 'Will the agent open a correct pull request for this task?',
+      },
+    },
+    primary: 'feasibility',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      task: { title: i.title, plan: i.plan, files: i.files, fix_mode: i.fix_mode, prior_failure: i.prior_failure ?? null },
+      context: { risk_class: i.risk_class ?? null, source_type: i.source_type ?? null },
+    }),
+  },
+  {
+    // VTID-04775 (Jev P1 C1): how did an ORB voice session end? Post-session,
+    // counters and close reasons only — never what anyone said.
+    name: 'voice_session_outcome',
+    description: 'Outcome class of an ORB voice session from its own telemetry (post-session).',
+    roles: ENGINEERING,
+    input: z.object({
+      stop_reason: optText(80),
+      provider: optText(40),
+      lang: optText(16),
+      duration_s: z.number().min(0).max(86_400),
+      turns: z.number().int().min(0).max(5000),
+      user_turns: z.number().int().min(0).max(5000).optional(),
+      model_turns: z.number().int().min(0).max(5000).optional(),
+      audio_in_chunks: z.number().int().min(0),
+      audio_in_forwarded: z.number().int().min(0).optional(),
+      audio_out_chunks: z.number().int().min(0),
+      greeting_sent: z.boolean().optional(),
+      reconnects: z.number().int().min(0).max(1000).optional(),
+      watchdog_reason: optText(80),
+      tool_call_streak: z.number().int().min(0).max(1000).optional(),
+      connection_failed: z.boolean().optional(),
+      rule_class: optText(60),
+    }),
+    questions: {
+      outcome: {
+        type: 'choice',
+        instructions: 'From these voice-session counters, how did the session end?',
+        criteria: {
+          completed: 'A real conversation took place (several turns both ways) and ended normally.',
+          user_left_early: 'The member left within the first seconds or after the greeting, with no sign of a fault.',
+          no_engagement: 'The member spoke but the assistant never really engaged (no or almost no model turns).',
+          one_way_audio: 'Audio flowed only one way: the assistant was heard but the member was not, or the reverse.',
+          connection_dropped: 'The connection broke or was reconnected mid-session; the session did not end by choice.',
+          model_stalled: 'The assistant stopped responding mid-session (watchdog fired, long silence).',
+          looping: 'The assistant got stuck in a loop of tool calls or repeated turns.',
+          failed_to_start: 'The session never really started (connection failed, no greeting, no audio out).',
+        },
+      },
+      needs_fix: {
+        type: 'noul',
+        instructions: 'Is this a product or engineering failure someone should fix, rather than normal member behaviour?',
+      },
+    },
+    primary: 'outcome',
+    threshold: 0.6,
+    pii: 'forbid',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ session: i }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
