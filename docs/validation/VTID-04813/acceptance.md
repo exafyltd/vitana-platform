@@ -105,22 +105,68 @@ audio asset.
 
 ## 6. Acceptance criteria
 
-| # | Criterion | Test |
-|---|---|---|
-| AC-1 | The switch defaults OFF — merging changes nothing by itself | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "defaults to disabled" |
-| AC-2 | Only the exact string `'true'` enables it; a typo is off | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "enabled only by the exact string" |
-| AC-3 | The language predicate matches `ru` and `ru-RU`/`ru_RU` only | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "matches bare ru" / "region/script-tagged" |
-| AC-4 | It refuses every other language, `sr` included | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "rejects every other language" |
-| AC-5 | The Serbian predicate still refuses `ru` — not widened | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "the Serbian predicate still refuses ru" |
-| AC-6 | Each switch controls only its own bridge | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "each switch controls only its own bridge" |
-| AC-7 | A `ru` session resolves `provider: vertex`, `reason: vertex_russian_bridge` | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "fires for ru with its OWN reason" |
-| AC-8 | A `sr` session still resolves `vertex_serbian_bridge` | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "still reports vertex_serbian_bridge" |
-| AC-9 | Both fields must be explicitly true; absent object cannot satisfy it | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "needs BOTH of its own fields true" / "an absent vertexRussianBridge object" |
-| AC-10 | The bridge is checked before the cascade | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "is checked BEFORE the cascade" |
-| AC-11 | With the flag off, `ru` keeps the cascade behaviour byte-for-byte | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "keeps the existing cascade behaviour byte-for-byte" |
-| AC-12 | A healthy Nova language never reaches Vertex, flag on or not | `TEST: vtid-04813-vertex-russian-bridge.test.ts` → "never routes a healthy Nova language" |
-| AC-13 | The flag is pinned on both deploy workflows, stripped before re-add | `TEST: vtid-04813-russian-bridge-wiring-pinned.test.ts` → "strips the var before re-adding" / "exact string true" |
-| AC-14 | Pinning it does not create an auto-to-prod path | `TEST: vtid-04813-russian-bridge-wiring-pinned.test.ts` → "prod deploy stays manual-dispatch only" |
+AC-1 — The switch defaults OFF, so merging this changes nothing by itself.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "defaults to disabled — merging this file changes nothing on its own"
+
+AC-2 — Only the exact string `'true'` enables it; every typo resolves to off.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "is enabled only by the exact string \"true\""
+
+AC-3 — The language predicate matches `ru`, `ru-RU`, `ru_RU`, `RU-ru`.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "matches bare \"ru\"" + "matches region/script-tagged variants"
+
+AC-4 — It refuses every other language, `sr` included.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "rejects every other language — including sr, which has its own bridge"
+
+AC-5 — The Serbian predicate still refuses `ru`: it was not widened.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "the Serbian predicate still refuses ru — it was not widened to carry Russian"
+
+AC-6 — Each switch controls only its own bridge.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "each switch controls only its own bridge"
+
+AC-7 — A `ru` session resolves `provider: vertex` with `reason: vertex_russian_bridge`.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "fires for ru with its OWN reason, so telemetry never mislabels it Serbian"
+
+AC-8 — A `sr` session still resolves `vertex_serbian_bridge`, unchanged.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "still reports vertex_serbian_bridge for a Serbian session — unchanged"
+
+AC-9 — Both context fields must be explicitly true; an absent object cannot satisfy the gate.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "needs BOTH of its own fields true" + "an absent vertexRussianBridge object cannot satisfy the gate"
+
+AC-10 — The bridge is checked BEFORE the cascade, so `ru` gets Gemini not Polly.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "is checked BEFORE the cascade"
+
+AC-11 — With the flag off, `ru` keeps the existing cascade behaviour byte-for-byte.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "with the bridge off, a ru session keeps the existing cascade behaviour byte-for-byte"
+
+AC-12 — A healthy Nova language never reaches Vertex, flag on or not.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts` → "never routes a healthy Nova language to Vertex, even with the flag on"
+
+AC-13 — The flag is pinned on BOTH deploy workflows, stripped before re-add.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-russian-bridge-wiring-pinned.test.ts` → "strips the var before re-adding it" + "re-adds it as the exact string true"
+
+AC-14 — Pinning it does not create an auto-to-prod path.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-russian-bridge-wiring-pinned.test.ts` → "prod deploy stays manual-dispatch only"
+
+AC-15 — The GCP project/location stay pinned with the flag, and the decommissioned project never appears.
+TEST: `services/gateway/test/orb/live/upstream/vtid-04813-russian-bridge-wiring-pinned.test.ts` → "still pins the GCP project and location the bridge needs"
+
+OASIS_PROOF: the selection reason reaches `oasis_events` — that is how
+VTID-04000 recorded Serbian's own acceptance signal ("the real signal is the
+next real `sr` session on staging reporting `reason:'vertex_serbian_bridge'`
+in `oasis_events`"). This VTID adds no new OASIS topic and no new emission
+site; it adds one new VALUE, `vertex_russian_bridge`, to the existing
+`SelectionReason` union that those events already carry, so a Russian
+session can be told apart from a Serbian one in telemetry. The read-only
+query to confirm it after deploy:
+
+```sql
+SELECT created_at, metadata->>'session_id' AS sid,
+       metadata->>'lang' AS lang, metadata->>'provider' AS provider,
+       metadata->>'reason' AS reason
+FROM oasis_events
+WHERE topic = 'orb.live.diag' AND metadata->>'lang' = 'ru'
+ORDER BY created_at DESC LIMIT 20;
+```
 
 ## 7. Verification run
 
