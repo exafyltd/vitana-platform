@@ -1,0 +1,16 @@
+# targeted: 04542 identity + 04776 + 04785 + test/orb/live/session
+Test Suites: 42 passed, 42 total
+Tests:       742 passed, 742 total
+Snapshots:   56 passed, 56 total
+# test/routes test/orb/routes test/orb/live/ws-transport-default test/orb/live/characterization
+Test Suites: 172 passed, 172 total
+Tests:       1 skipped, 2505 passed, 2506 total
+# npm run test:roles
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+# npm run test:support
+Test Suites: 4 passed, 4 total
+Tests:       82 passed, 82 total
+# npm run test:operator
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total

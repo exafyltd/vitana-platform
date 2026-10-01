@@ -1687,6 +1687,7 @@ import {
   configureLiveSessionController,
   cleanupExpiredSessions,
   cleanupWsSession,
+  emitSseDisconnectStop, // VTID-04785
   handleLiveStreamEndTurn,
   handleLiveSessionStart,
   handleLiveSessionStop,
@@ -8470,6 +8471,11 @@ async function connectToLiveAPI(
   void emitOasisEvent({
     type: 'orb.upstream.provider.selected',
     vtid: 'VTID-02980',
+    // VTID-04785: service/status/message are NOT NULL in oasis_events; this
+    // emit omitted all three, so not one row ever landed.
+    source: 'gateway',
+    status: 'info',
+    message: `upstream provider selected: ${__upstreamDecision.provider} (${__upstreamDecision.reason})`,
     payload: {
       session_id: session.sessionId,
       // VTID-04776: tenant/user so the provider choice can be cut by tenant.
@@ -8491,6 +8497,9 @@ async function connectToLiveAPI(
     void emitOasisEvent({
       type: 'orb.upstream.provider.selection_error',
       vtid: 'VTID-02980',
+      source: 'gateway', // VTID-04785: NOT NULL columns (see .selected above)
+      status: 'warning',
+      message: `upstream provider selection error: ${__upstreamDecision.error}`,
       payload: {
         session_id: session.sessionId,
         provider: __upstreamDecision.provider,
@@ -17029,6 +17038,12 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     // VTID-04353: memory + voice summary through the one idempotent finalize
     // (was a separate forced extraction racing POST /live/session/stop).
     finalizeLiveSession(session, { sessionId, reason: 'sse_disconnect' });
+
+    // VTID-04785: this handler deletes the session below, so it is the last
+    // place that can report the end — emit the stop + facts end (once, via
+    // the shared stopEventEmitted latch). Was silent: 82/107 prod SSE
+    // sessions (24 h) had no vtid.live.session.stop.
+    emitSseDisconnectStop(session, sessionId, 'sse_disconnect');
 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {

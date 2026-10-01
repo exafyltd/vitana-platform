@@ -503,6 +503,64 @@ export function cleanupWsSession(
   console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
 }
 
+/**
+ * VTID-04785: the SSE twin of VTID-03561. `GET /live/stream`'s
+ * `req.on('close')` handler is how almost every SSE session ends (tab closed,
+ * app backgrounded, EventSource closed before or instead of
+ * `POST /live/session/stop`). It finalized memory, closed the upstream and
+ * DELETED the session from `liveSessions` — but emitted no
+ * `vtid.live.session.stop`. Because it deletes, neither the idle sweep nor a
+ * later `POST /live/session/stop` (404 "Session not found") could report it
+ * afterwards. Measured on prod 2026-10-01 (24 h): 82 of 107 SSE sessions had
+ * no stop event; 76 of those 82 carry `conversation.session.finalized` with
+ * `reason='sse_disconnect'` — this exact handler. WS was 12/12.
+ *
+ * Emits the stop + records the voice_session_facts end exactly once per
+ * session object (the `stopEventEmitted` latch shared with every other end
+ * path), and never throws: it runs inside a socket 'close' callback.
+ * Returns true when it emitted.
+ */
+export function emitSseDisconnectStop(
+  ls: any,
+  sessionId: string,
+  reason: string = 'sse_disconnect',
+): boolean {
+  if (!ls || ls.stopEventEmitted) return false;
+  try {
+    const deps = getDeps();
+    const liveSessionKey = ls.sessionId || sessionId;
+    const nowMs = Date.now();
+    const startedMs = ls.createdAt instanceof Date ? ls.createdAt.getTime() : null;
+    const lastActivityMs = ls.lastActivity instanceof Date ? ls.lastActivity.getTime() : null;
+    const turns = Array.isArray(ls.transcriptTurns) ? ls.transcriptTurns : [];
+    // Latch BEFORE the emit so a re-entrant close cannot double-book.
+    ls.stopEventEmitted = true;
+    void deps.emitLiveSessionEvent?.('vtid.live.session.stop', {
+      session_id: liveSessionKey,
+      user_id: ls.identity?.user_id || null,
+      tenant_id: ls.identity?.tenant_id || null,
+      transport: 'sse',
+      idle_ms: lastActivityMs === null ? null : nowMs - lastActivityMs,
+      audio_in_chunks: ls.audioInChunks ?? 0,
+      audio_in_forwarded_chunks: ls.audioInForwarded ?? 0,
+      audio_out_chunks: ls.audioOutChunks ?? 0,
+      video_frames: ls.videoInFrames ?? 0,
+      duration_ms: startedMs === null ? null : nowMs - startedMs,
+      turn_count: ls.turn_count ?? 0,
+      user_turns: turns.filter((t: { role?: string }) => t.role === 'user').length,
+      model_turns: turns.filter((t: { role?: string }) => t.role === 'assistant').length,
+      ...stopEventContext(ls, reason),
+    })?.catch(() => {
+      /* fire-and-forget: teardown must never depend on OASIS */
+    });
+    recordLiveSessionEnd(ls, liveSessionKey, reason);
+    return true;
+  } catch {
+    /* telemetry must never cost us the teardown it describes */
+    return true;
+  }
+}
+
 // =============================================================================
 // Session-action handlers
 // =============================================================================
