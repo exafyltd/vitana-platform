@@ -30,7 +30,7 @@ function memSb(seed: { links?: any[]; referrals?: any[]; tenants?: any[]; rpcErr
     user_tenants: [...(seed.tenants ?? [{ user_id: NEWBIE, tenant_id: TENANT }])],
     profiles: [{ user_id: INVITER, first_name: 'Ana' }],
   };
-  const rpc = jest.fn(async () => ({ error: seed.rpcError ? { message: 'boom' } : null }));
+  const rpc = jest.fn(async () => (seed.rpcError ? { data: null, error: { message: 'boom' } } : { data: { ok: true }, error: null }));
   let n = 0;
   const sb: any = {
     t, rpc,
@@ -139,7 +139,12 @@ describe('claim', () => {
     const r = await claimInvite(sb, NEWBIE, 'abcd2345', deps());
     expect(r).toMatchObject({ status: 'attributed', rewarded: true, credits: 200 });
     expect(sb.rpc).toHaveBeenCalledTimes(1);
-    expect(sb.rpc).toHaveBeenCalledWith('increment_wallet_balance', { p_user_id: INVITER, p_currency_type: 'CREDITS', p_amount: 200 });
+    // VTID-04809: earned VTNA on the canonical ledger, keyed per referral so
+    // AP-0405 paying the same referral cannot double it.
+    expect(sb.rpc).toHaveBeenCalledWith('credit_wallet', expect.objectContaining({
+      p_user_id: INVITER, p_amount: 200, p_type: 'reward', p_source: 'member_invite',
+      p_source_event_id: `referral_reward:${INVITER}:${NEWBIE}`,
+    }));
     expect(sb.t.referrals[0].status).toBe('rewarded');
   });
 
