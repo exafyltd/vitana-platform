@@ -66,3 +66,16 @@ export async function updateShadowOutcome(sb: SupabaseClient, id: string, patch:
 export async function shadowGateStatsRpc(sb: SupabaseClient, days: number) {
   return sb.rpc('jev_shadow_gate_stats', { p_days: days });
 }
+
+/** VTID-04759: the newest gate row for a subject since a time (incident dedupe). */
+export async function fetchRecentShadowBySubject(sb: SupabaseClient, gate: string, subjectRef: string, sinceIso: string) {
+  return sb
+    .from('jev_shadow_decisions')
+    .select('id, subject_ref, created_at')
+    .eq('gate', gate)
+    .eq('subject_ref', subjectRef)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+}
