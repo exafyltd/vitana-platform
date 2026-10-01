@@ -29,7 +29,7 @@ import {
 } from './voice-session-classifier';
 import { getVoiceSpecHint } from './voice-spec-hints';
 import { lookupSpecMemory } from './voice-spec-memory';
-import { isDispatchAllowed, appendVerdict, evaluateAndQuarantine } from './voice-recurrence-sentinel';
+import { isDispatchAllowed, appendVerdict, evaluateAndQuarantine, resolveRecurrenceAfterFixMs } from './voice-recurrence-sentinel';
 import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
 import { appendShadowLog } from './voice-shadow-mode';
@@ -283,11 +283,16 @@ async function handleQualityFailure(
   // for threshold evaluation. Treat quality failures as 'rollback' verdicts
   // (the model didn't deliver a usable response, equivalent to a fix
   // that didn't hold).
+  // VTID-04776: recurrence vs the last fix of this signature (feeds the
+  // Sentinel's Persistence threshold) and the tenant the failure was seen in.
+  const recurrence = await resolveRecurrenceAfterFixMs(qc.class, qc.normalized_signature).catch(() => null);
   await appendVerdict({
     class: qc.class,
     normalized_signature: qc.normalized_signature,
     verdict: 'rollback',
     vtid: null,
+    recurrence_after_fix_ms: recurrence,
+    tenant_scope: opts.tenantScope || 'global',
   }).catch(() => { /* best-effort */ });
 
   // Sentinel gate: if already quarantined, don't spawn another investigator.

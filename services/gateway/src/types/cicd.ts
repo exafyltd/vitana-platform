@@ -625,6 +625,9 @@ export type CicdEventType =
   | 'orb.livekit.agent.room_join_succeeded'
   | 'orb.livekit.agent.room_join_failed'
   | 'orb.livekit.agent.disconnected'
+  // VTID-04776: the gateway minted a LiveKit session token (tenant, surface,
+  // role, lang — previously only inside the token metadata).
+  | 'orb.livekit.session.minted'
   // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
   // agent can reach a model from canary room context using Cloud Run's
   // default service account (ADC, no API key). Emitted by the orb-agent's

@@ -412,6 +412,74 @@ CREATE TABLE operator_messages (
 
 ---
 
+### voice_session_facts / voice_session_facts_hourly — committed, NOT yet applied (VTID-04776)
+
+One row per ORB voice session (SSE, WebSocket and LiveKit) — the per-session
+fact behind the Command Hub Voice Supervisor (`/api/v1/voice/supervisor/*`).
+Before it a session existed only as OASIS events with no tenant column, and the
+start/stop events carried no role, surface, language or provider. Migration
+`20261001120000_vtid_04776_voice_session_facts.sql` (additive, idempotent;
+apply with `RUN-MIGRATION.yml`). Verified against a local Postgres 16: applies
+twice cleanly, backfill idempotent, anon/authenticated refused.
+
+```sql
+CREATE TABLE voice_session_facts (
+  session_id         TEXT PRIMARY KEY,      -- live-<uuid> (gateway) / orb-<uuid> (LiveKit)
+  tenant_id          UUID NULL,
+  user_id            UUID NULL,
+  is_anonymous       BOOLEAN NOT NULL DEFAULT false,
+  surface            TEXT NULL,             -- vitanaland | command-hub | admin | backoffice | commerce
+  role               TEXT NULL,             -- role the Assistant Profile served
+  persona_key        TEXT NULL,
+  profile_resolution TEXT NULL,             -- declared | route | narrowed | unverified | anonymous
+  lang               TEXT NULL,
+  provider           TEXT NULL,             -- nova_sonic | cascade | vertex_serbian_bridge | livekit | unknown (CHECK)
+  selection_reason   TEXT NULL,
+  transport          TEXT NULL,             -- sse | ws | livekit (CHECK)
+  is_mobile          BOOLEAN NULL,
+  app_version        TEXT NULL,
+  entry              TEXT NULL,
+  started_at         TIMESTAMPTZ NOT NULL,
+  ended_at           TIMESTAMPTZ NULL,
+  last_activity_at   TIMESTAMPTZ NULL,      -- refreshed every 5 min while live
+  duration_ms        INTEGER NULL,
+  turn_count         INTEGER NULL,
+  user_turns         INTEGER NULL,
+  model_turns        INTEGER NULL,
+  audio_in_chunks    INTEGER NULL,
+  audio_out_chunks   INTEGER NULL,
+  ttfa_ms            INTEGER NULL,          -- session start -> first model audio
+  p50_turn_ms        INTEGER NULL,          -- reserved; not written yet
+  close_reason       TEXT NULL,
+  close_code         INTEGER NULL,          -- last upstream close code before the end
+  failure_class      TEXT NULL,             -- voice-failure-taxonomy class, NULL when healthy
+  outcome            TEXT NULL,             -- ok | silent | one_way | dropped | error | abandoned | active (CHECK)
+  stall_count        INTEGER NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()   -- trigger-maintained
+);
+-- indexes: (started_at DESC), (tenant_id, started_at DESC), (surface, role, started_at DESC),
+--          (provider, started_at DESC), (lang, started_at DESC), partial (started_at DESC) WHERE ended_at IS NULL
+```
+
+- Written only by the gateway (`services/gateway/src/services/voice-session-facts.ts`),
+  fire-and-forget: start (session/start, LiveKit token mint), updates (provider
+  selected, first audio, member role resolved, activity heartbeat, orb-agent
+  start via `/api/v1/oasis/emit`), end (all five gateway stop paths, WS
+  cleanup, orb-agent stop). Kill switch `VOICE_SESSION_FACTS_ENABLED=false`.
+- `outcome` / `failure_class` come from `classifyVoiceSessionOutcome()` (reuses
+  `classifyQualityFromSessionStop` / `detectAudioOneWay`).
+- View `voice_session_facts_hourly` (`security_invoker`): per hour x tenant x
+  surface x role x provider x lang — sessions, ok/silent/one_way/dropped/error
+  counts, avg duration, p50/p95 ttfa (`percentile_cont`).
+- Function `voice_session_facts_backfill(p_since timestamptz) RETURNS int`:
+  best-effort rebuild from `oasis_events` (start/stop/profile.resolved/
+  provider.selected joined on `metadata->>session_id`), `ON CONFLICT DO NOTHING`,
+  `p_since` required and at most 30 days back. NOT run by the migration —
+  operator step after apply.
+- RLS on, no policies; `anon`/`authenticated` revoked on table and view;
+  `service_role` only (table, view, function).
+
 ### conversation_metrics_hourly — APPLIED 2026-09-23 (VTID-04371)
 
 Hourly conversation metrics for Command Hub → Conversation → Monitor and
@@ -1165,6 +1233,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-01 | VTID-04776, **committed, NOT applied** (migration `20261001120000_vtid_04776_voice_session_facts.sql`, additive): table `voice_session_facts` (one row per ORB voice session, PK `session_id`; RLS on, service_role only), view `voice_session_facts_hourly` (security_invoker), trigger `trg_voice_session_facts_touch`, function `voice_session_facts_backfill(p_since)` (service_role, max 30 days back, not run by the migration). Read by `/api/v1/voice/supervisor/*` (VTID-04776/04778/04780). The gateway writes it fire-and-forget and logs loudly while the table is missing, so apply before relying on the Supervisor; then run the backfill for the history you want. | Claude Code | VTID-04776 |
 | 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04668, **not yet applied** (migration `20260926160000_vtid_04668_recommendation_priority.sql`, additive): nullable `autopilot_recommendations.priority_score numeric` and `autopilot_recommendations.quality jsonb`, plus partial index `idx_autopilot_recommendations_dev_priority` on `(status, priority_score DESC) WHERE user_id IS NULL`. Written by the gateway for developer rows only (`user_id IS NULL`, not `community` / `operator_onramp`): `priority_score = value × confidence × success_odds / max(expected_cost_usd, 0.05)`; `quality = {version, value, confidence, success_odds, expected_cost_usd, expected_input_tokens, executable, basis, scored_at}` (VTID-04669 adds `review`, `review_attempts`, `review_last_attempt_at`). The same write maps `impact_score` (from value) and `effort_score` (from expected cost) so older readers keep working. Community rows keep NULL. Apply before the gateway code is deployed. | Claude Code | VTID-04668 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |

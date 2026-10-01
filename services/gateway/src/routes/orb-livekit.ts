@@ -42,6 +42,12 @@ import { randomUUID } from 'crypto';
 import { AccessToken } from 'livekit-server-sdk';
 import * as jose from 'jose';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { recordVoiceSessionStart, uuidOrNull } from '../services/voice-session-facts';
+import {
+  resolveAssistantProfile,
+  clampRoleToProfile,
+  type AssistantProfile,
+} from '../orb/profile/assistant-profile';
 // §11 conversation-flow architecture: the single session-end memory-commit step.
 // The LiveKit agent POSTs its transcript here on teardown so the SAME extraction
 // the Vertex path runs also runs for LiveKit (it ran NOTHING before).
@@ -644,6 +650,35 @@ interface MintTokenBody {
   //   "Kore"                  (Gemini TTS multilingual voice)
   // Empty / absent → use language default from LANG_DEFAULTS.
   voice_override?: string;
+  // VTID-04776: the screen declares which Vitana it is (same contract as
+  // orb-live's session start, VTID-04560): `surface` + `view_role`, and the
+  // route for older clients that declare neither.
+  surface?: string;
+  view_role?: string;
+  current_route?: string;
+}
+
+/**
+ * VTID-04776: the role a LiveKit session serves — resolved through the same
+ * Assistant Profile resolver orb-live uses. The device never decides
+ * (CLAUDE.md 42g): this route used to force `community` on any mobile
+ * User-Agent, so an admin on the admin screens of a phone got the community
+ * Vitana. Exported for the regression test.
+ */
+export function resolveLiveKitProfile(input: {
+  body: Pick<MintTokenBody, 'surface' | 'view_role' | 'current_route'>;
+  isAnonymous: boolean;
+  isExafyAdmin: boolean;
+  storedRole: string | null | undefined;
+}): { profile: AssistantProfile; role: string } {
+  const profile = resolveAssistantProfile({
+    declaredSurface: input.body.surface,
+    declaredViewRole: input.body.view_role,
+    currentRoute: typeof input.body.current_route === 'string' ? input.body.current_route : null,
+    isAnonymous: input.isAnonymous,
+    isExafyAdmin: input.isExafyAdmin,
+  });
+  return { profile, role: clampRoleToProfile(profile, input.storedRole) ?? 'community' };
 }
 
 router.post(
@@ -682,12 +717,16 @@ router.post(
     const userId = req.identity?.user_id ?? `anon-${randomUUID()}`;
     const tenantId = req.identity?.tenant_id ?? '';
 
-    // Mobile-community coercion (defense-in-depth, mirrors
-    // memory/feedback_mobile_community_only.md).
+    // VTID-04776: `is_mobile` is still reported to the agent, but it no
+    // longer decides the role — the screen does (resolveLiveKitProfile).
     const ua = String(req.headers['user-agent'] || '').toLowerCase();
     const isMobile = /iphone|android|appilix|webview|mobile/.test(ua);
-    const dbRole = req.identity?.role ?? 'community';
-    const role = isMobile ? 'community' : dbRole;
+    const { profile: assistantProfile, role } = resolveLiveKitProfile({
+      body,
+      isAnonymous,
+      isExafyAdmin: req.identity?.exafy_admin === true,
+      storedRole: req.identity?.role ?? null,
+    });
 
     const orbSessionId = `orb-${randomUUID()}`;
     const roomName = `orb-${userId}-${Date.now()}`;
@@ -709,6 +748,7 @@ router.post(
         user_id: userId,
         tenant_id: tenantId,
         role,
+        surface: assistantProfile.surface,
         lang,
         is_mobile: isMobile,
         is_anonymous: isAnonymous,
@@ -734,6 +774,44 @@ router.post(
     });
 
     const token = await at.toJwt();
+
+    // VTID-04776: the mint is the LiveKit session's start on the gateway —
+    // tenant/surface/role/lang were only inside the token metadata before.
+    void emitOasisEvent({
+      vtid: 'VTID-04776',
+      type: 'orb.livekit.session.minted',
+      source: 'orb-livekit',
+      status: 'info',
+      message: `livekit session minted: surface=${assistantProfile.surface} role=${role} lang=${lang}`,
+      payload: {
+        session_id: orbSessionId,
+        tenant_id: tenantId || null,
+        user_id: isAnonymous ? null : userId,
+        is_anonymous: isAnonymous,
+        surface: assistantProfile.surface,
+        role,
+        lang,
+        is_mobile: isMobile,
+        agent_id: agentId,
+        resolution: assistantProfile.resolution,
+      },
+      actor_id: req.identity?.user_id ?? undefined,
+    }).catch(() => { /* telemetry never blocks the mint */ });
+    recordVoiceSessionStart({
+      session_id: orbSessionId,
+      tenant_id: uuidOrNull(tenantId),
+      user_id: uuidOrNull(isAnonymous ? null : userId),
+      is_anonymous: isAnonymous,
+      surface: assistantProfile.surface,
+      role,
+      persona_key: assistantProfile.personaKey ?? null,
+      profile_resolution: assistantProfile.resolution,
+      lang,
+      provider: 'livekit',
+      selection_reason: 'livekit_token_mint',
+      transport: 'livekit',
+      is_mobile: isMobile,
+    });
 
     // VTID-03035: pre-warm the bootstrap cache so the agent's
     // /orb/context-bootstrap call (which fires ~1-2s later, while

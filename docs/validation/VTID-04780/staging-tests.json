@@ -1,0 +1,9 @@
+{"vtid":"VTID-04780","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"voice-lab live sessions still refuse anonymous callers","path":"/api/v1/voice-lab/live/sessions","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"voice-lab healing overview still refuses anonymous callers","path":"/api/v1/voice-lab/healing/overview","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"voice-lab probe write route is gated","method":"POST","path":"/api/v1/voice-lab/probe","rejected_probe":true,"expect_status":401},
+{"kind":"http","name":"voice-lab health stays public","path":"/api/v1/voice-lab/health","expect_status":200},
+{"kind":"http","name":"supervisor refuses anonymous callers","path":"/api/v1/voice/supervisor/overview","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"existing","ref":"npx jest test/vtid-04780-voice-supervisor-auth.test.ts test/routes/voice-lab.test.ts","cwd":"services/gateway","reason":"Proves a plain member and a tenant admin get 403 on voice-lab sessions/healing/probe, exafy_admin passes, and a tenant admin is forced to their own tenant on every supervisor read whatever tenant_id they pass. Staging probes run without a member token, so the 403 paths are proven here."}
+]}
