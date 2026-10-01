@@ -30,7 +30,7 @@
  * Claude session as additional context.
  */
 
-import { bridgeActivationToExecution, isUuidString } from './dev-autopilot-execute';
+import { bridgeActivationToExecution, confirmNewFiles, isUuidString } from './dev-autopilot-execute';
 import { allocateAndRegisterFindingVtid } from './dev-autopilot-vtid-allocate';
 
 const VTID = 'VTID-02665';
@@ -174,31 +174,39 @@ async function loadSafetyConfig(s: SupaConfig): Promise<SafetyConfigSummary> {
       'services/gateway/src/frontend/command-hub/**',
       'services/agents/**',
     ],
+    // VTID-04790: name-contains form, so the corrected matcher denies
+    // exactly what the old one did (any file name containing these).
     deny_scope: [
       'supabase/migrations/**',
-      '**/auth*',
-      '**/orb-live.ts',
+      '**/*auth*',
+      '**/*orb-live.ts',
       '.github/workflows/**',
-      '**/.env*',
+      '**/*.env*',
     ],
   };
 }
 
-function preflightFiles(files: string[], cfg: SafetyConfigSummary): {
+function preflightFiles(files: string[], cfg: SafetyConfigSummary, newFiles: string[] = []): {
   allowed: string[];
   denied: string[];
   outside: string[];
 } {
-  // We import matchGlob lazily (require inside service module is fine in our
+  // We import the matchers lazily (require inside service module is fine in our
   // runtime) so the bridge has no cyclic dep on the gate at module load.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { matchGlob } = require('./dev-autopilot-safety') as { matchGlob: (p: string, pat: string) => boolean };
+  const { matchGlob, isDeniedPath } = require('./dev-autopilot-safety') as {
+    matchGlob: (p: string, pat: string) => boolean;
+    isDeniedPath: (p: string, deny: string[], opts?: { isNewFile?: boolean }) => boolean;
+  };
   const matchAny = (p: string, pats: string[]) => pats.some(pat => matchGlob(p, pat));
+  const isNew = new Set(newFiles);
   const allowed: string[] = [];
   const denied: string[] = [];
   const outside: string[] = [];
   for (const f of files) {
-    if (matchAny(f, cfg.deny_scope)) denied.push(f);
+    // VTID-04790: a new test file caught only by a name-only rule (e.g.
+    // "...-auth-transition.test.ts" vs `**/*auth*`) is not denied.
+    if (isDeniedPath(f, cfg.deny_scope, { isNewFile: isNew.has(f) })) denied.push(f);
     else if (matchAny(f, cfg.allow_scope)) allowed.push(f);
     else outside.push(f);
   }
@@ -459,7 +467,7 @@ export async function dispatchFeedbackTicket(
   const cfg = await loadSafetyConfig(s);
   const MAX_DRAFT_RETRIES = 2;
   let proposedFiles = parseFilesToTouchFromSpec(ticket.spec_md);
-  let flight = preflightFiles(proposedFiles, cfg);
+  let flight = preflightFiles(proposedFiles, cfg, await confirmNewFiles(proposedFiles, cfg.deny_scope));
 
   for (let attempt = 0; attempt < MAX_DRAFT_RETRIES; attempt++) {
     const isBad = proposedFiles.length === 0 || flight.allowed.length === 0;
@@ -507,7 +515,7 @@ export async function dispatchFeedbackTicket(
         }).catch(() => { /* non-blocking */ });
         ticket.spec_md = r.markdown;
         proposedFiles = parseFilesToTouchFromSpec(r.markdown);
-        flight = preflightFiles(proposedFiles, cfg);
+        flight = preflightFiles(proposedFiles, cfg, await confirmNewFiles(proposedFiles, cfg.deny_scope));
       }
     } catch (err) {
       console.warn(`[${VTID}] auto-retry failed:`, err);
