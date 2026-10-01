@@ -25,8 +25,9 @@ describe('VTID-04754 production Jev declaration', () => {
     expect(prod).not.toMatch(/name:"TYPESAFE_API_KEY", value:/);
   });
 
-  test('upserts JEV_DECISIONS_ENABLED=true', () => {
-    expect(step2).toMatch(/select\(\.name != "JEV_DECISIONS_ENABLED"\) \]\s*\+ \[ \{name:"JEV_DECISIONS_ENABLED", value:"true"\} \]/);
+  // VTID-04759 widened the same upsert to also carry the self-healing gate modes.
+  test('upserts JEV_DECISIONS_ENABLED=true (strip, then add)', () => {
+    expect(step2).toMatch(/select\(\.name != "JEV_DECISIONS_ENABLED"[^\]]*\) \]\s*\+ \[ \{name:"JEV_DECISIONS_ENABLED", value:"true"\}/);
   });
 
   test('runs after the GITHUB_SAFE_MERGE_TOKEN block and before env_overrides (which may still override it)', () => {

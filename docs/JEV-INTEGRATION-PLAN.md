@@ -697,6 +697,16 @@ names only after the DPA.
 decides whether a lesson is new and durable before `dev_agent_memory`; weekly
 top classes become findings.
 
+### 10.4a P1 progress
+- **B1 + B2 — VTID-04759 (shadow).** `services/gateway/src/services/jev/gates/selfheal-gates.ts`,
+  called from `spawnTriageAgent` for every triage. Rules classify the provider
+  failure (the production strings are fixed: Bedrock "Operation not allowed",
+  DeepSeek 402, "Too many tokens per day", "prompt is too long"); Jev
+  `ops_error_triage` is asked only for unrecognised text. The incident key is
+  `provider:<class>:<providers>` for an outage, else the endpoint; a repeat
+  within 30 minutes is a duplicate. Both pinned `shadow` on staging and prod.
+  Agreement is written back from triage's own result.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
