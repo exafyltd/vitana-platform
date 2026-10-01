@@ -381,6 +381,38 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04801 (Jev P2 A4): a new attempt at a finding whose last attempt
+    // failed — is it the same approach again? Plans and the failure text
+    // only (paths, never code).
+    name: 'execution_repeat',
+    description: 'Whether a new Dev Autopilot attempt repeats the approach of an attempt that already failed.',
+    roles: ENGINEERING,
+    input: z.object({
+      title: optText(300),
+      previous_plan: text(6000),
+      previous_failure: text(2000),
+      new_plan: text(6000),
+      fix_mode: z.boolean(),
+    }),
+    questions: {
+      repeat: {
+        type: 'noul',
+        instructions: 'Does the new plan take materially the same approach as the previous plan, with nothing that addresses why the previous attempt failed?',
+      },
+      will_succeed: { type: 'noul', instructions: 'Will the new attempt succeed (open its pull request)?' },
+    },
+    primary: 'repeat',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      task: i.title ?? null,
+      previous_attempt: { plan: i.previous_plan, failure: i.previous_failure },
+      new_attempt: { plan: i.new_plan, fix_mode: i.fix_mode },
+    }),
+  },
+  {
     // VTID-04775 (Jev P1 C1): how did an ORB voice session end? Post-session,
     // counters and close reasons only — never what anyone said.
     name: 'voice_session_outcome',
