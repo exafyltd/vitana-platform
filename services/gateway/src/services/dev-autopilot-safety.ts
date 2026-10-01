@@ -97,6 +97,14 @@ export interface SafetyContext {
    * file-list-dependent and still apply pre-flight, unchanged.
    */
   is_open_ended?: boolean;
+
+  /**
+   * VTID-04790: plan files confirmed NOT to exist on the base branch yet.
+   * A new test file listed here is exempt from name-only deny rules (see
+   * isDeniedPath). Callers fill it only after checking the repository, and
+   * leave it empty when the check fails — the exemption then never applies.
+   */
+  new_files?: string[];
 }
 
 export interface SafetyPlan {
@@ -148,11 +156,18 @@ function globToRegex(pattern: string): RegExp {
     const c = pattern[i];
     if (c === '*') {
       if (pattern[i + 1] === '*') {
-        // **  → match across segments (optionally including trailing /)
-        re += '.*';
         i += 2;
-        // consume a following '/' if present so "a/**/b" matches "a/b"
-        if (pattern[i] === '/') i += 1;
+        if (pattern[i] === '/') {
+          // `**/` → zero or more WHOLE directories, so "a/**/b" matches
+          // "a/b" and "a/x/y/b". VTID-04790: this used to emit `.*` and drop
+          // the slash, which let the next segment start mid-name — so
+          // `**/auth*` matched ".../get-current-screen-auth-transition.test.ts".
+          re += '(?:.*/)?';
+          i += 1;
+        } else {
+          // trailing `**` → anything below
+          re += '.*';
+        }
         continue;
       }
       // single * → anything but '/'
@@ -195,6 +210,50 @@ const TEST_FILE_PATTERNS = [
 
 export function isTestFile(path: string): boolean {
   return TEST_FILE_PATTERNS.some(rx => rx.test(path));
+}
+
+// =============================================================================
+// Deny scope with the new-test-file exemption (VTID-04790)
+// =============================================================================
+
+/**
+ * A deny rule that judges only the file NAME — `**\/<glob without '/'>`,
+ * e.g. `**\/*auth*`, `**\/*.env*`. Rules naming a directory
+ * (`supabase/migrations/**`) or one exact file are not name-only.
+ */
+export function isNameOnlyRule(pattern: string): boolean {
+  return pattern.startsWith('**/') && !pattern.slice(3).includes('/');
+}
+
+/**
+ * Whether `path` is in the deny scope. One exemption: a test file that does
+ * not exist yet (`isNewFile`) and is caught ONLY by name-only rules is not
+ * denied — a new test named "...-auth-transition.test.ts" changes no auth
+ * code. An existing test with such a name, any source file, and anything
+ * caught by a directory or exact-path rule stays denied.
+ */
+export function isDeniedPath(
+  path: string,
+  deny: string[],
+  opts: { isNewFile?: boolean } = {},
+): boolean {
+  const hits = deny.filter(p => matchGlob(path, p));
+  if (hits.length === 0) return false;
+  if (opts.isNewFile && isTestFile(path) && hits.every(isNameOnlyRule)) return false;
+  return true;
+}
+
+/**
+ * The paths whose deny verdict depends on whether they are new: test files
+ * caught only by name-only rules. Callers check just these against the
+ * repository, so a plan with no such file costs no lookup.
+ */
+export function newFileCandidates(paths: string[], deny: string[]): string[] {
+  return paths.filter(p => {
+    if (!isTestFile(p)) return false;
+    const hits = deny.filter(d => matchGlob(p, d));
+    return hits.length > 0 && hits.every(isNameOnlyRule);
+  });
 }
 
 // =============================================================================
@@ -291,11 +350,12 @@ export function evaluateSafetyGate(plan: SafetyPlan, ctx: SafetyContext): Safety
     );
     const filesOutsideAllow: string[] = [];
     const filesInDeny: string[] = [];
+    const newFiles = new Set(ctx.new_files ?? []);
     for (const f of plan.files_to_modify) {
       if (!matchesAnyGlob(f, effectiveAllow)) {
         filesOutsideAllow.push(f);
       }
-      if (matchesAnyGlob(f, effectiveDeny)) {
+      if (isDeniedPath(f, effectiveDeny, { isNewFile: newFiles.has(f) })) {
         filesInDeny.push(f);
       }
     }

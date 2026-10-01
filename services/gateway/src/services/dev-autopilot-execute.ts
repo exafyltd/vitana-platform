@@ -37,6 +37,7 @@ import type { LLMProvider } from '../constants/llm-defaults';
 import { emitOasisEvent, cicdEvents } from './oasis-event-service';
 import {
   evaluateSafetyGate,
+  newFileCandidates,
   SafetyContext,
   SafetyPlan,
   SafetyDecision,
@@ -706,6 +707,9 @@ export async function approveAutoExecute(input: ApprovalInput): Promise<Approval
     is_feedback_lane: isFeedbackLane,
     scanner: scannerForSafety,
     is_open_ended: isOpenEndedPlan,
+    // VTID-04790: new test files named e.g. "...-auth-...test.ts" are exempt
+    // from name-only deny rules; existence is checked on the base branch.
+    new_files: isOpenEndedPlan ? [] : await confirmNewFiles(files, cfg.deny_scope),
   };
   const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
   if (!decision.ok) {
@@ -1200,6 +1204,26 @@ async function fetchFileContent(
   // GitHub returns base64-encoded content
   const decoded = Buffer.from(r.data.content || '', r.data.encoding as BufferEncoding || 'base64').toString('utf-8');
   return { exists: true, content: decoded, sha: r.data.sha };
+}
+
+/**
+ * VTID-04790: of `paths`, the test files caught only by name-only deny rules
+ * that do NOT exist on the base branch yet. Fails closed: a lookup error
+ * counts as "exists", so the deny rule keeps applying.
+ */
+export async function confirmNewFiles(
+  paths: string[],
+  deny: string[],
+  lookup: (path: string) => Promise<{ exists: boolean; error?: string }> = (p) => fetchFileContent(p, GITHUB_BASE_BRANCH),
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of newFileCandidates(paths, deny)) {
+    try {
+      const r = await lookup(p);
+      if (!r.exists && !r.error) out.push(p);
+    } catch { /* fail closed */ }
+  }
+  return out;
 }
 
 async function getBranchSha(branch: string): Promise<{ ok: boolean; sha?: string; error?: string }> {
