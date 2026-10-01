@@ -825,6 +825,16 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   records whether Jev's call for it was right. 18 dirty-merge CI failures in
   60 days, 13 on one day of parallel runs.
 
+- **E5 — VTID-04810 (shadow).** `jev/gates/duplicate-account-gate.ts`, after
+  a `crm.company.create` or a company `sales.customer.create` executes (both
+  command paths). Entity resolution only matches names exactly, so "Acme
+  GmbH", "ACME" and "Acme Holding" become three accounts. The ERP is read
+  through the bridge's own list actions; up to 3 similar company records (never
+  a person's) go to Jev `account_duplicate` with business fields only. A rule
+  calls a pair the same when the names match once case, punctuation and
+  legal-form words are removed; agreement is written against that at once.
+  Leads and contacts (people) wait for the DPA.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

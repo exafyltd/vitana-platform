@@ -193,6 +193,27 @@ const defs: JevDecisionDef[] = [
     buildState: (i) => ({ account: { name: i.name, notes: i.notes ?? null } }),
   },
   {
+    // VTID-04810 (P2 E5): a company/customer was just created — is it the
+    // same business as one that already exists? Companies only, business
+    // fields only (people's names wait for the DPA).
+    name: 'account_duplicate',
+    description: 'Whether a newly created business account is the same company as an existing one.',
+    roles: BACKOFFICE,
+    input: z.object({ new_name: text(300), new_details: optText(1500), existing_name: text(300), existing_details: optText(1500) }),
+    questions: {
+      same: {
+        type: 'noul',
+        instructions: 'Are these two records the same company (the same legal entity or the same business under a variant name), so the new one is a duplicate?',
+      },
+    },
+    primary: 'same',
+    threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({ new_account: { name: i.new_name, details: i.new_details ?? null }, existing_account: { name: i.existing_name, details: i.existing_details ?? null } }),
+  },
+  {
     name: 'contract_clause_flag',
     description: 'Whether a contract excerpt contains a given kind of clause, and its risk.',
     roles: BACKOFFICE,

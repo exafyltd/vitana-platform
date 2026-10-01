@@ -20,6 +20,7 @@ import { emitOasisEvent } from '../oasis-event-service';
 import { getSupabase } from '../../lib/supabase';
 import { recordCustomerEpisode } from '../memory/customer';
 import { isCrmGatesOn, runCrmGates } from '../jev/gates/crm-gates';
+import { isDuplicateAccountOn, runDuplicateAccountCheck } from '../jev/gates/duplicate-account-gate';
 
 const VTID = 'VTID-03842';
 
@@ -45,6 +46,13 @@ function rememberForCustomer(done: CommandRow): void {
 function scoreCrmRecord(done: CommandRow): void {
   if (done.status !== 'executed' || !isCrmGatesOn()) return;
   void runCrmGates(done);
+}
+
+/** VTID-04810: Jev E5 shadow duplicate check on company creates; off unless its mode is set. Never awaited. */
+function checkDuplicateAccount(done: CommandRow): void {
+  if (done.status !== 'executed' || !isDuplicateAccountOn()) return;
+  if (done.type !== 'crm.company.create' && done.type !== 'sales.customer.create') return;
+  void runDuplicateAccountCheck(done, { bridge: getErpBridgeClient() });
 }
 
 export interface OrchestratorCaller {
@@ -231,6 +239,7 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
   const done = await store.updateCommand(row.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? new Date().toISOString() : null });
   rememberForCustomer(done);
   scoreCrmRecord(done);
+  checkDuplicateAccount(done);
   await audit(store, caller, access, channel, outcome.status === 'executed' ? 'command.executed' : 'command.failed', row.id, null, { type: spec.type, tier: decision.tier, escalations: decision.escalations, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }
@@ -263,6 +272,7 @@ export async function decideApproval(caller: OrchestratorCaller, access: Effecti
   const done = await store.updateCommand(command.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? now : null });
   rememberForCustomer(done);
   scoreCrmRecord(done);
+  checkDuplicateAccount(done);
   await audit(store, caller, access, channel, 'approval.approved', command.id, approval.id, { note, requester_id: approval.requester_id, outcome: outcome.status, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }
