@@ -6,3 +6,4 @@ npx jest test/vtid-04815 test/vtid-04465-operator-pipeline-regression test/orb/l
 npx jest $(grep -rlE "run-agent-execution|dev-autopilot-watcher|fetchRecentShadowRow" test)   # runner/watcher/shadow-row suites (outputs/jest-runner-watcher.txt)
 # Evidence (plan §10.4 A): 21 of 675 executions completed; 42 Dev Autopilot CI failures in 30 days. A dirty-merge
 # CI failure is a clash (A7), not the change's own risk, and is excluded from A9's outcome.
+npx jest (full gateway suite, merged with origin/main 4dcd539)          # 1454 suites, 23318 passed, 0 failed (outputs/jest-full.txt)
