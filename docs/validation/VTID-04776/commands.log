@@ -1,6 +1,6 @@
 # VTID-04776 / 04777 / 04778 / 04779 / 04780 — commands run in this session (services/gateway unless noted)
 npx tsc --noEmit -p .                                                          # clean
-npx jest test/vtid-04776-voice-supervisor.test.ts test/vtid-04780-voice-supervisor-auth.test.ts \
+npx jest test/vtid-04776-voice-supervisor.test.ts test/routes/voice-supervisor.test.ts \
   test/routes/orb-livekit.test.ts test/command-hub/vtid-04779-voice-section-rebuild.test.ts \
   test/orb/latency/vtid-04542-voice-payload-identity.test.ts                   # outputs/jest-voice-supervisor.txt
 npx jest test/command-hub                                                      # 28 suites pass

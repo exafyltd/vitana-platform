@@ -1,5 +1,5 @@
 {"vtid":"VTID-04778","service":"gateway","tests":[
 {"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
 {"kind":"http","name":"fix impact endpoint is mounted and auth-gated","path":"/api/v1/voice/supervisor/fixes/healing_history:00000000-0000-4000-8000-000000000000/impact?days=7","expect_status":401,"expect_json":{"ok":false}},
-{"kind":"existing","ref":"npx jest test/vtid-04776-voice-supervisor.test.ts test/vtid-04780-voice-supervisor-auth.test.ts","cwd":"services/gateway","reason":"The before/after comparison (25% relative AND 2pp, MIN_SAMPLE on both windows, class rate vs 1-ok_rate) and the impact endpoint's segment scoping are pure/mocked; staging probes are read-only and anonymous, so they can only prove the route exists."}
+{"kind":"existing","ref":"npx jest test/vtid-04776-voice-supervisor.test.ts test/routes/voice-supervisor.test.ts","cwd":"services/gateway","reason":"The before/after comparison (25% relative AND 2pp, MIN_SAMPLE on both windows, class rate vs 1-ok_rate) and the impact endpoint's segment scoping are pure/mocked; staging probes are read-only and anonymous, so they can only prove the route exists."}
 ]}

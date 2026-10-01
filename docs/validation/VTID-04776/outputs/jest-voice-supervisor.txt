@@ -1,4 +1,4 @@
-PASS test/vtid-04780-voice-supervisor-auth.test.ts
+PASS test/routes/voice-supervisor.test.ts
 PASS test/routes/orb-livekit.test.ts
 PASS test/command-hub/vtid-04779-voice-section-rebuild.test.ts
 PASS test/vtid-04776-voice-supervisor.test.ts

@@ -26,7 +26,7 @@ const IDENTITIES: Record<string, any> = {
   member: { user_id: '33333333-3333-4333-8333-333333333333', tenant_id: T_OWN, exafy_admin: false },
 };
 
-jest.mock('../src/middleware/auth-supabase-jwt', () => ({
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: jest.fn(async (req: any, res: any, next: any) => {
     const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
     const id = IDENTITIES[token];
@@ -39,7 +39,7 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
     req.identity?.exafy_admin ? next() : res.status(403).json({ ok: false })),
 }));
 
-jest.mock('../src/services/dependency-probe', () => ({
+jest.mock('../../src/services/dependency-probe', () => ({
   withDependencyHealth: async (_deps: unknown, body: unknown) => body,
 }));
 
@@ -52,7 +52,7 @@ const mockFetchCallerTenantRole = jest.fn();
 const mockFetchFixes = jest.fn();
 const mockFetchFix = jest.fn();
 
-jest.mock('../src/services/voice-supervisor-data', () => {
+jest.mock('../../src/services/voice-supervisor-data', () => {
   class SupervisorDataError extends Error {}
   return {
     MAX_FACT_ROWS: 50000,
@@ -68,8 +68,8 @@ jest.mock('../src/services/voice-supervisor-data', () => {
   };
 });
 
-import supervisorRouter from '../src/routes/voice-supervisor';
-import voiceLabRouter from '../src/routes/voice-lab';
+import supervisorRouter from '../../src/routes/voice-supervisor';
+import voiceLabRouter from '../../src/routes/voice-lab';
 
 const app = express();
 app.use(express.json());
@@ -198,7 +198,7 @@ describe('VTID-04780 voice supervisor access', () => {
   });
 
   test('a failed read is a 502, never an empty healthy answer', async () => {
-    const { SupervisorDataError } = jest.requireMock('../src/services/voice-supervisor-data');
+    const { SupervisorDataError } = jest.requireMock('../../src/services/voice-supervisor-data');
     mockFetchFactRows.mockRejectedValue(new SupervisorDataError('voice_session_facts read failed: 404'));
     const err = jest.spyOn(console, 'error').mockImplementation(() => {});
     const res = await request(app).get('/api/v1/voice/supervisor/overview').set(auth('admin'));
@@ -240,7 +240,7 @@ describe('VTID-04780 voice-lab is developer-only', () => {
   });
 
   test('exafy_admin passes the gate', async () => {
-    const { requireVoiceLabDevAccess } = require('../src/routes/voice-lab');
+    const { requireVoiceLabDevAccess } = require('../../src/routes/voice-lab');
     const next = jest.fn();
     const req: any = { headers: { authorization: 'Bearer admin' }, get: () => undefined, method: 'GET', path: '/x' };
     const res: any = { status: jest.fn(() => res), json: jest.fn(() => res) };

@@ -23,7 +23,7 @@ AC-3: The LiveKit token route resolves the assistant from the declared surface/v
 AC-4: Healing verdicts record `recurrence_after_fix_ms` and `tenant_scope`.
   TEST: services/gateway/test/vtid-04776-voice-supervisor.test.ts
 AC-5: voice-lab live-session and healing reads require exafy_admin (previously any signed-in user saw every tenant's sessions).
-  TEST: services/gateway/test/vtid-04780-voice-supervisor-auth.test.ts
+  TEST: services/gateway/test/routes/voice-supervisor.test.ts
 AC-6: `/api/v1/voice/supervisor/overview` answers healthy / system_wide / segment_specific / insufficient_data from per-segment rates with a minimum sample; a session with no recorded end is a telemetry gap (`no_end`), excluded from quality rates and reported as `end_recorded_rate`.
   TEST: services/gateway/test/vtid-04776-voice-supervisor.test.ts
 AC-7: `/segments` builds the tenant x assistant matrix (any two dimensions) and the `assistant` filter maps each column to its surface, so a clicked cell opens exactly its sessions.
@@ -31,7 +31,7 @@ AC-7: `/segments` builds the tenant x assistant matrix (any two dimensions) and 
 AC-8 (VTID-04778): `/fixes/:id/impact` compares the fix's segment N days before vs after and returns improved / no_change / regressed / insufficient_data.
   TEST: services/gateway/test/vtid-04776-voice-supervisor.test.ts
 AC-9 (VTID-04780): a platform admin sees every tenant; a tenant admin is forced to their own tenant whatever the query says; anyone else 403; no token 401.
-  TEST: services/gateway/test/vtid-04780-voice-supervisor-auth.test.ts
+  TEST: services/gateway/test/routes/voice-supervisor.test.ts
 AC-10 (VTID-04777/04778/04779): the Voice section is Overview, Tenants & Roles, Sessions, Issues & Healing (Action Queue / Self-Healing Pipeline / Fix Impact), Test Bench (LiveKit | Nova Sonic + voice test suite), Providers & Config; Test Contracts lives in Testing & QA; every old path redirects; LiveKit Run Diagnostics is read-only.
   TEST: services/gateway/test/command-hub/vtid-04779-voice-section-rebuild.test.ts
   UI: Playwright screenshots of each tab at 1400x900 and 390x844 (API mocked), reviewed in-session
