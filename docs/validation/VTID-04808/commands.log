@@ -8,3 +8,4 @@ npx jest $(grep -rl dev-autopilot-watcher test)                         # watche
 # dirty merge state records "other_conflicted"; the two overlap tests were corrected to include the shared test/ dir.
 # Evidence (production, read-only SQL, 60 days to 2026-10-01): dev_autopilot.execution.ci_failed with
 # mergeable_state=dirty — 2026-09-18: 4 of 10, 2026-09-21: 13 of 24, 2026-09-25: 1 of 2.
+npx jest (full gateway suite, merged with origin/main 9766e1d)          # 1451 suites, 23275 passed, 0 failed (outputs/jest-full.txt)
