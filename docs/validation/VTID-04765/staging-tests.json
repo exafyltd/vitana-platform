@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04765",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "scripts/ci/sql-tests/run-erase-user-data-test.sh", "cwd": ".",
+      "reason": "erasure deletes rows; it is proven on a throwaway Postgres in CI (SQL-ERASE-USER-DATA.yml), never on the shared database staging writes to" }
+  ]
+}

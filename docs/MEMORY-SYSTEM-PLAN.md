@@ -6,6 +6,8 @@
 
 **Goal:** a memory system that a supervisor can maintain and that the team can rely on. Community users should notice it, and a developer should never start the day with an empty memory.
 
+> **Revised 2026-10-01 (VTID-04767): read §8 first.** Sections 0–7 are the 2026-09-23 audit and its phases (mostly shipped). §8 extends the target to the whole memory, not just chat facts: roles and multi-role users, personal vs role memory, cross-session continuity, the Garden, the Diary, health records, combining sources before answering, people and relationships, erasure. It also maps all 22 requirements.
+
 ---
 
 ## 0. Verdict in five lines
@@ -369,6 +371,159 @@ Separately, `POST /api/v1/automations/cron/:id` had no authentication. Fixed by 
    - The golden eval runs against it from an ECS task inside the VPC.
    - For per-PR CI, a throwaway pgvector container in the GitHub runner is the cheaper complement. Phase 0's `write_fact` change was tested the same way, on a local Postgres.
 5. **Sequencing:** community first (Phases 0–2), then developers (3), then ERP/support (4).
+
+---
+
+## 8. Revision 2026-10-01 — the whole memory (VTID-04767)
+
+### 8.1 Why this revision
+
+Production mobile sessions on 2026-09-29 showed failures that sections 0–7 do not address:
+- The wife's parents were stored as the member's own parents.
+- A correction was claimed but not saved.
+- An old note beat a newer fact.
+- The display stuck on "Vitana spricht".
+
+The owner asked for a foundation others have already proven instead of more patches. Two research rounds checked that: R1 covered voice frameworks and memory layers; R2 covered memory with roles, the Garden, the Diary, health records and context assembly, against the inventory below.
+
+Both are kept with the session record; the summaries are here:
+- **Inventory of what exists:** 13 sections, 22 hard requirements, the custom logic no framework provides.
+- **R2 result:** no memory product meets the 22 requirements without becoming a second store. The products checked were Mem0, Zep/Graphiti, Letta, LangGraph Store, Cognee, Hindsight and AgentCore Memory, and every one owns its own tables or service. So the recorded decision stands: **Postgres + pgvector + Titan v2, one write API, one read API.**
+- **What changes is the pattern.** We borrow what the large products do:
+  - memory scoped inside the existing system of record (M365 Copilot, Salesforce);
+  - per-project memory (ChatGPT / Claude Projects): our roles;
+  - health kept apart, flowing one way (ChatGPT Health);
+  - health records fetched by tool, never copied into memory (Claude's health-records connector).
+- **R1's recommendation was withdrawn.** It proposed AgentCore Memory as the store and Graphiti as the upgrade, contrary to §2 and §7, and it ignored roles, the Garden, the Diary, health and the 300 ms gate.
+
+### 8.2 Target: one Postgres memory, scoped, snapshotted
+
+**Scopes on every memory row** (`memory_facts` too; today a fact has no role, so role-private facts are impossible):
+
+| scope | Visible in | Examples |
+|---|---|---|
+| `personal` | every role the member holds | name, family, preferences, diary-derived episodes |
+| `role:<role>` | only when that role is served | developer handoffs, admin notes |
+| `customer:<id>` | BackOffice for that customer | CRM notes, calls |
+| `tenant:<role>` | everyone serving that role in the tenant | support resolutions |
+
+**Flow rule:** personal memory flows into every role; role memory never flows out of its role (a developer note never reaches the community Vitana). The served role comes from the session's Assistant Profile (VTID-04560), never from the device and never from memory. **Roles and permissions are never stored as memory facts**: agents act on permissions written into their own memory.
+
+**Sensitivity:** `standard` | `special_category` (health, GDPR Art. 9). Special-category rows reach only member surfaces and the Health Coach, with consent checked at read time.
+
+**Enforcement in the database, not only in the app:**
+- RLS on transaction-local settings (`app.user_id`, `app.served_role`, `app.surface`).
+- A database role that cannot bypass RLS.
+- Recall functions that run as the caller.
+- `WORK_SURFACE_CONTEXT_MARKER` and the profile clamp stay as defense in depth.
+
+**People and relationships (VTID-04766, shipped):**
+- A relative is a relation path from the member plus an attribute: `spouse › father › name`.
+- It is read from the facts' keys (`services/memory/people.ts`), so the facts stay the only store.
+- One canonical key per relative.
+- Matching is relation-aware, so a wife's father is never the member's father.
+- A `<people>` block tells the model who is who.
+- Later, if families grow beyond what keys express (two children with the same attribute), add a typed `memory_people(path, attribute, value)` *projection* rebuilt from facts, never a second writer.
+
+**The Memory Garden** stays the member's view and editor of exactly what recall reads. The list uses the same `recall()` with `sections=all, visible_to_user=true`. Forget-sticks (VTID-04441) and Identity Lock are unchanged.
+
+**The Daily Diary** keeps its single write path (VTID-04390). Memory holds the derived episode and points back to the diary row; the diary row stays the record.
+
+**Health records** (about 25 tables, lab results, wearables, Vitana Index) are never copied into memory. The model reaches them through typed tools that read the source tables per question, with consent checked and audited. Only a short derived summary ("sleep trending down 2 weeks") may enter the snapshot, as `special_category`.
+
+**Cross-session continuity:**
+- These stay as they are: session summaries, open threads, assistant promises, the wake brief.
+- New: they become role-scoped, so a developer session's open thread never opens a community session.
+
+**Combining before answering (one read path):**
+- `recall({tenant, user, served_role, surface, locale, query?, sections, budget})` returns sections with provenance and `degraded_sources`.
+- Two modes:
+  - **snapshot:** at session start, one row from `memory_context_snapshot(tenant, user, served_role, locale)`. It is rebuilt from an outbox whenever memory changes, and immediately on forget or consent revocation. This turns the 300 ms gate into a single-row read; today it is usually missed.
+  - **live:** tools and mid-session deltas.
+- Fixed priority trimming. Never trimmed: identity from `app_users` and the conflict rules. Then, in order: people → facts → open threads and promises → recent summaries → diary → health summary → episodes.
+- Conflict rules unchanged:
+  - current message > stored fact > older note (VTID-04750);
+  - stated > edited > inferred;
+  - ask before replacing a different value.
+- **The production voice path moves to this read path.** Today it still runs the legacy six-table read in `orb-memory-bridge.ts`; `recall()` is on only on staging (`MEMORY_ORB_RECALL_ENABLED`).
+
+**Writes:**
+- The existing `remember.*` gets an explicit gate (add / supersede / no-op / disregard) and an outbox row in the same transaction.
+- The backstops stay (Nova does not call `remember_fact` reliably).
+- But the extractor must be given the previous turn, so "ihr Vater" is resolved, never guessed.
+
+**Erasure (VTID-04765, shipped as a PR):**
+- `erase_user_data()` covers every `user_id` table by discovery, with a registry of legal retentions.
+- The account is deleted only when erasure reported no errors.
+- **Next:**
+  - a CI guard that every new table with personal data but no `user_id` column (e.g. `sender_id`) is registered;
+  - vacuum after erasure (soft-deleted vector pages are recoverable);
+  - a non-cascading audit row for the request itself;
+  - counsel's confirmation of the retention list.
+
+**Voice layer:**
+- LiveKit Agents (R1) does not change any of this; it makes the snapshot mandatory.
+- Nova accepts history only before audio starts.
+- LiveKit's per-turn memory hook works only on the cascade.
+- The voice agent gets an opaque session token and calls the gateway's `recall()`. It never queries memory itself and never puts memory into room attributes.
+
+### 8.3 The 22 requirements → how they are met
+
+| # | Requirement | How |
+|---|---|---|
+| 1 | Postgres-coherent, one store | Unchanged decision; no product store |
+| 2 | Tenant + user isolation | RLS on GUCs, non-bypass role (new) |
+| 3 | Role scope, multi-role users | `scope` column on facts + items; flow rule above (new) |
+| 4 | Work-surface isolation | RLS on `app.surface` + existing marker |
+| 5 | Typed facts, one current value | Existing `write_fact`; relation-aware keys (VTID-04766) |
+| 6 | Episodes of many kinds | Existing `memory_items` kinds + idempotency |
+| 7 | Garden = what recall reads | Garden lists through `recall()` (new) |
+| 8 | Durable forgetting | Existing markers; snapshot rebuilt on forget (new) |
+| 9 | Identity Lock | Unchanged; add role/permissions to never-memory |
+| 10 | 300 ms voice gate | `memory_context_snapshot` (new) |
+| 11 | Bounded prompt | Fixed priority trimming (new order above) |
+| 12 | Multi-block assembly | `recall()` sections; health via tools |
+| 13 | Conflict semantics | Unchanged (VTID-04588/04750) |
+| 14 | Titan v2 only | Unchanged |
+| 15 | LLMs via Bedrock routing, locale | Unchanged |
+| 16 | Idempotent session-end commit | Unchanged; writes outbox |
+| 17 | Retention + GDPR | Transcript TTL; `erase_user_data()` (VTID-04765); vacuum (new) |
+| 18 | Observability | Existing telemetry + snapshot age/staleness metric (new) |
+| 19 | Testable without production | Golden eval; throwaway Postgres in CI (as VTID-04765 does) |
+| 20 | No new service | None added |
+| 21 | Scale | Fine to low thousands on one Postgres |
+| 22 | Multilingual | DE-first detectors; relation words in de/en/es/sr (VTID-04766) |
+
+### 8.4 Phases
+
+Each phase is its own VTID, its own PR, a staging verification, and the owner's "yes" for production.
+
+1. **Ship the two fixes already built.**
+   - Erasure: apply the migration, then deploy the edge function.
+   - People model.
+2. **Production voice on `recall()`.** Flip `MEMORY_ORB_RECALL_ENABLED` in production after a staging comparison of both read paths on the same sessions (read-only).
+3. **Scope + sensitivity columns** on `memory_facts` and `memory_items`.
+   - Backfill: everything existing is `personal`; developer/customer/support rows get their scopes.
+   - RLS policies.
+   - A non-bypass DB role for the gateway's memory module.
+4. **Snapshot + outbox.**
+   - `memory_context_snapshot` rebuilt on change.
+   - The voice bootstrap reads one row.
+   - Measure the gate hit rate before and after.
+5. **Health through tools.** Typed read tools over the source tables, consent-checked and audited; only derived summaries in the snapshot.
+6. **Backstop context.** The extractor gets the previous turn; it saves nothing when the subject is unclear.
+7. **Delete what this replaces:**
+   - the legacy six-table read;
+   - the tier-2 `mem_*` mirrors;
+   - `ai_memory`;
+   - the dead D-engine prompt paths.
+8. **Isolated test database** (§7 decision 4): the live-voice memory suite moves off production data. **Until it exists, live memory tests write the test account's rows into production, which conflicts with the staging read-only rule.**
+
+### 8.5 Open decisions for the owner
+
+1. The retention list in `erasure_registry` (financial records, HGB §257 / AO §147) needs counsel.
+2. Health data's Art. 9 legal basis and consent text need counsel. The design assumes explicit consent, checked at read time.
+3. Provisioning the isolated test database (phase 8) is an owner action.
 
 ---
 

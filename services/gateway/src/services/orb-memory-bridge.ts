@@ -52,6 +52,7 @@ import {
   formatSelectionDebug
 } from './context-window-manager';
 import { isOrbRecallEnabled, recallOrbMemoryItems } from './memory/recall';
+import { formatPeopleBlock } from './memory/people';
 
 // =============================================================================
 // VTID-01106: Constants & Configuration
@@ -1569,6 +1570,15 @@ function formatMemoryForPrompt(items: MemoryItem[]): string {
       lines.push(`- ${fact.content}`);
     }
     lines.push('');
+    // VTID-04766: who is who, so a wife's father is never read as the
+    // member's own father.
+    const people = formatPeopleBlock(
+      structuredFacts.map((f) => {
+        const cj = (f as any).content_json;
+        return { fact_key: String(cj?.fact_key ?? ''), fact_value: String(cj?.fact_value ?? '') };
+      }),
+    );
+    if (people) lines.push(people.trimEnd(), '');
   }
 
   if (regularItems.length > 0) {
