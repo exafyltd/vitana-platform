@@ -1,0 +1,26 @@
+# VTID-04771 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-10-01T10:03:30.783Z
+# execution_id=5952d2be-84da-4daa-a559-f7c95396083a finding_id=c91f9f43-9c79-4d0b-9ea3-4242f593e786 plan_version=1
+# branch=dev-autopilot/5952d2be base=main
+# llm provider=bedrock model=eu.anthropic.claude-sonnet-4-6
+
+# agent turns=33 fix_rounds=0 checks_refused_by_guard=0 nav_repeats_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/5952d2be
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add services/gateway/src/orb/live/session/upstream-message-handler.ts   # modify
+$ git add services/gateway/src/orb/upstream/constants.ts   # modify
+$ git add services/gateway/src/services/decision-contract/policy-keys.ts   # modify
+$ git add services/gateway/test/orb/live/session/vtid-04771-tool-filler-guidance.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04771/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/5952d2be
+$ gh pr create --base main --head dev-autopilot/5952d2be
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).

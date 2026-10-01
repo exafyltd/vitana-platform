@@ -52,6 +52,11 @@ export const POLICY_KEYS = {
     'voice.loop_guard.max_consecutive_model_turns',
   VOICE_LOOP_GUARD_MAX_CONSECUTIVE_TOOL_CALLS:
     'voice.loop_guard.max_consecutive_tool_calls',
+  // VTID-04771: threshold above which a slow tool result carries a
+  // speak_guidance filler intent so the model acknowledges rather than
+  // going silent (model_under_responds_r100plus mitigation).
+  VOICE_TOOL_FILLER_THRESHOLD_MS:
+    'voice.tool.filler_threshold_ms',
 
   // ---- Phase D.4.a (VTID-03127) --------------------------------
   // Default voice cascade returned by the gateway when no per-agent

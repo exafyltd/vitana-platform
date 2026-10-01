@@ -1,0 +1,33 @@
+{
+  "vtid": "VTID-04771",
+  "execution_id": "5952d2be-84da-4daa-a559-f7c95396083a",
+  "finding_id": "c91f9f43-9c79-4d0b-9ea3-4242f593e786",
+  "plan_version": 1,
+  "branch": "dev-autopilot/5952d2be",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/orb/live/session/upstream-message-handler.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/orb/upstream/constants.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/decision-contract/policy-keys.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/orb/live/session/vtid-04771-tool-filler-guidance.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-10-01T10:03:30.784Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
