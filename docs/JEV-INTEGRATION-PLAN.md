@@ -756,6 +756,12 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   triage's own report ("transient" ↔ info severity). Enforce would skip only
   a decided "transient"; not pinned.
 
+- **A6 — VTID-04800 (shadow).** `jev/gates/ci-failure-gate.ts`, in the
+  watcher's CI-failed branch: Jev `ci_failure_bucket` per failing check (log
+  excerpt), next to a rule bucket (governance checks by name; `error TS`,
+  Jest FAIL, npm ERR!, runner loss by log line). Agreement at once where the
+  rules knew. Every failure still goes to fix mode until enforce is decided.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

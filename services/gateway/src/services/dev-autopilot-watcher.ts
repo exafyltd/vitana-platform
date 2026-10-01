@@ -27,6 +27,7 @@ import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing
 import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from './dev-autopilot-execute';
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
+import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
@@ -750,6 +751,10 @@ export async function ciWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} CI failed: ${failureReason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: analysis.failedNames, mergeable_state: mState, gate_reason: failureReason, ci_log_jobs: evidence.map((e) => e.job_id) },
       });
+      // VTID-04800 (Jev A6): bucket each failing check (test / type / lint /
+      // governance / dependency / infrastructure). Off unless
+      // JEV_CI_FAILURE_ROUTING_MODE is set; never awaited, routing unchanged.
+      if (isCiFailureRoutingOn()) void runCiFailureRouting({ executionId: exec.id, failedChecks: analysis.failedNames, evidence });
       await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }
