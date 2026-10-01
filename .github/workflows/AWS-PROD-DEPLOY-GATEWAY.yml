@@ -1196,6 +1196,17 @@ jobs:
               ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
                 + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
 
+          # VTID-04786: AP-0910 memory embedding backfill runs here from its own
+          # in-process loop (every 30 min, one task per interval via
+          # automation_runs). Its scheduler died with GCP; the job only writes
+          # embeddings onto members' own memory rows. Maxina holds 97% of the
+          # backlog. The general heartbeat loop stays off on prod.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED" and .name != "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS") ]
+                + [ {name:"MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED", value:"true"},
+                    {name:"MEMORY_EMBEDDING_BACKFILL_TENANT_IDS", value:"2e7528b8-472a-4356-88da-0280d4639cce"} ] )')
+
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set
           # or add anything new — deliberately the opposite precedence of an

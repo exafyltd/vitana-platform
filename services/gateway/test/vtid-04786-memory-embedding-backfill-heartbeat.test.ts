@@ -2,8 +2,9 @@
  * VTID-04786 — AP-0910 (memory embedding backfill) had not run since
  * 2026-07-06: its only trigger was the GCP Cloud Scheduler and the EventBridge
  * replacement for the memory block was never applied. Memory health (morning
- * check 21) read 4% embedding coverage. It now runs from the gateway's
- * in-process heartbeat loop, once per interval across all gateway tasks.
+ * check 21) read 4% embedding coverage. The heartbeat-loop entry below
+ * deduplicates across gateway tasks; the loop that actually runs it on
+ * production is pinned in vtid-04786-memory-embedding-backfill-loop.test.ts.
  */
 import * as fs from 'fs';
 import * as path from 'path';

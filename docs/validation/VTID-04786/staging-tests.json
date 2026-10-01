@@ -15,6 +15,12 @@
       "ref": "npx jest test/vtid-04786-memory-embedding-backfill-heartbeat.test.ts",
       "cwd": "services/gateway",
       "reason": "the cross-instance guard needs controlled run history; staging tests are read-only"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04786-memory-embedding-backfill-loop.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the loop must not start on staging (shadow mode); it is proven by unit tests and, after PUBLISH, by read-only automation_runs rows on production"
     }
   ]
 }
