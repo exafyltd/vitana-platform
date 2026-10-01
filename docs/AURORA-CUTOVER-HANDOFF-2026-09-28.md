@@ -66,6 +66,13 @@ aws cloudtrail lookup-events --region $R --start-time 2026-09-22T00:00:00Z \
 # If state is Disabled:         aws kms enable-key --key-id $K --region $R
 ```
 
+**Owner ran the checks above on 2026-10-01:** key state `Enabled`,
+`KeyManager: CUSTOMER`, no deletion date; key policy grants root and
+`rds.amazonaws.com`; the CloudTrail lookup by key id returned nothing (re-run
+it with the full key ARN to find the 2026-09-23 cause). So the backups are
+restorable, but the old cluster stays in the terminal state and has to be
+replaced by a restore.
+
 Then decide: PITR restore to a new cluster (keeps data through 2026-09-23),
 or a fresh cluster + DMS full load from Supabase. Either way the Aurora
 endpoint changes (or the old cluster must be deleted first to reuse the
