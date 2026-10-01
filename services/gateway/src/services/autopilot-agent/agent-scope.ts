@@ -9,7 +9,7 @@
  * evaluateSafetyGate().
  */
 
-import { matchGlob } from '../dev-autopilot-safety';
+import { isDeniedPath, matchGlob } from '../dev-autopilot-safety';
 import type { ChangedFile } from './agent-workspace';
 
 export interface ScopeCheck {
@@ -35,7 +35,9 @@ export function checkChangedFilesScope(
   const in_deny: string[] = [];
   for (const f of changed) {
     if (runnerOwned.some((g) => matchGlob(f.path, g))) continue;
-    if (matchesAny(f.path, deny)) in_deny.push(f.path);
+    // VTID-04790: a test file the agent CREATED is exempt from name-only
+    // deny rules (isDeniedPath); editing an existing one is not.
+    if (isDeniedPath(f.path, deny, { isNewFile: f.action === 'create' })) in_deny.push(f.path);
     else if (!matchesAny(f.path, allow)) outside_allow.push(f.path);
   }
   const parts: string[] = [];

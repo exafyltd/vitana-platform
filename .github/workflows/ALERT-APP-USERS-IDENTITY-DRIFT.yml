@@ -81,7 +81,20 @@ jobs:
             --database "$AURORA_DATABASE_NAME" \
             --sql "SELECT count(*) FROM public.app_users;" \
             --output json 2>&1) || {
-              echo "::error::RDS Data API call failed — this workflow's AWS identity likely lacks rds-data:ExecuteStatement on $AURORA_CLUSTER_ARN or secretsmanager:GetSecretValue on $AURORA_SECRET_ARN. Not a drift finding — a permissions gap to fix first. Raw error:"
+              # VTID-04787: a stopped Aurora instance is not drift and not a
+              # broken check — there is nothing to compare. Aurora has had no
+              # replication since the 2026-09-21 full load (VTID-04624) and the
+              # instance is stopped; report it, skip the comparison, stay green.
+              if echo "$RESULT" | grep -q 'InvalidResourceStateException'; then
+                echo "::warning::Aurora instance is stopped — app_users drift cannot be measured. Skipped (not a drift finding). Raw: $(echo "$RESULT" | tail -1)"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              if echo "$RESULT" | grep -qE 'AccessDenied|not authorized'; then
+                echo "::error::RDS Data API call was refused — this workflow's AWS identity lacks rds-data:ExecuteStatement on $AURORA_CLUSTER_ARN or secretsmanager:GetSecretValue on $AURORA_SECRET_ARN. Not a drift finding. Raw error:"
+              else
+                echo "::error::RDS Data API call failed. Not a drift finding. Raw error:"
+              fi
               echo "$RESULT"
               exit 1
             }
@@ -97,6 +110,7 @@ jobs:
 
       - name: Query Supabase app_users count (PostgREST)
         id: supabase
+        if: steps.aurora.outputs.skip != 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
@@ -124,6 +138,7 @@ jobs:
           echo "Supabase app_users count: $COUNT"
 
       - name: Evaluate drift
+        if: steps.aurora.outputs.skip != 'true'
         run: |
           set -euo pipefail
           AURORA="${{ steps.aurora.outputs.aurora_count }}"

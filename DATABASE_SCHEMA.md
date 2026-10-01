@@ -412,6 +412,74 @@ CREATE TABLE operator_messages (
 
 ---
 
+### voice_session_facts / voice_session_facts_hourly — committed, NOT yet applied (VTID-04776)
+
+One row per ORB voice session (SSE, WebSocket and LiveKit) — the per-session
+fact behind the Command Hub Voice Supervisor (`/api/v1/voice/supervisor/*`).
+Before it a session existed only as OASIS events with no tenant column, and the
+start/stop events carried no role, surface, language or provider. Migration
+`20261001120000_vtid_04776_voice_session_facts.sql` (additive, idempotent;
+apply with `RUN-MIGRATION.yml`). Verified against a local Postgres 16: applies
+twice cleanly, backfill idempotent, anon/authenticated refused.
+
+```sql
+CREATE TABLE voice_session_facts (
+  session_id         TEXT PRIMARY KEY,      -- live-<uuid> (gateway) / orb-<uuid> (LiveKit)
+  tenant_id          UUID NULL,
+  user_id            UUID NULL,
+  is_anonymous       BOOLEAN NOT NULL DEFAULT false,
+  surface            TEXT NULL,             -- vitanaland | command-hub | admin | backoffice | commerce
+  role               TEXT NULL,             -- role the Assistant Profile served
+  persona_key        TEXT NULL,
+  profile_resolution TEXT NULL,             -- declared | route | narrowed | unverified | anonymous
+  lang               TEXT NULL,
+  provider           TEXT NULL,             -- nova_sonic | cascade | vertex_serbian_bridge | livekit | unknown (CHECK)
+  selection_reason   TEXT NULL,
+  transport          TEXT NULL,             -- sse | ws | livekit (CHECK)
+  is_mobile          BOOLEAN NULL,
+  app_version        TEXT NULL,
+  entry              TEXT NULL,
+  started_at         TIMESTAMPTZ NOT NULL,
+  ended_at           TIMESTAMPTZ NULL,
+  last_activity_at   TIMESTAMPTZ NULL,      -- refreshed every 5 min while live
+  duration_ms        INTEGER NULL,
+  turn_count         INTEGER NULL,
+  user_turns         INTEGER NULL,
+  model_turns        INTEGER NULL,
+  audio_in_chunks    INTEGER NULL,
+  audio_out_chunks   INTEGER NULL,
+  ttfa_ms            INTEGER NULL,          -- session start -> first model audio
+  p50_turn_ms        INTEGER NULL,          -- reserved; not written yet
+  close_reason       TEXT NULL,
+  close_code         INTEGER NULL,          -- last upstream close code before the end
+  failure_class      TEXT NULL,             -- voice-failure-taxonomy class, NULL when healthy
+  outcome            TEXT NULL,             -- ok | silent | one_way | dropped | error | abandoned | active (CHECK)
+  stall_count        INTEGER NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()   -- trigger-maintained
+);
+-- indexes: (started_at DESC), (tenant_id, started_at DESC), (surface, role, started_at DESC),
+--          (provider, started_at DESC), (lang, started_at DESC), partial (started_at DESC) WHERE ended_at IS NULL
+```
+
+- Written only by the gateway (`services/gateway/src/services/voice-session-facts.ts`),
+  fire-and-forget: start (session/start, LiveKit token mint), updates (provider
+  selected, first audio, member role resolved, activity heartbeat, orb-agent
+  start via `/api/v1/oasis/emit`), end (all five gateway stop paths, WS
+  cleanup, orb-agent stop). Kill switch `VOICE_SESSION_FACTS_ENABLED=false`.
+- `outcome` / `failure_class` come from `classifyVoiceSessionOutcome()` (reuses
+  `classifyQualityFromSessionStop` / `detectAudioOneWay`).
+- View `voice_session_facts_hourly` (`security_invoker`): per hour x tenant x
+  surface x role x provider x lang — sessions, ok/silent/one_way/dropped/error
+  counts, avg duration, p50/p95 ttfa (`percentile_cont`).
+- Function `voice_session_facts_backfill(p_since timestamptz) RETURNS int`:
+  best-effort rebuild from `oasis_events` (start/stop/profile.resolved/
+  provider.selected joined on `metadata->>session_id`), `ON CONFLICT DO NOTHING`,
+  `p_since` required and at most 30 days back. NOT run by the migration —
+  operator step after apply.
+- RLS on, no policies; `anon`/`authenticated` revoked on table and view;
+  `service_role` only (table, view, function).
+
 ### conversation_metrics_hourly — APPLIED 2026-09-23 (VTID-04371)
 
 Hourly conversation metrics for Command Hub → Conversation → Monitor and
@@ -1165,6 +1233,8 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-01 | VTID-04798, **applied live** 2026-10-01 with the owner's go (migration `20261001160000_vtid_04798_memory_sensitivity.sql`, RUN-MIGRATION run 36895020174; verified: 457 fact rows and 65 items special_category, both triggers and constraints present): `memory_facts.sensitivity` and `memory_items.sensitivity` (text NOT NULL DEFAULT 'standard', CHECK in ('standard','special_category')) mark GDPR Art. 9 data. One rule decides it: immutable function `memory_sensitivity_of(text)` on the fact key / category key, applied by BEFORE INSERT/UPDATE triggers `trg_memory_facts_sensitivity` / `trg_memory_items_sensitivity` (they only ever raise to special_category) and by a backfill (measured 2026-10-01: 95 of 392 current fact keys, 457 fact rows, 65 items). `memory_items.sensitivity_flag` (VTID-01116, never written) is left as is. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-memory-sensitivity-test.sh` (CI `SQL-MEMORY-SENSITIVITY.yml`). | Claude Code | VTID-04798 |
+| 2026-10-01 | VTID-04776, **committed, NOT applied** (migration `20261001120000_vtid_04776_voice_session_facts.sql`, additive): table `voice_session_facts` (one row per ORB voice session, PK `session_id`; RLS on, service_role only), view `voice_session_facts_hourly` (security_invoker), trigger `trg_voice_session_facts_touch`, function `voice_session_facts_backfill(p_since)` (service_role, max 30 days back, not run by the migration). Read by `/api/v1/voice/supervisor/*` (VTID-04776/04778/04780). The gateway writes it fire-and-forget and logs loudly while the table is missing, so apply before relying on the Supervisor; then run the backfill for the history you want. | Claude Code | VTID-04776 |
 | 2026-09-28 | VTID-04674, **applied live** (`vtid_04674_notification_type_controls`, starting list approved by the owner in session): the admin switch per notification type. It adds `notification_type_controls` (+ audit, + daily block counts), `notification_categories.member_can_disable`, the decision functions, the BEFORE INSERT guard on `user_notifications`, two read models, index `idx_user_notifications_tenant_time`, and member categories `posts_reactions` and `tips_updates`. Starting state: 13 types ON for every tenant (the ones delivered in the last 30 days plus `reminder_due`); everything else OFF and registered as OFF on first send. Idempotent; tested twice against a local Postgres (`docs/validation/VTID-04674/`). Verified live read-only: 26 rows ON (13 types × 2 tenants), trigger enabled, categories extended, 0 blocks at apply time. | Claude Code | VTID-04674 |
 | 2026-09-26 | VTID-04668, **not yet applied** (migration `20260926160000_vtid_04668_recommendation_priority.sql`, additive): nullable `autopilot_recommendations.priority_score numeric` and `autopilot_recommendations.quality jsonb`, plus partial index `idx_autopilot_recommendations_dev_priority` on `(status, priority_score DESC) WHERE user_id IS NULL`. Written by the gateway for developer rows only (`user_id IS NULL`, not `community` / `operator_onramp`): `priority_score = value × confidence × success_odds / max(expected_cost_usd, 0.05)`; `quality = {version, value, confidence, success_odds, expected_cost_usd, expected_input_tokens, executable, basis, scored_at}` (VTID-04669 adds `review`, `review_attempts`, `review_last_attempt_at`). The same write maps `impact_score` (from value) and `effort_score` (from expected cost) so older readers keep working. Community rows keep NULL. Apply before the gateway code is deployed. | Claude Code | VTID-04668 |
 | 2026-09-26 | VTID-04624, **applied live** (`vtid_04624_operator_readonly_query`): function `operator_readonly_query(q text) RETURNS jsonb` (SECURITY INVOKER, EXECUTE granted to `service_role` only — revoked from public/anon/authenticated). Backs the Operator Console's `dev_run_sql_readonly` on the live database (owner decision 2026-09-26; the Aurora copy the tool was designed for has had no replication since the 2026-09-21 full load). Sets `transaction_read_only=on` and `lock_timeout=2s` before executing the statement as a subquery of a jsonb aggregate; the PostgREST login role caps each call at 8 s. Verified live in a rolled-back transaction: a read returns rows; an INSERT through a function, switching back to read-write and a stacked statement are all refused; `auth.users` is not readable by service_role. Migration `20260926110000_vtid_04624_operator_readonly_query.sql`. | Claude Code | VTID-04624 |
@@ -1977,6 +2047,15 @@ existing 90 sessions to 5-94. The `session` CHECK is now `BETWEEN 1 AND 94`.
 Existing `user_guided_journey_state.current_session` pointers (> 1) were
 shifted +4 so they keep referencing the same content. The current published
 snapshot was rewritten in place by the same migration.
+
+**VTID-04762 (Audiobook Season 0):** now **100 sessions / 260 topics**.
+Migration `20261001120000` prepended the six-episode Prolog (T255-T260,
+`chapter_id='prolog'`, shown as Season 0 of the Audiobook) at sessions 1-6 and
+shifted everything else to 7-100. The `session` CHECK is now
+`BETWEEN 1 AND 100`; `current_session` pointers > 1 shifted +6 (members who
+already started keep their place and the Prolog counts as heard); the current
+published snapshot was rewritten in place; English translation rows (incl.
+`vitana_voice_script`) ship with it and I18N-DB-SEED fills the other locales.
 
 ---
 
@@ -2908,6 +2987,49 @@ get full access to every `partner_registry` row linked to their org;
 Supabase/gateway credentials were reachable from this session; see
 `docs/validation/VTID-03932/acceptance.md`.
 
+### Supplier go-live lists products (VTID-04769) — APPLIED to the live project 2026-10-01
+
+Migration `20261001120000_vtid_04769_supplier_go_live_lists_products.sql`.
+`products.is_active` stays the one truth every member-facing reader filters
+on; for **supplier** products (merchant linked to a partner organization, or
+owned by a test/service account) the database now maintains it:
+
+- `products.first_listed_at TIMESTAMPTZ` — when a supplier product was first
+  switched on; `NULL` = never-listed draft.
+- `products.listing_hold TEXT` (`org_not_live` | `excluded_account`) — why the
+  gate is holding a product off; `NULL` = not held.
+- Org reaches `lifecycle_state = 'live'` (also via the legacy
+  `POST /partner-orgs/:id/activate` status write) → its waiting products
+  (drafts and held ones) go on. Products added while live go on at once.
+- Org paused/suspended, or its owner registered in `service_bot_accounts` /
+  `notification_test_actors` → its products go off with `listing_hold` set,
+  and come back when that clears.
+- An explicit `is_active` write (admin) is a decision: switch-off is never
+  undone by a go-live; switch-on while the org is not live is held until it is.
+- Network products (no partner org, no owner) are never read or written.
+
+Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
+are service_role only. Scenarios: `docs/validation/VTID-04769/`.
+
+
+### Discover categories as data (VTID-04783) — APPLIED 2026-10-01 (VTID-04783)
+
+Migration `20261001140000_vtid_04783_discover_categories.sql`.
+
+- `discover_categories(key PK, label_key, icon, sort_order, is_active)` and
+  `discover_subcategories(category_key FK, key, label_key, sort_order, is_active)`
+  — Discover's product categories. `label_key` is a frontend i18n key. Public
+  read (RLS select-all), service-role write. Adding a category is a row here
+  plus its label in the frontend catalogue.
+- `catalog_verticals.discover_category` (FK) — the Discover category a
+  supplier vertical lands in; NULL = none yet (services, until step C).
+- `trg_products_discover_category` (BEFORE INSERT/UPDATE OF category,
+  subcategory, merchant_id) — supplier products only (merchant linked to an
+  org or owned by a user): category becomes the vertical's Discover category;
+  a subcategory survives only if it belongs to that category. Network
+  products are untouched.
+- `discover_category_counts()` — active products per (category, subcategory)
+  in known categories; backs `GET /api/v1/discover/categories`.
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
@@ -2918,6 +3040,9 @@ Plan and rationale: `docs/MEMORY-SYSTEM-PLAN.md`. Canonical user memory is two t
 |---|---|---|
 | `memory_facts` | Current key/value facts with provenance and supersession (`superseded_by IS NULL` = current). Written only through `write_fact()`. | `embedding vector(1024)`, `embedding_model = 'amazon.titan-embed-text-v2:0'` |
 | `memory_items` | Episodes (conversation turns today; session summaries, diary, daily learnings in later phases). | `embedding vector(1024)`, same model |
+
+- **Sensitivity (VTID-04798)** — every row of both tables carries `sensitivity`: `special_category` (health, religion, sexual orientation, ethnic origin, political opinion, genetic/biometric data; for this app also diet, intake, steps and the Vitana Index) or `standard`. The database sets it from the key (`memory_sensitivity_of`), whoever writes. `special_category` rows reach the member's own surfaces and the Health Coach only; anything that can show a row to another member reads `standard` only (the member ranker).
+- **Role scope** — `memory_items.active_role` (NULL = personal, VTID-04367). `memory_facts` is personal memory only: a conversation on a work surface (Command Hub, admin, BackOffice, commerce) writes no facts (VTID-04798).
 
 - **`write_fact(...)`** — if the current fact for (tenant, user, entity, fact_key) has the same value (trimmed, case-insensitive) and the incoming provenance is not stronger, returns the existing id and writes nothing. Strength: `user_*` 3 > `system_observed` 2 > `assistant_inferred` 1 > other 0. A different value, or a stronger source confirming the same value, supersedes as before.
 - **Embeddings** are written by the gateway only (`services/gateway/src/services/memory-embedding.ts`): on write (`memory_items`, fire-and-forget), async after `write_fact` (facts), and by the hourly AP-0910 backfill for anything left NULL. No fallback provider — a vector from another model is never written into these columns.
@@ -3090,3 +3215,41 @@ The explicit-preference table is called **`user_explicit_preferences`**:
 Functions: `preference_set/delete`, `constraint_set/delete`,
 `preference_bundle_get`, `preference_confirm`, `inference_reinforce/downgrade`,
 `preference_get_audit` (pagination fixed as above).
+
+### Jev spend and shadow decisions (VTID-04754)
+Tables: `jev_spend_counters` (PK `tenant_id, plane, month`; `calls`,
+`input_tokens`, `cost_usd`), `jev_shadow_decisions` (one row per shadow or
+enforce gate run: `gate`, `decision`, `mode`, `plane`, `tenant_id`,
+`subject_type`/`subject_ref`, `jev_outcome`, `jev_verdict`, `jev_confidence`,
+`system_action`, later `agreed`/`outcome`/`outcome_at`, `cost_usd`).
+Service role only; RLS on with no client policies. Platform-level spend
+(no tenant) is counted under `00000000-0000-0000-0000-000000000000`.
+
+Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
+increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
+(per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
+`tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
+(no new column).
+
+## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
+
+`request-account-deletion` (vitana-v1 edge function) deleted 20 hand-listed tables, then the auth user. On 2026-10-01 the live schema had ~200 more public tables whose `user_id` does not cascade from `auth.users` — memory, diary, health, notifications among them — so their rows outlived the account.
+
+Migration `supabase/migrations/20261001120000_vtid_04765_erase_user_data.sql`.
+
+### erasure_registry
+| Column | Type | Notes |
+|---|---|---|
+| `table_name` | text PK | a public table |
+| `action` | text | only `retain` |
+| `reason` | text NOT NULL | the legal reason (bookkeeping retention, allowlists) |
+| `created_at` | timestamptz | |
+
+Seeded with the financial ledgers and order/payment records (HGB §257, AO §147; to be confirmed by counsel) and the two test/service-account allowlists. service_role only.
+
+### `erase_user_data(p_user_id uuid, p_dry_run boolean default false) returns jsonb`
+- Finds every ordinary or partitioned public table with a uuid `user_id` itself; new tables are covered without a list.
+- Skips `retain` tables and tables whose `user_id` cascades from `auth.users`; those go with the auth user as before.
+- Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
+- Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
+- SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).

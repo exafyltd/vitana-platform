@@ -6,7 +6,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/app.js?v=20261022-vtid-04814",
+      "path": "/command-hub/app.js?v=20261024-vtid-04814",
       "expect_status": 200,
       "expect_body_contains": "function syncOrbRouteWithCommandHub()",
       "reason": "the Command Hub client served at the URL index.html loads reports every tab switch to the voice widget, so Vitana knows which Command Hub screen the developer is on"
@@ -15,7 +15,7 @@
       "kind": "http",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/app.js?v=20261022-vtid-04814",
+      "path": "/command-hub/app.js?v=20261024-vtid-04814",
       "expect_status": 200,
       "expect_body_contains": "status: 'refused', reason: 'not a Command Hub screen'",
       "reason": "the Command Hub reports whether a voice navigation opened (opened / refused / not_found) instead of always 'unknown'"
@@ -24,7 +24,7 @@
       "kind": "existing",
       "ref": "npx jest test/navigation/vtid-04814-command-hub-navigation.test.ts",
       "cwd": "services/gateway",
-      "reason": "134 Command Hub screens match NAVIGATION_CONFIG one to one; every legacy DEVHUB id still opens; 39 developer phrasings resolve on the Command Hub; member requests never reach Command Hub screens and Command Hub requests never reach member screens"
+      "reason": "133 Command Hub screens match NAVIGATION_CONFIG one to one; every legacy DEVHUB id still opens; 42 developer phrasings resolve on the Command Hub; member requests never reach Command Hub screens and Command Hub requests never reach member screens"
     },
     {
       "kind": "existing",

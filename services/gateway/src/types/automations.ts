@@ -52,6 +52,9 @@ export interface AutomationDefinition {
     cronExpression?: string;   // e.g. '0 8 * * *'
     eventTopic?: string;       // OASIS event to listen for
     intervalMinutes?: number;  // heartbeat interval
+    /** Heartbeat only: skip when automation_runs already shows a run inside the
+     *  interval, so N gateway tasks don't each fire the job (VTID-04786). */
+    dedupeAcrossInstances?: boolean;
   };
   targetRoles: RoleTarget;     // which user roles this automation applies to
   requires?: string[];         // AP-XXXX dependencies

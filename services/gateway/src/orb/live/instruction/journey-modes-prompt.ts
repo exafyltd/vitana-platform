@@ -3,7 +3,8 @@
  *
  * Teaches Vitana the DECLARATIVE distinction between the two presentations of
  * the user's longevity journey (the /autopilot "My Journey" screen):
- *   • GUIDED JOURNEY  — German "Einführung" / "geführte Journey"
+ *   • AUDIOBOOK (the guided journey) — German "Hörbuch" (VTID-04760; was
+ *     "Einführung" / "geführte Journey")
  *   • FULL APP        — German "Vollversion"
  *
  * Why this exists: the guided-journey *content* system (narrate_guided_session,
@@ -24,41 +25,45 @@ export function buildJourneyModesSection(lang: string): string {
   if (isDe) {
     return `
 
-=== MY JOURNEY — ZWEI ANSICHTEN (Geführt vs. Vollversion) ===
+=== MY JOURNEY — ZWEI ANSICHTEN (Hörbuch vs. Vollversion) ===
 Die "Longevity Journey" des Nutzers (der Bildschirm "My Journey" / Autopilot)
 kann in ZWEI Ansichten angezeigt werden. Es ist DIESELBE Journey in zwei
 Darstellungen — KEINE zwei verschiedenen Funktionen. Der Nutzer kann jederzeit
 zwischen ihnen wechseln:
-  • GEFÜHRTE JOURNEY ("Einführung") — die Schritt-für-Schritt geführte Ansicht,
-    die den Nutzer durch EINEN fokussierten Schritt nach dem anderen führt. Ideal
-    zum Einstieg und für alle, die geführt werden möchten.
+  • HÖRBUCH (die GEFÜHRTE JOURNEY, früher "Einführung") — kurze Folgen, in
+    denen du Schritt für Schritt erklärst, wie Maxina hilft. Der Nutzer muss
+    nur zuhören; er drückt einmal auf Abspielen und die Folgen laufen
+    nacheinander. Ideal zum Einstieg und für alle, die lieber zuhören.
   • VOLLVERSION (die volle App) — die komplette Ansicht mit allem auf einmal
     verfügbar. Ideal für erfahrene Nutzer, die volle Kontrolle wollen.
-Gewechselt wird über den Einführung/Vollversion-Umschalter oben auf dem
-My-Journey-Bildschirm — ODER indem der Nutzer dich einfach bittet ("wechsle zur
-geführten Journey", "zeig mir die Vollversion"); dann navigierst du und die
-Ansicht klappt um.
+Gewechselt wird über den Hörbuch/Vollversion-Umschalter oben auf dem
+My-Journey-Bildschirm — ODER indem der Nutzer dich einfach bittet ("öffne mein
+Hörbuch", "zeig mir die Vollversion"); dann navigierst du und die Ansicht
+klappt um. Nennt der Nutzer noch "Einführung" oder "geführte Journey", meint er
+das Hörbuch.
 WENN DER NUTZER NACH DEM UNTERSCHIED FRAGT ("was ist der Unterschied zwischen
-geführter Journey und Vollversion?"), ERKLÄRE ihn mit den obigen Punkten in
-seiner Sprache. Sage NIEMALS, dass du den Unterschied nicht kennst.`;
+Hörbuch und Vollversion?"), ERKLÄRE ihn mit den obigen Punkten in seiner
+Sprache. Sage NIEMALS, dass du den Unterschied nicht kennst.`;
   }
   return `
 
-=== MY JOURNEY — TWO VIEWS (Guided vs Full App) ===
+=== MY JOURNEY — TWO VIEWS (Audiobook vs Full App) ===
 The user's longevity journey (the "My Journey" / Autopilot screen) can be shown
 in TWO views. It is the SAME journey in two presentations — NOT two different
 features. The user can switch between them at any time:
-  • GUIDED JOURNEY (German: "Einführung" / "geführte Journey") — the
-    step-by-step guided view that walks the user through ONE focused move at a
-    time. Best for getting started and for anyone who wants to be led.
+  • AUDIOBOOK (the GUIDED JOURNEY; German: "Hörbuch", formerly "Einführung") —
+    short episodes in which you explain, step by step, how Maxina helps. The
+    user only has to listen: one press of play and the episodes run one after
+    another. Best for getting started and for anyone who prefers to listen.
   • FULL APP (German: "Vollversion") — the complete view with everything
     available at once. Best for established users who want full control.
-Switching is done with the Einführung/Vollversion toggle at the top of the
-My Journey screen — OR by the user simply asking you ("switch me to the guided
-journey", "show me the full version"); you then navigate and the view flips.
+Switching is done with the Hörbuch/Vollversion (Audiobook/Full App) toggle at
+the top of the My Journey screen — OR by the user simply asking you ("open my
+audiobook", "show me the full version"); you then navigate and the view flips.
+A user who still says "guided journey" or "Einführung" means the Audiobook.
 WHEN THE USER ASKS WHAT THE DIFFERENCE IS ("what's the difference between the
-guided journey and the full app?"), EXPLAIN it in their language using the
-points above. NEVER say you don't know the difference.`;
+audiobook and the full app?"), EXPLAIN it in their language using the points
+above. NEVER say you don't know the difference.`;
 }
 
 /**

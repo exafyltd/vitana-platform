@@ -79,6 +79,7 @@ import {
   settleRememberHold,
   takeRememberHold,
 } from './remember-hold';
+import { endRecallTurn, evaluateRecallHold, maybeArmRecallHold, rearmRecallHoldAfterTool } from './recall-hold';
 import { deduplicatedExtract } from '../../../services/extraction-dedup-manager';
 import {
   writeMemoryItemWithIdentity,
@@ -1046,6 +1047,8 @@ export function createUpstreamLiveMessageHandler(
                   tenant_id: session.identity.tenant_id,
                   user_id: session.identity.user_id,
                   session_id: session.sessionId,
+                  work_surface: session.assistantProfile?.isWorkSurface === true,
+                  served_role: session.active_role,
                   turn_count: session.turn_count,
                   force: !!session.pendingNavigation,
                 });
@@ -1713,6 +1716,7 @@ export function handleInterrupted(
   // member's next words re-arm the hold for the reply that follows.
   const cutOffHold = takeRememberHold(session);
   if (cutOffHold) dropRememberHold(ctx as any, cutOffHold, 'interrupted');
+  endRecallTurn(session);
   // VTID-04571: a FINAL block still in flight belongs to the cut-off turn.
   (session as any).outputTurnClosed = true;
   session.pendingEventLinks = [];
@@ -1878,6 +1882,9 @@ export function handleTranscript(
     // VTID-04702: the member asked Vitana to remember something — hold the
     // reply until the save has run.
     maybeArmOnMemberSpeech(ctx as any);
+    // VTID-04753: a question about the member's own people or details — hold
+    // the reply until it is plainly not a refusal.
+    maybeArmRecallHold(ctx as any);
 
     // Loop-guard re-arm of the PCM silence keepalive — providers that need
     // synthetic silence at all get it (both Vertex and Nova; see the
@@ -1962,6 +1969,8 @@ export function handleTranscript(
     writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
   }
   session.outputTranscriptBuffer += outputTranscription;
+  // VTID-04753: release a held recall reply as soon as it is plainly fine.
+  evaluateRecallHold(ctx as any);
 
   // VTID-04480: the model is reading a tool payload aloud (JSON, ids,
   // snake_case keys). Nova's speculative text runs ahead of its audio, so
@@ -2209,6 +2218,9 @@ export function handleToolCall(
         if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
           const preToolReply = takeRememberHold(session);
           if (preToolReply) dropRememberHold(ctx as any, preToolReply, result.success ? 'tool_result_sent' : 'tool_failed');
+        } else {
+          // VTID-04753: "let me check" plays; the answer to the result is held.
+          rearmRecallHoldAfterTool(ctx as any);
         }
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
@@ -2264,6 +2276,8 @@ export function handleToolCall(
         if (toolName === 'remember_fact' || toolName === 'forget_fact' || toolName === 'forget_memory') {
           const preToolReply = takeRememberHold(session);
           if (preToolReply) dropRememberHold(ctx as any, preToolReply, 'tool_failed');
+        } else {
+          rearmRecallHoldAfterTool(ctx as any);
         }
         // Nova item 5: a failed tool result is still a result — the model owes
         // a response to it, so response liveness resets here too.
@@ -2338,10 +2352,14 @@ export function handleTurnComplete(
   // VTID-04702: detach the held reply (the corrected reply that follows must
   // play live) and decide once the remember backstop below is done.
   (session as any).rememberBackstopRun = null;
+  (session as any).recallBackstopRun = null;
   const heldReply = takeRememberHold(session);
+  endRecallTurn(session);
   if (heldReply) {
     setImmediate(() => {
-      void settleRememberHold(ctx as any, heldReply, (session as any).rememberBackstopRun ?? null);
+      // VTID-04753: a held recall reply is answered by the recall backstop.
+      const run = heldReply.reason === 'recall_question' ? (session as any).recallBackstopRun : (session as any).rememberBackstopRun;
+      void settleRememberHold(ctx as any, heldReply, run ?? null);
     });
   }
 
@@ -2575,6 +2593,7 @@ export function handleTurnComplete(
     // VTID-04692: the member asked about something stored ("Wie heißt mein
     // Hund?") and the reply said it is not stored, with the fact present.
     const recallRun = maybeRunRecallBackstop(ctx, session, userText, session.outputTranscriptBuffer || '');
+    (session as any).recallBackstopRun = recallRun;
     // VTID-04714: the reply was muted for reading internal data or its own
     // reasoning aloud — the member heard none of it. Unless a backstop above
     // already answered, ask for the reply the member should have heard.
@@ -2926,6 +2945,8 @@ export function handleTurnComplete(
         tenant_id: session.identity.tenant_id,
         user_id: session.identity.user_id,
         session_id: session.sessionId,
+        work_surface: session.assistantProfile?.isWorkSurface === true,
+        served_role: session.active_role,
         turn_count: session.turn_count,
         force: !!session.pendingNavigation,
       });

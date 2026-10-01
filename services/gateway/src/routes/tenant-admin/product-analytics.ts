@@ -9,6 +9,8 @@
  *   GET /features?days=30   — adoption: opens, completions, repeat users, trends
  *   GET /interests?days=30  — detected topics, sources, repeated interest
  *   GET /events?limit=100   — recent raw event feed (metadata only)
+ *   GET /audiobook?days=30  — Audiobook: listen-through, Season 0 completion,
+ *                             day-7 return, listening → first action (VTID-04763)
  *
  * All endpoints are requireTenantAdmin-gated and tenant-scoped. Aggregation
  * happens in TS over a bounded window of raw events — the same pattern as
@@ -25,6 +27,11 @@ import { requireTenantAdmin } from '../../middleware/require-tenant-admin';
 import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import * as repo from './product-analytics-repository';
+import {
+  AUDIOBOOK_FEATURE_KEY,
+  computeAudiobookMetrics,
+  type AudiobookEventRow,
+} from '../../services/guided-journey/audiobook-metrics';
 
 const router = Router({ mergeParams: true });
 
@@ -486,6 +493,39 @@ router.get('/features', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({ ok: true, days, top_features: topFeatures.slice(0, 25), feature_trends: featureTrends });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} GET /features:`, err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── GET /audiobook (VTID-04763) ─────────────────────────────────────────────
+
+router.get('/audiobook', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'TENANT_ID_REQUIRED' });
+  const days = parseDays(req);
+  const since = new Date(Date.now() - days * 86400000).toISOString();
+
+  try {
+    const events: AudiobookEventRow[] = [];
+    let truncated = false;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const { data, error } = await repo.fetchFeatureEventsPage(supabase, {
+        tenantId,
+        featureKey: AUDIOBOOK_FEATURE_KEY,
+        sinceIso: since,
+        from: page * PAGE_SIZE,
+        to: (page + 1) * PAGE_SIZE - 1,
+      });
+      if (error) throw new Error(error.message);
+      events.push(...((data ?? []) as AudiobookEventRow[]));
+      if (!data || data.length < PAGE_SIZE) break;
+      if (page === MAX_PAGES - 1) truncated = true;
+    }
+    return res.json({ ok: true, days, truncated, metrics: computeAudiobookMetrics(events) });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /audiobook:`, err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
 });

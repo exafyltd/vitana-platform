@@ -169,7 +169,7 @@ describe('opening a Command Hub screen', () => {
 
   it('opens a legacy redirect id at the tab it moved to', async () => {
     const r = await openScreen('DEVHUB.DIAGNOSTICS.VOICE_LAB', '', hub) as { ok: true; result: { route: string } };
-    expect(r.result.route).toBe('/command-hub/voice/orb-live/');
+    expect(r.result.route).toBe('/command-hub/voice/sessions/');
   });
 });
 

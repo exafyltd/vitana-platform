@@ -4038,8 +4038,10 @@ export async function tool_navigate(
         //     onboarding / walk me through / simple(r) / basic / easy mode.
         // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
         //     leicht (+ "-modus"/"-version").
+        // VTID-04760: the guided view is presented to members as the Audiobook
+        //     (DE "Hörbuch"), so those names select it too.
         const wantsGuided =
-          /guided|gef[üu]hrt|einf[üu]hrung|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
+          /guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
             intentText,
           );
         // EN: full app/version/mode/experience / complete / advanced /
@@ -4056,7 +4058,7 @@ export async function tool_navigate(
         // explicitly-rejected mode never wins. Targets the named modes (the words
         // people actually contrast); broad synonyms aren't negated in practice.
         const negatedGuided =
-          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung)/.test(
+          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch)/.test(
             intentText,
           );
         const negatedFull =
@@ -4155,19 +4157,19 @@ export async function tool_navigate(
       lines.push('automatically when you finish speaking.');
       if (journeyModeSwitched === 'guided') {
         lines.push('');
-        lines.push('MODE_SWITCH: You switched the user into the GUIDED JOURNEY — the');
-        lines.push('step-by-step guided experience that walks them through one focused');
-        lines.push('move at a time. Briefly explain how this differs from the FULL app');
+        lines.push('MODE_SWITCH: You switched the user into the AUDIOBOOK view (the guided');
+        lines.push('journey; German "Hörbuch") — short episodes they can simply listen to,');
+        lines.push('one after another. Briefly explain how this differs from the FULL app');
         lines.push('(the complete version with everything available at once), and tell');
-        lines.push('them they can switch back anytime with the Einführung/Vollversion');
+        lines.push('them they can switch back anytime with the Hörbuch/Vollversion');
         lines.push('toggle at the top of this screen — or just ask you to switch.');
       } else if (journeyModeSwitched === 'full') {
         lines.push('');
         lines.push('MODE_SWITCH: You switched the user into the FULL app — the complete');
         lines.push('version with everything available at once. Briefly explain how this');
-        lines.push('differs from the GUIDED Journey (the step-by-step guided experience),');
-        lines.push('and tell them they can switch back anytime with the');
-        lines.push('Einführung/Vollversion toggle at the top of this screen — or just ask you.');
+        lines.push('differs from the AUDIOBOOK (the guided, listen-only episodes), and tell');
+        lines.push('them they can switch back anytime with the Hörbuch/Vollversion');
+        lines.push('toggle at the top of this screen — or just ask you.');
       }
 
       return {

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04787",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04787-self-audit-and-identity-drift.test.ts",
+      "cwd": "services/gateway",
+      "reason": "workflow-only change; the real check is the next morning health-check and identity-drift runs, dispatched after merge"
+    }
+  ]
+}

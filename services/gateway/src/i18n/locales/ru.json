@@ -24,6 +24,8 @@
   "notif.signal_expired.title": "Сигнал истёк",
   "notif.signal_expired.body": "Прогностический сигнал истёк.",
   "notif.reminder.title": "🔔 Напоминание",
+  "notif.audiobook_daily.title": "🎧 Твой эпизод на сегодня",
+  "notif.audiobook_daily.body": "Несколько минут, чтобы послушать – Витана расскажет следующий эпизод твоей аудиокниги.",
   "notif.calendar_reminder.in_minutes": "{title} через {minutes} мин",
   "notif.calendar_reminder.in_hours": "{title} через {hours} ч",
   "notif.calendar_reminder.now": "{title} — сейчас",

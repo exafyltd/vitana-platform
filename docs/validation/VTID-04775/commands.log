@@ -1,0 +1,6 @@
+# VTID-04775 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04775-voice-outcome-gate.test.ts                    # 14 tests
+npx jest test/voice-self-healing-adapter.test.ts test/voice-failure-taxonomy.test.ts test/vtid-04775-voice-outcome-gate.test.ts   # 78 tests, outputs/jest-c1.txt
+npx jest (full gateway suite)                                          # 1417 suites, 22790 tests, 0 failed

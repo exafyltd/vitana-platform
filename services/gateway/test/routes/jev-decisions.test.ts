@@ -16,8 +16,22 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
 
 const roles: Record<string, string> = {};
 jest.mock('../../src/lib/supabase', () => ({ getSupabase: () => ({}) }));
-jest.mock('../../src/middleware/require-tenant-admin-repository', () => ({
-  fetchCallerActiveRoleForTenant: jest.fn(async (_sb: unknown, userId: string) => ({ data: roles[userId] ? { active_role: roles[userId] } : null, error: null })),
+// VTID-04754: role, tenant flag and spend reads all go through jev-repository.
+const ok = (data: unknown) => ({ data, error: null });
+jest.mock('../../src/services/jev/jev-repository', () => ({
+  fetchPrimaryTenant: jest.fn(async () => ok({ tenant_id: 't1' })),
+  fetchLatestRolePreference: jest.fn(async () => ok(null)),
+  fetchTenantActiveRole: jest.fn(async (_sb: unknown, userId: string) => ok(roles[userId] ? { active_role: roles[userId] } : null)),
+  fetchExplicitRoleGrants: jest.fn(async (_sb: unknown, userId: string) => ok(roles[userId] ? [{ role: roles[userId] }] : [])),
+  fetchActiveMembershipRoles: jest.fn(async () => ok([])),
+  fetchTenantByIdOrSlug: jest.fn(async (_sb: unknown, v: string) => ok(v === 'maxina' || v === 't1' ? { tenant_id: 't1', slug: 'maxina' } : null)),
+  fetchTenantFeatureFlags: jest.fn(async () => ok(null)),
+  fetchTenantMonthSpend: jest.fn(async () => ok([])),
+  recordSpendRpc: jest.fn(async () => ok(0)),
+  fetchMonthSpendRows: jest.fn(async () => ok([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }])),
+  shadowGateStatsRpc: jest.fn(async () => ok([])),
+  insertShadowDecision: jest.fn(async () => ok({ id: 's1' })),
+  updateShadowOutcome: jest.fn(async () => ok(null)),
 }));
 jest.mock('../../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn(async () => ({ ok: true })) }));
 
@@ -134,5 +148,42 @@ describe('VTID-04473 jev routes', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.data).toHaveProperty('by_plane');
     expect(ok.body.data.community_enabled).toBe(false);
+  });
+
+  // VTID-04754
+  test('GET /jev/decisions shows planes, data class and the resolved tenant', async () => {
+    const res = await request(app()).get('/api/v1/jev/decisions').set('x-test-user', 'backoffice1');
+    expect(res.body.data.tenant_id).toBe('t1');
+    const doc = res.body.data.decisions.find((d: any) => d.name === 'document_relevance');
+    expect(doc).toMatchObject({ planes: ['internal'], data: 'business' });
+  });
+
+  test('an acting role the user does not hold is refused', async () => {
+    const res = await request(app())
+      .post('/api/v1/jev/decisions/support_ticket_triage')
+      .set('x-test-user', 'backoffice1')
+      .set('x-jev-acting-role', 'developer')
+      .send({ input: { body: 'x' } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('acting_role_not_permitted');
+    expect(jevFetch).not.toHaveBeenCalled();
+  });
+
+  test('exafy_admin: tenant data needs a named tenant; an unknown one is 404', async () => {
+    const none = await request(app()).post('/api/v1/jev/decisions/support_ticket_triage').set('x-test-user', 'root').set('x-test-admin', '1').send({ input: { body: 'x' } });
+    expect(none.status).toBe(400);
+    expect(none.body.error).toBe('target_tenant_required');
+    const unknown = await request(app()).post('/api/v1/jev/decisions/support_ticket_triage').set('x-test-user', 'root').set('x-test-admin', '1').set('x-jev-tenant', 'nope').send({ input: { body: 'x' } });
+    expect(unknown.status).toBe(404);
+    expect(jevFetch).not.toHaveBeenCalled();
+  });
+
+  test('GET /jev/admin/stats carries the persisted month spend and the shadow gates', async () => {
+    const res = await request(app()).get('/api/v1/jev/admin/stats').set('x-test-user', 'root').set('x-test-admin', '1');
+    expect(res.status).toBe(200);
+    expect(res.body.data.month).toMatch(/^\d{4}-\d{2}-01$/);
+    expect(res.body.data.spend_month).toEqual([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }]);
+    expect(res.body.data.shadow_gates).toEqual([]);
+    expect(res.body.data).toHaveProperty('gate_modes');
   });
 });

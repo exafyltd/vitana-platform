@@ -1,0 +1,95 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+  console.warn
+    [jev] JEV_SELFHEAL_PROVIDER_FAILURE_MODE="Enforce" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:159:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+  console.warn
+    [jev] JEV_SELFHEAL_INCIDENT_DEDUPE_MODE="true" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:160:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+  console.warn
+    [jev] self-heal gates failed, triage proceeds: db down
+      238 |   } catch (err: any) {
+      239 |     // A gate must never break triage: on any error, triage runs as before.
+    > 240 |     console.warn(`[jev] self-heal gates failed, triage proceeds: ${err?.message || err}`);
+          |             ^
+      241 |     result.skip = null;
+      242 |   }
+      243 |   return result;
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:240:13)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:192:15)
+PASS test/vtid-04759-selfheal-jev-gates.test.ts
+  VTID-04759 B2 provider-failure classifier (production strings)
+    ✓ bedrockDenied → permission / stop_and_alert
+    ✓ deepseek402 → credit / stop_and_alert
+    ✓ bothFailed → credit / stop_and_alert
+    ✓ dailyTokens → quota / stop_and_alert
+    ✓ promptTooLong → input_too_large / triage
+    ✓ badGateway → transient / retry_once
+    ✓ timeout → transient / retry_once
+    ✓ throttled → throttle / back_off
+    ✓ both providers are named on a two-provider failure
+    ✓ every message the retry breaker calls an outage is a stop class here too
+    ✓ our own endpoint failing with 403/502 is not a provider failure — triage it
+    ✓ an unrecognised provider failure is unknown (Jev is asked), empty text is none
+    ✓ failure text is read from whichever field the caller used
+  VTID-04759 B1 incident key
+    ✓ one outage is one incident whatever execution hit it
+    ✓ anything else keys on the endpoint, else the vtid (never deduped)
+  VTID-04759 gate modes
+    ✓ off (default): no row, no skip
+    ✓ shadow: rows recorded for both gates, triage never skipped — even on a duplicate outage
+    ✓ enforce: a provider outage skips triage
+    ✓ enforce: a transient or code failure still triages
+    ✓ enforce dedupe: the second triage of the same outage within 30 min is skipped; after 30 min it runs
+    ✓ a typo in the mode is off, never enforce
+    ✓ an unrecognised provider failure asks Jev (ops_error_triage) and records its verdict
+    ✓ a known class never calls Jev
+    ✓ a failing gate store never blocks triage
+  VTID-04759 outcome write-back (agreement)
+    ✓ predicted stop + triage then died on the outage → agreed
+    ✓ predicted stop but triage succeeded → disagreed
+    ✓ predicted proceed (transient) and triage succeeded → agreed
+  VTID-04759 deploy pins: both gates run in shadow, never enforce
+    ✓ staging pins shadow for both gates
+    ✓ prod pins shadow for both gates
+    ✓ the generated pin registry agrees
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04754-jev-prod-workflow.test.ts
+  VTID-04754 production Jev declaration
+    ✓ pins the full secret ARN in step 2/2 env (the prod deploy role cannot describe secrets)
+    ✓ upserts TYPESAFE_API_KEY as a secret reference, never a plain env value
+    ✓ upserts JEV_DECISIONS_ENABLED=true (strip, then add)
+    ✓ runs after the GITHUB_SAFE_MERGE_TOKEN block and before env_overrides (which may still override it)
+    ✓ never opens the member plane
+  VTID-04754 staging probe classifies the AWS error
+    ✓ keeps stderr instead of discarding it
+    ✓ names not-found, access-denied and other failures separately
+Test Suites: 2 passed, 2 total
+Tests:       37 passed, 37 total
+Snapshots:   0 total
+Time:        0.681 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04759|test\/vtid-04754-jev-prod-workflow/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

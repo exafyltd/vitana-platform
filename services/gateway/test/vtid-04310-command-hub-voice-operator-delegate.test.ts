@@ -25,8 +25,12 @@ describe('Command Hub voice catalog', () => {
     for (const retired of COMMAND_HUB_RETIRED_VOICE_TOOLS) expect(hubNames).not.toContain(retired);
   });
 
-  it('keeps navigation, memory search and developer read tools', () => {
-    expect(hubNames).toEqual(expect.arrayContaining(['navigate', 'end_conversation', 'search_memory', 'dev_discover_tasks', 'dev_query_oasis_events']));
+  it('keeps navigation and developer read tools', () => {
+    expect(hubNames).toEqual(expect.arrayContaining(['navigate', 'end_conversation', 'dev_discover_tasks', 'dev_query_oasis_events']));
+  });
+
+  it("never declares search_memory: the member's personal memory stays off the Command Hub (VTID-04798)", () => {
+    expect(hubNames).not.toContain('search_memory');
   });
 
   it('drops community tools', () => {

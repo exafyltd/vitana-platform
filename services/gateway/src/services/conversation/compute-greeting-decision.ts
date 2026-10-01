@@ -1148,10 +1148,11 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
     // from greeting-pools' buildFirstTimeWelcomeLine — a hardcoded spoken
     // sentence (NEVER-rule 41) in the verbatim-recitation shape the Nova
     // guardrail blocks (VTID-03797). Same content, stated as an intent.
+    // VTID-04760: the starting point is Episode 1 of the Audiobook.
     const welPrompt = buildOpeningIntentDirective(
       `${firstTimeNamePart(ctx.firstName)}This is their very first voice conversation. Welcome them warmly to Maxina, ` +
-        'introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey ' +
-        'and show them how everything works, and invite them to start their first session together.',
+        'introduce yourself as Vitana, their personal longevity assistant, reassure them there is no rush and nothing to figure out alone, ' +
+        'and invite them to start Episode 1 of their Audiobook, where you explain step by step how everything works and they only have to listen.',
       'short_welcome',
     );
     return {

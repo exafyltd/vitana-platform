@@ -457,7 +457,7 @@ export async function processConversationTurn(
     try {
       const category = classifyCategory(input.message);
       await writeMemoryItemWithIdentity(
-        { user_id: input.user_id, tenant_id: input.tenant_id },
+        { user_id: input.user_id, tenant_id: input.tenant_id, active_role: conversationChannelRole(input.channel) },
         {
           content: input.message,
           source: input.channel === 'orb' ? 'orb_text' : 'orb_text',
@@ -487,6 +487,7 @@ export async function processConversationTurn(
       user_id: input.user_id,
       thread_id: thread.thread_id,
       turn_count: thread.turn_count,
+      channel: input.channel,
     });
 
     // Log turn completed
@@ -639,6 +640,15 @@ export function servedModelLabel(meta: Record<string, unknown> | undefined): str
  * blocks the reply. Skips the canned error reply so a failed turn cannot
  * teach Vitana anything.
  */
+/**
+ * VTID-04798: the role a text channel serves. The Operator Console and the
+ * developer assistant are Command Hub work, so their turns are developer
+ * memory, not the member's personal memory; the ORB text channel is personal.
+ */
+export function conversationChannelRole(channel: ConversationChannel | string | null | undefined): string | null {
+  return channel === 'operator' || channel === 'developer_assistant' ? 'developer' : null;
+}
+
 export function extractTypedTurnFacts(args: {
   message: string;
   reply: string;
@@ -646,6 +656,7 @@ export function extractTypedTurnFacts(args: {
   user_id: string;
   thread_id: string;
   turn_count?: number;
+  channel?: ConversationChannel;
 }): { extracted: boolean; skip_reason?: string } {
   try {
     if (!args.message?.trim()) return { extracted: false, skip_reason: 'empty_message' };
@@ -657,6 +668,7 @@ export function extractTypedTurnFacts(args: {
       session_id: args.thread_id,
       turn_count: args.turn_count,
       force: true,
+      served_role: conversationChannelRole(args.channel),
     });
     if (!result.extracted) {
       console.debug(`[VTID-04540] typed-turn extraction skipped: ${result.skip_reason}`);

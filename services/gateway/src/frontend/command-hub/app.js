@@ -3626,20 +3626,23 @@ const NAVIGATION_CONFIG = [
         ]
     },
     // VTID-02856: Unified Voice section — owns every voice-management surface.
-    // VTID-02865: Improve cockpit is tab #1 — operators land on the
-    // diagnose-and-repair surface; Orb LIVE moves to #2.
+    // VTID-04777..04780: rebuilt as a supervisor cockpit. Overview answers "is
+    // it system-wide or one segment?", Tenants & Roles is the tenant x
+    // assistant matrix, Sessions is the one live+historical list (replaces Orb
+    // LIVE), Issues & Healing merges Improve + Self-Healing + Fix Impact, and
+    // Test Bench puts LiveKit and Nova side by side with the voice test suite.
+    // Old tab URLs redirect (AUTONOMY_REDIRECTS); Test Contracts moved to
+    // Testing & QA.
     {
         "section": "voice",
         "basePath": "/command-hub/voice/",
         "tabs": [
-            { "key": "improve",         "label": "Improve",            "path": "/command-hub/voice/improve/" },
-            { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
-            { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
-            { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
-            { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
-            { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
-            { "key": "nova-sonic-test", "label": "Nova Sonic Test Bench", "path": "/command-hub/voice/nova-sonic-test/" },
-            { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
+            { "key": "overview",        "label": "Overview",            "path": "/command-hub/voice/overview/" },
+            { "key": "segments",        "label": "Tenants & Roles",     "path": "/command-hub/voice/segments/" },
+            { "key": "sessions",        "label": "Sessions",            "path": "/command-hub/voice/sessions/" },
+            { "key": "issues-healing",  "label": "Issues & Healing",    "path": "/command-hub/voice/issues-healing/" },
+            { "key": "test-bench",      "label": "Test Bench",          "path": "/command-hub/voice/test-bench/" },
+            { "key": "providers",       "label": "Providers & Config",  "path": "/command-hub/voice/providers/" }
         ]
     },
     {
@@ -3803,7 +3806,8 @@ const NAVIGATION_CONFIG = [
             { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
             { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
             { "key": "run-tests", "path": "/command-hub/testing-qa/run-tests/" },
-            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
+            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
+            { "key": "test-contracts", "path": "/command-hub/testing-qa/test-contracts/" }
         ]
     },
     {
@@ -8426,42 +8430,28 @@ function renderModuleContent(moduleKey, tab) {
         // so it does not collide with Conversation's existing 'tools' (Tool Health).
         container.appendChild(renderVoiceToolsCatalogView());
 
-    // ──── VTID-02856: Voice section · VTID-02865: Improve cockpit ────
-    } else if (moduleKey === 'voice' && tab === 'improve') {
-        // VTID-02865: Diagnose-and-repair cockpit. Default landing for /voice/.
-        container.appendChild(renderVoiceImproveView());
-    } else if (moduleKey === 'voice' && tab === 'orb-live') {
-        // Rich Voice Lab content (sessions list + detail drawer).
-        // Reset the internal Voice-Lab sub-tab so a stale value (e.g. from a
-        // previous visit to "Experiments") doesn't leak into the new home.
-        state.voiceLab.activeSubTab = 'orb-live';
-        container.appendChild(renderVoiceLabView());
+    // ──── VTID-02856: Voice section · VTID-04777..04780: supervisor cockpit ────
+    } else if (moduleKey === 'voice' && tab === 'overview') {
+        // VTID-04777: supervisor cockpit (voice-supervisor.js).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorOverview', 'Voice Overview'));
+    } else if (moduleKey === 'voice' && tab === 'segments') {
+        // VTID-04777: tenant x assistant matrix (voice-supervisor.js).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorSegments', 'Tenants & Roles'));
+    } else if (moduleKey === 'voice' && tab === 'sessions') {
+        // VTID-04777: unified live + historical session list (voice-supervisor.js).
+        // A row opens the existing session drawer (openVoiceLabSessionDrawer).
+        container.appendChild(renderVoiceSupervisorScreen('renderVoiceSupervisorSessions', 'Voice Sessions'));
+        mountVoiceLabSessionDrawer();
+    } else if (moduleKey === 'voice' && tab === 'issues-healing') {
+        // VTID-04778: Action Queue (Improve) + Self-Healing Pipeline + Fix Impact.
+        container.appendChild(renderVoiceIssuesHealingView());
+    } else if (moduleKey === 'voice' && tab === 'test-bench') {
+        // VTID-04779: LiveKit + Nova Sonic benches side by side + voice test suite.
+        container.appendChild(renderVoiceTestBenchView());
     } else if (moduleKey === 'voice' && tab === 'providers') {
-        // VTID-02857: Providers & Voice — V2V (Vertex/LiveKit) + STT + TTS
-        // provider switches + TTS voice/language/speed.
+        // VTID-02857: Providers & Config — V2V + STT + TTS provider switches,
+        // TTS voice/language/speed, provider registry and per-agent config.
         container.appendChild(renderVoiceProvidersView());
-    } else if (moduleKey === 'voice' && tab === 'self-healing') {
-        // VTID-04626: rebuilt screen, lives in voice-self-healing.js.
-        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
-            container.appendChild(window.renderVoiceSelfHealingScreen());
-        } else {
-            var vshMissing = document.createElement('p');
-            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
-            container.appendChild(vshMissing);
-        }
-    } else if (moduleKey === 'voice' && tab === 'test-contracts') {
-        // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
-        container.appendChild(renderTestContractsPanel());
-    } else if (moduleKey === 'voice' && tab === 'livekit-test') {
-        container.appendChild(renderLivekitTestView());
-    } else if (moduleKey === 'voice' && tab === 'nova-sonic-test') {
-        // DEV-COMHU-0514 / BOOTSTRAP-NOVA-SONIC-VOICE: Nova 2 Sonic test bench
-        container.appendChild(renderNovaSonicTestView());
-    } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
-        // Migrated from testing-qa/e2e — scheduled UI E2E test runs
-        container.appendChild(renderOrbMonitorSection());
-        // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
-        container.appendChild(renderLivekitHourlyTestsPanel());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -8682,6 +8672,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestingRunTestsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
+    } else if (moduleKey === 'testing-qa' && tab === 'test-contracts') {
+        // VTID-04779: moved from Voice — platform-wide capability contracts, not voice-only.
+        container.appendChild(renderTestContractsPanel());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -12363,17 +12356,27 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/voice/journey-context/':            { section: 'conversation', tab: 'journey-context' },
     '/command-hub/voice/tools/':                      { section: 'conversation', tab: 'tool-catalog' },
     // VTID-02856: Voice section consolidation. Old paths now resolve to the unified Voice tabs.
-    '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'orb-live' },
+    // VTID-04777..04779: Orb LIVE became Sessions; the benches and ORB UI checks became Test Bench.
+    '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/experiments/':{ section: 'assistant', tab: 'experiments' },
     '/command-hub/diagnostics/voice-lab/personality/':{ section: 'assistant', tab: 'personality' },
     '/command-hub/diagnostics/voice-lab/sessions/':   { section: 'assistant', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/metrics/':    { section: 'assistant', tab: 'metrics' },
-    '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'orb-live' },
+    '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'sessions' },
     '/command-hub/assistant/voice-tools/':             { section: 'conversation', tab: 'tool-catalog' },
     '/command-hub/assistant/awareness-registry/':      { section: 'conversation', tab: 'awareness', subtab: 'registry' },
     '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
-    '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
-    '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
+    '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'test-bench' },
+    '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'test-bench' },
+    // VTID-04777..04779: the old Voice tabs, kept working for bookmarks and
+    // backend deep links (autonomy-pulse / autonomy-trace link test-contracts).
+    '/command-hub/voice/improve/':                     { section: 'voice', tab: 'issues-healing', subtab: 'action-queue' },
+    '/command-hub/voice/orb-live/':                    { section: 'voice', tab: 'sessions' },
+    '/command-hub/voice/self-healing/':                { section: 'voice', tab: 'issues-healing', subtab: 'pipeline' },
+    '/command-hub/voice/livekit-test/':                { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/nova-sonic-test/':             { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/orb-ui-monitor/':              { section: 'voice', tab: 'test-bench' },
+    '/command-hub/voice/test-contracts/':              { section: 'testing-qa', tab: 'test-contracts' },
     // VTID-04642: the Testing & QA rebuild replaced four stale tabs; old links land on the new ones.
     '/command-hub/testing-qa/unit-tests/':        { section: 'testing-qa', tab: 'catalog' },
     '/command-hub/testing-qa/integration-tests/': { section: 'testing-qa', tab: 'catalog' },
@@ -12387,6 +12390,12 @@ const AUTONOMY_REDIRECTS = {
 // section. renderVoiceAwarenessView still reads state.voiceAwareness.
 function applyRouteSubtab(route) {
     if (!route || !route.subtab) return;
+    // VTID-04778: Issues & Healing sub-tab (action-queue | pipeline | fix-impact).
+    if (route.section === 'voice' && route.tab === 'issues-healing') {
+        if (!state.voiceIssues) state.voiceIssues = { subTab: 'action-queue' };
+        state.voiceIssues.subTab = route.subtab;
+        return;
+    }
     if (route.section === 'conversation' && route.tab === 'awareness') {
         if (!state.voiceAwareness) state.voiceAwareness = { activeSubTab: 'registry' };
         state.voiceAwareness.activeSubTab = route.subtab;
@@ -17374,188 +17383,6 @@ function formatModelName(model) {
 // ===========================================================================
 
 /**
- * VTID-01218E: Voice LAB sub-tabs configuration
- */
-var VOICE_LAB_TABS = [
-    { key: 'orb-live', label: 'ORB Live', path: '/command-hub/diagnostics/voice-lab/' },
-    { key: 'experiments', label: 'Experiments', path: '/command-hub/diagnostics/voice-lab/experiments/' },
-    { key: 'personality', label: 'AI Personality', path: '/command-hub/diagnostics/voice-lab/personality/' },
-    { key: 'providers', label: 'Providers', path: '/command-hub/diagnostics/voice-lab/providers/' },
-    // VTID-LIVEKIT-FOUNDATION: per-agent STT/LLM/TTS dropdowns (companion to PR #1156 + #1157).
-    { key: 'agent-config', label: 'Agent Config', path: '/command-hub/diagnostics/voice-lab/agent-config/' },
-    { key: 'sessions', label: 'Sessions', path: '/command-hub/diagnostics/voice-lab/sessions/' },
-    { key: 'metrics', label: 'Metrics', path: '/command-hub/diagnostics/voice-lab/metrics/' },
-    { key: 'governance', label: 'Governance', path: '/command-hub/diagnostics/voice-lab/governance/' }
-];
-
-/**
- * VTID-01218E: Render Voice LAB view with 6 sub-tabs
- */
-function renderVoiceLabView() {
-    var container = document.createElement('div');
-    container.className = 'voice-lab-container';
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'voice-lab-header';
-
-    var title = document.createElement('h2');
-    title.className = 'voice-lab-title';
-    title.textContent = 'Voice LAB';
-    header.appendChild(title);
-
-    var subtitle = document.createElement('span');
-    subtitle.className = 'voice-lab-subtitle';
-    subtitle.textContent = 'ORB Live Observability & Debugging';
-    header.appendChild(subtitle);
-
-    container.appendChild(header);
-
-    // VTID-LIVEKIT-FOUNDATION: Active Provider banner — shows which voice
-    // pipeline is currently serving traffic + a flip button. Always visible.
-    container.appendChild(renderActiveProviderBanner());
-
-    // Sub-tab navigation
-    var tabBar = document.createElement('div');
-    tabBar.className = 'voice-lab-tab-bar';
-
-    VOICE_LAB_TABS.forEach(function (tab) {
-        var btn = document.createElement('button');
-        btn.className = 'voice-lab-tab-btn' + (state.voiceLab.activeSubTab === tab.key ? ' active' : '');
-        btn.textContent = tab.label;
-        btn.setAttribute('data-tab', tab.key);
-        btn.addEventListener('click', function () {
-            state.voiceLab.activeSubTab = tab.key;
-            history.pushState(null, '', tab.path);
-            renderApp();
-        });
-        tabBar.appendChild(btn);
-    });
-
-    container.appendChild(tabBar);
-
-    // Content area
-    var content = document.createElement('div');
-    content.className = 'voice-lab-content';
-    content.setAttribute('data-scroll-retain', 'true');
-    content.setAttribute('data-scroll-key', 'voiceLab-content');
-
-    // VTID-01218B: Stop auto-refresh when leaving ORB Live tab
-    if (state.voiceLab.activeSubTab !== 'orb-live') {
-        stopVoiceLabAutoRefresh();
-    }
-
-    switch (state.voiceLab.activeSubTab) {
-        case 'orb-live':
-            content.appendChild(renderVoiceLabOrbLivePanel());
-            break;
-        case 'experiments':
-            // VTID-01218B: Runtime controls panel
-            content.appendChild(renderVoiceLabExperimentsPanel());
-            break;
-        case 'providers':
-            content.appendChild(renderVoiceLabProvidersPanel());
-            break;
-        case 'agent-config':
-            content.appendChild(renderVoiceLabAgentConfigPanel());
-            break;
-        case 'sessions':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
-            break;
-        case 'metrics':
-            content.appendChild(renderAssistantLearningHealthView()); // VTID-04371
-            break;
-        case 'personality':
-            content.appendChild(renderVoiceLabPersonalityPanel());
-            break;
-        case 'governance':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Governance', 'VTID-01218D'));
-            break;
-        default:
-            content.appendChild(renderVoiceLabOrbLivePanel());
-    }
-
-    container.appendChild(content);
-
-    return container;
-}
-
-/**
- * VTID-LIVEKIT-FOUNDATION: Active Provider banner.
- *
- * Shows which voice pipeline is currently serving traffic (vertex|livekit)
- * with a flip button. The flip itself is a 501 stub today (gateway PR #1157)
- * — UI is wired so the operator surface lands first.
- */
-function renderActiveProviderBanner() {
-    var banner = document.createElement('div');
-    banner.className = 'voice-lab-active-provider-banner';
-    banner.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin:8px 0;background:#1a2332;border:1px solid #2d3748;border-radius:8px;font-family:monospace;';
-
-    var label = document.createElement('div');
-    label.style.cssText = 'flex:1;';
-    label.innerHTML = '<span style="color:#94a3b8;font-size:12px;">ACTIVE VOICE PROVIDER</span><br>'
-        + '<span class="active-provider-value" style="color:#facc15;font-size:18px;font-weight:bold;">loading…</span>';
-
-    var btn = document.createElement('button');
-    btn.className = 'btn btn-secondary';
-    btn.textContent = 'Flip';
-    btn.disabled = true;
-    btn.style.cssText = 'padding:8px 16px;';
-    btn.addEventListener('click', function () {
-        if (!confirm('Flip the active voice provider? In-flight sessions on the current pipeline will drain naturally.')) {
-            return;
-        }
-        var current = banner.querySelector('.active-provider-value');
-        var next = (current && current.textContent === 'livekit') ? 'vertex' : 'livekit';
-        fetchActivePost(next);
-    });
-
-    banner.appendChild(label);
-    banner.appendChild(btn);
-
-    // Async load.
-    fetchActiveProvider().then(function (info) {
-        var span = banner.querySelector('.active-provider-value');
-        if (span) {
-            span.textContent = info.active_provider || 'vertex';
-            span.style.color = info.active_provider === 'livekit' ? '#22c55e' : '#facc15';
-        }
-        btn.disabled = false;
-        btn.textContent = info.active_provider === 'livekit' ? 'Flip to Vertex' : 'Flip to LiveKit';
-    }).catch(function () {
-        var span = banner.querySelector('.active-provider-value');
-        if (span) span.textContent = '(unreachable)';
-    });
-
-    return banner;
-}
-
-function fetchActiveProvider() {
-    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
-    return fetch(url).then(function (r) { return r.json(); });
-}
-
-function fetchActivePost(provider) {
-    var url = (window.GATEWAY_URL || '') + '/api/v1/orb/active-provider';
-    return fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: provider, reason: 'voice-lab manual flip' })
-    }).then(function (r) {
-        if (r.status === 501) {
-            showToast('Flip endpoint stubbed pending follow-up PR (gateway #1157).', 'warning');
-        } else if (!r.ok) {
-            showToast('Flip failed: HTTP ' + r.status, 'error');
-        } else {
-            showToast('Active provider flipped.', 'success');
-        }
-    }).catch(function (e) {
-        showToast('Flip network error: ' + e.message, 'error');
-    });
-}
-
-/**
  * VTID-LIVEKIT-FOUNDATION: Voice Lab Providers panel.
  *
  * Lists every provider in `voice_providers` (STT/LLM/TTS/transport) with
@@ -18616,216 +18443,37 @@ function showPersonalityToast(message, type) {
 }
 
 /**
- * VTID-01218E: Render ORB Live panel - active sessions and turn timeline
- * VTID-01218B: Enhanced with auto-refresh, visual alerts
+ * VTID-04777: the Voice / Sessions tab (voice-supervisor.js) reuses this
+ * drawer. openVoiceLabSessionDrawer(id) selects a session and loads its
+ * details/turns/diagnostics; the dispatcher calls mountVoiceLabSessionDrawer()
+ * after every render of the Sessions tab so the drawer survives renderApp().
  */
-function renderVoiceLabOrbLivePanel() {
-    var panel = document.createElement('div');
-    panel.className = 'voice-lab-orb-live-panel';
-
-    // VTID-01218B: Start auto-refresh when entering this panel
-    startVoiceLabAutoRefresh();
-
-    // Auto-fetch sessions (only on first render)
-    if (!state.voiceLab.sessionsLoading && !state.voiceLab.sessionsFetched) {
-        fetchVoiceLabSessions();
-    }
-
-    // Active Sessions Section
-    var sessionsSection = document.createElement('div');
-    sessionsSection.className = 'voice-lab-sessions-section';
-
-    var sessionsHeader = document.createElement('div');
-    sessionsHeader.className = 'voice-lab-section-header';
-
-    var sessionsTitle = document.createElement('h3');
-    sessionsTitle.textContent = 'Active Sessions';
-    sessionsHeader.appendChild(sessionsTitle);
-
-    // VTID-01218B: Header controls (auto-refresh toggle + refresh button)
-    var headerControls = document.createElement('div');
-    headerControls.className = 'voice-lab-header-controls';
-
-    // Auto-refresh toggle
-    var autoRefreshLabel = document.createElement('label');
-    autoRefreshLabel.className = 'voice-lab-auto-refresh-label';
-    var autoRefreshCheckbox = document.createElement('input');
-    autoRefreshCheckbox.type = 'checkbox';
-    autoRefreshCheckbox.checked = state.voiceLab.autoRefreshEnabled;
-    autoRefreshCheckbox.addEventListener('change', function () {
-        state.voiceLab.autoRefreshEnabled = autoRefreshCheckbox.checked;
-        if (autoRefreshCheckbox.checked) {
-            startVoiceLabAutoRefresh();
-        } else {
-            stopVoiceLabAutoRefresh();
-        }
-    });
-    autoRefreshLabel.appendChild(autoRefreshCheckbox);
-    autoRefreshLabel.appendChild(document.createTextNode(' Auto-refresh (2s)'));
-    headerControls.appendChild(autoRefreshLabel);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'voice-lab-refresh-btn';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.addEventListener('click', function () {
-        state.voiceLab.sessionsFetched = false;
-        fetchVoiceLabSessions();
-    });
-    headerControls.appendChild(refreshBtn);
-
-    sessionsHeader.appendChild(headerControls);
-    sessionsSection.appendChild(sessionsHeader);
-
-    // Sessions table or loading state
-    if (state.voiceLab.sessionsLoading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'voice-lab-loading';
-        loadingDiv.textContent = 'Loading sessions...';
-        sessionsSection.appendChild(loadingDiv);
-    } else if (state.voiceLab.sessions.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'voice-lab-empty';
-        emptyDiv.textContent = 'No active voice sessions';
-        sessionsSection.appendChild(emptyDiv);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'voice-lab-sessions-table';
-
-        var thead = document.createElement('thead');
-        thead.innerHTML = '<tr>' +
-            '<th>Session ID</th>' +
-            '<th>User</th>' +
-            '<th>Platform</th>' +
-            '<th>Started</th>' +
-            '<th>Duration</th>' +
-            '<th>Status</th>' +
-            '<th>Turns</th>' +
-            '<th>Class</th>' +  // VTID-02868
-            '<th>Alerts</th>' +
-            '<th>Actions</th>' +
-            '</tr>';
-        table.appendChild(thead);
-
-        var tbody = document.createElement('tbody');
-        state.voiceLab.sessions.forEach(function (session) {
-            var row = document.createElement('tr');
-            row.className = session.connected ? 'session-active' : 'session-ended';
-
-            var startedAt = session.startedAt ? new Date(session.startedAt).toLocaleTimeString() : '-';
-
-            // User display
-            var userDisplay = session.userDisplayName || session.userEmail || (session.userId ? session.userId.substring(0, 8) : 'Anonymous');
-            var userTitle = session.userEmail || session.userId || 'Anonymous';
-
-            // Platform badge
-            var platformDisplay = session.platform || 'unknown';
-            var platformClass = 'platform-badge platform-' + platformDisplay.toLowerCase();
-
-            // VTID-01218B: Visual alerts
-            var alerts = [];
-            var alertClass = '';
-            if (session.turnCount === 0 && !session.connected) {
-                alerts.push('No turns');
-                alertClass = 'alert-red';
-            }
-            if (session.interruptedCount > 0) {
-                alerts.push(session.interruptedCount + ' interrupts');
-                if (!alertClass) alertClass = 'alert-orange';
-            }
-            if (session.errorCount > 0) {
-                alerts.push(session.errorCount + ' errors');
-                if (!alertClass) alertClass = 'alert-red';
-            }
-
-            var alertsHtml = alerts.length > 0
-                ? '<span class="voice-lab-alert ' + alertClass + '">' + alerts.join(', ') + '</span>'
-                : '<span class="voice-lab-ok">OK</span>';
-
-            // VTID-01218B: Turns with color coding
-            var turnsClass = '';
-            if (session.turnCount === 0 && !session.connected) {
-                turnsClass = 'turns-zero';
-            }
-
-            // Duration
-            var durationMs = session.durationMs;
-            if (!durationMs && session.startedAt && session.endedAt) {
-                durationMs = new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime();
-            }
-            var durationStr = durationMs ? formatDuration(durationMs) : (session.connected ? 'Live' : '-');
-
-            // VTID-02868: failure-class badge (server-side classifier).
-            // Empty when session is active OR metrics don't match a quality
-            // class — that's the healthy default.
-            var classHtml = '<span style="color:var(--color-text-secondary);font-size:0.7rem;">—</span>';
-            if (session.failureClass) {
-                var fcLabel = session.failureClass.replace(/^voice\./, '');
-                var fcColor = '#dc2626';
-                if (session.failureClass === 'voice.low_turn_progression') fcColor = '#a16207';
-                else if (session.failureClass === 'voice.no_engagement') fcColor = '#f59e0b';
-                else if (session.failureClass === 'voice.model_under_responds') fcColor = '#f59e0b';
-                classHtml = '<span title="' + escapeHtml(session.failureSignature || '') + '" style="font-size:0.65rem;padding:.1rem .35rem;border-radius:4px;color:' + fcColor + ';background:rgba(220,38,38,.08);">' + escapeHtml(fcLabel) + '</span>';
-            }
-
-            row.innerHTML = '<td class="session-id">' + (session.sessionId || '-').substring(0, 8) + '...</td>' +
-                '<td class="session-user" title="' + userTitle + '">' + userDisplay + '</td>' +
-                '<td><span class="' + platformClass + '">' + platformDisplay + '</span></td>' +
-                '<td>' + startedAt + '</td>' +
-                '<td>' + durationStr + '</td>' +
-                '<td class="session-status">' + (session.connected ? '<span class="status-active">Active</span>' : '<span class="status-ended">Ended</span>') + '</td>' +
-                '<td class="' + turnsClass + '">' + (session.turnCount || 0) + '</td>' +
-                '<td>' + classHtml + '</td>' +
-                '<td>' + alertsHtml + '</td>' +
-                '<td></td>';
-
-            // Add view details button in the Actions cell
-            var actionsCell = row.querySelector('td:last-child');
-            var viewBtn = document.createElement('button');
-            viewBtn.className = 'voice-lab-view-btn';
-            viewBtn.textContent = 'Details';
-            viewBtn.setAttribute('data-session-id', session.sessionId);
-            viewBtn.addEventListener('click', function () {
-                state.voiceLab.selectedSession = session.sessionId;
-                fetchVoiceLabSessionDetails(session.sessionId);
-            });
-            actionsCell.appendChild(viewBtn);
-
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        sessionsSection.appendChild(table);
-
-        // Load More button
-        if (state.voiceLab.sessionsHasMore) {
-            var loadMoreDiv = document.createElement('div');
-            loadMoreDiv.className = 'voice-lab-load-more';
-            var loadMoreBtn = document.createElement('button');
-            loadMoreBtn.className = 'voice-lab-load-more-btn';
-            loadMoreBtn.textContent = state.voiceLab.sessionsLoadingMore ? 'Loading...' : 'Load More Sessions';
-            loadMoreBtn.disabled = state.voiceLab.sessionsLoadingMore;
-            loadMoreBtn.addEventListener('click', function () {
-                fetchVoiceLabSessions(true);
-            });
-            loadMoreDiv.appendChild(loadMoreBtn);
-            sessionsSection.appendChild(loadMoreDiv);
-        }
-    }
-
-    panel.appendChild(sessionsSection);
-
-    // Session Details Side Drawer (fixed overlay, appended to body)
+function mountVoiceLabSessionDrawer() {
+    var existing = document.querySelector('.voice-lab-drawer-overlay');
+    if (existing) existing.remove();
     if (state.voiceLab.selectedSession) {
-        // Remove any existing drawer first
-        var existingOverlay = document.querySelector('.voice-lab-drawer-overlay');
-        if (existingOverlay) existingOverlay.remove();
         document.body.appendChild(renderVoiceLabSessionDrawer());
-    } else {
-        // Clean up overlay if session deselected
-        var staleOverlay = document.querySelector('.voice-lab-drawer-overlay');
-        if (staleOverlay) staleOverlay.remove();
     }
+}
+window.openVoiceLabSessionDrawer = function (sessionId) {
+    if (!sessionId) return;
+    state.voiceLab.selectedSession = sessionId;
+    fetchVoiceLabSessionDetails(sessionId);
+};
 
-    return panel;
+/**
+ * VTID-04777: mount one of the voice-supervisor.js screens, with a visible
+ * fallback when that file failed to load (same pattern as Self-Healing).
+ */
+function renderVoiceSupervisorScreen(fnName, label) {
+    if (typeof window[fnName] === 'function') {
+        return window[fnName]();
+    }
+    var missing = document.createElement('p');
+    missing.className = 'vsup-load-error';
+    missing.setAttribute('role', 'alert');
+    missing.textContent = label + ' failed to load (voice-supervisor.js). Reload the page.';
+    return missing;
 }
 
 /**
@@ -19510,72 +19158,6 @@ function renderVoiceLabPipelineDiagnostics() {
 }
 
 /**
- * VTID-01218E: Fetch Voice LAB sessions from API
- */
-function fetchVoiceLabSessions(append) {
-    if (!append) {
-        state.voiceLab.sessionsLoading = true;
-        renderApp();
-    } else {
-        state.voiceLab.sessionsLoadingMore = true;
-        renderApp();
-    }
-
-    var offset = append ? state.voiceLab.sessions.length : 0;
-    // VTID-02983: requireAuth on /voice-lab/* reads Bearer-only — without
-    // buildContextHeaders the request 401s and the catch silently empties
-    // the list. Same fix applies to /:id, /:id/turns, /:id/diagnostics below.
-    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset, { headers: buildContextHeaders() })
-        .then(function (resp) {
-            if (!resp.ok) throw new Error('Failed to fetch sessions');
-            return resp.json();
-        })
-        .then(function (data) {
-            // VTID-01218E: Map API response (snake_case) to frontend format (camelCase)
-            var sessions = (data.sessions || []).map(function (s) {
-                return {
-                    sessionId: s.session_id,
-                    connected: s.status === 'active',
-                    startedAt: s.started_at,
-                    endedAt: s.ended_at,
-                    lastActivity: s.ended_at || s.started_at,
-                    turnCount: s.turn_count,
-                    durationMs: s.duration_ms,
-                    lang: s.lang,
-                    errorCount: s.error_count,
-                    interruptedCount: s.interrupted_count,
-                    userId: s.user_id,
-                    userEmail: s.user_email,
-                    userDisplayName: s.user_display_name,
-                    userRole: s.user_role,
-                    platform: s.platform,
-                    // VTID-02868: per-session quality classification from server.
-                    failureClass: s.failure_class || null,
-                    failureSignature: s.failure_signature || null,
-                };
-            });
-            if (append) {
-                state.voiceLab.sessions = state.voiceLab.sessions.concat(sessions);
-            } else {
-                state.voiceLab.sessions = sessions;
-            }
-            state.voiceLab.sessionsHasMore = data.has_more || false;
-            state.voiceLab.sessionsLoading = false;
-            state.voiceLab.sessionsLoadingMore = false;
-            state.voiceLab.sessionsFetched = true;
-            renderApp();
-        })
-        .catch(function (err) {
-            console.error('[VTID-01218E] Error fetching sessions:', err);
-            if (!append) state.voiceLab.sessions = [];
-            state.voiceLab.sessionsLoading = false;
-            state.voiceLab.sessionsLoadingMore = false;
-            state.voiceLab.sessionsFetched = true;
-            renderApp();
-        });
-}
-
-/**
  * VTID-01218B: Fetch session details and turns from API
  */
 function fetchVoiceLabSessionDetails(sessionId) {
@@ -19587,7 +19169,7 @@ function fetchVoiceLabSessionDetails(sessionId) {
     renderApp();
 
     // Fetch session details, turns, and pipeline diagnostics in parallel
-    // VTID-02983: same auth requirement as fetchVoiceLabSessions above.
+    // VTID-02983: the voice-lab live routes require the signed-in bearer.
     var vlHeaders = { headers: buildContextHeaders() };
     Promise.all([
         fetch('/api/v1/voice-lab/live/sessions/' + sessionId, vlHeaders).then(function (r) { return r.json(); }),
@@ -19616,138 +19198,6 @@ function fetchVoiceLabSessionDetails(sessionId) {
             state.voiceLab.sessionDetailsLoading = false;
             renderApp();
         });
-}
-
-/**
- * VTID-01218B: Start auto-refresh polling for Voice LAB sessions
- */
-function startVoiceLabAutoRefresh() {
-    if (state.voiceLab.autoRefreshIntervalId) {
-        return; // Already running
-    }
-    console.log('[VTID-01218B] Starting auto-refresh (2s interval)');
-    state.voiceLab.autoRefreshIntervalId = setInterval(function () {
-        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: ORB Live is reachable from two paths
-        // (Diagnostics → Voice Lab AND Assistant → ORB Live). The Diagnostics
-        // path's renderVoiceLabView fires stopVoiceLabAutoRefresh when its
-        // activeSubTab changes, but the Assistant path doesn't — so the
-        // interval was orphaned and fetchVoiceLabSessionsSilent →
-        // updateVoiceLabSessionsTable → renderApp() fired every 2s on every
-        // other screen, resetting sidebar scroll and causing flicker.
-        //
-        // Now: only fetch when the ORB Live panel is actually in view. If
-        // not, self-cancel so we don't keep firing.
-        var onOrbLive =
-            (state.currentModuleKey === 'diagnostics' && state.currentTab === 'voice-lab'
-             && state.voiceLab.activeSubTab === 'orb-live')
-            || (state.currentModuleKey === 'assistant' && state.currentTab === 'orb-live')
-            // VTID-02856: Voice section's Orb LIVE tab uses the same auto-refresh.
-            || (state.currentModuleKey === 'voice' && state.currentTab === 'orb-live'
-                && state.voiceLab.activeSubTab === 'orb-live');
-
-        if (onOrbLive && state.voiceLab.autoRefreshEnabled) {
-            fetchVoiceLabSessionsSilent();
-        } else if (!onOrbLive) {
-            stopVoiceLabAutoRefresh();
-        }
-    }, 2000);
-}
-
-/**
- * VTID-01218B: Stop auto-refresh polling
- */
-function stopVoiceLabAutoRefresh() {
-    if (state.voiceLab.autoRefreshIntervalId) {
-        console.log('[VTID-01218B] Stopping auto-refresh');
-        clearInterval(state.voiceLab.autoRefreshIntervalId);
-        state.voiceLab.autoRefreshIntervalId = null;
-    }
-}
-
-/**
- * VTID-01218B: Silent fetch (no loading state, for auto-refresh)
- */
-function fetchVoiceLabSessionsSilent() {
-    // VTID-02983: auth headers required — see fetchVoiceLabSessions.
-    fetch('/api/v1/voice-lab/live/sessions', { headers: buildContextHeaders() })
-        .then(function (resp) {
-            if (!resp.ok) throw new Error('Failed to fetch sessions');
-            return resp.json();
-        })
-        .then(function (data) {
-            var freshSessions = (data.sessions || []).map(function (s) {
-                return {
-                    sessionId: s.session_id,
-                    connected: s.status === 'active',
-                    startedAt: s.started_at,
-                    endedAt: s.ended_at,
-                    lastActivity: s.ended_at || s.started_at,
-                    turnCount: s.turn_count,
-                    durationMs: s.duration_ms,
-                    lang: s.lang,
-                    errorCount: s.error_count,
-                    interruptedCount: s.interrupted_count,
-                    userId: s.user_id,
-                    userEmail: s.user_email,
-                    userDisplayName: s.user_display_name,
-                    userRole: s.user_role,
-                    platform: s.platform,
-                    // VTID-02868: per-session quality classification from server.
-                    failureClass: s.failure_class || null,
-                    failureSignature: s.failure_signature || null,
-                };
-            });
-            // If user has loaded more pages, keep those and only replace the first page
-            if (state.voiceLab.sessions.length > freshSessions.length) {
-                var extra = state.voiceLab.sessions.slice(freshSessions.length);
-                state.voiceLab.sessions = freshSessions.concat(extra);
-            } else {
-                state.voiceLab.sessions = freshSessions;
-            }
-            // Update DOM without full re-render to preserve scroll/focus
-            updateVoiceLabSessionsTable();
-        })
-        .catch(function (err) {
-            console.error('[VTID-01218B] Silent fetch error:', err);
-        });
-}
-
-/**
- * VTID-01218B: Update sessions table without full re-render
- */
-function updateVoiceLabSessionsTable() {
-    // VTID-01218B: Don't re-render if a modal is open (login, etc.) - preserves input focus
-    var modalOpen = document.querySelector('.auth-modal, .login-modal, .modal-overlay, .modal-backdrop');
-    if (modalOpen) {
-        return;
-    }
-
-    // Don't re-render if there's an active input focus
-    var activeElement = document.activeElement;
-    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-        return;
-    }
-
-    var tbody = document.querySelector('.voice-lab-sessions-table tbody');
-    if (!tbody) {
-        // BOOTSTRAP-SIDEBAR-FLICKER-FIX: if the table isn't in the DOM we are
-        // NOT on the ORB Live panel — just bail. The previous behaviour of
-        // calling renderApp() here turned every orphaned interval tick into
-        // a full re-render (sidebar scroll reset, flicker). If the user is
-        // on the ORB Live panel and the table is genuinely still mounting,
-        // the next tick (2s later) will find it.
-        return;
-    }
-
-    // Only re-render if data actually changed (prevents scroll jump)
-    var newFingerprint = state.voiceLab.sessions.map(function (s) {
-        return s.sessionId + ':' + s.connected + ':' + s.turnCount + ':' + s.errorCount;
-    }).join('|');
-    if (newFingerprint === state.voiceLab._lastSessionsFingerprint) {
-        return; // No change, skip re-render
-    }
-    state.voiceLab._lastSessionsFingerprint = newFingerprint;
-    renderApp();
 }
 
 /**
@@ -36703,8 +36153,8 @@ function renderTestingE2eView() {
         container.appendChild(cyclesGrid);
     }
 
-    // VTID-02856: ORB Monitor relocated to Voice / Orb UI Monitor.
-    container.appendChild(renderMovedToVoiceBreadcrumb('Orb UI Monitor', 'orb-ui-monitor'));
+    // VTID-02856: ORB Monitor relocated to Voice; VTID-04779: now Voice / Test Bench.
+    container.appendChild(renderMovedToVoiceBreadcrumb('Test Bench · ORB UI checks', 'test-bench'));
 
     // Runs history table
     var runsTitle = document.createElement('h3');
@@ -36946,9 +36396,11 @@ function renderLivekitHourlyTestsPanel() {
 
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">LiveKit Hourly Tests</h3>' +
+    // VTID-04779: retitled — this is a gateway tool-routing dry run (no
+    // LiveKit media involved), and there is no hourly schedule.
+    titleRow.innerHTML = '<h3 class="vsup-flush-title">Tool-routing dry run (gateway)</h3>' +
         '<span style="font-size:0.75rem;color:var(--color-text-secondary);">' +
-        'Layer-A dry-run via gateway tool-routing · VTID-03025</span>';
+        'Layer-A dry-run: each case checks which tool the gateway routes a voice request to · VTID-03025</span>';
     section.appendChild(titleRow);
 
     // Lazy-fetch latest run + cases + coverage on first render.
@@ -36991,7 +36443,7 @@ function renderLivekitHourlyTestsPanel() {
     if (state.livekitTests.loading && !state.livekitTests.fetched) {
         var loader = document.createElement('div');
         loader.className = 'placeholder-content';
-        loader.textContent = 'Loading LiveKit hourly test grid...';
+        loader.textContent = 'Loading tool-routing dry-run results...';
         section.appendChild(loader);
         return section;
     }
@@ -37000,7 +36452,7 @@ function renderLivekitHourlyTestsPanel() {
         var errDiv = document.createElement('div');
         errDiv.className = 'placeholder-content';
         errDiv.style.color = 'var(--color-text-secondary)';
-        errDiv.textContent = 'Could not load LiveKit hourly tests: ' + state.livekitTests.error;
+        errDiv.textContent = 'Could not load tool-routing dry-run results: ' + state.livekitTests.error;
         section.appendChild(errDiv);
         return section;
     }
@@ -37217,7 +36669,7 @@ function renderLivekitHourlyTestsPanel() {
 
     var casesInfo = document.createElement('span');
     casesInfo.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);margin-left:auto;align-self:center;';
-    casesInfo.textContent = cases.length + ' case(s) enabled · hourly cron lands in Slice 1b';
+    casesInfo.textContent = cases.length + ' case(s) enabled · runs on demand (Trigger Run) — no scheduled run';
     btnRow.appendChild(casesInfo);
 
     card.appendChild(btnRow);
@@ -37247,14 +36699,14 @@ async function triggerLivekitHourlyTests(btn) {
             state.livekitTests.loading = false;
             state.livekitTests.latestRun = null;
             renderApp();
-            showToast('LiveKit hourly tests triggered (run ' +
+            showToast('Tool-routing dry run triggered (run ' +
                 (result.summary && result.summary.run_id ? result.summary.run_id.substring(0, 8) : '?') +
                 ')', 'success');
         } else {
             state.livekitTests.triggering = false;
             btn.disabled = false;
             btn.textContent = 'Trigger Run';
-            showToast('LiveKit tests failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+            showToast('Tool-routing dry run failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
         }
     } catch (e) {
         state.livekitTests.triggering = false;
@@ -37806,11 +37258,11 @@ function renderLivekitTestView() {
     controls.innerHTML =
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
-        + '<button class="lkt-diagnose" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics</button>'
+        + '<button class="lkt-diagnose" title="Read-only: reads your session, bootstrap and tool lookups; creates nothing">⚙ Run Diagnostics (read-only)</button>'
         + '<input type="hidden" class="lkt-mode" value="test-session" />'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
-        + '<a href="/command-hub/voice/orb-live/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Orb LIVE</a>';
+        + '<a href="/command-hub/voice/sessions/" class="lkt-sessions-link">→ Voice Sessions</a>';
     container.appendChild(controls);
     var langSelect = controls.querySelector('.lkt-lang');
     langSelect.addEventListener('change', function () {
@@ -38100,8 +37552,8 @@ function renderLivekitTestView() {
     emailInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') passwordInput.focus(); });
     refreshAuthUI();
 
-    // Diagnostics — runs every tool against the user's signed-in JWT and
-    // prints pass/fail. Mirrors the Python harness at /tmp/test_livekit_e2e.py
+    // Diagnostics — runs the READ-ONLY tool probes against the user's
+    // signed-in JWT and prints pass/fail (VTID-04779: no write probes). Mirrors the Python harness at /tmp/test_livekit_e2e.py
     // so we can prove from the browser what the agent sees against THIS
     // user's account specifically.
     function diagAppend(line) {
@@ -38263,8 +37715,15 @@ function renderLivekitTestView() {
             String((bs.body && bs.body.voice_config && bs.body.voice_config.llm_model) || ''),
         );
 
-        // Phase 3: direct-route tools
-        diagAppend('<br><strong style="color:#facc15;">Direct-route tools (18):</strong>');
+        // Phase 3: direct-route tools — READ-ONLY (VTID-04779).
+        // This bench runs as the signed-in operator against the shared
+        // production database, so diagnostics only read. The write probes it
+        // used to run (create_calendar_event, add_to_calendar,
+        // activate_recommendation, save_diary_entry, set_reminder /
+        // delete_reminder, post_intent / mark_intent_fulfilled) and the
+        // dispatcher tools that send, share, persist or call paid external
+        // services are covered by the gateway's CI tests instead.
+        diagAppend('<br><strong class="lkt-diag-heading">Direct-route tools (read-only):</strong>');
         var k = await diagFetch('POST', '/api/v1/assistant/knowledge/search', { query: 'autopilot' });
         diagRow('tool', 'search_knowledge', k.ok, k.status + '');
 
@@ -38274,36 +37733,8 @@ function renderLivekitTestView() {
         var st = await diagFetch('GET', '/api/v1/calendar/events/today');
         diagRow('tool', 'get_schedule', st.ok, st.status + '');
 
-        var ce = await diagFetch('POST', '/api/v1/calendar/events', {
-            title: '[TEST] diagnostics probe',
-            start_time: '2026-12-31T15:00:00Z',
-            end_time: '2026-12-31T15:30:00Z',
-        });
-        diagRow('tool', 'create_calendar_event', ce.ok, ce.status + '');
-        var ceId = ce.body && ((ce.body.data && ce.body.data.id) || ce.body.id);
-        if (ceId) await diagFetch('DELETE', '/api/v1/calendar/events/' + ceId);
-
-        var ca = await diagFetch('POST', '/api/v1/calendar/events', {
-            title: '[TEST] add_to_calendar probe',
-            start_time: '2026-12-31T17:00:00Z',
-            end_time: '2026-12-31T17:15:00Z',
-        });
-        diagRow('tool', 'add_to_calendar', ca.ok, ca.status + '');
-        var caId = ca.body && ((ca.body.data && ca.body.data.id) || ca.body.id);
-        if (caId) await diagFetch('DELETE', '/api/v1/calendar/events/' + caId);
-
         var rec = await diagFetch('GET', '/api/v1/autopilot/recommendations');
         diagRow('tool', 'get_recommendations', rec.ok, rec.status + '');
-        var recId = null;
-        if (rec.ok && rec.body && Array.isArray(rec.body.recommendations) && rec.body.recommendations[0]) {
-            recId = rec.body.recommendations[0].id;
-        }
-        if (recId) {
-            var act = await diagFetch('POST', '/api/v1/autopilot/recommendations/' + recId + '/activate', {});
-            diagRow('tool', 'activate_recommendation', act.ok, act.status + '');
-        } else {
-            diagRow('tool', 'activate_recommendation', true, 'skipped (no rec_id)');
-        }
 
         var idx = await diagFetch('GET', '/api/v1/vitana-index');
         diagRow('tool', 'get_vitana_index', idx.ok, idx.status + ' total=' + (idx.body && idx.body.snapshot && idx.body.snapshot.total));
@@ -38311,32 +37742,8 @@ function renderLivekitTestView() {
         var sug = await diagFetch('GET', '/api/v1/vitana-index/suggestions');
         diagRow('tool', 'get_index_improvement_suggestions', sug.ok, sug.status + '');
 
-        var dy = await diagFetch('POST', '/api/v1/memory/diary/sync-index', { raw_text: '[TEST] diagnostics probe — drank water and walked' });
-        diagRow('tool', 'save_diary_entry', dy.ok, dy.status + '');
-
-        var sr = await diagFetch('POST', '/api/v1/reminders', {
-            action_text: '[TEST] probe',
-            spoken_message: '[TEST]',
-            scheduled_for_iso: '2026-08-01T08:00:00Z',
-        });
-        diagRow('tool', 'set_reminder', sr.ok, sr.status + '');
-        var rId = sr.body && ((sr.body.data && sr.body.data.id) || sr.body.id);
-
         var fr = await diagFetch('GET', '/api/v1/reminders');
         diagRow('tool', 'find_reminders', fr.ok, fr.status + '');
-        if (rId) {
-            var dr = await diagFetch('DELETE', '/api/v1/reminders/' + rId);
-            diagRow('tool', 'delete_reminder', dr.ok, dr.status + '');
-        }
-
-        var pi = await diagFetch('POST', '/api/v1/intents', {
-            intent_kind: 'social_seek',
-            title: '[TEST] diagnostics probe — coffee buddy',
-            scope: 'Looking for someone to grab coffee with one afternoon next week. Casual, talk about longevity. (harness probe — safe to ignore)',
-        });
-        diagRow('tool', 'post_intent', pi.ok || pi.status === 200, pi.status + '');
-        var intentId =
-            pi.body && (pi.body.intent_id || (pi.body.intent && pi.body.intent.intent_id) || (pi.body.data && pi.body.data.id));
 
         var li = await diagFetch('GET', '/api/v1/intents');
         diagRow('tool', 'list_my_intents', li.ok, li.status + '');
@@ -38344,40 +37751,17 @@ function renderLivekitTestView() {
         var vm = await diagFetch('GET', '/api/v1/intent-matches/incoming');
         diagRow('tool', 'view_intent_matches', vm.ok, vm.status + '');
 
-        if (intentId) {
-            var mm = await diagFetch('GET', '/api/v1/intents/' + intentId + '/matchmaker');
-            diagRow('tool', 'get_matchmaker_result', mm.ok || mm.status === 202, mm.status + '');
-            var mf = await diagFetch('POST', '/api/v1/intents/' + intentId + '/close', {});
-            diagRow('tool', 'mark_intent_fulfilled', mf.ok, mf.status + '');
-        }
-
-        // Phase 4: dispatcher tools (22)
-        diagAppend('<br><strong style="color:#facc15;">Dispatcher tools (22):</strong>');
+        // Phase 4: dispatcher tools — read-only lookups only (VTID-04779).
+        diagAppend('<br><strong class="lkt-diag-heading">Dispatcher tools (read-only):</strong>');
         await diagDispatch('search_memory', { query: 'vitana', limit: 5 });
-        await diagDispatch('search_web', { query: 'longevity' });
         await diagDispatch('recall_conversation_at_time', { when: 'yesterday' });
-        await diagDispatch('switch_persona', { persona: 'warm' });
-        await diagDispatch('report_to_specialist', { specialist: 'devon', reason: 'probe', context_summary: 'probe' });
         await diagDispatch('search_events', { query: '' });
         await diagDispatch('search_community', { query: '' });
-        await diagDispatch('play_music', { query: 'calm' });
-        await diagDispatch('set_capability_preference', { capability: 'music.play', provider: 'spotify' });
-        await diagDispatch('read_email', {});
         await diagDispatch('find_contact', { query: 'test' });
-        await diagDispatch('consult_external_ai', { prompt: 'test' });
-        await diagDispatch('create_index_improvement_plan', { target_pillar: 'nutrition' });
-        await diagDispatch('ask_pillar_agent', { pillar: 'nutrition', question: 'what should I eat?' });
         await diagDispatch('explain_feature', { feature: 'diary' });
         await diagDispatch('resolve_recipient', { name: 'test' });
-        var meId = me.body && me.body.identity && me.body.identity.user_id;
-        if (meId) {
-            await diagDispatch('send_chat_message', { recipient_id: meId, body_text: '[TEST] diag probe' });
-            await diagDispatch('share_link', { url: 'https://vitana.app/test', with_recipient: meId });
-            await diagDispatch('share_intent_post', { intent_id: '00000000-0000-0000-0000-000000000000', with_recipient: meId });
-        }
-        await diagDispatch('scan_existing_matches', {});
-        await diagDispatch('respond_to_match', { match_id: '00000000-0000-0000-0000-000000000000', response: 'interested' });
         await diagDispatch('navigate_to_screen', { target: 'diary' });
+        diagAppend('<div class="vtb-diag-note">Write paths (calendar, reminders, diary, intents, chat, sharing, matches, preferences, specialist reports) are not exercised here — they are covered by the gateway CI test suites. No data is created under your account.</div>');
 
         // Phase 5 — agent-JWT round-trip. The voice agent does NOT use the
         // browser's bearer; it uses the agent_user_jwt minted by /orb/livekit/token
@@ -40407,7 +39791,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const section = NAVIGATION_CONFIG.find(s => s.section === route.section);
         const tab = section ? section.tabs.find(t => t.key === route.tab) : null;
         if (tab && window.location.pathname !== tab.path) {
-            history.replaceState(null, '', tab.path);
+            // VTID-04777: keep the query string — Voice supervisor filters live there.
+            history.replaceState(null, '', tab.path + (window.location.search || ''));
         }
 
         // VTID-01230: If no auth token, show auth gate immediately — do NOT load any data
@@ -44180,7 +43565,7 @@ function renderVoiceImproveView() {
 
     var title = document.createElement('h2');
     title.style.margin = '0 0 0.25rem 0';
-    title.textContent = 'Voice Improve';
+    title.textContent = 'Action Queue';
     container.appendChild(title);
 
     var subtitle = document.createElement('p');
@@ -44374,14 +43759,18 @@ function verbLabel(verb) {
 function handleVoiceImproveAction(item, verb) {
     var vi = state.voiceImprove;
     if (verb === 'investigate' || verb === 'open_in_self_healing') {
-        var target = '/command-hub/voice/orb-live/';
+        // VTID-04778: retargeted to the rebuilt Voice tabs.
+        var target = '/command-hub/voice/sessions/';
         if (item.source === 'awareness_not_wired' || item.source.startsWith('watchdog_')) target = '/command-hub/conversation/awareness/';
         else if (item.source === 'healing_quarantine' || item.source === 'self_healing_escalation' || item.source === 'architecture_report' || item.source === 'failure_class_no_rule') target = '/command-hub/voice/self-healing/';
         else if (item.source === 'provider_drift') target = '/command-hub/voice/providers/';
-        history.pushState(null, '', target);
         var route = getRouteFromPath(target);
+        var section = NAVIGATION_CONFIG.find(function (s) { return s.section === route.section; });
+        var tabDef = section ? section.tabs.find(function (t) { return t.key === route.tab; }) : null;
+        history.pushState(null, '', tabDef ? tabDef.path : target);
         state.currentModuleKey = route.section;
         state.currentTab = route.tab;
+        applyRouteSubtab(route);
         renderApp();
         return;
     }
@@ -44523,7 +43912,7 @@ function handleVoiceImproveAction(item, verb) {
 
 // Small inline breadcrumb shown where a voice surface used to live.
 // Lets operators with old bookmarks one-click jump to the new home.
-function renderMovedToVoiceBreadcrumb(label, voiceTab) {
+function renderMovedToVoiceBreadcrumb(label, voiceTab, subtab) {
     var box = document.createElement('div');
     box.style.cssText = 'margin:0 0 16px 0;padding:10px 14px;background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.25);border-radius:8px;font-size:0.85rem;color:var(--color-text-secondary);';
     var link = document.createElement('a');
@@ -44535,6 +43924,7 @@ function renderMovedToVoiceBreadcrumb(label, voiceTab) {
         history.pushState(null, '', link.getAttribute('href'));
         state.currentModuleKey = 'voice';
         state.currentTab = voiceTab;
+        applyRouteSubtab({ section: 'voice', tab: voiceTab, subtab: subtab });
         renderApp();
     };
     box.appendChild(document.createTextNode('Moved to '));
@@ -44558,7 +43948,7 @@ function renderVoiceProvidersView() {
 
     var title = document.createElement('h2');
     title.style.margin = '0 0 0.25rem 0';
-    title.textContent = 'Providers & Voice';
+    title.textContent = 'Providers & Config';
     container.appendChild(title);
 
     var subtitle = document.createElement('p');
@@ -45002,7 +44392,206 @@ function renderVoiceProvidersView() {
 
     container.appendChild(saveBar);
 
+    // VTID-04777: the provider registry and per-agent STT/LLM/TTS config used
+    // to sit behind the Orb LIVE screen's sub-tab strip (which the Voice
+    // router reset, so they were unreachable). They live here now, collapsed
+    // until opened so they only fetch when someone looks.
+    container.appendChild(renderVoiceConfigDisclosure('registry', 'Voice provider registry', renderVoiceLabProvidersPanel));
+    container.appendChild(renderVoiceConfigDisclosure('agents', 'Agent voice configuration (STT / LLM / TTS per agent)', renderVoiceLabAgentConfigPanel));
+
     return container;
+}
+
+function renderVoiceConfigDisclosure(key, label, renderPanel) {
+    if (!state.voiceConfigDisclosure) state.voiceConfigDisclosure = {};
+    var details = document.createElement('details');
+    details.className = 'vsup-disclosure';
+    var summary = document.createElement('summary');
+    summary.textContent = label;
+    details.appendChild(summary);
+    var mounted = false;
+    function mount() {
+        if (mounted) return;
+        mounted = true;
+        details.appendChild(renderPanel());
+    }
+    if (state.voiceConfigDisclosure[key]) {
+        details.open = true;
+        mount();
+    }
+    details.addEventListener('toggle', function () {
+        state.voiceConfigDisclosure[key] = details.open;
+        if (details.open) mount();
+    });
+    return details;
+}
+
+// ─── VTID-04778: Voice / Issues & Healing ──────────────────────────────
+// One tab for "what is wrong and is it getting fixed": the Action Queue
+// (the former Improve cockpit), the Self-Healing Pipeline
+// (voice-self-healing.js) and Fix Impact (voice-supervisor.js, before/after
+// per shipped fix). Sub-tab lives in state.voiceIssues.subTab and in the
+// ?sub= query parameter so links can point at one of them.
+var VOICE_ISSUES_SUBTABS = [
+    { key: 'action-queue', label: 'Action Queue' },
+    { key: 'pipeline', label: 'Self-Healing Pipeline' },
+    { key: 'fix-impact', label: 'Fix Impact' }
+];
+
+function renderVoiceIssuesHealingView() {
+    if (!state.voiceIssues) state.voiceIssues = { subTab: 'action-queue' };
+    try {
+        var qsSub = new URLSearchParams(window.location.search).get('sub');
+        if (qsSub && VOICE_ISSUES_SUBTABS.some(function (t) { return t.key === qsSub; })) {
+            state.voiceIssues.subTab = qsSub;
+        }
+    } catch (_e) { /* no URLSearchParams — keep state */ }
+    var active = state.voiceIssues.subTab || 'action-queue';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'vsup-subtabs-wrap';
+
+    var bar = document.createElement('div');
+    bar.className = 'vsup-subtabs';
+    bar.setAttribute('role', 'tablist');
+    bar.setAttribute('aria-label', 'Issues & Healing views');
+    VOICE_ISSUES_SUBTABS.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'vsup-subtab' + (t.key === active ? ' is-active' : '');
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', t.key === active ? 'true' : 'false');
+        b.textContent = t.label;
+        b.addEventListener('click', function () {
+            state.voiceIssues.subTab = t.key;
+            history.pushState(null, '', '/command-hub/voice/issues-healing/?sub=' + t.key);
+            renderApp();
+        });
+        bar.appendChild(b);
+    });
+    wrap.appendChild(bar);
+
+    var panel = document.createElement('div');
+    panel.className = 'vsup-subtab-panel';
+    panel.setAttribute('role', 'tabpanel');
+    if (active === 'pipeline') {
+        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
+            panel.appendChild(window.renderVoiceSelfHealingScreen());
+        } else {
+            var vshMissing = document.createElement('p');
+            vshMissing.className = 'vsup-load-error';
+            vshMissing.setAttribute('role', 'alert');
+            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
+            panel.appendChild(vshMissing);
+        }
+    } else if (active === 'fix-impact') {
+        panel.appendChild(renderVoiceSupervisorScreen('renderVoiceFixImpact', 'Fix Impact'));
+    } else {
+        panel.appendChild(renderVoiceImproveView());
+    }
+    wrap.appendChild(panel);
+    return wrap;
+}
+
+// ─── VTID-04779: Voice / Test Bench ────────────────────────────────────
+// Top: the LiveKit bench (left) and the Nova Sonic bench (right) side by
+// side (two columns >= 1200px, stacked below). Both benches use class-scoped
+// selectors (lkt-* / nst-*), never element ids, so mounting them together has
+// no id collisions; the Nova session poller stops itself once its node is
+// detached, and the LiveKit view survives re-renders while a call is live.
+// Below: the voice test suite — tool-routing dry run, ORB UI checks and the
+// TTS sweep / echo-barge-in gate (orb-voice-bench.html, same-origin iframe:
+// the Command Hub CSP's default-src 'self' covers frame-src).
+function renderVoiceTestBenchView() {
+    if (!state.voiceTestBench) state.voiceTestBench = { audioBenchOpen: false };
+    var tb = state.voiceTestBench;
+
+    var root = document.createElement('div');
+    root.className = 'vtb';
+
+    var head = document.createElement('div');
+    head.className = 'vtb-head';
+    var h2 = document.createElement('h2');
+    h2.textContent = 'Voice Test Bench';
+    head.appendChild(h2);
+    var sub = document.createElement('p');
+    sub.className = 'vtb-sub';
+    sub.textContent = 'Talk to each voice pipeline yourself, side by side, then check the automated voice suite below. Diagnostics here only read — nothing is written under your account.';
+    head.appendChild(sub);
+    root.appendChild(head);
+
+    var split = document.createElement('div');
+    split.className = 'vtb-split';
+    var left = document.createElement('section');
+    left.className = 'vtb-col';
+    left.setAttribute('aria-label', 'LiveKit test bench');
+    left.appendChild(renderLivekitTestView());
+    var right = document.createElement('section');
+    right.className = 'vtb-col';
+    right.setAttribute('aria-label', 'Nova Sonic test bench');
+    right.appendChild(renderNovaSonicTestView());
+    split.appendChild(left);
+    split.appendChild(right);
+    root.appendChild(split);
+
+    var suite = document.createElement('section');
+    suite.className = 'vtb-suite';
+    suite.setAttribute('aria-labelledby', 'vtb-suite-title');
+    var suiteTitle = document.createElement('h2');
+    suiteTitle.id = 'vtb-suite-title';
+    suiteTitle.textContent = 'Voice test suite';
+    suite.appendChild(suiteTitle);
+
+    var routing = document.createElement('div');
+    routing.className = 'vtb-suite-block';
+    routing.appendChild(renderLivekitHourlyTestsPanel());
+    suite.appendChild(routing);
+
+    var orbUi = document.createElement('div');
+    orbUi.className = 'vtb-suite-block';
+    orbUi.appendChild(renderOrbMonitorSection());
+    suite.appendChild(orbUi);
+
+    var audio = document.createElement('details');
+    audio.className = 'vtb-suite-block vtb-audio';
+    var audioSummary = document.createElement('summary');
+    audioSummary.textContent = 'TTS sweep & echo / barge-in gate';
+    audio.appendChild(audioSummary);
+    var audioNote = document.createElement('p');
+    audioNote.className = 'vtb-sub';
+    audioNote.textContent = 'Plays real gateway TTS for every language and measures it, and checks whether this device\'s speaker echo opens the mic gate. Needs your speakers and microphone. The embedded copy reloads whenever the Command Hub redraws (for example after a toast) — for a long run, open it in its own tab.';
+    audio.appendChild(audioNote);
+    var openLink = document.createElement('a');
+    openLink.className = 'vtb-open-link';
+    openLink.href = '/command-hub/orb-voice-bench.html';
+    openLink.target = '_blank';
+    openLink.rel = 'noopener';
+    openLink.textContent = 'Open the voice bench in a new tab';
+    audio.appendChild(openLink);
+    var frameMounted = false;
+    function mountFrame() {
+        if (frameMounted) return;
+        frameMounted = true;
+        var frame = document.createElement('iframe');
+        frame.className = 'vtb-frame';
+        frame.src = '/command-hub/orb-voice-bench.html';
+        frame.title = 'ORB voice bench: TTS sweep and echo / barge-in gate';
+        frame.setAttribute('allow', 'microphone; autoplay');
+        frame.setAttribute('loading', 'lazy');
+        audio.appendChild(frame);
+    }
+    if (tb.audioBenchOpen) {
+        audio.open = true;
+        mountFrame();
+    }
+    audio.addEventListener('toggle', function () {
+        tb.audioBenchOpen = audio.open;
+        if (audio.open) mountFrame();
+    });
+    suite.appendChild(audio);
+
+    root.appendChild(suite);
+    return root;
 }
 
 function fetchTtsVoicesForLanguage(lang) {
@@ -47085,9 +46674,9 @@ function renderSelfHealingView() {
         fetchSelfHealingData();
     }
 
-    // VTID-02856: Voice Self-Healing relocated to Voice / Self-Healing.
+    // VTID-02856: Voice Self-Healing relocated to Voice; VTID-04778: now Voice / Issues & Healing.
     // A small breadcrumb stays here so operators with old bookmarks find it.
-    container.appendChild(renderMovedToVoiceBreadcrumb('Voice Self-Healing', 'self-healing'));
+    container.appendChild(renderMovedToVoiceBreadcrumb('Issues & Healing · Self-Healing Pipeline', 'issues-healing', 'pipeline'));
 
     // ── HEADER with Kill Switch ──
     var header = document.createElement('div');
@@ -52098,7 +51687,7 @@ function renderAssistantOverviewView() {
         };
         return b;
     };
-    toolbar.appendChild(quickBtn('Open Orb LIVE', 'voice', 'orb-live'));
+    toolbar.appendChild(quickBtn('Open Voice Sessions', 'voice', 'sessions'));
     toolbar.appendChild(quickBtn('Awareness', 'voice', 'awareness'));
     toolbar.appendChild(quickBtn('Personality', 'assistant', 'personality'));
     container.appendChild(toolbar);

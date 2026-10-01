@@ -73,6 +73,15 @@ import { getUserHealthContext } from './user-health-context';
 // FEATURE_VOICE_RANKING_SHADOW_ENV shadow-compare log. See memory-ranker.ts.
 import { isFeatureLive } from './feature-flags';
 import { rankMemoryHits, shadowCompareHits } from './memory-hit-ranking';
+import { formatPeopleBlock, type KeyedFact } from './memory/people';
+
+/** A structured fact hit's content is "fact_key: fact_value". */
+function factFromHitContent(hit: { content: string }): KeyedFact {
+  const i = hit.content.indexOf(': ');
+  return i < 0
+    ? { fact_key: '', fact_value: '' }
+    : { fact_key: hit.content.slice(0, i), fact_value: hit.content.slice(i + 2) };
+}
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -1448,6 +1457,9 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
       context += `- ${hit.content}\n`;
     }
     context += `</structured_facts>\n\n`;
+    // VTID-04766: who is who, so a wife's father is never read as the
+    // member's own father.
+    context += formatPeopleBlock(structuredFactHits.map(factFromHitContent));
   }
 
   // Relationship graph section (from relationship graph)

@@ -870,6 +870,9 @@ jobs:
           # Applied unconditionally below, in every deploy mode (env-only too),
           # in this step because step 1/2 is at the 20,000-char run limit.
           GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI
+          # VTID-04754: the TypeSafe key (shared with staging, owner decision
+          # 2026-09-30). Pinned as a full ARN for the same reason as above.
+          JEV_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/typesafe-api-key-YElucz
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
@@ -1146,6 +1149,64 @@ jobs:
             .containerDefinitions[0].secrets |=
               ( [ (. // [])[] | select(.name != "GITHUB_SAFE_MERGE_TOKEN") ]
                 + [ {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$GH} ] )')
+
+          # VTID-04754: Jev (TypeSafe System One) decisions, internal roles
+          # only. Declared here so prod no longer relies on the live task def
+          # carrying rev 140's manual edit forward. JEV_COMMUNITY_ENABLED is
+          # never set (community plane stays off).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg J "$JEV_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
+                + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
+            | .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and (.name | test("^JEV_.*_MODE$") | not)) ]
+                + [ {name:"JEV_DECISIONS_ENABLED", value:"true"},
+                    {name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"},
+                    {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"},
+                    {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"},
+                    {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"},
+                    {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"},
+                    {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"},
+                    {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"},
+                    {name:"JEV_PLANNABILITY_MODE", value:"shadow"},
+                    {name:"JEV_TEST_SELECTION_MODE", value:"shadow"},
+                    {name:"JEV_PR_CLASH_MODE", value:"shadow"},
+                    {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"},
+                    {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"},
+                    {name:"JEV_CHANGE_RISK_MODE", value:"shadow"} ] )')
+          # Jev gates (VTID-04759 B1/B2, 04764 A1, 04774 A2, 04775 C1, 04782 E3/E6, 04797 A8,
+          # 04799 B3, 04800 A6, 04801 A4, 04802 B4/B5, 04803 B6, 04804 C2, 04805 C3,
+          # 04806 A3, 04807 A5, 04808 A7, 04810 E5, 04811 E7, 04815 A9): shadow only, record and
+          # change nothing; enforce is a per-gate decision once agreement data exists.
+
+          # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
+          # memory read; recall() runs in the background and one counts-only
+          # '[VTID-04784] recall-shadow' line compares the two per session.
+          # Read-only, never awaited. The recall switch itself stays unset
+          # until scripts/memory/recall-shadow-report.sh shows they agree.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
+
+          # VTID-04786: AP-0910 memory embedding backfill runs here from its own
+          # in-process loop (every 30 min, one task per interval via
+          # automation_runs). Its scheduler died with GCP; the job only writes
+          # embeddings onto members' own memory rows. Maxina holds 97% of the
+          # backlog. The general heartbeat loop stays off on prod.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED" and .name != "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS") ]
+                + [ {name:"MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED", value:"true"},
+                    {name:"MEMORY_EMBEDDING_BACKFILL_TENANT_IDS", value:"2e7528b8-472a-4356-88da-0280d4639cce"} ] )')
 
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set

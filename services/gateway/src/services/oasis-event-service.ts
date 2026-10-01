@@ -31,6 +31,29 @@ function inferTaskStageFromType(eventType: string): 'PLANNER' | 'WORKER' | 'VALI
 }
 
 /**
+ * VTID-04785: `oasis_events.service`, `.status` and `.message` are NOT NULL.
+ * Several fire-and-forget callers build the event with `as any` and omit all
+ * three, so PostgREST rejects the INSERT, this function returns
+ * `{ ok: false }` and the caller's `.catch(() => {})` never notices.
+ * Measured on prod 2026-10-01: zero `orb.upstream.provider.selected` rows,
+ * ever. We deliberately do NOT default the missing fields here: that would
+ * start landing every other silently-failing topic at once, at a volume
+ * nobody has reviewed. Instead the failure is made loud (one console.error
+ * per topic) and the doomed INSERT is skipped; callers are fixed one by one
+ * (the provider-selection emits in orb-live.ts pass all three explicitly).
+ */
+const loggedMissingRequired = new Set<string>();
+
+export function missingOasisRequiredFields(event: CicdOasisEvent): string[] {
+  const e = event as unknown as { source?: unknown; status?: unknown; message?: unknown };
+  const missing: string[] = [];
+  if (typeof e.source !== 'string') missing.push('source');
+  if (typeof e.status !== 'string') missing.push('status');
+  if (typeof e.message !== 'string') missing.push('message');
+  return missing;
+}
+
+/**
  * Emit an event to OASIS via Supabase
  */
 export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boolean; event_id?: string; error?: string }> {
@@ -63,6 +86,17 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     ...callerMetadata,
     env: (callerMetadata as Record<string, unknown>).env ?? envTag,
   };
+
+  // VTID-04785: a NOT NULL column is missing - the INSERT can only fail.
+  // Say so loudly (once per topic) instead of letting it fail silently.
+  const missingRequired = missingOasisRequiredFields(event);
+  if (missingRequired.length > 0) {
+    if (!loggedMissingRequired.has(event.type)) {
+      loggedMissingRequired.add(event.type);
+      console.error(`[OASIS Event] ${event.type} not recorded: missing required ${missingRequired.join(', ')} (VTID-04785)`);
+    }
+    return { ok: false, error: `missing_required_fields:${missingRequired.join(',')}` };
+  }
 
   const payload: Record<string, unknown> = {
     id: eventId,

@@ -381,8 +381,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-de-first-day: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20410,
-  "instruction_sha256": "9dd92d096ef1f41d3681baefafea4517b97cf5d758eb503525035ba440e11500",
+  "instruction_bytes": 20543,
+  "instruction_sha256": "87f4910ec414e0e2139e359844209463470a6f5e7013a224e0439cc0b10dabdf",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -449,7 +449,7 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
-- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
+- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
 - PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD: say a session is finished only after you spoke its full script in that turn; offer the next topic on the following turn.
@@ -664,8 +664,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) authenticated-community-en-returning: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 21210,
-  "instruction_sha256": "e95224c1144d44c0ea1b2cbd4b3aaa6106825d12f01b0db6e559d235c08fe1a9",
+  "instruction_bytes": 21343,
+  "instruction_sha256": "ddc1633f3e7493eb1466f2e39a40f78d989b7645db32ae8b4c26d412eaf9311d",
   "provider": "nova_sonic",
   "tool_count": 45,
   "tools_bytes": 65549,
@@ -731,7 +731,7 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
-- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
+- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
 - PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD: say a session is finished only after you spoke its full script in that turn; offer the next topic on the following turn.
@@ -966,8 +966,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) cascade-ru: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20176,
-  "instruction_sha256": "bbdbc323002540e855b134fde65f5bc3c8d74e17fca36d764656bc918218e22d",
+  "instruction_bytes": 20309,
+  "instruction_sha256": "2a683385e72bb66f471d42652ced881227d2866df10223aa5c13fbfc3c61413f",
   "provider": "cascaded",
   "tool_count": 296,
   "tools_bytes": 228798,
@@ -1034,7 +1034,7 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
-- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
+- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
 - PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD: say a session is finished only after you spoke its full script in that turn; offer the next topic on the following turn.
@@ -1495,12 +1495,12 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) command-hub-developer-en: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 10183,
-  "instruction_sha256": "3ebe1c617895a297dce9c3f4b648b77e36db0f3ad25b1e78df17e846945650d1",
+  "instruction_bytes": 10130,
+  "instruction_sha256": "a10713a9caa4cfbbbbec6d7b6a72d4518bb7cdfac7026752aeb76c0dbf9bc116",
   "provider": "nova_sonic",
-  "tool_count": 157,
-  "tools_bytes": 54750,
-  "tools_sha256": "85290a3c45d88b9f7fa3c5483dbdc3605eccf943c127c9054acec5cec38cab88",
+  "tool_count": 156,
+  "tools_bytes": 54271,
+  "tools_sha256": "32e77fa250c61181e98f3e8c66c99fa78fdcb306be6f0a09d208f1cf19fbae74",
   "voice": "amy",
 }
 `;
@@ -1579,9 +1579,8 @@ TOOLS:
 - Use operator_delegate whenever the developer wants something DONE: start or queue a task, fix a bug, change code, check or approve/reject a held execution, or look up the status of work. Pass a self-contained request with everything agreed in the conversation. Before delegating a code change, restate the task in one sentence and get a yes. Afterwards, tell the developer briefly what the Operator did (VTID, execution queued and held for approval, or still working) and that the full exchange is in the Operator Console thread
 - operator_delegate answers within a moment. If it says the Operator is still working, say briefly that it is handed over and move on; call get_delegation_result when the developer asks how it went or on a later turn, and cancel_delegation if they say to stop it
 - Use search_knowledge to look up VTID status, architecture docs, deployment history, OASIS event types, and platform documentation
-- Use search_memory to recall past technical discussions with this developer
 - Use the dev_* read tools for task, OASIS and work-order lookups
-- Community-surface tools (events, community search, reminders, chat) do not exist in this surface. If the developer asks about events, groups, the Maxina Community, or wellness, say in your own words that this is the engineering assistant and that community topics live on vitanaland.com
+- Community-surface tools (events, community search, reminders, chat, personal member memory) do not exist in this surface. If the developer asks about events, groups, the Maxina Community, or wellness, say in your own words that this is the engineering assistant and that community topics live on vitanaland.com
 - search_calendar checks the user's schedule and free slots; create_calendar_event adds or books events.
 - set_reminder only when they want to be prompted later at a time they said ("remind me at 8pm", "erinnere MICH um …"); delete_reminder only once confirmed (confirmed=true). German "erinnern/Erinnerung" also means MEMORY (VTID-04640): "erinnere DICH", "merk dir", "was hast du im Gedächtnis", "woran erinnerst du dich" → remember_fact to store, search_memory to recall. Unsure → ask: remember it, or remind later?
 
@@ -1615,7 +1614,6 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 [
   "get_current_screen",
   "navigate",
-  "search_memory",
   "search_knowledge",
   "end_conversation",
   "dev_list_vtids",
@@ -2201,8 +2199,8 @@ exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) 
 exports[`VTID-04542 A — connect-time payload identity (real connectToLiveAPI) vertex-serbian-bridge-sr: summary 1`] = `
 {
   "deferred_tools": 0,
-  "instruction_bytes": 20188,
-  "instruction_sha256": "7593c3df1cc408844b63223b82b8017fcfaf013a36447f3c265dae2dd1eb1029",
+  "instruction_bytes": 20321,
+  "instruction_sha256": "9a6ed3c39aeff4b8e340bfe75c8807fb2c0c7df8ebf3d368233b538fd2a881d8",
   "provider": "vertex",
   "tool_count": 34,
   "tools_bytes": 49198,
@@ -2269,7 +2267,7 @@ PROACTIVE LEADERSHIP — RULE 0 (every turn, every user, new or long-time):
 ENDING THE CONVERSATION — OVERRIDES RULE 0 (ABSOLUTE): when the user says, in any words or language, that they want to stop or turn you off, RULE 0 is SUSPENDED — no proposal and no question. Speak one brief, warm farewell, then call end_conversation and stay silent. If they have to say it again ("you're still here"), the first call never happened: call it now, without apology or explanation. Inside Teacher Mode or a My Journey topic, use their own end tools.
 
 GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
-- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
+- The Guided Journey is an ordered catalog of sessions that teaches the user Vitanaland one step at a time. Members know it as their Audiobook (German "Hörbuch"), with sessions as episodes ("Folge") they can simply listen to; call it that. It is one good lead for a new user, not the only one (setting their goal or showing their Vitana Index work too).
 - FLEXIBLE WORDING: Vary your phrasing every conversation; never open two conversations with the same sentence.
 - When the user agrees to start or continue ("ja", "yes", "weiter", "nächste Session"): call narrate_guided_session and speak the returned script IN FULL, word for word — not a one-sentence introduction, a summary or a paraphrase. If it returns "degraded" or no script (the curriculum isn't available), pivot to another concrete step in fresh words, and do NOT claim the user finished everything.
 - PLAYING A SESSION = SPEAKING ITS SCRIPT ALOUD: say a session is finished only after you spoke its full script in that turn; offer the next topic on the following turn.
@@ -2750,7 +2748,7 @@ exports[`VTID-04542 B — greeting decision identity (computeGreetingDecision) f
   "diag": {
     "is_first_session": true,
     "lang": "de",
-    "prompt_len": 559,
+    "prompt_len": 610,
     "wake_opener": "safe_fast_first_time_welcome",
   },
   "effects": {
@@ -2762,7 +2760,7 @@ exports[`VTID-04542 B — greeting decision identity (computeGreetingDecision) f
 }
 `;
 
-exports[`VTID-04542 B — greeting decision identity (computeGreetingDecision) first_time_welcome (safe-fast): directive (full text) 1`] = `"Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey and show them how everything works, and invite them to start their first session together. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen."`;
+exports[`VTID-04542 B — greeting decision identity (computeGreetingDecision) first_time_welcome (safe-fast): directive (full text) 1`] = `"Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, reassure them there is no rush and nothing to figure out alone, and invite them to start Episode 1 of their Audiobook, where you explain step by step how everything works and they only have to listen. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen."`;
 
 exports[`VTID-04542 B — greeting decision identity (computeGreetingDecision) guided topic (override_v2 guided): decision 1`] = `
 {
@@ -2976,10 +2974,12 @@ exports[`VTID-04542 C1 — per-turn persistence identity (handleTurnComplete) gr
         {
           "conversationText": "Assistant: Guten Morgen Ana — schön, dass du da bist. Sollen wir mit deinem Schlaf weitermachen?",
           "force": false,
+          "served_role": "community",
           "session_id": "live-vtid-04542-turn",
           "tenant_id": "22222222-2222-4222-8222-222222222222",
           "turn_count": 1,
           "user_id": "11111111-1111-4111-8111-111111111111",
+          "work_surface": false,
         },
       ],
     ],
@@ -3121,10 +3121,12 @@ exports[`VTID-04542 C1 — per-turn persistence identity (handleTurnComplete) re
 User: Ich habe letzte Nacht nur fünf Stunden geschlafen und fühle mich müde.
 Assistant: Das klingt anstrengend. Magst du, dass ich deinen Schlaf heute Abend im Blick behalte?",
           "force": false,
+          "served_role": "community",
           "session_id": "live-vtid-04542-turn",
           "tenant_id": "22222222-2222-4222-8222-222222222222",
           "turn_count": 2,
           "user_id": "11111111-1111-4111-8111-111111111111",
+          "work_surface": false,
         },
       ],
     ],
@@ -3242,6 +3244,7 @@ exports[`VTID-04542 C2 — session-start persistence identity (handleLiveSession
   ],
   "http_non_get": [
     "PATCH /rest/v1/agents_registry",
+    "POST /rest/v1/voice_session_facts",
   ],
   "memory_writes": 0,
   "rpcs": [],
@@ -3266,9 +3269,11 @@ exports[`VTID-04542 C2 — session-start persistence identity (handleLiveSession
   ],
   "http_non_get": [
     "PATCH /rest/v1/agents_registry",
+    "PATCH /rest/v1/voice_session_facts",
     "POST /rest/v1/rpc/get_current_facts",
     "POST /rest/v1/rpc/memory_audit_log_insert",
     "POST /rest/v1/rpc/user_sessions_today_window",
+    "POST /rest/v1/voice_session_facts",
   ],
   "memory_writes": 0,
   "rpcs": [

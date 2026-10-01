@@ -39,7 +39,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
       'Live voice sessions: Amazon Nova Sonic for most languages, the Transcribe→Bedrock→Polly/Fish cascade for languages Nova cannot speak, and the Serbian-only Vertex bridge. One session controller for WS and SSE, a greeting brain, the tool catalog and the Assistant Profile that decides which Vitana speaks.',
     routes: [/^orb-/, /^voice-/, /^live/, /^realtime-relay$/, /^conversation/, /^assistant$/, /^ai-assistants$/, /^ai-personality$/, /^ai-bridge$/, /^visual-interactive$/, /^tenant-admin\/assistant-/],
     code: ['orb/live/', 'orb/profile/', 'orb/context/', 'orb/delegation/', 'routes/orb-live.ts', 'services/conversation/', 'services/tts/'],
-    tables: ['oasis_events (orb.live.*, vtid.live.*)', 'ai_personality_config', 'agent_voice_configs', 'decision_policy', 'user_session_summaries'],
+    tables: ['oasis_events (orb.live.*, vtid.live.*)', 'voice_session_facts (+ _hourly view; Voice Supervisor)', 'ai_personality_config', 'agent_voice_configs', 'decision_policy', 'user_session_summaries'],
     flags: ['NOVA_SONIC_GLOBAL_ENABLED', 'ORB_FULL_DUPLEX_ENABLED', 'VERTEX_SERBIAN_BRIDGE_ENABLED', 'TTS_PROVIDER', 'TTS_FISH_FALLBACK_ENABLED', 'FEATURE_ORB_SAFE_FAST_GREETING_ENV'],
     docs: ['CLAUDE.md §2c/§2e', 'docs/HANDOFF-voice-quality.md', 'docs/CONVERSATION_FLOW_ARCHITECTURE.md'],
     aliases: ['orb', 'voice', 'nova', 'nova sonic', 'polly', 'fish', 'cascade', 'greeting', 'greet', 'greeting brain', 'barge-in', 'vertex bridge', 'serbian', 'assistant profile', 'community assistant', 'developer assistant', 'widget'],

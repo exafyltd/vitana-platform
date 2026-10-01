@@ -942,6 +942,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
 
+  // VTID-04776/04778/04780: Voice Supervisor (Command Hub → Voice → Supervisor)
+  // GET /api/v1/voice/supervisor/{meta,overview,segments,sessions,fixes,fixes/:id/impact}
+  // exafy_admin sees all tenants; a tenant admin is confined to their tenant.
+  const voiceSupervisorRouter = require('./routes/voice-supervisor').default;
+  mountRouterSync(app, '/api/v1/voice/supervisor', voiceSupervisorRouter, { owner: 'voice-supervisor' });
+
   // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
   // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
   const testContractsRouter = require('./routes/test-contracts').default;
@@ -1710,6 +1716,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04786: AP-0910 memory embedding backfill, the one job of the
+      // automation engine that runs on production (it notifies nobody).
+      try {
+        const { startMemoryEmbeddingBackfillLoop } = require('./services/memory-embedding-backfill-loop');
+        startMemoryEmbeddingBackfillLoop();
+      } catch (error) {
+        console.warn('⚠️ Memory embedding backfill loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04763: the Audiobook's daily "your episode for today" push for
+      // members who asked for it. Same on-switch as reminder dispatch.
+      try {
+        const { startAudiobookReminderLoop } = require('./services/guided-journey/audiobook-reminder-dispatch');
+        const { getSupabase: getAudiobookSupabase } = require('./lib/supabase');
+        if (startAudiobookReminderLoop(() => getAudiobookSupabase())) {
+          console.log('🎧 Audiobook daily reminder loop started');
+        }
+      } catch (error) {
+        console.warn('⚠️ Audiobook daily reminder loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {
@@ -1801,6 +1828,24 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         startProductAnalyticsRollupScheduler();
       } catch (error) {
         console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04804 (Jev C2): voice backstop clusters, judged once per UTC day.
+      // Off unless JEV_VOICE_BACKSTOP_CLUSTERS_MODE is set; shadow only.
+      try {
+        const { startBackstopClusterScheduler } = require('./services/jev/gates/backstop-cluster-gate');
+        if (startBackstopClusterScheduler()) console.log('🧩 Jev voice backstop cluster scheduler started (VTID-04804)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice backstop cluster scheduler initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04805 (Jev C3): stalled voice sessions, cause judged once per UTC day.
+      // Off unless JEV_VOICE_SLOW_SESSION_MODE is set; shadow only.
+      try {
+        const { startSlowSessionScheduler } = require('./services/jev/gates/slow-session-gate');
+        if (startSlowSessionScheduler()) console.log('🐢 Jev slow voice session scheduler started (VTID-04805)');
+      } catch (error) {
+        console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
       }
 
       // VTID-01185: Initialize autonomous self-improvement engine

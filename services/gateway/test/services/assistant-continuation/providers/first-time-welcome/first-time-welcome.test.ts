@@ -7,7 +7,9 @@
  *   - Skips on missing inputs.
  *   - Errors on DB error.
  *   - Flips is_first_session=false fire-and-forget on fire.
- *   - EN + DE content both present and authored (real DE, not a copy of EN).
+ *   - VTID-04760: carries an INTENT (never a finished spoken sentence —
+ *     NEVER-rule 41), pointing at Episode 1 of the Audiobook; the wake-brief
+ *     block renders it compositionally and LiveKit never speaks it.
  */
 
 import {
@@ -17,9 +19,11 @@ import {
   FIRST_TIME_WELCOME_PRIORITY,
 } from '../../../../../src/services/assistant-continuation/providers/first-time-welcome';
 import {
-  renderFirstTimeWelcomeLine,
-  FIRST_TIME_WELCOME_LOCALES,
+  buildFirstTimeWelcomeIntent,
+  FIRST_TIME_WELCOME_DEDUPE_PREFIX,
 } from '../../../../../src/services/assistant-continuation/providers/first-time-welcome/content';
+import { buildVertexWakeBriefBlock } from '../../../../../src/orb/live/session/live-session-controller';
+import { livekitSpeakableWakeLine } from '../../../../../src/routes/orb-livekit';
 
 function makeFakeSupabase(
   row: { is_first_session: boolean } | null,
@@ -71,40 +75,47 @@ function makeCtx(extraOverride: any = {}, sbOverride?: any) {
   } as any;
 }
 
-describe('R6 first-time-welcome content', () => {
-  it('exposes both EN and DE locales', () => {
-    expect(FIRST_TIME_WELCOME_LOCALES).toContain('en');
-    expect(FIRST_TIME_WELCOME_LOCALES).toContain('de');
+describe('R6 first-time-welcome content (VTID-04760 intent)', () => {
+  it('is an English intent that points at Episode 1 of the Audiobook', () => {
+    const intent = buildFirstTimeWelcomeIntent({ firstName: null });
+    expect(intent).toMatch(/Audiobook/);
+    expect(intent).toMatch(/Episode 1/);
+    expect(intent).toMatch(/Vitana/);
+    // No more 90-day plan framing and no per-language finished scripts.
+    expect(intent).not.toMatch(/90/);
+    expect(intent).not.toMatch(/Langlebigkeits|Herzlich willkommen/);
   });
 
-  it('renders an EN script naming the 90-day plan and inviting a goal', () => {
-    const line = renderFirstTimeWelcomeLine({ lang: 'en', firstName: null });
-    expect(line).toMatch(/Vitana/);
-    expect(line).toMatch(/longevity companion/i);
-    expect(line).toMatch(/90-day/);
-    expect(line).toMatch(/\?$/); // ends on the first-goal invitation
+  it('is written as an instruction to the model, not a line to recite', () => {
+    const intent = buildFirstTimeWelcomeIntent({ firstName: null });
+    expect(intent).toMatch(/^This is the member's very first conversation/);
+    expect(intent).not.toMatch(/^(Hello|Hallo|Welcome|Willkommen)/);
   });
 
-  it('renders a REAL German script (not a copy of EN)', () => {
-    const de = renderFirstTimeWelcomeLine({ lang: 'de', firstName: null });
-    const en = renderFirstTimeWelcomeLine({ lang: 'en', firstName: null });
-    expect(de).not.toEqual(en);
-    expect(de).toMatch(/Vitana/);
-    expect(de).toMatch(/Langlebigkeits-Begleiterin/);
-    expect(de).toMatch(/90-Tage-Starterplan/);
-    expect(de).toMatch(/\?$/);
+  it('names the member when known', () => {
+    expect(buildFirstTimeWelcomeIntent({ firstName: 'Dragan' })).toMatch(/Dragan/);
+    expect(buildFirstTimeWelcomeIntent({ firstName: null })).not.toMatch(/first name is/);
   });
 
-  it('substitutes firstName when present', () => {
-    const line = renderFirstTimeWelcomeLine({ lang: 'en', firstName: 'Dragan' });
-    expect(line).toMatch(/Dragan/);
-    expect(line).not.toMatch(/\{name\}/);
+  it('renders as a compositional wake-brief block, never the verbatim one', () => {
+    const block = buildVertexWakeBriefBlock(
+      buildFirstTimeWelcomeIntent({ firstName: null }),
+      'de',
+      `${FIRST_TIME_WELCOME_DEDUPE_PREFIX}u1`,
+    );
+    expect(block).toMatch(/FIRST-EVER CONVERSATION/);
+    expect(block).toMatch(/compose every word yourself/);
+    expect(block).not.toMatch(/VERBATIM|letter-for-letter/i);
   });
 
-  it('falls back to EN for an unknown locale', () => {
-    const unknown = renderFirstTimeWelcomeLine({ lang: 'zz', firstName: null });
-    const en = renderFirstTimeWelcomeLine({ lang: 'en', firstName: null });
-    expect(unknown).toEqual(en);
+  it('is never handed to the LiveKit agent for deterministic session.say()', () => {
+    expect(
+      livekitSpeakableWakeLine({ userFacingLine: 'intent text', dedupeKey: 'first-time-welcome:u1' }),
+    ).toBe('');
+    expect(
+      livekitSpeakableWakeLine({ userFacingLine: ' other line ', dedupeKey: 'new-day:u1' }),
+    ).toBe('other line');
+    expect(livekitSpeakableWakeLine(null)).toBe('');
   });
 });
 
@@ -174,11 +185,16 @@ describe('R6 first-time-welcome provider', () => {
     expect(res.reason).toMatch(/boom/);
   });
 
-  it('renders the DE line when lang=de and fires', async () => {
+  it('carries the same language-neutral intent for lang=de, and a CTA into the Audiobook', async () => {
     const { sb } = makeFakeSupabase({ is_first_session: true });
     const p = makeFirstTimeWelcomeProvider(baseOpts);
     const res = await p.produce(makeCtx({ lang: 'de', firstName: null }, sb));
     expect(res.status).toBe('returned');
-    expect(res.candidate?.userFacingLine).toMatch(/Langlebigkeits-Begleiterin/);
+    expect(res.candidate?.userFacingLine).toBe(buildFirstTimeWelcomeIntent({ firstName: null }));
+    expect(res.candidate?.cta).toEqual({
+      type: 'navigate',
+      route: '/autopilot?audiobook=play',
+      payload: { intent: 'audiobook_episode_1' },
+    });
   });
 });

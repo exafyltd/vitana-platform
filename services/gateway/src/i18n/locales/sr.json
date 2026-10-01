@@ -24,6 +24,8 @@
   "notif.signal_expired.title": "Signal je istekao",
   "notif.signal_expired.body": "Prediktivni signal je istekao.",
   "notif.reminder.title": "🔔 Podsetnik",
+  "notif.audiobook_daily.title": "🎧 Tvoja epizoda za danas",
+  "notif.audiobook_daily.body": "Nekoliko minuta za slušanje – Vitana ti priča sledeću epizodu tvoje audio-knjige.",
   "notif.calendar_reminder.in_minutes": "{title} za {minutes} min",
   "notif.calendar_reminder.in_hours": "{title} za {hours} h",
   "notif.calendar_reminder.now": "{title} — sada",

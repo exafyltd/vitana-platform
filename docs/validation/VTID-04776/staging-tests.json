@@ -1,0 +1,11 @@
+{"vtid":"VTID-04776","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"supervisor meta is mounted and auth-gated","path":"/api/v1/voice/supervisor/meta","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"supervisor overview is mounted and auth-gated","path":"/api/v1/voice/supervisor/overview?window=24h","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"supervisor segments is mounted and auth-gated","path":"/api/v1/voice/supervisor/segments?row=tenant&col=assistant","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"supervisor sessions is mounted and auth-gated","path":"/api/v1/voice/supervisor/sessions?limit=5","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"supervisor fixes is mounted and auth-gated","path":"/api/v1/voice/supervisor/fixes?days=30","expect_status":401,"expect_json":{"ok":false}},
+{"kind":"http","name":"orb active-provider (LiveKit route module) still answers after the token-route change","path":"/api/v1/orb/active-provider","expect_status":200},
+{"kind":"existing","ref":"npx jest test/vtid-04776-voice-supervisor.test.ts test/routes/orb-livekit.test.ts test/orb/live/session/live-session-controller.test.ts test/routes/oasis-emit.test.ts test/voice-recurrence-sentinel.test.ts test/voice-self-healing-adapter.test.ts","cwd":"services/gateway","reason":"voice_session_facts rows are written only by real voice sessions (writes land in production data, so staging probes cannot create one). These suites prove the writer protocol (start upsert, PATCH updates, held pre-start updates, end outcome), the outcome classifier, the LiveKit role now resolved by the screen not the device, the minted event, the orb-agent stop hook and the healing recurrence/tenant_scope wiring. On staging, rows appear in voice_session_facts after any ORB session once the migration is applied."},
+{"kind":"existing","ref":"npm run test:roles","cwd":"services/gateway","reason":"The atlas drift guard must claim routes/voice-supervisor.ts and the role/profile matrix the LiveKit route now uses must stay intact."}
+]}

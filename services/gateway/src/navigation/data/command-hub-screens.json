@@ -619,44 +619,111 @@
    }
   },
   {
-   "id": "DEVHUB.VOICE.IMPROVE",
-   "route": "/command-hub/voice/improve/",
+   "id": "DEVHUB.VOICE.OVERVIEW",
+   "route": "/command-hub/voice/overview/",
    "category": "developer",
    "access": "member",
    "surface": "command-hub",
    "i18n": {
     "en": {
-     "title": "Voice Improve",
-     "shows": "Voice diagnose-and-repair cockpit: quality score, session-health card and an action queue with fix buttons from the improvement briefing.",
+     "title": "Voice Overview",
+     "shows": "Voice supervisor overview: a health verdict, KPI tiles with change versus the previous window, live sessions now and quick links.",
      "phrasings": [
-      "open Voice Improve",
-      "show me Voice Improve",
-      "go to the Improve tab in Voice",
-      "open Improve in Voice"
+      "open Voice Overview",
+      "show me Voice Overview",
+      "go to the Overview tab in Voice",
+      "open Overview in Voice"
      ]
     }
    }
   },
   {
-   "id": "DEVHUB.VOICE.ORB_LIVE",
-   "route": "/command-hub/voice/orb-live/",
+   "id": "DEVHUB.VOICE.SEGMENTS",
+   "route": "/command-hub/voice/segments/",
    "category": "developer",
    "access": "member",
    "surface": "command-hub",
    "i18n": {
     "en": {
-     "title": "Voice Orb LIVE",
-     "shows": "Voice LAB ORB Live panel: active-provider banner with flip button and an auto-refreshing active voice sessions table with turn timeline.",
+     "title": "Voice Tenants & Roles",
+     "shows": "Tenants & Roles heatmap: voice health per tenant and assistant (or role, provider, language), coloured by health.",
      "phrasings": [
-      "open Voice Orb LIVE",
-      "show me Voice Orb LIVE",
-      "go to the Orb LIVE tab in Voice",
-      "open Orb LIVE in Voice"
+      "open Voice Tenants & Roles",
+      "show me Voice Tenants & Roles",
+      "go to the Tenants & Roles tab in Voice",
+      "open Tenants & Roles in Voice"
+     ]
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.VOICE.SESSIONS",
+   "route": "/command-hub/voice/sessions/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Sessions",
+     "shows": "Live and recent voice sessions in one list; a row opens the session drawer with its timeline.",
+     "phrasings": [
+      "open Voice Sessions",
+      "show me Voice Sessions",
+      "go to the Sessions tab in Voice",
+      "open Sessions in Voice"
      ]
     }
    },
    "formerIds": [
-    "DEVHUB.DIAGNOSTICS.VOICE_LAB"
+    "DEVHUB.DIAGNOSTICS.VOICE_LAB",
+    "DEVHUB.VOICE.ORB_LIVE"
+   ]
+  },
+  {
+   "id": "DEVHUB.VOICE.ISSUES_HEALING",
+   "route": "/command-hub/voice/issues-healing/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Issues & Healing",
+     "shows": "Voice issues and their fixes: the Action Queue, the Self-Healing Pipeline and Fix Impact (before/after per shipped fix).",
+     "phrasings": [
+      "open Voice Issues & Healing",
+      "show me Voice Issues & Healing",
+      "go to the Issues & Healing tab in Voice",
+      "open Issues & Healing in Voice"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.IMPROVE",
+    "DEVHUB.VOICE.SELF_HEALING"
+   ]
+  },
+  {
+   "id": "DEVHUB.VOICE.TEST_BENCH",
+   "route": "/command-hub/voice/test-bench/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Voice Test Bench",
+     "shows": "Voice test bench: LiveKit and Nova Sonic benches side by side, tool-routing dry run, ORB UI checks and the TTS and barge-in sweep.",
+     "phrasings": [
+      "open Voice Test Bench",
+      "show me Voice Test Bench",
+      "go to the Test Bench tab in Voice",
+      "open Test Bench in Voice"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.LIVEKIT_TEST",
+    "DEVHUB.VOICE.NOVA_SONIC_TEST",
+    "DEVHUB.VOICE.ORB_UI_MONITOR"
    ]
   },
   {
@@ -667,107 +734,13 @@
    "surface": "command-hub",
    "i18n": {
     "en": {
-     "title": "Providers & Voice",
+     "title": "Voice Providers & Config",
      "shows": "Switch V2V, STT and TTS providers and set TTS voice, language and speed with a preview button before saving.",
      "phrasings": [
-      "open Providers & Voice",
-      "show me Providers & Voice",
-      "go to the Providers & Voice tab in Voice"
-     ]
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.VOICE.SELF_HEALING",
-   "route": "/command-hub/voice/self-healing/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Voice Self-Healing",
-     "shows": "Voice self-healing overview: loop health per stage, alerts, investigation reports needing decisions, detections, quarantine and live session monitor.",
-     "phrasings": [
-      "open Voice Self-Healing",
-      "show me Voice Self-Healing",
-      "go to the Self-Healing tab in Voice",
-      "open Self-Healing in Voice"
-     ]
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.VOICE.TEST_CONTRACTS",
-   "route": "/command-hub/voice/test-contracts/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Voice Test Contracts",
-     "shows": "Test Contracts table (capability, status, last run, owner) with per-row Run now and a Run scheduled scan button.",
-     "phrasings": [
-      "open Voice Test Contracts",
-      "show me Voice Test Contracts",
-      "go to the Test Contracts tab in Voice",
-      "open Test Contracts in Voice"
-     ]
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.VOICE.LIVEKIT_TEST",
-   "route": "/command-hub/voice/livekit-test/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Voice LiveKit Test Bench",
-     "shows": "Standalone LiveKit test bench: connect with mic to a LiveKit room, hear the agent, and view a log of data events.",
-     "phrasings": [
-      "open Voice LiveKit Test Bench",
-      "show me Voice LiveKit Test Bench",
-      "go to the LiveKit Test Bench tab in Voice",
-      "open LiveKit Test Bench in Voice"
-     ]
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.VOICE.NOVA_SONIC_TEST",
-   "route": "/command-hub/voice/nova-sonic-test/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Voice Nova Sonic Test Bench",
-     "shows": "Nova 2 Sonic test bench showing provider status (enabled, ready, model/region, canary) and running automated tests.",
-     "phrasings": [
-      "open Voice Nova Sonic Test Bench",
-      "show me Voice Nova Sonic Test Bench",
-      "go to the Nova Sonic Test Bench tab in Voice",
-      "open Nova Sonic Test Bench in Voice"
-     ]
-    }
-   }
-  },
-  {
-   "id": "DEVHUB.VOICE.ORB_UI_MONITOR",
-   "route": "/command-hub/voice/orb-ui-monitor/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Voice Orb UI Monitor",
-     "shows": "ORB Monitor per-screen E2E status (runs every 15 min) plus LiveKit hourly dry-run test grid with Trigger Run button.",
-     "phrasings": [
-      "open Voice Orb UI Monitor",
-      "show me Voice Orb UI Monitor",
-      "go to the Orb UI Monitor tab in Voice",
-      "open Orb UI Monitor in Voice"
+      "open Voice Providers & Config",
+      "show me Voice Providers & Config",
+      "go to the Providers & Config tab in Voice",
+      "open Providers & Config in Voice"
      ]
     }
    }
@@ -2329,6 +2302,28 @@
      "hint": "When asking about E2E tests, end-to-end tests, playwright, or integration testing."
     }
    }
+  },
+  {
+   "id": "DEVHUB.TESTING.TEST_CONTRACTS",
+   "route": "/command-hub/testing-qa/test-contracts/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Testing Test Contracts",
+     "shows": "Test Contracts table (capability, status, last run, owner) with per-row Run now and a Run scheduled scan button.",
+     "phrasings": [
+      "open Testing Test Contracts",
+      "show me Testing Test Contracts",
+      "go to the Test Contracts tab in Testing",
+      "open Test Contracts in Testing"
+     ]
+    }
+   },
+   "formerIds": [
+    "DEVHUB.VOICE.TEST_CONTRACTS"
+   ]
   },
   {
    "id": "DEVHUB.INTELLIGENCE.MEMORY_VAULT",

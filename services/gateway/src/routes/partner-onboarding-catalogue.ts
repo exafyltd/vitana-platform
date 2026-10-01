@@ -55,7 +55,7 @@ import {
 const router = Router();
 
 const MERCHANT_FIELDS = 'id,name,vertical_key,onboarding_status,merchant_country,currencies,partner_organization_id';
-const PRODUCT_FIELDS = 'id,title,price_cents,currency,images,affiliate_url,availability,category,attributes,is_active,updated_at';
+const PRODUCT_FIELDS = 'id,title,price_cents,currency,images,affiliate_url,availability,category,subcategory,attributes,is_active,updated_at';
 
 /** Lifecycle states in which the catalogue can no longer be edited. */
 const CATALOGUE_LOCKED_STATES = ['rejected', 'suspended'];
@@ -80,6 +80,7 @@ const OPTIONAL_PRODUCT_NULLS = {
   ships_to_countries: null,
   ships_to_regions: null,
   category: null,
+  subcategory: null,
 } as const;
 
 export function catalogueStepStatus(productCount: number): CatalogueStatus {

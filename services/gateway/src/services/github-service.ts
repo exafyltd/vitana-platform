@@ -542,6 +542,35 @@ export async function getBaseChangesSince(
 }
 
 /**
+ * VTID-04802: the commits a deploy brought in (`base...head`), newest first,
+ * each with the paths it touched — messages and paths only, never contents.
+ * At most `limit` commits get a per-commit file lookup.
+ */
+export async function getCommitsBetween(
+  repo: string,
+  base: string,
+  head: string,
+  limit = 5,
+): Promise<Array<{ sha: string; message: string; files: string[] }>> {
+  const r = await githubRequest<{ commits?: Array<{ sha: string; commit?: { message?: string } }> }>(
+    `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+  );
+  const commits = (r.commits || []).slice().reverse().slice(0, Math.max(0, limit));
+  const out: Array<{ sha: string; message: string; files: string[] }> = [];
+  for (const c of commits) {
+    let files: string[] = [];
+    try {
+      const d = await githubRequest<{ files?: Array<{ filename: string }> }>(`/repos/${repo}/commits/${encodeURIComponent(c.sha)}`);
+      files = (d.files || []).map((f) => f.filename).slice(0, 60);
+    } catch {
+      files = [];
+    }
+    out.push({ sha: c.sha, message: (c.commit?.message || '').split('\n')[0].slice(0, 300), files });
+  }
+  return out;
+}
+
+/**
  * VTID-04379: merge the base branch into the PR head (GitHub "Update branch",
  * a merge commit — never a rebase, so no history is rewritten). expected_head_sha
  * makes GitHub refuse if the head moved since we looked.

@@ -98,7 +98,9 @@ describe('BOOTSTRAP-ORB-RCV-DOUBLEGREET LiveKit first-turn single source of trut
     // agent reads it from this payload field. If this regresses, the
     // LiveKit orb would go SILENT on turn-1 (worse than a double).
     expect(source).toMatch(/wake_brief_decision:\s*wakeBriefDecision/);
-    expect(source).toMatch(/user_facing_line:\s*wakeBriefDecision\.selectedContinuation\?\.userFacingLine/);
+    // VTID-04760: routed through livekitSpeakableWakeLine(), which withholds
+    // only an intent-shaped line (the first-time welcome) from session.say().
+    expect(source).toMatch(/user_facing_line:\s*livekitSpeakableWakeLine\(wakeBriefDecision\.selectedContinuation\)/);
   });
 
   it('preserves the proactive-offer lifecycle fields (dedupe_key + source_key)', () => {

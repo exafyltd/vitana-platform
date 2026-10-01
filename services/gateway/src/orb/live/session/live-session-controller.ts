@@ -96,6 +96,14 @@ import {
   fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
+// VTID-04776: one voice_session_facts row per session (Voice Supervisor).
+import {
+  recordVoiceSessionStart,
+  updateVoiceSessionFacts,
+  recordLiveSessionEnd,
+  stopEventContext,
+  uuidOrNull,
+} from '../../../services/voice-session-facts';
 import { SessionStartTimer, deriveLatencyEntry } from '../latency-context';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
@@ -118,6 +126,7 @@ import {
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
+import { buildVoiceOutcomeSignals } from '../../../services/jev/gates/voice-outcome-gate'; // VTID-04775
 import { finalizeLiveSession } from './finalize-live-session';
 import { createRequestMemo } from './request-memo';
 import {
@@ -466,10 +475,13 @@ export function cleanupWsSession(
           turn_count: ls.turn_count ?? 0,
           user_turns: turns.filter((t) => t.role === 'user').length,
           model_turns: turns.filter((t) => t.role === 'assistant').length,
+          // VTID-04776: which Vitana / language / provider this session was.
+          ...stopEventContext(ls, reason),
         })?.catch(() => {
           /* fire-and-forget: teardown must never depend on OASIS */
         });
         ls.stopEventEmitted = true;
+        recordLiveSessionEnd(ls, liveSessionKey, reason); // VTID-04776
       } catch {
         /* telemetry must never cost us the teardown it describes */
       }
@@ -489,6 +501,64 @@ export function cleanupWsSession(
 
   wsClientSessions.delete(sessionId);
   console.log(`[VTID-01222] WebSocket session cleaned up: ${sessionId}`);
+}
+
+/**
+ * VTID-04785: the SSE twin of VTID-03561. `GET /live/stream`'s
+ * `req.on('close')` handler is how almost every SSE session ends (tab closed,
+ * app backgrounded, EventSource closed before or instead of
+ * `POST /live/session/stop`). It finalized memory, closed the upstream and
+ * DELETED the session from `liveSessions` — but emitted no
+ * `vtid.live.session.stop`. Because it deletes, neither the idle sweep nor a
+ * later `POST /live/session/stop` (404 "Session not found") could report it
+ * afterwards. Measured on prod 2026-10-01 (24 h): 82 of 107 SSE sessions had
+ * no stop event; 76 of those 82 carry `conversation.session.finalized` with
+ * `reason='sse_disconnect'` — this exact handler. WS was 12/12.
+ *
+ * Emits the stop + records the voice_session_facts end exactly once per
+ * session object (the `stopEventEmitted` latch shared with every other end
+ * path), and never throws: it runs inside a socket 'close' callback.
+ * Returns true when it emitted.
+ */
+export function emitSseDisconnectStop(
+  ls: any,
+  sessionId: string,
+  reason: string = 'sse_disconnect',
+): boolean {
+  if (!ls || ls.stopEventEmitted) return false;
+  try {
+    const deps = getDeps();
+    const liveSessionKey = ls.sessionId || sessionId;
+    const nowMs = Date.now();
+    const startedMs = ls.createdAt instanceof Date ? ls.createdAt.getTime() : null;
+    const lastActivityMs = ls.lastActivity instanceof Date ? ls.lastActivity.getTime() : null;
+    const turns = Array.isArray(ls.transcriptTurns) ? ls.transcriptTurns : [];
+    // Latch BEFORE the emit so a re-entrant close cannot double-book.
+    ls.stopEventEmitted = true;
+    void deps.emitLiveSessionEvent?.('vtid.live.session.stop', {
+      session_id: liveSessionKey,
+      user_id: ls.identity?.user_id || null,
+      tenant_id: ls.identity?.tenant_id || null,
+      transport: 'sse',
+      idle_ms: lastActivityMs === null ? null : nowMs - lastActivityMs,
+      audio_in_chunks: ls.audioInChunks ?? 0,
+      audio_in_forwarded_chunks: ls.audioInForwarded ?? 0,
+      audio_out_chunks: ls.audioOutChunks ?? 0,
+      video_frames: ls.videoInFrames ?? 0,
+      duration_ms: startedMs === null ? null : nowMs - startedMs,
+      turn_count: ls.turn_count ?? 0,
+      user_turns: turns.filter((t: { role?: string }) => t.role === 'user').length,
+      model_turns: turns.filter((t: { role?: string }) => t.role === 'assistant').length,
+      ...stopEventContext(ls, reason),
+    })?.catch(() => {
+      /* fire-and-forget: teardown must never depend on OASIS */
+    });
+    recordLiveSessionEnd(ls, liveSessionKey, reason);
+    return true;
+  } catch {
+    /* telemetry must never cost us the teardown it describes */
+    return true;
+  }
 }
 
 // =============================================================================
@@ -705,6 +775,29 @@ export function buildVertexWakeBriefBlock(
   // tells the model to compose its own opener, and the GUIDE MODE block names
   // the topic — so the sentence is redundant as well as risky, and omitting it
   // satisfies NEVER-rule 41 (write the INTENT, never the finished sentence).
+  // VTID-04760 — the first-time welcome carries an INTENT, not a sentence
+  // (NEVER-rule 41). Render it compositionally: the model writes the welcome
+  // in the member's language, in its own words. Same marker, so the SHORT-GAP
+  // pool and the brain's rival openers stay suppressed for this turn.
+  if (dedupeKey?.startsWith('first-time-welcome:')) {
+    return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+
+## SPOKEN FIRST UTTERANCE — FIRST-EVER CONVERSATION (VTID-04760)
+
+What your opening must do (compose every word yourself, in the user's own
+language; this is an intent, not text to read out):
+${safe}
+
+Rules:
+  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
+    that section is SUPPRESSED for this turn.
+  - Do NOT list features or screens.
+  - After speaking, stop and wait for the user's reply. On a yes, start
+    Episode 1 by calling narrate_guided_session.${dedupeLine}
+
+This is your first spoken turn this session.`;
+  }
+
   if (dedupeKey?.startsWith('guided_topic:')) {
     return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 
@@ -1394,6 +1487,8 @@ export async function handleLiveSessionStart(
         }).text;
 
         session.active_role = resolvedRole;
+        // VTID-04776: the member role is only known here (async context build).
+        updateVoiceSessionFacts(sessionId, { role: resolvedRole ?? null, lang: finalLang });
         session.lastSessionInfo = fetchedSessionInfo;
         session.contextInstruction = finalContext;
         session.contextPack = bootstrapResult.contextPack;
@@ -2450,7 +2545,14 @@ export async function handleLiveSessionStart(
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
     email: orbIdentity?.email || null,
-    active_role: sseActiveRole || null,
+    // VTID-04776: a member session's role was null here. The Assistant
+    // Profile already carries the role the screen declared (view_role), so
+    // use it when the fixed work-surface / guided role is not set. A member
+    // session from an older widget that declares no view_role still reports
+    // null: its stored role is only read later inside the async context
+    // build, and voice_session_facts.role is updated when it resolves.
+    active_role: sseActiveRole || assistantProfile.role || null,
+    surface: assistantProfile.surface,
     user_agent: req.headers['user-agent'] || null,
     origin: req.headers['origin'] || req.headers['referer'] || null,
     transport: transportLabel,
@@ -2491,6 +2593,26 @@ export async function handleLiveSessionStart(
   } catch {
     // Telemetry never blocks session start.
   }
+
+  // VTID-04776: the session's fact row (fire-and-forget, never throws).
+  // Placed after the latency context so `entry` is known; provider, first
+  // audio and the member role arrive later as updates.
+  recordVoiceSessionStart({
+    session_id: sessionId,
+    tenant_id: uuidOrNull(session.identity?.tenant_id),
+    user_id: uuidOrNull(session.identity?.user_id),
+    is_anonymous: isAnonymousSession,
+    surface: assistantProfile.surface,
+    role: sseActiveRole || assistantProfile.role || null,
+    persona_key: assistantProfile.personaKey ?? null,
+    profile_resolution: assistantProfile.resolution,
+    lang,
+    transport: transportLabel,
+    is_mobile: typeof session.is_mobile === 'boolean' ? session.is_mobile : !!clientContext.isMobile,
+    app_version: session.app_version ?? null,
+    entry: session.latencyContext?.entry ?? null,
+    started_at: session.createdAt.toISOString(),
+  });
 
   return res.status(200).json({
     ok: true,
@@ -2649,8 +2771,12 @@ export async function handleLiveSessionStop(
     turn_count: session.turn_count,
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
+    // VTID-04776: this stop had no reason; it is the client's explicit
+    // POST /live/session/stop. Plus which Vitana / language / provider.
+    ...stopEventContext(session, 'client_stop'),
   });
   session.stopEventEmitted = true; // VTID-03561
+  recordLiveSessionEnd(session, session_id, 'client_stop'); // VTID-04776
 
   // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
   // Feeds the "since we last spoke" line + morning greeting on next open. Never
@@ -2681,6 +2807,10 @@ export async function handleLiveSessionStop(
       user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
       model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
     },
+    // VTID-04775 flow-test-exempt: post-session telemetry handed to the
+    // self-healing dispatch after the session has stopped; nothing Vitana says,
+    // picks or remembers changes. Wiring pinned by test/vtid-04775-voice-outcome-gate.test.ts.
+    outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop'),
   });
 
   // Session-end memory commit from the in-memory transcriptTurns (the full,
@@ -2706,6 +2836,7 @@ export async function handleLiveSessionStop(
             userId,
             sessionId: session_id,
             activeRole,
+            workSurface: session.assistantProfile?.isWorkSurface === true,
             channel: 'orb_voice',
             trigger: 'sse_stop_memory_items',
           });
