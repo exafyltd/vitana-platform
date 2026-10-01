@@ -6,6 +6,8 @@ import request from 'supertest';
 import express from 'express';
 
 const mockSet = jest.fn();
+const mockEmit = jest.fn(async () => ({ ok: true }));
+jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: (...a: unknown[]) => (mockEmit as any)(...a) }));
 const mockRecord = jest.fn();
 
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
@@ -51,6 +53,17 @@ describe('POST /audiobook/reminder', () => {
     const res = await request(app()).post(URL_).set('Authorization', 'Bearer valid-user').send({ time: '08:00', tz: 'Europe/Berlin' });
     expect(res.status).toBe(200);
     expect(mockSet).toHaveBeenCalledWith({}, 'u-1', { time: '08:00', tz: 'Europe/Berlin' });
+  });
+
+  it('records the opt-in and the opt-out as OASIS events', async () => {
+    mockEmit.mockClear();
+    await request(app()).post(URL_).set('Authorization', 'Bearer valid-user').send({ time: '08:00', tz: 'UTC' });
+    await request(app()).post(URL_).set('Authorization', 'Bearer valid-user').send({ time: null });
+    expect((mockEmit.mock.calls as any[]).map((c) => c[0].type)).toEqual([
+      'journey.audiobook.reminder.set',
+      'journey.audiobook.reminder.cleared',
+    ]);
+    expect((mockEmit.mock.calls as any[])[0][0]).toMatchObject({ vtid: 'VTID-04763', actor_id: 'u-1', payload: { time: '08:00', tz: 'UTC' } });
   });
 
   it('switches it off', async () => {

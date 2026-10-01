@@ -239,6 +239,19 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
   }
   try {
     const state = await setAudiobookReminder(client, userId, pref);
+    // A member opting in to / out of a daily push is a real state transition.
+    void emitOasisEvent({
+      vtid: 'VTID-04763',
+      type: (pref ? 'journey.audiobook.reminder.set' : 'journey.audiobook.reminder.cleared') as any,
+      source: 'guided-journey-api',
+      actor_id: userId,
+      surface: 'api',
+      status: 'info',
+      message: pref
+        ? `Audiobook daily reminder set for ${pref.time} (${pref.tz})`
+        : 'Audiobook daily reminder switched off',
+      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null },
+    });
     return res.json({ ok: true, state, vtid: 'VTID-04763' });
   } catch (err: any) {
     console.error(`[VTID-04763] audiobook reminder update failed: ${err?.message}`);
