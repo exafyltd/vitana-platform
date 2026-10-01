@@ -3090,3 +3090,18 @@ The explicit-preference table is called **`user_explicit_preferences`**:
 Functions: `preference_set/delete`, `constraint_set/delete`,
 `preference_bundle_get`, `preference_confirm`, `inference_reinforce/downgrade`,
 `preference_get_audit` (pagination fixed as above).
+
+### Jev spend and shadow decisions (VTID-04754)
+Tables: `jev_spend_counters` (PK `tenant_id, plane, month`; `calls`,
+`input_tokens`, `cost_usd`), `jev_shadow_decisions` (one row per shadow or
+enforce gate run: `gate`, `decision`, `mode`, `plane`, `tenant_id`,
+`subject_type`/`subject_ref`, `jev_outcome`, `jev_verdict`, `jev_confidence`,
+`system_action`, later `agreed`/`outcome`/`outcome_at`, `cost_usd`).
+Service role only; RLS on with no client policies. Platform-level spend
+(no tenant) is counted under `00000000-0000-0000-0000-000000000000`.
+
+Functions: `jev_record_spend(tenant, plane, input_tokens, cost_usd)` (atomic
+increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
+(per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
+`tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
+(no new column).

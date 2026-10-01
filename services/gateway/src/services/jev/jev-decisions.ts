@@ -14,6 +14,8 @@
 import { z } from 'zod';
 import type { JevQuestions } from './jev-types';
 import type { JevPiiPolicy } from './jev-pii';
+import type { JevPlane } from './jev-access';
+import type { JevDataClass } from './jev-policy';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 const optText = (max: number) => z.string().trim().max(max).optional();
@@ -30,12 +32,20 @@ export interface JevDecisionDef<I = any> {
   /** Below this confidence the decision abstains and the caller keeps its own path. */
   threshold: number;
   pii: JevPiiPolicy;
+  /** VTID-04754: planes this decision may run on (jev-policy.ts). */
+  planes: readonly JevPlane[];
+  /** VTID-04754: the class of data the state carries to TypeSafe. */
+  data: JevDataClass;
   buildState: (input: I) => Record<string, unknown>;
 }
 
 const ENGINEERING = ['developer', 'admin', 'infra'] as const;
 const BACKOFFICE = ['backoffice', 'admin'] as const;
 const SUPPORT = ['staff', 'admin', 'developer', 'backoffice'] as const;
+
+// VTID-04754 planes. Telemetry decisions may also run for Community Autopilot.
+const INTERNAL: readonly JevPlane[] = ['internal'];
+const INTERNAL_AND_AUTOPILOT: readonly JevPlane[] = ['internal', 'system_autopilot'];
 
 const defs: JevDecisionDef[] = [
   {
@@ -64,6 +74,9 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'category',
     threshold: 0.7,
+    planes: INTERNAL,
+    // a member's message addressed to the business, handled by staff; PII redacted
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ ticket: { subject: i.subject ?? null, body: i.body, surface: i.surface ?? null } }),
   },
@@ -88,6 +101,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'cause',
     threshold: 0.7,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
     pii: 'redact',
     buildState: (i) => ({ error_event: { service: i.service ?? null, topic: i.topic ?? null, message: i.message, context: i.context ?? null } }),
   },
@@ -112,6 +127,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'bucket',
     threshold: 0.7,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
     pii: 'redact',
     buildState: (i) => ({ ci_check: { name: i.check_name, log_excerpt: i.log_excerpt } }),
   },
@@ -125,6 +142,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'duplicate',
     threshold: 0.75,
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
     pii: 'redact',
     buildState: (i) => ({ new_finding: i.finding, existing_finding: i.candidate }),
   },
@@ -143,6 +162,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'relevant',
     threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ search_request: i.query, document: { title: i.title ?? null, text: i.text } }),
   },
@@ -166,6 +187,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'kind',
     threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ account: { name: i.name, notes: i.notes ?? null } }),
   },
@@ -184,6 +207,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'present',
     threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ clause_type: i.clause_type, contract_excerpt: i.excerpt }),
   },
@@ -201,6 +226,8 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'fit',
     threshold: 0.6,
+    planes: INTERNAL,
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ lead: i.lead, offering: i.offering ?? 'Vitanaland longevity community, health services and products' }),
   },
@@ -230,6 +257,9 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'category',
     threshold: 0.75,
+    planes: INTERNAL_AND_AUTOPILOT,
+    // content a member posted for other members: member rules apply
+    data: 'member_content',
     pii: 'redact',
     buildState: (i) => ({ reported_content: i.content, report_reason: i.report_reason ?? null }),
   },
@@ -247,6 +277,9 @@ const defs: JevDecisionDef[] = [
     },
     primary: 'fit',
     threshold: 0.6,
+    planes: INTERNAL,
+    // a client request addressed to the professional's business; PII redacted
+    data: 'business',
     pii: 'redact',
     buildState: (i) => ({ client_request: i.request, professional_services: i.services }),
   },
