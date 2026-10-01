@@ -7,10 +7,14 @@
  * no env reads, no clock reads except through arguments — so each rule is
  * unit-tested directly (test/vtid-04776-voice-supervisor.test.ts).
  *
- * Rate denominators are FINISHED sessions (outcome set and not 'active').
- * An 'active' row whose last activity is older than ACTIVE_WINDOW_MS never
- * received an end (gateway restart, lost stop) and is counted as
- * 'abandoned' — it is in the denominator, never in a failure numerator.
+ * Rate denominators are FINISHED sessions (an end was recorded).
+ * A row with no end whose last activity is older than ACTIVE_WINDOW_MS never
+ * received an end (gateway restart, lost stop) and counts as 'no_end'. That
+ * is a telemetry gap, not a voice outcome: it is excluded from every quality
+ * rate and reported on its own (`no_end`, `end_recorded_rate`). Measured on
+ * the 7-day backfill (2026-10-01): ~70% of historical sessions had a start
+ * event and no stop event — counting them as 'abandoned' put ok_rate near
+ * 30% and would have raised a system-wide alarm about missing telemetry.
  */
 
 export const MIN_SAMPLE = 20;
@@ -59,6 +63,10 @@ export interface FactRow {
 export interface Kpis {
   sessions: number;
   finished: number;
+  /** Sessions past the live window with no recorded end (telemetry gap). */
+  no_end: number;
+  /** finished / (finished + no_end): how much of the window the rates cover. */
+  end_recorded_rate: number | null;
   ok_rate: number | null;
   silent_rate: number | null;
   one_way_rate: number | null;
@@ -91,11 +99,14 @@ function ratio(n: number, d: number): number | null {
 
 /** The outcome a row counts as, at `nowMs`. 'active' = still live. */
 export function effectiveOutcome(row: FactRow, nowMs: number): string {
-  const o = row.outcome || (row.ended_at ? 'ok' : 'active');
-  if (o !== 'active') return o;
-  if (row.ended_at) return 'ok';
-  const last = Date.parse(row.last_activity_at || row.started_at);
-  return Number.isFinite(last) && nowMs - last <= ACTIVE_WINDOW_MS ? 'active' : 'abandoned';
+  if (!row.ended_at) {
+    // No end recorded: live while recent, otherwise a lost end. A stored
+    // outcome (e.g. the backfill's 'abandoned') never overrides that.
+    const last = Date.parse(row.last_activity_at || row.started_at);
+    return Number.isFinite(last) && nowMs - last <= ACTIVE_WINDOW_MS ? 'active' : 'no_end';
+  }
+  const o = row.outcome;
+  return !o || o === 'active' ? 'ok' : o;
 }
 
 export function isLive(row: FactRow, nowMs: number): boolean {
@@ -112,6 +123,7 @@ const OUTCOME_FOR: Record<FailureMetric, string> = {
 interface Tally {
   sessions: number;
   finished: number;
+  noEnd: number;
   counts: Record<string, number>;
   ttfa: number[];
   turn: number[];
@@ -120,11 +132,12 @@ interface Tally {
 }
 
 function tally(rows: FactRow[], nowMs: number): Tally {
-  const t: Tally = { sessions: 0, finished: 0, counts: {}, ttfa: [], turn: [], durations: [], failureClass: {} };
+  const t: Tally = { sessions: 0, finished: 0, noEnd: 0, counts: {}, ttfa: [], turn: [], durations: [], failureClass: {} };
   for (const r of rows) {
     t.sessions++;
     const o = effectiveOutcome(r, nowMs);
     if (o === 'active') continue;
+    if (o === 'no_end') { t.noEnd++; continue; }
     t.finished++;
     t.counts[o] = (t.counts[o] || 0) + 1;
     if (typeof r.ttfa_ms === 'number') t.ttfa.push(r.ttfa_ms);
@@ -141,6 +154,8 @@ export function computeKpis(rows: FactRow[], nowMs: number): Kpis {
   return {
     sessions: t.sessions,
     finished: t.finished,
+    no_end: t.noEnd,
+    end_recorded_rate: ratio(t.finished, t.finished + t.noEnd),
     ok_rate: rate('ok'),
     silent_rate: rate('silent'),
     one_way_rate: rate('one_way'),

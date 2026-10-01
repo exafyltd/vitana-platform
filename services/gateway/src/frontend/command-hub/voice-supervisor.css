@@ -119,6 +119,7 @@
 .vsup-outcome-one_way,
 .vsup-outcome-dropped { color: #fde68a; background: rgba(245, 158, 11, 0.16); }
 .vsup-outcome-abandoned,
+.vsup-outcome-no_end,
 .vsup-outcome-unknown { color: var(--vsup-muted); background: rgba(148, 163, 184, 0.12); }
 .vsup-outcome-active { color: #bfdbfe; background: rgba(59, 130, 246, 0.2); }
 

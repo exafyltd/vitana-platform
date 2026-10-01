@@ -17,7 +17,7 @@
  * (never an empty "healthy" answer — a failed read must not look like calm).
  */
 
-import type { FactRow } from './voice-supervisor-analysis';
+import { ACTIVE_WINDOW_MS, type FactRow } from './voice-supervisor-analysis';
 
 export const MAX_FACT_ROWS = 50_000;
 const PAGE = 1000;
@@ -155,7 +155,17 @@ export async function fetchSessionsPage(
     ...(filters.before ? [`started_at=lt.${enc(filters.before)}`] : []),
     ...filterParams(filters),
   ];
-  if (filters.outcome) p.push(`outcome=eq.${enc(filters.outcome)}`);
+  // Filter on what a row COUNTS as (analysis.effectiveOutcome), not the raw
+  // stored column: 'active' and 'no_end' both mean "no end recorded" and are
+  // split by the live window; an ended row is matched on its stored outcome.
+  const liveCutoff = new Date(Date.now() - ACTIVE_WINDOW_MS).toISOString();
+  if (filters.outcome === 'active') {
+    p.push('ended_at=is.null', `or=(last_activity_at.gte.${enc(liveCutoff)},and(last_activity_at.is.null,started_at.gte.${enc(liveCutoff)}))`);
+  } else if (filters.outcome === 'no_end') {
+    p.push('ended_at=is.null', `or=(last_activity_at.lt.${enc(liveCutoff)},and(last_activity_at.is.null,started_at.lt.${enc(liveCutoff)}))`);
+  } else if (filters.outcome) {
+    p.push('ended_at=not.is.null', `outcome=eq.${enc(filters.outcome)}`);
+  }
   if (filters.failure_class) p.push(`failure_class=eq.${enc(filters.failure_class)}`);
   const q = (filters.q || '').trim();
   if (q) {

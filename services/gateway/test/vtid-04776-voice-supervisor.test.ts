@@ -84,11 +84,30 @@ describe('VTID-04776 KPIs', () => {
     expect(k.p50_ttfa_ms).toBe(1200);
   });
 
-  test('a never-ended row older than the live window counts as abandoned, not live', () => {
+  test('a never-ended row older than the live window is a lost end (no_end), not live and not abandoned', () => {
     const stale = row({ outcome: 'active', ended_at: null, last_activity_at: new Date(NOW - ACTIVE_WINDOW_MS - 1000).toISOString() });
     const fresh = row({ outcome: 'active', ended_at: null, last_activity_at: new Date(NOW - 1000).toISOString() });
-    expect(effectiveOutcome(stale, NOW)).toBe('abandoned');
+    // The backfill stores 'abandoned' on start-only rows; a stored outcome never overrides a missing end.
+    const backfilled = row({ outcome: 'abandoned', ended_at: null, last_activity_at: new Date(NOW - ACTIVE_WINDOW_MS - 1000).toISOString() });
+    expect(effectiveOutcome(stale, NOW)).toBe('no_end');
+    expect(effectiveOutcome(backfilled, NOW)).toBe('no_end');
     expect(effectiveOutcome(fresh, NOW)).toBe('active');
+  });
+
+  test('lost ends are a telemetry gap: excluded from quality rates, reported as coverage', () => {
+    const old = new Date(NOW - ACTIVE_WINDOW_MS - 60_000).toISOString();
+    const rows = [
+      row({ outcome: 'ok', ended_at: old }),
+      row({ outcome: 'silent', ended_at: old }),
+      row({ outcome: 'abandoned', ended_at: null, last_activity_at: old }),
+      row({ outcome: 'abandoned', ended_at: null, last_activity_at: old }),
+    ];
+    const k = computeKpis(rows, NOW);
+    expect(k.finished).toBe(2);
+    expect(k.no_end).toBe(2);
+    expect(k.ok_rate).toBe(0.5);
+    expect(k.silent_rate).toBe(0.5);
+    expect(k.end_recorded_rate).toBe(0.5);
   });
 
   test('percentile matches percentile_cont (linear interpolation)', () => {

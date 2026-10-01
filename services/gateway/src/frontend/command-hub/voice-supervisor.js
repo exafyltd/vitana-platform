@@ -45,7 +45,7 @@
     { key: '30d', label: 'Last 30 days' },
   ];
   var COMMON_KEYS = ['window', 'tenant_id', 'surface', 'assistant', 'role', 'provider', 'lang'];
-  var OUTCOMES = ['ok', 'silent', 'one_way', 'dropped', 'error', 'abandoned', 'active'];
+  var OUTCOMES = ['ok', 'silent', 'one_way', 'dropped', 'error', 'abandoned', 'active', 'no_end'];
   var ROW_DIMS = [
     { key: 'tenant', label: 'Tenant' },
     { key: 'surface', label: 'Assistant / surface' },
@@ -80,6 +80,10 @@
     { key: 'p95_ttfa_ms', label: 'First audio p95', kind: 'ms', better: 'down' },
     { key: 'p50_turn_ms', label: 'Turn latency p50', kind: 'ms', better: 'down' },
     { key: 'avg_duration_ms', label: 'Avg duration', kind: 'duration', better: 'none' },
+    // VTID-04776: sessions with no recorded end are a telemetry gap, not a
+    // voice outcome — the rates above exclude them; this says how much of the
+    // window they cover.
+    { key: 'end_recorded_rate', label: 'Ends recorded', kind: 'rate', better: 'up', hint: 'Share of finished sessions whose end was recorded. The quality rates above only cover these.' },
   ];
 
   var S = {
@@ -358,7 +362,7 @@
   }
   function outcomeBadge(o) {
     var key = o || 'unknown';
-    var labels = { ok: 'OK', silent: 'Silent', one_way: 'One-way', dropped: 'Dropped', error: 'Error', abandoned: 'Abandoned', active: 'Live' };
+    var labels = { ok: 'OK', silent: 'Silent', one_way: 'One-way', dropped: 'Dropped', error: 'Error', abandoned: 'Abandoned', active: 'Live', no_end: 'End not recorded' };
     return el('span', 'vsup-badge vsup-outcome-' + key.replace(/[^a-z_]/g, ''), labels[key] || human(key) || '—');
   }
 
@@ -922,7 +926,7 @@
     var extra = el('form', 'vsup-filters vsup-filters-secondary');
     extra.setAttribute('role', 'search');
     extra.setAttribute('aria-label', 'Session search');
-    extra.appendChild(selectField('Outcome', p.outcome, OUTCOMES.map(function (o) { return { value: o, label: o === 'active' ? 'Live now' : human(o) }; }), function (v) { setParam('outcome', v); loadSessions(true); }));
+    extra.appendChild(selectField('Outcome', p.outcome, OUTCOMES.map(function (o) { return { value: o, label: o === 'active' ? 'Live now' : (o === 'no_end' ? 'End not recorded' : human(o)) }; }), function (v) { setParam('outcome', v); loadSessions(true); }));
     var classes = {};
     slot.rows.forEach(function (s) { if (s.failure_class) classes[s.failure_class] = true; });
     if (p.failure_class) classes[p.failure_class] = true;

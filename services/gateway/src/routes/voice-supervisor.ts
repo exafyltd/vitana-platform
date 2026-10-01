@@ -36,6 +36,7 @@ import {
   filterSegment,
   defaultLabel,
   isLive,
+  effectiveOutcome,
   MIN_SAMPLE,
   type Dimension,
   type FactRow,
@@ -298,6 +299,10 @@ router.get('/sessions', async (req: Request, res: Response) => {
       window: win.key,
       sessions: page.map((r) => ({
         ...r,
+        // What the row counts as now: a lost end reads 'no_end', not the
+        // stored 'abandoned'/'active' (same rule as every KPI).
+        outcome: effectiveOutcome(r as unknown as FactRow, nowMs),
+        stored_outcome: r.outcome ?? null,
         tenant_name: r.tenant_id ? names[r.tenant_id as string] ?? null : null,
       })),
       next_before: rows.length > limit && page.length ? (page[page.length - 1].started_at as string) : null,
