@@ -24,6 +24,8 @@
   "notif.signal_expired.title": "Sinyalin süresi doldu",
   "notif.signal_expired.body": "Öngörücü bir sinyalin süresi doldu.",
   "notif.reminder.title": "🔔 Hatırlatma",
+  "notif.audiobook_daily.title": "🎧 Bugünkü bölümün",
+  "notif.audiobook_daily.body": "Dinlemek için birkaç dakika – Vitana sesli kitabının bir sonraki bölümünü anlatıyor.",
   "notif.calendar_reminder.in_minutes": "{title} {minutes} dk sonra",
   "notif.calendar_reminder.in_hours": "{title} {hours} sa sonra",
   "notif.calendar_reminder.now": "{title} — şimdi",

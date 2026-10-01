@@ -717,6 +717,29 @@ export function buildVertexWakeBriefBlock(
   // tells the model to compose its own opener, and the GUIDE MODE block names
   // the topic — so the sentence is redundant as well as risky, and omitting it
   // satisfies NEVER-rule 41 (write the INTENT, never the finished sentence).
+  // VTID-04760 — the first-time welcome carries an INTENT, not a sentence
+  // (NEVER-rule 41). Render it compositionally: the model writes the welcome
+  // in the member's language, in its own words. Same marker, so the SHORT-GAP
+  // pool and the brain's rival openers stay suppressed for this turn.
+  if (dedupeKey?.startsWith('first-time-welcome:')) {
+    return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+
+## SPOKEN FIRST UTTERANCE — FIRST-EVER CONVERSATION (VTID-04760)
+
+What your opening must do (compose every word yourself, in the user's own
+language; this is an intent, not text to read out):
+${safe}
+
+Rules:
+  - Do NOT pick a phrase from the "SHORT-GAP GREETING PHRASES" section —
+    that section is SUPPRESSED for this turn.
+  - Do NOT list features or screens.
+  - After speaking, stop and wait for the user's reply. On a yes, start
+    Episode 1 by calling narrate_guided_session.${dedupeLine}
+
+This is your first spoken turn this session.`;
+  }
+
   if (dedupeKey?.startsWith('guided_topic:')) {
     return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 

@@ -24,6 +24,8 @@
   "notif.signal_expired.title": "Señal caducada",
   "notif.signal_expired.body": "Una señal predictiva ha caducado.",
   "notif.reminder.title": "🔔 Recordatorio",
+  "notif.audiobook_daily.title": "🎧 Tu episodio de hoy",
+  "notif.audiobook_daily.body": "Unos minutos para escuchar: Vitana te cuenta el siguiente episodio de tu audiolibro.",
   "notif.calendar_reminder.in_minutes": "{title} en {minutes} min",
   "notif.calendar_reminder.in_hours": "{title} en {hours} h",
   "notif.calendar_reminder.now": "{title} — ahora",

@@ -1716,6 +1716,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04763: the Audiobook's daily "your episode for today" push for
+      // members who asked for it. Same on-switch as reminder dispatch.
+      try {
+        const { startAudiobookReminderLoop } = require('./services/guided-journey/audiobook-reminder-dispatch');
+        const { getSupabase: getAudiobookSupabase } = require('./lib/supabase');
+        if (startAudiobookReminderLoop(() => getAudiobookSupabase())) {
+          console.log('🎧 Audiobook daily reminder loop started');
+        }
+      } catch (error) {
+        console.warn('⚠️ Audiobook daily reminder loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04338: default reminders for calendar entries — reconciles the
       // reminders table against upcoming entries every minute.
       try {

@@ -53,8 +53,8 @@ describe('NAV-GUIDED-JOURNEY', () => {
     expect(r.ok).toBe(true);
     expect(r.result.route).toBe('/autopilot');
     // Vitana is told to explain the difference + how to switch.
-    expect(r.text).toContain('GUIDED JOURNEY');
-    expect(r.text).toContain('Einführung/Vollversion');
+    expect(r.text).toContain('AUDIOBOOK');
+    expect(r.text).toContain('Hörbuch/Vollversion');
   });
 
   test('full-app intent → flips durable mode to full + explains the difference', async () => {
@@ -63,7 +63,7 @@ describe('NAV-GUIDED-JOURNEY', () => {
     expect(mockSetMode).toHaveBeenCalledTimes(1);
     expect(mockSetMode.mock.calls[0]).toEqual([sbStub, 'u-1', 'full']);
     expect(r.text).toContain('FULL app');
-    expect(r.text).toContain('Einführung/Vollversion');
+    expect(r.text).toContain('Hörbuch/Vollversion');
   });
 
   test('German "geführte" / "Einführung" intent also flips the mode', async () => {
@@ -96,6 +96,10 @@ describe('NAV-GUIDED-JOURNEY', () => {
       'die geführte Einführung bitte',
       'show me the easy mode',
       'open the tutorial journey',
+      // VTID-04760: the guided view is presented as the Audiobook / Hörbuch.
+      'open my audiobook',
+      'zeig mir mein Hörbuch',
+      'spiel mein Hoerbuch in my journey',
     ];
     const FULL_PHRASES = [
       'take me to the complete version of my journey',
@@ -106,6 +110,7 @@ describe('NAV-GUIDED-JOURNEY', () => {
       'ich will die komplette App-Journey',
       'bring mich zur erweiterten Journey',
       'show me all features of my journey',
+      'show me the full app, not the audiobook',
     ];
 
     test.each(GUIDED_PHRASES)('guided variant: "%s" → guided', async (q) => {
