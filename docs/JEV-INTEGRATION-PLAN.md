@@ -904,8 +904,21 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   contact persons; showing it to the reviewer is enforce; approval stays
   human.
 
-P3 status: A9, A10, C4, F (first slice), E8, E10 built in shadow. E1/E2 wait
-for the owner to name the Drive/OneDrive account(s).
+- **E1 — VTID-04821 (shadow).** Owner decision 2026-10-01: company
+  documentation is on the Exafy corporate Google Drive (and OneDrive), reached
+  only through Exafy accounts (d.stevanovic@exafy.io, j.tadic@exafy.io today).
+  `services/company-docs/company-docs.ts` + Operator Console tools
+  `dev_company_docs_search` / `dev_company_docs_connect`, verified exafy_admin
+  only, never on the member Connected Apps screen. Each person connects their
+  own drive read-only (drive.readonly / Files.Read.All); a connection whose
+  account is not on `COMPANY_DOCS_DOMAINS` (default exafy.io) is never
+  searched. Names, kinds, dates and links only, never contents. After a
+  search, Jev `company_doc_relevance` (`jev/gates/company-doc-relevance-gate.ts`)
+  picks the result that answers it (or none) under the caller's tenant;
+  agreement with the provider's rank 1 at once. The search text is not
+  stored (hashed subject_ref).
+
+P3 status: A9, A10, C4, F (first slice), E8, E10, E1 built in shadow; E2 next.
 
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
