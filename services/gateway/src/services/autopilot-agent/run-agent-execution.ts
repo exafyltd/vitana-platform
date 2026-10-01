@@ -41,6 +41,7 @@ import { RepeatedCheckGuard } from './agent-check-guard';
 import { buildAgentMemoryContext, recordAgentRunMemory } from './agent-memory-context';
 import type { FinishArgs } from './agent-tools';
 import { devWorkerModel } from '../dev-pipeline-models';
+import { createAgentProgressGate } from '../jev/gates/agent-progress-gate';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -168,6 +169,14 @@ export async function runAgentExecutionSession(
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
+  // VTID-04764 (Jev P1 A1): every-N-turns progress check, observe-only
+  // (JEV_AGENT_PROGRESS_MODE; off = a no-op object). The task summary is the
+  // plan's opening, never file contents.
+  const progressGate = createAgentProgressGate({
+    executionId,
+    findingId: exec.finding_id,
+    task: (plan.plan_markdown || '').slice(0, 1500),
+  });
   // VTID-04017: per-run usage/cost, appended to the finding's outcome row
   // in `finally` whatever happens (best-effort, never throws).
   const run: AgentRunUsage = {
@@ -321,6 +330,7 @@ export async function runAgentExecutionSession(
         // VTID-04466: first round of a non-fix run only — a fix round starts
         // from a diff that already exists.
         exploration: explorationEnabled && round === 0 ? explorationThresholds(AGENT_MAX_TURNS) : null,
+        onTurnSnapshot: progressGate.onTurn,
       });
       history = loop.history; totalTurns += loop.turns;
       memHistory = history; memFinished = loop.finished || memFinished;
@@ -456,6 +466,7 @@ export async function runAgentExecutionSession(
     run.recorded_at = new Date().toISOString();
     run.cost_usd = estimateCost(run.model || '', run.input_tokens, run.output_tokens);
     await recordAgentRunUsage(exec.finding_id, run).catch(() => undefined);
+    await progressGate.finish(run.outcome);
     // VTID-04223: engineering memory OUT — ≤3 durable facts from the run's
     // transcript via the `memory` routing stage. The task_outcome / failure
     // row is the gateway's (applyExecutionResult), not written here.
