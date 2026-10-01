@@ -857,6 +857,15 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   (first landing wins). Showing the score to the reviewer is enforce. Runs
   where the agent runs (like A1/A5).
 
+- **A10 — VTID-04816 (shadow).** `jev/gates/operator-route-gate.ts`. Every
+  Operator Console turn sends the model the whole tool catalog (~60 tools).
+  Beside each turn (never awaited before it) Jev `operator_route` names the
+  lane — answer only / task management / code lookup / ops diagnostics /
+  delivery / community; the lane of the tools the turn actually called is the
+  outcome, known at once. Every operator tool is mapped to a lane (a test
+  fails when a new tool has none). Enforce — sending only the lane's tools —
+  after the data.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

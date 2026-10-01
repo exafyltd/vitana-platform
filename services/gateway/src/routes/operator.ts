@@ -32,6 +32,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
+import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
 import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
@@ -409,6 +410,8 @@ export async function runOperatorChatTurn(
     // — a missing table / Supabase error yields null and the turn proceeds
     // exactly as before.
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
+    // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
+    const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
     let geminiResult = await processWithGemini({
       text: message,
       threadId,
@@ -467,6 +470,7 @@ export async function runOperatorChatTurn(
         console.warn(`[VTID-04172] retry itself threw, keeping the original (simulated) reply: ${retryErr?.message}`);
       }
     }
+    if (routeCheck) void recordOperatorRouteOutcome(routeCheck, (geminiResult.toolResults || []).map((tr) => tr.name));
 
     // VTID-04025: durable facts from this turn (decisions, gotchas,
     // preferences …) → dev_agent_memory, extracted by the memory stage.
