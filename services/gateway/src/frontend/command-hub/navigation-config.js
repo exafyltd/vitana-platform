@@ -207,7 +207,8 @@ export const NAVIGATION_CONFIG = [
       { key: "catalog", label: "Catalog" },
       { key: "runs", label: "Runs" },
       { key: "run-tests", label: "Run Tests" },
-      { key: "e2e", label: "E2E" }
+      { key: "e2e", label: "E2E" },
+      { key: "test-contracts", label: "Test Contracts" }
     ]
   },
   {
