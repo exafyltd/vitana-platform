@@ -1159,7 +1159,7 @@ jobs:
               ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
                 + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
             | .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and .name != "JEV_SELFHEAL_PROVIDER_FAILURE_MODE" and .name != "JEV_SELFHEAL_INCIDENT_DEDUPE_MODE" and .name != "JEV_AGENT_PROGRESS_MODE" and .name != "JEV_CLAIM_FEASIBILITY_MODE" and .name != "JEV_VOICE_SESSION_OUTCOME_MODE" and .name != "JEV_CRM_LEAD_SCORE_MODE" and .name != "JEV_CRM_ACCOUNT_CLASSIFICATION_MODE" and .name != "JEV_FINDING_DEDUPE_MODE" and .name != "JEV_SELFHEAL_PRETRIAGE_MODE" and .name != "JEV_CI_FAILURE_ROUTING_MODE" and .name != "JEV_REPEAT_RUN_GUARD_MODE" and .name != "JEV_SELFHEAL_DEPLOY_CAUSE_MODE" and .name != "JEV_FIX_VERIFICATION_MODE") ]
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and (.name | test("^JEV_.*_MODE$") | not)) ]
                 + [ {name:"JEV_DECISIONS_ENABLED", value:"true"},
                     {name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"},
                     {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"},
@@ -1174,19 +1174,9 @@ jobs:
                     {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"},
                     {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"},
                     {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"} ] )')
-          # VTID-04759: the self-healing gates B1/B2 run in shadow (record only);
-          # enforce is a separate decision once their agreement rate is known.
-          # VTID-04764: A1 agent progress, shadow, for agent runs the gateway
-          # executes in-process (the ECS executor task is wired separately).
-          # VTID-04774: A2 claim feasibility, shadow (the claim runs here).
-          # VTID-04775: C1 voice session outcome, shadow (telemetry only).
-          # VTID-04782: E3/E6 CRM lead score + account classification, shadow (business fields only).
-          # VTID-04797: A8 finding near-duplicate check, shadow.
-          # VTID-04799: B3 self-heal pre-triage cause class, shadow (enforce stays off).
-          # VTID-04801: A4 repeat-run guard, shadow.
-          # VTID-04800: A6 CI failure routing, shadow.
-          # VTID-04803: B6 fix verification second opinion, shadow.
-          # VTID-04802: B4/B5 self-heal deploy cause (no deploy seen + likely-cause commit), shadow.
+          # Jev gates (VTID-04759 B1/B2, 04764 A1, 04774 A2, 04775 C1, 04782 E3/E6, 04797 A8,
+          # 04799 B3, 04800 A6, 04801 A4, 04802 B4/B5, 04803 B6): shadow only, record and
+          # change nothing; enforce is a per-gate decision once agreement data exists.
 
           # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
           # memory read; recall() runs in the background and one counts-only
