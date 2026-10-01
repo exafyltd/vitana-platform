@@ -707,6 +707,14 @@ top classes become findings.
   within 30 minutes is a duplicate. Both pinned `shadow` on staging and prod.
   Agreement is written back from triage's own result.
 
+- **A1 — VTID-04764 (shadow).** `jev/gates/agent-progress-gate.ts`, fed by an
+  observe-only `onTurnSnapshot` hook in `runAgentLoop`. Every 10 turns Jev
+  `agent_progress_check` judges continue / commit / handoff / stop from the
+  task summary and the run's own activity; agreement comes from whether the
+  run then opened its PR. Pinned shadow on both gateways (in-process runs);
+  the ECS executor task is wired once its execution role is confirmed to read
+  the TypeSafe secret.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

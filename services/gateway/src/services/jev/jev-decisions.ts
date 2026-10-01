@@ -283,6 +283,60 @@ const defs: JevDecisionDef[] = [
     pii: 'redact',
     buildState: (i) => ({ client_request: i.request, professional_services: i.services }),
   },
+  {
+    // VTID-04764 (Jev P1 A1): mid-run progress check for the Dev Autopilot
+    // coding agent, asked every N turns in shadow mode. Telemetry only: the
+    // task summary and the agent's own tool activity, never member data.
+    name: 'agent_progress_check',
+    description: 'Is a Dev Autopilot coding run converging, and what should it do next?',
+    roles: ENGINEERING,
+    input: z.object({
+      task: text(2000),
+      turn: z.number().int().min(1).max(500),
+      max_turns: z.number().int().min(1).max(500),
+      tool_calls: z.number().int().min(0).max(5000),
+      has_edited: z.boolean(),
+      idle_turns: z.number().int().min(0).max(500),
+      failed_checks: z.number().int().min(0).max(500),
+      passed_checks: z.number().int().min(0).max(500),
+      recent_activity: z.array(z.string().trim().max(160)).max(40),
+    }),
+    questions: {
+      next_step: {
+        type: 'choice',
+        instructions: 'Given the task and the agent activity so far, what should this coding run do next?',
+        criteria: {
+          continue: 'It is making real progress toward the task (new files read with purpose, edits landing, checks moving towards green); keep going.',
+          commit: 'It already has a usable change for the task; it should run its checks and finish now instead of exploring further.',
+          handoff: 'It is going in circles or blocked on something it cannot resolve itself (unclear task, missing access, repeated identical failures); stop and hand off its findings.',
+          stop: 'The task cannot be completed with these tools in the remaining turns; further turns only spend tokens.',
+        },
+      },
+      will_finish: {
+        type: 'noul',
+        instructions: 'Will this run finish the task with a passing change before it runs out of turns?',
+      },
+    },
+    primary: 'next_step',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      task: i.task,
+      progress: {
+        turn: i.turn,
+        max_turns: i.max_turns,
+        turns_remaining: Math.max(0, i.max_turns - i.turn),
+        tool_calls: i.tool_calls,
+        has_edited: i.has_edited,
+        idle_turns: i.idle_turns,
+        failed_checks: i.failed_checks,
+        passed_checks: i.passed_checks,
+      },
+      recent_activity: i.recent_activity,
+    }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
