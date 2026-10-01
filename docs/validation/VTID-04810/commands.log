@@ -9,3 +9,4 @@ npx jest $(grep -rlE "command-orchestrator|crm-gates" test)             # Backof
 # own duplicate; "holding" is not a legal form (a holding is a different entity) and was removed from the list.
 # Evidence: production has no erp_commands yet (plan §10.3 E), so there is nothing to measure until the
 # Backoffice is used; the gate is ready for the first company creates.
+npx jest (full gateway suite, merged with origin/main 7898787)          # 1452 suites, 23288 passed, 0 failed (outputs/jest-full.txt)
