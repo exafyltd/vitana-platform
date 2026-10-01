@@ -4,3 +4,8 @@ postgres 16 (local, throwaway, /var/tmp): psql -f docs/validation/VTID-04769/mig
 node (TS transpile harness) services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts -> 9/9 ok; CI Gateway Jest runs it (passed on f3956fd)
 node scripts/ci/staging-verify/run.mjs check-pr --service gateway -> change suite present and valid
 read-only (production Supabase, SELECT only): required columns/tables present; 0 partner_organizations, 0 supplier merchants, 0 supplier products; 511 active products (network) -> backfill changes no rows
+merged #3835 as bf90251 (all 18 checks green)
+RUN-MIGRATION.yml run 36854138526 -> failed before any SQL: Supabase Management API HTTP 401 (repo secret SUPABASE_ACCESS_TOKEN rejected); nothing applied
+Supabase MCP apply_migration -> timed out twice waiting for approval; read-only check: nothing applied
+owner ran the same SQL (main, split into 5 transactional parts, comments stripped) in the Supabase SQL Editor, project inmkhvwdcuyhnxkgfvsb -> final check 2 | 7 | 511
+read-only verification -> outputs/live-schema.txt
