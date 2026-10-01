@@ -122,6 +122,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   TTS_PROVIDER: { staging: "polly", prod: "dynamic" },
   VERTEX_AI_LOCATION: { staging: "global", prod: "global" },
   VERTEX_LIVE_UNAVAILABLE: { staging: "true", prod: "dynamic" },
+  VERTEX_RUSSIAN_BRIDGE_ENABLED: { staging: "true", prod: "true" },
   VERTEX_SERBIAN_BRIDGE_ENABLED: { staging: "true", prod: "true" },
   VITANA_ENV: { staging: "staging", prod: null },
 };

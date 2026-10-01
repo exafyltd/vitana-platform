@@ -817,7 +817,8 @@ jobs:
           # AWS principal staging already uses. No additional GCP-side grant
           # was needed or made.
           #
-          # `sr` only, same narrow selector gate as staging
+          # `sr`+`ru` only (VTID-04813: own switch each), same narrow
+          # selector gate as staging
           # (upstream-provider-selector.ts's tryVertexBridgeRescue, checked
           # before the cascade at all 5 call sites) — every other language
           # and every other Vitana process is unaffected.
@@ -826,10 +827,12 @@ jobs:
             .containerDefinitions[0].environment |=
               ( [ .[] | select(.name | IN("GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                           "VERTEX_SERBIAN_BRIDGE_ENABLED",
+                                          "VERTEX_RUSSIAN_BRIDGE_ENABLED",
                                           "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                 + [ {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                     {name:"VERTEX_AI_LOCATION", value:"global"},
                     {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
+                    {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"},
                     {name:"GCP_SERVICE_ACCOUNT_JSON", value:$CRED} ] )')
 
           # VTID-03709: hand off to the next step via the runner's filesystem.

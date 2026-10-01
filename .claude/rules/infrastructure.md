@@ -199,6 +199,14 @@ OPENAI_API_KEY=xxx
 # GOOGLE_CLOUD_PROJECT/VERTEX_AI_LOCATION must point at the NEW project,
 # never lovable-vitana-vers1 (permanently decommissioned).
 VERTEX_SERBIAN_BRIDGE_ENABLED=true
+# Russian-only Vertex Live bridge, the SECOND one — see
+# §2e-vertex-russian-bridge (VTID-04813). Its OWN switch, deliberately not a
+# widened Serbian gate: Polly has no neural/generative Russian voice at all
+# (only standard-engine Tatyana/Maxim), so the voice quality is not fixable
+# in Polly. Shares the same GCP project/WIF config as the Serbian bridge.
+# Off by default; `false` reverts ru to the Transcribe->Bedrock->Polly
+# cascade byte-for-byte, independently of sr.
+VERTEX_RUSSIAN_BRIDGE_ENABLED=true
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx

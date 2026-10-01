@@ -161,6 +161,14 @@ checked with real `DescribeVoices` + `SynthesizeSpeech` calls in
 - **Russian is the quality floor and is unfixable inside Polly** —
   `Tatyana` **and** `Maxim` are both `standard`-only. There is no neural
   Russian voice at all, so this is a product limitation, not a config gap.
+  **Re-measured live 2026-09-29 and still true.** A member reported the
+  Russian voice as "like from a desperate old woman with zero energy",
+  which is an accurate description of that engine. VTID-04813 resolves it
+  by moving the Russian LIVE VOICE SESSION onto the Vertex/Gemini bridge
+  (§2e-vertex-russian-bridge) rather than by changing anything here:
+  `POLLY_VOICES.ru` stays, because `resolvePollyVoice('ru')` still serves
+  the non-conversational Russian TTS call sites (`/orb/tts`, reminder
+  pre-render, guided-topic narration), which do not go through Gemini Live.
 - **Six of nine languages can upgrade engine without changing voice.**
   `en`/Joanna, `de`/Vicki, `fr`/Lea, `es`/Lucia, `pt`/Camila, `pl`/Ola all
   support **`generative`** on the *same* voice id and are pinned to
@@ -396,9 +404,11 @@ on the gateway task role.
 ## 2e. ORB VOICE — NOVA SONIC (VTID-03501)
 
 **Voice runs on Amazon Nova Sonic (+ the Transcribe/Bedrock/Polly-or-Fish
-cascade for languages Nova can't speak) for every language except one —
-Serbian goes through a narrow, explicit Vertex Live bridge on a NEW GCP
-project instead, see §2e-vertex-serbian-bridge (VTID-04000).** GCP's
+cascade for languages Nova can't speak) for every language except two —
+Serbian (§2e-vertex-serbian-bridge, VTID-04000) and Russian
+(§2e-vertex-russian-bridge, VTID-04813) go through narrow, explicit Vertex
+Live bridges on a NEW GCP project instead. Each has its OWN switch and its
+OWN single-language predicate; neither is a widened language list.** GCP's
 2026-08-16 shutdown killed the GENERAL Vertex Live fallback outright — that
 part is unchanged and still true for every other language. `VERTEX_LIVE_
 UNAVAILABLE=true` (`orb-live.ts`) forces Nova through its own
@@ -698,6 +708,64 @@ gets fixed some other way), the fix is one flag flip
 (`VERTEX_SERBIAN_BRIDGE_ENABLED=false`) plus deleting the GCP project and
 its WIF pool/provider/binding; the selector code can stay (inert, harmless)
 or be removed in a follow-up cleanup VTID.
+
+### 2e-vertex-russian-bridge. Russian voice — the SECOND Vertex bridge (VTID-04813)
+
+Owner decision 2026-10-01, from a live report: the Russian voice is "like
+from a desperate old woman with zero energy" → "replace Tatyana voice with
+a Google voice like for Serbian".
+
+**Why Polly cannot fix it.** `DescribeVoices(ru-RU)` in `eu-central-1`
+returns exactly `Tatyana` and `Maxim`, and BOTH are `standard`-engine only
+— no neural, no generative (re-measured live 2026-09-29; §2c has said this
+since VTID-03578). `ru` is the only language in `POLLY_VOICES` not on
+`neural`. No Polly setting closes that gap.
+
+**Why it reuses the Serbian bridge.** Gemini Live speaks Russian natively
+in one hop — `ru` is in Google's own Live API supported-language table (99
+languages, checked 2026-10-01) — and the Serbian bridge doing exactly this
+is already live in PRODUCTION (`VERTEX_SERBIAN_BRIDGE_ENABLED=true` is
+pinned in `AWS-PROD-DEPLOY-GATEWAY.yml`). Nothing new had to be
+provisioned: same GCP project, same WIF credential config, same
+`VERTEX_AI_LOCATION`. The live `decision_policy` row
+`voice.live_api.voice.ru` is already `{voice_name:"Aoede"}` — byte-identical
+to `sr`'s — and `Aoede` is female, so VTID-04445's persona voice-gender
+rule passes with no change.
+
+**A SEPARATE switch, not a widened gate.** `vertex-russian-bridge.ts` holds
+`isVertexRussianBridgeEnabled()` (`VERTEX_RUSSIAN_BRIDGE_ENABLED`, exact
+string `'true'`) and `isVertexRussianBridgeLanguage()` (`ru` only).
+`vertex-serbian-bridge.ts` is untouched — its own header promises its
+predicate is "never widened to a language list", and keeping Russian in its
+own file keeps that promise mechanically true. New
+`SelectionReason: 'vertex_russian_bridge'` so telemetry never reports a
+Russian session as a Serbian one. `tryVertexBridgeRescue()` checks both
+pairs; the two predicates are mutually exclusive by language, so order
+cannot change which fires.
+
+**On §2e-vertex-serbian-bridge's "do not promote past a small canary before
+the watchdog parity gap is closed".** That precondition offers two routes
+and the second one holds, verified in code rather than assumed: the
+gateway's own session reapers (`cleanupExpiredSessions()` in
+`session/live-session-controller.ts`, and the `wsClientSessions` sweep in
+`routes/orb-live.ts`) expire any session idle past `SESSION_TIMEOUT_MS`
+(30 min) every 5 minutes, and **neither looks at the provider** — a Vertex
+session is bounded by them exactly as a Nova session is. By volume this is
+not a promotion either: measured read-only in production `oasis_events`
+over the 30 days to 2026-10-01, `sr` ran 136 sessions and `ru` 18, so
+Russian is ~7.5x SMALLER than the language already on this bridge in
+production. The remaining parity items (the 7 OASIS topics, the
+reconnect/connection caps) are still open and still apply to both bridges.
+
+**Scope — only the live voice session moves.** `POLLY_VOICES.ru` is
+deliberately unchanged; see the §2c note above for which Russian TTS call
+sites still use Tatyana and why removing it would break them.
+
+**Same 90-day window and same exit as Serbian:** one flag flip
+(`VERTEX_RUSSIAN_BRIDGE_ENABLED=false`) reverts `ru` to the
+Transcribe→Bedrock→Polly cascade byte-for-byte, independently of Serbian.
+
+---
 
 ---
 
