@@ -7,3 +7,4 @@ npx jest $(grep -rlE "run-agent-execution|dev-autopilot-watcher" test)   # 31 ru
 # (the A6 fixture prints "Tests: 1 failed, 200 passed" to stdout; it is test data, filtered out)
 # Evidence (production, read-only SQL, 30 days to 2026-10-01): dev_autopilot.execution.ci_failed by failed checks —
 # [] 11, validate-pr 8, Gateway Service Tests 6, Test Suite Summary + Gateway (Jest) 2, Path Ownership Guard 2, …
+npx jest (full gateway suite, merged with origin/main eed65af)          # 1450 suites, 23258 passed, 0 failed (outputs/jest-full.txt)
