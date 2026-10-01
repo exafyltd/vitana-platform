@@ -103,3 +103,15 @@ export async function fetchRecentDeployEvents(sb: SupabaseClient, topic: string,
     .order('created_at', { ascending: false })
     .limit(limit);
 }
+
+/** VTID-04804: voice backstop diag events in a window (metadata only). */
+export async function fetchVoiceDiagEvents(sb: SupabaseClient, stages: readonly string[], sinceIso: string, untilIso: string, limit = 5000) {
+  return sb
+    .from('oasis_events')
+    .select('metadata')
+    .eq('topic', 'orb.live.diag')
+    .in('metadata->>stage', stages as string[])
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}

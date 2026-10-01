@@ -1830,6 +1830,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-04804 (Jev C2): voice backstop clusters, judged once per UTC day.
+      // Off unless JEV_VOICE_BACKSTOP_CLUSTERS_MODE is set; shadow only.
+      try {
+        const { startBackstopClusterScheduler } = require('./services/jev/gates/backstop-cluster-gate');
+        if (startBackstopClusterScheduler()) console.log('🧩 Jev voice backstop cluster scheduler started (VTID-04804)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice backstop cluster scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');
