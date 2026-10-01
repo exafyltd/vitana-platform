@@ -1177,10 +1177,11 @@ jobs:
                     {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"},
                     {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"},
                     {name:"JEV_PLANNABILITY_MODE", value:"shadow"},
-                    {name:"JEV_TEST_SELECTION_MODE", value:"shadow"} ] )')
+                    {name:"JEV_TEST_SELECTION_MODE", value:"shadow"},
+                    {name:"JEV_PR_CLASH_MODE", value:"shadow"} ] )')
           # Jev gates (VTID-04759 B1/B2, 04764 A1, 04774 A2, 04775 C1, 04782 E3/E6, 04797 A8,
           # 04799 B3, 04800 A6, 04801 A4, 04802 B4/B5, 04803 B6, 04804 C2, 04805 C3,
-          # 04806 A3, 04807 A5): shadow only, record and
+          # 04806 A3, 04807 A5, 04808 A7): shadow only, record and
           # change nothing; enforce is a per-gate decision once agreement data exists.
 
           # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB

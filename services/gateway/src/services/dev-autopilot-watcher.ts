@@ -29,6 +29,7 @@ import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
 import { isTestSelectionOn, recordTestSelectionOutcome } from './jev/gates/test-selection-gate';
+import { isPrClashOn, recordPrClashOutcome, runPrClashCheck, type OpenChange } from './jev/gates/pr-clash-gate';
 import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
@@ -216,6 +217,32 @@ async function loadFixContext(s: SupaConfig, findingId: string): Promise<FixCont
   if (!rec) return null;
   const plan = planR.ok && planR.data && planR.data[0] ? planR.data[0] : null;
   return { title: rec.title || '', summary: rec.summary || '', source_type: rec.source_type ?? null, files: plan?.files_referenced || [] };
+}
+
+/**
+ * VTID-04808 (Jev A7, shadow): before a green PR merges, would merging it now
+ * make another open Dev Autopilot PR conflict or break? Never awaited.
+ */
+function clashCheckBeforeMerge(s: SupaConfig, exec: { id: string; finding_id: string }): void {
+  if (!isPrClashOn()) return;
+  const asChange = async (id: string, findingId: string): Promise<OpenChange | null> => {
+    const ctx = await loadFixContext(s, findingId);
+    return ctx ? { execution_id: id, title: ctx.title, files: ctx.files } : null;
+  };
+  void runPrClashCheck({
+    executionId: exec.id,
+    deps: {
+      loadMerging: () => asChange(exec.id, exec.finding_id),
+      loadOthers: async () => {
+        const r = await supa<Array<{ id: string; finding_id: string }>>(
+          s, `/rest/v1/dev_autopilot_executions?status=in.(ci,merging)&pr_number=not.is.null&id=neq.${exec.id}&select=id,finding_id&order=created_at.desc&limit=10`,
+        );
+        if (!r.ok || !r.data) return [];
+        const all = await Promise.all(r.data.map((o) => asChange(o.id, o.finding_id)));
+        return all.filter((c): c is OpenChange => !!c);
+      },
+    },
+  });
 }
 
 async function loadFindingVtid(s: SupaConfig, findingId: string): Promise<string | null> {
@@ -783,6 +810,7 @@ export async function ciWatcherTick(): Promise<void> {
       if (isCiFailureRoutingOn()) void runCiFailureRouting({ executionId: exec.id, failedChecks: analysis.failedNames, evidence });
       // VTID-04807 (Jev A5): did a failing suite match one Jev would have run?
       if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: false, evidence });
+      if (isPrClashOn() && mState === 'dirty') void recordPrClashOutcome(exec.id, true);
       await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }
@@ -822,11 +850,14 @@ export async function ciWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} CI failed (recheck): ${reason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, failed_checks: recheckAnalysis.failedNames, mergeable_state: recheckMState, gate_reason: reason },
       });
+      if (isPrClashOn() && recheckMState === 'dirty') void recordPrClashOutcome(exec.id, true);
       await bridgeFailure(exec.id, 'ci', reason);
       continue;
     }
 
     // Both gate evaluations passed. Proceed with merge.
+    // VTID-04808 (Jev A7): shadow clash check against the other open PRs.
+    clashCheckBeforeMerge(s, exec);
     // VTID-04218: the merge is irreversible; the bookkeeping must land
     // first. If the ci→merging transition did not move the row (another
     // tick took it, or the database refused the write), do NOT merge —
@@ -851,6 +882,7 @@ export async function ciWatcherTick(): Promise<void> {
       },
     });
     if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: true });
+    if (isPrClashOn()) void recordPrClashOutcome(exec.id, false);
 
     // Defense-in-depth: check risk class one more time before auto-merging.
     // The approve safety-gate already rejected high-risk, but an execution
