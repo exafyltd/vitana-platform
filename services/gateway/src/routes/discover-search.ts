@@ -36,6 +36,7 @@ import { getConditionMapping, expandSynonymPhrase } from '../services/condition-
 import { emitLimitationBypass } from '../services/reward-events';
 import * as jose from 'jose';
 import * as repo from './discover-search-repository';
+import { buildDiscoverCategoryTree } from '../services/discover-categories';
 import {
   CountryCode,
   CurrencyCode,
@@ -501,6 +502,40 @@ router.get('/product/:id', async (req: Request, res: Response) => {
       ...data,
       evidence_links: Array.isArray(data.evidence_links) ? data.evidence_links : [],
     },
+  });
+});
+
+// ==================== GET /categories ====================
+// VTID-04783 — Discover's category list with live product counts, from data
+// (discover_categories / discover_subcategories). Labels are i18n keys.
+// `include_empty=true` returns every category and subcategory (the supplier
+// portal's picker); otherwise only those with live products.
+
+router.get('/categories', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    res.status(500).json({ ok: false, error: 'Supabase unavailable' });
+    return;
+  }
+  const includeEmpty = String(req.query.include_empty ?? '') === 'true';
+  const [cats, subs, counts] = await Promise.all([
+    repo.fetchDiscoverCategories(supabase),
+    repo.fetchDiscoverSubcategories(supabase),
+    repo.fetchDiscoverCategoryCounts(supabase),
+  ]);
+  if (cats.error || subs.error || counts.error) {
+    res.status(500).json({ ok: false, error: 'failed to load categories' });
+    return;
+  }
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json({
+    ok: true,
+    categories: buildDiscoverCategoryTree(
+      (cats.data ?? []) as any[],
+      (subs.data ?? []) as any[],
+      (counts.data ?? []) as any[],
+      includeEmpty,
+    ),
   });
 });
 

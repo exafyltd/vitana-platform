@@ -54,14 +54,18 @@ router.get('/verticals', async (req: Request, res: Response) => {
   const s = supa(res);
   if (!s) return;
 
-  const [{ data: verticals, error: vErr }, { data: fields, error: fErr }] = await Promise.all([
-    s.from('catalog_verticals').select('key,display_label,description,icon,is_regulated,sort_order')
+  const [{ data: verticals, error: vErr }, { data: fields, error: fErr }, { data: subcats, error: sErr }] = await Promise.all([
+    s.from('catalog_verticals').select('key,display_label,description,icon,is_regulated,sort_order,discover_category')
       .eq('is_active', true).order('sort_order'),
     s.from('catalog_vertical_fields')
       .select('vertical_key,field_key,display_label,help_text,data_type,vocabulary,unit,is_prominent,sort_order')
       .eq('is_active', true).order('sort_order'),
+    // VTID-04783: the Discover subcategories a product of each vertical can
+    // be filed under (keys + i18n label keys; the form translates them).
+    s.from('discover_subcategories').select('category_key,key,label_key,sort_order')
+      .eq('is_active', true).order('sort_order'),
   ]);
-  if (vErr || fErr) {
+  if (vErr || fErr || sErr) {
     res.status(500).json({ ok: false, error: 'failed to load verticals' });
     return;
   }
@@ -85,6 +89,9 @@ router.get('/verticals', async (req: Request, res: Response) => {
       verticals: (verticals ?? []).map((v: any) => ({
         ...v,
         fields: (fields ?? []).filter((f: any) => f.vertical_key === v.key),
+        subcategories: (subcats ?? [])
+          .filter((c: any) => v.discover_category && c.category_key === v.discover_category)
+          .map((c: any) => ({ key: c.key, label_key: c.label_key })),
       })),
       options,
     },
@@ -266,6 +273,10 @@ export const ProductFields = z.object({
   ships_to_regions: z.array(z.string()).optional(),
   availability: z.enum(['in_stock', 'out_of_stock', 'preorder', 'discontinued', 'unknown']).default('in_stock'),
   category: z.string().max(128).optional(),
+  // VTID-04783: one of the Discover category's subcategory keys
+  // (discover_subcategories). The database keeps it only when it belongs to
+  // the product's Discover category, so an unknown value never hides a product.
+  subcategory: z.string().max(64).optional(),
   // Vertical-specific answers, keyed by catalog_vertical_fields.field_key.
   attributes: z.record(z.string(), z.unknown()).default({}),
 });
@@ -320,7 +331,7 @@ router.get('/products', async (req: Request, res: Response) => {
   }
 
   const { data, error } = await s.from('products')
-    .select('id,title,price_cents,currency,images,affiliate_url,availability,category,attributes,is_active,updated_at')
+    .select('id,title,price_cents,currency,images,affiliate_url,availability,category,subcategory,attributes,is_active,updated_at')
     .eq('merchant_id', merchant.id).order('updated_at', { ascending: false }).limit(500);
   if (error) {
     res.status(500).json({ ok: false, error: 'failed to load products' });

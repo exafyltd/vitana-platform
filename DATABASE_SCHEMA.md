@@ -2932,6 +2932,25 @@ owned by a test/service account) the database now maintains it:
 Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
 are service_role only. Scenarios: `docs/validation/VTID-04769/`.
 
+
+### Discover categories as data (VTID-04783) — NOT YET APPLIED
+
+Migration `20261001140000_vtid_04783_discover_categories.sql`.
+
+- `discover_categories(key PK, label_key, icon, sort_order, is_active)` and
+  `discover_subcategories(category_key FK, key, label_key, sort_order, is_active)`
+  — Discover's product categories. `label_key` is a frontend i18n key. Public
+  read (RLS select-all), service-role write. Adding a category is a row here
+  plus its label in the frontend catalogue.
+- `catalog_verticals.discover_category` (FK) — the Discover category a
+  supplier vertical lands in; NULL = none yet (services, until step C).
+- `trg_products_discover_category` (BEFORE INSERT/UPDATE OF category,
+  subcategory, merchant_id) — supplier products only (merchant linked to an
+  org or owned by a user): category becomes the vertical's Discover category;
+  a subcategory survives only if it belongs to that category. Network
+  products are untouched.
+- `discover_category_counts()` — active products per (category, subcategory)
+  in known categories; backs `GET /api/v1/discover/categories`.
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project

@@ -1,0 +1,5 @@
+# VTID-04783
+POST /api/v1/vtid/allocate -> VTID-04783
+read-only (production Supabase, SELECT only): products category/subcategory distribution (network: supplements, skincare, health-tests, lifestyle); catalog_verticals keys
+postgres 16 (local, throwaway): psql -f docs/validation/VTID-04783/migration-scenarios.sql -> 15 x ok, ALL PASSED (outputs/migration-scenarios-postgres16.txt)
+node (TS transpile harness) test/services/discover-categories.test.ts -> 4/4 ok; the route/CSV suites need node_modules (npm registry blocked in this sandbox) and run in CI Gateway Jest

@@ -36,3 +36,16 @@ export async function fetchProductById(
 ): Promise<{ data: any; error: any }> {
   return sb.from('products').select(selectColumns).eq('id', id).eq('is_active', true).maybeSingle();
 }
+
+// VTID-04783 — Discover's category list (data-driven, see services/discover-categories.ts).
+export function fetchDiscoverCategories(sb: SupabaseClient) {
+  return sb.from('discover_categories').select('key,label_key,icon,sort_order').eq('is_active', true);
+}
+
+export function fetchDiscoverSubcategories(sb: SupabaseClient) {
+  return sb.from('discover_subcategories').select('category_key,key,label_key,sort_order').eq('is_active', true);
+}
+
+export function fetchDiscoverCategoryCounts(sb: SupabaseClient) {
+  return sb.rpc('discover_category_counts');
+}
