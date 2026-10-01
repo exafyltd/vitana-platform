@@ -22,6 +22,7 @@ import { recordCustomerEpisode } from '../memory/customer';
 import { isCrmGatesOn, runCrmGates } from '../jev/gates/crm-gates';
 import { isDuplicateAccountOn, runDuplicateAccountCheck } from '../jev/gates/duplicate-account-gate';
 import { isApprovalRiskOn, recordApprovalDecision, runApprovalRiskCheck } from '../jev/gates/approval-risk-gate';
+import { isPaymentMatchOn, runPaymentMatchCheck } from '../jev/gates/payment-match-gate';
 
 const VTID = 'VTID-03842';
 
@@ -54,6 +55,12 @@ function checkDuplicateAccount(done: CommandRow): void {
   if (done.status !== 'executed' || !isDuplicateAccountOn()) return;
   if (done.type !== 'crm.company.create' && done.type !== 'sales.customer.create') return;
   void runDuplicateAccountCheck(done, { bridge: getErpBridgeClient() });
+}
+
+/** VTID-04819: Jev E8 shadow payment ↔ invoice match on allocations; off unless its mode is set. Never awaited. */
+function checkPaymentMatch(done: CommandRow): void {
+  if (done.status !== 'executed' || done.type !== 'finance.payment.allocate' || !isPaymentMatchOn()) return;
+  void runPaymentMatchCheck(done, { bridge: getErpBridgeClient() });
 }
 
 export interface OrchestratorCaller {
@@ -243,6 +250,7 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
   rememberForCustomer(done);
   scoreCrmRecord(done);
   checkDuplicateAccount(done);
+  checkPaymentMatch(done);
   await audit(store, caller, access, channel, outcome.status === 'executed' ? 'command.executed' : 'command.failed', row.id, null, { type: spec.type, tier: decision.tier, escalations: decision.escalations, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }
@@ -278,6 +286,7 @@ export async function decideApproval(caller: OrchestratorCaller, access: Effecti
   rememberForCustomer(done);
   scoreCrmRecord(done);
   checkDuplicateAccount(done);
+  checkPaymentMatch(done);
   await audit(store, caller, access, channel, 'approval.approved', command.id, approval.id, { note, requester_id: approval.requester_id, outcome: outcome.status, reason: outcome.reason });
   return { http: outcome.status === 'executed' ? 200 : 502, body: { ok: outcome.status === 'executed', command: publicCommand(done) } };
 }

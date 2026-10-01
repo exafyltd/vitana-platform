@@ -214,6 +214,54 @@ const defs: JevDecisionDef[] = [
     buildState: (i) => ({ new_account: { name: i.new_name, details: i.new_details ?? null }, existing_account: { name: i.existing_name, details: i.existing_details ?? null } }),
   },
   {
+    // VTID-04819 (P3 E8): a payment was allocated to an invoice — does it
+    // really belong to it? Amounts, currencies, dates, references and whether
+    // the two parties are the same; never a party's name.
+    name: 'payment_invoice_match',
+    description: 'Whether a payment allocated to an invoice actually matches it.',
+    roles: BACKOFFICE,
+    input: z.object({
+      payment_amount: z.number().nullable(),
+      payment_currency: optText(10),
+      payment_date: optText(20),
+      payment_reference: optText(140),
+      allocated_amount: z.number().nullable(),
+      invoice_total: z.number().nullable(),
+      invoice_outstanding_before: z.number().nullable(),
+      invoice_currency: optText(10),
+      invoice_due_date: optText(20),
+      invoice_number: optText(140),
+      same_party: z.boolean().nullable(),
+      reference_mentions_invoice: z.boolean(),
+    }),
+    questions: {
+      matches: { type: 'noul', instructions: 'Does this payment belong to this invoice, so the allocation is right?' },
+      issue: {
+        type: 'choice',
+        instructions: 'What is the main problem, if any?',
+        criteria: {
+          none: 'It matches.',
+          amount_mismatch: 'The amounts do not fit (not the total, the outstanding amount or a plausible part payment).',
+          party_mismatch: 'The payment comes from a different party than the invoice is for.',
+          currency_mismatch: 'Different currencies without a conversion.',
+          already_settled: 'The invoice was already paid or the payment already used.',
+          unclear: 'Not enough information to tell.',
+        },
+      },
+    },
+    primary: 'matches',
+    threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({
+      payment: { amount: i.payment_amount, currency: i.payment_currency ?? null, date: i.payment_date ?? null, reference: i.payment_reference ?? null, allocated: i.allocated_amount },
+      invoice: { total: i.invoice_total, outstanding_before: i.invoice_outstanding_before, currency: i.invoice_currency ?? null, due_date: i.invoice_due_date ?? null, number: i.invoice_number ?? null },
+      same_party: i.same_party,
+      reference_mentions_invoice: i.reference_mentions_invoice,
+    }),
+  },
+  {
     // VTID-04811 (P2 E7): a High-risk Backoffice command is waiting for a
     // second person. A risk hint for the approver, from the command's own
     // business fields — never who requested it or any person's data.
