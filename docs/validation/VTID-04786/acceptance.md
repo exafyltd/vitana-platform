@@ -76,3 +76,4 @@ TEST: services/gateway/test/vtid-04786-memory-embedding-backfill-loop.test.ts
 
 AC-4 (after PUBLISH, read-only): `automation_runs` gets AP-0910 rows with trigger_source
 `embedding-backfill-loop` every 30 minutes, and morning check 21's coverage climbs past 90%.
+CURL: GET https://gateway.vitanaland.com/api/v1/admin/build-info -> git_commit is the published commit; row 21 of MORNING-SYSTEM-HEALTH-CHECK.yml (ci_memory_health, read-only) then reads AP-0910 recency and coverage
