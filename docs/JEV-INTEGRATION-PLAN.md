@@ -797,6 +797,15 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   forwarding_no_ack → upstream_connection; 22 of 24 such stalls in 14 days).
   One row per session; agreement with the rules where they name a cause.
 
+- **A3 — VTID-04806 (shadow).** `jev/gates/plannability-gate.ts`, on a
+  first-time Dev Autopilot plan (never a human's continue-planning call):
+  Jev `finding_plannable` (plannable? blocker: vague / broad / needs a
+  decision / no location) runs beside the planner, never awaited. The row's
+  outcome is what the planner produced: a plan citing files, a plan without
+  files, a planner failure, or an infrastructure error (excluded from
+  agreement — most of the 30 days' plan failures are ~30-39 s "unknown
+  error", not the finding).
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
