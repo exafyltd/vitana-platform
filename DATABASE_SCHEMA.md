@@ -2908,6 +2908,30 @@ get full access to every `partner_registry` row linked to their org;
 Supabase/gateway credentials were reachable from this session; see
 `docs/validation/VTID-03932/acceptance.md`.
 
+### Supplier go-live lists products (VTID-04769) — NOT YET APPLIED
+
+Migration `20261001120000_vtid_04769_supplier_go_live_lists_products.sql`.
+`products.is_active` stays the one truth every member-facing reader filters
+on; for **supplier** products (merchant linked to a partner organization, or
+owned by a test/service account) the database now maintains it:
+
+- `products.first_listed_at TIMESTAMPTZ` — when a supplier product was first
+  switched on; `NULL` = never-listed draft.
+- `products.listing_hold TEXT` (`org_not_live` | `excluded_account`) — why the
+  gate is holding a product off; `NULL` = not held.
+- Org reaches `lifecycle_state = 'live'` (also via the legacy
+  `POST /partner-orgs/:id/activate` status write) → its waiting products
+  (drafts and held ones) go on. Products added while live go on at once.
+- Org paused/suspended, or its owner registered in `service_bot_accounts` /
+  `notification_test_actors` → its products go off with `listing_hold` set,
+  and come back when that clears.
+- An explicit `is_active` write (admin) is a decision: switch-off is never
+  undone by a go-live; switch-on while the org is not live is held until it is.
+- Network products (no partner org, no owner) are never read or written.
+
+Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
+are service_role only. Scenarios: `docs/validation/VTID-04769/`.
+
 ---
 
 ## Memory — canonical stores, embeddings, health (VTID-04341 / 04342 / 04343 / 04345, 2026-09-23) — APPLIED to the live project
