@@ -409,6 +409,18 @@ export async function runHeartbeatCycle(tenantId: string): Promise<{
       continue;
     }
 
+    // VTID-04786: the loop runs on every gateway task. For jobs that must run
+    // once per interval system-wide, the shared run history decides.
+    if (def.triggerConfig?.dedupeAcrossInstances) {
+      const [latest] = await getRunHistory(tenantId, def.id, 1);
+      const latestMs = latest?.started_at ? Date.parse(latest.started_at) : 0;
+      if (latestMs && now - latestMs < intervalMs) {
+        lastHeartbeatRun[def.id] = latestMs;
+        skipped.push(def.id);
+        continue;
+      }
+    }
+
     lastHeartbeatRun[def.id] = now;
     const result = await executeAutomation(def.id, tenantId, 'heartbeat', 'heartbeat-loop');
 
