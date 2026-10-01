@@ -6,3 +6,4 @@ npx jest test/vtid-04817 test/vtid-04465-operator-pipeline-regression test/orb/l
 # Evidence (production, read-only SQL, 14 days to 2026-10-01), greeting_sent joined to conversation.session.finalized:
 #   conv_resume + wake_brief 436 sessions, 9% engaged; conv_resume + feature_discovery 137, 9%;
 #   conv_resume + next_step 53, 21%; resume_thread + wake_brief 19, 63%; safe_fast_proactive 62, 0%.
+npx jest (full gateway suite, merged with origin/main 8af043b)          # 1456 suites, 23341 passed, 0 failed (outputs/jest-full.txt)
