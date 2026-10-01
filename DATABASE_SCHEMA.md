@@ -2908,7 +2908,7 @@ get full access to every `partner_registry` row linked to their org;
 Supabase/gateway credentials were reachable from this session; see
 `docs/validation/VTID-03932/acceptance.md`.
 
-### Supplier go-live lists products (VTID-04769) — NOT YET APPLIED
+### Supplier go-live lists products (VTID-04769) — APPLIED to the live project 2026-10-01
 
 Migration `20261001120000_vtid_04769_supplier_go_live_lists_products.sql`.
 `products.is_active` stays the one truth every member-facing reader filters
