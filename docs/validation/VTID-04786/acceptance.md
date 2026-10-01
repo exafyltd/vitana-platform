@@ -44,3 +44,35 @@ TEST: services/gateway/test/vtid-04786-memory-embedding-backfill-heartbeat.test.
 AC-2 (staging): the public registry reports AP-0910 as `heartbeat` with `dedupeAcrossInstances`.
 Within an hour of deploy `automation_runs` shows new AP-0910 runs and coverage climbs.
 CURL: GET https://preview-aws-gateway.vitanaland.com/api/v1/automations/registry?domain=memory-intelligence -> AP-0910 triggerType heartbeat (docs/validation/VTID-04786/staging-tests.json)
+
+## Follow-up: the heartbeat loop never ran it (2026-10-01, after #3847)
+Two hours after the staging deploy of bd230831, `automation_runs` still showed no AP-0910 row, while
+AP-0302, AP-0602, AP-0701 and other heartbeat jobs ran every interval. Two reasons:
+
+- **Staging skips it.** Staging runs the heartbeat loop in shadow mode (`AUTOMATIONS_DELIVERY_MODE=shadow`,
+  VTID-04349), and `runMemoryEmbeddingBackfill` is in `SHADOW_UNSAFE_HANDLERS`. It writes through its
+  own client, so the shadow wrapper cannot stop its writes. `executeAutomation` returns before it
+  creates a run row.
+- **Production has no loop.** Production does not run the heartbeat loop at all. Running the
+  community automation engine live there is an owner decision, and this change does not take it.
+
+Fix:
+- **A dedicated loop.** `services/memory-embedding-backfill-loop.ts` runs AP-0910 and nothing else, every
+  30 minutes per tenant. It skips when `automation_runs` already has a run inside the interval, so
+  only one gateway task runs it.
+- **When it starts.** It needs `MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED=true` (exact) and
+  `MEMORY_EMBEDDING_BACKFILL_TENANT_IDS`, and it never starts when the delivery mode resolves to
+  shadow.
+- **Where it is pinned.** Only `AWS-PROD-DEPLOY-GATEWAY.yml` pins it, for Maxina, which holds 3,433
+  of 3,571 missing items and 804 of 821 missing facts. Backfilling Maxina alone lifts total
+  coverage to about 96%, above the check's 90% bar.
+
+The job sends nothing to anyone. It writes Titan embeddings onto members' own memory rows.
+
+AC-3: the loop starts only on the exact flag with a valid tenant id in live mode, and never in
+shadow mode. A tick runs tenants whose last run is older than 30 minutes and skips the rest.
+Production pins the flag; staging does not.
+TEST: services/gateway/test/vtid-04786-memory-embedding-backfill-loop.test.ts
+
+AC-4 (after PUBLISH, read-only): `automation_runs` gets AP-0910 rows with trigger_source
+`embedding-backfill-loop` every 30 minutes, and morning check 21's coverage climbs past 90%.
