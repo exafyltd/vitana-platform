@@ -1,6 +1,6 @@
 # Vitana Onboarding Assistant (VOA) — Plan v1
 
-Status: DRAFT for owner review · 2026-09-29 · VTID: VTID-04744
+Status: DRAFT for owner review · updated 2026-10-01 · VTID: VTID-04744
 Repos: `vitana-platform` (engine, ORB, notifications) + `vitana-v1` (Home card, permission priming, i18n)
 
 ## 1. Problem
@@ -59,7 +59,7 @@ Dead / disconnected (do not build on):
 
 ### 4.1 Principle
 One brain, many mouths. A new **Onboarding Coach service** computes per-member *state* and the *single next best
-action*; existing channels (ORB, Home card, push, in-app, Vitana DM) only render it. Every outbound touch goes
+action*; existing channels (ORB, Home card, push, in-app, Vitana DM, feed post) only render it. Every outbound touch goes
 through the presence pacer. Nothing existing is deleted; the hello DM stays.
 
 ### 4.2 Cohort & gating
@@ -87,7 +87,7 @@ never hardcoded; push/in-app titles are `tt()` catalog keys in all 11 locales.
 | 0–1 | First value | Set a goal (Life Compass) or answer a 3-question Index baseline → member sees a first Vitana Index number. Ask push permission *after* this moment of value, not at signup. |
 | 1–3 | Talk to Vitana | "Try asking me: …" (3 contextual sample asks, tied to interests). Diary voice note (30 s). T252–T254. |
 | 3–7 | First people | Vitana-hosted intros (§4.5); join 1–2 groups incl. Alle Beisammen; see 1 event. |
-| 8–30 | Habit | Daily/weekly rhythm: morning brief opt-in, reminders, Autopilot slots, Did-You-Know tour (existing 30-usage-day curriculum). One new feature per week, max. |
+| 8–30 | Habit | Daily/weekly rhythm: morning brief opt-in, reminders, Autopilot slots, Did-You-Know tour (existing 30-usage-day curriculum). First inspiration post on the first Friday (§4.6). One new feature per week, max. |
 | 31–60 | Deepen | Guided sessions pace (existing daily goal), events/meetups in real life, first invite of a friend. |
 | 61–90 | Own it | Recap ("your 60 days"), switch to Full mode, graduate; hand over to normal Autopilot. |
 
@@ -102,8 +102,8 @@ Problem with today's hello: sender is a stranger, no reason to answer. Keep it; 
    framed with the *shared reason*. Replies land in the normal inbox with a push.
 2. **Reason-rich prompt to the existing member**, not a bare DM: the existing in-app card ("New here: Sam — also into sleep optimisation. Say hi?"). **In-app card only — no push, no new surface (owner decision).** Reuse the existing new-member card; only enrich its copy with the shared reason.
 3. **Mariia Maksina is the communication centre (owner decision).** Instead of a pool of hosts, Vitana routes onboarding communication through Mariia: when a member reaches a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" and, on yes, sends that chat message (read-back + confirm flow). Mariia is the human welcome point; her inbox load needs a cap/digest (max N onboarding messages/day, grouped) so she isn't flooded. Welcome Hosts pool is dropped for v1.
-4. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
-4. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
+5. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
+6. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
    in the cohort receives a personal welcome DM *from Mariia*. Owner's wording, used as the seed: "So nice to see you with us. Welcome, and I'm looking
    forward to many beautiful moments together on our joint Longevity Journey!" — final copy may vary slightly per language.
    - Sent once per member, on membership creation (DB-trigger/tick path, not `/auth/login`), idempotent via a `voa_mariia_welcome_sent_at` marker.
@@ -113,10 +113,67 @@ Problem with today's hello: sender is a stranger, no reason to answer. Keep it; 
      (`VOA_WELCOME_SENDER_USER_ID`, not hardcoded), and the message is capped/idempotent. Replies from members go to Mariia's inbox → covered by the daily digest/cap in §4.5.3.
    - Pilot: only the allowlisted test members (Jovana, Alex Red, Alex Blue) receive it; Mariia does not message herself.
    - Milestone loop stays: later Vitana can also tell Mariia when a member has joined the Longevity Journey (§4.5.3).
-5. Low-risk first: react to a post, join a group, RSVP — before DMs. Ladder order reflects shyness.
+7. Low-risk first: react to a post, join a group, RSVP — before DMs. Ladder order reflects shyness.
 Consolidate on one match source (see risk R3): use `daily_matches`/intent matches whichever is live per query of the live schema.
 
-### 4.6 Channels
+### 4.6 Inspiration posts — Autopilot posts on the member's behalf (owner request 2026-10-01)
+
+**Why.** Shy new members don't post. If their first post is prepared for them, they see that a post gets likes and
+replies, and the community sees them as someone who brings good energy. The teaching goal: "a positive post is
+easy and people respond to it."
+
+**What a post looks like.** A quote card in the feed: a short quote, who said it, an optional line from the member
+("Have a wonderful weekend, everyone! ☀️"), on a calm branded background. Always positive, warm and inspiring.
+
+**Occasions (rotating, max 1 post per member per week):**
+| When | Theme | Example intent |
+|---|---|---|
+| Friday afternoon (member's local time) | Weekend wish | wish everyone a lovely weekend + a light quote |
+| Monday morning | Fresh start | motivation for the week |
+| Member's milestone (e.g. finished T251–T254, first goal set) | Celebration | "I started my Longevity Journey" + a quote about beginnings |
+| Seasonal moments (spring, summer start, New Year) | Season | a matching positive quote |
+
+**Quote sources — a curated library, never invented.** Quotes come from `onboarding_quote_library`, a reviewed
+list. The model picks one and writes the member's personal line around it. It never writes or "remembers" a quote
+itself, because made-up or wrongly attributed quotes are common and would embarrass the member (NEVER rule 31).
+- **Historical figures:** short, positive quotes in the public domain (e.g. Seneca, Marcus Aurelius, Goethe, Laozi,
+  Helen Keller, Mark Twain), each with a verified source and checked translations in the member's language.
+- **Happy songs:** song lyrics are copyrighted, so the library holds the **song title and artist** with a one-line
+  feeling in our own words ("Today feels like 'Here Comes the Sun' — The Beatles ☀️"), not quoted lyric lines.
+  Short lyric quotes only after a legal check.
+- Each entry has: text per locale, author, source, theme tags (weekend, start, gratitude, movement, friendship,
+  longevity), mood check = positive, `status` draft → approved. An admin approves entries; only approved ones are used.
+- Seed: ~150 entries (≥ 30 per theme) so a member never sees a repeat within 90 days; feed-wide, the same quote is
+  not reused by anyone within 4 weeks.
+
+**Flow ("let me do it for you", with consent):**
+1. Vitana (ORB or Home card) offers: "It's Friday — shall I post a weekend wish for you? Here's a draft." The member
+   sees the card preview.
+2. The member taps **Post**, **Change** (another quote / edit the line) or **Not now**. Nothing is posted without that
+   tap. After 3 posts the member can switch on "post for me automatically on Fridays" in Autopilot settings, and
+   switch it off again any time.
+3. After posting, Vitana reports back the next day: "5 people liked your weekend wish, Anna replied." That turns
+   into the next social step (reply to Anna, §4.5).
+4. A small "created with Vitana" label on the card keeps it honest.
+
+**Guardrails.**
+- **No tenant-wide push for these posts.** Today every public post pushes to every member of the tenant
+  (`trg_notify_community_post`). Inspiration posts carry `post_kind='inspiration'` and the trigger skips
+  them: they appear in the feed only, with no push. Otherwise 20 new members posting weekly would send thousands of
+  pushes a week to everyone.
+- **Feed cap:** max N inspiration posts per tenant per day (proposed 3), spread out in time, so the feed is never flooded.
+- Max 1 inspiration post per member per week; counts toward the 1-touch-per-day onboarding cap.
+- Language: the post is written in the member's language; readers see it as written (same as any post).
+- Never health claims, politics, religion-specific or sad content; tone checked against the library tags.
+- Service/test accounts never post (rules 43–45); during the pilot only the allowlisted accounts.
+- Reuse what exists: the `Inspiration` templates screen (`vitana-v1/src/pages/messages/Inspiration.tsx`) and
+  `profile_posts`; the card is a new post type rendered by the existing feed (`NewsFeedItemCard`).
+
+**Pilot.** Posts in the real feed are seen by every member, not only the four pilot accounts, so pilot posts
+need an owner decision (see §8 open item c). Default until then: pilot posts are created as non-public (visible to
+the author only) to test the whole flow without anyone else seeing them.
+
+### 4.7 Channels
 - **ORB**: new greeting rung `onboarding_coach` between `first_time_welcome` and `journey_guide` for cohort members; also a `onboarding_coach`
   context provider so any conversation can mention the next step once, naturally. Kill-switch like the newday rungs.
 - **Home (FE)**: new "Dein Start / Your start" card in `cardSlots` (top, above Vitana Index): progress ring, the ONE next action, "later" + "stop".
@@ -127,10 +184,11 @@ Consolidate on one match source (see risk R3): use `daily_matches`/intent matche
   `setup-eventbridge-daily-feature-tip.sh`). *Not* the AP engine (dark), *not* an in-process loop (double-fire with >1 instance).
   Signup-time kick-off uses a DB trigger on `user_tenants` (bypass-proof, precedent exists).
 
-### 4.7 Observability
-OASIS events (`onboarding.coach.stage_changed`, `.touch_sent`, `.touch_skipped{reason}`, `.milestone_reached`, `.intro_proposed/accepted/replied`)
+### 4.8 Observability
+OASIS events (`onboarding.coach.stage_changed`, `.touch_sent`, `.touch_skipped{reason}`, `.milestone_reached`, `.intro_proposed/accepted/replied`, `.inspiration_post_offered/posted/declined`)
 + admin funnel view. Success metrics vs the §3.4 baseline: D1/D7/D30 return, % who talk to Vitana in 24 h, % with push on,
-% with ≥1 reply in 7 days (target: >3× baseline), % in ≥1 group, churn-before-day-7.
+% with ≥1 reply in 7 days (target: >3× baseline), % in ≥1 group, churn-before-day-7,
+% who accept an inspiration-post draft, likes/replies per inspiration post, % who post on their own afterwards.
 
 ## 5. Delivery slices (each = own VTID + PR, each shippable behind the flag)
 
@@ -141,8 +199,9 @@ OASIS events (`onboarding.coach.stage_changed`, `.touch_sent`, `.touch_skipped{r
 | 2 | FE: "Your start" card, i18n'd wizard speech, push-permission priming after first value, nav-registry/What's New entry | v1 | RTL + du-form; screenshots desktop+mobile |
 | 3 | ORB rung + context provider + sample-ask prompts | platform | extend greeting characterization tests; kill switch |
 | 4 | Mariia welcome DM + Social bridge: intro proposals, veteran prompt, Alle Beisammen thread; Mariia-centred flow | both | consent + rate limits; test-account exclusion |
-| 5 | Day 8–90 cadence, recap, EventBridge script | platform | no email |
-| 6 | Funnel dashboard + weekly report | platform | |
+| 5 | Inspiration posts: quote library + admin review, post draft/offer flow, quote card post type, trigger skip for `post_kind='inspiration'`, feed cap | both | legal check for song lines; no tenant push |
+| 6 | Day 8–90 cadence, recap, EventBridge script | platform | no email |
+| 7 | Funnel dashboard + weekly report | platform | |
 
 Regression rule to add with slice 1 (like 04456/04465): `test/vtid-XXXXX-onboarding-assistant-regression.test.ts`, `npm run test:onboarding`.
 
@@ -152,7 +211,8 @@ Constraint (CLAUDE.md): staging and previews share the **production Supabase**; 
 So the "test run with a new registered user" is done in three safe layers:
 
 1. **Simulation (CI, in-memory DB + fake clock).** Golden scenarios: (a) eager user, (b) shy user who ignores 3 nudges,
-   (c) user who accepts an intro and gets a reply, (d) user who says "stop", (e) veteran (must get nothing), (f) service-bot account (must get nothing).
+   (c) user who accepts an intro and gets a reply, (d) user who says "stop", (e) veteran (must get nothing), (f) service-bot account (must get nothing),
+   (g) Friday weekend-wish offer → accepted → post created with no tenant push, feed cap respected, no repeated quote.
    Fast-forwards 90 days; asserts touches/day cap, quiet hours, back-off, milestone progression, text keys in all locales.
 2. **Shadow mode on real signups (read-only).** Flag `shadow`: the coach runs for each real new registration, writes only its own
    decision log, sends nothing. We review "what would Vitana have said/done" for the next real signups and compare to their actual behaviour.
@@ -173,9 +233,10 @@ So the "test run with a new registered user" is done in three safe layers:
 - R4 Push infra: FCM project `lovable-vitana-vers1` is hardcoded while GCP is decommissioned — verify push actually delivers before promising it.
 - R5 Journey/T-topic content is German-first scripts; check en/es/sr/ar coverage; du-form; RTL for Arabic.
 - R6 `first_time_welcome` lazy row and stale seed copy ("Maxina") — handled in §3.
+- R8 Inspiration posts: notification storm (handled by trigger skip), misattributed quotes (curated library only), song-lyric copyright (titles, not lyrics), feed flooding (tenant cap), posts feeling fake (consent per post + "created with Vitana" label).
 - R7 Greeting ladder still inline in `orb-live.ts` (high-risk file): keep the rung change minimal and characterization-tested.
 
-## 8. Decisions (owner, 2026-09-29) — resolved
+## 8. Decisions (owner, 2026-09-29 / 2026-10-01)
 
 1. Cohort: new registrations **and** members who joined in the last 30 days.
 2. Mariia Maksina is the communication centre ("tell Mariia you're onboarded and happy to join the Longevity Journey"); Jovana, Alex Blue, Alex Red are the test accounts. No Welcome Hosts pool.
@@ -183,4 +244,11 @@ So the "test run with a new registered user" is done in three safe layers:
 4. Live pilot with real messages to Mariia, Jovana, Alex Red, Alex Blue (allowlist-enforced).
 5. Email dropped.
 
-Open (small): (a) Mariia's daily inbox cap / digest size; (b) which of the four plays "new member" vs receiver in each scenario (proposed: Jovana, Alex Red, Alex Blue = new members; Mariia = receiver).
+6. Inspiration posts: Autopilot prepares positive quote-card posts on the member's behalf (weekend wishes, quotes from happy songs and historical figures).
+
+Open:
+- (a) Mariia's daily inbox cap / digest size.
+- (b) Roles in the pilot (proposed: Jovana, Alex Red, Alex Blue = new members; Mariia = receiver).
+- (c) Pilot inspiration posts: may they be public in the real feed (all members see them), or stay non-public during the pilot (default)?
+- (d) Inspiration posts: no push to the tenant (recommended), confirm.
+- (e) Who approves quote-library entries (owner, Mariia, or an admin)?
