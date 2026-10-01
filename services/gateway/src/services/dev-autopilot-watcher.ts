@@ -28,6 +28,7 @@ import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from 
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
+import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
@@ -192,6 +193,30 @@ async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise
 }
 
 /** VTID-04377: the finding's own ledger VTID (VTID-04246), excluded from blast radius. */
+/**
+ * VTID-04803 (Jev B6): a second opinion on the verification verdict. Off
+ * unless JEV_FIX_VERIFICATION_MODE is set; never awaited; changes nothing.
+ */
+function secondOpinionOnFix(s: SupaConfig, exec: { id: string; finding_id: string }, verdict: FixVerdict): void {
+  if (!isFixVerificationOn()) return;
+  void runFixVerificationCheck({ executionId: exec.id, verdict, load: () => loadFixContext(s, exec.finding_id) });
+}
+
+async function loadFixContext(s: SupaConfig, findingId: string): Promise<FixContext | null> {
+  const [recR, planR] = await Promise.all([
+    supa<Array<{ title?: string | null; summary?: string | null; source_type?: string | null }>>(
+      s, `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=title,summary,source_type&limit=1`,
+    ),
+    supa<Array<{ files_referenced?: string[] | null }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&select=files_referenced&order=version.desc&limit=1`,
+    ),
+  ]);
+  const rec = recR.ok && recR.data && recR.data[0] ? recR.data[0] : null;
+  if (!rec) return null;
+  const plan = planR.ok && planR.data && planR.data[0] ? planR.data[0] : null;
+  return { title: rec.title || '', summary: rec.summary || '', source_type: rec.source_type ?? null, files: plan?.files_referenced || [] };
+}
+
 async function loadFindingVtid(s: SupaConfig, findingId: string): Promise<string | null> {
   if (!findingId) return null;
   const r = await supa<Array<{ activated_vtid: string | null }>>(
@@ -1075,6 +1100,7 @@ export async function verificationWatcherTick(): Promise<void> {
         message: `Execution ${exec.id.slice(0, 8)} verification failed: ${verdict.reason}`,
         payload: { execution_id: exec.id, pr_url: exec.pr_url, blast_radius: verdict.blastRadiusEvents },
       });
+      secondOpinionOnFix(s, exec, { state: 'fail', reason: verdict.reason || 'blast_radius', blast_radius: verdict.blastRadiusEvents.length, probe: null });
       await bridgeFailure(exec.id, 'verification', verdict.reason || 'verification window saw error events', {
         blast_radius: verdict.blastRadiusEvents,
         verification_result: { state: 'fail', reason: verdict.reason },
@@ -1111,6 +1137,7 @@ export async function verificationWatcherTick(): Promise<void> {
           message: `Execution ${exec.id.slice(0, 8)} verification failed: ${reason}`,
           payload: { execution_id: exec.id, pr_url: exec.pr_url, reprobe: { endpoint: probeTarget, http_status: probe.http_status } },
         });
+        secondOpinionOnFix(s, exec, { state: 'fail', reason: 'reprobe_unhealthy', blast_radius: 0, probe: { endpoint: probeTarget, healthy: false, http_status: probe.http_status ?? null } });
         await bridgeFailure(exec.id, 'verification', reason, {
           verification_result: { state: 'fail', reason: 'reprobe_unhealthy', endpoint: probeTarget, http_status: probe.http_status },
         });
@@ -1119,6 +1146,7 @@ export async function verificationWatcherTick(): Promise<void> {
     }
 
     // pass — blast radius clean AND (re-probe healthy OR no probeable endpoint)
+    secondOpinionOnFix(s, exec, { state: 'pass', reason: null, blast_radius: 0, probe: probeTarget ? { endpoint: probeTarget, healthy: true, http_status: 200 } : null });
     await transitionStatus(s, exec.id, 'verifying', 'completed', {
       completed_at: new Date().toISOString(),
     });

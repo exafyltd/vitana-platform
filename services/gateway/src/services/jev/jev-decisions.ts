@@ -381,6 +381,30 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04803 (Jev P2 B6): after a fix deployed and the verification window
+    // closed — is the original problem actually resolved? Finding text, changed
+    // paths and the rules' window summary only.
+    name: 'fix_verification',
+    description: 'Whether a deployed Dev Autopilot fix resolved the problem its finding described.',
+    roles: ENGINEERING,
+    input: z.object({
+      finding: text(3000),
+      changed_files: z.array(z.string().max(300)).max(60),
+      verification: text(2000),
+      source_type: optText(60),
+    }),
+    questions: {
+      resolved: { type: 'noul', instructions: 'Is the problem the finding describes resolved by this change, given the verification evidence?' },
+      evidence_sufficient: { type: 'noul', instructions: 'Is the verification evidence enough to tell whether the original problem is gone?' },
+    },
+    primary: 'resolved',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ finding: { text: i.finding, source: i.source_type ?? null }, change: { files: i.changed_files }, verification: i.verification }),
+  },
+  {
     // VTID-04802 (Jev P2 B4): could this commit, from the last deploy, have
     // caused this error? Commit subject and file paths only — never a diff.
     name: 'commit_cause_score',

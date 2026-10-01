@@ -773,6 +773,12 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   scored by Jev `commit_cause_score` from subject + paths. Agreement when
   triage's affected component is in the top commit's paths.
 
+- **B6 — VTID-04803 (shadow).** `jev/gates/fix-verification-gate.ts`, at each
+  verification verdict (pass / blast-radius fail / re-probe fail): Jev
+  `fix_verification` asks whether the finding's problem is resolved and
+  whether the evidence suffices. Agreement with the rules at once; the
+  interesting rows are passes Jev doubts on unprobed findings.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
