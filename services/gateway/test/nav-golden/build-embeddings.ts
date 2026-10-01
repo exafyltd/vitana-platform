@@ -28,6 +28,7 @@ import { loadSnapshotRegistry } from '../../src/navigation/nav-registry';
 import { registryDocTexts } from '../../src/navigation/nav-resolver';
 import { GOLDEN_SET } from './golden-set';
 import { PARAPHRASE_CASES, REDIRECT_CASES } from '../nav-redirect/redirect-cases';
+import { COMMAND_HUB_CASES } from './command-hub-golden';
 
 (async () => {
   const seed = new Map(loadBundledEmbeddings());
@@ -40,6 +41,7 @@ import { PARAPHRASE_CASES, REDIRECT_CASES } from '../nav-redirect/redirect-cases
     ...GOLDEN_SET.map((g) => g.utterance.trim()),
     ...REDIRECT_CASES.map((c) => c.say.trim()),
     ...PARAPHRASE_CASES.flatMap((p) => [p.say.trim(), p.modelQuestion.trim()]),
+    ...COMMAND_HUB_CASES.map((c) => c.say.trim()),
   ])];
   const missing = texts.filter((t) => !seed.has(t)).length;
   console.log(`${texts.length} texts, ${missing} to embed`);

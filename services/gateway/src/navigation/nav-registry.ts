@@ -11,6 +11,12 @@
  *
  * The Command Hub navigator is not a second registry: it may only switch
  * screens off or adjust them per tenant (decision 2026-09-24).
+ *
+ * VTID-04814: the Command Hub's own screens are the one part the gateway
+ * owns, because the gateway serves the Command Hub. They live in
+ * data/command-hub-screens.json (surface 'command-hub') and are merged into
+ * whichever community registry is in use, so one index answers both
+ * surfaces and the resolver keeps each session on its own surface.
  */
 import { createHash } from 'crypto';
 import * as fs from 'fs';
@@ -41,8 +47,27 @@ export interface NavScreen {
   aliases?: string[];
   formerIds?: string[];
   disabled?: string;
+  /**
+   * VTID-04814: which app renders the screen. Absent means the community
+   * app (every screen vitana-v1 publishes); 'command-hub' screens come from
+   * data/command-hub-screens.json. A session only ever reaches screens of
+   * its own surface.
+   */
+  surface?: NavSurface;
   /** Every shipped language, merged by the frontend build. */
   i18n: Record<string, NavScreenText>;
+}
+
+export type NavSurface = 'community' | 'command-hub';
+
+/** The surface a screen belongs to (absent = community). */
+export function screenSurface(s: Pick<NavScreen, 'surface'>): NavSurface {
+  return s.surface === 'command-hub' ? 'command-hub' : 'community';
+}
+
+/** The surface a route is on: the Command Hub is served under /command-hub. */
+export function surfaceForRoute(route: string | null | undefined): NavSurface {
+  return route && (route === '/command-hub' || route.startsWith('/command-hub/')) ? 'command-hub' : 'community';
 }
 
 export interface NavRegistry {
@@ -61,6 +86,7 @@ export interface LoadedNavRegistry {
 }
 
 export const SNAPSHOT_PATH = path.join(__dirname, 'data', 'nav-registry.snapshot.json');
+export const COMMAND_HUB_SCREENS_PATH = path.join(__dirname, 'data', 'command-hub-screens.json');
 const REFRESH_MS = 10 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 3000;
 
@@ -95,8 +121,45 @@ export function registrySignature(reg: NavRegistry): string {
   return createHash('sha256').update(JSON.stringify(reg.screens)).digest('hex').slice(0, 16);
 }
 
+let commandHubCache: NavScreen[] | null = null;
+
+/** The Command Hub's screens (bundled with the gateway that serves it). */
+export function loadCommandHubScreens(): NavScreen[] {
+  if (!commandHubCache) {
+    const reg = JSON.parse(fs.readFileSync(COMMAND_HUB_SCREENS_PATH, 'utf8')) as NavRegistry;
+    const problems = validateNavRegistry(reg);
+    for (const s of reg.screens || []) {
+      if (screenSurface(s) !== 'command-hub') problems.push(`${s.id}: not a command-hub screen`);
+      if (surfaceForRoute(s.route) !== 'command-hub') problems.push(`${s.id}: route outside /command-hub`);
+    }
+    if (problems.length) throw new Error(`bundled command-hub screens are invalid: ${problems.slice(0, 3).join('; ')}`);
+    commandHubCache = reg.screens;
+  }
+  return commandHubCache;
+}
+
+/**
+ * The community registry plus the Command Hub's screens. A community screen
+ * never loses its place: a Command Hub id that collides with one is dropped
+ * (and logged) rather than shadowing it.
+ */
+export function withCommandHubScreens(reg: NavRegistry): NavRegistry {
+  const community = reg.screens.filter((s) => screenSurface(s) === 'community');
+  const taken = new Set(community.map((s) => s.id));
+  const hub: NavScreen[] = [];
+  for (const s of loadCommandHubScreens()) {
+    if (taken.has(s.id)) {
+      console.warn(`[nav-registry] command-hub screen ${s.id} collides with a community screen; dropped`);
+      continue;
+    }
+    hub.push(s);
+  }
+  return { ...reg, screens: [...community, ...hub] };
+}
+
 function wrap(registry: NavRegistry, source: LoadedNavRegistry['source']): LoadedNavRegistry {
-  return { registry, signature: registrySignature(registry), source, loaded_at: Date.now() };
+  const merged = withCommandHubScreens(registry);
+  return { registry: merged, signature: registrySignature(merged), source, loaded_at: Date.now() };
 }
 
 let snapshotCache: LoadedNavRegistry | null = null;

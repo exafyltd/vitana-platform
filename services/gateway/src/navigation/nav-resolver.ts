@@ -21,7 +21,7 @@
  * every registry phrasing (docs/navigation-rebuild/PLAN.md); tests pin them.
  */
 import { NavEmbedder } from './nav-embedder';
-import { isVoiceTarget, LoadedNavRegistry, NavScreen, pageOf } from './nav-registry';
+import { isVoiceTarget, LoadedNavRegistry, NavScreen, NavSurface, pageOf, screenSurface } from './nav-registry';
 
 export const NAV_THRESHOLDS = {
   /** Top score needed before a screen can be opened without asking. */
@@ -116,6 +116,11 @@ export interface NavResolveContext {
   authenticated: boolean;
   /** Screen ids switched off for this tenant (Command Hub override). */
   excluded?: ReadonlySet<string>;
+  /**
+   * VTID-04814: the surface the session is on. Only that surface's screens
+   * are reachable; absent means community.
+   */
+  surface?: NavSurface;
   /** Evaluation only: ignore registry texts equal to this (case-insensitive). */
   ignoreText?: string;
 }
@@ -139,6 +144,7 @@ export function isReachable(s: NavScreen, ctx: NavResolveContext): boolean {
   if (!ctx.authenticated && s.access !== 'public') return false;
   if (ctx.viewport && s.viewport && s.viewport !== ctx.viewport) return false;
   if (ctx.excluded?.has(s.id)) return false;
+  if (screenSurface(s) !== (ctx.surface ?? 'community')) return false;
   return true;
 }
 

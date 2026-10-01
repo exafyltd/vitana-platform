@@ -40026,7 +40026,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     var pathOnly = route ? route.split('?')[0] : '';
                     if (!pathOnly || pathOnly.indexOf('/command-hub') !== 0) {
                         console.warn('[VTOrb-Nav] Refused cross-surface route (Command Hub is developer-only): ' + route);
-                        return;
+                        // VTID-04814: say so, so Vitana does not claim it opened.
+                        return { status: 'refused', reason: 'not a Command Hub screen' };
                     }
                     var parsed = getRouteFromPath(route);
                     if (parsed) {
@@ -40035,9 +40036,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                             handleTabClick(parsed.tab);
                         }
                         console.log('[VTOrb-Nav] SPA navigated to ' + parsed.section + '/' + parsed.tab);
+                        return { status: 'opened', route: window.location.pathname };
                     }
+                    return { status: 'not_found', reason: 'no Command Hub tab for ' + pathOnly };
                 }
             });
+            syncOrbRouteWithCommandHub();
         }
 
         // VTID-0520: Start Background Polling
@@ -40050,6 +40054,35 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.innerHTML = `<div class="critical-error"><h1>Critical Error</h1><pre>${e.stack}</pre></div>`;
     }
 });
+// VTID-04814: the voice widget reads current_route once at init, and the
+// Command Hub switches tabs with history.pushState without telling it — so
+// Vitana believed the developer was still on the first tab ("already there"
+// checks and get_current_screen were wrong). Report every route change.
+function syncOrbRouteWithCommandHub() {
+    if (window.__vitanaOrbRouteSync) return;
+    window.__vitanaOrbRouteSync = true;
+    var last = window.location.pathname;
+    function report() {
+        var now = window.location.pathname;
+        if (now === last) return;
+        last = now;
+        try {
+            if (window.VitanaOrb && typeof window.VitanaOrb.updateContext === 'function') {
+                window.VitanaOrb.updateContext({ current_route: now });
+            }
+        } catch (e) { /* the widget is optional */ }
+    }
+    ['pushState', 'replaceState'].forEach(function (m) {
+        var original = history[m];
+        history[m] = function () {
+            var out = original.apply(this, arguments);
+            report();
+            return out;
+        };
+    });
+    window.addEventListener('popstate', report);
+}
+
 // VTID-01226 Command Hub stability fix
 
 // ===========================================================================

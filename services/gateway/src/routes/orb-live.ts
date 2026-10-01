@@ -3961,6 +3961,13 @@ async function executeLiveApiToolInner(
   if (toolName === 'navigate_to_screen') {
     return await handleNavigateToScreen(session, args);
   }
+  // VTID-04814: the developer tool that opens a Command Hub panel goes
+  // through the same handler, so its directive actually reaches the widget
+  // (the generic tool dispatcher below never forwards one). Navigation is
+  // not privileged; the panels themselves keep their own access checks.
+  if (toolName === 'dev_open_hub_panel' && sessionServedSurface(session) === 'command-hub') {
+    return await handleNavigateToScreen(session, { screen_id: args.screen_id, reason: args.reason || 'dev_open_hub_panel' });
+  }
   // Legacy: navigator_consult was the consult-then-narrate path before the
   // unified `navigate` tool. Still routed to the unified handler for any
   // in-flight session that has the old declarations cached.
