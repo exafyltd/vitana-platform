@@ -381,6 +381,46 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04804 (Jev P2 C2): a day's worth of one voice backstop firing —
+    // a product defect worth a finding, or the safety net doing its job?
+    // Counts and session metrics only, never what anyone said.
+    name: 'backstop_cluster_defect',
+    description: 'Whether a cluster of voice backstop firings is a defect worth a Dev Autopilot finding.',
+    roles: ENGINEERING,
+    input: z.object({
+      stage: text(80),
+      sub_cause: optText(80),
+      firings: z.number().int().min(0),
+      sessions: z.number().int().min(0),
+      window_hours: z.number().min(0).max(168),
+      avg_turns: z.number().min(0).optional(),
+      what_it_means: text(600),
+    }),
+    questions: {
+      defect: {
+        type: 'noul',
+        instructions: 'Is this a recurring product defect someone should fix (a prompt, a tool contract, a detection), rather than the safety net working as intended?',
+      },
+      kind: {
+        type: 'choice',
+        instructions: 'What kind of problem is it most likely?',
+        criteria: {
+          prompt_instruction: 'The model is not told clearly enough what to do.',
+          tool_contract: 'A tool is missing, mis-described or returns something the model misreads.',
+          model_limitation: 'The model cannot reliably do this; the backstop is the right long-term answer.',
+          expected_safety_net: 'Rare, expected cases the backstop exists for.',
+          detection_false_positive: 'The backstop fires when nothing was actually wrong.',
+        },
+      },
+    },
+    primary: 'defect',
+    threshold: 0.7,
+    pii: 'forbid',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ cluster: i }),
+  },
+  {
     // VTID-04803 (Jev P2 B6): after a fix deployed and the verification window
     // closed — is the original problem actually resolved? Finding text, changed
     // paths and the rules' window summary only.
