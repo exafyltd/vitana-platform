@@ -1,0 +1,8 @@
+# VTID-04817 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_VOICE_OPENER_OUTCOMES_MODE "04817 C4"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04817 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-c4.txt
+# Evidence (production, read-only SQL, 14 days to 2026-10-01), greeting_sent joined to conversation.session.finalized:
+#   conv_resume + wake_brief 436 sessions, 9% engaged; conv_resume + feature_discovery 137, 9%;
+#   conv_resume + next_step 53, 21%; resume_thread + wake_brief 19, 63%; safe_fast_proactive 62, 0%.
