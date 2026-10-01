@@ -1,0 +1,5 @@
+# VTID-04803 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04803 test/dev-autopilot-watcher test/vtid-04377 test/vtid-04465-operator-pipeline-regression   # 78 tests (outputs/jest-b6.txt)
+npx jest (full gateway suite)                                          # 1444 suites, 23172 tests, 0 failed (outputs/jest-full.txt)
