@@ -918,7 +918,20 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   agreement with the provider's rank 1 at once. The search text is not
   stored (hashed subject_ref).
 
-P3 status: A9, A10, C4, F (first slice), E8, E10, E1 built in shadow; E2 next.
+- **E2 — VTID-04822 (shadow).** `jev/gates/document-type-gate.ts`, after a
+  company document search: the top three results (folders skipped, each
+  document at most once a month) are typed by Jev `document_type` (contract,
+  invoice, quote/order, policy, specification, presentation, report,
+  corporate-legal, HR, marketing, other) from name, kind and source, and each
+  type maps to a route (clause review → E9, payment match → E8, knowledge
+  base → E11, sales, legal records, restricted). The rule next to it is a
+  keyword match on the file name in English, German and Serbian; agreement at
+  once where it names a type, open otherwise. Routing is enforce. With this
+  pin the prod task-definition step is at 19,964 of GitHub's 20,000 chars:
+  the next Jev gate first moves the Jev pins into their own step.
+
+P3 status: A9, A10, C4, F (first slice), E8, E10, E1, E2 built in shadow.
+Left in P3: F's weekly root-cause roll-up into findings.
 
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce

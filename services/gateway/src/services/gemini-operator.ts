@@ -3676,6 +3676,8 @@ export async function executeCompanyDocsTool(
     if (found.length) {
       const { isCompanyDocRelevanceOn, runCompanyDocRelevance } = await import('./jev/gates/company-doc-relevance-gate');
       if (isCompanyDocRelevanceOn()) void runCompanyDocRelevance({ query, docs: found, tenantId });
+      const { isDocumentTypeRoutingOn, runDocumentTypeRouting } = await import('./jev/gates/document-type-gate');
+      if (isDocumentTypeRoutingOn()) void runDocumentTypeRouting({ docs: found, tenantId });
     }
     return { ok: true, data: { query, results: found, sources } };
   } catch (e) {

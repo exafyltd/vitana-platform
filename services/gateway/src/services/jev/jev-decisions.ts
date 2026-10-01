@@ -291,6 +291,40 @@ const defs: JevDecisionDef[] = [
     buildState: (i) => ({ search: i.query, documents: i.candidates }),
   },
   {
+    // VTID-04822 (P3 E2): a company document found by E1 arrives untyped.
+    // Its type decides where it goes next (clause review, payment match,
+    // knowledge base). From name, kind and source only — never contents.
+    name: 'document_type',
+    description: 'What kind of company document this is, so it can be routed.',
+    roles: ['admin', 'developer', 'backoffice'],
+    input: z.object({ name: text(300), kind: text(40), source: text(20) }),
+    questions: {
+      type: {
+        type: 'choice',
+        instructions: 'From the file name and kind, what type of company document is this?',
+        criteria: {
+          contract: 'A contract, agreement, NDA or terms signed between parties.',
+          invoice: 'An invoice, receipt or credit note.',
+          quote_or_order: 'A quote, offer or purchase order.',
+          policy: 'An internal policy, guideline or procedure.',
+          specification: 'A product or technical specification or requirements.',
+          presentation: 'A slide deck or pitch.',
+          report: 'A report or analysis.',
+          legal_corporate: 'A company-law record: articles, register extract, shareholder or power-of-attorney document.',
+          hr: 'A personnel document: CV, payroll, employment record.',
+          marketing: 'Marketing material: brochure, flyer, campaign, newsletter.',
+          other: 'None of these, or not enough to tell.',
+        },
+      },
+    },
+    primary: 'type',
+    threshold: 0.6,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({ document: { name: i.name, kind: i.kind, source: i.source } }),
+  },
+  {
     // VTID-04820 (P3 E10): a partner submitted its onboarding. Advisory triage
     // for the reviewer from business facts and the checklist — never the
     // people behind it. Approval stays with the rules and a human.
