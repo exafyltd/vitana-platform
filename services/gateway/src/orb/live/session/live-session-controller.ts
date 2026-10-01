@@ -118,6 +118,7 @@ import {
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
+import { buildVoiceOutcomeSignals } from '../../../services/jev/gates/voice-outcome-gate'; // VTID-04775
 import { finalizeLiveSession } from './finalize-live-session';
 import { createRequestMemo } from './request-memo';
 import {
@@ -2681,6 +2682,7 @@ export async function handleLiveSessionStop(
       user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
       model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
     },
+    outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop'), // VTID-04775
   });
 
   // Session-end memory commit from the in-memory transcriptTurns (the full,

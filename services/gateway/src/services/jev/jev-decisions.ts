@@ -380,6 +380,57 @@ const defs: JevDecisionDef[] = [
       context: { risk_class: i.risk_class ?? null, source_type: i.source_type ?? null },
     }),
   },
+  {
+    // VTID-04775 (Jev P1 C1): how did an ORB voice session end? Post-session,
+    // counters and close reasons only — never what anyone said.
+    name: 'voice_session_outcome',
+    description: 'Outcome class of an ORB voice session from its own telemetry (post-session).',
+    roles: ENGINEERING,
+    input: z.object({
+      stop_reason: optText(80),
+      provider: optText(40),
+      lang: optText(16),
+      duration_s: z.number().min(0).max(86_400),
+      turns: z.number().int().min(0).max(5000),
+      user_turns: z.number().int().min(0).max(5000).optional(),
+      model_turns: z.number().int().min(0).max(5000).optional(),
+      audio_in_chunks: z.number().int().min(0),
+      audio_in_forwarded: z.number().int().min(0).optional(),
+      audio_out_chunks: z.number().int().min(0),
+      greeting_sent: z.boolean().optional(),
+      reconnects: z.number().int().min(0).max(1000).optional(),
+      watchdog_reason: optText(80),
+      tool_call_streak: z.number().int().min(0).max(1000).optional(),
+      connection_failed: z.boolean().optional(),
+      rule_class: optText(60),
+    }),
+    questions: {
+      outcome: {
+        type: 'choice',
+        instructions: 'From these voice-session counters, how did the session end?',
+        criteria: {
+          completed: 'A real conversation took place (several turns both ways) and ended normally.',
+          user_left_early: 'The member left within the first seconds or after the greeting, with no sign of a fault.',
+          no_engagement: 'The member spoke but the assistant never really engaged (no or almost no model turns).',
+          one_way_audio: 'Audio flowed only one way: the assistant was heard but the member was not, or the reverse.',
+          connection_dropped: 'The connection broke or was reconnected mid-session; the session did not end by choice.',
+          model_stalled: 'The assistant stopped responding mid-session (watchdog fired, long silence).',
+          looping: 'The assistant got stuck in a loop of tool calls or repeated turns.',
+          failed_to_start: 'The session never really started (connection failed, no greeting, no audio out).',
+        },
+      },
+      needs_fix: {
+        type: 'noul',
+        instructions: 'Is this a product or engineering failure someone should fix, rather than normal member behaviour?',
+      },
+    },
+    primary: 'outcome',
+    threshold: 0.6,
+    pii: 'forbid',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ session: i }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

@@ -1159,17 +1159,19 @@ jobs:
               ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
                 + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
             | .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and .name != "JEV_SELFHEAL_PROVIDER_FAILURE_MODE" and .name != "JEV_SELFHEAL_INCIDENT_DEDUPE_MODE" and .name != "JEV_AGENT_PROGRESS_MODE" and .name != "JEV_CLAIM_FEASIBILITY_MODE") ]
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and .name != "JEV_SELFHEAL_PROVIDER_FAILURE_MODE" and .name != "JEV_SELFHEAL_INCIDENT_DEDUPE_MODE" and .name != "JEV_AGENT_PROGRESS_MODE" and .name != "JEV_CLAIM_FEASIBILITY_MODE" and .name != "JEV_VOICE_SESSION_OUTCOME_MODE") ]
                 + [ {name:"JEV_DECISIONS_ENABLED", value:"true"},
                     {name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"},
                     {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"},
                     {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"},
-                    {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"} ] )')
+                    {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"} ] )')
           # VTID-04759: the self-healing gates B1/B2 run in shadow (record only);
           # enforce is a separate decision once their agreement rate is known.
           # VTID-04764: A1 agent progress, shadow, for agent runs the gateway
           # executes in-process (the ECS executor task is wired separately).
           # VTID-04774: A2 claim feasibility, shadow (the claim runs here).
+          # VTID-04775: C1 voice session outcome, shadow (telemetry only).
 
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set
