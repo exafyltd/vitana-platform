@@ -262,6 +262,35 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04821 (P3 E1): an Exafy staff member searched the company drives
+    // (Exafy Google Drive / OneDrive). Which result best answers the search,
+    // judged from file names, kinds and dates only — never file contents.
+    name: 'company_doc_relevance',
+    description: 'Which company document found by a search best answers it.',
+    roles: ['admin', 'developer', 'backoffice'],
+    input: z.object({
+      query: text(300),
+      candidates: z.array(z.object({ n: z.number().int().min(1).max(10), name: text(300), kind: text(40), modified: optText(10), source: text(20) })).min(1).max(10),
+    }),
+    questions: {
+      best: {
+        type: 'choice',
+        instructions: 'Which numbered document best answers the search? Answer none if no document fits.',
+        criteria: {
+          d1: 'Document 1.', d2: 'Document 2.', d3: 'Document 3.', d4: 'Document 4.', d5: 'Document 5.',
+          d6: 'Document 6.', d7: 'Document 7.', d8: 'Document 8.', d9: 'Document 9.', d10: 'Document 10.',
+          none: 'None of the documents answers the search.',
+        },
+      },
+    },
+    primary: 'best',
+    threshold: 0.6,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({ search: i.query, documents: i.candidates }),
+  },
+  {
     // VTID-04820 (P3 E10): a partner submitted its onboarding. Advisory triage
     // for the reviewer from business facts and the checklist — never the
     // people behind it. Approval stays with the rules and a human.

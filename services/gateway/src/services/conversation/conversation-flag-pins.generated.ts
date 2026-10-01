@@ -53,6 +53,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_CHANGE_RISK_MODE: { staging: "shadow", prod: "shadow" },
   JEV_CI_FAILURE_ROUTING_MODE: { staging: "shadow", prod: "shadow" },
   JEV_CLAIM_FEASIBILITY_MODE: { staging: "shadow", prod: "shadow" },
+  JEV_COMPANY_DOC_RELEVANCE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_CRM_ACCOUNT_CLASSIFICATION_MODE: { staging: "shadow", prod: "shadow" },
   JEV_CRM_DUPLICATE_ACCOUNT_MODE: { staging: "shadow", prod: "shadow" },
   JEV_CRM_LEAD_SCORE_MODE: { staging: "shadow", prod: "shadow" },
