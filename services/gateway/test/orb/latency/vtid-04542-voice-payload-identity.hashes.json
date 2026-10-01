@@ -150,10 +150,10 @@
     "directive_bytes": 464
   },
   "session_start:anonymous de": {
-    "sha256": "e366bd226d91315d79f295a36f342766785465c7ab0ed4958343b1ef1cd347f7"
+    "sha256": "b54c30119cbc26a4a1d610cfc709ea08c4b124fefcd404a7a9aca6d01ea5fecc"
   },
   "session_start:authenticated community de": {
-    "sha256": "145abc7e002f10e3eec745512cf13c84193d8f68a8330071b6368dbf8dae0f78"
+    "sha256": "c076221cc0800d5a00c0576daf0a0e0f2e8da01ded30da03f108ef5c314d1122"
   },
   "turn:greeting turn (first assistant turn, no user speech)": {
     "sha256": "6f39ef99ca7a3c297926c7a0224fc47c8b83857e0b66394b0c36db6ba4615a9c"

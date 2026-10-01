@@ -31,7 +31,7 @@ import { runVoiceProbe } from './voice-synthetic-probe';
 import { triggerRollbackRecommendation } from './voice-auto-rollback';
 import { recordSpecMemory } from './voice-spec-memory';
 import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
-import { appendVerdict, evaluateAndQuarantine } from './voice-recurrence-sentinel';
+import { appendVerdict, evaluateAndQuarantine, resolveRecurrenceAfterFixMs } from './voice-recurrence-sentinel';
 import { probeEndpoint as sharedProbeEndpoint } from './self-healing-probe';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -67,6 +67,17 @@ interface StaleRow {
   created_at: string;
   diagnosis: Record<string, unknown> | null;
   attempt_number: number | null;
+}
+
+/**
+ * VTID-04776: the tenant a voice self-healing row belongs to. The adapter's
+ * dispatch payload records it in the diagnosis (`tenant_scope`/`tenant_id`);
+ * rows without one are platform-wide ('global').
+ */
+export function tenantScopeOf(row: { diagnosis: Record<string, unknown> | null }): string {
+  const d = (row.diagnosis || {}) as Record<string, unknown>;
+  const v = d.tenant_scope ?? d.tenant_id ?? (d.evidence as Record<string, unknown> | undefined)?.tenant_id;
+  return typeof v === 'string' && v.trim() ? v.trim() : 'global';
 }
 
 function supabaseHeaders(): Record<string, string> {
@@ -288,12 +299,17 @@ async function reconcileVoiceRow(
       });
     }
     // VTID-01962 (PR #5): Sentinel append + threshold evaluate.
+    // VTID-04776: recurrence vs the PREVIOUS fix of this signature (read
+    // before this row is written) and the tenant the failure was seen in.
+    const recurrence = await resolveRecurrenceAfterFixMs(voiceClass, signature);
     await appendVerdict({
       class: voiceClass,
       normalized_signature: signature,
       verdict: 'ok',
       vtid: row.vtid,
       fixed_at: new Date().toISOString(),
+      recurrence_after_fix_ms: recurrence,
+      tenant_scope: tenantScopeOf(row),
     });
     const quarantineReason = await evaluateAndQuarantine(voiceClass, signature);
     if (quarantineReason) {
@@ -344,11 +360,14 @@ async function reconcileVoiceRow(
     });
   }
   // VTID-01962 (PR #5): Sentinel append + threshold evaluate.
+  // VTID-04776: recurrence vs the last fix + tenant scope (were never passed).
   await appendVerdict({
     class: voiceClass,
     normalized_signature: signature,
     verdict: 'rollback',
     vtid: row.vtid,
+    recurrence_after_fix_ms: await resolveRecurrenceAfterFixMs(voiceClass, signature),
+    tenant_scope: tenantScopeOf(row),
   });
   const quarantineReason = await evaluateAndQuarantine(voiceClass, signature);
   if (quarantineReason) {

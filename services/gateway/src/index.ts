@@ -942,6 +942,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const voiceImproveRouter = require('./routes/voice-improve').default;
   mountRouterSync(app, '/api/v1', voiceImproveRouter, { owner: 'voice-improve' });
 
+  // VTID-04776/04778/04780: Voice Supervisor (Command Hub → Voice → Supervisor)
+  // GET /api/v1/voice/supervisor/{meta,overview,segments,sessions,fixes,fixes/:id/impact}
+  // exafy_admin sees all tenants; a tenant admin is confined to their tenant.
+  const voiceSupervisorRouter = require('./routes/voice-supervisor').default;
+  mountRouterSync(app, '/api/v1/voice/supervisor', voiceSupervisorRouter, { owner: 'voice-supervisor' });
+
   // VTID-02954 (PR-L1): Test Contract Registry — autonomy spine for self-healing
   // GET /api/v1/test-contracts + /:id + /by-capability/:cap + POST /:id/run
   const testContractsRouter = require('./routes/test-contracts').default;

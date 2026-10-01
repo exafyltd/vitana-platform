@@ -96,6 +96,14 @@ import {
   fetchRecentConversationTranscript,
 } from '../../../services/orb-memory-bridge';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
+// VTID-04776: one voice_session_facts row per session (Voice Supervisor).
+import {
+  recordVoiceSessionStart,
+  updateVoiceSessionFacts,
+  recordLiveSessionEnd,
+  stopEventContext,
+  uuidOrNull,
+} from '../../../services/voice-session-facts';
 import { SessionStartTimer, deriveLatencyEntry } from '../latency-context';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
@@ -467,10 +475,13 @@ export function cleanupWsSession(
           turn_count: ls.turn_count ?? 0,
           user_turns: turns.filter((t) => t.role === 'user').length,
           model_turns: turns.filter((t) => t.role === 'assistant').length,
+          // VTID-04776: which Vitana / language / provider this session was.
+          ...stopEventContext(ls, reason),
         })?.catch(() => {
           /* fire-and-forget: teardown must never depend on OASIS */
         });
         ls.stopEventEmitted = true;
+        recordLiveSessionEnd(ls, liveSessionKey, reason); // VTID-04776
       } catch {
         /* telemetry must never cost us the teardown it describes */
       }
@@ -1395,6 +1406,8 @@ export async function handleLiveSessionStart(
         }).text;
 
         session.active_role = resolvedRole;
+        // VTID-04776: the member role is only known here (async context build).
+        updateVoiceSessionFacts(sessionId, { role: resolvedRole ?? null, lang: finalLang });
         session.lastSessionInfo = fetchedSessionInfo;
         session.contextInstruction = finalContext;
         session.contextPack = bootstrapResult.contextPack;
@@ -2451,7 +2464,14 @@ export async function handleLiveSessionStart(
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
     email: orbIdentity?.email || null,
-    active_role: sseActiveRole || null,
+    // VTID-04776: a member session's role was null here. The Assistant
+    // Profile already carries the role the screen declared (view_role), so
+    // use it when the fixed work-surface / guided role is not set. A member
+    // session from an older widget that declares no view_role still reports
+    // null: its stored role is only read later inside the async context
+    // build, and voice_session_facts.role is updated when it resolves.
+    active_role: sseActiveRole || assistantProfile.role || null,
+    surface: assistantProfile.surface,
     user_agent: req.headers['user-agent'] || null,
     origin: req.headers['origin'] || req.headers['referer'] || null,
     transport: transportLabel,
@@ -2492,6 +2512,26 @@ export async function handleLiveSessionStart(
   } catch {
     // Telemetry never blocks session start.
   }
+
+  // VTID-04776: the session's fact row (fire-and-forget, never throws).
+  // Placed after the latency context so `entry` is known; provider, first
+  // audio and the member role arrive later as updates.
+  recordVoiceSessionStart({
+    session_id: sessionId,
+    tenant_id: uuidOrNull(session.identity?.tenant_id),
+    user_id: uuidOrNull(session.identity?.user_id),
+    is_anonymous: isAnonymousSession,
+    surface: assistantProfile.surface,
+    role: sseActiveRole || assistantProfile.role || null,
+    persona_key: assistantProfile.personaKey ?? null,
+    profile_resolution: assistantProfile.resolution,
+    lang,
+    transport: transportLabel,
+    is_mobile: typeof session.is_mobile === 'boolean' ? session.is_mobile : !!clientContext.isMobile,
+    app_version: session.app_version ?? null,
+    entry: session.latencyContext?.entry ?? null,
+    started_at: session.createdAt.toISOString(),
+  });
 
   return res.status(200).json({
     ok: true,
@@ -2650,8 +2690,12 @@ export async function handleLiveSessionStop(
     turn_count: session.turn_count,
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
+    // VTID-04776: this stop had no reason; it is the client's explicit
+    // POST /live/session/stop. Plus which Vitana / language / provider.
+    ...stopEventContext(session, 'client_stop'),
   });
   session.stopEventEmitted = true; // VTID-03561
+  recordLiveSessionEnd(session, session_id, 'client_stop'); // VTID-04776
 
   // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
   // Feeds the "since we last spoke" line + morning greeting on next open. Never

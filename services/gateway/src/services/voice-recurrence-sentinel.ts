@@ -115,6 +115,54 @@ function isoMinusHours(hours: number): string {
 }
 
 // =============================================================================
+// VTID-04776: recurrence after fix
+// =============================================================================
+
+/**
+ * Pure: ms between the most recent fix of this (class, signature) and `nowMs`.
+ * Null when there is no prior fix or the timestamp is unusable (never
+ * negative). This is what the Persistence threshold ("fix never holds for
+ * long", recurrence < 6 h) reads — and what every appendVerdict caller left
+ * null until VTID-04776, so that threshold could never trip.
+ */
+export function recurrenceAfterFixMs(priorFixedAt: string | null | undefined, nowMs: number = Date.now()): number | null {
+  if (!priorFixedAt) return null;
+  const t = Date.parse(priorFixedAt);
+  if (!Number.isFinite(t) || t > nowMs) return null;
+  return nowMs - t;
+}
+
+/**
+ * The most recent `fixed_at` recorded for (class, signature), or null.
+ * Never throws; a failed lookup is logged and reads as "no prior fix".
+ */
+export async function fetchLastFixedAt(klass: string, signature: string): Promise<string | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return null;
+  try {
+    const url =
+      `${SUPABASE_URL}/rest/v1/voice_healing_history?` +
+      `class=eq.${encodeURIComponent(klass)}&` +
+      `normalized_signature=eq.${encodeURIComponent(signature)}&` +
+      `fixed_at=not.is.null&select=fixed_at&order=fixed_at.desc&limit=1`;
+    const res = await fetch(url, { headers: supabaseHeaders() });
+    if (!res || !res.ok) {
+      console.warn(`[VTID-04776] last fixed_at lookup failed for ${klass}/${signature}: ${res?.status ?? 'no response'}`);
+      return null;
+    }
+    const rows = (await res.json()) as Array<{ fixed_at: string | null }>;
+    return rows?.[0]?.fixed_at ?? null;
+  } catch (err) {
+    console.warn(`[VTID-04776] last fixed_at lookup threw for ${klass}/${signature}: ${(err as Error)?.message}`);
+    return null;
+  }
+}
+
+/** Convenience for appendVerdict callers: recurrence vs the prior fix. */
+export async function resolveRecurrenceAfterFixMs(klass: string, signature: string): Promise<number | null> {
+  return recurrenceAfterFixMs(await fetchLastFixedAt(klass, signature));
+}
+
+// =============================================================================
 // History append
 // =============================================================================
 

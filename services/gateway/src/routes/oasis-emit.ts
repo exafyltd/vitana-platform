@@ -36,10 +36,60 @@ import {
 import type { CicdEventType } from '../types/cicd';
 import { dataExportConsentTag } from '../services/data-export-consent';
 import { buildOrbTurnRespondedPayload } from './orb-turn-event-payload';
+import {
+  updateVoiceSessionFacts,
+  recordVoiceSessionEnd,
+  uuidOrNull,
+} from '../services/voice-session-facts';
 
 const router = Router();
 
 const VTID = 'VTID-02987';
+
+/**
+ * VTID-04776: map the orb-agent's vtid.live.session.start/stop (transport
+ * 'livekit', session.py) onto voice_session_facts. Never throws.
+ */
+export function recordLiveKitAgentLifecycle(topic: string, p: Record<string, unknown>): void {
+  try {
+    if (p.transport !== 'livekit') return;
+    const sessionId = typeof p.session_id === 'string' ? p.session_id : '';
+    if (!sessionId) return;
+    const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
+    const identity = {
+      tenant_id: uuidOrNull(p.tenant_id),
+      user_id: uuidOrNull(p.user_id),
+      transport: 'livekit' as const,
+      provider: 'livekit' as const,
+    };
+    if (topic === 'vtid.live.session.start') {
+      updateVoiceSessionFacts(sessionId, {
+        ...identity,
+        started_at: new Date().toISOString(),
+        is_anonymous: p.is_anonymous === true,
+        ...(typeof p.lang === 'string' ? { lang: p.lang } : {}),
+        ...(typeof p.is_mobile === 'boolean' ? { is_mobile: p.is_mobile } : {}),
+        // `role`/`surface` deliberately not taken from the agent: the token
+        // mint resolved them from the screen (VTID-04560), which decides.
+      });
+    } else if (topic === 'vtid.live.session.stop') {
+      recordVoiceSessionEnd(sessionId, {
+        ...identity,
+        duration_ms: num(p.duration_ms),
+        turn_count: num(p.turn_count),
+        user_turns: num(p.user_turns),
+        model_turns: num(p.model_turns),
+        // session.py approximates chunks from turn counts (~50 per turn).
+        audio_in_chunks: num(p.audio_in_chunks),
+        audio_out_chunks: num(p.audio_out_chunks),
+        stall_count: num(p.stall_count),
+        close_reason: typeof p.reason === 'string' && p.reason ? p.reason : 'livekit_agent_teardown',
+      });
+    }
+  } catch (err) {
+    console.error(`[VTID-04776] livekit facts hook failed: ${(err as Error)?.message}`);
+  }
+}
 
 // Cap body at 16 KiB. Telemetry payloads are small by design.
 const MAX_BODY_BYTES = 16 * 1024;
@@ -251,6 +301,11 @@ router.post(
       actor_role: actor.startsWith('admin:') ? 'admin' : 'agent',
       surface: 'api',
     });
+
+    // VTID-04776: the orb-agent's LiveKit session start/stop already arrive
+    // here — record them in voice_session_facts (fire-and-forget, never
+    // affects this response). The row was created at token mint.
+    recordLiveKitAgentLifecycle(body.topic, effectivePayload);
 
     if (!result.ok) {
       res.status(500).json({
