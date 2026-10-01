@@ -52,6 +52,7 @@ import {
   formatSelectionDebug
 } from './context-window-manager';
 import { isOrbRecallEnabled, recallOrbMemoryItems } from './memory/recall';
+import { isRecallShadowEnabled, runRecallShadow, type ReadPath } from './memory/recall-shadow';
 import { formatPeopleBlock } from './memory/people';
 
 // =============================================================================
@@ -147,6 +148,8 @@ export interface OrbMemoryContext {
   excludedCount?: number;
   /** VTID-01117: Reasons for exclusions (summary) */
   exclusionSummary?: Record<string, number>;
+  /** VTID-04784: which read path produced this context (unset on errors). */
+  read_path?: ReadPath;
 }
 
 // =============================================================================
@@ -830,6 +833,31 @@ export async function fetchMemoryContextWithIdentity(
   limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
   categories?: string[]
 ): Promise<OrbMemoryContext> {
+  const t0 = Date.now();
+  const ctx = await readMemoryContext(identity, limit, categories);
+  // VTID-04784: compare against the other read path in the background
+  // (memory plan phase 2). Never awaited; the session is already answered.
+  if (identity && ctx.ok && ctx.read_path && isRecallShadowEnabled()) {
+    const served = ctx.read_path;
+    const other: ReadPath = served === 'legacy' ? 'recall' : 'legacy';
+    void runRecallShadow(ctx, { served, ms_served: Date.now() - t0 }, () =>
+      readMemoryContext(identity, limit, categories, other),
+    );
+  }
+  return ctx;
+}
+
+/**
+ * The ORB memory read. `forcePath` picks a path regardless of
+ * MEMORY_ORB_RECALL_ENABLED (the VTID-04784 shadow); a forced recall does not
+ * fall back to the legacy read.
+ */
+async function readMemoryContext(
+  identity?: MemoryIdentity | null,
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[],
+  forcePath?: ReadPath,
+): Promise<OrbMemoryContext> {
   // If no identity provided, fall back to DEV_IDENTITY in dev-sandbox mode
   const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
     ? identity
@@ -856,12 +884,23 @@ export async function fetchMemoryContextWithIdentity(
 
   // VTID-04452: read through the broker (one recall()) when enabled. Falls
   // back to the legacy six-table read below if the broker gives nothing.
-  if (identity && isOrbRecallEnabled()) {
+  const useRecall = forcePath ? forcePath === 'recall' : isOrbRecallEnabled();
+  if (identity && useRecall) {
     const recalled = await recallOrbMemoryItems(effectiveIdentity);
     if (recalled.ok) {
-      return buildOrbMemoryContextFromItems(
-        recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
-      );
+      return {
+        ...buildOrbMemoryContextFromItems(
+          recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
+        ),
+        read_path: 'recall',
+      };
+    }
+    if (forcePath === 'recall') {
+      return {
+        ok: false, user_id: effectiveIdentity.user_id, tenant_id: effectiveIdentity.tenant_id,
+        items: [], summary: 'recall unavailable', formatted_context: '',
+        fetched_at: new Date().toISOString(), error: recalled.error ?? 'recall_not_ok',
+      };
     }
   }
 
@@ -1104,7 +1143,8 @@ export async function fetchMemoryContextWithIdentity(
       formatted_context: formattedContext,
       fetched_at: fetchedAt,
       contextMetrics: selectionResult.metrics,
-      excludedCount: selectionResult.excludedItems.length
+      excludedCount: selectionResult.excludedItems.length,
+      read_path: 'legacy',
     };
 
   } catch (err: any) {

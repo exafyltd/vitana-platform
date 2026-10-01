@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04784",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04784-recall-shadow.test.ts", "cwd": "services/gateway",
+      "reason": "the shadow runs inside a voice session's memory read; the evidence is the recall-shadow log lines on real sessions, summarised by scripts/memory/recall-shadow-report.sh (read-only)" }
+  ]
+}

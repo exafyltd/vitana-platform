@@ -758,6 +758,9 @@ jobs:
 #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
 #     memory through the broker; falls back to the legacy read on failure.
 #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
+#   MEMORY_ORB_RECALL_SHADOW (VTID-04784) -- after each ORB memory read, the
+#     other read path runs in the background and one counts-only
+#     '[VTID-04784] recall-shadow' line compares them (memory plan phase 2).
 # Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
 # readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
 # the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
@@ -1019,7 +1022,7 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED","MEMORY_ORB_RECALL_SHADOW",
                                                 "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE",
                                                 "NAV_V2_ENABLED","NAV_REGISTRY_URL",
                                                 "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
@@ -1091,6 +1094,7 @@ jobs:
                           {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
                           {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
                           {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
+                          {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},

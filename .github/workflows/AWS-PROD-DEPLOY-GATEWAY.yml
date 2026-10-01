@@ -1176,6 +1176,16 @@ jobs:
           # VTID-04775: C1 voice session outcome, shadow (telemetry only).
           # VTID-04782: E3/E6 CRM lead score + account classification, shadow (business fields only).
 
+          # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
+          # memory read; recall() runs in the background and one counts-only
+          # '[VTID-04784] recall-shadow' line compares the two per session.
+          # Read-only, never awaited. The recall switch itself stays unset
+          # until scripts/memory/recall-shadow-report.sh shows they agree.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
+
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set
           # or add anything new — deliberately the opposite precedence of an
