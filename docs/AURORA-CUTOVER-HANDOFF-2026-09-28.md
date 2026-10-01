@@ -12,6 +12,70 @@ Branch for all of this: `claude/aws-supabase-aurora-cutover-oxdie9`, on both
 
 ---
 
+## ⚠️ UPDATE 2026-10-01 (VTID-04755) — supersedes the security-group theory below
+
+**The proxy timeouts are not a security-group problem. Aurora itself is
+offline: RDS lost access to its KMS key.** Read live on 2026-10-01:
+
+```
+aws rds describe-db-clusters --db-cluster-identifier vitana-aurora-prod
+  Status: inaccessible-encryption-credentials   (cluster AND both instances)
+  KmsKeyId: arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1
+  LatestRestorableTime: 2026-09-23T22:44:19Z
+```
+
+RDS event timeline (`aws rds describe-events`):
+
+| UTC | Event |
+|---|---|
+| 2026-09-23 22:30 | "unable to access the KMS encryption key … likely due to the key being disabled" (reader) |
+| 2026-09-23 22:47 | both instances stopped |
+| 2026-09-30 22:46 | 7-day recoverable window expired → terminal `inaccessible-encryption-credentials` |
+| 2026-09-30 22:48 | "RDS recommends that you initiate a point-in-time-restore" |
+
+Consequences:
+- **The existing cluster cannot be brought back in place.** Recovery is a
+  restore (PITR up to 2026-09-23 22:44Z, or one of ~60 snapshots) into a
+  **new** cluster.
+- **Every snapshot and the PITR log are encrypted with the same key**, so
+  any restore first needs that key usable again. If the key is
+  *pending deletion*, that is the most urgent thing in this whole migration:
+  `aws kms cancel-key-deletion` + `enable-key` before the waiting period ends,
+  or every backup becomes unrecoverable. If it is merely *disabled*, or its
+  key policy no longer lets RDS use it, re-enable / restore the policy.
+- **No production impact.** Production still reads Supabase
+  (`OPERATOR_SQL_READONLY_BACKEND=supabase`; no Aurora errors in
+  `/vitana/gateway` logs). Aurora holds only migration copies; Supabase is
+  still the source of truth, so a fresh DMS full load into a new cluster is
+  also a valid recovery path if the backups are lost.
+- No migration doc records any KMS change. Who/what changed the key is
+  unknown — this identity has no `kms:*` or `cloudtrail:LookupEvents`.
+
+**What only the owner can do** (this identity has no KMS/CloudTrail access,
+and should not be granted KMS write):
+
+```bash
+K=1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1; R=eu-central-1
+aws kms describe-key --key-id $K --region $R \
+  --query 'KeyMetadata.{state:KeyState,mgr:KeyManager,deletion:DeletionDate}'
+aws kms get-key-policy --key-id $K --policy-name default --region $R
+aws cloudtrail lookup-events --region $R --start-time 2026-09-22T00:00:00Z \
+  --lookup-attributes AttributeKey=ResourceName,AttributeValue=$K \
+  --query 'Events[?EventName!=`Decrypt` && EventName!=`GenerateDataKey`].[EventTime,EventName,Username]' --output text
+# If state is PendingDeletion:  aws kms cancel-key-deletion --key-id $K --region $R
+# If state is Disabled:         aws kms enable-key --key-id $K --region $R
+```
+
+Then decide: PITR restore to a new cluster (keeps data through 2026-09-23),
+or a fresh cluster + DMS full load from Supabase. Either way the Aurora
+endpoint changes (or the old cluster must be deleted first to reuse the
+name — deletion protection is on; a destructive owner decision), and the
+~15 ECS task definitions carrying `vitana-aurora-prod.*` hosts need review.
+The EC2 security-group check below is now secondary; only revisit it once a
+working cluster exists.
+
+---
+
 ## TL;DR
 
 **Not cut over.** The last mile is Step 7 of the runbook (verify the Aurora
