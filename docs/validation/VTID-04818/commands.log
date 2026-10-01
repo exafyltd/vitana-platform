@@ -7,3 +7,4 @@ npx jest $(grep -rlE "operator-turn-memory|agent-memory-context" test)  # memory
 # Evidence (production, read-only SQL): dev_agent_memory rows by source/category in 30 days — session incident 39,
 # decision 39, gotcha 34, convention 33; autopilot convention 25, gotcha 25, incident 21, decision 9 (plus 47
 # autopilot task_outcome status rows, which are not extracted lessons and are not checked).
+npx jest (full gateway suite, merged with origin/main d5e5692)          # 1457 suites, 23353 passed, 0 failed (outputs/jest-full.txt)
