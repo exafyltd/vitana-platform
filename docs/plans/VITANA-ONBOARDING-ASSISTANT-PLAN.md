@@ -102,8 +102,8 @@ Problem with today's hello: sender is a stranger, no reason to answer. Keep it; 
    framed with the *shared reason*. Replies land in the normal inbox with a push.
 2. **Reason-rich prompt to the existing member**, not a bare DM: the existing in-app card ("New here: Sam — also into sleep optimisation. Say hi?"). **In-app card only — no push, no new surface (owner decision).** Reuse the existing new-member card; only enrich its copy with the shared reason.
 3. **Mariia Maksina is the communication centre (owner decision).** Instead of a pool of hosts, Vitana routes onboarding communication through Mariia: when a member reaches a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" and, on yes, sends that chat message (read-back + confirm flow). Mariia is the human welcome point; her inbox load needs a cap/digest (max N onboarding messages/day, grouped) so she isn't flooded. Welcome Hosts pool is dropped for v1.
-5. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
-6. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
+4. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
+5. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
    in the cohort receives a personal welcome DM *from Mariia*. Owner's wording, used as the seed: "So nice to see you with us. Welcome, and I'm looking
    forward to many beautiful moments together on our joint Longevity Journey!" — final copy may vary slightly per language.
    - Sent once per member, on membership creation (DB-trigger/tick path, not `/auth/login`), idempotent via a `voa_mariia_welcome_sent_at` marker.
@@ -113,7 +113,7 @@ Problem with today's hello: sender is a stranger, no reason to answer. Keep it; 
      (`VOA_WELCOME_SENDER_USER_ID`, not hardcoded), and the message is capped/idempotent. Replies from members go to Mariia's inbox → covered by the daily digest/cap in §4.5.3.
    - Pilot: only the allowlisted test members (Jovana, Alex Red, Alex Blue) receive it; Mariia does not message herself.
    - Milestone loop stays: later Vitana can also tell Mariia when a member has joined the Longevity Journey (§4.5.3).
-7. Low-risk first: react to a post, join a group, RSVP — before DMs. Ladder order reflects shyness.
+6. Low-risk first: react to a post, join a group, RSVP — before DMs. Ladder order reflects shyness.
 Consolidate on one match source (see risk R3): use `daily_matches`/intent matches whichever is live per query of the live schema.
 
 ### 4.6 Inspiration posts — Autopilot posts on the member's behalf (owner request 2026-10-01)
@@ -233,8 +233,8 @@ So the "test run with a new registered user" is done in three safe layers:
 - R4 Push infra: FCM project `lovable-vitana-vers1` is hardcoded while GCP is decommissioned — verify push actually delivers before promising it.
 - R5 Journey/T-topic content is German-first scripts; check en/es/sr/ar coverage; du-form; RTL for Arabic.
 - R6 `first_time_welcome` lazy row and stale seed copy ("Maxina") — handled in §3.
-- R8 Inspiration posts: notification storm (handled by trigger skip), misattributed quotes (curated library only), song-lyric copyright (titles, not lyrics), feed flooding (tenant cap), posts feeling fake (consent per post + "created with Vitana" label).
 - R7 Greeting ladder still inline in `orb-live.ts` (high-risk file): keep the rung change minimal and characterization-tested.
+- R8 Inspiration posts: notification storm (handled by trigger skip), misattributed quotes (curated library only), song-lyric copyright (titles, not lyrics), feed flooding (tenant cap), posts feeling fake (consent per post + "created with Vitana" label).
 
 ## 8. Decisions (owner, 2026-09-29 / 2026-10-01)
 
@@ -243,7 +243,6 @@ So the "test run with a new registered user" is done in three safe layers:
 3. Veteran-side prompt: existing in-app card only, not extended.
 4. Live pilot with real messages to Mariia, Jovana, Alex Red, Alex Blue (allowlist-enforced).
 5. Email dropped.
-
 6. Inspiration posts: Autopilot prepares positive quote-card posts on the member's behalf (weekend wishes, quotes from happy songs and historical figures).
 
 Open:
