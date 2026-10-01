@@ -81,6 +81,7 @@ import {
   isPlanFileCheckEnabled,
 } from './dev-autopilot-approval-gates';
 import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
+import { isClaimFeasibilityOn, runClaimFeasibilityCheck, recordClaimFeasibilityOutcome, type FeasibilityContext } from './jev/gates/claim-feasibility-gate';
 import { rescoreTick } from './recommendation-quality/scoring-service';
 import { qualityReviewTick } from './recommendation-quality/quality-review';
 import { weeklySummaryTick } from './recommendation-quality/acceptance';
@@ -3074,6 +3075,16 @@ export async function backgroundExecutorTick(): Promise<void> {
       payload: { execution_id: exec.id, finding_id: exec.finding_id },
     });
 
+    // VTID-04774 (Jev P1 A2): feasibility check in shadow — fire-and-forget,
+    // never delays the claim or changes the dispatch below.
+    if (isClaimFeasibilityOn()) {
+      void runClaimFeasibilityCheck({
+        executionId: exec.id,
+        findingId: exec.finding_id,
+        load: () => loadFeasibilityContext(s, exec),
+      });
+    }
+
     // VTID-02703: dispatch path — Cloud Run Job (durable) or in-process (fast).
     // The Job runtime survives container churn that kills long-running
     // fire-and-forget Promises. Used for orb-live.ts and any execution
@@ -3273,6 +3284,9 @@ export async function applyExecutionResult(
   execId: string,
   result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean; cancelled?: boolean },
 ): Promise<void> {
+  // VTID-04774: the A2 feasibility row (if any) learns how the run ended.
+  // Fire-and-forget; no row when the gate was off.
+  void recordClaimFeasibilityOutcome(execId, result);
   // VTID-04446: the running phase is over, whatever the result — close its
   // lease so the watchdog has nothing to decide. Idempotent, fail-open.
   if (isRunLeaseEnabled()) await releaseDevRunLease(leaseRest(s), execId, runPhaseOutcome(result), result.ok ? null : (result.error || null));
@@ -4353,3 +4367,37 @@ export function startBackgroundExecutor(): void {
 }
 
 export { LOG_PREFIX, DRY_RUN, BACKGROUND_TICK_MS };
+
+/**
+ * VTID-04774: what the A2 feasibility check sees — the finding's title, the
+ * plan version's excerpt and file paths, and whether this is a fix-mode or
+ * self-heal child. Two reads, the same ones the agent runner makes.
+ */
+async function loadFeasibilityContext(
+  s: SupaConfig,
+  exec: { finding_id: string; plan_version: number; metadata?: Record<string, unknown> | null },
+): Promise<FeasibilityContext | null> {
+  const [planR, findR] = await Promise.all([
+    supa<Array<{ plan_markdown: string; files_referenced: string[] | null }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&select=plan_markdown,files_referenced&limit=1`,
+    ),
+    supa<Array<{ title?: string | null; risk_class?: string | null; source_type?: string | null; spec_snapshot?: Record<string, unknown> | null }>>(
+      s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=title,risk_class,source_type,spec_snapshot&limit=1`,
+    ),
+  ]);
+  const plan = planR.ok && planR.data && planR.data[0] ? planR.data[0] : null;
+  if (!plan) return null;
+  const rec = findR.ok && findR.data && findR.data[0] ? findR.data[0] : null;
+  const md = exec.metadata || {};
+  const title = (rec?.title as string) || (typeof rec?.spec_snapshot?.title === 'string' ? (rec.spec_snapshot.title as string) : '') || '';
+  const prior = typeof md.parent_failure === 'string' ? (md.parent_failure as string) : typeof md.failure_reason === 'string' ? (md.failure_reason as string) : null;
+  return {
+    title,
+    plan: plan.plan_markdown || '',
+    files: plan.files_referenced || [],
+    fix_mode: !!md.fix_mode,
+    prior_failure: prior,
+    risk_class: rec?.risk_class ?? null,
+    source_type: rec?.source_type ?? null,
+  };
+}

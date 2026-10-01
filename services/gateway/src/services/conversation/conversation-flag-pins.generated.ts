@@ -49,6 +49,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   GOOGLE_CLOUD_PROJECT: { staging: "project-da3eb05a-c86e-47cb-85f", prod: "project-da3eb05a-c86e-47cb-85f" },
   IMAGE_PROVIDER: { staging: null, prod: "dynamic" },
   JEV_AGENT_PROGRESS_MODE: { staging: "shadow", prod: "shadow" },
+  JEV_CLAIM_FEASIBILITY_MODE: { staging: "shadow", prod: "shadow" },
   JEV_DECISIONS_ENABLED: { staging: "false | true", prod: "true" },
   JEV_SELFHEAL_INCIDENT_DEDUPE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_SELFHEAL_PROVIDER_FAILURE_MODE: { staging: "shadow", prod: "shadow" },

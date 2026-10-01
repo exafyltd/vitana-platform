@@ -715,6 +715,12 @@ top classes become findings.
   the ECS executor task is wired once its execution role is confirmed to read
   the TypeSafe secret.
 
+- **A2 — VTID-04774 (shadow).** `jev/gates/claim-feasibility-gate.ts`, asked
+  once per execution right after the executor claims it (the one point every
+  execution passes). Jev `execution_feasibility`: feasible / needs_human /
+  needs_infra / too_large / unclear. The outcome comes from
+  `applyExecutionResult`. Pinned shadow on both gateways.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

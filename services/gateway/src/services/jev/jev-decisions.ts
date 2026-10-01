@@ -337,6 +337,49 @@ const defs: JevDecisionDef[] = [
       recent_activity: i.recent_activity,
     }),
   },
+  {
+    // VTID-04774 (Jev P1 A2): before a Dev Autopilot execution is dispatched,
+    // can the agent's tools finish it in one PR? Telemetry only: the
+    // finding's title, plan excerpt and file paths — never file contents.
+    name: 'execution_feasibility',
+    description: 'Can the Dev Autopilot agent finish this execution with its tools, and if not, what blocks it?',
+    roles: ENGINEERING,
+    input: z.object({
+      title: text(300),
+      plan: text(3000),
+      files: z.array(z.string().trim().max(200)).max(40),
+      fix_mode: z.boolean(),
+      prior_failure: optText(800),
+      risk_class: optText(40),
+      source_type: optText(60),
+    }),
+    questions: {
+      feasibility: {
+        type: 'choice',
+        instructions: 'Can a coding agent that can only read, search and edit repository files and run tsc/jest finish this task in one pull request?',
+        criteria: {
+          feasible: 'Yes: the change is in code the agent can reach and the task says clearly what to change.',
+          needs_human: 'It needs a human decision, product choice, approval, credentials or data the agent cannot reach.',
+          needs_infra: 'It needs a change outside the repository: AWS/console, secrets, CI settings, DNS, a provider account or billing.',
+          too_large: 'It is a multi-PR or open-ended effort, far beyond one focused change.',
+          unclear: 'The task is too vague or contradictory to know what to change.',
+        },
+      },
+      will_succeed: {
+        type: 'noul',
+        instructions: 'Will the agent open a correct pull request for this task?',
+      },
+    },
+    primary: 'feasibility',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      task: { title: i.title, plan: i.plan, files: i.files, fix_mode: i.fix_mode, prior_failure: i.prior_failure ?? null },
+      context: { risk_class: i.risk_class ?? null, source_type: i.source_type ?? null },
+    }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
