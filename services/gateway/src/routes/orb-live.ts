@@ -4014,6 +4014,12 @@ async function executeLiveApiToolInner(
       }
 
       case 'search_memory': {
+        // VTID-04798 (owner decision 2026-10-01): a work surface never reads the
+        // member's personal memory. The catalog no longer declares the tool
+        // there; this refuses a call the model makes anyway.
+        if (session.assistantProfile?.isWorkSurface) {
+          return { success: false, result: '', error: 'search_memory is not available on this surface' };
+        }
         // PR D-3: lifted to services/orb-tools-shared.ts.
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -10304,6 +10310,8 @@ async function connectToLiveAPI(
             tenant_id: session.identity.tenant_id,
             user_id: session.identity.user_id,
             session_id: session.sessionId,
+            work_surface: session.assistantProfile?.isWorkSurface === true,
+            served_role: session.active_role,
             turn_count: session.turn_count,
           });
         }

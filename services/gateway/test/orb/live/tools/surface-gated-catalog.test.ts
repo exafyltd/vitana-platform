@@ -48,6 +48,8 @@ describe('surface gating', () => {
   test('command-hub surface never gains backoffice tools (its own gate is VTID-04310)', () => {
     const before = names(buildLiveApiTools('authenticated', '/command-hub', 'developer'));
     expect(before).not.toEqual(expect.arrayContaining(BACKOFFICE_TOOL_NAMES));
-    expect(before).toContain('search_memory');
+    // VTID-04798: the Command Hub never reads the member's personal memory.
+    expect(before).not.toContain('search_memory');
+    expect(before).toContain('search_knowledge');
   });
 });

@@ -152,7 +152,7 @@ function surfaceAllowlist(surface: 'admin' | 'backoffice'): Set<string> {
  * declarations, diary/water/journey tools included) with the developer
  * tools appended last — so the tool-catalog byte budget (VTID-04026/04097)
  * almost certainly trimmed the developer tools away. It now gets the
- * navigation tools, memory/knowledge search, the developer read tools, and
+ * navigation tools, the developer read tools, and
  * `operator_delegate` — the one way voice queues work (same Operator turn,
  * approval hold and exafy_admin gate as the Operator Console).
  *
@@ -164,7 +164,9 @@ export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
   'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
   'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
 ]);
-const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
+// VTID-04798 (owner decision 2026-10-01): no search_memory here — the Command
+// Hub never reads the member's personal memory (CLAUDE.md 42g).
+const COMMAND_HUB_EXTRA_TOOLS = new Set([OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
 function commandHubAllowlist(): Set<string> {
   return new Set<string>([
     ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),

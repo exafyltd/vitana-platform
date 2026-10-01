@@ -40,6 +40,13 @@ export interface RememberBackstopSession {
   /** VTID-04690: a remember_fact call this turn answered STATUS: already_known. */
   rememberFactAlreadyKnownThisTurn?: boolean;
   openRememberConflicts?: OpenConflict[];
+  /** VTID-04798: a work-surface session never reads or writes personal facts. */
+  assistantProfile?: { isWorkSurface?: boolean } | null;
+}
+
+/** VTID-04798: the backstops serve the member's own memory, member surfaces only. */
+function onWorkSurface(session: RememberBackstopSession): boolean {
+  return session.assistantProfile?.isWorkSurface === true;
 }
 
 type EmitDiag = (session: any, stage: string, extra?: Record<string, unknown>) => void;
@@ -84,7 +91,7 @@ export function maybeRunRememberBackstop(
     session.openRememberConflicts = [];
     return null;
   }
-  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
@@ -169,7 +176,7 @@ export function maybeRunForgetBackstop(
   const toolCalled = session.forgetFactCalledThisTurn === true;
   session.forgetFactCalledThisTurn = false;
   if (toolCalled) return null;
-  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRememberBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;
@@ -246,7 +253,7 @@ export function maybeRunRecallBackstop(
   const toolCalled = session.memoryWriteToolCalledThisTurn === true;
   session.memoryWriteToolCalledThisTurn = false;
   if (toolCalled) return null;
-  if (!isRecallBackstopEnabled() || session.upstreamProvider !== 'nova_sonic') return null;
+  if (!isRecallBackstopEnabled() || session.upstreamProvider !== 'nova_sonic' || onWorkSurface(session)) return null;
   const userId = session.identity?.user_id;
   const tenantId = session.identity?.tenant_id;
   if (!userId || !tenantId || !session.upstreamClient) return null;

@@ -2836,6 +2836,7 @@ export async function handleLiveSessionStop(
             userId,
             sessionId: session_id,
             activeRole,
+            workSurface: session.assistantProfile?.isWorkSurface === true,
             channel: 'orb_voice',
             trigger: 'sse_stop_memory_items',
           });

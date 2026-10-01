@@ -52,11 +52,11 @@
   "connect:command-hub-developer-en": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "3ebe1c617895a297dce9c3f4b648b77e36db0f3ad25b1e78df17e846945650d1",
-    "instruction_bytes": 10183,
-    "tools_sha256": "85290a3c45d88b9f7fa3c5483dbdc3605eccf943c127c9054acec5cec38cab88",
-    "tools_bytes": 54750,
-    "tool_count": 157,
+    "instruction_sha256": "a10713a9caa4cfbbbbec6d7b6a72d4518bb7cdfac7026752aeb76c0dbf9bc116",
+    "instruction_bytes": 10130,
+    "tools_sha256": "32e77fa250c61181e98f3e8c66c99fa78fdcb306be6f0a09d208f1cf19fbae74",
+    "tools_bytes": 54271,
+    "tool_count": 156,
     "deferred_tools": 0
   },
   "connect:devon-specialist-en": {
@@ -156,12 +156,12 @@
     "sha256": "c076221cc0800d5a00c0576daf0a0e0f2e8da01ded30da03f108ef5c314d1122"
   },
   "turn:greeting turn (first assistant turn, no user speech)": {
-    "sha256": "6f39ef99ca7a3c297926c7a0224fc47c8b83857e0b66394b0c36db6ba4615a9c"
+    "sha256": "6239f31178dda5943c1b9fce9de50a85d86653f97314a6deb9bed29deecb6bb9"
   },
   "turn:regular turn (anonymous, no identity)": {
     "sha256": "d059c4acd94bc4fa4e4efe40ee2816b10692d94bae17a817c0535598caba45fd"
   },
   "turn:regular turn (user + assistant, authenticated)": {
-    "sha256": "71a1236179fc288a5682bf8f957b602442b80742a3f4846eb28ea10c083edeff"
+    "sha256": "1a4f22496f90f0ff29e5fb69942993cc25c5d6507552486341d9c238db547df1"
   }
 }

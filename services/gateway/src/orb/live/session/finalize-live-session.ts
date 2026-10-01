@@ -44,6 +44,8 @@ export interface FinalizableLiveSession {
   clientContext?: { timezone?: string | null } | null;
   /** VTID-04425: mid-session context_update counters, when any arrived. */
   contextUpdateStats?: ContextUpdateStats;
+  /** VTID-04798: a work-surface session commits no personal facts. */
+  assistantProfile?: { isWorkSurface?: boolean } | null;
 }
 
 type ScheduleRefreshFn = (input: {
@@ -198,6 +200,7 @@ export function finalizeLiveSession(
       userId,
       sessionId: opts.sessionId,
       activeRole: session.active_role || 'community',
+      workSurface: session.assistantProfile?.isWorkSurface === true,
       // VTID-04365 (main): recorded on the memory-system summary.
       channel: 'orb_voice',
       trigger: opts.reason,

@@ -511,16 +511,10 @@ async function tier1ExactMatch(
     bump(uid, stated ? 0.30 : 0.20, 'memory_fact', `${(r as any).fact_key} = ${(r as any).fact_value}`);
   }
 
-  // (c) health_features_daily — feature_key
-  const { data: actRows } = await repo.searchHealthFeaturesByKeyword(sb, kwLike);
-  const actCounts = new Map<string, number>();
-  for (const r of actRows || []) {
-    const uid = String((r as any).user_id);
-    actCounts.set(uid, (actCounts.get(uid) ?? 0) + 1);
-  }
-  for (const [uid, n] of actCounts) {
-    bump(uid, 0.20 + Math.min(0.05, n * 0.005), 'logged_activity', `${n} entries matching "${keyword}"`);
-  }
+  // (c) VTID-04798: health_features_daily (sleep, steps, heart rate, meals,
+  // mood) is no longer a lane. A suggestion shows its reason to another
+  // member, and a member's health tracking is GDPR Art. 9 data that reaches
+  // only their own surfaces and the Health Coach (plan §8.2).
 
   // (d) community_groups via topic_key + community_group_members
   const { data: grpRows } = await repo.searchGroupsByTopicOrName(sb, kwLike);

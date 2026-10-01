@@ -23,6 +23,7 @@
 import { createHash } from 'crypto';
 import { extractAndPersistFacts, isInlineExtractionAvailable } from './inline-fact-extractor';
 import { addSessionFact } from './session-memory-buffer';
+import { mayWritePersonalFacts } from './memory/scope';
 
 // =============================================================================
 // Configuration
@@ -131,6 +132,14 @@ export interface DeduplicatedExtractInput {
   turn_count?: number;
   /** Force extraction even if dedup would skip it (e.g., session end) */
   force?: boolean;
+  /**
+   * VTID-04798: the conversation runs on a work surface (Command Hub, admin,
+   * BackOffice, commerce). Facts are the member's personal memory, so a work
+   * conversation never writes them.
+   */
+  work_surface?: boolean;
+  /** VTID-04798: the role the conversation serves; a work role also skips. */
+  served_role?: string | null;
 }
 
 export interface DeduplicatedExtractResult {
@@ -154,6 +163,11 @@ export interface DeduplicatedExtractResult {
 export function deduplicatedExtract(
   input: DeduplicatedExtractInput,
 ): DeduplicatedExtractResult {
+  // VTID-04798: never turn a work conversation into personal facts.
+  if (!mayWritePersonalFacts({ workSurface: input.work_surface, role: input.served_role })) {
+    return { extracted: false, skip_reason: 'work_surface' };
+  }
+
   // Check availability first
   if (!isInlineExtractionAvailable()) {
     return { extracted: false, skip_reason: 'inline_extraction_unavailable' };
