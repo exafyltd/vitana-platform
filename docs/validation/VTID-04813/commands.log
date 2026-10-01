@@ -1,0 +1,151 @@
+# VTID-04813 — what was actually run, in order
+#
+# Honest record, including the wrong turns. Read-only investigation first,
+# then code, then verification.
+
+## 1. Establish the fault is real and Polly cannot fix it
+
+# Polly's Russian voice table — standard engine, the only language not on neural
+grep -n "POLLY_VOICES" -A 30 services/gateway/src/services/tts/polly.ts
+#   -> ru: { voiceId: 'Tatyana', engine: 'standard', languageCode: 'ru-RU' }
+#   -> file's own comment: "a quality step down from ru-RU-Wavenet-A"
+#   -> DescribeVoices(ru-RU) was re-measured live on 2026-09-29 under
+#      VTID-04724: exactly Tatyana + Maxim, BOTH standard-only.
+
+## 2. Work out what "like for Serbian" actually means today
+#
+# WRONG TURN #1: there were two plausible readings and they lead to
+# materially different work —
+#   (a) widen the Vertex/Gemini Live bridge to ru (the Serbian *solution*)
+#   (b) point ru's cascade TTS at a Google Cloud TTS voice
+#       (ru-RU-Wavenet-A, literally "replace Tatyana with a Google voice")
+# Serbian has had THREE answers over time (Google TTS, then Fish, then the
+# Vertex bridge), so "like for Serbian" is ambiguous on its own. Resolved it
+# by checking what Serbian runs RIGHT NOW rather than by asking:
+
+grep -rn "VERTEX_SERBIAN_BRIDGE_ENABLED" .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+#   -> {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"} is pinned on
+#      PRODUCTION. So the live Serbian mechanism is the Vertex/Gemini bridge
+#      -> reading (a).
+
+## 3. Verify every precondition rather than assuming it
+
+# Does Gemini Live actually speak Russian?
+#   WebFetch ai.google.dev/gemini-api/docs/live-guide
+#   -> 99 languages; `ru` AND `sr` both listed. Confirmed 2026-10-01.
+
+# Is the Gemini voice for ru correctly gendered for Vitana (VTID-04445)?
+grep -n "GEMINI_VOICE_GENDER" -A 40 services/gateway/src/orb/live/voice/persona-voice-gender.ts
+#   -> Kore: female, Aoede: female, Charon: male
+
+# What voice will a ru bridge session actually get? (read-only, live DB)
+#   SELECT policy_key, value_json FROM decision_policy
+#    WHERE policy_key IN ('voice.live_api.voice.ru','voice.live_api.voice.sr');
+#   -> ru: {"voice_name":"Aoede","fallback_lang":"en"}
+#   -> sr: {"voice_name":"Aoede","fallback_lang":"en"}
+#   IDENTICAL. ru inherits a voice already proven on this bridge in
+#   production, and Aoede is female -> no DB change needed or made.
+
+# Is the CLAUDE.md watchdog-parity precondition satisfiable?
+sed -n '335,365p' services/gateway/src/orb/live/session/live-session-controller.ts
+grep -n "SESSION_TIMEOUT_MS" services/gateway/src/orb/live/config.ts
+sed -n '17880,17905p' services/gateway/src/routes/orb-live.ts
+#   -> cleanupExpiredSessions() + the wsClientSessions sweep both expire any
+#      session idle > SESSION_TIMEOUT_MS (30 min) every 5 min, and NEITHER
+#      reads the provider. A Vertex session is bounded like a Nova one.
+
+# How much traffic would this actually expose? (read-only, live DB)
+#   SELECT metadata->>'lang', count(*) FROM oasis_events
+#    WHERE topic='orb.live.diag' AND metadata->>'stage'='greeting_sent'
+#      AND created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC;
+#   -> de 866, en 258, sr 136, ru 18, fr 3, es 1
+#   ru is ~7.5x SMALLER than sr, which is already on this bridge in prod.
+
+## 4. Governance
+
+# VTID self-allocated BEFORE any code change (CLAUDE.md rule 2b)
+curl -s -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"claude-code","layer":"backend","module":"orb-voice"}'
+#   -> {"ok":true,"vtid":"VTID-04813",...}
+# then UPDATE vtid_ledger: real title/summary, status=in_progress,
+# spec_status=approved (owner instructed the work in conversation).
+
+## 5. Implement
+
+# new: services/gateway/src/orb/live/upstream/vertex-russian-bridge.ts
+# edit: upstream-provider-selector.ts (new SelectionReason + context field,
+#       tryVertexBridgeRescue checks both bridges)
+# edit: routes/orb-live.ts (import + precompute, same shape as sr)
+# edit: both deploy workflows (pin VERTEX_RUSSIAN_BRIDGE_ENABLED=true)
+# edit: CLAUDE.md, .claude/rules/backend.md, .claude/rules/infrastructure.md
+
+## 6. Verify
+
+cd services/gateway && npx tsc --noEmit
+#   -> clean (exit 0)
+
+node node_modules/.bin/jest test/orb/live/upstream/vtid-04813-vertex-russian-bridge.test.ts
+#   -> 17/17 passed
+
+node node_modules/.bin/jest test/orb/live/upstream
+#   -> 49 suites, 589 tests, 0 failures (includes the UNTOUCHED Serbian
+#      bridge suite and the VTID-03723 vertex-unavailable invariant matrix)
+
+# MUTATION TEST A — revert the selector wiring to Serbian-only
+#   -> 2 failed, 15 passed  (AC-7, AC-10 go red)  [restored]
+# MUTATION TEST B — widen the ru predicate to also accept 'sr'
+#   -> 2 failed, 15 passed  (AC-4, AC-5 go red)   [restored]
+
+node node_modules/.bin/jest
+#   -> 1453 suites, 23,304 tests, 0 failures, 109/109 snapshots
+
+## 7. Two repo guards caught real problems — fixed properly, not loosened
+
+# WRONG TURN #2: the VTID-03788 guard failed —
+#   "AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 chars"
+# My explanatory comment pushed the prod run: step 238 chars over GitHub's
+# hard limit. Measured it, then CONDENSED the comment to a one-line pointer
+# (the full rationale lives in the module header and backend.md) rather than
+# touching the guard. Final headroom: 49 chars.
+python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))
+[print(len(s['run']),s['name'][:45]) for j in d['jobs'].values() for s in j.get('steps',[]) if s.get('run') and len(s['run'])>18000]"
+#   -> 19951 (headroom 49), 19498
+
+# WRONG TURN #3: vtid-04525 failed — conversation-flag-pins.generated.ts
+# was stale because I added a new pinned workflow env var.
+node scripts/conversation/generate-flag-pins.mjs
+#   -> + VERTEX_RUSSIAN_BRIDGE_ENABLED: { staging: "true", prod: "true" }
+#   The generator independently resolved the same shape as Serbian, which is
+#   an extra confirmation the wiring is right.
+
+## 8. Validator / staging-gate pre-checks run locally before pushing
+
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway \
+  --repo-root . --base origin/main --head HEAD --title "<pr title>"
+#   -> change suite present and valid for VTID-04813
+
+node scripts/ci/validator-path-guard.cjs <changed_files> gateway_backend
+#   -> APPROVED: 8 in-remit files match the gateway_backend allowlist
+#   -> NOT JUDGED: 5 files outside remit (CLAUDE.md, .claude/rules/**,
+#      the two workflows) — reported, not approved, per VTID-03696
+
+node scripts/ci/validator-path-guard.cjs --route-evidence-required <route_diff>
+#   -> exit 1: "No route registration added" — correctly not required; this
+#      PR edits routes/orb-live.ts but adds no route.
+
+# WRONG TURN #4: the first push failed validate-pr with exit 12,
+# "REJECTED: missing SCOPE_ALLOWLIST:". I had VTID:/VALIDATION_PROFILE: in
+# the PR body but not the other four required markers, and the acceptance.md
+# ACs were in a markdown TABLE (`| AC-1 |`), which the gate's own
+# `^AC-\d+` regex cannot match after stripping. Both fixed: markers added to
+# the body, ACs rewritten as plain lines each followed by a TEST: line, and
+# commands.log + outputs/ added (exit 32/33).
+
+## 9. NOT run
+
+# No real Russian ORB voice session. This session cannot place an ORB call,
+# and CLAUDE.md forbids testing against production. The routing decision and
+# all its gates are proven; the audio is not. The post-deploy signal is the
+# OASIS_PROOF query in acceptance.md returning reason='vertex_russian_bridge'
+# on a ru session that produced audio.

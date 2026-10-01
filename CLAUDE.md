@@ -13,8 +13,14 @@ This file contains critical information for AI assistants working on the Vitana 
 > the platform owner opened a brand-new, dedicated GCP project (90-day free
 > credit window) and asked to revive the Vertex Live API — never deleted,
 > only made structurally unreachable, see `upstream-provider-selector.ts`'s
-> own VTID-03723 header — for **Serbian voice sessions only**, behind
-> `VERTEX_SERBIAN_BRIDGE_ENABLED=true`. Every other Vitana process still
+> own VTID-03723 header — for **Serbian voice sessions** behind
+> `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, and since VTID-04813 for **Russian
+> voice sessions** behind its own separate `VERTEX_RUSSIAN_BRIDGE_ENABLED=true`
+> (Polly has no neural or generative Russian voice at all — only
+> standard-engine `Tatyana`/`Maxim` — so the Russian voice quality is not
+> fixable inside Polly; owner decision 2026-10-01). Two languages, two
+> independent switches, two `ru`/`sr`-only predicates — never one widened
+> language list. Every other Vitana process still
 > runs on AWS exclusively: no OASIS, no autopilot, no other agent, no Cloud
 > Run, no Cloud Scheduler on GCP anywhere else. Before touching any
 > `gcloud`/Cloud Run/Artifact Registry/GCP-project reference below, check
@@ -596,14 +602,19 @@ await page.reload();
     for every language; that general fallback is still permanently dead
     (GCP billing disabled 2026-08-16, VTID-03649) and voice runs on Amazon
     Nova Sonic (+ the Transcribe/Bedrock/Fish or Polly cascade for
-    languages Nova can't speak) for every language except one. **Serbian
-    is the sole, deliberate exception (VTID-04000, §2e-vertex-serbian-bridge):**
-    a NEW, dedicated GCP project (never `lovable-vitana-vers1`) behind
-    `VERTEX_SERBIAN_BRIDGE_ENABLED=true`, narrowly gated in
+    languages Nova can't speak) for every language except two.
+    **`sr` (VTID-04000, §2e-vertex-serbian-bridge) and `ru` (VTID-04813)
+    are the deliberate exceptions:** a NEW, dedicated GCP project (never
+    `lovable-vitana-vers1`), each behind its OWN switch —
+    `VERTEX_SERBIAN_BRIDGE_ENABLED=true` and
+    `VERTEX_RUSSIAN_BRIDGE_ENABLED=true` — each with its own
+    single-language predicate, both narrowly gated in
     `upstream-provider-selector.ts` so no other language or session can
-    ever reach it. Do not reintroduce a Google call ANYWHERE else — this
-    carve-out is one language, one flag, one narrow selector gate, not a
-    general reopening.
+    ever reach it. Do not reintroduce a Google call ANYWHERE else, and do
+    NOT add a third language by widening either predicate into a list: a
+    new bridge language is a new switch, a new predicate and a new VTID,
+    so turning one off never turns another off and deleting one stays a
+    one-file operation.
 28. **IF** validation is needed → **THEN use Claude (via Bedrock).**
 29. **IF** model fallback occurs → **THEN log explicitly.** A fallback that
     lands on Google must be treated as an incident, not as normal operation.

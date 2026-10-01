@@ -2112,6 +2112,12 @@ import {
   resolveVertexLivePersonaVoice,
   enforceVertexVoiceGender,
 } from '../orb/live/upstream/vertex-serbian-bridge';
+// VTID-04813: the second narrow bridge, ru-only, its own switch. Same
+// caller-must-ask trap as the sr one above.
+import {
+  isVertexRussianBridgeEnabled,
+  isVertexRussianBridgeLanguage,
+} from '../orb/live/upstream/vertex-russian-bridge';
 import { bindUpstreamSessionHandlers, isVertexSharedHandlersEnabled } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
 import type { UpstreamLiveClient } from '../orb/live/upstream/types';
@@ -8432,6 +8438,13 @@ async function connectToLiveAPI(
       vertexSerbianBridge: {
         enabled: isVertexSerbianBridgeEnabled(),
         languageSupported: isVertexSerbianBridgeLanguage(session.lang),
+      },
+      // VTID-04813: precomputed identically, from its own pure predicates.
+      // A separate switch from Serbian's on purpose — see
+      // `vertex-russian-bridge.ts`.
+      vertexRussianBridge: {
+        enabled: isVertexRussianBridgeEnabled(),
+        languageSupported: isVertexRussianBridgeLanguage(session.lang),
       },
     });
   } catch (e) {
