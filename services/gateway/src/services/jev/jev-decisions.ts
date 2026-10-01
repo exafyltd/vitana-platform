@@ -553,6 +553,57 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ session: i }),
   },
+  {
+    // VTID-04805 (P2 C3): a voice session stalled (the watchdog fired). From
+    // the session's own counters and timings, what most likely made it slow?
+    // Telemetry only, never what anyone said.
+    name: 'slow_session_cause',
+    description: 'The most likely cause of a stalled ORB voice session, from its telemetry.',
+    roles: ENGINEERING,
+    input: z.object({
+      stall_reason: text(60),
+      timeout_ms: z.number().int().min(0).optional(),
+      provider: optText(60),
+      lang: optText(16),
+      turn_count: z.number().int().min(0).optional(),
+      audio_in_chunks: z.number().int().min(0).optional(),
+      audio_out_chunks: z.number().int().min(0).optional(),
+      greeting_sent: z.boolean().optional(),
+      prewarm_missed: z.boolean(),
+      context_build_ms: z.number().min(0).optional(),
+      context_chars: z.number().int().min(0).optional(),
+      tool_catalog_bytes: z.number().int().min(0).optional(),
+      tool_calls: z.number().int().min(0),
+      tool_failures: z.number().int().min(0),
+      upstream_close_reason: optText(60),
+      reconnects: z.number().int().min(0),
+    }),
+    questions: {
+      cause: {
+        type: 'choice',
+        instructions: 'From these voice-session counters and timings, what most likely made the session stall?',
+        criteria: {
+          upstream_connection: 'The voice model stream was not ready or dropped (no prewarmed stream, upstream closed, no acknowledgement of forwarded audio).',
+          upstream_model: 'The stream was up but the model was slow or silent (no greeting or reply in time) with nothing else unusual.',
+          context_build: 'Building the session context or instruction took long enough to delay the model.',
+          tool_call: 'A tool call was slow or failed and the reply waited on it.',
+          prompt_size: 'The instruction or tool catalog was so large it slowed or confused the model.',
+          client_audio: 'Audio from the member stopped or never arrived; the client or network side.',
+          unknown: 'The counters do not point to a cause.',
+        },
+      },
+      fixable: {
+        type: 'noul',
+        instructions: 'Is this something the product could fix, rather than a one-off network or provider blip?',
+      },
+    },
+    primary: 'cause',
+    threshold: 0.6,
+    pii: 'forbid',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ session: i }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

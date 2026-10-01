@@ -788,6 +788,15 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   cluster per day, never repeated. Turning defect clusters into Dev
   Autopilot findings comes after the data.
 
+- **C3 — VTID-04805 (shadow).** `jev/gates/slow-session-gate.ts`, an hourly
+  tick that judges the previous UTC day once: each stalled voice session
+  (`orb.live.stall_detected`) of this environment is summarised from its own
+  events (prewarm missed, context build time, tool calls/failures, upstream
+  close, reconnects, audio counters — never transcripts) and sent to Jev
+  `slow_session_cause`, next to a small rules mapping (e.g. prewarm missed +
+  forwarding_no_ack → upstream_connection; 22 of 24 such stalls in 14 days).
+  One row per session; agreement with the rules where they name a cause.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
