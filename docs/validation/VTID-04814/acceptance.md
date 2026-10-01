@@ -27,7 +27,7 @@ covers besides members.
 - AC-2: every one of the 67 legacy `DEVHUB.*` ids still opens (65 keep their
   id, the two whose tab moved are `formerIds` of the new tab).
   TEST: npx jest test/navigation/vtid-04814-command-hub-navigation.test.ts
-- AC-3: on the Command Hub, 40 developer phrasings (35 English, 4 German)
+- AC-3: on the Command Hub, 39 developer phrasings (35 English, 4 German)
   put the right screen first; no Command Hub request ever offers a member
   screen, and no member request (80 golden cases) ever offers a Command Hub
   screen.

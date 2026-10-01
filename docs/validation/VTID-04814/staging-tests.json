@@ -24,7 +24,7 @@
       "kind": "existing",
       "ref": "npx jest test/navigation/vtid-04814-command-hub-navigation.test.ts",
       "cwd": "services/gateway",
-      "reason": "134 Command Hub screens match NAVIGATION_CONFIG one to one; every legacy DEVHUB id still opens; 40 developer phrasings resolve on the Command Hub; member requests never reach Command Hub screens and Command Hub requests never reach member screens"
+      "reason": "134 Command Hub screens match NAVIGATION_CONFIG one to one; every legacy DEVHUB id still opens; 39 developer phrasings resolve on the Command Hub; member requests never reach Command Hub screens and Command Hub requests never reach member screens"
     },
     {
       "kind": "existing",
