@@ -519,7 +519,8 @@ Each phase is its own VTID, its own PR, a staging verification, and the owner's 
      - The ranker reads `standard` facts only and no longer reads `health_features_daily`.
      - Existing rows needed no scope backfill: all 3,737 `memory_items` and all facts are personal; developer, customer and support memory already live in their own stores or carry `active_role`.
    - **3b (next):** RLS on transaction-local settings, a non-bypass DB role for the memory module, and only then a role column on `memory_facts`. Role-scoped facts wait for 3b on purpose: ~80 gateway files read `memory_facts` directly with the service role, so a role column without database enforcement would leak role facts into every one of them.
-   - **Open (owner):** `search_memory` is allowed on the Command Hub and reads the member's personal memory there. §8.2's flow rule (personal memory flows into every role) allows it; standing rule 42g (a work surface never carries member content) does not.
+   - **Decided (owner, 2026-10-01): no personal member memory on the Command Hub.** `search_memory` is no longer declared there, the developer persona no longer mentions it, and the live dispatcher refuses it on any work surface. §8.2's flow rule is narrowed accordingly: personal memory flows into every *member* role, never into a work surface (standing rule 42g).
+   - Migration applied to the live project 2026-10-01 (RUN-MIGRATION run 36895020174): 457 fact rows and 65 items `special_category`.
 4. **Snapshot + outbox.**
    - `memory_context_snapshot` rebuilt on change.
    - The voice bootstrap reads one row.

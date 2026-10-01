@@ -18,6 +18,9 @@ Changed:
   - existing rows backfilled.
 - Member ranker: it reads `standard` facts only and no longer reads `health_features_daily`.
 
+- Owner decision 2026-10-01: no personal member memory on the Command Hub. `search_memory` is no longer declared there, the developer persona no longer mentions it, and the live dispatcher refuses it on any work surface.
+- Migration applied to the live project with the owner's go (RUN-MIGRATION run 36895020174).
+
 Not in this change (phase 3b): RLS on transaction-local settings, a non-bypass DB role, and a role column on `memory_facts`.
 
 ## Acceptance
@@ -35,4 +38,7 @@ AC-4: Art. 9 rows are marked by the database on insert, update and backfill, nev
 TEST: scripts/ci/sql-tests/run-memory-sensitivity-test.sh (CI: SQL-MEMORY-SENSITIVITY.yml)
 
 AC-5: another member is matched on standard facts only, never on health tracking.
+TEST: services/gateway/test/services/memory/vtid-04798-memory-scope-sensitivity.test.ts
+
+AC-6: the Command Hub catalog does not declare search_memory, the member catalog does, and the live dispatcher refuses it on a work surface.
 TEST: services/gateway/test/services/memory/vtid-04798-memory-scope-sensitivity.test.ts

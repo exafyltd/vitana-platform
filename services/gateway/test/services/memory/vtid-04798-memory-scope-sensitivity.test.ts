@@ -24,6 +24,7 @@ import {
   maybeRunRecallBackstop,
 } from '../../../src/orb/live/session/remember-backstop-hook';
 import { searchMemoryFactsByKeyword } from '../../../src/services/voice-tools/community-member-ranker-repository';
+import { buildLiveApiTools } from '../../../src/orb/live/tools/live-tool-catalog';
 
 const TEXT = 'User: Mein Projekt ist am Freitag fällig und meine Frau heißt Maria.\nAssistant: Notiert.';
 const ID = { tenant_id: '22222222-2222-2222-2222-222222222222', user_id: '11111111-1111-1111-1111-111111111111' };
@@ -145,6 +146,24 @@ describe('VTID-04798 member ranker', () => {
     const repo = fs.readFileSync(path.join(__dirname, '../../../src/services/voice-tools/community-member-ranker-repository.ts'), 'utf8');
     expect(src).not.toContain('searchHealthFeaturesByKeyword');
     expect(repo).not.toContain("from('health_features_daily')");
+  });
+});
+
+describe('VTID-04798 search_memory stays off work surfaces (owner decision 2026-10-01)', () => {
+  const names = (tools: object[]) =>
+    (tools as Array<{ function_declarations?: Array<{ name: string }> }>).flatMap((g) => (g.function_declarations || []).map((d) => d.name));
+
+  it('the Command Hub catalog does not declare it; the member catalog does', () => {
+    expect(names(buildLiveApiTools('authenticated', '/command-hub/operator', 'developer'))).not.toContain('search_memory');
+    expect(names(buildLiveApiTools('authenticated', '/home', 'community'))).toContain('search_memory');
+  });
+
+  it('the live dispatcher refuses it on a work surface even if the model calls it', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../../src/routes/orb-live.ts'), 'utf8');
+    const at = src.indexOf("case 'search_memory': {");
+    expect(at).toBeGreaterThan(0);
+    const body = src.slice(at, at + 600);
+    expect(body).toMatch(/if \(session\.assistantProfile\?\.isWorkSurface\) \{\s*return \{ success: false/);
   });
 });
 

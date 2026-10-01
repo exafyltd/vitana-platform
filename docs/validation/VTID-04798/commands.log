@@ -14,3 +14,10 @@ npx jest --ci (full gateway suite, first run)   -> 3 suites failed on the intend
          (extractor args), community-member-ranker (health lane), VTID-04542 voice payload snapshot (2 extraction args);
          tests updated, snapshot regenerated with -u
 npx jest --ci (full gateway suite, final)       -> 1439 passed, 1 skipped; 23100 tests passed (outputs/jest-full.txt)
+
+# Owner go 2026-10-01: apply the migration; no personal member memory on the Command Hub
+RUN-MIGRATION.yml (migration_file=supabase/migrations/20261001160000_vtid_04798_memory_sensitivity.sql), run 36895020174 -> success
+SELECT sensitivity, count(*) ... (read-only)  -> facts: 457 special_category / 11500 standard; items: 65 / 3672; triggers + constraints present;
+                                                memory_sensitivity_of('user_medication')=special_category, ('user_hobby_painting')=standard
+search_memory off work surfaces: tsc clean; npx jest test/services/memory test/orb test/vtid-04310* vtid-04560 vtid-04465 vtid-04456 -> 319 suites, 5213 tests passed
+VTID-04542 voice payload snapshot regenerated with -u: command-hub-developer-en tool_count 157 -> 156 (search_memory), persona text only
