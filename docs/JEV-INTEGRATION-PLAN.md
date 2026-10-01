@@ -875,6 +875,16 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   share. 14 days to 2026-10-01: conv_resume + wake_brief 436 sessions, 9%
   engaged; resume_thread + wake_brief 63%; conv_resume + next_step 21%.
 
+- **F (first slice) — VTID-04818 (shadow).** `jev/gates/lesson-novelty-gate.ts`.
+  Before each lesson extracted from an Operator Console turn or a Dev
+  Autopilot run is written to `dev_agent_memory`, the three most similar
+  stored lessons are recalled and Jev `lesson_novelty` judges the candidate
+  (new and durable? new / duplicate / update / too specific / not a lesson).
+  The write is unchanged; agreement is written at once where the similarity
+  rule is certain (≥ 0.92 duplicate, < 0.75 new). Skipping duplicates and
+  superseding updates is enforce. The weekly root-cause roll-up into findings
+  is a later slice.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
