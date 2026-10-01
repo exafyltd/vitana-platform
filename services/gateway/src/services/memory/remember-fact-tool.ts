@@ -21,6 +21,7 @@
 
 import { isIdentityLockedKey, getRedirectTarget, type IdentityLockedKey } from '../memory-identity-lock';
 import { rememberFact } from './remember';
+import { relationKey, sameRelative } from './people';
 
 export type RememberFactStatus = 'profile_owned' | 'already_known' | 'conflict' | 'saved' | 'failed';
 
@@ -310,6 +311,16 @@ export function findRelatedFact(factKey: string, facts: StoredKeyedFact[]): Stor
   if (want.size === 0) return null;
   let best: { fact: StoredKeyedFact; shared: number } | null = null;
   for (const f of facts) {
+    // VTID-04766: keys about relatives match only when they name the same
+    // relative — "spouse_father_name" shares two words with "father_name"
+    // but is never the member's own father.
+    const relative = sameRelative(factKey, f.fact_key, facts);
+    if (relative === false) continue;
+    if (relative === true) {
+      const newer = best && best.shared === Infinity && String(f.extracted_at ?? '') > String(best.fact.extracted_at ?? '');
+      if (!best || best.shared !== Infinity || newer) best = { fact: f, shared: Infinity };
+      continue;
+    }
     const have = keyTokens(f.fact_key);
     let shared = 0;
     for (const t of have) if (want.has(t)) shared++;
@@ -354,7 +365,7 @@ export async function runRememberFact(
   // VTID-04694: the English form of the key. The profile lock is checked on
   // both forms — "geburtstag" is the member's birthday exactly as "birthday"
   // is, and must never be written as an ordinary fact (Codex review, #3791).
-  const canonicalKey = canonicalFactKey(factKey);
+  let canonicalKey = canonicalFactKey(factKey);
   const profileKey =
     resolveProfileKey(factKey, input.about) ??
     (canonicalKey !== factKey ? resolveProfileKey(canonicalKey, input.about) : null);
@@ -380,6 +391,20 @@ export async function runRememberFact(
 
   const pendingConflicts = deps.pendingConflicts ?? defaultPendingConflicts;
   const now = (deps.now ?? Date.now)();
+  let listed: StoredKeyedFact[] | null = null;
+  const listFacts = async (): Promise<StoredKeyedFact[]> => {
+    if (listed === null) {
+      listed = deps.listCurrentFacts
+        ? await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[])
+        : [];
+    }
+    return listed;
+  };
+  // VTID-04766: a relative is stored under one key per relation
+  // ("maria_maksina_father" and "schwiegervater_name" are both
+  // "spouse_father_name" once Maria Maksina is known as the spouse).
+  const relation = relationKey(canonicalKey, await listFacts());
+  if (relation) canonicalKey = relation;
   let stored = await deps.readCurrentFact(input.tenant_id, input.user_id, factKey).catch(() => null);
   // An exact read of the English key before the fact counts as new: the
   // related-fact listing is capped and may miss an older `favorite_food`,
@@ -392,7 +417,7 @@ export async function runRememberFact(
     }
   }
   if (!stored && deps.listCurrentFacts) {
-    const facts = await deps.listCurrentFacts(input.tenant_id, input.user_id).catch(() => [] as StoredKeyedFact[]);
+    const facts = await listFacts();
     const related = findRelatedFact(factKey, facts);
     if (related) {
       // Keep one fact per thing: compare against, and replace, the stored key.

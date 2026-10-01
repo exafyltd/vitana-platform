@@ -3129,3 +3129,26 @@ increment, returns the tenant's month total), `jev_shadow_gate_stats(days)`
 (per-gate calls, decided, agreement rate, cost). Per-tenant control lives in
 `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`
 (no new column).
+
+## Account erasure — `erasure_registry`, `erase_user_data()` (VTID-04765, 2026-10-01) — NOT YET APPLIED
+
+`request-account-deletion` (vitana-v1 edge function) deleted 20 hand-listed tables, then the auth user. On 2026-10-01 the live schema had ~200 more public tables whose `user_id` does not cascade from `auth.users` — memory, diary, health, notifications among them — so their rows outlived the account.
+
+Migration `supabase/migrations/20261001120000_vtid_04765_erase_user_data.sql`.
+
+### erasure_registry
+| Column | Type | Notes |
+|---|---|---|
+| `table_name` | text PK | a public table |
+| `action` | text | only `retain` |
+| `reason` | text NOT NULL | the legal reason (bookkeeping retention, allowlists) |
+| `created_at` | timestamptz | |
+
+Seeded with the financial ledgers and order/payment records (HGB §257, AO §147; to be confirmed by counsel) and the two test/service-account allowlists. service_role only.
+
+### `erase_user_data(p_user_id uuid, p_dry_run boolean default false) returns jsonb`
+- Finds every ordinary or partitioned public table with a uuid `user_id` itself; new tables are covered without a list.
+- Skips `retain` tables and tables whose `user_id` cascades from `auth.users`; those go with the auth user as before.
+- Retries foreign-key failures for up to 5 passes and sweeps again after delete triggers.
+- Returns `{deleted, retained, errors, passes}`. The edge function deletes the auth user only when `errors` is empty.
+- SECURITY DEFINER, `service_role` only. Tested on a throwaway Postgres: `scripts/ci/sql-tests/run-erase-user-data-test.sh` (CI: `SQL-ERASE-USER-DATA.yml`).
