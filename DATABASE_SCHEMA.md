@@ -1978,6 +1978,15 @@ Existing `user_guided_journey_state.current_session` pointers (> 1) were
 shifted +4 so they keep referencing the same content. The current published
 snapshot was rewritten in place by the same migration.
 
+**VTID-04762 (Audiobook Season 0):** now **100 sessions / 260 topics**.
+Migration `20261001120000` prepended the six-episode Prolog (T255-T260,
+`chapter_id='prolog'`, shown as Season 0 of the Audiobook) at sessions 1-6 and
+shifted everything else to 7-100. The `session` CHECK is now
+`BETWEEN 1 AND 100`; `current_session` pointers > 1 shifted +6 (members who
+already started keep their place and the Prolog counts as heard); the current
+published snapshot was rewritten in place; English translation rows (incl.
+`vitana_voice_script`) ship with it and I18N-DB-SEED fills the other locales.
+
 ---
 
 ### journey_checklist_translations (BOOTSTRAP-GUIDED-JOURNEY-POPUP)
