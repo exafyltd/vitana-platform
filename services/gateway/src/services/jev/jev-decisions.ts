@@ -783,6 +783,34 @@ const defs: JevDecisionDef[] = [
       change: { files: i.files, stat: i.diff_stat, patch_excerpt: i.patch_excerpt, tests_in_diff: i.tests_in_diff, fix_rounds: i.fix_rounds },
     }),
   },
+  {
+    // VTID-04816 (P3 A10): which lane does an Operator Console message belong
+    // to? Every turn today sends the model the whole tool catalog (~60 tools).
+    name: 'operator_route',
+    description: 'Which kind of work an Operator Console message asks for.',
+    roles: ENGINEERING,
+    input: z.object({ message: text(4000), developer_tools: z.boolean() }),
+    questions: {
+      lane: {
+        type: 'choice',
+        instructions: 'What does this Operator Console message ask the assistant to do?',
+        criteria: {
+          answer_only: 'Answer or explain from what it already knows; no lookup or action needed.',
+          task_management: 'Create, run, check, approve or reject tasks, specs, executions or recommendations.',
+          code_lookup: 'Look into the codebase: search, read files, code structure, risk of a file.',
+          ops_diagnostics: 'Check live systems: services, logs, database, events, deploy and CI health, a failure.',
+          delivery: 'Open or merge a pull request, or deploy a service.',
+          community: 'Community and member features: people, events, groups, marketplace, messages, wearables.',
+        },
+      },
+    },
+    primary: 'lane',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL,
+    data: 'telemetry',
+    buildState: (i) => ({ message: i.message, developer_tools_available: i.developer_tools }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
