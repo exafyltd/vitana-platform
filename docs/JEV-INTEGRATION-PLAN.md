@@ -767,6 +767,12 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   version → a rules row (repeat), otherwise Jev `execution_repeat` compares
   the two plans and the previous failure. Outcome from the run's result.
 
+- **B5 + B4 — VTID-04802 (shadow).** `jev/gates/deploy-cause-gate.ts`, started
+  with triage: no deploy of this environment in 24 h → rules row "no deploy
+  seen"; otherwise the deploy's commits (previous deploy … this one, ≤5) are
+  scored by Jev `commit_cause_score` from subject + paths. Agreement when
+  triage's affected component is in the top commit's paths.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

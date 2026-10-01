@@ -1,0 +1,7 @@
+# VTID-04802 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04802 + every suite naming self-healing-triage-service or github-service   # 508 passed, 2 skipped
+npx jest test/vtid-04802 test/vtid-04799 test/vtid-04759 test/vtid-04465-operator-pipeline-regression   # 86 tests (outputs/jest-b4-b5.txt)
+npx jest (full gateway suite)                                          # 1443 suites, 23160 tests, 0 failed (outputs/jest-full.txt)
+(read-only) oasis_events 14 d: staging.deploy.completed 299, prod.deploy.completed 33; prod rows carry git_commit + rolled_back_to, staging git_commit only

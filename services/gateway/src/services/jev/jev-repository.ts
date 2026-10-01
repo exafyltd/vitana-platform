@@ -92,3 +92,14 @@ export async function fetchRecentShadowRow(sb: SupabaseClient, gate: string, sub
     .limit(1)
     .maybeSingle();
 }
+
+/** VTID-04802: the newest deploy-completed events of one topic at or before a time. */
+export async function fetchRecentDeployEvents(sb: SupabaseClient, topic: string, beforeIso: string, limit: number) {
+  return sb
+    .from('oasis_events')
+    .select('created_at, metadata')
+    .eq('topic', topic)
+    .lte('created_at', beforeIso)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
