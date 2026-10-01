@@ -731,6 +731,15 @@ top classes become findings.
   rows with no rule class measure what the rules miss. Pinned shadow on both
   gateways.
 
+- **E3 + E6 — VTID-04782 (shadow).** `jev/gates/crm-gates.ts`, run after a
+  Backoffice command executes (both the direct and the approved path). E3:
+  `lead_score` on `crm.lead.create` from business fields only (company,
+  industry, territory, source, job title — never the person); the outcome is
+  the lead's later conversion to an opportunity. E6: `account_classification`
+  on `crm.company.create` and on `sales.customer.create` when the customer is
+  explicitly a company; agreement against the kind the create implies. Both
+  pinned shadow on both gateways.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
