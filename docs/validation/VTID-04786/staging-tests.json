@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04786",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "AP-0910 is a heartbeat job deduplicated across gateway tasks",
+      "path": "/api/v1/automations/registry?domain=memory-intelligence",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"dedupeAcrossInstances\":true"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04786-memory-embedding-backfill-heartbeat.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the cross-instance guard needs controlled run history; staging tests are read-only"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+gh API (read): runs of MARKETPLACE-SYNC-CRON / DAILY-STATUS-UPDATE / ALERT-APP-USERS-IDENTITY-DRIFT; failed job logs (runs 35972832427, 36859125940)
+curl .../actions/workflows/DAILY-STATUS-UPDATE.yml/runs?per_page=30 | new jq -> "success 2026-10-01T06:54:36Z"
+python3 yaml.safe_load on both workflows; npx jest test/vtid-04787-self-audit-and-identity-drift.test.ts

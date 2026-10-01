@@ -543,7 +543,9 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
 // so nothing had been embedded since 2026-04-28 and semantic recall fell back
 // to recency. Hourly, bounded, and a cheap no-op once the backlog is empty; a
 // row whose embedding fails stays NULL and is retried on the next run.
-const EMBED_BACKFILL_BATCH = 100;
+// VTID-04786: 200 per store per 30-min heartbeat run (~800 rows/h) drains
+// the July-September backlog in hours; Titan concurrency is 5, ~20 s a run.
+const EMBED_BACKFILL_BATCH = 200;
 
 async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
