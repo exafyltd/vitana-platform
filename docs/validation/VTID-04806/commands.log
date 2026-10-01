@@ -8,3 +8,4 @@ npx jest $(grep -rl dev-autopilot-planning test)                       # 18 plan
 # plan.version_added 77, plan.failed ~180 — almost all "Plan generation failed after 26-39s: unknown error"
 # (a planner-side timeout, not the finding), plus "both providers failed". Those count as infrastructure
 # errors and are excluded from agreement.
+npx jest (full gateway suite, merged with origin/main ee48595)         # 1449 suites, 23240 passed, 0 failed (outputs/jest-full.txt)
