@@ -64,6 +64,8 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_VOICE_SESSION_OUTCOME_MODE: { staging: "shadow", prod: "shadow" },
   LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: null },
   MARKETPLACE_SYNC_SECRET: { staging: null, prod: "dynamic" },
+  MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED: { staging: null, prod: "true" },
+  MEMORY_EMBEDDING_BACKFILL_TENANT_IDS: { staging: null, prod: "2e7528b8-472a-4356-88da-0280d4639cce" },
   MEMORY_ORB_RECALL_ENABLED: { staging: "true", prod: null },
   MEMORY_ORB_RECALL_SHADOW: { staging: "true", prod: "true" },
   NARRATION_AUDIO_BUCKET: { staging: null, prod: "dynamic" },

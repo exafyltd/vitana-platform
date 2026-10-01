@@ -1716,6 +1716,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04786: AP-0910 memory embedding backfill, the one job of the
+      // automation engine that runs on production (it notifies nobody).
+      try {
+        const { startMemoryEmbeddingBackfillLoop } = require('./services/memory-embedding-backfill-loop');
+        startMemoryEmbeddingBackfillLoop();
+      } catch (error) {
+        console.warn('⚠️ Memory embedding backfill loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-04763: the Audiobook's daily "your episode for today" push for
       // members who asked for it. Same on-switch as reminder dispatch.
       try {
