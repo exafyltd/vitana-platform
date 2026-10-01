@@ -8,3 +8,4 @@ npx jest $(grep -rlE "command-orchestrator|crm-gates" test)             # Backof
 # reproduced by staging-deploy-workflow-bash-syntax.test.ts. The five-line per-VTID Jev comment became one line
 # pointing at the plan; the step is 19,759 chars. Every workflow-touching suite: 77 passed.
 # Evidence: production has no erp_commands yet (plan §10.3 E); the gate is ready for the first allocations.
+npx jest (full gateway suite, merged with origin/main 45cda68)          # 1459 suites, 23426 passed, 0 failed (outputs/jest-full.txt)
