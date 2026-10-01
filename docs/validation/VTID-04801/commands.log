@@ -1,0 +1,7 @@
+# VTID-04801 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04801-repeat-run-guard.test.ts test/vtid-04774-claim-feasibility-gate.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04467-dispatch-fallback.test.ts   # 79 tests (outputs/jest-a4.txt)
+npx jest (full gateway suite)                                          # 1442 suites, 23145 tests, 0 failed (outputs/jest-full.txt)
+(read-only) dev_autopilot_executions 30 d: 685 executions, 142 findings, 22 completed, 619 auto_archived, 45 findings ran more than once
+node scripts/ci/dev-autopilot-impact-scan.mjs   (repo root)            # blocker=0 warning=0 info=0
