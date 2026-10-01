@@ -84,7 +84,7 @@ export async function fetchRecentShadowBySubject(sb: SupabaseClient, gate: strin
 export async function fetchRecentShadowRow(sb: SupabaseClient, gate: string, subjectRef: string, sinceIso: string) {
   return sb
     .from('jev_shadow_decisions')
-    .select('id, jev_outcome, jev_verdict')
+    .select('id, jev_outcome, jev_verdict, outcome')
     .eq('gate', gate)
     .eq('subject_ref', subjectRef)
     .gte('created_at', sinceIso)

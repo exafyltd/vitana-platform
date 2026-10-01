@@ -30,6 +30,7 @@ import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-l
 import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
 import { isTestSelectionOn, recordTestSelectionOutcome } from './jev/gates/test-selection-gate';
 import { isPrClashOn, recordPrClashOutcome, runPrClashCheck, type OpenChange } from './jev/gates/pr-clash-gate';
+import { isChangeRiskOn, recordChangeRiskOutcome } from './jev/gates/change-risk-gate';
 import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
@@ -200,6 +201,8 @@ async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise
  * unless JEV_FIX_VERIFICATION_MODE is set; never awaited; changes nothing.
  */
 function secondOpinionOnFix(s: SupaConfig, exec: { id: string; finding_id: string }, verdict: FixVerdict): void {
+  // VTID-04815 (Jev A9): how the change landed, for its risk score.
+  if (isChangeRiskOn()) void recordChangeRiskOutcome(exec.id, verdict.state === 'pass' ? 'verification_passed' : 'verification_failed');
   if (!isFixVerificationOn()) return;
   void runFixVerificationCheck({ executionId: exec.id, verdict, load: () => loadFixContext(s, exec.finding_id) });
 }
@@ -811,6 +814,7 @@ export async function ciWatcherTick(): Promise<void> {
       // VTID-04807 (Jev A5): did a failing suite match one Jev would have run?
       if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: false, evidence });
       if (isPrClashOn() && mState === 'dirty') void recordPrClashOutcome(exec.id, true);
+      if (isChangeRiskOn() && mState !== 'dirty') void recordChangeRiskOutcome(exec.id, 'ci_failed');
       await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }

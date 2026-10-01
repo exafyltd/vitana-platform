@@ -847,6 +847,16 @@ in shadow first, and enforce is decided per gate once agreement data exists.
 With E7 every P2 slice has landed in shadow (A3–A8, B3–B6, C2–C3, E5, E7).
 Enforcing any gate waits for agreement data, which needs a production deploy.
 
+### 10.4c P3 progress
+- **A9 — VTID-04815 (shadow, advisory).** `jev/gates/change-risk-gate.ts`.
+  The finding's `risk_class` is set before any code exists. After the agent
+  runner pushes a new change, Jev `change_risk` scores the diff itself (low /
+  moderate / high / very high) from the paths, diff stat, a bounded patch
+  excerpt, tests in the diff and fix rounds. The outcome is how it landed: a
+  CI failure that is not a dirty merge, or the post-deploy verification verdict
+  (first landing wins). Showing the score to the reviewer is enforce. Runs
+  where the agent runs (like A1/A5).
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

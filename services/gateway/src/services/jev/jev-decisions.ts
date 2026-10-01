@@ -750,6 +750,39 @@ const defs: JevDecisionDef[] = [
       overlap: { files: i.shared_files, directories: i.shared_dirs },
     }),
   },
+  {
+    // VTID-04815 (P3 A9): how risky is this Dev Autopilot diff to land, as an
+    // advisory for the reviewer? The finding's risk_class is set before any
+    // code exists; this reads the change itself.
+    name: 'change_risk',
+    description: 'How risky a Dev Autopilot change is to merge and deploy, judged from its diff.',
+    roles: ENGINEERING,
+    input: z.object({
+      finding_title: text(300),
+      finding_risk_class: optText(20),
+      files: z.array(z.string().trim().max(300)).max(60),
+      diff_stat: text(4000),
+      patch_excerpt: text(8000),
+      tests_in_diff: z.number().int().min(0),
+      fix_rounds: z.number().int().min(0),
+    }),
+    questions: {
+      risk: {
+        type: 'score',
+        instructions: 'How likely is this change to break CI, production behaviour or other code once merged and deployed?',
+        criteria: ['Low: small, contained, covered by tests', 'Moderate: a careful look is enough', 'High: shared or central code, thin coverage', 'Very high: likely to break something'],
+      },
+    },
+    primary: 'risk',
+    threshold: 0.6,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({
+      finding: { title: i.finding_title, risk_class: i.finding_risk_class ?? null },
+      change: { files: i.files, stat: i.diff_stat, patch_excerpt: i.patch_excerpt, tests_in_diff: i.tests_in_diff, fix_rounds: i.fix_rounds },
+    }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
