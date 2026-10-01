@@ -65,7 +65,7 @@ OASIS_IMPACT: no new event type. `jev.decision.*` payloads gain `data`, `cross_t
 
 ## Database
 
-MERGE_PAYLOAD_PREVIEW: migration `20261001100000_vtid_04754_jev_spend_and_shadow.sql` — two new tables (`jev_spend_counters`, `jev_shadow_decisions`) and three functions (`jev_record_spend`, `jev_shadow_gate_stats`), service role only, RLS on with no client policies. Additive; nothing existing is altered. The gateway fails closed (fallback, no TypeSafe call) for tenants with a budget until it is applied; tenants without a budget keep working and log "spend NOT persisted".
+MERGE_PAYLOAD_PREVIEW: migration `20261001100000_vtid_04754_jev_spend_and_shadow.sql` — two new tables (`jev_spend_counters`, `jev_shadow_decisions`) and three functions (`jev_record_spend`, `jev_shadow_gate_stats`), service role only, RLS on with no client policies. Additive; nothing existing is altered. Applied 2026-10-01 (the drift gate requires it before merge); verification in outputs/migration-applied.txt.
 
 ## Not verified live
 
