@@ -1,0 +1,9 @@
+# VTID-04811 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_APPROVAL_RISK_MODE "04811 E7"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04811 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-e7.txt
+npx jest $(grep -rlE "command-orchestrator|crm-gates" test)             # Backoffice suites (outputs/jest-backoffice.txt)
+# Evidence: production has no erp_commands or approvals yet (plan §10.3 E); the gate is ready for the first
+# High-risk commands. Built on top of E5 (VTID-04810), which edits the same orchestrator.
+npx jest (full gateway suite, merged with origin/main 80463c8)          # 1453 suites, 23303 passed, 0 failed (outputs/jest-full.txt)

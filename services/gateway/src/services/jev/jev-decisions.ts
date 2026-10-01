@@ -214,6 +214,34 @@ const defs: JevDecisionDef[] = [
     buildState: (i) => ({ new_account: { name: i.new_name, details: i.new_details ?? null }, existing_account: { name: i.existing_name, details: i.existing_details ?? null } }),
   },
   {
+    // VTID-04811 (P2 E7): a High-risk Backoffice command is waiting for a
+    // second person. A risk hint for the approver, from the command's own
+    // business fields — never who requested it or any person's data.
+    name: 'approval_risk',
+    description: 'How risky a queued High-risk Backoffice command is, as a hint for the approver.',
+    roles: BACKOFFICE,
+    input: z.object({
+      command_type: text(120),
+      action: text(120),
+      escalations: z.array(z.string().trim().max(80)).max(10),
+      fields: text(2000),
+      payload_keys: z.array(z.string().trim().max(60)).max(60),
+    }),
+    questions: {
+      risk: {
+        type: 'score',
+        instructions: 'How risky is it to approve this command as it stands (money or records lost, wrong counterparty, irreversible effect, unusual for this kind of command)?',
+        criteria: ['Routine, approve', 'Some risk, check the details', 'High risk, check carefully', 'Looks wrong, do not approve as is'],
+      },
+    },
+    primary: 'risk',
+    threshold: 0.6,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({ command: { type: i.command_type, action: i.action, escalations: i.escalations, fields: i.fields, payload_keys: i.payload_keys } }),
+  },
+  {
     name: 'contract_clause_flag',
     description: 'Whether a contract excerpt contains a given kind of clause, and its risk.',
     roles: BACKOFFICE,

@@ -21,6 +21,7 @@ import { getSupabase } from '../../lib/supabase';
 import { recordCustomerEpisode } from '../memory/customer';
 import { isCrmGatesOn, runCrmGates } from '../jev/gates/crm-gates';
 import { isDuplicateAccountOn, runDuplicateAccountCheck } from '../jev/gates/duplicate-account-gate';
+import { isApprovalRiskOn, recordApprovalDecision, runApprovalRiskCheck } from '../jev/gates/approval-risk-gate';
 
 const VTID = 'VTID-03842';
 
@@ -229,6 +230,8 @@ export async function submitCommand(caller: OrchestratorCaller, access: Effectiv
     });
     await store.updateCommand(row.id, { approval_id: approval.id });
     row.approval_id = approval.id;
+    // VTID-04811 (Jev E7, shadow): a risk hint for the approver, recorded only. Never awaited.
+    if (isApprovalRiskOn()) void runApprovalRiskCheck(row, approval.id);
     await audit(store, caller, access, channel, 'command.queued', row.id, approval.id, { type: spec.type, tier: decision.tier, approve_capability: approveCap, escalations: decision.escalations, eligible_approvers: eligible });
     return { http: 202, body: { ok: true, command: publicCommand(row), approval: { approval_id: approval.id, approve_capability: approveCap, eligible_approvers: eligible } } };
   }
@@ -262,12 +265,14 @@ export async function decideApproval(caller: OrchestratorCaller, access: Effecti
 
   if (verdict === 'rejected') {
     await store.updateApproval(approval.id, { status: 'rejected', decided_by: caller.user_id, decided_at: now, decision_note: note });
+    if (isApprovalRiskOn()) void recordApprovalDecision(approval.id, 'rejected');
     const done = await store.updateCommand(command.id, { status: 'rejected', reason: 'approval_rejected' });
     await audit(store, caller, access, channel, 'approval.rejected', command.id, approval.id, { note, requester_id: approval.requester_id });
     return { http: 200, body: { ok: true, command: publicCommand(done) } };
   }
 
   await store.updateApproval(approval.id, { status: 'approved', decided_by: caller.user_id, decided_at: now, decision_note: note });
+  if (isApprovalRiskOn()) void recordApprovalDecision(approval.id, 'approved');
   const outcome = await runOnBridge(command, (command.resolved_payload ?? command.payload) as Record<string, unknown>, { id: approval.id, approver: caller.user_id, requester: approval.requester_id });
   const done = await store.updateCommand(command.id, { status: outcome.status, receipt: outcome.receipt, reason: outcome.reason, executed_at: outcome.status === 'executed' ? now : null });
   rememberForCustomer(done);
