@@ -535,7 +535,10 @@ describe('findCommunityMember — Tier 1 exact match', () => {
     assertWellFormedToolResult(out.result);
   });
 
-  it('matches a candidate via a logged health activity hit', async () => {
+  // VTID-04798: a member's health tracking (health_features_daily) is GDPR
+  // Art. 9 data and the suggestion shows its reason to another member, so it
+  // is no longer a match lane. This test used to assert the opposite.
+  it('never matches a candidate on logged health tracking', async () => {
     installWorld(mock, {
       visibleUserIds: ['u-1', 'u-2'],
       users: {
@@ -547,8 +550,8 @@ describe('findCommunityMember — Tier 1 exact match', () => {
     const out = await findCommunityMember(mock.client, baseArgs({ query: 'who logs pilates' }));
 
     expect(out.result.ok).toBe(true);
-    expect(out.winnerUserId).toBe('u-1');
-    expect(out.lane).toBe('exact_activity');
+    expect(out.lane).not.toBe('exact_activity');
+    expect(JSON.stringify(out.result)).not.toMatch(/entries matching/);
     assertWellFormedToolResult(out.result);
   });
 });

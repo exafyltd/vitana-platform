@@ -156,12 +156,12 @@
     "sha256": "c076221cc0800d5a00c0576daf0a0e0f2e8da01ded30da03f108ef5c314d1122"
   },
   "turn:greeting turn (first assistant turn, no user speech)": {
-    "sha256": "6f39ef99ca7a3c297926c7a0224fc47c8b83857e0b66394b0c36db6ba4615a9c"
+    "sha256": "6239f31178dda5943c1b9fce9de50a85d86653f97314a6deb9bed29deecb6bb9"
   },
   "turn:regular turn (anonymous, no identity)": {
     "sha256": "d059c4acd94bc4fa4e4efe40ee2816b10692d94bae17a817c0535598caba45fd"
   },
   "turn:regular turn (user + assistant, authenticated)": {
-    "sha256": "71a1236179fc288a5682bf8f957b602442b80742a3f4846eb28ea10c083edeff"
+    "sha256": "1a4f22496f90f0ff29e5fb69942993cc25c5d6507552486341d9c238db547df1"
   }
 }
