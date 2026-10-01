@@ -6,7 +6,7 @@
  *   2. Provenance fields enforced + propagated
  *   3. HIPAA audit trail emitted via OASIS
  *
- * Existing writers (cognee-extractor-client, orb-live, conversation, memory.ts)
+ * Existing writers (inline-fact-extractor, orb-live, conversation, memory.ts)
  * route their identity-class fact writes through assertWriteFact() before
  * calling write_fact() RPC. The Postgres trigger
  * `enforce_identity_lock_memory_facts` (migration vtid_01952) is defense-in-depth
@@ -38,7 +38,7 @@ export interface MemoryWriteAttemptInput {
   provenance_source: string | null | undefined;
   /** Provenance confidence 0..1. */
   provenance_confidence?: number;
-  /** Who is performing the write (e.g. 'orb-live', 'cognee-extractor', 'profile-ui'). */
+  /** Who is performing the write (e.g. 'orb-live', 'inline-fact-extractor', 'profile-ui'). */
   actor_id: string;
   /** Tenant + user scope (REQUIRED — never skip). */
   tenant_id: string;

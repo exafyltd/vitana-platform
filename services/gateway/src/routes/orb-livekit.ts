@@ -71,6 +71,13 @@ import {
   buildSpecialistLanguageDirective,
   fetchSpecialistContextSection,
 } from './orb-live';
+// VTID-04414 (WS-1.3): the shared voice-session context builder.
+import {
+  buildBaseSessionContext,
+  resolveBrainRole,
+  type BaseContextResult,
+} from '../orb/live/session/session-context-builder';
+import { packBootstrapContext } from '../orb/live/instruction/bootstrap-packer';
 // L2.2b.6 (VTID-03010): render the full Vertex system instruction for LiveKit.
 // Until this slice, the LiveKit agent built its own ~7-section Python prompt
 // while Vertex sent a ~17-section TypeScript prompt — the LLM had radically
@@ -611,8 +618,13 @@ router.post(
 // separate endpoint would let the two drift. See buildCascadeHealthPayload
 // for why `effective` (not `enabled`) is the field to read.
 router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
+  const payload = buildNovaSonicHealthPayload(process.env);
   return res.json({
-    ...buildNovaSonicHealthPayload(process.env),
+    ...payload,
+    // VTID-04662: `ok` only says the route answered. The Service Health panel
+    // reads `status`, so it follows readiness: ready → ok, enabled but not
+    // ready → down, switched off on this stack → not_configured.
+    status: payload.ready ? 'ok' : payload.enabled ? 'down' : 'not_configured',
     cascade: buildCascadeHealthPayload(process.env),
   });
 });
@@ -1152,7 +1164,7 @@ router.get(
     // VTID-03036: result of buildBootstrapContextPack (memory preamble +
     // last-3 user turns + USER CONTEXT PROFILE). Held outside the batch
     // closure so the post-batch ctxParts push can read it.
-    let historyContextPack: Awaited<ReturnType<typeof buildBootstrapContextPack>> | null = null;
+    let historyContextPack: BaseContextResult | null = null;
 
     if (sb && userId) {
       const [
@@ -1231,14 +1243,29 @@ router.get(
         // contextInstruction layer. Best-effort; any throw is swallowed
         // and the LiveKit bootstrap falls back to the prior (thinner)
         // identity-only context.
+        // VTID-04414 (WS-1.3): the shared voice context builder — the brain
+        // when `vitana_brain_orb_enabled` is on (the same text the Vertex/Nova
+        // session starts with), the legacy pack otherwise. The brain text is
+        // fitted to the same 12 KB bootstrap budget by section priority.
         (async () => {
           try {
             if (!req.identity) return null;
             const sessionId = `livekit-bootstrap-${agentId}-${userId.slice(0, 8)}`;
-            return await buildBootstrapContextPack(req.identity, sessionId);
+            const base = await buildBaseSessionContext(
+              {
+                identity: req.identity,
+                sessionId,
+                brainRole: resolveBrainRole({ identityRole: (req.identity as { active_role?: string | null }).active_role ?? null }),
+              },
+              { legacy: buildBootstrapContextPack },
+            );
+            if (base.builder === 'brain' && base.contextInstruction) {
+              base.contextInstruction = packBootstrapContext(base.contextInstruction).text;
+            }
+            return base;
           } catch (exc) {
             console.warn(
-              `[${VTID}] buildBootstrapContextPack failed: ${(exc as Error).message}`,
+              `[${VTID}] session context build failed: ${(exc as Error).message}`,
             );
             return null;
           }
@@ -1319,7 +1346,7 @@ router.get(
     const vitanaId = req.identity?.vitana_id ?? null;
 
     // VTID-03014: extract first_name preferring app_users.display_name, then
-    // memory_facts.user_name (the canonical Cognee-extracted name). Without
+    // memory_facts.user_name (the canonical extracted name). Without
     // this, users whose display_name is null but whose user_name fact IS
     // populated got greeted by @handle instead of their actual name —
     // exactly the failure mode the L2.2b.6 smoke surfaced.
@@ -1958,6 +1985,8 @@ normal conversation flow.`;
               && historyContextPack.contextInstruction.trim().length > 0,
             latency_ms: historyContextPack.latencyMs,
             skipped_reason: historyContextPack.skippedReason ?? null,
+            builder: historyContextPack.builder,
+            brain_error: historyContextPack.brainError ?? null,
             chars: typeof historyContextPack.contextInstruction === 'string'
               ? historyContextPack.contextInstruction.length
               : 0,
@@ -2139,8 +2168,8 @@ router.get(
 
 // §11 — session-end memory commit (LiveKit parity with Vertex). The agent owns
 // the transcript (the conversation runs in the agent process), so it POSTs it
-// here on teardown. This runs the SAME extraction (Cognee + deduplicated inline
-// facts) the Vertex path runs at session stop. Without it, LiveKit conversations
+// here on teardown. This runs the SAME extraction (deduplicated inline facts)
+// the Vertex path runs at session stop. Without it, LiveKit conversations
 // were heard and thrown away → no cross-session memory. Fire-and-forget;
 // extraction never blocks the agent's teardown. See
 // docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
@@ -2163,7 +2192,10 @@ router.post(
       const sessionId =
         typeof body.session_id === 'string' && body.session_id.length > 0
           ? body.session_id
-          : `livekit-${userId.slice(0, 8)}`;
+          : // VTID-04365: the commit is idempotent per session id, so a fallback
+            // id must be unique per call — a per-user constant would drop every
+            // later session of that user for six hours.
+            `livekit-${userId.slice(0, 8)}-${Date.now()}`;
       const activeRole = typeof body.active_role === 'string' ? body.active_role : null;
 
       const result = commitSessionMemory({
@@ -2172,6 +2204,8 @@ router.post(
         userId,
         sessionId,
         activeRole,
+        channel: 'livekit',
+        trigger: 'livekit_commit_memory',
       });
 
       // Telemetry so "did this session persist memory?" is QUERYABLE (§4/§11),
@@ -2189,7 +2223,7 @@ router.post(
           session_id: sessionId,
           user_id: userId,
           committed: result.committed,
-          cognee_queued: result.cognee_queued,
+          summary_queued: result.summary_queued ?? false,
           reason: result.reason ?? null,
           transcript_chars: transcript.length,
         },

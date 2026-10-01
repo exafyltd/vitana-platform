@@ -1,26 +1,32 @@
 /**
- * VTID-01225: Inline Fact Extractor (Cognee Fallback)
+ * VTID-01225: Inline Fact Extractor
  *
- * Lightweight Gemini-based fact extractor that runs INSIDE the gateway
- * when the external Cognee extractor service is unavailable (404/down).
+ * Lightweight LLM-based fact extractor that runs INSIDE the gateway. Originally
+ * the fallback for the external Cognee extractor service; since VTID-04344
+ * (Cognee removed) it is the sole conversation fact-extraction path.
  *
- * Uses the SAME write_fact() RPC that Cognee uses, writing to the SAME
- * memory_facts table with the SAME schema. The read path (context-pack-builder)
- * doesn't care which service wrote the fact.
+ * Writes via the write_fact() RPC into memory_facts. The read path
+ * (context-pack-builder) doesn't care which service wrote the fact.
  *
  * Design constraints:
- * - Fire-and-forget (non-blocking, same as Cognee)
+ * - Fire-and-forget (non-blocking)
  * - Uses Vertex AI (primary) or Gemini API (fallback) - same as conversation route
- * - Writes via write_fact() RPC (same as cognee-extractor-client.ts line 582)
+ * - Writes via write_fact() RPC
  * - Low temperature (0.1) for deterministic extraction
  * - Small token budget (512) to keep latency low
  * - Only extracts identity/preference/relationship facts (high-value)
  */
 
-import { assertWriteFact } from './memory-audit'; // VTID-01952 Identity Lock chokepoint
+import { rememberFact } from './memory/remember'; // VTID-04364 single fact-write path
+import { valuesMatch, findRelatedFact } from './memory/remember-fact-tool';
+
+const STATED_SOURCES = new Set(['user_stated', 'user_stated_via_settings', 'user_edited', 'user_stated_via_memory_garden_ui']);
+function isStatedProvenance(source: string | undefined): boolean {
+  return !!source && STATED_SOURCES.has(source);
+}
 import { callViaRouter } from './llm-router'; // VTID-03579: provider comes from llm_routing_policy, never hardcoded
 // BOOTSTRAP-VOICE-DEMO: real heartbeats so the agents dashboard reflects
-// inline-fact-extractor activity (the cognee fallback path).
+// inline-fact-extractor activity.
 import { recordAgentHeartbeat } from '../routes/agents-registry';
 
 // =============================================================================
@@ -56,6 +62,7 @@ Common fact keys:
 - user_preference_*, user_goal_*, user_hobby_*, user_language, user_pet_name
 - spouse_name, fiancee_name, partner_name, mother_name, father_name, child_name, friend_name_*
 - sibling_name, colleague_name, grandchild_name (people the user mentions by role)
+- spouse_father_name, spouse_mother_name, child_spouse_name, spouse_sibling_name (a relative of one of the user's people: chain the relations from the user)
 - <person>_birthday, <person>_health_condition (dates/conditions of people the user discloses, e.g. spouse_birthday)
 - upcoming_event_* (a concrete planned event with its date, e.g. upcoming_event_wedding)
 
@@ -69,7 +76,11 @@ Rules:
 - If no facts are present, return an empty array: []
 - Do NOT invent facts. Only extract what the conversation clearly supports.
 - Keep fact_value concise (1-8 words)
+- A hypothetical, wish or "what if" is NOT a fact ("if I had a dog it would be called Max", "wenn ich einen Hund hätte, würde er Max heißen") — return nothing for it
+- A request to FORGET something is not a statement of it ("forget that my dog is called Bello") — return nothing for it
 - For preferences, use "user_favorite_X" or "user_preference_X" as the key
+- father_name, mother_name and the other plain relation keys are ONLY for the user's OWN relatives ("mein Vater", "my mother"). A relative of someone else gets the chained key: the wife's father is spouse_father_name, never father_name
+- "her father", "ihr Vater", "sein Vater", "deren Mutter": if the text does not say whose father or mother it is, return nothing for it — never guess that it is the user's own
 
 Example input:
 User: My name is Dusan and I live in Amsterdam. My favorite tea is Earl Grey. Ugh, barely slept, the deadline is killing me.
@@ -82,7 +93,7 @@ Example output:
 // Types
 // =============================================================================
 
-interface ExtractedFact {
+export interface ExtractedFact {
   fact_key: string;
   fact_value: string;
   entity: string;
@@ -105,7 +116,7 @@ const CONFIDENCE_CAP = 0.98;
 // Core: Extract facts using Gemini
 // =============================================================================
 
-async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+export async function callLlmForExtraction(conversationText: string): Promise<ExtractedFact[]> {
   // VTID-03579: this was a hardcoded DeepSeek -> Vertex AI -> Gemini-API
   // cascade. Three providers chosen here, none of them visible to
   // `llm_routing_policy` — so the routing table could say one thing while this
@@ -228,12 +239,36 @@ async function persistFact(
   // confirmation loop ("is that still right?") upgrades facts the same way.
   const provenance = fact.stated ? 'user_stated' : 'assistant_inferred';
   let confidence = fact.stated ? CONFIDENCE_STATED : CONFIDENCE_INFERRED;
+  // VTID-04639: one row per fact. The same thing is often already stored
+  // under another key ("lieblingsessen" by the voice model, "user_favorite_food"
+  // here; "paul_birthday" vs "brother_paul_birthday"). Compare against — and
+  // write to — that stored key, so the dedupe and conflict guards below see it.
+  try {
+    const listResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/memory_facts?` +
+        `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
+        `superseded_at=is.null&select=fact_key,fact_value,extracted_at&order=extracted_at.desc&limit=500`,
+      { headers: { apikey: SUPABASE_SERVICE_ROLE, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}` } },
+    );
+    if (listResp.ok) {
+      const current = (await listResp.json()) as Array<{ fact_key: string; fact_value: string; extracted_at: string | null }>;
+      if (Array.isArray(current) && !current.some((f) => f.fact_key === effectiveFactKey)) {
+        const related = findRelatedFact(effectiveFactKey, current);
+        if (related) {
+          console.log(`[VTID-04639] ${effectiveFactKey} is stored as ${related.fact_key}; using the stored key`);
+          effectiveFactKey = related.fact_key;
+        }
+      }
+    }
+  } catch {
+    // Best effort: without the list the exact key is used, as before.
+  }
   try {
     const existingResp = await fetch(
       `${SUPABASE_URL}/rest/v1/memory_facts?` +
         `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
         `fact_key=eq.${encodeURIComponent(effectiveFactKey)}&superseded_at=is.null&` +
-        `select=fact_value,provenance_confidence&limit=1`,
+        `select=fact_value,provenance_confidence,provenance_source&limit=1`,
       {
         headers: {
           apikey: SUPABASE_SERVICE_ROLE,
@@ -242,8 +277,23 @@ async function persistFact(
       },
     );
     if (existingResp.ok) {
-      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number }>;
+      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number; provenance_source?: string }>;
       const existing = rows?.[0];
+      // VTID-04581: a value the member stated is never silently replaced by
+      // a different one from background extraction. The live assistant asks
+      // which is right (remember_fact STATUS: conflict) and writes the
+      // answer itself with confirm_replace.
+      if (
+        existing &&
+        typeof existing.fact_value === 'string' &&
+        isStatedProvenance(existing.provenance_source) &&
+        !valuesMatch(existing.fact_value, fact.fact_value)
+      ) {
+        console.log(
+          `[VTID-04581] conflict kept for review: ${effectiveFactKey} stored="${existing.fact_value}" new="${fact.fact_value}" — not overwritten`,
+        );
+        return false;
+      }
       if (
         existing &&
         typeof existing.fact_value === 'string' &&
@@ -257,70 +307,33 @@ async function persistFact(
     // Evidence lookup is best-effort; base confidence stands.
   }
 
-  // VTID-01952: Identity Lock chokepoint. Inline LLM extraction is an
-  // inference path — never allowed to write identity-class facts (name,
-  // DOB, gender, email, etc.). DB trigger is defense-in-depth.
-  const lockCheck = await assertWriteFact({
-    fact_key: effectiveFactKey,
-    provenance_source: provenance,
-    provenance_confidence: confidence,
-    actor_id: 'inline-fact-extractor',
-    source_engine: 'inline-fact-extractor',
+  // VTID-04364: Identity Lock check, write_fact RPC and embed-on-write all
+  // run in the shared rememberFact() path. Inline LLM extraction is an
+  // inference path, so identity-class keys are refused there.
+  const written = await rememberFact({
     tenant_id,
     user_id,
+    fact_key: effectiveFactKey,
+    fact_value: fact.fact_value,
+    entity: fact.entity,
+    fact_value_type: fact.fact_value_type,
+    provenance_source: provenance,
+    provenance_confidence: confidence,
+    actor: 'inline-fact-extractor',
   });
-  if (!lockCheck.ok) {
+  if (written.blocked === 'identity_lock') {
     console.log(
-      `[VTID-01952] Identity Lock blocked inline fact write: ${effectiveFactKey} ` +
-      `(reason=${lockCheck.reason}). User must change identity-class facts via Profile/Settings UI.`
+      `[VTID-01952] Identity Lock blocked inline fact write: ${effectiveFactKey}. ` +
+      `User must change identity-class facts via Profile/Settings UI.`
     );
     return false;
   }
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/write_fact`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
-      body: JSON.stringify({
-        p_tenant_id: tenant_id,
-        p_user_id: user_id,
-        p_fact_key: effectiveFactKey,
-        p_fact_value: fact.fact_value,
-        p_entity: fact.entity,
-        p_fact_value_type: fact.fact_value_type,
-        p_provenance_source: provenance,
-        p_provenance_confidence: confidence,
-      }),
-    });
-
-    if (response.ok) {
-      const factId = await response.json();
-      console.log(`[VTID-01225-inline] Persisted: ${fact.fact_key}="${fact.fact_value}" (id=${factId})`);
-      // BOOTSTRAP-MEMORY-DAILY-LEARNING: embed on write (fire-and-forget).
-      // This path wrote 96% of live facts without embeddings, which left
-      // tier-2 semantic fact retrieval permanently blind.
-      if (typeof factId === 'string' && factId) {
-        try {
-          const { generateFactEmbeddingAsync } = await import('./memory-facts-service');
-          generateFactEmbeddingAsync(factId, effectiveFactKey, fact.fact_value);
-        } catch {
-          /* embedding is best-effort; the backfill automation catches misses */
-        }
-      }
-      return true;
-    } else {
-      const errorText = await response.text();
-      console.warn(`[VTID-01225-inline] write_fact failed for "${fact.fact_key}": ${response.status} - ${errorText}`);
-      return false;
-    }
-  } catch (err: any) {
-    console.warn(`[VTID-01225-inline] Persist error for "${fact.fact_key}": ${err.message}`);
+  if (!written.ok) {
+    console.warn(`[VTID-01225-inline] write_fact failed for "${fact.fact_key}": ${written.error}`);
     return false;
   }
+  console.log(`[VTID-01225-inline] Persisted: ${fact.fact_key}="${fact.fact_value}" (id=${written.fact_id})`);
+  return true;
 }
 
 // =============================================================================
@@ -331,8 +344,8 @@ async function persistFact(
  * Extract facts from a conversation turn and persist to memory_facts.
  * Fire-and-forget: call this without awaiting.
  *
- * Uses the same write_fact() RPC as Cognee, writing to the same table.
- * The read path (context-pack-builder fetchMemoryFacts) picks up both.
+ * Uses the write_fact() RPC into memory_facts; the read path
+ * (context-pack-builder fetchMemoryFacts) picks it up.
  */
 export async function extractAndPersistFacts(input: {
   conversationText: string;
@@ -350,7 +363,16 @@ export async function extractAndPersistFacts(input: {
     // shows inline-fact-extractor as healthy whenever it's actually called.
     recordAgentHeartbeat('inline-fact-extractor').catch(() => {});
 
-    const facts = await callLlmForExtraction(input.conversationText);
+    const extracted = await callLlmForExtraction(input.conversationText);
+    // VTID-04684/04685: a value the member only said inside a forget request
+    // or a hypothetical is not a fact they told us ("vergiss, dass mein Hund
+    // Bello heißt", "wenn ich einen Hund hätte, würde er Max heißen").
+    const { valueOnlyInNonStatements } = await import('./memory/memory-intent');
+    const facts = extracted.filter((f) => {
+      const skip = valueOnlyInNonStatements(f.fact_value, input.conversationText);
+      if (skip) console.log(`[VTID-04685] skipped ${f.fact_key}: said only in a forget request or a hypothetical`);
+      return !skip;
+    });
 
     if (facts.length === 0) {
       console.debug(`[VTID-01225-inline] No facts extracted from turn (${input.session_id})`);

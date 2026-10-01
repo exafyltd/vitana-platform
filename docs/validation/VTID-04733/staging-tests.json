@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04733",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/scheduled-notifications-whats-new.test.ts", "cwd": "services/gateway",
+      "reason": "the route writes a News Feed card and pushes to members; staging shares the production Supabase project, so it is proven by unit tests, never called on staging" }
+  ]
+}

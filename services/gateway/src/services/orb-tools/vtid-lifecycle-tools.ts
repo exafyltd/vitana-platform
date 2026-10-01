@@ -16,6 +16,8 @@ import {
   gatewayApiCall,
 } from './developer-tools';
 import * as repo from './vtid-lifecycle-tools-repository';
+// VTID-04727: the ledger's write routes require the service token or an admin JWT.
+import { serviceAuthHeaders } from '../../middleware/ledger-write-auth';
 
 type Handler = (
   args: OrbToolArgs,
@@ -58,6 +60,7 @@ export const dev_allocate_vtid: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/vtid/allocate', {
     method: 'POST',
+    headers: serviceAuthHeaders(),
     body: { source, layer, module, title },
   });
   if (!ok || body.ok !== true) {
@@ -89,6 +92,7 @@ export const dev_create_task: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/vtid/create', {
     method: 'POST',
+    headers: serviceAuthHeaders(),
     body: { task_family, task_module, title, target_roles },
   });
   if (!ok || body.ok !== true) {
@@ -126,6 +130,7 @@ export const dev_update_task: Handler = async (args, id, sb) => {
   }
   const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}`, {
     method: 'PATCH',
+    headers: serviceAuthHeaders(),
     body: patch,
   });
   if (!ok) {
@@ -157,9 +162,10 @@ export const dev_cancel_task: Handler = async (args, id, sb) => {
   }
   const preStart = PRE_START_STATUSES.has(String(target.status ?? ''));
   const { ok, status, body } = preStart
-    ? await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}`, { method: 'DELETE' })
+    ? await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}`, { method: 'DELETE', headers: serviceAuthHeaders() })
     : await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}/complete`, {
         method: 'POST',
+        headers: serviceAuthHeaders(),
         body: { terminal_outcome: 'cancelled' },
       });
   if (!ok) {
@@ -187,6 +193,7 @@ export const dev_complete_task: Handler = async (args, id, sb) => {
   }
   const { ok, status, body } = await gatewayApiCall(`/api/v1/oasis/tasks/${encodeURIComponent(target.vtid)}/complete`, {
     method: 'POST',
+    headers: serviceAuthHeaders(),
     body: { terminal_outcome: outcome },
   });
   if (!ok) {

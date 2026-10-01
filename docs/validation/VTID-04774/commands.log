@@ -1,0 +1,6 @@
+# VTID-04774 — commands (services/gateway unless noted)
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .   # clean
+npx jest test/vtid-04774-claim-feasibility-gate.test.ts               # 15 tests, outputs/jest-a2.txt
+npx jest test/vtid-04465 test/vtid-04467 test/vtid-04247 test/vtid-04368 test/vtid-04032   # 84 tests pass
+npx jest (full gateway suite)                                         # 1416 suites, 22773 tests, 0 failed
+(read-only) autopilot_recommendations columns title, risk_class, source_type, spec_snapshot exist

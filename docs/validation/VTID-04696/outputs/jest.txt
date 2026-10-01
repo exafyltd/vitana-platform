@@ -1,0 +1,27 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+  VTID-04696 staging checks follow Command Hub asset bumps
+    ✓ every asset version named in a staging suite is the one index.html loads (16 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04659-staging-checks-use-versioned-urls.test.ts
+  VTID-04659 Command Hub asset URLs in staging checks
+    ✓ index.html loads orb-widget.js with the VTID-04659 cache bust (3 ms)
+    ✓ no staging http check reads a versioned Command Hub asset at its bare URL (8 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        0.963 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04696-staging-checks-follow-asset-bumps.test.ts|test\/vtid-04659-staging-checks-use-versioned-urls.test.ts/i.

@@ -32,6 +32,10 @@ jest.mock('../src/services/llm-telemetry-service', () => ({
   startLLMCall: jest.fn(async () => ({ id: 'ctx' })),
   completeLLMCall: jest.fn(async () => undefined),
   failLLMCall: jest.fn(async () => undefined),
+  // VTID-04546: the router uses the non-blocking variants.
+  startLLMCallDetached: jest.fn(() => ({ id: 'ctx' })),
+  completeLLMCallDetached: jest.fn(async () => undefined),
+  failLLMCallDetached: jest.fn(async () => undefined),
 }));
 
 const getActivePolicy = jest.fn();

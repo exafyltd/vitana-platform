@@ -1,0 +1,7 @@
+{
+  "project": "inmkhvwdcuyhnxkgfvsb",
+  "found": { "table": "memory_items", "id": "46940d10-a35e-4cd6-b51f-4a69534cb365", "source": "orb_voice",
+             "created_at": "2026-09-24T12:49:25Z", "active_role": "authenticated" },
+  "repaired": { "rows": 1, "active_role": null },
+  "memory_transcript_turns_with_role": 0
+}

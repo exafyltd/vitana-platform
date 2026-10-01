@@ -5,8 +5,9 @@ agents_registry table reflects this service's status. The agent_id used
 here MUST match the seed row added by the eventual migration that adds
 'orb-agent' to agents_registry.
 
-Mirrors the inline pattern in services/agents/cognee-extractor/main.py:474
-and the future shared helper at services/agents/shared/agents_registry_client.py.
+Mirrors the inline pattern the retired cognee-extractor service used (removed
+in VTID-04344) and the future shared helper at
+services/agents/shared/agents_registry_client.py.
 """
 from __future__ import annotations
 

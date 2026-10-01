@@ -2,13 +2,13 @@
  * VTID-01225: Intelligence & Memory Stack End-to-End Verification Tests
  *
  * Verifies the complete intelligence pipeline from extraction to retrieval:
- * 1. Cognee extraction writes to memory_facts, relationship_nodes, relationship_edges
+ * 1. Extraction writes to memory_facts, relationship_nodes, relationship_edges
  * 2. Context pack builder reads from ALL tables (memory_items + memory_facts + relationship_nodes)
  * 3. Retrieval router correctly routes queries to appropriate sources
  * 4. Conversation history is maintained across turns
  * 5. Structured facts and relationship context appear in LLM prompt
  *
- * These tests verify the write/read bridge fix that connects the cognee
+ * These tests verify the write/read bridge fix that connects the
  * extraction write path to the context-pack-builder read path.
  */
 
@@ -16,7 +16,6 @@
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
-process.env.COGNEE_EXTRACTOR_URL = 'http://localhost:9999';
 process.env.PERPLEXITY_API_KEY = 'test-perplexity-key';
 
 // Track all fetch calls to verify correct tables are queried
@@ -88,7 +87,7 @@ const MEMORY_ITEM_ROWS = [
     content: 'User mentioned fiancée Mariia Maksina',
     importance: 85,
     occurred_at: new Date().toISOString(),
-    source: 'cognee_extraction',
+    source: 'memory_extraction',
   },
 ];
 
@@ -127,7 +126,7 @@ const mockFetch = jest.fn().mockImplementation(async (url: string, options?: Req
   fetchCalls.push({ url, method, body: options?.body as string });
 
   // ---- system_controls: enable ONLY the memory broker (VTID-02026 gate).
-  // Everything else (tier0 redis, cognee, …) stays off so the test exercises
+  // Everything else (tier0 redis, …) stays off so the test exercises
   // the canonical broker read path without side quests.
   if (url.includes('/rest/v1/system_controls')) {
     const keyMatch = url.match(/key=eq\.([^&]+)/);

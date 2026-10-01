@@ -151,7 +151,6 @@ describe('VTID-03180 — POST /:id/complete', () => {
     });
 
     // RPC was called with the right shape, via PostgREST.
-    expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain('/rest/v1/rpc/complete_autopilot_recommendation');
     expect(init?.method).toBe('POST');
@@ -159,6 +158,15 @@ describe('VTID-03180 — POST /:id/complete', () => {
       p_recommendation_id: REC_ID,
       p_user_id: USER_ID,
     });
+
+    // VTID-04331: then the recommendation's open calendar entries are ticked off.
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const [calUrl, calInit] = mockFetch.mock.calls[1];
+    expect(String(calUrl)).toContain('/rest/v1/calendar_events?');
+    expect(String(calUrl)).toContain('source_ref_type=eq.autopilot_recommendation');
+    expect(String(calUrl)).toContain(`source_ref_id=eq.${REC_ID}`);
+    expect(calInit?.method).toBe('PATCH');
+    expect(JSON.parse(String(calInit?.body))).toMatchObject({ completion_status: 'completed' });
   });
 
   test('role can be supplied via X-Vitana-Active-Role header instead of ?role=', async () => {

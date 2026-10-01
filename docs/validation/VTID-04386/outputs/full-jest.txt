@@ -1,0 +1,40 @@
+
+PASS test/services/guide/pattern-extractor-repository.test.ts
+  pattern-extractor-repository
+    fetchUserRoutines
+      ✓ scopes by user_id + min confidence, orders confidence descending (2 ms)
+    upsertUserRoutine
+      ✓ conflicts on user_id,routine_kind,routine_key (1 ms)
+    fetchCalendarEventsSince
+      ✓ does not select a time_slot column (verified missing from live schema)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/characterization/reconnect-announcement-silent-before-first-audio.characterization.test.ts
+  VTID-03685 — reconnecting announcement silenced when nothing has been heard yet
+    ✓ computes a turn_count===0 signal alongside the existing persona-swap/rotation gates (1 ms)
+    ✓ the reconnecting message is gated on all three suppression signals
+    ✓ does not touch MAX_RECONNECTS / _reconnectCount bookkeeping (1 ms)
+    ✓ resendGreetingIfStuckAtZeroTurns (the actual recovery) still gates on turn_count===0
+
+PASS test/orb/live/characterization/zero-turn-recovery-when-greeting-never-dispatched.characterization.test.ts
+  VTID-03687 — zero-turn recovery fires even when the greeting was never dispatched
+    ✓ gates only on turn_count === 0, not on greetingSent (1 ms)
+    ✓ still sets the one-shot fresh-open override before resending (VTID-03634 mechanism intact)
+    ✓ all three call sites (guided-topic fallback, same-provider retry, generic fallback) still reach this function (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1106 passed, 1106 of 1107 total
+Tests:       29 skipped, 6 todo, 17921 passed, 17956 total
+Snapshots:   42 passed, 42 total
+Time:        93.153 s, estimated 96 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

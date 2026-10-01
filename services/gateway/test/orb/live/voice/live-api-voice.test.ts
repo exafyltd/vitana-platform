@@ -73,8 +73,8 @@ describe('VTID-03126 Phase D.3 Live API voice accessor', () => {
       expect(voiceFallbackCalls).toHaveLength(0);
     });
 
-    it('fr → Charon (native, no warning)', () => {
-      expect(getLiveApiVoice('fr')).toBe('Charon');
+    it('fr → Leda (native, female — VTID-04445, was Charon)', () => {
+      expect(getLiveApiVoice('fr')).toBe('Leda');
       // PolicyResolver may emit its own "policy.miss" warnings when the
       // cache has no row for a key — those are unrelated to the
       // voice-fallback contract. Assert that no [voice-fallback] line was
@@ -85,8 +85,8 @@ describe('VTID-03126 Phase D.3 Live API voice accessor', () => {
       expect(voiceFallbackCalls).toHaveLength(0);
     });
 
-    it('es → Fenrir (native, no warning)', () => {
-      expect(getLiveApiVoice('es')).toBe('Fenrir');
+    it('es → Autonoe (native, female — VTID-04445, was Fenrir)', () => {
+      expect(getLiveApiVoice('es')).toBe('Autonoe');
       // PolicyResolver may emit its own "policy.miss" warnings when the
       // cache has no row for a key — those are unrelated to the
       // voice-fallback contract. Assert that no [voice-fallback] line was

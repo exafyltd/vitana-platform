@@ -132,8 +132,11 @@ describe('VTID-04025 extractAndRecordTurnMemory', () => {
 
 describe('VTID-04025 executor outcomes', () => {
   it('a run that opened a PR becomes a task_outcome row; a failed run becomes a gotcha row carrying the reason', () => {
-    const ok = buildExecutionOutcomeMemory({ executionId: '4f7d5ea4-0000', ok: true, prUrl: 'https://github.com/exafyltd/vitana-platform/pull/3382', branch: 'dev-autopilot/4f7d5ea4', vtid: 'VTID-04012', executor: 'agent' });
-    expect(ok).toMatchObject({ category: 'task_outcome', source: 'autopilot', vtid: 'VTID-04012', importance: 40, tags: ['dev-autopilot', 'execution', 'pr_opened'] });
+    const ok = buildExecutionOutcomeMemory({ executionId: '4f7d5ea4-0000', ok: true, prUrl: 'https://github.com/exafyltd/vitana-platform/pull/3382', branch: 'dev-autopilot/4f7d5ea4', vtid: 'VTID-04012', executor: 'agent', filePaths: ['services/gateway/src/routes/orb-live.ts'] });
+    expect(ok).toMatchObject({ category: 'task_outcome', source: 'autopilot', vtid: 'VTID-04012', importance: 40, tags: ['dev-autopilot', 'execution', 'pr_opened'], stage: 'worker', filePaths: ['services/gateway/src/routes/orb-live.ts'] });
+    // BOOTSTRAP file-scope wiring: an omitted filePaths list defaults to [], never undefined,
+    // so a caller that doesn't yet have a cheap file list still gets a well-formed write.
+    expect(buildExecutionOutcomeMemory({ executionId: 'no-files', ok: true }).filePaths).toEqual([]);
     expect(ok.title).toBe('Dev Autopilot 4f7d5ea4 (VTID-04012) opened a PR');
     expect(ok.content).toContain('agent executor run 4f7d5ea4 for VTID-04012 opened https://github.com/exafyltd/vitana-platform/pull/3382 from branch dev-autopilot/4f7d5ea4');
     const bad = buildExecutionOutcomeMemory({ executionId: '47a4d6eb-0000', ok: false, error: 'CI failed: Test Suite\n\n  ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile"', vtid: 'VTID-04008' });

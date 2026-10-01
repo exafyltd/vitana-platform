@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../../fixtures/readonly-test';
 import { waitForOrb, showOrbOverlay, setOrbState } from '../../fixtures/orb-helpers';
 
 /**

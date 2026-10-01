@@ -1,0 +1,40 @@
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json; echo "EXIT:$?"
+EXIT:0
+
+$ npx jest test/dev-autopilot-synthesis.test.ts --silent
+PASS test/dev-autopilot-synthesis.test.ts
+  fingerprintSignal
+    ✓ produces stable 16-char hex fingerprints
+    ✓ is stable for identical inputs
+    ✓ changes when any keying field changes
+    ✓ treats missing line_number as 0 consistently
+  scoreSignal
+    ✓ scales impact with severity
+    ✓ marks dead_code as low risk + auto-exec eligible
+    ✓ marks large_file as high risk + auto-exec ineligible
+    ✓ marks medium-risk types ineligible for auto-exec (human review required)
+    ✓ marks low-risk but trivial-impact signals ineligible for auto-exec
+  titleForSignal
+    ✓ uses the basename of the file
+    ✓ varies title by signal type
+  domainForPath
+    ✓ buckets known prefixes
+    ✓ falls back to general
+  TYPE_RISK_CLASS invariant
+    ✓ covers every SignalType with a risk_class
+  ingestScan — run finalization
+    ✓ finalizes the run row with status=done on success
+    ✓ finalizes the run row with status=failed (not stuck at ingesting) when ingestion throws after the run row is created
+    ✓ still reports ok:true when only the finalize PATCH itself fails (findings were already written)
+    ✓ returns ok:false without attempting any writes when the initial run-row insert fails
+
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+
+$ npx jest test/routes/dev-autopilot.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       146 passed, 146 total
+
+$ npx jest --testPathPattern="dev-autopilot" --silent
+Test Suites: 25 passed, 25 total
+Tests:       576 passed, 576 total

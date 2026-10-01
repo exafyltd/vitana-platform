@@ -30,17 +30,18 @@ jest.mock('../../src/services/supabase-semantic-memory', () => ({
   updateEmbeddings: (...args: unknown[]) => mockUpdateEmbeddings(...args),
   markForReembed: (...args: unknown[]) => mockMarkForReembed(...args),
   VTID: 'VTID-01184',
-  EMBEDDING_DIMENSIONS: 1536,
+  EMBEDDING_DIMENSIONS: 1024,
 }));
 
 const mockGenerateEmbedding = jest.fn();
 const mockGenerateBatchEmbeddings = jest.fn();
 const mockIsEmbeddingServiceAvailable = jest.fn();
 
-jest.mock('../../src/services/embedding-service', () => ({
-  generateEmbedding: (...args: unknown[]) => mockGenerateEmbedding(...args),
-  generateBatchEmbeddings: (...args: unknown[]) => mockGenerateBatchEmbeddings(...args),
-  isEmbeddingServiceAvailable: (...args: unknown[]) => mockIsEmbeddingServiceAvailable(...args),
+// VTID-04342: the route embeds memory_items with the memory embedder (Titan V2).
+jest.mock('../../src/services/memory-embedding', () => ({
+  generateMemoryEmbedding: (...args: unknown[]) => mockGenerateEmbedding(...args),
+  generateMemoryBatchEmbeddings: (...args: unknown[]) => mockGenerateBatchEmbeddings(...args),
+  isMemoryEmbeddingAvailable: (...args: unknown[]) => mockIsEmbeddingServiceAvailable(...args),
 }));
 
 const mockEmitOasisEvent = jest.fn();
@@ -65,7 +66,7 @@ const lensFor = (tenant_id: string, user_id: string) => ({
   workspace_scope: 'product' as const,
 });
 
-const EMBEDDING = Array.from({ length: 1536 }, () => 0.01);
+const EMBEDDING = Array.from({ length: 1024 }, () => 0.01);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -96,7 +97,7 @@ describe('POST /semantic/search', () => {
   });
 
   it('generates a query embedding when none is supplied, then forwards the EXACT lens through to semanticSearch', async () => {
-    mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'text-embedding-3-small' });
+    mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockSemanticSearch.mockResolvedValue({ ok: true, results: [], query: 'hello', total_found: 0 });
 
     const res = await request(app)
@@ -175,7 +176,7 @@ describe('POST /semantic/write', () => {
   });
 
   it('forwards the exact lens to writeMemoryItem on a valid write, and 201s', async () => {
-    mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'text-embedding-3-small' });
+    mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mem-1' });
 
     const res = await request(app)
@@ -265,7 +266,7 @@ describe('GET /semantic/health', () => {
     const res = await request(app).get('/semantic/health');
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    expect(res.body.embedding_dimensions).toBe(1536);
+    expect(res.body.embedding_dimensions).toBe(1024);
     expect(res.body.embedding_service).toEqual({ available: true, providers: ['openai'] });
   });
 });
@@ -286,7 +287,7 @@ describe('POST /admin/embeddings/generate', () => {
   it('processes items in batches and emits an OASIS event on success', async () => {
     const items = Array.from({ length: 3 }, (_, i) => ({ id: `item-${i}`, content: `content ${i}` }));
     mockGetItemsNeedingEmbeddings.mockResolvedValue({ ok: true, items });
-    mockGenerateBatchEmbeddings.mockResolvedValue({ ok: true, embeddings: items.map(() => EMBEDDING), model: 'text-embedding-3-small' });
+    mockGenerateBatchEmbeddings.mockResolvedValue({ ok: true, embeddings: items.map(() => EMBEDDING), model: 'amazon.titan-embed-text-v2:0' });
     mockUpdateEmbeddings.mockResolvedValue({ ok: true, updated_count: 3 });
 
     const res = await request(app).post('/admin/embeddings/generate').send({ limit: 100 });

@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04673",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04673-eventbridge-cron-conversion.test.ts", "cwd": "services/gateway",
+      "reason": "runs the cron converter embedded in the scheduler setup script against every job it defines; the script is an operator tool, nothing in it deploys" }
+  ]
+}

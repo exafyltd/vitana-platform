@@ -58,7 +58,7 @@ const VTID = 'VTID-01178';
 // Matches the hardcoded fallback in SERVICE_URLS['gateway'] (no GATEWAY_URL
 // env var is set for these tests), so tests that want a *configured*
 // service without threading deploy_url can target this host directly.
-const GATEWAY_DEFAULT_URL = 'https://gateway-lovable-vitana-vers1.uc.r.appspot.com';
+const GATEWAY_DEFAULT_URL = 'https://gateway.vitanaland.com'; // VTID-04380
 
 const PASSING_VISUAL = {
   ok: true,

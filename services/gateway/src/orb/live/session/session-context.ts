@@ -75,6 +75,12 @@ export interface SessionContext {
   /** Recent navigation trail (newest → oldest), bounded length. */
   readonly recentRoutes: ReadonlyArray<string>;
 
+  /**
+   * VTID-04425: screen title and small app state the host reported
+   * mid-session via `context_update`; null until one arrives.
+   */
+  readonly screenContext: Readonly<{ screen_title: string | null; app_state: Readonly<Record<string, string | number | boolean>> }> | null;
+
   /** Number of completed user turns so far in this session. */
   readonly turnCount: number;
 
@@ -127,6 +133,12 @@ export function buildSessionContext(session: SessionLike): SessionContext {
     clientContext,
     currentRoute: session.current_route ?? null,
     recentRoutes,
+    screenContext: session.screenContext
+      ? Object.freeze({
+        screen_title: session.screenContext.screen_title ?? null,
+        app_state: Object.freeze({ ...(session.screenContext.app_state ?? {}) }),
+      })
+      : null,
     turnCount: session.turn_count ?? 0,
     createdAt: session.createdAt instanceof Date
       ? session.createdAt.toISOString()
@@ -158,6 +170,8 @@ export interface SessionLike {
    */
   recent_routes?: string[];
   recentRoutes?: string[];
+  /** VTID-04425: see `SessionContext.screenContext`. */
+  screenContext?: { screen_title: string | null; app_state: Record<string, string | number | boolean> } | null;
   turn_count?: number;
   createdAt: Date | string;
   isReconnectStart?: boolean;

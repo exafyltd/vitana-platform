@@ -7,9 +7,14 @@
  * grouped by decision_id. Used by the Command Hub Candidate Inspector
  * panel to answer "what did Vitana suggest, what did the user do?".
  *
- * Auth: requireExafyAdmin. The inspector exposes raw OASIS metadata
- * (source evidence + reasons + dedupe keys) so it's an operator surface,
- * not a per-user one.
+ * Auth: requireAuth + requireExafyAdmin. The inspector exposes raw OASIS
+ * metadata (source evidence + reasons + dedupe keys) so it's an operator
+ * surface, not a per-user one.
+ *
+ * VTID-04491: requireExafyAdmin only reads req.identity; nothing set it,
+ * because requireAuth was missing from the chain. Every request therefore
+ * got 401 UNAUTHENTICATED, including an admin's — the Command Hub panel
+ * that reads this route could never load. requireAuth now runs first.
  *
  * Response shape:
  *   {
@@ -44,6 +49,7 @@
 
 import { Router, Response } from 'express';
 import {
+  requireAuth,
   requireExafyAdmin,
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
@@ -73,6 +79,7 @@ const MAX_HOURS = 24 * 14; // two weeks
 
 router.get(
   '/voice/next-action/inspector',
+  requireAuth,
   requireExafyAdmin,
   async (req: AuthenticatedRequest, res: Response) => {
     try {

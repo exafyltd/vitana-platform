@@ -1,0 +1,26 @@
+[
+ {
+  "tag": "desktop",
+  "tiles": [
+   "SUGGESTIONS MADE | 90 | last 30 day(s)",
+   "ACCEPTED | 43.6% | 34 of 78 settled",
+   "DECLINED | 10",
+   "IGNORED | 34 | replaced, or unanswered for a day",
+   "STILL OPEN | 12"
+  ],
+  "horizontalOverflow": false,
+  "errors": []
+ },
+ {
+  "tag": "mobile",
+  "tiles": [
+   "SUGGESTIONS MADE | 90 | last 30 day(s)",
+   "ACCEPTED | 43.6% | 34 of 78 settled",
+   "DECLINED | 10",
+   "IGNORED | 34 | replaced, or unanswered for a day",
+   "STILL OPEN | 12"
+  ],
+  "horizontalOverflow": false,
+  "errors": []
+ }
+]

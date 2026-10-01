@@ -21,9 +21,11 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   requireAuth: (req: any, res: any, next: any) => {
     const token = req.headers.authorization;
     const byToken: Record<string, any> = {
-      'Bearer owner-1': { user_id: OWNER_USER_ID, tenant_id: null, exafy_admin: false },
-      'Bearer other-1': { user_id: OTHER_USER_ID, tenant_id: null, exafy_admin: false },
-      'Bearer exafy-admin-1': { user_id: EXAFY_ADMIN_USER_ID, tenant_id: null, exafy_admin: true },
+      'Bearer owner-1': { user_id: OWNER_USER_ID, email: 'owner@example.com', tenant_id: null, exafy_admin: false },
+      'Bearer other-1': { user_id: OTHER_USER_ID, email: 'x@example.com', tenant_id: null, exafy_admin: false },
+      'Bearer other-mixed-case': { user_id: OTHER_USER_ID, email: '  X@Example.COM ', tenant_id: null, exafy_admin: false },
+      'Bearer no-email': { user_id: 'no-email-1', email: null, tenant_id: null, exafy_admin: false },
+      'Bearer exafy-admin-1': { user_id: EXAFY_ADMIN_USER_ID, email: 'admin@exafy.io', tenant_id: null, exafy_admin: true },
     };
     if (!token || !byToken[token]) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     req.identity = byToken[token];
@@ -36,7 +38,20 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => emitOasisEventMock(...args),
 }));
 
+// VTID-04463 — the invite route sends an email. The locale lookup and the
+// sender are mocked here; the email builder and the Resend client have their
+// own suite (vtid-04463-partner-invite-email.test.ts).
+jest.mock('../src/i18n/server-locale', () => ({ getUserLocale: jest.fn().mockResolvedValue('de') }));
+const sendPartnerInviteEmailMock = jest.fn();
+jest.mock('../src/services/email/partner-invite-email', () => {
+  const actual = jest.requireActual('../src/services/email/partner-invite-email');
+  return { ...actual, sendPartnerInviteEmail: (...args: any[]) => sendPartnerInviteEmailMock(...args) };
+});
+
 let tableHandlers: Record<string, (ctx: { op: string; args: any[] }) => any>;
+// Records every .in(column, values) filter so tests can assert that a write
+// was conditional (VTID-04337 activate guard).
+let inFilters: Array<{ table: string; column: string; values: any[] }>;
 
 function makeFakeSupabase() {
   return {
@@ -46,9 +61,10 @@ function makeFakeSupabase() {
       let op = 'select';
       let opArgs: any[] = [];
       const chain: any = {};
-      for (const m of ['eq', 'in', 'order', 'limit']) {
+      for (const m of ['eq', 'order', 'limit']) {
         chain[m] = (...args: any[]) => chain;
       }
+      chain.in = (column: string, values: any[]) => { inFilters.push({ table, column, values }); return chain; };
       chain.select = (...args: any[]) => { if (op === 'select') opArgs = args; return chain; };
       chain.insert = (...args: any[]) => { op = 'insert'; opArgs = args; return chain; };
       chain.update = (...args: any[]) => { op = 'update'; opArgs = args; return chain; };
@@ -77,7 +93,9 @@ function makeApp() {
 beforeEach(() => {
   jest.clearAllMocks();
   emitOasisEventMock.mockResolvedValue({ ok: true });
+  sendPartnerInviteEmailMock.mockResolvedValue({ sent: false, status: 'disabled' });
   tableHandlers = {};
+  inFilters = [];
 });
 
 describe('partner-orgs — auth (mount proof)', () => {
@@ -152,6 +170,71 @@ describe('POST /register', () => {
 
     expect(r.status).toBe(201);
     expect(r.body.organization).toMatchObject({ id: 'org-2', status: 'pending_review' });
+  });
+
+  // VTID-04471 — partner account model fields.
+  it('201 with partner_type — derives commerce_vertical and stores the company facts', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return {
+        data: { id: 'org-3', org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', commerce_vertical: 'health', status: 'pending_review', lifecycle_state: 'draft' },
+        error: null,
+      };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'praxis-nord', display_name: 'Praxis Nord', org_type: 'clinic', partner_type: 'practitioner_clinic', legal_name: 'Praxis Nord GmbH', country: 'de', website: 'https://praxis.example' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).toMatchObject({
+      partner_type: 'practitioner_clinic',
+      commerce_vertical: 'health',
+      legal_name: 'Praxis Nord GmbH',
+      country: 'DE',
+      website: 'https://praxis.example/',
+      status: 'pending_review',
+    });
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(r.body.organization).toMatchObject({ partner_type: 'practitioner_clinic', lifecycle_state: 'draft' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'partner_org.registered', payload: expect.objectContaining({ partner_type: 'practitioner_clinic' }) }),
+    );
+  });
+
+  it('400 on an unknown partner_type, a conflicting commerce_vertical or an invalid company fact', async () => {
+    tableHandlers.partner_organizations = () => { throw new Error('must not insert'); };
+    const base = { org_key: 'x', display_name: 'X', org_type: 'shop' };
+    const send = (body: object) =>
+      request(makeApp()).post('/api/v1/partner-orgs/register').set('Authorization', 'Bearer owner-1').send({ ...base, ...body });
+
+    expect((await send({ partner_type: 'bank' })).status).toBe(400);
+    expect((await send({ partner_type: 'lab', commerce_vertical: 'general' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', country: 'Germany' })).status).toBe(400);
+    expect((await send({ partner_type: 'supplier_shop', website: 'ftp://shop.example' })).status).toBe(400);
+  });
+
+  it('never lets a client set lifecycle_state or trust_level at registration', async () => {
+    let inserted: any = null;
+    tableHandlers.partner_organizations = ({ op, args }) => {
+      if (op === 'insert') inserted = args[0];
+      return { data: { id: 'org-4', org_key: 'y', display_name: 'Y', org_type: 'shop', commerce_vertical: 'general', status: 'pending_review' }, error: null };
+    };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/register')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ org_key: 'y', display_name: 'Y', org_type: 'shop', partner_type: 'supplier_shop', lifecycle_state: 'live', trust_level: 2, status: 'active' });
+
+    expect(r.status).toBe(201);
+    expect(inserted).not.toHaveProperty('lifecycle_state');
+    expect(inserted).not.toHaveProperty('trust_level');
+    expect(inserted.status).toBe('pending_review');
   });
 });
 
@@ -243,6 +326,80 @@ describe('POST /:orgId/members/invite', () => {
     expect(r.body.invite.role).toBe('professional');
     expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_invited' }));
   });
+
+  // VTID-04463 — invite email
+  function inviteTables() {
+    tableHandlers.partner_organization_members = () => ({ data: { role: 'org_admin' }, error: null });
+    tableHandlers.partner_organizations = () => ({ data: { display_name: 'DoctorBox' }, error: null });
+    tableHandlers.partner_organization_invites = () => ({
+      data: { id: 'invite-1', email: 'doc@example.com', role: 'professional', expires_at: '2026-12-01T00:00:00Z', token: 'tok123' },
+      error: null,
+    });
+  }
+
+  it('sends the invite email to the invited address with the org name, role and accept link', async () => {
+    inviteTables();
+    sendPartnerInviteEmailMock.mockResolvedValue({ sent: true, status: 'sent', provider_id: 'em_1' });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'Doc@Example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(sendPartnerInviteEmailMock).toHaveBeenCalledTimes(1);
+    const input = sendPartnerInviteEmailMock.mock.calls[0][0];
+    expect(input).toEqual(expect.objectContaining({
+      to: 'doc@example.com',
+      orgName: 'DoctorBox',
+      role: 'professional',
+      validDays: 7,
+      locale: 'de',
+    }));
+    // The token in the link is the one stored on the invite row.
+    const insertedToken = input.acceptUrl.split('/commerce/invites/')[1].split('/accept')[0];
+    expect(insertedToken).toMatch(/^[0-9a-f]{48}$/);
+    expect(r.body.accept_url).toBe(input.acceptUrl);
+    expect(r.body.email).toEqual({ sent: true, status: 'sent' });
+    expect(emitOasisEventMock).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'partner_org.member_invited',
+      payload: expect.objectContaining({ email_status: 'sent' }),
+    }));
+  });
+
+  it('still creates the invite and returns the accept link when email is disabled', async () => {
+    inviteTables();
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(r.body.accept_url).toMatch(/\/commerce\/invites\/[0-9a-f]{48}\/accept$/);
+    expect(r.body.email).toEqual({ sent: false, status: 'disabled' });
+  });
+
+  it('a refused or thrown email never fails the invite', async () => {
+    inviteTables();
+    sendPartnerInviteEmailMock.mockRejectedValue(new Error('network down'));
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(201);
+    expect(r.body.ok).toBe(true);
+    expect(r.body.email).toEqual({ sent: false, status: 'failed' });
+    // The provider error is logged, never returned to the browser.
+    expect(JSON.stringify(r.body)).not.toContain('network down');
+  });
+
+  it('no email is sent when the invite insert fails', async () => {
+    tableHandlers.partner_organization_members = () => ({ data: { role: 'org_admin' }, error: null });
+    tableHandlers.partner_organization_invites = () => ({ data: null, error: { message: 'insert failed' } });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/members/invite')
+      .set('Authorization', 'Bearer owner-1')
+      .send({ email: 'doc@example.com', role: 'professional' });
+    expect(r.status).toBe(500);
+    expect(sendPartnerInviteEmailMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /:orgId/invites', () => {
@@ -322,6 +479,46 @@ describe('POST /invites/:token/accept', () => {
   });
 });
 
+describe('POST /invites/:token/accept — invite bound to the invited email (VTID-04337 SEC-1)', () => {
+  const pendingInvite = {
+    id: 'invite-1', partner_organization_id: 'org-1', email: 'x@example.com', role: 'staff',
+    expires_at: '2099-01-01T00:00:00Z', accepted_at: null,
+  };
+
+  it('403 INVITE_EMAIL_MISMATCH when a different account holds the token, and no member row is written', async () => {
+    tableHandlers.partner_organization_invites = () => ({ data: pendingInvite, error: null });
+    tableHandlers.partner_organization_members = () => { throw new Error('must not add a member on email mismatch'); };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer owner-1');
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('INVITE_EMAIL_MISMATCH');
+    expect(JSON.stringify(r.body)).not.toContain('x@example.com');
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.member_joined' }));
+  });
+
+  it('403 INVITE_EMAIL_UNVERIFIED when the identity carries no email', async () => {
+    tableHandlers.partner_organization_invites = () => ({ data: pendingInvite, error: null });
+    tableHandlers.partner_organization_members = () => { throw new Error('must not add a member without an email'); };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer no-email');
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('INVITE_EMAIL_UNVERIFIED');
+  });
+
+  it('200 when the email matches ignoring case and surrounding whitespace', async () => {
+    tableHandlers.partner_organization_invites = ({ op }) =>
+      op === 'update' ? { data: null, error: null } : { data: { ...pendingInvite, email: 'X@example.com' }, error: null };
+    tableHandlers.partner_organization_members = () => ({ data: null, error: null });
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/invites/tok123/accept')
+      .set('Authorization', 'Bearer other-mixed-case');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, partner_organization_id: 'org-1', role: 'staff' });
+  });
+});
+
 describe('POST /:orgId/activate', () => {
   it('403 for a non-exafy_admin caller', async () => {
     const r = await request(makeApp())
@@ -336,6 +533,20 @@ describe('POST /:orgId/activate', () => {
       .post('/api/v1/partner-orgs/org-1/activate')
       .set('Authorization', 'Bearer exafy-admin-1');
     expect(r.status).toBe(404);
+  });
+
+  it('409 ORG_NOT_ACTIVATABLE for a rejected org, and the update was conditional on status (VTID-04337 SEC-3)', async () => {
+    tableHandlers.partner_organizations = ({ op }: any) =>
+      op === 'update'
+        ? { data: null, error: null } // the status filter matched nothing
+        : { data: { id: 'org-1', status: 'rejected' }, error: null };
+    const r = await request(makeApp())
+      .post('/api/v1/partner-orgs/org-1/activate')
+      .set('Authorization', 'Bearer exafy-admin-1');
+    expect(r.status).toBe(409);
+    expect(r.body).toMatchObject({ ok: false, error: 'ORG_NOT_ACTIVATABLE', status: 'rejected' });
+    expect(inFilters).toContainEqual({ table: 'partner_organizations', column: 'status', values: ['pending_review', 'suspended', 'active'] });
+    expect(emitOasisEventMock).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'partner_org.activated' }));
   });
 
   it('200 happy path — general-commerce vertical, no partner_registry bridge', async () => {

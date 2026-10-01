@@ -2,8 +2,8 @@
  * Vitana Knowledge Skill for OpenClaw
  *
  * RAG-style knowledge base queries, content indexing, and i18n
- * content delivery. Integrates with Cognee entity extraction
- * and the existing knowledge base tables.
+ * content delivery over the existing knowledge base tables.
+ * (VTID-04344: the Cognee entity-extraction integration was removed.)
  */
 
 import { z } from 'zod';
@@ -35,11 +35,6 @@ const IndexContentSchema = z.object({
   locale: z.string().default('en'),
   tags: z.array(z.string()).default([]),
   author_id: z.string().uuid().optional(),
-});
-
-const ExtractEntitiesSchema = z.object({
-  tenant_id: z.string().uuid(),
-  text: z.string().min(1).max(10000),
 });
 
 const SuggestSchema = z.object({
@@ -162,16 +157,6 @@ export const actions = {
 
     if (error) throw new Error(`index_content failed: ${error.message}`);
 
-    // Trigger entity extraction asynchronously via Cognee
-    const cogneeUrl = process.env.COGNEE_EXTRACTOR_URL;
-    if (cogneeUrl) {
-      fetch(`${cogneeUrl}/extract`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: `${title}\n\n${body}`, source_id: data.id, tenant_id }),
-      }).catch(() => {});
-    }
-
     await supabase.from('autopilot_logs').insert({
       tenant_id,
       action: 'knowledge.content_indexed',
@@ -181,32 +166,6 @@ export const actions = {
     });
 
     return { success: true, article: data };
-  },
-
-  /**
-   * Extract entities from text using Cognee.
-   */
-  async extract_entities(input: unknown) {
-    const { tenant_id, text } = ExtractEntitiesSchema.parse(input);
-
-    const cogneeUrl = process.env.COGNEE_EXTRACTOR_URL;
-    if (!cogneeUrl) {
-      return { success: false, error: 'COGNEE_EXTRACTOR_URL not configured' };
-    }
-
-    const res = await fetch(`${cogneeUrl}/extract`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, tenant_id }),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Entity extraction failed (${res.status}): ${errText}`);
-    }
-
-    const entities = await res.json();
-    return { success: true, entities };
   },
 
   /**

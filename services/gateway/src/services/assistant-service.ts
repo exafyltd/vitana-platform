@@ -182,7 +182,8 @@ export async function processAssistantMessage(
   role: string,
   tenant: string,
   route: string,
-  selectedId: string
+  selectedId: string,
+  identity?: { user_id: string; tenant_id: string | null } | null
 ): Promise<AssistantChatResponse> {
   const startTime = Date.now();
 
@@ -201,17 +202,21 @@ export async function processAssistantMessage(
   console.log(`[VTID-0150-B] Processing assistant message, session=${finalSessionId}, new=${isNewSession}`);
 
   try {
-    // VITANA-BRAIN: Route through brain when flag is enabled
+    // VITANA-BRAIN: Route through brain when flag is enabled.
+    // VTID-04339: only with a verified identity. The brain reads and writes a
+    // user's memory, so it must never run under a session id posing as a
+    // user_id or a tenant taken from the request body. Unauthenticated callers
+    // (the Command Hub Dev ORB today) take the stateless path below.
     const { isVitanaBrainEnabled } = await import('./system-controls-service');
-    const useBrain = await isVitanaBrainEnabled();
+    const useBrain = !!(identity?.user_id && identity?.tenant_id) && (await isVitanaBrainEnabled());
 
-    if (useBrain) {
+    if (useBrain && identity?.user_id && identity?.tenant_id) {
       console.log(`[VITANA-BRAIN] Routing assistant message through brain`);
       const { processBrainTurn } = await import('./vitana-brain');
       const brainResult = await processBrainTurn({
         channel: 'developer_assistant',
-        tenant_id: tenant,
-        user_id: finalSessionId, // assistant doesn't have user_id, use session as fallback
+        tenant_id: identity.tenant_id,
+        user_id: identity.user_id,
         role,
         message,
       });

@@ -224,7 +224,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -236,12 +236,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },
@@ -297,13 +326,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",
@@ -345,7 +377,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -364,6 +396,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -811,34 +847,26 @@ that use report_to_specialist (creates ticket AND swaps).",
       {
         "description": "File a customer-support ticket and hand the call to Devon, our
 tech-support colleague (VTID-03044 canary: Devon is the ONLY
-enabled specialist; Sage / Atlas / Mira are disabled). This is
-RARE — typically less than 5% of conversations. You ARE the
-instruction manual; almost every question is yours to answer.
+enabled specialist; Sage / Atlas / Mira are disabled).
 
-YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
-first say something like "Shall I bring in Devon to file this?"
-and wait for the user to say yes. Implicit consent does NOT count.
-Vary the proposal phrasing every time.
+CALL IT when the user reports a CONCRETE PROBLEM: a bug, something
+that does not work, a problem with their account, a refund or
+claim. That IS a hand-off case. Confirm once, in your own words,
+that they want it filed and passed to support; when they agree,
+call it. One short confirmation is enough.
 
-CALL ONLY WHEN ALL THREE are true:
-  (1) the user has described a CONCRETE PROBLEM (bug, broken
-      state, refund, account lockout, claim) — not a question
-      about how something works,
-  (2) the user has EXPLICITLY agreed to be connected to a
-      specialist (after you proposed it), and
-  (3) you can write a SPECIFIC \`summary\` (>= 15 words) that
-      describes WHAT broke, on WHICH screen/feature, with the
-      user's own words. If you cannot — because the user only
-      said "I want to report a bug" without details — DO NOT
-      CALL THIS TOOL YET. Instead ask ONE follow-up question:
-      "What's breaking — which screen or feature?" Get the
-      details, THEN call this tool. A vague summary causes the
-      specialist to invent the issue, which is worse than not
-      forwarding at all. Generic summaries like "user wants to
-      report a bug" are FORBIDDEN.
+\`summary\`: what went wrong and where, in the user's own words. A
+short sentence is fine. If the user only said they want to report
+something without saying what, ask one short question about what
+is broken first. Placeholder summaries ("user wants to report a
+bug") are rejected.
 
-NEVER CALL for any of these — answer them yourself inline using
-search_knowledge first:
+The reply begins with a STATUS line. Only "STATUS: handoff_created."
+means a colleague is joining; every other STATUS means you stay
+with the user — follow its ACTION line.
+
+Do NOT call for how-to questions — you are the instruction manual
+for those; answer them yourself inline using search_knowledge first:
   - "How does X work?" / "What is X?" / "Explain X"
   - "Show me how to use X" / "How do I X?" / "Teach me"
   - "Tell me about X" / "I want to learn X" / "I am new"
@@ -849,17 +877,12 @@ search_knowledge first:
     report. First-time users asking how to use the diary is a
     teaching moment, NOT a customer-support ticket.
 
-GATE-A enforcement: the backend re-checks the user's actual
-recent words (not your summary). If the gate returns STAY_INLINE,
-do NOT mention the routing decision out loud — silently answer
-the question. Same if the conversation's forward budget is
-exhausted (max 1 forward + 1 return per conversation).
+The backend re-checks the user's actual recent words (not your
+summary); max 1 forward + 1 return per conversation.
 
-AFTER A FORWARD FIRES: speak ONE short bridge sentence in your
-own natural words. ANNOUNCE the handoff — never INTRODUCE the
-specialist ("Hi, here is Devon" — that is DEVON'S job in his
-own voice). Vary your phrasing every time, never recite a
-template. Then STOP — the next voice is the specialist's.",
+AFTER STATUS handoff_created: one short turn in your own words
+announcing the colleague by role — never introduce them or speak
+for them (they greet in their own voice). Then STOP.",
         "name": "report_to_specialist",
         "parameters": {
           "properties": {
@@ -881,13 +904,38 @@ template. Then STOP — the next voice is the specialist's.",
               "type": "string",
             },
             "summary": {
-              "description": "CONCRETE one-paragraph summary using the user's OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.",
+              "description": "What went wrong and where, in the user's own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.",
               "type": "string",
             },
           },
           "required": [
             "kind",
             "summary",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Support colleague only (not Vitana): add a detail the user gives
+you to the ticket Vitana filed when she handed the user to you.
+Call it for each substantive detail — what they did, what
+happened, which screen, error text, device. Use ticket_id
+"current" for this hand-off's ticket. Do not read the note back
+to the user. Vitana files new reports with report_to_specialist.",
+        "name": "append_to_ticket",
+        "parameters": {
+          "properties": {
+            "note": {
+              "description": "The detail to record, in plain words.",
+              "type": "string",
+            },
+            "ticket_id": {
+              "description": ""current" for the ticket of this hand-off (default), or that ticket's id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "note",
           ],
           "type": "object",
         },
@@ -1823,6 +1871,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -1830,6 +1882,47 @@ open the Autopilot screen instead via navigate_to_screen.",
           },
           "required": [
             "id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
           ],
           "type": "object",
         },
@@ -1867,16 +1960,29 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.",
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
                 "type": "string",
+              },
+              "type": "array",
+            },
+            "positions": {
+              "description": "OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").",
+              "items": {
+                "type": "integer",
               },
               "type": "array",
             },
@@ -3856,10 +3962,12 @@ relay that plainly. Afterwards, confirm the unblock out loud.",
 just files and confirms. Call when the user describes something BROKEN and
 wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 "report this bug", "the button does nothing, file it".
-The summary must be a concrete description of at least 15 words in the
+The summary must be a concrete description (at least 5 words) in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
-For live handoff to a specialist use report_to_specialist instead.",
+Prefer report_to_specialist, which files the same ticket AND hands the
+user to tech support; use this only when the user wants it logged
+without talking to support.",
         "name": "submit_bug_report",
         "parameters": {
           "properties": {
@@ -3868,7 +3976,7 @@ For live handoff to a specialist use report_to_specialist instead.",
               "type": "string",
             },
             "summary": {
-              "description": "Concrete bug description, at least 15 words, in the user's own words (what broke, where, what was expected).",
+              "description": "Concrete bug description, at least 5 concrete words, in the user's own words (what broke, where, what was expected).",
               "type": "string",
             },
           },
@@ -3884,13 +3992,13 @@ should answer offline. Call when the user explicitly wants their question
 logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
 Support weiter", "open a support ticket", "log this question for support".
 Do NOT call for how-to questions you can answer yourself — answer inline.
-Summary: at least 12 words describing the question and context.
+Summary: at least 5 concrete words describing the question and context.
 AFTER: speak the ticket number once and say support will follow up.",
         "name": "submit_support_ticket",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "The user's question with context, at least 12 words.",
+              "description": "The user's question with context, at least 5 concrete words.",
               "type": "string",
             },
           },
@@ -3905,7 +4013,7 @@ AFTER: speak the ticket number once and say support will follow up.",
 or damaged items, orders that never arrived, seller issues, overcharges.
 Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
 "I want a refund", "the seller sent the wrong item, file a claim".
-Summary: at least 12 words — what was ordered, what went wrong, what the
+Summary: at least 5 concrete words — what was ordered, what went wrong, what the
 user wants (refund / replacement). Include the order number if they have it.
 AFTER: speak the ticket number once and say the team will review the claim.",
         "name": "submit_marketplace_dispute",
@@ -3916,7 +4024,7 @@ AFTER: speak the ticket number once and say the team will review the claim.",
               "type": "string",
             },
             "summary": {
-              "description": "Dispute description, at least 12 words: item, problem, desired outcome.",
+              "description": "Dispute description, at least 5 concrete words: item, problem, desired outcome.",
               "type": "string",
             },
           },
@@ -3931,14 +4039,14 @@ AFTER: speak the ticket number once and say the team will review the claim.",
 email trouble, role/permission issues, profile data corrections, lockouts.
 Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
 bitte melden", "I'm locked out", "report my login problem".
-NEVER ask for or record passwords. Summary: at least 12 words describing
+NEVER ask for or record passwords. Summary: at least 5 concrete words describing
 the account problem and what the user already tried.
 AFTER: speak the ticket number once and say the team will follow up.",
         "name": "submit_account_issue",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "Account problem description, at least 12 words. Never include passwords.",
+              "description": "Account problem description, at least 5 concrete words. Never include passwords.",
               "type": "string",
             },
           },
@@ -6237,7 +6345,8 @@ CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
         "description": "Get today's single highest-priority recommended health action.
 CALL WHEN the user asks: "what should I do today?", "what's my next
 step?", "was soll ich heute für meine Gesundheit tun?".
-If the result has an autopilot id, offer to call activate_recommendation.",
+If the result has an autopilot id, offer to call activate_recommendation.
+It may also list other next steps for this person (leads, not lines): propose at most one, in your own words.",
         "name": "get_next_best_action",
         "parameters": {
           "properties": {},
@@ -10596,6 +10705,31 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
         },
       },
       {
+        "description": "DEVELOPER ONLY. Live system snapshot: which build staging and production serve, the Dev Autopilot state (kill switch, provider outage, executions in flight and waiting for approval, 7-day success rate, alerts) and the last hour of error events and voice sessions. Pass fresh:true to bypass the 90-second cache.",
+        "name": "dev_system_status",
+        "parameters": {
+          "properties": {
+            "fresh": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs.",
+        "name": "dev_domain_atlas",
+        "parameters": {
+          "properties": {
+            "domain": {
+              "description": "A domain key or a topic, e.g. "voice" or "knowledge graph".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
         "description": "ADMIN ONLY. Find a user by name, email, or vitana_id.",
         "name": "admin_lookup_user",
         "parameters": {
@@ -12998,6 +13132,21 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
           "type": "object",
         },
       },
+      {
+        "description": "Forget a stored fact the member asks you to forget; reply per STATUS.",
+        "name": "forget_fact",
+        "parameters": {
+          "properties": {
+            "what": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "what",
+          ],
+          "type": "object",
+        },
+      },
     ],
   },
   {
@@ -13115,7 +13264,7 @@ a Create button to get started. Let me take you there."",
         },
       },
       {
-        "description": "Search the user's personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.",
+        "description": "Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.",
         "name": "search_memory",
         "parameters": {
           "properties": {
@@ -13127,12 +13276,41 @@ a Create button to get started. Let me take you there."",
               "type": "array",
             },
             "query": {
-              "description": "The search query to find relevant memories, diary entries, or personal records",
+              "description": "What to look for",
               "type": "string",
             },
           },
           "required": [
             "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save a stated fact; reply per STATUS.",
+        "name": "remember_fact",
+        "parameters": {
+          "properties": {
+            "about": {
+              "enum": [
+                "self",
+                "other",
+              ],
+              "type": "string",
+            },
+            "confirm_replace": {
+              "type": "boolean",
+            },
+            "fact_key": {
+              "type": "string",
+            },
+            "fact_value": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "fact_key",
+            "fact_value",
           ],
           "type": "object",
         },
@@ -13188,13 +13366,16 @@ user asks you to schedule, add, create, or book a meeting, appointment,
 activity, or any calendar event.
 
 IMPORTANT:
-- Always confirm the event details with the user BEFORE calling this tool.
-- If the user does not specify an end time, default to 1 hour after start.
-- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").
-- After creating, confirm the event title and time back to the user.",
+- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.
+- No end time given: 1 hour after start. Times in ISO 8601.
+- After creating, say the title and time back to them.",
         "name": "create_calendar_event",
         "parameters": {
           "properties": {
+            "confirmed": {
+              "description": "true only after the user said yes to the read-back.",
+              "type": "boolean",
+            },
             "description": {
               "description": "Optional description or notes for the event.",
               "type": "string",
@@ -13236,7 +13417,7 @@ IMPORTANT:
         },
       },
       {
-        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.",
+        "description": "Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.",
         "name": "search_events",
         "parameters": {
           "properties": {
@@ -13255,6 +13436,10 @@ IMPORTANT:
             "max_price": {
               "description": "Maximum price in EUR. Use 0 for free events only.",
               "type": "number",
+            },
+            "open_event": {
+              "description": "true only if the member asked to open one event; omit for questions.",
+              "type": "boolean",
             },
             "organizer": {
               "description": "Name of the event organizer or host to filter by.",
@@ -13702,34 +13887,26 @@ that use report_to_specialist (creates ticket AND swaps).",
       {
         "description": "File a customer-support ticket and hand the call to Devon, our
 tech-support colleague (VTID-03044 canary: Devon is the ONLY
-enabled specialist; Sage / Atlas / Mira are disabled). This is
-RARE — typically less than 5% of conversations. You ARE the
-instruction manual; almost every question is yours to answer.
+enabled specialist; Sage / Atlas / Mira are disabled).
 
-YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
-first say something like "Shall I bring in Devon to file this?"
-and wait for the user to say yes. Implicit consent does NOT count.
-Vary the proposal phrasing every time.
+CALL IT when the user reports a CONCRETE PROBLEM: a bug, something
+that does not work, a problem with their account, a refund or
+claim. That IS a hand-off case. Confirm once, in your own words,
+that they want it filed and passed to support; when they agree,
+call it. One short confirmation is enough.
 
-CALL ONLY WHEN ALL THREE are true:
-  (1) the user has described a CONCRETE PROBLEM (bug, broken
-      state, refund, account lockout, claim) — not a question
-      about how something works,
-  (2) the user has EXPLICITLY agreed to be connected to a
-      specialist (after you proposed it), and
-  (3) you can write a SPECIFIC \`summary\` (>= 15 words) that
-      describes WHAT broke, on WHICH screen/feature, with the
-      user's own words. If you cannot — because the user only
-      said "I want to report a bug" without details — DO NOT
-      CALL THIS TOOL YET. Instead ask ONE follow-up question:
-      "What's breaking — which screen or feature?" Get the
-      details, THEN call this tool. A vague summary causes the
-      specialist to invent the issue, which is worse than not
-      forwarding at all. Generic summaries like "user wants to
-      report a bug" are FORBIDDEN.
+\`summary\`: what went wrong and where, in the user's own words. A
+short sentence is fine. If the user only said they want to report
+something without saying what, ask one short question about what
+is broken first. Placeholder summaries ("user wants to report a
+bug") are rejected.
 
-NEVER CALL for any of these — answer them yourself inline using
-search_knowledge first:
+The reply begins with a STATUS line. Only "STATUS: handoff_created."
+means a colleague is joining; every other STATUS means you stay
+with the user — follow its ACTION line.
+
+Do NOT call for how-to questions — you are the instruction manual
+for those; answer them yourself inline using search_knowledge first:
   - "How does X work?" / "What is X?" / "Explain X"
   - "Show me how to use X" / "How do I X?" / "Teach me"
   - "Tell me about X" / "I want to learn X" / "I am new"
@@ -13740,17 +13917,12 @@ search_knowledge first:
     report. First-time users asking how to use the diary is a
     teaching moment, NOT a customer-support ticket.
 
-GATE-A enforcement: the backend re-checks the user's actual
-recent words (not your summary). If the gate returns STAY_INLINE,
-do NOT mention the routing decision out loud — silently answer
-the question. Same if the conversation's forward budget is
-exhausted (max 1 forward + 1 return per conversation).
+The backend re-checks the user's actual recent words (not your
+summary); max 1 forward + 1 return per conversation.
 
-AFTER A FORWARD FIRES: speak ONE short bridge sentence in your
-own natural words. ANNOUNCE the handoff — never INTRODUCE the
-specialist ("Hi, here is Devon" — that is DEVON'S job in his
-own voice). Vary your phrasing every time, never recite a
-template. Then STOP — the next voice is the specialist's.",
+AFTER STATUS handoff_created: one short turn in your own words
+announcing the colleague by role — never introduce them or speak
+for them (they greet in their own voice). Then STOP.",
         "name": "report_to_specialist",
         "parameters": {
           "properties": {
@@ -13772,13 +13944,38 @@ template. Then STOP — the next voice is the specialist's.",
               "type": "string",
             },
             "summary": {
-              "description": "CONCRETE one-paragraph summary using the user's OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.",
+              "description": "What went wrong and where, in the user's own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.",
               "type": "string",
             },
           },
           "required": [
             "kind",
             "summary",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Support colleague only (not Vitana): add a detail the user gives
+you to the ticket Vitana filed when she handed the user to you.
+Call it for each substantive detail — what they did, what
+happened, which screen, error text, device. Use ticket_id
+"current" for this hand-off's ticket. Do not read the note back
+to the user. Vitana files new reports with report_to_specialist.",
+        "name": "append_to_ticket",
+        "parameters": {
+          "properties": {
+            "note": {
+              "description": "The detail to record, in plain words.",
+              "type": "string",
+            },
+            "ticket_id": {
+              "description": ""current" for the ticket of this hand-off (default), or that ticket's id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "note",
           ],
           "type": "object",
         },
@@ -14714,6 +14911,10 @@ open the Autopilot screen instead via navigate_to_screen.",
         "name": "activate_recommendation",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.",
+              "type": "boolean",
+            },
             "id": {
               "description": "The recommendation id from the initiative target. Pass verbatim — never construct or guess it.",
               "type": "string",
@@ -14721,6 +14922,47 @@ open the Autopilot screen instead via navigate_to_screen.",
           },
           "required": [
             "id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "The user just agreed ("yes", "okay, do it", "ja, mach das") to the
+offer you made. Runs exactly that stored offer — no id needed.
+If the result says awaiting_confirmation, read the details back in
+your own words and, if the user agrees, call again with confirm=true.
+If it says there is no open offer, ask what they would like to do.",
+        "name": "confirm_pending_action",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "True only after a read-back the user agreed to.",
+              "type": "boolean",
+            },
+            "offer_id": {
+              "description": "OPTIONAL — the offer_id of the offer, when you have it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start an Autopilot calendar slot that is due now and mark it done,
+together with the suggestion it came from. Use it when the user
+agrees to the due slot you offered (confirm_pending_action runs it
+for you after a "yes"). Returns the screen to open, if any.",
+        "name": "start_autopilot_slot",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "The calendar event id of the due slot.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "event_id",
           ],
           "type": "object",
         },
@@ -14758,16 +15000,29 @@ queue). Use ONLY after the user has explicitly agreed to act
 
 You normally call this with NO arguments right after
 get_autopilot_recommendations — it activates the actions you
-just read aloud. To activate a subset, pass \`ids\` with the
-specific recommendation ids from the items list (never guess an
-id). Returns { ok, activated, spoken }; speak \`spoken\` verbatim.",
+just read aloud. To activate a subset, pass \`positions\` (1-based
+numbers as read aloud: "the second one" → [2]) or \`ids\` from the
+items list (never guess an id). Returns per-item results; confirm
+in your own words what was activated and where it landed (calendar
+slot), and say plainly if something could not be activated.",
         "name": "activate_autopilot_recommendations",
         "parameters": {
           "properties": {
+            "confirm": {
+              "description": "Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.",
+              "type": "boolean",
+            },
             "ids": {
               "description": "OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.",
               "items": {
                 "type": "string",
+              },
+              "type": "array",
+            },
+            "positions": {
+              "description": "OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").",
+              "items": {
+                "type": "integer",
               },
               "type": "array",
             },
@@ -16747,10 +17002,12 @@ relay that plainly. Afterwards, confirm the unblock out loud.",
 just files and confirms. Call when the user describes something BROKEN and
 wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
 "report this bug", "the button does nothing, file it".
-The summary must be a concrete description of at least 15 words in the
+The summary must be a concrete description (at least 5 words) in the
 user's own words — which screen, what happened, what was expected.
 AFTER: speak the ticket number once and say the team will follow up.
-For live handoff to a specialist use report_to_specialist instead.",
+Prefer report_to_specialist, which files the same ticket AND hands the
+user to tech support; use this only when the user wants it logged
+without talking to support.",
         "name": "submit_bug_report",
         "parameters": {
           "properties": {
@@ -16759,7 +17016,7 @@ For live handoff to a specialist use report_to_specialist instead.",
               "type": "string",
             },
             "summary": {
-              "description": "Concrete bug description, at least 15 words, in the user's own words (what broke, where, what was expected).",
+              "description": "Concrete bug description, at least 5 concrete words, in the user's own words (what broke, where, what was expected).",
               "type": "string",
             },
           },
@@ -16775,13 +17032,13 @@ should answer offline. Call when the user explicitly wants their question
 logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
 Support weiter", "open a support ticket", "log this question for support".
 Do NOT call for how-to questions you can answer yourself — answer inline.
-Summary: at least 12 words describing the question and context.
+Summary: at least 5 concrete words describing the question and context.
 AFTER: speak the ticket number once and say support will follow up.",
         "name": "submit_support_ticket",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "The user's question with context, at least 12 words.",
+              "description": "The user's question with context, at least 5 concrete words.",
               "type": "string",
             },
           },
@@ -16796,7 +17053,7 @@ AFTER: speak the ticket number once and say support will follow up.",
 or damaged items, orders that never arrived, seller issues, overcharges.
 Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
 "I want a refund", "the seller sent the wrong item, file a claim".
-Summary: at least 12 words — what was ordered, what went wrong, what the
+Summary: at least 5 concrete words — what was ordered, what went wrong, what the
 user wants (refund / replacement). Include the order number if they have it.
 AFTER: speak the ticket number once and say the team will review the claim.",
         "name": "submit_marketplace_dispute",
@@ -16807,7 +17064,7 @@ AFTER: speak the ticket number once and say the team will review the claim.",
               "type": "string",
             },
             "summary": {
-              "description": "Dispute description, at least 12 words: item, problem, desired outcome.",
+              "description": "Dispute description, at least 5 concrete words: item, problem, desired outcome.",
               "type": "string",
             },
           },
@@ -16822,14 +17079,14 @@ AFTER: speak the ticket number once and say the team will review the claim.",
 email trouble, role/permission issues, profile data corrections, lockouts.
 Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
 bitte melden", "I'm locked out", "report my login problem".
-NEVER ask for or record passwords. Summary: at least 12 words describing
+NEVER ask for or record passwords. Summary: at least 5 concrete words describing
 the account problem and what the user already tried.
 AFTER: speak the ticket number once and say the team will follow up.",
         "name": "submit_account_issue",
         "parameters": {
           "properties": {
             "summary": {
-              "description": "Account problem description, at least 12 words. Never include passwords.",
+              "description": "Account problem description, at least 5 concrete words. Never include passwords.",
               "type": "string",
             },
           },
@@ -19128,7 +19385,8 @@ CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
         "description": "Get today's single highest-priority recommended health action.
 CALL WHEN the user asks: "what should I do today?", "what's my next
 step?", "was soll ich heute für meine Gesundheit tun?".
-If the result has an autopilot id, offer to call activate_recommendation.",
+If the result has an autopilot id, offer to call activate_recommendation.
+It may also list other next steps for this person (leads, not lines): propose at most one, in your own words.",
         "name": "get_next_best_action",
         "parameters": {
           "properties": {},
@@ -20573,6 +20831,21 @@ Warenkorb?".",
             },
           },
           "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Forget a stored fact the member asks you to forget; reply per STATUS.",
+        "name": "forget_fact",
+        "parameters": {
+          "properties": {
+            "what": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "what",
+          ],
           "type": "object",
         },
       },

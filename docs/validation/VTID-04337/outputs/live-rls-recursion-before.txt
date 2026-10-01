@@ -1,0 +1,26 @@
+Live project inmkhvwdcuyhnxkgfvsb, 2026-09-23 ~11:15 UTC, read-only transaction
+(nothing written; rolled back), executed via the Supabase MCP connection:
+
+  BEGIN READ ONLY;
+  SELECT set_config('request.jwt.claims',
+    '{"sub":"a27552a3-0257-4305-8ed0-351a80fd3701","role":"authenticated"}', true);
+  SET LOCAL ROLE authenticated;
+  SELECT count(*) FROM public.partner_organization_members;
+  ROLLBACK;
+
+Result:
+  ERROR:  42P17: infinite recursion detected in policy for relation
+  "partner_organization_members"
+
+Live policy definitions at the same time (pg_policy):
+  partner_organization_members_select:
+    EXISTS (SELECT 1 FROM partner_organization_members pom
+            WHERE pom.partner_organization_id = partner_organization_members.partner_organization_id
+              AND pom.user_id = current_user_id())
+  partner_organizations_select:
+    status = 'active' OR owner_user_id = current_user_id()
+    OR EXISTS (SELECT 1 FROM partner_organization_members pom
+               WHERE pom.partner_organization_id = partner_organizations.id
+                 AND pom.user_id = current_user_id())
+
+No function named *partner_org* existed in schema public.

@@ -18,6 +18,11 @@ import {
 
 // Mock auth — admin pass-through.
 jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  // VTID-04491: requireAuth now runs before requireExafyAdmin.
+  requireAuth: (req: any, _res: any, next: any) => {
+    req.identity = { user_id: 'admin', exafy_admin: true };
+    next();
+  },
   requireExafyAdmin: (_req: any, _res: any, next: any) => next(),
   requireAuthWithTenant: (req: any, _res: any, next: any) => {
     req.identity = { user_id: 'admin', tenant_id: 'admin' };
@@ -204,5 +209,16 @@ describe('VTID-03063 — HTTP contract', () => {
       '/api/v1/voice/next-action/inspector?user_id=c5a4daf9-190a-4a9e-9638-d6b32f85244a',
     );
     expect(res.status).toBe(500);
+  });
+});
+
+describe('VTID-04491 — auth chain', () => {
+  test('requireAuth runs before requireExafyAdmin, so an admin identity exists when the admin gate reads it', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const src: string = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/routes/voice-next-action-inspector.ts'),
+      'utf8',
+    );
+    expect(src).toMatch(/'\/voice\/next-action\/inspector',\s*requireAuth,\s*requireExafyAdmin,/);
   });
 });

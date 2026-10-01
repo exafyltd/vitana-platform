@@ -30,8 +30,9 @@
  *
  * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
+import { gatewayBaseUrl } from '../env';
 
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+const GATEWAY_URL = gatewayBaseUrl();
 const PROBE_TIMEOUT_MS = 15_000;
 
 export type ProbeFailureModeCode =

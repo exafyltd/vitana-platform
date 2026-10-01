@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { mapRawToStage, normalizeStage, isValidStage, emptyStageCounters, VALID_STAGES, type TaskStage, type StageCounters } from "../lib/stage-mapping";
 import { requireAuth, AuthenticatedRequest } from "../middleware/auth-supabase-jwt";
 
+import { withDependencyHealth } from '../services/dependency-probe';
 export const router = Router();
 
 // Telemetry Event Schema (TickerEvent format)
@@ -270,12 +271,13 @@ router.post("/batch", requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 // GET /health - Telemetry subsystem health
 // VTID-0526-D: Route mounted at /api/v1/telemetry, so this becomes /api/v1/telemetry/health
-router.get("/health", (_req: Request, res: Response) => {
-  res.status(200).json({
+router.get("/health", async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.status(200).json(await withDependencyHealth([{ table: 'oasis_events' }], {
     ok: true,
     service: "telemetry",
     timestamp: new Date().toISOString(),
-  });
+  }));
 });
 
 /**

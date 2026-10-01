@@ -4,7 +4,8 @@
 // Scope (this file):
 //   1. writeFact() — inference-confidence gate, the VTID-01952 Identity
 //      Lock chokepoint, RPC success/failure, entity scoping (self vs
-//      disclosed), provenance fields, and the Tier-2 mirror fire-and-forget.
+//      disclosed) and provenance fields. The write goes through
+//      services/memory/remember.ts (VTID-04364); the tier-2 mirror is gone.
 //   2. getCurrentFacts() — RPC mapping + tenant/user scoping.
 //   3. checkFactsForDerivedAnswer() — presence / user-stated / confidence
 //      checks used before answering derived questions.
@@ -28,13 +29,6 @@ jest.mock('../../src/services/oasis-event-service', () => ({
   emitOasisEvent: (...args: any[]) => mockEmitOasisEvent(...args),
 }));
 
-// Fire-and-forget Tier 2 mirror — stub it out so tests don't depend on its
-// (separately-tested) internals, but still assert on what it was called with.
-const mockMirrorFact = jest.fn().mockResolvedValue(undefined);
-jest.mock('../../src/services/mem-tier2-writer', () => ({
-  mirrorFact: (...args: any[]) => mockMirrorFact(...args),
-}));
-
 // assertWriteFact (VTID-01952) is used from the real memory-audit +
 // memory-identity-lock modules — NOT mocked — so the Identity Lock
 // chokepoint itself is exercised, not a stand-in for it.
@@ -51,14 +45,9 @@ import {
 const TENANT_A = 'tenant-aaa';
 const USER_B = 'user-bbb';
 
-function flushMicrotasks() {
-  return new Promise((resolve) => setImmediate(resolve));
-}
-
 beforeEach(() => {
   mockRpc.mockReset();
   mockEmitOasisEvent.mockClear();
-  mockMirrorFact.mockClear();
   process.env.SUPABASE_URL = 'http://localhost:54321';
   process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
 });
@@ -116,7 +105,6 @@ describe('writeFact — Identity Lock chokepoint (VTID-01952)', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toBe('identity_locked: user_first_name cannot be written from this source');
     expect(mockRpc).not.toHaveBeenCalled();
-    expect(mockMirrorFact).not.toHaveBeenCalled();
   });
 
   it('allows an identity-class fact written from an authorized UI surface', async () => {
@@ -175,13 +163,11 @@ describe('writeFact — RPC success path (provenance + entity scope + mirror)', 
       p_entity: 'self',
       p_fact_value_type: 'text',
       p_provenance_source: 'user_stated',
-      p_provenance_utterance_id: null,
       p_provenance_confidence: 0.9,
-      p_thread_id: null,
     });
   });
 
-  it('passes entity="disclosed" straight through to the RPC and to the Tier-2 mirror', async () => {
+  it('passes entity="disclosed" straight through to the RPC', async () => {
     mockRpc.mockResolvedValue({ data: 'fact-id-5', error: null });
 
     await writeFact({
@@ -195,16 +181,24 @@ describe('writeFact — RPC success path (provenance + entity scope + mirror)', 
     });
 
     expect(mockRpc).toHaveBeenCalledWith('write_fact', expect.objectContaining({ p_entity: 'disclosed' }));
-    await flushMicrotasks();
-    expect(mockMirrorFact).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenant_id: TENANT_A,
-        user_id: USER_B,
-        entity: 'disclosed',
-        fact_key: 'fiancee_name',
-        fact_value: 'Alex',
-      })
-    );
+  });
+
+  it('sends the utterance and thread ids only when they are set (VTID-04364)', async () => {
+    mockRpc.mockResolvedValue({ data: 'fact-id-7', error: null });
+
+    await writeFact({
+      tenant_id: TENANT_A,
+      user_id: USER_B,
+      fact_key: 'user_favorite_color',
+      fact_value: 'teal',
+      provenance_utterance_id: 'utt-1',
+      thread_id: 'thread-1',
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('write_fact', expect.objectContaining({
+      p_provenance_utterance_id: 'utt-1',
+      p_thread_id: 'thread-1',
+    }));
   });
 
   it('emits memory.fact.written with the resolved provenance on success', async () => {
@@ -233,7 +227,7 @@ describe('writeFact — RPC success path (provenance + entity scope + mirror)', 
 });
 
 describe('writeFact — RPC failure path', () => {
-  it('returns ok:false with the RPC error message and never fires the Tier-2 mirror', async () => {
+  it('returns ok:false with the RPC error message', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'constraint violation' } });
 
     const result = await writeFact({
@@ -244,8 +238,6 @@ describe('writeFact — RPC failure path', () => {
     });
 
     expect(result).toEqual({ ok: false, error: 'constraint violation' });
-    await flushMicrotasks();
-    expect(mockMirrorFact).not.toHaveBeenCalled();
   });
 
   it('emits memory.fact.write.failed on RPC error', async () => {

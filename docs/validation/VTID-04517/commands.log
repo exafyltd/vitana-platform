@@ -1,0 +1,14 @@
+# VTID-04517 — commands run (resolver part)
+# Registry: vitana-v1 main after #1151 (3436424), rebuilt locally:
+node scripts/nav/build-nav-registry.mjs          # 185 screens → public/nav-registry.json
+cp public/nav-registry.json ../vitana-platform/services/gateway/src/navigation/data/nav-registry.snapshot.json
+cd services/gateway
+# Titan v2 vectors (read-only Bedrock InvokeModel, eu-central-1):
+BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts   # 7672 texts → data/nav-embeddings.{json,bin}
+NAV_GOLDEN_WRITE_BASELINE=1 npx jest test/nav-golden/nav-golden-registry.test.ts   # baseline.registry.json
+NAV_GOLDEN_WRITE_BASELINE=1 npx jest test/nav-golden/nav-registry-loo.test.ts      # baseline.loo.json
+npx jest test/navigation test/nav-golden        # 6 suites, 287/287 pass
+npx tsc --noEmit -p .                           # clean
+npm run build                                   # clean; dist/navigation/data carries snapshot + vectors
+node -e "require('./dist/navigation').loadBundledEmbeddings().size"   # 7672
+# live query check (Titan, read-only): fresh vs stored cosine 1.0000, ~220 ms/query

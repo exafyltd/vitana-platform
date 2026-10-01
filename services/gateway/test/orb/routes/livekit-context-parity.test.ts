@@ -48,11 +48,14 @@ describe('VTID-03036 LiveKit context parity wire-up', () => {
     expect(source).toMatch(/import\s*{[^}]*\bbuildBootstrapContextPack\b[^}]*}\s*from\s*['"]\.\/orb-live['"]/);
   });
 
-  it('invokes buildBootstrapContextPack inside the parallel batch', () => {
-    // The pack call sits inside the existing Promise.all alongside the
+  it('invokes the shared session context builder inside the parallel batch', () => {
+    // The build sits inside the existing Promise.all alongside the
     // 6 user-scoped queries. Running it in parallel is required so the
     // history-aware fetch does not regress bootstrap latency.
-    expect(source).toMatch(/await\s+buildBootstrapContextPack\(\s*req\.identity\s*,\s*sessionId\s*\)/);
+    // VTID-04414 (WS-1.3): the shared builder (brain when enabled), with the
+    // legacy pack as its fallback.
+    expect(source).toMatch(/await\s+buildBaseSessionContext\(/);
+    expect(source).toMatch(/\{\s*legacy:\s*buildBootstrapContextPack\s*\}/);
   });
 
   it('passes a LiveKit-scoped synthetic sessionId to the pack', () => {
@@ -88,7 +91,7 @@ describe('VTID-03036 LiveKit context parity wire-up', () => {
     // The promise body must swallow throws so a pack failure never
     // blocks the bootstrap response. The Vertex production path is
     // unaffected by anything inside this best-effort closure.
-    expect(source).toMatch(/buildBootstrapContextPack failed:/);
+    expect(source).toMatch(/session context build failed:/);
   });
 
   // VTID-03084 (Lane 2) — LiveKit lang resolution priority.

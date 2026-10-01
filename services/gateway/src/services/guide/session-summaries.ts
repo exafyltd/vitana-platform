@@ -33,6 +33,7 @@ Rules:
 - Refer to the user as "the user", never "you".
 - Lead with the topic. Skip greetings, sign-offs, "user said hello", etc.
 - If the user revealed a fact about themselves (their company, their goal, a name), include it concisely.
+- Record only facts the USER stated. Never record a personal fact that only the assistant stated (a name, a date, a birthday, an allergy): the assistant may have been wrong. Write "Vitana answered about X" without the value instead.
 - Do NOT invent details. Stick to what is in the transcript.
 - Plain prose. No markdown, no quotes, no JSON.
 
@@ -109,6 +110,21 @@ export async function recordSessionSummary(
     summarySource = 'heuristic';
   }
   const themes = extractThemes(input.transcript_turns);
+
+  // VTID-04701: a summary that names a value the member asked to forget is
+  // not stored — it would bring the value back in the next session's context.
+  // A failed marker read stores the summary (logged): losing every summary
+  // because a side table is unreachable is the larger harm.
+  try {
+    const { listForgottenValueHashes, textNamesForgottenValue } = await import('../memory/forgotten');
+    const hashes = await listForgottenValueHashes(supabase, input.user_id);
+    if (textNamesForgottenValue(summary, hashes)) {
+      console.log(`${LOG_PREFIX} summary for session=${input.session_id.substring(0, 12)} names a forgotten value — not stored`);
+      return { success: false, error: 'names_forgotten_value' };
+    }
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+  }
 
   const { error } = await repo.upsertSessionSummary(supabase, {
     user_id: input.user_id,
@@ -360,7 +376,12 @@ function truncate(s: string, max: number): string {
  */
 export function formatSummariesForPrompt(summaries: SessionSummary[]): string {
   if (!summaries || summaries.length === 0) return '';
-  const lines: string[] = ['Recent prior sessions (most recent first — weave naturally, do NOT recite):'];
+  // VTID-04713: live B-PROF-03 (pass 7). A summary recorded a guessed answer
+  // ("her name is Anna and birthday is March 12") and later sessions repeated
+  // it as memory. Summaries are recaps, never the source of a personal fact.
+  const lines: string[] = [
+    'Recent prior sessions (most recent first — weave naturally, do NOT recite). These are recaps, not stored facts: never take a name, date, birthday or other personal detail from them; use only the stored facts for those:',
+  ];
   for (const s of summaries) {
     const when = new Date(s.ended_at).toISOString().slice(0, 10);
     const themes = s.themes && s.themes.length > 0 ? ` [themes: ${s.themes.join(', ')}]` : '';

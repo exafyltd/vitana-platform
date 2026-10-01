@@ -141,3 +141,13 @@ export async function fetchLatestCompletedExecutionByFindingId(sb: SupabaseClien
 export async function insertAgentAuditLog(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('agent_audit_log').insert(row);
 }
+
+/** VTID-04307: the caller's role in the requested tenant (admin gate). */
+export async function fetchCallerTenantRole(sb: SupabaseClient, userId: string, tenantId: string) {
+  return sb
+    .from('user_tenants')
+    .select('active_role')
+    .eq('user_id', userId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+}

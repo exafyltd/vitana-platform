@@ -70,11 +70,13 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
     localStorage.setItem('vitana.authToken', s.access_token);
   }, { session });
 
-  // Step 3: Switch to target role via gateway API
+  // Step 3: Switch to target role via gateway API.
+  // VTID-04482: with E2E_READONLY=1 the POST is skipped (it saves the
+  // account's role preference, a write) and only the local view role is set.
   const gatewayUrl = process.env.HUB_URL || 'https://preview-aws-gateway.vitanaland.com';
 
-  await page.evaluate(async ({ gatewayUrl: gw, jwt: token, role: r }) => {
-    try {
+  await page.evaluate(async ({ gatewayUrl: gw, jwt: token, role: r, readonly: ro }) => {
+    if (!ro) try {
       await fetch(`${gw}/api/v1/me/active-role`, {
         method: 'POST',
         headers: {
@@ -85,7 +87,7 @@ export async function loginAsRole(page: Page, role: UserRole): Promise<void> {
       });
     } catch { /* gateway may be unreachable in some test configs — role stays default */ }
     localStorage.setItem('vitana.viewRole', r);
-  }, { gatewayUrl, jwt, role });
+  }, { gatewayUrl, jwt, role, readonly: process.env.E2E_READONLY === '1' });
 
   // Step 4: Reload to apply auth + role
   await page.reload({ waitUntil: 'domcontentloaded' });

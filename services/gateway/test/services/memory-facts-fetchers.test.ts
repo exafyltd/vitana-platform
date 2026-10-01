@@ -21,18 +21,19 @@
 // `searchFactsSemantic` lazy-imports the embedding service so the file
 // stays loadable in environments where embeddings aren't configured.
 // Mock it before any imports of the module under test.
-jest.mock('../../src/services/embedding-service', () => ({
-  generateEmbedding: jest.fn(),
+// VTID-04342: queries are embedded with the memory embedder (Titan V2).
+jest.mock('../../src/services/memory-embedding', () => ({
+  embedMemoryText: jest.fn(),
 }));
 
 import {
   searchFactsSemantic,
   listFactsByConfidence,
 } from '../../src/services/memory-facts-service';
-import { generateEmbedding } from '../../src/services/embedding-service';
+import { embedMemoryText } from '../../src/services/memory-embedding';
 
-const mockedEmbedding = generateEmbedding as jest.MockedFunction<
-  typeof generateEmbedding
+const mockedEmbedding = embedMemoryText as jest.MockedFunction<
+  typeof embedMemoryText
 >;
 const mockedFetch = global.fetch as jest.MockedFunction<typeof fetch>;
 

@@ -1,0 +1,3 @@
+# VTID-04519 commands
+# read-only: select screen_id, route, is_active from nav_catalog where screen_id in (HOME.MATCHES, HOME.CONTEXT, HOME.ACTIONS, HOME.AI_FEED)
+cd services/gateway && npx tsc --noEmit -p . && npx jest

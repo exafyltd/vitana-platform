@@ -76,3 +76,31 @@ export function gatewayBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   if (explicit) return explicit.replace(/\/+$/, '');
   return GATEWAY_URLS[env.VITANA_ENV === 'staging' ? 'staging' : 'production'];
 }
+
+/**
+ * VTID-04318: the community app (frontend) base URL for this environment.
+ * `COMMUNITY_APP_URL` wins; otherwise staging → preview-aws, production →
+ * the apex. Replaces a default that pointed at the deleted Cloud Run
+ * `community-app` host.
+ */
+export const COMMUNITY_APP_URLS: Record<VitanaEnv, string> = {
+  staging: 'https://preview-aws.vitanaland.com',
+  production: 'https://vitanaland.com',
+};
+
+export function communityAppBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = (env.COMMUNITY_APP_URL || '').trim();
+  if (explicit) return explicit.replace(/\/+$/, '');
+  return COMMUNITY_APP_URLS[env.VITANA_ENV === 'staging' ? 'staging' : 'production'];
+}
+
+/**
+ * VTID-04318: the OASIS operator base URL. `OASIS_OPERATOR_URL` wins;
+ * otherwise the AWS service (CLAUDE.md §1b), never the deleted Cloud Run host.
+ */
+export const OASIS_OPERATOR_DEFAULT_URL = 'https://dr-oasis-operator.vitanaland.com';
+
+export function oasisOperatorBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = (env.OASIS_OPERATOR_URL || '').trim();
+  return (explicit || OASIS_OPERATOR_DEFAULT_URL).replace(/\/+$/, '');
+}

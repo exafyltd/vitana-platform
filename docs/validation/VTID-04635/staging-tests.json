@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04635",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "run dispatch refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/run", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "cycle run refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/cycles/00000000-0000-0000-0000-000000000000/run", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "cycle creation refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/cycles", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "ORB monitor trigger refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/orb-monitor/trigger", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "suite list still answers", "path": "/api/v1/testing/suites",
+      "expect_status": 200, "expect_json": { "ok": true } },
+    { "kind": "existing", "ref": "npx jest test/command-hub/vtid-04635-testing-qa-tabs-honest.test.ts", "cwd": "services/gateway",
+      "reason": "pins the corrected Testing & QA tabs in app.js; the served file is not checkable (the change sits past the runner's 1 MB body limit and Cloudflare caches the unversioned path)" },
+    { "kind": "existing", "ref": "npx jest test/routes/testing.test.ts", "cwd": "services/gateway",
+      "reason": "pins the admin gate on every run route and the staging-only E2E target" }
+  ]
+}

@@ -56,7 +56,27 @@
 # (no billing account, VTID-03656/03676's own finding).
 #
 # Usage:
-#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh [--delete] [--dry-run]
+#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh [--delete] [--dry-run] [--only <name-prefix>]...
+#
+# --only <name-prefix> (VTID-04352, repeatable) limits the run to the jobs whose
+# NAME starts with one of the prefixes. It exists so one group can be switched
+# on at a time: e.g. the nightly memory/learning jobs (AP-0906..AP-0913) without
+# also creating the member-facing notification schedules in the same pass.
+#   DEFAULT_TENANT_ID=<uuid> ./scripts/aws/setup-eventbridge-cron-migration.sh --only autopilot-memory- --dry-run
+# With --delete, --only removes only the matching schedules and leaves the
+# shared Lambda and both IAM roles alone (other schedules still use them).
+# A prefix list that matches nothing is an error, never a silent no-op.
+# Note: of the eight memory jobs, AP-0907 (autopilot-memory-daily-learning-digest)
+# is member-facing — one "I learned something new about you" push per user at
+# their local 18:00, only on days new facts were learned. The other seven write
+# memory only. To start the silent seven first, pass each as its own --only:
+#   --only autopilot-memory-routine-pattern-extraction
+#   --only autopilot-memory-relationship-graph-projection
+#   --only autopilot-memory-behavior-preference-inference
+#   --only autopilot-memory-health-correlation-insights
+#   --only autopilot-memory-user-model-synthesis
+#   --only autopilot-memory-own-post-capture
+#   --only autopilot-memory-embedding-backfill
 #
 # Prerequisites (NOT covered by this session's AWS grant as of VTID-03766
 # — see docs/AURORA-B6-STORAGE-INVENTORY.md's sibling B7 finding for why
@@ -69,6 +89,8 @@
 # ──────────────────────────────────────────────────────────────
 
 set -euo pipefail
+# VTID-04673: no interactive pager -- the first live apply stopped at "(END)".
+export AWS_PAGER=""
 
 REGION="${VITANA_AWS_REGION:-eu-central-1}"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:-472838866351}"
@@ -77,6 +99,13 @@ TENANT_ID="${DEFAULT_TENANT_ID:-}"
 # VTID-04226: the test-contract scanners target STAGING until the owner
 # promotes them (IF-THEN 26); override to gateway.vitanaland.com deliberately.
 TEST_CONTRACTS_GATEWAY_URL="${TEST_CONTRACTS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"
+# VTID-04349: the AP-XXXX automation jobs start on the STAGING gateway, where
+# AUTOMATIONS_DELIVERY_MODE=shadow records notifications and writes instead of
+# performing them. Pointing them at production (live, real members) is the
+# owner's go-live decision: re-run with AUTOMATIONS_GATEWAY_URL=https://gateway.vitanaland.com
+# once staging shadow runs are verified. /api/v1/automations/* now requires
+# X-Gateway-Internal, so these jobs carry auth=gateway_internal.
+AUTOMATIONS_GATEWAY_URL="${AUTOMATIONS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"
 INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/staging/internal-token}"
 
 LAMBDA_NAME="vitana-cron-dispatch"
@@ -85,10 +114,16 @@ SCHEDULER_ROLE_NAME="vitana-scheduler-cron-dispatch"
 
 DELETE=false
 DRY_RUN=false
+ONLY_PREFIXES=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --delete) DELETE=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
+    --only)
+      if [[ $# -lt 2 || -z "$2" || "$2" == --* ]]; then
+        echo "ERROR: --only needs a job-name prefix, e.g. --only autopilot-memory-" >&2; exit 1
+      fi
+      ONLY_PREFIXES+=("$2"); shift 2 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -104,25 +139,27 @@ fi
 # Verbatim from scripts/setup-cloud-scheduler.sh's JOBS + MEMORY_INTELLIGENCE_JOBS
 # + DIRECT_JOBS (minus push-dispatch, already migrated) + TENANT_DIRECT_JOBS.
 JOBS=(
-  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}"
-  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}"
+  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-memory-diary-theme-rollup|25 4 * * *|UTC|/api/v1/automations/cron/AP-0915|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
   "gateway-reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick|{}"
   "gateway-reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper|{}"
   "gateway-daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute|{\"tenant_id\":\"$TENANT_ID\"}"
@@ -132,18 +169,50 @@ JOBS=(
   # VTID-04226 — test-contract scanners (see header). Cadence chosen, not restored.
   "gateway-test-contracts-scheduled-run|*/15 * * * *|UTC|/api/v1/test-contracts/scheduled-run|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
   "gateway-test-contracts-missing|30 6 * * *|UTC|/api/v1/test-contracts/missing|{}|{\"method\":\"GET\",\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-04407 — Operator thread handoffs (developer memory). Staging: that is
+  # where OPERATOR_THREADS_ENABLED records threads. Hourly; idempotent.
+  "gateway-dev-memory-handoff-sweep|20 * * * *|UTC|/api/v1/dev-memory/handoffs/sweep|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-04505 — Community Autopilot twice-daily scan. Hourly tick; the route
+  # only scans members whose local hour is 07 or 17, and writes nothing unless
+  # COMMUNITY_AUTOPILOT_SCAN_ENABLED=true on the target gateway. Staging first.
+  "gateway-community-autopilot-scan|5 * * * *|UTC|/api/v1/autopilot/recommendations/community-scan|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
 )
+
+# VTID-04352: --only narrows JOBS to the requested name prefixes.
+if [[ ${#ONLY_PREFIXES[@]} -gt 0 ]]; then
+  SELECTED=()
+  for JOB in "${JOBS[@]}"; do
+    NAME="${JOB%%|*}"
+    for PREFIX in "${ONLY_PREFIXES[@]}"; do
+      if [[ "$NAME" == "$PREFIX"* ]]; then SELECTED+=("$JOB"); break; fi
+    done
+  done
+  if [[ ${#SELECTED[@]} -eq 0 ]]; then
+    echo "ERROR: --only ${ONLY_PREFIXES[*]} matches none of the ${#JOBS[@]} jobs." >&2
+    exit 1
+  fi
+  JOBS=("${SELECTED[@]}")
+fi
 
 echo "Region:   $REGION"
 echo "Account:  $ACCOUNT_ID"
 echo "Gateway:  $GATEWAY_URL"
 echo "Test-contract gateway: $TEST_CONTRACTS_GATEWAY_URL (internal token secret: $INTERNAL_TOKEN_SECRET_ID)"
-echo "Jobs:     ${#JOBS[@]}"
+echo "Jobs:     ${#JOBS[@]}${ONLY_PREFIXES[0]:+  (--only ${ONLY_PREFIXES[*]})}"
 echo "Delete:   $DELETE"
 echo "Dry run:  $DRY_RUN"
 echo ""
 
 if $DELETE; then
+  if [[ ${#ONLY_PREFIXES[@]} -gt 0 ]]; then
+    echo "Deleting ${#JOBS[@]} matching schedules (shared Lambda and IAM roles kept — other schedules use them)..."
+    for JOB in "${JOBS[@]}"; do
+      IFS='|' read -r NAME _ _ _ _ <<< "$JOB"
+      if $DRY_RUN; then echo "  would delete $NAME"; else aws scheduler delete-schedule --name "$NAME" --region "$REGION" 2>/dev/null || true; fi
+    done
+    echo "Done."
+    exit 0
+  fi
   echo "Deleting all ${#JOBS[@]} schedules, the shared Lambda, and both IAM roles..."
   for JOB in "${JOBS[@]}"; do
     IFS='|' read -r NAME _ _ _ _ <<< "$JOB"
@@ -359,10 +428,50 @@ echo "Waiting 10s for IAM role propagation..."
 sleep 10
 
 # ── 4. One EventBridge Scheduler schedule per job ────────────
-# 5-field unix cron -> EventBridge's 6-field cron(minute hour day-of-month
-# month day-of-week year), trailing wildcard year appended.
+# 5-field unix cron -> EventBridge Scheduler cron(). VTID-04673: the old
+# version only appended a year, which EventBridge rejects (`cron(0 8 * * * *)`
+# -- exactly one of day-of-month / day-of-week must be `?`) and which would
+# also have shifted every weekday by one (EventBridge 1 = Sunday, unix 0 =
+# Sunday, so unix `5` = Friday meant Thursday). All 11 schedules failed on the
+# first apply, 2026-09-26. Weekdays are emitted as names, `*/N` as `0/N`.
+# The block between the markers is executed by the VTID-04673 test.
 to_eventbridge_cron() {
-  echo "cron($1 *)"
+  python3 - "$1" <<'PY'
+# --- eventbridge-cron-converter:begin ---
+import re, sys
+DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+def _day(t):
+    return DAYS[int(t)] if t.isdigit() else t.upper()
+def _dow(field):
+    out = []
+    for item in field.split(','):
+        if '-' in item:
+            a, b = item.split('-', 1)
+            out.append(_day(a) + '-' + _day(b))
+        else:
+            out.append(_day(item))
+    return ','.join(out)
+def convert(expr):
+    f = expr.split()
+    if len(f) != 5:
+        raise ValueError('expected 5 unix cron fields: %r' % expr)
+    minute, hour, dom, month, dow = f
+    minute = re.sub(r'^\*/', '0/', minute)
+    hour = re.sub(r'^\*/', '0/', hour)
+    if dow == '*':
+        dow = '?'
+    else:
+        if dom != '*':
+            raise ValueError('EventBridge cannot restrict both day-of-month and day-of-week: %r' % expr)
+        dom, dow = '?', _dow(dow)
+    return 'cron(%s %s %s %s %s *)' % (minute, hour, dom, month, dow)
+try:
+    print(convert(sys.argv[1]))
+except ValueError as e:
+    print('ERROR: %s' % e, file=sys.stderr)
+    sys.exit(2)
+# --- eventbridge-cron-converter:end ---
+PY
 }
 
 CREATED=0
@@ -370,7 +479,10 @@ FAILED=0
 for JOB in "${JOBS[@]}"; do
   IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ BODY EXTRA <<< "$JOB"
   EXTRA="${EXTRA:-{\}}"
-  EB_CRON=$(to_eventbridge_cron "$SCHEDULE")
+  if ! EB_CRON=$(to_eventbridge_cron "$SCHEDULE"); then
+    echo "── $NAME  FAILED — cannot convert '$SCHEDULE' to an EventBridge cron"
+    FAILED=$((FAILED+1)); continue
+  fi
   # Built in Python, not a bash heredoc — the Input field is itself a
   # JSON-encoded string (EventBridge Scheduler's contract), and getting
   # that double-encoding right with bash quoting alone is fragile.
@@ -385,31 +497,26 @@ print(json.dumps({
 ")
 
   echo "── $NAME  ($EB_CRON $TIMEZONE) -> $PATH_"
-  if aws scheduler create-schedule \
+  # VTID-04673: update when it exists, else create -- and never discard the
+  # AWS error (the old `> /dev/null 2>&1` printed "see above" with nothing above).
+  if aws scheduler get-schedule --name "$NAME" --region "$REGION" > /dev/null 2>&1; then
+    VERB=update-schedule; DONE_MSG="updated (already existed)."
+  else
+    VERB=create-schedule; DONE_MSG="created."
+  fi
+  if aws scheduler "$VERB" \
     --name "$NAME" \
     --region "$REGION" \
     --schedule-expression "$EB_CRON" \
     --schedule-expression-timezone "$TIMEZONE" \
     --flexible-time-window '{"Mode":"OFF"}' \
     --state ENABLED \
-    --target "$TARGET" > /dev/null 2>&1; then
-    echo "  created."
+    --target "$TARGET" > /dev/null; then
+    echo "  $DONE_MSG"
     CREATED=$((CREATED+1))
   else
-    if aws scheduler update-schedule \
-      --name "$NAME" \
-      --region "$REGION" \
-      --schedule-expression "$EB_CRON" \
-      --schedule-expression-timezone "$TIMEZONE" \
-      --flexible-time-window '{"Mode":"OFF"}' \
-      --state ENABLED \
-      --target "$TARGET" > /dev/null 2>&1; then
-      echo "  updated (already existed)."
-      CREATED=$((CREATED+1))
-    else
-      echo "  FAILED — see above for the error."
-      FAILED=$((FAILED+1))
-    fi
+    echo "  FAILED — the AWS error is printed just above."
+    FAILED=$((FAILED+1))
   fi
 done
 

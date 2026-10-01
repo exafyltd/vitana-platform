@@ -1,0 +1,82 @@
+{
+ "tag": "desktop",
+ "report": [
+  {
+   "name": "simulator",
+   "candRows": [
+    "2026-09-22 22:17 UTC | conv_resume | continue | reconnect | next_session (journey) | /command-hub/autopilot/live/ | login_briefing · outranked",
+    "voice_wake_brief | suppressed | 4 ms | superseded",
+    "contextual_next_action | suppressed | 210 ms | no_source_candidate",
+    "feature_discovery_teacher | errored | 800 ms | provider_timeout",
+    "new_day_return | suppressed | 95 ms | same_day",
+    "first_time_welcome | suppressed | 2 ms | not_first_time",
+    "goal_completion_inquiry | suppressed | 120 ms | no_goal_due",
+    "journey_guide | returned | 180 ms | ",
+    "guided_topic_narration | skipped | 0 ms | no_topic_selected",
+    "login_briefing | returned | 340 ms | ",
+    "unread_messages_announce | returned | 150 ms | ",
+    "partner_health_result_ready | suppressed | 60 ms | no_unsurfaced_result",
+    "conversation_flow_v3 | skipped | 1 ms | flag_off",
+    "real_life_invite | suppressed | 2 ms | flag_off"
+   ],
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 222 KB · 245 dropped · nova_sonic · screen: wallet · 7 screen tools · 245 reachable · 1 find_tool · used: log_meal",
+    "LIVE ADVISOR | 2 note(s) | 2 get_guidance (2 fresh) · $0.0030 · slowest 1.2 s · not_meaningful ×1 · suggested: get_wallet_balance, list_wallet_transactions",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  }
+ ],
+ "errors": []
+}
+{
+ "tag": "mobile",
+ "report": [
+  {
+   "name": "simulator",
+   "candRows": [
+    "2026-09-22 22:17 UTC | conv_resume | continue | reconnect | next_session (journey) | /command-hub/autopilot/live/ | login_briefing · outranked",
+    "voice_wake_brief | suppressed | 4 ms | superseded",
+    "contextual_next_action | suppressed | 210 ms | no_source_candidate",
+    "feature_discovery_teacher | errored | 800 ms | provider_timeout",
+    "new_day_return | suppressed | 95 ms | same_day",
+    "first_time_welcome | suppressed | 2 ms | not_first_time",
+    "goal_completion_inquiry | suppressed | 120 ms | no_goal_due",
+    "journey_guide | returned | 180 ms | ",
+    "guided_topic_narration | skipped | 0 ms | no_topic_selected",
+    "login_briefing | returned | 340 ms | ",
+    "unread_messages_announce | returned | 150 ms | ",
+    "partner_health_result_ready | suppressed | 60 ms | no_unsurfaced_result",
+    "conversation_flow_v3 | skipped | 1 ms | flag_off",
+    "real_life_invite | suppressed | 2 ms | flag_off"
+   ],
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 222 KB · 245 dropped · nova_sonic · screen: wallet · 7 screen tools · 245 reachable · 1 find_tool · used: log_meal",
+    "LIVE ADVISOR | 2 note(s) | 2 get_guidance (2 fresh) · $0.0030 · slowest 1.2 s · not_meaningful ×1 · suggested: get_wallet_balance, list_wallet_transactions",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  }
+ ],
+ "errors": []
+}

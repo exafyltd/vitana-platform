@@ -97,8 +97,9 @@ describe('BOOTSTRAP-ORB-RCV-DOUBLEGREET heavy-context first-turn suppression sur
     );
     instruction += FIRST_TURN_SUPPRESSION_DIRECTIVE;
 
-    // The cap DID fire (heavy user) — proven by the trim sentinel.
-    expect(instruction).toMatch(/context trimmed: \d+ chars of older context omitted/);
+    // The cap DID fire (heavy user) — proven by the trim sentinel. VTID-04393:
+    // the priority packer's sentinel replaces the head-slice's.
+    expect(instruction).toMatch(/context trimmed: \d+ chars of older context omitted|context packed to fit budget/);
 
     // The load-bearing directive is STILL present in the final instruction.
     expect(instruction).toMatch(/DO NOT SPEAK FIRST/);
@@ -138,6 +139,11 @@ describe('BOOTSTRAP-ORB-RCV-DOUBLEGREET heavy-context first-turn suppression sur
   });
 
   it('REGRESSION GUARD: old tail-append composition would drop the directive', () => {
+    // VTID-04393: this characterizes the HEAD-SLICE cap, which is now only the
+    // BRAIN_CONTEXT_PACKER=false kill-switch path. (The priority packer keeps a
+    // tail block by its header instead of by position.)
+    const prevPacker = process.env.BRAIN_CONTEXT_PACKER;
+    process.env.BRAIN_CONTEXT_PACKER = 'false';
     // This proves the bug was real: appending the directive to the END of the
     // bootstrap (the pre-fix composition) gets it trimmed by the cap for a
     // heavy user, so it never reaches the final instruction.
@@ -159,6 +165,8 @@ describe('BOOTSTRAP-ORB-RCV-DOUBLEGREET heavy-context first-turn suppression sur
       '@tester',
       true,
     );
+
+    if (prevPacker === undefined) delete process.env.BRAIN_CONTEXT_PACKER; else process.env.BRAIN_CONTEXT_PACKER = prevPacker;
 
     // The cap fired and the tail (where the directive lived) was trimmed away.
     expect(instruction).toMatch(/context trimmed: \d+ chars of older context omitted/);

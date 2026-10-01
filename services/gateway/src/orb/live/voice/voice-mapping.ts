@@ -55,7 +55,9 @@ const LIVE_LANGUAGE_VOICE_FALLBACKS: Record<string, string> = {
   pl: 'Despina',
   // VTID-03730 — parity with the pt/pl addition above; distinct voice, not
   // reused from another language.
-  tr: 'Umbriel',
+  // VTID-04445 — was Umbriel, a male voice; Vitana's voice is female in
+  // every language. Pulcherrima is female and otherwise unused here.
+  tr: 'Pulcherrima',
 };
 
 const GEMINI_TTS_VOICE_FALLBACKS: Record<string, TtsVoiceConfig> = {

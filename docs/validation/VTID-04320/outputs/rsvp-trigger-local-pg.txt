@@ -1,0 +1,11 @@
+# VTID-04321 RSVP->calendar trigger, run against a throwaway local Postgres 16 (NOT the shared project)
+# schema: minimal copies of global_community_events / global_event_participants / calendar_events + idx_calendar_events_source_ref
+
+T1 voice join | 1 | community_rsvp
+T2 web join | 1 | manual
+T3 re-upsert | 1
+T4 leave | 0 | 1
+T5 rejoin | 1 | 1
+T6 end | 01:00:00
+T7 web leave via status | 0
+T8 unrelated | 1

@@ -74,9 +74,21 @@ async function probeHttp(
   // backward compat with PR-L1 allowlist entries.
   baseUrl: () => string = contractGatewayBaseUrl,
 ): Promise<TestContractRunResult> {
-  const url = `${baseUrl()}${path}`;
+  const base = baseUrl();
   const t0 = Date.now();
   const ran_at = new Date().toISOString();
+  if (!base) {
+    return {
+      passed: false,
+      status_code: null,
+      content_type: null,
+      body_excerpt: '',
+      duration_ms: 0,
+      ran_at,
+      failure_reason: 'base_url_not_configured',
+    };
+  }
+  const url = `${base}${path}`;
   try {
     const resp = await fetch(url, {
       method,

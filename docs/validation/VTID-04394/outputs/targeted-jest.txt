@@ -1,0 +1,30 @@
+    ✓ signatures ignore argument order (3 ms)
+    ✓ new call is progress, exact repeat is not, failed call is not (1 ms)
+    ✓ an edit or a passing check is progress even when repeated (1 ms)
+    ✓ replan exactly once, then stalled (1 ms)
+    ✓ progress after the re-plan resets the count
+    ✓ a model repeating one call is re-planned once, then stopped as stalled (6 ms)
+    ✓ reading a new file every turn never stalls (turn cap instead) (1 ms)
+    ✓ stall: false disables detection
+    ✓ a stalled run counts like a turn-cap failure
+    ✓ runs tool calls, feeds results back, and stops on finish with the transcript in router shape (2 ms)
+    ✓ nudges a text-only answer back to tools and gives up after 3 in a row (1 ms)
+    ✓ surfaces an LLM failure and the turn it happened on
+    ✓ stops at maxTurns and at the deadline (1 ms)
+    ✓ continues a prior transcript (fix round) instead of starting over (1 ms)
+    ✓ records fallbackUsed when any turn was served by the fallback provider
+    ✓ forces the wrap-up prompt once an edit has landed and turns remaining hit the margin (1 ms)
+    ✓ never forces wrap-up before any edit has happened, even with almost no turns left
+    ✓ does not count a FAILED edit_file call as "an edit has happened" (1 ms)
+    ✓ honors a custom wrapUpMarginTurns instead of the default 8
+    ✓ the wrap-up prompt names the tool and stays actionable, not just a warning (1 ms)
+    ✓ regression: VTID-04138 shape — a late edit now gets real turns to verify and finish instead of dying at the cap (1 ms)
+    ✓ returns the history unchanged when under budget (1 ms)
+    ✓ replaces the OLDEST tool results with a notice once over budget, leaving the newest message intact
+    ✓ keeps trimming forward through the history until under budget or only the last message remains (1 ms)
+    ✓ defaults to the 120,000-char budget when none is passed
+    ✓ sends a trimmed copy to callLlm while the returned history keeps every result in full (1 ms)
+    ✓ honors a custom historyCharBudget instead of the 120,000-char default (3 ms)
+    ✓ never trims when the default 120,000-char budget is not exceeded (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       28 passed, 28 total

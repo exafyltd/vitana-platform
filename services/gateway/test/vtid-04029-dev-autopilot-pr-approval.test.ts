@@ -369,7 +369,9 @@ describe('VTID-04029 wiring guards', () => {
     const exec = read('src/services/dev-autopilot-execute.ts');
     expect(exec.match(/status=in\.\(cooling,running,awaiting_approval,ci,merging,deploying,verifying\)/g)?.length).toBe(2);
     // the concurrency cap deliberately does NOT count a human hold
-    expect(exec).toContain('`/rest/v1/dev_autopilot_executions?status=in.(running,ci,merging,deploying,verifying)&select=id`');
+    // (VTID-04376: the cap reads cooling/running + the post-merge tail, never awaiting_approval)
+    expect(exec).toContain('`/rest/v1/dev_autopilot_executions?status=in.(cooling,running,${POST_MERGE_TAIL_STATUSES.join(\',\')})&select=status`');
+    expect(read('src/services/dev-autopilot-pipeline-guards.ts')).toMatch(/POST_MERGE_TAIL_STATUSES = \['ci', 'merging', 'deploying', 'verifying'\]/);
   });
 
   it('the diff API contract and shared expandedDiffExecIds state exist for the Command Hub UI', () => {

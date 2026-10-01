@@ -5,6 +5,7 @@
  */
 
 import { LLMStage, LLMProvider, LLMRoutingPolicy, StageRoutingConfig } from '../constants/llm-defaults';
+import type { GenAISpan } from '../services/llm-genai-semconv';
 
 // Re-export for convenience
 export { LLMStage, LLMProvider, LLMRoutingPolicy, StageRoutingConfig };
@@ -58,6 +59,10 @@ export interface LLMTelemetryPayload {
 
   // Timestamp
   created_at: string;
+
+  // VTID-04410: the same call under OpenTelemetry GenAI semantic-convention
+  // names (additive; see services/llm-genai-semconv.ts).
+  otel?: GenAISpan;
 }
 
 /**

@@ -1,0 +1,28 @@
+# VTID-04471 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint), then set title + in_progress/approved on the ledger row
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04471"}
+
+# Live project, READ-ONLY (Supabase MCP execute_sql): column shapes and row counts
+select ... from information_schema.columns where table_name in ('partner_organizations','merchants','partner_tenant',...);
+select count(*) ... -> 0 partner_organizations, 0 merchants with owner_user_id, 0 partner_tenant rows
+
+# Local PostgreSQL 16 scratch cluster (never the live project):
+initdb; pg_ctl start -p 55432
+psql -f prereq-stub.sql            # existing table shapes + seed rows for the backfill
+psql -f supabase/migrations/20260924130000_vtid_04471_partner_account_model.sql   # x2 (idempotency)
+psql -f prisma/migrations/20260924_vcaop_partner_org_link_0007/migration.sql      # x2
+psql -f prisma/migrations/20260924_vcaop_partner_org_link_0007/down.sql
+# -> outputs/local-postgres16-apply-backfill.txt, outputs/local-postgres16-trigger-behaviour.txt
+
+# Isolated strict typecheck of services/partner-lifecycle.ts -> exit 0
+tsc --ignoreConfig --noEmit --strict ... services/gateway/src/services/partner-lifecycle.ts
+
+# The new unit suite, run through a minimal jest-compatible shim with ts-node
+# -> outputs/unit-suite-shim-run.txt (15/15)
+
+# Jest itself: NOT runnable here. The npm registry returns 403 and there is no node_modules.
+# CI is the first real execution of test/partner-orgs.test.ts and
+# test/vtid-04471-partner-account-model.test.ts.
+# prisma format/validate: not runnable here for the same reason; CI (Prisma Schema Check) checks it.

@@ -189,11 +189,22 @@ export interface ExecutionOutcomeInput {
   error?: string;
   vtid?: string;
   executor?: string;
+  /**
+   * The plan's/diff's concrete changed files, when the caller has them
+   * cheaply on hand. Optional and additive -- an omitted list just means
+   * this row won't surface via recallDevMemoryByFiles, exactly as before
+   * this field existed. Wiring a real file list into the two call sites
+   * in dev-autopilot-execute.ts is a deliberate follow-up, not done here
+   * (it needs its own plan/diff lookup in a function this repo's own
+   * change log flags as high-churn and cancellation-sensitive).
+   */
+  filePaths?: string[];
 }
 
 export function buildExecutionOutcomeMemory(input: ExecutionOutcomeInput): WriteDevMemoryInput {
   const exec8 = input.executionId.slice(0, 8);
   const who = input.executor ? `${input.executor} executor` : 'executor';
+  const filePaths = input.filePaths ?? [];
   if (input.ok) {
     return {
       repo: 'vitana-platform',
@@ -204,6 +215,8 @@ export function buildExecutionOutcomeMemory(input: ExecutionOutcomeInput): Write
       importance: 40,
       source: 'autopilot',
       tags: ['dev-autopilot', 'execution', 'pr_opened'],
+      filePaths,
+      stage: 'worker',
     };
   }
   const reason = (input.error || 'unknown').replace(/\s+/g, ' ').trim();
@@ -216,6 +229,8 @@ export function buildExecutionOutcomeMemory(input: ExecutionOutcomeInput): Write
     importance: 55,
     source: 'autopilot',
     tags: ['dev-autopilot', 'execution', 'failed'],
+    filePaths,
+    stage: 'worker',
   };
 }
 

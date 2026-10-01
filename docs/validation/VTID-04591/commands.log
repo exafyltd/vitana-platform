@@ -1,0 +1,3 @@
+npx jest vtid-04591 vtid-04581                    # 44 passed
+npx jest test/services test/orb test/routes      # 718 suites, 11913 passed
+npx tsc --noEmit -p services/gateway             # clean

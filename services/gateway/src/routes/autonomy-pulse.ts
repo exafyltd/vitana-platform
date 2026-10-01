@@ -10,7 +10,15 @@
  * Feed item types:
  *   - pending_finding      autopilot_recommendations (dev_autopilot, new) — needs approval
  *   - pending_heal         self_healing_log (outcome=pending) — needs diagnosis review
- *   - active_execution     dev_autopilot_executions (cooling|running|ci|merging|deploying|verifying)
+ *   - active_execution     dev_autopilot_executions (cooling|running|ci|merging|deploying|verifying|awaiting_approval)
+ *
+ * VTID-04266: `awaiting_approval` (VTID-04029 — the agent pushed a branch
+ * and is holding for a human decision, the most decision-critical of all
+ * these statuses) was missing from the execution query entirely, so the
+ * one status that most needs a human's attention was invisible to the
+ * "single pane of glass" this endpoint exists to be. It now surfaces as
+ * `critical` severity with `approve`/`reject` actions, same routes the
+ * Autopilot Live/Dev Autopilot cards already use.
  *
  * Each item carries a normalized shape with:
  *   - id, source, title, description, severity, created_at, age_minutes
@@ -291,22 +299,34 @@ function normalizeExecution(row: ExecRow): PulseItem {
     merging: 'merging approved PR',
     deploying: 'gateway deploying',
     verifying: 'post-deploy verification',
+    // VTID-04266: the agent pushed a branch and is holding — no PR has
+    // been opened yet, so `row.pr_url` is still null here (title below
+    // falls through to the generic branch, not the "PR: ..." one).
+    awaiting_approval: 'held for approval — needs a human decision',
   };
   const label = statusLabel[row.status] || row.status;
   const title = row.pr_url
     ? `Execution ${row.id.slice(0, 8)} — ${label}`
     : `Execution ${row.id.slice(0, 8)} — ${label}`;
+  const isAwaitingApproval = row.status === 'awaiting_approval';
   return {
     id: `autonomous_execution:${row.id}`,
     source: 'autonomous_execution',
     title,
-    description: row.pr_url ? `PR: ${row.pr_url}` : `Plan execution in progress`,
-    severity: (row.auto_fix_depth || 0) > 0 ? 'warning' : 'info',
+    description: isAwaitingApproval
+      ? `Branch pushed${row.branch ? ` (${row.branch})` : ''} — review the diff before it opens a PR.`
+      : row.pr_url ? `PR: ${row.pr_url}` : `Plan execution in progress`,
+    // Awaiting approval is the most actionable status in this feed — it is
+    // blocked on a human, not on anything autonomous — so it outranks the
+    // depth-based warning/info split every other status uses.
+    severity: isAwaitingApproval ? 'critical' : (row.auto_fix_depth || 0) > 0 ? 'warning' : 'info',
     created_at: created,
     age_minutes: ageMinutes(created),
-    actions: row.status === 'cooling'
-      ? ['cancel', 'view_trace']
-      : ['view_trace'],
+    actions: isAwaitingApproval
+      ? ['approve', 'reject', 'view_trace']
+      : row.status === 'cooling'
+        ? ['cancel', 'view_trace']
+        : ['view_trace'],
     source_url: `/command-hub/dev-autopilot?execution_id=${row.id}`,
     metadata: {
       execution_id: row.id,
@@ -349,7 +369,7 @@ async function fetchHeals(s: SupaConfig, limit: number): Promise<HealRow[]> {
 async function fetchExecutions(s: SupaConfig, limit: number): Promise<ExecRow[]> {
   const r = await supaGet<ExecRow[]>(
     s,
-    `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,ci,merging,deploying,verifying)` +
+    `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,ci,merging,deploying,verifying,awaiting_approval)` +
     `&select=id,finding_id,status,pr_url,pr_number,branch,execute_after,auto_fix_depth,self_healing_vtid,created_at,updated_at` +
     `&order=created_at.desc&limit=${limit}`,
   );
@@ -450,7 +470,7 @@ router.get('/pulse/counts', requireDevRole, async (_req: Request, res: Response)
     const [findings, heals, executions, contracts] = await Promise.all([
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=eq.new&select=id&limit=1000`),
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/self_healing_log?outcome=eq.pending&select=id&limit=1000`),
-      supaGet<Array<{ id: string }>>(supa, `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,ci,merging,deploying,verifying)&select=id&limit=1000`),
+      supaGet<Array<{ id: string }>>(supa, `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,ci,merging,deploying,verifying,awaiting_approval)&select=id&limit=1000`),
       supaGet<Array<{ id: string }>>(supa, `/rest/v1/test_contracts?status=in.(fail,quarantined)&select=id&limit=1000`),
     ]);
 

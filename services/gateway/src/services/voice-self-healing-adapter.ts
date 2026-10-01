@@ -22,6 +22,7 @@
  * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
 
+import { gatewayBaseUrl } from '../env';
 import {
   classifyVoiceSession,
   VoiceClassification,
@@ -33,10 +34,11 @@ import { emitOasisEvent } from './oasis-event-service';
 import { spawnInvestigator } from './voice-architecture-investigator';
 import { appendShadowLog } from './voice-shadow-mode';
 import { classifyQualityFromSessionStop } from './voice-failure-taxonomy';
+import { isVoiceOutcomeOn, runVoiceOutcomeCheck, VoiceOutcomeSignals } from './jev/gates/voice-outcome-gate';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const GATEWAY_URL = process.env.GATEWAY_URL || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+const GATEWAY_URL = gatewayBaseUrl();
 // Cloud Run sets K_REVISION; fall back to BUILD_INFO for local/dev.
 const GATEWAY_REVISION =
   process.env.K_REVISION || process.env.BUILD_INFO || 'unknown';
@@ -121,6 +123,11 @@ export interface DispatchOptions {
     user_turns?: number;
     model_turns?: number;
   };
+  /**
+   * VTID-04775: counters and flags for the Jev voice-outcome gate (C1).
+   * Read by an allow-list in buildVoiceOutcomeSignals(); never a transcript.
+   */
+  outcomeSignals?: VoiceOutcomeSignals;
 }
 
 export type DispatchAction =
@@ -134,6 +141,7 @@ export type DispatchAction =
   | 'sentinel_quarantined'
   | 'sentinel_probation_capped'
   | 'quality_failure_classified'
+  | 'duplicate_session_report'
   | 'error';
 
 export interface DispatchResult {
@@ -361,6 +369,50 @@ async function handleQualityFailure(
   };
 }
 
+/**
+ * VTID-04626: one voice conversation stops through TWO hooks — the WS
+ * transport (`ws-…` id) and the live session it wraps (`live-…` id) — and
+ * both report the same metrics. Every quality failure was therefore counted
+ * twice, written twice to voice_healing_history and spawned two
+ * investigators (live pairs on 2026-09-16 and 2026-09-22). The ids differ,
+ * so the pair is recognised by its metrics fingerprint within a short window.
+ */
+const QUALITY_FINGERPRINT_TTL_MS = 2 * 60_000;
+const recentQualityFingerprints = new Map<string, number>();
+
+export function qualityMetricsFingerprint(opts: DispatchOptions): string | null {
+  const m = opts.sessionMetrics;
+  if (!m) return null;
+  const ai = m.audio_in_chunks ?? 0;
+  const ao = m.audio_out_chunks ?? 0;
+  if (ai === 0 && ao === 0) return null;
+  return [
+    opts.tenantScope || 'global',
+    ai,
+    m.audio_in_forwarded ?? '',
+    ao,
+    m.turn_count ?? 0,
+  ].join('|');
+}
+
+/** True when the same conversation was already reported in the last 2 min. */
+export function isDuplicateQualityReport(opts: DispatchOptions, now = Date.now()): boolean {
+  const fp = qualityMetricsFingerprint(opts);
+  if (!fp) return false;
+  for (const [k, at] of recentQualityFingerprints) {
+    if (now - at > QUALITY_FINGERPRINT_TTL_MS) recentQualityFingerprints.delete(k);
+  }
+  const seen = recentQualityFingerprints.get(fp);
+  if (seen !== undefined && now - seen <= QUALITY_FINGERPRINT_TTL_MS) return true;
+  recentQualityFingerprints.set(fp, now);
+  return false;
+}
+
+/** Test helper. */
+export function _resetQualityFingerprintsForTests(): void {
+  recentQualityFingerprints.clear();
+}
+
 async function _dispatchVoiceFailureCore(
   opts: DispatchOptions,
 ): Promise<DispatchResult> {
@@ -375,6 +427,9 @@ async function _dispatchVoiceFailureCore(
   // investigator output is read-only and always allowed because the user
   // explicitly asked for visibility on every broken session.
   let qualityResult: DispatchResult | null = null;
+  if (opts.sessionMetrics && isDuplicateQualityReport(opts)) {
+    return { action: 'duplicate_session_report' };
+  }
   if (opts.sessionMetrics) {
     const qc = classifyQualityFromSessionStop({
       audio_in_chunks: opts.sessionMetrics.audio_in_chunks ?? 0,
@@ -409,6 +464,9 @@ async function _dispatchVoiceFailureCore(
   // because that means we observed errors we couldn't classify — investigator
   // needs that signal.
   if (classification.class === 'voice.unknown' && classification.severity !== 'error') {
+    // VTID-04626: a quality failure on an otherwise error-free session is
+    // what happened — log that, not 'classifier_no_error'.
+    if (qualityResult) return qualityResult;
     return {
       action: 'classifier_no_error',
       class: classification.class,
@@ -576,7 +634,7 @@ export async function dispatchVoiceFailure(
 
   // Skip shadow log for synthetic probe sessions — they're not real voice
   // traffic and would pollute the comparison view.
-  if (result.action === 'synthetic_skipped') {
+  if (result.action === 'synthetic_skipped' || result.action === 'duplicate_session_report') {
     return result;
   }
 
@@ -602,10 +660,24 @@ export async function dispatchVoiceFailure(
  * synchronously; never throws. Internal errors are logged at warn level.
  */
 export function dispatchVoiceFailureFireAndForget(opts: DispatchOptions): void {
-  dispatchVoiceFailure(opts).catch((err) => {
-    console.warn(
-      '[voice-self-healing-adapter] fire-and-forget dispatch failed:',
-      err?.message ?? err,
-    );
-  });
+  dispatchVoiceFailure(opts)
+    .then((result) => {
+      // VTID-04775 (Jev C1): one outcome row per session, after the rule
+      // classifier answered. Off unless JEV_VOICE_SESSION_OUTCOME_MODE is set;
+      // a repeat stop report for the same session is not asked again.
+      if (!isVoiceOutcomeOn() || result.action === 'duplicate_session_report') return;
+      void runVoiceOutcomeCheck({
+        sessionId: opts.sessionId,
+        metrics: opts.sessionMetrics,
+        signals: opts.outcomeSignals,
+        ruleClass: result.class ?? null,
+        synthetic: opts.metadata?.synthetic === true,
+      });
+    })
+    .catch((err) => {
+      console.warn(
+        '[voice-self-healing-adapter] fire-and-forget dispatch failed:',
+        err?.message ?? err,
+      );
+    });
 }

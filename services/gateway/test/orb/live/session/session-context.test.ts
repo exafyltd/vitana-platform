@@ -38,7 +38,8 @@ function makeFakeSession(): SessionLike {
 
 describe('A6 — SessionContext seam', () => {
   describe('buildSessionContext output shape', () => {
-    it('produces all 12 declared keys with no extras', () => {
+    // VTID-04425 added screenContext (13th key), deliberately.
+    it('produces all 13 declared keys with no extras', () => {
       const ctx = buildSessionContext(makeFakeSession());
       const expectedKeys: Array<keyof SessionContext> = [
         'sessionId',
@@ -50,6 +51,7 @@ describe('A6 — SessionContext seam', () => {
         'clientContext',
         'currentRoute',
         'recentRoutes',
+        'screenContext',
         'turnCount',
         'createdAt',
         'isReconnect',

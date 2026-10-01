@@ -22,29 +22,12 @@ async function runAutoScheduleDailyRoom(ctx: AutomationContext) {
 }
 
 async function runGraduatedReminders(ctx: AutomationContext) {
-  ctx.log('Graduated meetup reminders — dispatching via scheduled-notifications');
-  const { tenantId } = ctx;
-
-  try {
-    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
-    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/meetup-reminders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenant_id: tenantId }),
-    });
-
-    if (!resp.ok) {
-      ctx.log(`Meetup reminders endpoint failed: ${resp.status}`);
-      return { usersAffected: 0, actionsTaken: 0 };
-    }
-
-    const result = await resp.json() as any;
-    ctx.log(`Meetup reminders dispatched to ${result.dispatched || 0} users`);
-    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
-  } catch (err: any) {
-    ctx.log(`Meetup reminders error: ${err.message}`);
-    return { usersAffected: 0, actionsTaken: 0 };
-  }
+  // VTID-04374: meetup reminders now come from the calendar. A member who
+  // signs up for a community event gets a calendar entry with its own
+  // reminders; the old /meetup-reminders job never sent one (it read a
+  // table that does not exist).
+  ctx.log('Graduated meetup reminders are served by the calendar reminders loop — nothing to do');
+  return { usersAffected: 0, actionsTaken: 0 };
 }
 
 // Real schema: community_meetups/community_meetup_attendance (VTID-01084)

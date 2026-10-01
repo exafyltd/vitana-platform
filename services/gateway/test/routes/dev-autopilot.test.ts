@@ -47,6 +47,11 @@ jest.mock('../../src/services/oasis-event-service', () => ({
 }));
 jest.mock('../../src/services/dev-autopilot-outcomes', () => ({
   recordOutcome: jest.fn().mockResolvedValue(undefined),
+  // VTID-04267: summarizeSpendToday is pure (no Supabase/network dependency)
+  // and already unit-tested directly in dev-autopilot-outcomes.test.ts — use
+  // the real implementation here so this file's GET /spend tests exercise
+  // real route-to-summary wiring, not a second hand-written stub of it.
+  summarizeSpendToday: jest.requireActual('../../src/services/dev-autopilot-outcomes').summarizeSpendToday,
 }));
 
 import { ingestScan } from '../../src/services/dev-autopilot-synthesis';
@@ -68,6 +73,11 @@ const SCAN_TOKEN = 'test-scan-token-xyz';
 process.env.DEV_AUTOPILOT_SCAN_TOKEN = SCAN_TOKEN;
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role-key-mock';
+// VTID-04669: with the quality review on, the developer listings show only
+// reviewed-keep rows. This suite pins the listing's query/sort/count
+// behaviour underneath that filter, so it runs with the review off
+// (the review filter itself: test/vtid-04669-quality-review.test.ts).
+process.env.AUTOPILOT_QUALITY_REVIEW_ENABLED = 'false';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const router = require('../../src/routes/dev-autopilot').default;
@@ -191,6 +201,8 @@ describe('requireDevRole governance gate', () => {
     { method: 'get', url: '/api/v1/dev-autopilot/executions' },
     { method: 'get', url: '/api/v1/dev-autopilot/config' },
     { method: 'post', url: '/api/v1/dev-autopilot/config/kill-switch' },
+    { method: 'post', url: '/api/v1/dev-autopilot/config/update', body: { daily_budget: 5 } },
+    { method: 'get', url: '/api/v1/dev-autopilot/spend' }, // VTID-04267
   ];
 
   it.each(protectedEndpoints)(
@@ -474,6 +486,36 @@ describe('requireScanToken governance gate — POST /impact-ingest', () => {
     expect(res.body.new_count).toBe(0);
     expect(patchedBody).toMatchObject({ seen_count: 4 });
   });
+
+  it('VTID-04274: the dedup lookup includes activated findings, not just new/snoozed', async () => {
+    // Same live bug as dev-autopilot-synthesis.ts's ingestScan dedup: a
+    // finding already status='activated' (has a VTID, an in-flight
+    // execution) is still the same live problem — excluding it from the
+    // dedup lookup let a repeat signal spawn a duplicate finding + VTID.
+    let getUrl: string | null = null;
+    setFetchRoutes([
+      (url, opts) => {
+        if (url.includes('/rest/v1/autopilot_recommendations') && method(opts) === 'GET') {
+          getUrl = url;
+          return jsonRes(200, [{ id: 'existing-activated', seen_count: 1 }]);
+        }
+        if (url.includes('/rest/v1/autopilot_recommendations?id=eq.existing-activated') && method(opts) === 'PATCH') {
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+
+    const res = await request(app)
+      .post('/api/v1/dev-autopilot/impact-ingest')
+      .set('X-DevAutopilot-Scan-Token', SCAN_TOKEN)
+      .send({ findings: [{ rule: 'r4', severity: 'blocker', message: 'm4' }] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.updated_count).toBe(1);
+    expect(res.body.new_count).toBe(0);
+    expect(getUrl).toContain('status=in.(new,snoozed,activated)');
+  });
 });
 
 // =============================================================================
@@ -649,16 +691,36 @@ describe('GET /pending-approvals', () => {
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals'));
     expect(res.status).toBe(200);
-    expect(res.body.recommendations).toEqual([{ id: 'a1' }]);
+    // VTID-04333: every row carries feedback_ticket (null when not from a ticket).
+    expect(res.body.recommendations).toEqual([{ id: 'a1', feedback_ticket: null }]);
     expect(seenUrl).toContain('auto_exec_eligible=not.is.true');
     expect(seenUrl).toContain('status=eq.new');
+    expect(seenUrl).toContain('source_ref');
+  });
+
+  it('VTID-04333: a finding from a member ticket carries { ticket_id, ticket_number, linked_vtid }', async () => {
+    const tid = '11111111-2222-3333-4444-555555555555';
+    setFetchRoutes([
+      (url) => (url.includes('/rest/v1/autopilot_recommendations')
+        ? jsonRes(200, [{
+          id: 'a2', source_ref: `feedback_ticket:${tid}`, activated_vtid: 'VTID-04800',
+          spec_snapshot: { feedback: { ticket_id: tid, ticket_number: 'FB-2026-09-000055' } },
+        }])
+        : undefined),
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals'));
+    expect(res.body.recommendations[0].feedback_ticket).toEqual({
+      ticket_id: tid, ticket_number: 'FB-2026-09-000055', linked_vtid: 'VTID-04800',
+    });
   });
 });
 
 describe('GET /pending-approvals/count', () => {
-  it('parses the exact count from Content-Range', async () => {
+  // VTID-04668: the badge counts the rows the popup lists (quality floor
+  // applied in JS), no longer the PostgREST Content-Range total.
+  it('counts the listed rows (VTID-04668)', async () => {
     setFetchRoutes([
-      (url) => (url.includes('/rest/v1/autopilot_recommendations') ? jsonRes(200, [], { 'content-range': '0-0/42' }) : undefined),
+      (url) => (url.includes('/rest/v1/autopilot_recommendations') ? jsonRes(200, Array.from({ length: 42 }, (_, i) => ({ id: `f${i}`, status: 'new' }))) : undefined),
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/pending-approvals/count'));
     expect(res.status).toBe(200);
@@ -750,7 +812,7 @@ describe('GET /findings/:id', () => {
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/findings/f1'));
     expect(res.status).toBe(200);
-    expect(res.body.finding).toEqual({ id: 'f1' });
+    expect(res.body.finding).toEqual({ id: 'f1', feedback_ticket: null });
     expect(res.body.plan_versions).toEqual([{ version: 1 }]);
   });
 });
@@ -1090,6 +1152,32 @@ describe('GET /executions/:id/lineage', () => {
 // =============================================================================
 
 describe('GET /executions', () => {
+  it('VTID-04333: attaches feedback_ticket from the finding (null when not from a ticket)', async () => {
+    const tid = '11111111-2222-3333-4444-555555555555';
+    let recUrl = '';
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_executions')) {
+          return jsonRes(200, [{ id: 'e1', finding_id: 'r1' }, { id: 'e2', finding_id: 'r2' }]);
+        }
+        if (url.includes('/rest/v1/autopilot_recommendations')) {
+          recUrl = url;
+          return jsonRes(200, [
+            { id: 'r1', title: '[FB-2026-09-000066] x', source_type: 'dev_autopilot', source_ref: `feedback_ticket:${tid}`,
+              activated_vtid: 'VTID-04801', spec_snapshot: { feedback: { ticket_number: 'FB-2026-09-000066' } } },
+            { id: 'r2', title: 'y', source_type: 'dev_autopilot', source_ref: null, activated_vtid: null, spec_snapshot: {} },
+          ]);
+        }
+        return jsonRes(200, []);
+      },
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/executions'));
+    expect(recUrl).toContain('source_ref');
+    const byId = Object.fromEntries(res.body.executions.map((e: any) => [e.id, e]));
+    expect(byId.e1.feedback_ticket).toEqual({ ticket_id: tid, ticket_number: 'FB-2026-09-000066', linked_vtid: 'VTID-04801' });
+    expect(byId.e2.feedback_ticket).toBeNull();
+  });
+
   it('defaults to the active-status clause', async () => {
     let seenUrl = '';
     setFetchRoutes([
@@ -1201,5 +1289,127 @@ describe('POST /config/kill-switch', () => {
     const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/kill-switch').send({ armed: true }));
     expect(res.status).toBe(500);
     expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+});
+
+// POST /config/update — VTID-04268. Only the safe, bounded numeric fields
+// (never allow_scope/deny_scope/kill_switch) are writable.
+describe('POST /config/update', () => {
+  it('patches an accepted field and emits a "config.updated" OASIS event', async () => {
+    let patchedBody: any = null;
+    setFetchRoutes([
+      (url, opts) => {
+        if (url.includes('/rest/v1/dev_autopilot_config')) {
+          patchedBody = JSON.parse(opts.body);
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ daily_budget: 12 }));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, config: { daily_budget: 12 } });
+    expect(patchedBody.daily_budget).toBe(12);
+    expect(emitOasisEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'dev_autopilot.config.updated', payload: { daily_budget: 12 } }),
+    );
+  });
+
+  it('rejects an unknown field with 400 and does not call Supabase', async () => {
+    let fetchCalled = false;
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_config')) {
+          fetchCalled = true;
+          return jsonRes(200, {});
+        }
+        return undefined;
+      },
+    ]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ allow_scope: ['x'] }));
+    expect(res.status).toBe(400);
+    expect(fetchCalled).toBe(false);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+
+  it('rejects an out-of-range value with 400', async () => {
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ concurrency_cap: 999 }));
+    expect(res.status).toBe(400);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 and does not emit an event when the PATCH fails', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_config') ? jsonRes(500, {}) : undefined)]);
+    const res = await asAdmin(request(app).post('/api/v1/dev-autopilot/config/update').send({ daily_budget: 5 }));
+    expect(res.status).toBe(500);
+    expect(emitOasisEvent).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// GET /spend (VTID-04267) — today's real Dev Autopilot agent spend, summed
+// from dev_autopilot_outcomes.metadata.agent_runs[] via summarizeSpendToday
+// (unit-tested directly in test/services/dev-autopilot-outcomes.test.ts).
+// This suite only covers the route's own plumbing: querying the right
+// table/columns and passing the result through.
+// =============================================================================
+
+describe('GET /spend', () => {
+  it('sums agent_runs[] recorded today across the fetched outcome rows', async () => {
+    const todayIso = new Date().toISOString();
+    setFetchRoutes([
+      (url) =>
+        url.includes('/rest/v1/dev_autopilot_outcomes')
+          ? jsonRes(200, [
+              { metadata: { agent_runs: [{ cost_usd: 0.01, input_tokens: 100, output_tokens: 10, recorded_at: todayIso }] } },
+              { metadata: { agent_runs: [{ cost_usd: 0.02, input_tokens: 200, output_tokens: 20, recorded_at: todayIso }] } },
+            ])
+          : undefined,
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      spend_usd_today: 0.03,
+      input_tokens_today: 300,
+      output_tokens_today: 30,
+      runs_today: 2,
+    });
+  });
+
+  it('returns all zeros, not an error, when there are no outcome rows yet', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined)]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      spend_usd_today: 0,
+      input_tokens_today: 0,
+      output_tokens_today: 0,
+      runs_today: 0,
+    });
+  });
+
+  it('returns 500 when the Supabase query itself fails', async () => {
+    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(500, {}) : undefined)]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(500);
+    expect(res.body.ok).toBe(false);
+  });
+
+  it('queries only recent rows (bounded, ordered) — no unbounded table scan', async () => {
+    let queriedUrl = '';
+    setFetchRoutes([
+      (url) => {
+        if (url.includes('/rest/v1/dev_autopilot_outcomes')) {
+          queriedUrl = url;
+          return jsonRes(200, []);
+        }
+        return undefined;
+      },
+    ]);
+    await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(queriedUrl).toContain('order=created_at.desc');
+    expect(queriedUrl).toMatch(/limit=\d+/);
   });
 });

@@ -21,6 +21,9 @@ import googleConnector from './productivity/google';
 import vitanaHubConnector from './media/vitana-hub';
 // VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001 (sandbox/mock)
 import doctorBoxConnector from './health/doctorbox';
+// VTID-04403 / VTID-04404: Outlook (Microsoft Graph) and iCloud (Apple).
+import microsoftConnector from './productivity/microsoft';
+import appleConnector from './productivity/apple';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -41,6 +44,8 @@ register(stravaConnector);
 register(googleConnector);
 register(vitanaHubConnector);
 register(doctorBoxConnector);
+register(microsoftConnector);
+register(appleConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);

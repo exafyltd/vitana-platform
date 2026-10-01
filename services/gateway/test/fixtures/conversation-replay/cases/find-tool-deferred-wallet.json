@@ -1,0 +1,53 @@
+{
+ "schema_version": 1,
+ "id": "find-tool-deferred-wallet",
+ "description": "On the community screen the wallet tools are not declared; find_tool reaches them.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "providers": [
+   {
+    "providerKey": "unread_messages_announce",
+    "status": "returned",
+    "candidate": {
+     "id": "c-um",
+     "kind": "wake_brief",
+     "dedupeKey": "unread:2",
+     "priority": 55,
+     "userFacingLine": "You have two unread messages from your group.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/messages"
+     }
+    }
+   }
+  ],
+  "winner": "unread_messages_announce"
+ },
+ "turns": [
+  {
+   "route": "/community",
+   "user": "what is my wallet balance at the moment",
+   "find_tool": "wallet balance"
+  }
+ ],
+ "expect": {
+  "opener_kind": "legacy_default",
+  "candidate_provider": "unread_messages_announce",
+  "candidate_spoken": false,
+  "turns": [
+   {
+    "route_groups": [
+     "community"
+    ],
+    "reachable_tools_include": [
+     "get_wallet_balance"
+    ],
+    "find_tool_top": "get_wallet_balance",
+    "advisor_eligible": true
+   }
+  ]
+ }
+}

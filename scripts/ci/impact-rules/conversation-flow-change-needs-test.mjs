@@ -75,8 +75,19 @@ const FLOW_SOURCE_RE = [
 // exemption for a change that is not behaviour-free. Both launder a guess into a
 // green check. Same defect family as the Route Mount Evidence Gate (VTID-03696):
 // the rule keyed off a proxy for the thing it meant to check.
+//
+// VTID-04521 — voice navigation ("where is X → offer → yes → open") is flow
+// behaviour, and its suites live in test/navigation/ and test/nav-golden/
+// (the golden set and leave-one-out ratchets). Same fix as VTID-03885: extend
+// the keywords instead of renaming real tests to chase one.
+//
+// VTID-04586 — the work-surface greeting rung and instruction are pinned by
+// test/vtid-04560-role-separation-regression.test.ts (standing rule 42h,
+// `npm run test:roles`), the canonical suite for the ORB profile and the
+// greeting ladder per surface. Its name matched no keyword, so extending it for
+// a work-surface opener change still reported the blocker. Same fix again.
 const FLOW_TEST_RE =
-  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health).*\.(test|spec)\.(ts|tsx)$/i;
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health|navigation|nav-golden|role-separation).*\.(test|spec)\.(ts|tsx)$/i;
 
 const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
 const EXEMPT_RE = /flow-test-exempt/;

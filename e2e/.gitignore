@@ -5,3 +5,6 @@ playwright-report/
 test-results/
 results.json
 mobile-sim/artifacts/
+
+# STAGING-VERIFY runner config (VTID-04613)
+.staging-verify.playwright.config.mjs

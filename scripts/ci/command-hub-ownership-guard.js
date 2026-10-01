@@ -14,6 +14,52 @@ const path = require('path');
 
 const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 // VTID-0302: Original guard VTID
+// VTID-04754: new standalone jev.{html,js,css} only (no app.js/index.html/nav
+//             change) — the Jev decisions card: calls, cost, month spend per
+//             tenant x plane, shadow-gate agreement per gate.
+// VTID-04661..04665: app.js + styles.css + index.html (?v= bump) — Service Health
+// panel: every group drawn, honest classification, server-side summary, new checks.
+// VTID-04671: app.js + styles.css + index.html (?v= bump) — the recommendation card shows evidence, value, odds, cost, a dismiss-reason picker and the live execution.
+// VTID-04670: backend only (dismiss reasons + acceptance); listed so the P5/P6 pair can land together.
+// VTID-04661..04665: app.js + styles.css + index.html (?v= bump) — Service Health
+// panel: every group drawn, honest classification, server-side summary, new checks.
+// VTID-04661..04665: app.js + styles.css + index.html (?v= bump) — Service Health
+// panel: every group drawn, honest classification, server-side summary, new checks.
+// VTID-04661..04665: app.js + styles.css + index.html (?v= bump) — Service Health
+// panel: every group drawn, honest classification, server-side summary, new checks.
+// VTID-04667: app.js + index.html (?v= bump) — recommendation cards say "Create task" for types with no executor.
+// VTID-04657: app.js + styles.css/app.js ?v= bump — Pending Approvals Activate reports the real execution outcome.
+// VTID-04643: app.js + styles.css + index.html (?v= bump) + navigation-config.js — Testing & QA
+// rebuild P4: the Run Tests tab (reviewed launch list, reason required, OASIS-recorded).
+// VTID-04642: app.js + styles.css + index.html (?v= bump) + navigation-config.js — Testing & QA
+// rebuild P3: Overview / Catalog / Runs replace the unit/integration/validator/CI-reports tabs.
+// VTID-04626: app.js + index.html + new voice-self-healing.{js,css} — the
+//             Voice Self-Healing screen rebuild (old panel removed from app.js).
+// VTID-04635: app.js + index.html (?v= bump) — Testing & QA rebuild P0:
+//             the tabs state what really runs and where; the dead GCP
+//             host, the hand-typed coverage table and the run buttons that
+//             always answered 400 are removed; E2E runs are staging-only.
+// VTID-04587: orb-widget.js + index.html (?v= bump) only — a 'thinking'
+//             signal that arrives while the previous reply is still playing
+//             is remembered, so the end of playback shows Thinking instead
+//             of Listening (ready beep, mic) while Vitana prepares her answer.
+// VTID-04560..04565: orb-widget.js + app.js — the Vitana Assistant role-aware
+//             rebuild: the screen declares surface + view_role to the widget
+//             (init/updateContext/setViewRole, start payload); a role switch
+//             restarts the open conversation; the Command Hub declares
+//             command-hub/developer and hosts the developer Vitana's deep-dive
+//             progress.
+// VTID-04557/VTID-04558: orb-widget.js only — closing the orb cancels a
+// navigation that was announced but not yet run.
+// VTID-04521: orb-widget.js only — speak-then-navigate: a registry navigation
+//             directive (after_speech) is held until turn_complete and the
+//             audio drain, then run; the host's result goes back to the
+//             gateway as nav_result (VTID-04520); the host-reported
+//             is_mobile rides the start payload. Branch:
+//             claude/vitana-navigation-rebuild-6vy46r
+// VTID-04437: app.js only — the Operator Console sidebar merges the caller's
+//             server-side threads (GET /api/v1/operator/threads) and loads a
+//             server-only thread's transcript on open.
 // VTID-03763: orb-widget.js only — a monotonic _s._sessionGeneration
 //             counter, bumped on every real session start (SSE + WS),
 //             threaded through the four setTimeout-chained polling loops
@@ -735,6 +781,23 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             (describeTurnCost(), set as badge.title by VTID-04031), not to
 //             the badge text — no other badge content or layout changes.
 //             Branch: dev-autopilot/d1990492
+// VTID-04259: app.js + index.html (?v= bump, CLAUDE.md §16) only — the
+//             Command Hub idle-logout/silent-refresh session-extension gate
+//             (BOOTSTRAP-DEV-6H-SESSION) only ever applied to a session whose
+//             active_role resolved to the literal string 'developer', while
+//             Command Hub access itself is granted to a wider set
+//             (developer/admin/infra/staff). Anyone landing on
+//             admin/infra/staff fell through to the strict "logout the
+//             instant the raw Supabase JWT exp passes, no refresh" path,
+//             reported live as repeated logouts every ~10-20 minutes.
+//             Widens the role gate (both the fetch interceptor and the idle
+//             monitor) to a shared EXTENDED_SESSION_ROLES list matching the
+//             Command Hub's own access-control allowlist, raises the idle
+//             window from 6h to 24h (a full workday), and adds a
+//             cross-tab `storage` listener so a Supabase refresh-token
+//             rotation race between two open Command Hub tabs no longer
+//             logs out the losing tab. Branch:
+//             claude/gateway-session-timeout-uxbai8
 // VTID-04199: orb-widget.js only — live-reported on an iPhone (iOS 16.6,
 //             Appilix wrapper), pre-login: the orb displays "Vitana
 //             talking" and plays NO audio at all. Production telemetry
@@ -761,10 +824,154 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             the new POST /api/v1/orb/session/:id/audio-blocked, pairing
 //             'blocked' with 'recovered' or 'abandoned'. Branch:
 //             claude/iphone-prelogin-audio-bugs-9day9o
+// VTID-04260: app.js/index.html/styles.css — Autopilot "Runs" tab was
+//             calling GET /api/v1/automations/runs (the tenant-scoped
+//             consumer automation engine) instead of GET
+//             /api/v1/dev-autopilot/runs (the dev_autopilot_runs scan-run
+//             history every sibling Autopilot tab already reads from),
+//             so it 400'd and rendered permanently empty. Branch:
+//             claude/hopeful-ramanujan-whjhbv
+// VTID-04269: app.js + styles.css + index.html (?v= bump, CLAUDE.md §16)
+//             only — the Engine Configuration tab's CRON Jobs table was
+//             always static reference data copied from
+//             scripts/setup-cloud-scheduler.sh, with no gateway route or
+//             DB table backing it — and no reliable live source exists to
+//             wire up instead (GCP billing was disabled 2026-08-16, and
+//             per VTID-03676 only push-dispatch has a confirmed AWS
+//             EventBridge replacement). Adds an honest static-data notice
+//             above the table instead of leaving it looking like live
+//             infrastructure state, per this file's own established
+//             remedy for the same defect shape (VTID-04064). Branch:
+//             claude/vtid-04269-engine-config-cron-notice
+// VTID-04444: app.js + index.html (?v= bump) only — Learning health shows
+//             the diary theme rollup (on/off, users with themes, fresh,
+//             newest). Plan v1 WS-4.2.
+// VTID-04491: app.js + index.html (?v= bump) only — Conversation hub
+// Phase 0: Tool Catalog sends the bearer its routes now require, Monitor
+// reports scored openings instead of "changes nothing", stale Gemini/Vertex
+// labels on Awareness and Tool Catalog corrected.
+// VTID-04438: app.js + index.html (?v= bump) only — Learning health shows
+//             structured-profile quality and which inputs each profile saw.
+//             Plan v1 WS-4.1.
+// VTID-04435: app.js + index.html (?v= bump) only — Monitor's shadow
+//             section shows openings scored with personal weights, and the
+//             inspector shows a session's weight adjustment. Plan v1 WS-4.3.
+// VTID-04427: app.js + index.html (?v= bump) only — a Live advisor tile in
+//             the brain inspector (note count, get_guidance reads, cost,
+//             skip reasons; never the note text). Plan v1 WS-3.2.
+// VTID-04426: app.js + index.html (?v= bump) only — the brain inspector's
+//             Tool catalog tile shows the context-aware selection and the
+//             tools reached through find_tool / use_tool. Plan v1 WS-3.4.
+// VTID-04425: orb-widget.js + index.html (?v= bump) only — the widget
+//             sends a debounced context_update (screen, trail, small app
+//             state) to a live session when the host route changes.
+//             Plan v1 WS-3.3.
+// VTID-04422: app.js + styles.css + index.html (?v= bump) only —
+//             Conversation → Monitor gains "Ranking: live vs shadow score"
+//             and the brain inspector shows each opening's shadow scores.
+//             Plan v1 WS-2.2.
+// VTID-04421: app.js + index.html (?v= bump) only — Conversation → Monitor
+//             gains a Suggestion outcomes section (per-provider made /
+//             accepted / declined / ignored / open, read from
+//             conversation_offer_outcomes). Plan v1 WS-2.4.
+// VTID-04420: app.js + index.html (?v= bump) only — the brain inspector
+//             gains a Candidates section (every continuation provider's
+//             result for the opening, read from orb_wake_timelines) and a
+//             Candidate column on the decision table (which provider won
+//             and whether the opener spoke it). Plan v1 WS-2.1.
+// VTID-04419: app.js + styles.css + index.html (?v= bump) only — a brain
+//             inspector (context built and trimmed, opening decision, tool
+//             trim, errors, outcome, timeline per voice session) mounted in
+//             Conversation → Simulator and Conversation → Journey Context,
+//             read from GET /admin/conversation/sessions[/:id/brain].
+// VTID-04399: app.js + index.html (?v= bump) only — Conversation → Monitor
+//             gains "Started with no context" (signed-in sessions whose model
+//             setup carried no memory context; WS-1.2 target < 5%) and a
+//             context-source tile (fresh / core snapshot / none), read from
+//             the same /admin/conversation/metrics/summary rollup.
+// VTID-04371: app.js + styles.css + index.html (?v= bump) only — Conversation
+//             → Monitor gains a performance dashboard (first speech, context
+//             wait, stops/silent sessions, errors by kind, openers + repeat
+//             rate, offers) above the existing decisions feed, and the
+//             Assistant → Metrics placeholder (VTID-01218D) becomes a
+//             learning-health view (nightly jobs, narrative freshness, finalize
+//             coverage). Both read the hourly rollup via
+//             /api/v1/admin/conversation/metrics/*. Class-based CSS only.
+//             Branch: claude/zealous-wozniak-g57gnn
+// VTID-04282: app.js + styles.css + index.html (?v= bump) only — the nine
+//             Autopilot tabs were uncorrelated snapshots: Live read the
+//             tenant-scoped community AP engine (400 without a tenant, no
+//             runs since 2026-08-15) and never re-rendered its 10 s poll;
+//             Impact Rules showed rule severity as if it were open blockers;
+//             Auto Approve's % counted allowlist entries, not outcomes. Adds a
+//             shared supervisor strip (GET /api/v1/dev-autopilot/supervisor,
+//             VTID-04281) to every tab, per-finding blocker diagnosis,
+//             rule hit counts, effective autonomy, and a real Live view.
+//             Branch: claude/sweet-darwin-so2oup
+// VTID-04267: app.js + index.html (?v= bump, CLAUDE.md §16) only — the Dev
+//             Autopilot status strip's "Budget" chip showed a daily
+//             APPROVAL-COUNT budget, never real dollars, and no spend
+//             figure existed anywhere in the Command Hub even though
+//             per-run cost has been recorded since VTID-04017
+//             (dev_autopilot_outcomes.metadata.agent_runs[]). Adds a real
+//             "Spend today" chip fetched from a new
+//             GET /api/v1/dev-autopilot/spend route
+//             (services/gateway/src/routes/dev-autopilot.ts +
+//             summarizeSpendToday in dev-autopilot-outcomes.ts). Branch:
+//             claude/vtid-04267-dev-autopilot-spend
+// VTID-04266: app.js + index.html (?v= bump, CLAUDE.md §16) only — Autonomy
+//             Pulse's own header comment calls it "a single pane of glass",
+//             but dev_autopilot_executions rows in awaiting_approval
+//             (VTID-04029 — the agent pushed a branch and is holding for a
+//             human decision) were excluded from both its feed query and
+//             its badge-count query in services/gateway/src/routes/
+//             autonomy-pulse.ts. Adds approve/reject action wiring on the
+//             Command Hub side to the same routes the Autopilot Live /
+//             Dev Autopilot cards already call. Branch:
+//             claude/vtid-04266-autonomy-pulse-awaiting-approval
+// VTID-04265: app.js + index.html (?v= bump, CLAUDE.md §16) only — the
+//             Autopilot Live view's Dev Autopilot execution cards had no
+//             step/tool-call transcript, only a status pill — an operator
+//             watching a running agent had to guess what it was doing.
+//             Adds a "Steps" toggle per card, reusing the exact SSE stream
+//             (followOperatorExecution, GET /executions/:id/stream) and
+//             step-frame rendering the Operator Console chat panel already
+//             built (VTID-04033), not a second implementation of the same
+//             transport. Branch: claude/vtid-04265-live-steps-transcript
+// VTID-04264: app.js + index.html (?v= bump, CLAUDE.md §16) only — the Dev
+//             Autopilot status strip on Command Hub → Autopilot → Dev
+//             Autopilot displayed the kill_switch value as a read-only chip
+//             (fed by the already-working GET /config route) with no control
+//             to actually flip it — an operator had to write the row
+//             directly. Adds a toggle button next to Refresh that calls the
+//             existing POST /api/v1/dev-autopilot/config/kill-switch route
+//             (services/gateway/src/routes/dev-autopilot.ts, unchanged),
+//             mirroring the Self-Healing panel's own kill-switch button
+//             pattern one-for-one. Branch: claude/vtid-04264-kill-switch-button
 const DEV_AUTOPILOT_EXECUTOR_BRANCH_PATTERN = /^dev-autopilot\//;
 const REAL_VTID_PATTERN = /VTID-\d{4,5}/;
 
-const ALLOWED_VTID_PATTERN = /VTID-04181|VTID-04199|VTID-04198|VTID-04148|VTID-04142|VTID-04136|VTID-04110|VTID-04106|VTID-04104|VTID-04099|VTID-04095|VTID-04093|VTID-04091|VTID-04090|VTID-04089|VTID-04088|VTID-04087|VTID-04086|VTID-04083|VTID-04063|VTID-04060|VTID-04033|VTID-04032|VTID-04031|VTID-04029|VTID-04028|VTID-03970|VTID-03966|VTID-03960|VTID-03953|VTID-03949|VTID-03944|VTID-03947|VTID-03925|VTID-03918|VTID-03917|VTID-03911|VTID-03910|VTID-03908|VTID-03907|VTID-03906|VTID-03898|VTID-03897|VTID-03896|VTID-03852|VTID-03823|VTID-03822|VTID-03819|VTID-03824|VTID-03818|VTID-03808|VTID-03800|VTID-03799|VTID-03784|VTID-03783|VTID-03782|VTID-03779|VTID-03781|VTID-03778|VTID-03776|VTID-03774|VTID-03770|VTID-03763|VTID-03762|VTID-03746|VTID-03745|VTID-03727|VTID-03706|VTID-03599|VTID-03649|VTID-03685|VTID-03686|DEV-COMHU-\d+|BOOTSTRAP-ORB-FASTSTART-DRIFT|BOOTSTRAP-ORB-BARGEIN|BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV|orb-unread-messages-proactive-nav|orb-bargein-fix|VTID-03606|nova2sonic-german-speed|VTID-03471|VTID-03469|VTID-03455|VTID-03451|VTID-03449|VTID-03440|memory-orchestrator-mandatory|orb-widget-background-watchdog|BOOTSTRAP-PUBLISH-STALENESS-FIX|command-hub-publish-refresh|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
+// VTID-04309 / VTID-04310: app.js + orb-widget.js + styles.css + index.html
+//             (?v= bump) — Command Hub voice turns land in the Operator
+//             Console thread (operator_thread_id on the voice start payload,
+//             server-side transcript synced back), the console sends its
+//             thread id on every chat turn, and voice can hand a request to
+//             the Operator (docs/INTAKE-CHANNELS-PLAN.md steps 3-4).
+// VTID-04334: app.js + styles.css + index.html (?v= bump) only — the
+//             Feedback drawer gets a Pipeline block (ticket FB-…, VTID,
+//             finding, execution, PR, deploy/verify as chips) and the
+//             mark-duplicate / reclassify / rollback buttons whose routes
+//             already existed; the inbox gets a VTID column; Autopilot rows
+//             from a member report carry a "Member report FB-…" badge that
+//             opens the ticket (docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.1).
+// VTID-04644: orb-widget.js only — a navigate directive marked after_turn
+//             (the gateway opened the screen the member asked for, after
+//             the turn already ended) runs once the reply audio drains
+//             instead of waiting 15 s for a turn_complete that already
+//             passed.
+// VTID-04659: index.html only — bump the orb-widget.js ?v= that VTID-04644
+//             left unchanged, so the Command Hub loads the new widget.
+const ALLOWED_VTID_PATTERN = /VTID-04754|VTID-04665|VTID-04671|VTID-04670|VTID-04664|VTID-04663|VTID-04662|VTID-04661|VTID-04667|VTID-04659|VTID-04657|VTID-04644|VTID-04646|VTID-04643|VTID-04642|VTID-04626|VTID-04635|VTID-04587|VTID-04560|VTID-04561|VTID-04562|VTID-04563|VTID-04564|VTID-04565|VTID-04542|VTID-04547|VTID-04552|VTID-04554|VTID-04557|VTID-04558|VTID-04521|VTID-04491|VTID-04437|VTID-04444|VTID-04438|VTID-04430|VTID-04435|VTID-04427|VTID-04426|VTID-04425|VTID-04422|VTID-04421|VTID-04420|VTID-04419|VTID-04399|VTID-04371|VTID-04396|VTID-04395|VTID-04385|VTID-04354|VTID-04334|VTID-04310|VTID-04309|VTID-04282|VTID-04268|VTID-04269|VTID-04267|VTID-04266|VTID-04265|VTID-04264|VTID-04260|VTID-04259|VTID-04181|VTID-04199|VTID-04198|VTID-04148|VTID-04142|VTID-04136|VTID-04110|VTID-04106|VTID-04104|VTID-04099|VTID-04095|VTID-04093|VTID-04091|VTID-04090|VTID-04089|VTID-04088|VTID-04087|VTID-04086|VTID-04083|VTID-04063|VTID-04060|VTID-04033|VTID-04032|VTID-04031|VTID-04029|VTID-04028|VTID-03970|VTID-03966|VTID-03960|VTID-03953|VTID-03949|VTID-03944|VTID-03947|VTID-03925|VTID-03918|VTID-03917|VTID-03911|VTID-03910|VTID-03908|VTID-03907|VTID-03906|VTID-03898|VTID-03897|VTID-03896|VTID-03852|VTID-03823|VTID-03822|VTID-03819|VTID-03824|VTID-03818|VTID-03808|VTID-03800|VTID-03799|VTID-03784|VTID-03783|VTID-03782|VTID-03779|VTID-03781|VTID-03778|VTID-03776|VTID-03774|VTID-03770|VTID-03763|VTID-03762|VTID-03746|VTID-03745|VTID-03727|VTID-03706|VTID-03599|VTID-03649|VTID-03685|VTID-03686|DEV-COMHU-\d+|BOOTSTRAP-ORB-FASTSTART-DRIFT|BOOTSTRAP-ORB-BARGEIN|BOOTSTRAP-ORB-UNREAD-MESSAGES-NAV|orb-unread-messages-proactive-nav|orb-bargein-fix|VTID-03606|nova2sonic-german-speed|VTID-03471|VTID-03469|VTID-03455|VTID-03451|VTID-03449|VTID-03440|memory-orchestrator-mandatory|orb-widget-background-watchdog|BOOTSTRAP-PUBLISH-STALENESS-FIX|command-hub-publish-refresh|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
 
 function getChangedFiles() {
   try {

@@ -1,0 +1,29 @@
+# Last CloudWatch log event per ungoverned service, read 2026-09-23 ~11:05 UTC
+# (claude-code-aws-agent, logs:DescribeLogStreams, read-only)
+vitana-auth-proxy           /vitana/auth-proxy            2026-09-10 23:48
+vitana-conductor            /vitana/conductor             2026-09-11 10:39
+vitana-planner-core         /vitana/planner-core          2026-09-11 19:10
+vitana-validator-core       /vitana/validator-core        2026-09-11 08:19
+vitana-qa-agent             /vitana/qa-agent              2026-09-11 17:37
+vitana-worker-core          /vitana/worker-core           2026-09-11 13:45
+vitana-cognee-extractor     /vitana/cognee-extractor      2026-09-11 16:05
+vitana-oasis-approval       /vitana/oasis-approval        2026-09-11 12:58
+vitana-test-agent           /vitana/test-agent            2026-09-11 04:27
+vitana-dev-console-ui       /vitana/dev-console-ui        2026-09-10 23:02
+vitana-github-sync-service  /vitana/github-sync-service   2026-09-11 14:30
+vitana-cloudshell-relay     /vitana/cloudshell-relay      2026-09-10 20:42
+vitana-mcp-gateway          /vitana/mcp-gateway           2026-09-11 12:11
+vitana-oasis-mcp-v2         /vitana/oasis-mcp-v2          2026-09-11 05:14
+vitana-vitana-dev-gateway   /vitana/vitana-dev-gateway    2026-09-11 06:46
+vitana-memory-indexer       /vitana/memory-indexer        2026-09-11 00:38
+vitana-vitana-memory-indexer /vitana/vitana-memory-indexer 2026-09-11 09:55
+vitana-openclaw-bridge      /vitana/openclaw-bridge       2026-09-16 17:10
+vitana-crewai-kb-agent      /vitana/crewai-kb-agent       2026-09-11 01:22
+vitana-crewai-prompt-synth  /vitana/crewai-prompt-synth   2026-09-11 06:01
+vitana-lifetime-context-crew /vitana/lifetime-context-crew 2026-09-11 02:55
+vitana-community-app (bare) /vitana/community-app         shared log group with vitana-community-app-staging;
+                                                          the bare service's own task stream f8283359… last logged 2026-09-11
+vitana-oasis-operator (bare) /vitana/oasis-operator       live: task db047158… logs "INFO:main:Heartbeat sent" every few seconds
+                                                          (heartbeat to GATEWAY_URL with SUPABASE_SERVICE_ROLE); the governed
+                                                          vitana-oasis-operator-awsdr is the ALB-fronted replacement
+vitana-worker-runner        /vitana/worker-runner         live: "[VTID-01200] Polled: 0 pending, 0 eligible" on every poll

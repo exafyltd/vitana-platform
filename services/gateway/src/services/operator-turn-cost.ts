@@ -17,7 +17,7 @@
  * Anthropic model name the table is keyed by; DeepSeek ids are used as-is.
  */
 
-import { estimateCost, MODEL_COSTS } from '../constants/llm-defaults';
+import { estimateCost, modelCostKey } from '../constants/llm-defaults';
 import type { LLMUsage } from './llm-router';
 
 export interface TurnUsage {
@@ -46,15 +46,7 @@ export interface TurnCostSummary {
  * Anthropic model name (region prefix and date/version suffix removed).
  */
 export function pricingKeyForModel(model: string | undefined | null): string | null {
-  const m = (model || '').trim();
-  if (!m) return null;
-  if (MODEL_COSTS[m]) return m;
-  const bare = m
-    .replace(/^(?:eu|us|apac|global|jp|au|ca)\.anthropic\./, '')
-    .replace(/^anthropic\./, '')
-    .replace(/-\d{8}-v\d+:\d+$/, '')
-    .replace(/-v\d+:\d+$/, '');
-  return MODEL_COSTS[bare] ? bare : null;
+  return modelCostKey(model);
 }
 
 export function isModelPriced(model: string | undefined | null): boolean {

@@ -12,6 +12,10 @@
 #   def (VITANA_ENV, feature flags, SUPABASE_JWT_SECRET, …) carry forward —
 #   the task def is the AWS analogue of STAGE-DEPLOY.yml's authoritative
 #   ENV_VARS block, so this workflow does not re-declare it.
+#   Exception (VTID-04363): VITANA_ENV=staging IS pinned now — the Dev
+#   Autopilot loop runs only on its owner env (dev-autopilot-loop-owner.ts,
+#   default staging), so losing it from live state would silently stop the
+#   loop everywhere.
 # - Smoke gate mirrors STAGE-DEPLOY.yml: /api/v1/admin/health must report
 #   env=staging AND /api/v1/admin/build-info must report the deployed
 #   commit — otherwise the job fails loudly (CLAUDE.md §15).
@@ -39,6 +43,14 @@ on:
         description: 'Reason for this AWS staging gateway deploy'
         required: false
         default: 'manual deploy'
+      # VTID-04709: deploy a specific commit that is already on main instead of
+      # main HEAD. Lets staging be put back on an earlier, already-tested build
+      # so AWS-PROD-DEPLOY-GATEWAY.yml (promote-staging) can ship exactly that
+      # build and nothing newer. EMPTY = main HEAD, the unchanged default.
+      commit_sha:
+        description: 'Full 40-char commit SHA already on main to deploy instead of main HEAD (EMPTY = main HEAD)'
+        required: false
+        default: ''
       gateway_url:
         description: 'Public gateway URL for post-deploy verification'
         required: false
@@ -102,6 +114,26 @@ jobs:
           # codeintel staging step below can give RepoWise real git-tier
           # data for this repo (bug-fix/churn history, not just a snapshot).
           fetch-depth: 0
+          # VTID-04709: a pinned commit_sha when dispatched with one, else the
+          # triggering commit exactly as before.
+          ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Pinned commit must already be on main (VTID-04709)
+        if: ${{ inputs.commit_sha != '' }}
+        env:
+          PIN: ${{ inputs.commit_sha }}
+        run: |
+          set -e
+          if ! echo "$PIN" | grep -qE '^[0-9a-f]{40}$'; then
+            echo "::error::commit_sha must be a full 40-character lowercase SHA, got '$PIN'"
+            exit 1
+          fi
+          git fetch -q origin main
+          if ! git merge-base --is-ancestor "$PIN" origin/main; then
+            echo "::error::commit_sha $PIN is not on main — only commits that already landed on main may be deployed"
+            exit 1
+          fi
+          echo "Deploying pinned commit $PIN (main HEAD is $(git rev-parse origin/main))"
 
       - name: Checkout vitana-v1 (read-only, for codeintel indexing)
         id: checkout_v1
@@ -141,16 +173,19 @@ jobs:
       - name: Resolve commit metadata + refresh BUILD_INFO
         id: commit
         run: |
+          # VTID-04709: the commit actually checked out (equals GITHUB_SHA
+          # unless commit_sha pinned an earlier one).
+          SHA="$(git rev-parse HEAD)"
           SHORT="$(git rev-parse --short=12 HEAD)"
           {
-            echo "sha=$GITHUB_SHA"
+            echo "sha=$SHA"
             echo "short=$SHORT"
           } >> "$GITHUB_OUTPUT"
           # The gateway Dockerfile COPYs BUILD_INFO into the image; refresh
           # it so the baked file reflects this build, not the last commit
           # that happened to touch it.
           {
-            echo "$GITHUB_SHA"
+            echo "$SHA"
             echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > services/gateway/BUILD_INFO
 
@@ -193,7 +228,88 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
+      # VTID-04507: Connected Apps sign-in. Pins the public URLs the OAuth
+      # redirect and the post-consent return are built from (unset, both fell
+      # back to https://vitana.app), and wires the Google / Microsoft client
+      # and the credential-encryption key when their secrets exist. Absent
+      # secrets are left untouched and never fail the deploy — provision them
+      # with scripts/aws/setup-connected-apps-oauth-secrets.sh. Written to a
+      # file so the task-definition step (near GitHub's 20,000-char run limit)
+      # merges it with one short jq clause.
+      - name: Resolve Connected Apps sign-in config
+        run: |
+          set -euo pipefail
+          SEC='[]'
+          for pair in \
+            "GOOGLE_OAUTH_CLIENT_ID:google-oauth-client-id" \
+            "GOOGLE_OAUTH_CLIENT_SECRET:google-oauth-client-secret" \
+            "MICROSOFT_OAUTH_CLIENT_ID:microsoft-oauth-client-id" \
+            "MICROSOFT_OAUTH_CLIENT_SECRET:microsoft-oauth-client-secret" \
+            "AI_CREDENTIALS_ENC_KEY:credentials-enc-key" ; do
+            VAR="${pair%%:*}"; NAME="vitana/gateway/staging/${pair#*:}"
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "  $NAME absent - $VAR not wired (VTID-04507)"
+            else
+              echo "  resolved $NAME -> $VAR"
+              SEC=$(jq -c --arg n "$VAR" --arg a "$ARN" '. + [{name:$n, valueFrom:$a}]' <<<"$SEC")
+            fi
+          done
+          jq -n --argjson sec "$SEC" '{
+            env: [ {name:"GATEWAY_PUBLIC_URL", value:"https://preview-aws-gateway.vitanaland.com"},
+                   {name:"APP_URL", value:"https://preview-aws.vitanaland.com"} ],
+            sec: $sec }' > "$RUNNER_TEMP/connected-apps.json"
+          cat "$RUNNER_TEMP/connected-apps.json" | jq -c '{env, sec: [.sec[].name]}'
+      # VTID-04473: Jev (TypeSafe System One) typed decisions, internal roles
+      # only. Rides on connected-apps.json so the task-definition step stays
+      # unchanged. The key is wired only when the secret exists
+      # (scripts/aws/setup-typesafe-secret.sh); JEV_DECISIONS_ENABLED is
+      # always written - 'true' with the key, 'false' without - so a stale
+      # value can never outlive its key. JEV_COMMUNITY_ENABLED is never set.
+      - name: Resolve Jev decision config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/typesafe-api-key"
+          # VTID-04754: keep the AWS error so "not found" and "access denied"
+          # are told apart in the log instead of both reading as "absent".
+          ERR="$RUNNER_TEMP/jev-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - Jev stays inert (VTID-04473)"
+            elif grep -qE 'AccessDenied|not authorized' "$ERR"; then
+              echo "::warning::$NAME access denied for the deploy role - Jev stays inert: $(head -c 300 "$ERR")"
+            else
+              echo "::warning::$NAME lookup failed - Jev stays inert: $(head -c 300 "$ERR")"
+            fi
+            jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"JEV_DECISIONS_ENABLED", value:"true"}] | .sec += [{name:"TYPESAFE_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          # VTID-04759/04764/04774/04775/04782: Jev P1 gates B1/B2, A1, A2, C1, E3/E6 in shadow (record only).
+          jq -c '.env += [{name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"}, {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"}, {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"}, {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"}, {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"}, {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"}, {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
+      # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
+      # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
+      # (04550), mobile lead on the first burst only (04552), tool acknowledgement
+      # intent (04553). ORB_PREWARM_FULL_CONTEXT_ENABLED (04554) is deliberately NOT
+      # pinned: it would stop the blind prewarm claim, losing its latency gain. Rollback: one value to 'false'.
+      # (VTID-04624: moved out of the run: block below to stay under the 20,000-char limit, VTID-03788.)
+      # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
+      # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
+      # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
+      # untouched on the task definition and the gateway keeps reporting the
+      # bridge as not_configured. It must never fail a gateway deploy.
+      # VTID-04133: Operator Console machine-to-machine auth token — optional,
+      # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
+      # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
+      # task def, never forced off); present => enabled + wired as a secret.
       - name: Register task-definition revision + roll the service
+        id: roll
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
           # environment-scoped repository VARIABLES when set (not secrets —
@@ -251,32 +367,19 @@ jobs:
         # exactly one variable change + one dispatch. Never AWS access keys
         # here — Nova auth is the task role via the SDK default chain.
         #
-        # BOOTSTRAP-NOVA-SONIC-VOICE / VTID-04100:
-        # FEATURE_ORB_GREETING_TTS_BRIDGE_ENV was upserted to "off" on
-        # 2026-07-28, rejected on PRODUCT grounds, not technical ones: the
-        # bridge phrase is synthesized by a different engine from the live
-        # upstream, so the user hears one voice say the filler and another
-        # voice continue. That objection has NOT gone away — the bridge is
-        # Polly now rather than Cloud TTS, and Polly is still not a Nova
-        # Sonic voice.
+        # VTID-04511: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is pinned "off". The
+        # bridge was a Polly filler phrase played before Nova's greeting -- a
+        # second voice. The owner's rule is that it never plays; the gateway
+        # code path is removed too, this pin only keeps the flag honest.
         #
-        # It is set to "staging-only" here so the trade can be HEARD and
-        # decided on evidence, because the measured cost of not having it is
-        # large: on staging 2026-09-19, authenticated `de`, first MODEL audio
-        # was p50 ~2.5-3.0s and p90 up to 7.5s, while a bridge frame lands in
-        # the time it takes to write one SSE event. VTID-04100 also made the
-        # bridge cached and its pre-connect await bounded, so the mechanism no
-        # longer costs a Polly round trip per session and can no longer stall
-        # a connect the way VTID-03802 did.
-        #
-        # PROD IS DELIBERATELY NOT CHANGED. Reversing a recorded product
-        # decision for every real user is the platform owner's call, not a
-        # side effect of a latency VTID. Listen on preview-aws first; if the
-        # voice change is acceptable, promote by pinning the same value on
-        # AWS-PROD-DEPLOY-GATEWAY.yml. If it is not, set this back to "off"
-        # and the measured win has to come from the directive and tool-catalog
-        # budgets (VTID-04096/04097) alone.
-        #
+        # VTID-04349 -- community automation engine (AP-XXXX) back on STAGING in
+        # shadow mode: AUTOMATIONS_DELIVERY_MODE=shadow records every
+        # notification, write and RPC instead of performing it (staging shares
+        # the production database, so a live run here would reach real
+        # members). AUTOPILOT_HEARTBEAT_ENABLED + DEFAULT_TENANT_ID (Maxina)
+        # start the in-process heartbeat loop. Not declared on the prod
+        # workflow: production goes live only on the owner's decision after
+        # staging shadow runs are verified.
         # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
         # upserted to "staging-only" below. Checked live in this repo: it
         # is set on neither AWS gateway task def (only the dead GCP
@@ -602,6 +705,17 @@ jobs:
         # so no new credential material or IAM change is introduced -- this
         # is purely wiring an existing secret into a second task def.
         #
+        # VTID-04573 -- vitana/github/token (last set 2026-08-26 09:54 UTC)
+        # returns 401 from GitHub since ~2026-09-25 10:00 UTC, consistent with
+        # a 30-day fine-grained token expiring; every GitHub call from the
+        # staging gateway failed (PR open on approve, operator repo reads).
+        # Staging now reads vitana/github/pat -- the secret the autopilot
+        # executor already uses successfully under the same execution role.
+        # Production was repointed the same day (env-only run 332). Owner
+        # decision 2026-09-25 (VTID-04583): vitana/github/pat is the permanent
+        # GitHub token for both gateways and the executor. vitana/github/token
+        # is retired -- do not point anything back at it.
+        #
         # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
 # consumer, an Operator-chat-created task (metadata.source='operator-chat')
 # sat at status=scheduled/spec_status=missing forever -- confirmed live
@@ -633,11 +747,23 @@ jobs:
 #     rolling summary; the tables were applied live 2026-09-17.
 #   OPERATOR_TURN_MEMORY_ENABLED (VTID-04025) -- durable facts extracted
 #     from each console turn into dev_agent_memory (fail-open).
-# Plus OPTIONAL read-only SQL (VTID-04023): resolved the ERP-bridge way --
-# if vitana/gateway/staging/operator-sql-readonly-url exists, the task def
-# gets OPERATOR_SQL_READONLY_ENABLED=true + the URL as a secret; absent,
-# nothing is wired and the tool keeps reporting not_configured. It must
-# never fail a gateway deploy. Rollback for any of these is the value ->
+#   REMINDERS_INPROCESS_DISPATCH_ENABLED (VTID-04320) -- the reminders tick
+#     and sweeper run in-process; no external scheduler has called
+#     /reminders-tick since GCP was shut down, so no reminder fired. The
+#     claim RPC uses SKIP LOCKED, so several tasks (or prod too) are safe.
+#   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338) -- every calendar entry
+#     gets default reminders (reconciled into `reminders` every minute).
+#   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
+#     Autopilot/journey suggestions + 6-hourly priority refresh, in-process.
+#   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
+#     memory through the broker; falls back to the legacy read on failure.
+#     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
+# Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
+# readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
+# the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
+# ENABLED=true + OPERATOR_SQL_READONLY_BACKEND=supabase: the live DB through
+# public.operator_readonly_query (service_role only, read-only transaction).
+# It must never fail a gateway deploy. Rollback for any of these is the value ->
 # "false" (or removal), no code revert.
 #
 # VTID-04225 -- three credentials the starved autopilot/self-healing loops
@@ -653,6 +779,22 @@ jobs:
 # provisioned by scripts/aws/setup-gateway-internal-token.sh; it is what the
 # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
 # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
+#
+# VTID-04517 -- NAV_V2_ENABLED=true + NAV_REGISTRY_URL, STAGING ONLY: voice
+# navigation answered by the screen registry the frontend publishes
+# (/nav-registry.json on the staging frontend). Falls back to the legacy
+# navigator when the registry resolver cannot run. Rollback: "false".
+#
+# VTID-04727 -- LEDGER_WRITE_AUTH_MODE=enforce, STAGING ONLY: the VTID
+# ledger's write routes require GATEWAY_SERVICE_TOKEN or an exafy_admin JWT.
+# Production runs the code default (log) until its logs show no unknown
+# callers. Rollback: "log" (or "off" in an emergency).
+#
+# VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
+# decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.5.1): a
+# spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
+# dispatched to Dev Autopilot without an Approve & Fix click. Kill switch,
+# per-pass cap and the PR-approval hold still apply. Rollback: "false".
 #
 # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
         # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
@@ -780,7 +922,7 @@ jobs:
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_AURORA:vitana/aurora/prod/database-url" \
             "SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri" \
-            "SEC_GITHUB_TOKEN:vitana/github/token" \
+            "SEC_GITHUB_TOKEN:vitana/github/pat" \
             "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
@@ -792,11 +934,6 @@ jobs:
             export "$VAR"
             echo "  resolved $NAME"
           done
-          # VTID-03840: the erp-bridge (BackOffice ERP facade) is OPTIONAL on
-          # staging until an operator runs scripts/aws/setup-erp-bridge-staging.sh.
-          # Absent token secret => ERP_BRIDGE_URL/ERP_BRIDGE_TOKEN are left
-          # untouched on the task definition and the gateway keeps reporting the
-          # bridge as not_configured. It must never fail a gateway deploy.
           ERP_BRIDGE_URL="http://erp-bridge.vitana.internal:8080"
           SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_ERP_BRIDGE" ] || [ "$SEC_ERP_BRIDGE" = "None" ]; then
@@ -808,13 +945,20 @@ jobs:
           SEC_SQL_RO=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-sql-readonly-url --query ARN --output text 2>/dev/null || true)
           if [ -z "$SEC_SQL_RO" ] || [ "$SEC_SQL_RO" = "None" ]; then
             SEC_SQL_RO=""
-            echo "  operator sql read-only secret absent - dev_run_sql_readonly stays not_configured (VTID-04037; run scripts/aws/setup-operator-sql-readonly-secret.sh)"
+            echo "  operator sql read-only secret absent - dev_run_sql_readonly reads the live DB via operator_readonly_query (VTID-04624)"
           else
             echo "  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true"
           fi
           SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/dev/null || true)
           [ "$SEC_INTERNAL_TOKEN" = "None" ] && SEC_INTERNAL_TOKEN=""
           [ -n "$SEC_INTERNAL_TOKEN" ] && echo "  resolved internal-token" || echo "  internal-token secret absent (VTID-04226) - not wired"
+          SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
+          if [ -z "$SEC_MACHINE_AUTH" ] || [ "$SEC_MACHINE_AUTH" = "None" ]; then
+            SEC_MACHINE_AUTH=""
+            echo "  operator machine-auth secret absent - OPERATOR_MACHINE_AUTH_ENABLED not wired (VTID-04133; run scripts/aws/setup-operator-machine-auth-secret.sh)"
+          else
+            echo "  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true"
+          fi
           [ -n "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" ] || echo "::warning::DEV_AUTOPILOT_SCAN_TOKEN repo secret empty (VTID-04225)"
           GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
           TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
@@ -839,9 +983,11 @@ jobs:
                  --arg SEC_GITHUB_TOKEN "$SEC_GITHUB_TOKEN" \
                  --arg SEC_ERP_BRIDGE "$SEC_ERP_BRIDGE" --arg ERP_BRIDGE_URL "$ERP_BRIDGE_URL" \
                  --arg SEC_SQL_RO "$SEC_SQL_RO" \
+                 --arg SEC_MACHINE_AUTH "$SEC_MACHINE_AUTH" \
                  --arg SEC_SERVICE_TOKEN "$SEC_SERVICE_TOKEN" --arg SEC_INTERNAL_TOKEN "$SEC_INTERNAL_TOKEN" \
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
+                 --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -855,7 +1001,8 @@ jobs:
                                                 "FEATURE_ORB_BRAIN_CACHE_ENV",
                                                 "FEATURE_ORB_NOVA_PREWARM_ENV",
                                                 "FEATURE_ORB_WS_TRANSPORT_ENV",
-                                                "ORB_FULL_DUPLEX_ENABLED",
+                                                "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
+                                                "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                                 "ORB_DAY_CLOSE_RUNG_ENABLED",
                                                 "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
                                                 "TTS_PROVIDER","TTS_POLLY_STRICT","VERTEX_LIVE_UNAVAILABLE",
@@ -872,16 +1019,22 @@ jobs:
                                                 "OPERATOR_PLANNER_ENABLED",
                                                 "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
                                                 "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
-                                                "OPERATOR_SQL_READONLY_ENABLED",
+                                                "REMINDERS_INPROCESS_DISPATCH_ENABLED","CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","MEMORY_ORB_RECALL_ENABLED",
+                                                "FEEDBACK_AUTO_DISPATCH_ENABLED","LEDGER_WRITE_AUTH_MODE",
+                                                "NAV_V2_ENABLED","NAV_REGISTRY_URL",
+                                                "OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND",
+                                                "OPERATOR_MACHINE_AUTH_ENABLED",
                                                 "BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION",
                                                 "AURORA_CA_BUNDLE_PATH",
                                                 "GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
                                                 "VERTEX_SERBIAN_BRIDGE_ENABLED",
                                                 "GCP_SERVICE_ACCOUNT_JSON",
-                                                "OPERATOR_CODEINTEL_ENABLED",
+                                                "OPERATOR_CODEINTEL_ENABLED", "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED",
                                                 "DEV_AUTOPILOT_SCAN_TOKEN",
                                                 "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
-                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR") | not) ]
+                                                "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
+                                                "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
+                                                "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -890,16 +1043,25 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"},
                           {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging-only"},
                           {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
                           {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
-                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"},
+                          {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"}, {name:"ORB_DEVON_PRECONNECT_ENABLED", value:"true"}, {name:"ORB_CASCADE_STREAMING_ENABLED", value:"true"}, {name:"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED", value:"true"}, {name:"ORB_TOOL_ACK_INTENT_ENABLED", value:"true"},
+                          {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
+                          {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
                           {name:"ORB_DAY_CLOSE_RUNG_ENABLED", value:"true"},
                           {name:"ORB_LOG_NOVA_INSTRUCTION_DEBUG", value:"true"},
+                          {name:"NAV_CONTINUATION_BIND", value:"true"},
+                          {name:"NAV_V2_ENABLED", value:"true"}, {name:"NAV_REGISTRY_URL", value:"https://preview-aws.vitanaland.com/nav-registry.json"},
+                          {name:"VITANA_ENV", value:"staging"},
+                          {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
+                          {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
+                          {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
+                          {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
                           {name:"TTS_FISH_FALLBACK_ENABLED", value:"true"},
@@ -923,6 +1085,12 @@ jobs:
                           {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
                           {name:"OPERATOR_THREADS_ENABLED", value:"true"},
                           {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                          {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"},
+                          {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                          {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                          {name:"FEEDBACK_AUTO_DISPATCH_ENABLED", value:"true"},
+                          {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
+                          {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
                           {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
@@ -930,7 +1098,7 @@ jobs:
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
                           {name:"GCP_SERVICE_ACCOUNT_JSON", value:$GCP_CRED_CONFIG},
-                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                          {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"}, {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"}, {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"},
                           {name:"CODEINTEL_PLATFORM_REPO_DIR", value:"/repo-platform"},
                           {name:"CODEINTEL_V1_REPO_DIR", value:"/repo-vitana-v1"},
                           {name:"DEV_AUTOPILOT_SCAN_TOKEN", value:$SCAN_TOKEN} ] )
@@ -941,6 +1109,7 @@ jobs:
                                                 "AURORA_DATABASE_URL",
                                                 "AURORA_RLS_DATABASE_URL",
                                                 "GITHUB_SAFE_MERGE_TOKEN","OPERATOR_SQL_READONLY_DATABASE_URL",
+                                                "OPERATOR_MACHINE_AUTH_TOKEN",
                                                 "GCP_SERVICE_ACCOUNT_JSON") | not) ]
                       + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
                           {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
@@ -973,7 +1142,19 @@ jobs:
                       | .containerDefinitions[0].secrets |=
                           ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_DATABASE_URL") | not) ]
                             + [ {name:"OPERATOR_SQL_READONLY_DATABASE_URL", valueFrom:$SEC_SQL_RO} ] ) )
+                    else ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_SQL_READONLY_ENABLED","OPERATOR_SQL_READONLY_BACKEND") | not) ]
+                            + [ {name:"OPERATOR_SQL_READONLY_ENABLED", value:"true"}, {name:"OPERATOR_SQL_READONLY_BACKEND", value:"supabase"} ] ) ) end )
+                | ( if $SEC_MACHINE_AUTH != "" then
+                      ( .containerDefinitions[0].environment |=
+                          ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_ENABLED") | not) ]
+                            + [ {name:"OPERATOR_MACHINE_AUTH_ENABLED", value:"true"} ] )
+                      | .containerDefinitions[0].secrets |=
+                          ( [ .[] | select(.name | IN("OPERATOR_MACHINE_AUTH_TOKEN") | not) ]
+                            + [ {name:"OPERATOR_MACHINE_AUTH_TOKEN", valueFrom:$SEC_MACHINE_AUTH} ] ) )
                     else . end )
+                | .containerDefinitions[0].environment |= ( [ .[] | select(.name as $n | ($CA[0].env + $CA[0].sec) | map(.name) | index($n) | not) ] + $CA[0].env )
+                | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
@@ -984,6 +1165,35 @@ jobs:
           echo "Waiting for service to stabilize (up to ~10 min)…"
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
+      # VTID-04314: a timed-out `services-stable` waiter says nothing about WHY.
+      # From 2026-09-22 22:21 UTC seven consecutive deploys died that way with
+      # byte-identical build and secret output to the last green run, while
+      # staging kept serving the old build. Print the rollout state, the latest
+      # service events and the stop reason of the most recent stopped tasks so
+      # the failure names its own cause in the job log. Read-only, best-effort.
+      - name: Diagnose failed rollout (service events + stopped tasks)
+        if: failure() && steps.roll.outcome == 'failure'
+        run: |
+          set +e
+          C="${{ env.ECS_CLUSTER }}"; S="${{ env.ECS_SERVICE }}"
+          echo "== deployments"
+          aws ecs describe-services --cluster "$C" --services "$S" \
+            --query 'services[0].deployments[].{status:status,rollout:rolloutState,reason:rolloutStateReason,td:taskDefinition,desired:desiredCount,running:runningCount,pending:pendingCount,failed:failedTasks}' \
+            --output table
+          echo "== latest service events"
+          aws ecs describe-services --cluster "$C" --services "$S" \
+            --query 'services[0].events[:15].[createdAt,message]' --output text
+          echo "== most recent stopped tasks"
+          ARNS=$(aws ecs list-tasks --cluster "$C" --service-name "$S" --desired-status STOPPED \
+            --query 'taskArns[:5]' --output text | tr '\t' ' ' | sed 's/None//g')
+          if [ -n "${ARNS// /}" ]; then
+            aws ecs describe-tasks --cluster "$C" --tasks $ARNS \
+              --query 'tasks[].{td:taskDefinitionArn,stopCode:stopCode,stopped:stoppedReason,health:healthStatus,exit:containers[0].exitCode,why:containers[0].reason}' \
+              --output json
+          else
+            echo "(no stopped tasks listed)"
+          fi
+          exit 0
       - name: Smoke — env=staging + deployed commit live
         run: |
           set -e
@@ -1064,3 +1274,20 @@ jobs:
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"
             echo "- Reason: ${{ env.DEPLOY_REASON }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # VTID-04715: STAGING-VERIFY (workflow_run) only sees this run's
+      # head_sha, which is main HEAD even when a commit_sha pin deployed an
+      # older commit. Hand it the commit actually deployed.
+      - name: Record deployed commit for STAGING-VERIFY (VTID-04715)
+        if: success()
+        run: |
+          mkdir -p "$RUNNER_TEMP/deployed-commit"
+          echo "${{ steps.commit.outputs.sha }}" > "$RUNNER_TEMP/deployed-commit/sha"
+
+      - name: Upload deployed commit (VTID-04715)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-commit
+          path: ${{ runner.temp }}/deployed-commit/sha
+          retention-days: 7

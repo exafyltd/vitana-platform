@@ -1,0 +1,28 @@
+# The six owner-approved Dev Autopilot executions, 2026-09-21 19:23–19:28 UTC (oasis_events, read-only)
+#
+# exec      PR     approved  ci_failed  reverted  self-heal child → outcome
+# 59875200  #3543  19:23:01  19:25:38   19:26:24  a427ba48 → failed (PR-flood guard: parent still carries pr_url)
+# 39604ba4  #3544  19:23:04  19:24:52   19:25:36  ef63f33a → failed (same)
+# d49edb78  #3545  19:23:06  19:24:03   19:24:50  62381ec0 → failed (same)
+# dba39e32  #3546  19:23:10  19:25:01   19:25:41  8a0a5e49 → failed (same)
+# c52bfcca  #3547  19:23:16  19:26:46   19:27:29  ba5342a6 → failed (same)
+# 2a9edcb4  #3548  19:23:18  19:25:59   19:26:43  a1283045 → failed (same)
+#
+# Every ci_failed reason: "blocked: required check(s) failed: validate-pr".
+# Every parent was REVERTED (not continued in fix mode) because the rows
+# carry no metadata.executor — autoApproveTick stamps none, the mode was
+# resolved from the ECS task's env — and isFixModeEligible() requires
+# metadata.executor === 'agent'.
+#
+# VALIDATOR-CHECK run 35644492399 (PR #3548, head c0bc520), job validate-pr, verbatim:
+#   PR_TITLE: DEV-AUTOPILOT: order memory_facts by extracted_at, not the nonexistent created_at (VTID-DA-2a9edcb4)
+#   VTID="$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1)"
+#   ...
+#   REJECTED: no VTID in the title, and no explicit 'VTID: VTID-XXXXX' line in the body
+#   ##[error]Process completed with exit code 10.
+#
+# Why: the finding had no activated_vtid, so run-agent-execution.ts used the
+# `VTID-DA-<exec8>` placeholder and applyPrContract() returned
+#   skipped_reason: 'no real VTID (finding has no activated_vtid) — validator contract not applied'
+# Same shape on all six. The agent's diffs themselves were sound (#3548: a real
+# one-line schema-drift fix + 7 tests, tsc clean, 96 neighbouring tests green).

@@ -94,7 +94,11 @@ describe('VTID-03851 — thread marker semantics', () => {
 
 describe('VTID-03851 — source wiring', () => {
   it('/chat runs optionalAuth (never requireAuth — anonymous chat stays allowed)', () => {
-    expect(operatorRoute).toMatch(/router\.post\('\/chat', optionalAuth, async/);
+    // VTID-04133: operatorMachineAuth sits between optionalAuth and the handler
+    // (it only ever fills req.identity when optionalAuth left it unset, so a
+    // real authenticated caller is never overridden) — optionalAuth is still
+    // the first, non-rejecting gate, which is the invariant this test pins.
+    expect(operatorRoute).toMatch(/router\.post\('\/chat', optionalAuth, operatorMachineAuth, async/);
     expect(operatorRoute).toMatch(/import \{ requireAdminAuth, optionalAuth, AuthenticatedRequest \} from '\.\.\/middleware\/auth-supabase-jwt'/);
   });
 

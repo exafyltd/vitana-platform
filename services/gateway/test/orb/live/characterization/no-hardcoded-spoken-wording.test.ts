@@ -29,6 +29,13 @@ const greetingDecisionRaw = readFileSync(
   join(__dirname, '../../../../src/services/conversation/compute-greeting-decision.ts'),
   'utf8',
 );
+// VTID-04551: the generic recovery prompt moved out of orb-live.ts into its
+// own module (and was restated positively); the VTID-03622 guards below read
+// it there.
+const recoveryPromptRaw = readFileSync(
+  join(__dirname, '../../../../src/orb/live/instruction/reconnect-recovery-prompt.ts'),
+  'utf8',
+);
 const wakeBriefRaw = readFileSync(
   join(__dirname, '../../../../src/services/assistant-continuation/providers/voice-wake-brief.ts'),
   'utf8',
@@ -85,17 +92,29 @@ describe('VTID-03622 — no hardcoded spoken wording in the ORB voice path', () 
   });
 
   it('the recovery path hands the model an INTENT, not a script', () => {
-    expect(orbLive).toMatch(/const stageIntents: Record<string, string>/);
-    expect(orbLive).toMatch(/YOUR ACKNOWLEDGMENT for this stage must: \$\{stageIntent\}/);
+    const recoveryPrompt = stripComments(recoveryPromptRaw);
+    expect(recoveryPrompt).toMatch(/RECONNECT_RECOVERY_STAGE_INTENTS: Readonly<Record<string, string>>/);
+    expect(recoveryPrompt).toMatch(/YOUR ACKNOWLEDGMENT for this stage must: \$\{stageIntent\}/);
+    // orb-live.ts sends what the module builds — no second inline copy.
+    expect(orbLive).toMatch(/const prompt = buildReconnectRecoveryPrompt\(stage\);/);
+    expect(orbLive).not.toMatch(/const stageIntents: Record<string, string>/);
   });
 
-  it('the recovery prompt explicitly forbids a memorised line', () => {
+  it('the recovery prompt instructs the model to compose a fresh line every time', () => {
     // Without this the model is merely unscripted, not instructed to vary —
     // and an unscripted model asked the same question 49 times will happily
     // answer it the same way 49 times.
-    expect(orbLive).toMatch(/Compose that sentence YOURSELF/);
-    expect(orbLive).toMatch(/there is no approved phrasing to reproduce/);
-    expect(orbLive).toMatch(/Do NOT speak a memorised or fixed sentence/);
+    //
+    // VTID-04551 — this used to pin the literal prohibitions ("there is no
+    // approved phrasing to reproduce", "Do NOT speak a memorised or fixed
+    // sentence"). Those clauses were part of the eleven-deep negative stack
+    // that measured 29/30 Nova content-filter closes, and are now stated
+    // positively. The invariant VTID-03622 exists for is that the model
+    // COMPOSES the recovery line, freshly, every time — assert that.
+    const recoveryPrompt = stripComments(recoveryPromptRaw);
+    expect(recoveryPrompt).toMatch(/Compose that sentence yourself, in your own words, fresh for this reconnect/);
+    expect(recoveryPrompt).toMatch(/The wording is entirely yours to choose/);
+    expect(recoveryPrompt).toMatch(/Compose every recovery line newly for this moment, different from any earlier one/);
   });
 
   it('no German second-person sentence is handed to the model as speech', () => {

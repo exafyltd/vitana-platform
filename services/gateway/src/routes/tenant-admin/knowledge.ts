@@ -9,7 +9,7 @@
  *   GET    /documents/:id      — Single doc detail
  *   PUT    /documents/:id      — Update doc metadata/body
  *   DELETE /documents/:id      — Delete a tenant doc (can't delete baseline)
- *   POST   /documents/:id/reindex — Trigger re-indexing via cognee
+ *   POST   /documents/:id/reindex — Mark a doc pending re-index
  *   POST   /baseline/:documentId/optout — Opt out of a baseline doc
  *   DELETE /baseline/:documentId/optout — Opt back in to a baseline doc
  *   GET    /search              — Search tenant's KB (tenant docs ranked higher)
@@ -83,7 +83,6 @@ router.post('/documents', requireTenantAdmin, async (req: AuthenticatedRequest, 
 
     if (error) return res.status(500).json({ ok: false, error: error.message });
 
-    // TODO: trigger cognee indexing via cognee-extractor-client
     console.log(`[${VTID}] Document created: ${data.id} in tenant ${tenantId}`);
     return res.status(201).json({ ok: true, document: data });
   } catch (err: any) {
@@ -166,7 +165,6 @@ router.post('/documents/:id/reindex', requireTenantAdmin, async (req: Authentica
     // Mark as pending re-index
     await repo.markDocumentPendingReindex(supabase, id, tenantId);
 
-    // TODO: call cognee-extractor-client to trigger actual indexing
     console.log(`[${VTID}] Reindex requested for doc ${id} in tenant ${tenantId}`);
     return res.json({ ok: true, message: 'Re-indexing queued' });
   } catch (err: any) {

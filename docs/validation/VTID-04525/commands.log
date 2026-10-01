@@ -1,0 +1,9 @@
+jest test/services/conversation/vtid-04525-conversation-system-introspection.test.ts -> 16 pass
+jest test/services/conversation/vtid-04525-conversation-flag-registry.test.ts -> 9 pass
+jest test/routes/vtid-04525-conversation-hub-phase-a-routes.test.ts -> 10 pass
+mutation: a staging workflow pin changed (BRAIN_SCORED_OPENING true->false) without regenerating -> flag-registry suite 1 failed; workflow restored
+jest (full gateway suite) -> 1247 passed, 1 skipped; 19940 passed, 0 failed
+tsc --noEmit -> clean
+npm run build -> exit 0
+node scripts/conversation/generate-flag-pins.mjs --check -> current
+curl (staging, signed out, before) -> the three new routes 404 text/html; see outputs/staging-before.txt

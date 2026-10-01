@@ -36,6 +36,8 @@
  *     turn-shaping gets fixed instead.
  */
 
+import { isVoiceGender, personaVoiceGender } from '../voice/persona-voice-gender';
+
 export function isVertexSerbianBridgeEnabled(): boolean {
   return (process.env.VERTEX_SERBIAN_BRIDGE_ENABLED || '').trim() === 'true';
 }
@@ -43,4 +45,71 @@ export function isVertexSerbianBridgeEnabled(): boolean {
 export function isVertexSerbianBridgeLanguage(lang: string | null | undefined): boolean {
   const normalized = (lang || '').toLowerCase().split(/[-_]/)[0];
   return normalized === 'sr';
+}
+
+/**
+ * VTID-04336 — Gemini Live's prebuilt voice names (the only values its
+ * `speech_config.voice_config.prebuilt_voice_config.voice_name` accepts).
+ * Kept here, next to the only live Vertex path left (the Serbian bridge),
+ * because the persona registry's `voice_id` is shared by every provider: a
+ * registry row pointed at a Nova or Polly id (`matthew`, `Daniel`, …) would
+ * reach this setup verbatim and fail the hand-off reconnect.
+ */
+export const GEMINI_LIVE_PREBUILT_VOICES: ReadonlySet<string> = new Set([
+  'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe',
+  'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux',
+  'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima',
+  'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel',
+  'Vindemiatrix', 'Zephyr', 'Zubenelgenubi',
+]);
+
+/**
+ * VTID-04336 — the specialist's Gemini voice when the registry voice is not
+ * a Gemini prebuilt voice. `Charon` is Devon's own registry voice
+ * (`20260501100000_vtid_02651_persona_voice_greeting.sql`), the male
+ * counterpart of the receptionist voice, so the member still hears a
+ * different colleague pick up.
+ */
+export const VERTEX_SPECIALIST_FALLBACK_VOICE = 'Charon';
+
+/**
+ * VTID-04336 — the voice a Vertex Live setup may carry for `persona`.
+ * Returns the registry voice when Gemini knows it, the specialist fallback
+ * when a SPECIALIST's registry voice is not a Gemini voice, and null when
+ * there is no usable persona voice (the caller then uses the language voice,
+ * exactly as before). Never returns a non-Gemini name.
+ */
+export function resolveVertexLivePersonaVoice(
+  voice: string | null | undefined,
+  persona: string | null | undefined,
+): string | null {
+  const v = (voice || '').trim();
+  if (v && GEMINI_LIVE_PREBUILT_VOICES.has(v)) return v;
+  const p = (persona || '').trim().toLowerCase();
+  if (v && p && p !== 'vitana') return VERTEX_SPECIALIST_FALLBACK_VOICE;
+  return null;
+}
+
+/**
+ * VTID-04445 — Vitana's Gemini voice when a resolved voice breaks the
+ * persona voice-gender rule (`persona-voice-gender.ts`). `Aoede` is the
+ * Serbian bridge's own language voice (`voice.live_api.voice.sr`).
+ */
+export const VERTEX_VITANA_FALLBACK_VOICE = 'Aoede';
+
+/**
+ * VTID-04445 — last gate before a Gemini voice reaches `speech_config`:
+ * Vitana speaks with a female voice, Devon with a male one, whatever a
+ * registry row or a per-language policy row says. A voice the rule does not
+ * accept for the persona is replaced (Devon → `Charon`, Vitana → `Aoede`)
+ * and the swap is logged, so a bad row is visible instead of audible.
+ */
+export function enforceVertexVoiceGender(voice: string, persona: string | null | undefined): string {
+  const required = personaVoiceGender(persona);
+  if (!required || isVoiceGender('gemini', voice, required)) return voice;
+  const replacement = required === 'male' ? VERTEX_SPECIALIST_FALLBACK_VOICE : VERTEX_VITANA_FALLBACK_VOICE;
+  console.warn(
+    `[VTID-04445] Gemini voice "${voice}" is not ${required} — persona "${persona || 'vitana'}" speaks with "${replacement}"`,
+  );
+  return replacement;
 }

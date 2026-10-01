@@ -28,13 +28,13 @@
  * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { processMessage } from '../services/ai-orchestrator';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn } from '../services/operator-threads';
+import { getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -82,6 +82,10 @@ import {
 } from '../services/aws-gateway-admin';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
 import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import {
+  OPERATOR_MACHINE_AUTH_HEADER,
+  resolveOperatorMachineIdentity,
+} from '../services/operator-machine-auth';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
 // import { naturalLanguageService } from '../services/natural-language-service';
 import {
@@ -98,6 +102,25 @@ import { executeWithOasisContract, OperatorActionContext } from '../services/ope
 import { OperatorActionResult, OasisWriteFailedError } from '../types/cicd';
 
 const router = Router();
+
+/**
+ * VTID-04133 — resolves the machine credential ONLY when optionalAuth found
+ * no real identity, so a human JWT always wins and this can never override
+ * one. A wrong/absent machine token is a silent no-op (req.identity stays
+ * whatever optionalAuth left it), matching optionalAuth's own "never reject"
+ * contract — the actual refusal still happens downstream in
+ * isExecuteTaskAuthorized(), same as an anonymous browser request today.
+ */
+function operatorMachineAuth(req: Request, _res: Response, next: NextFunction): void {
+  const authedReq = req as AuthenticatedRequest;
+  if (!authedReq.identity) {
+    const machineIdentity = resolveOperatorMachineIdentity(req.headers[OPERATOR_MACHINE_AUTH_HEADER]);
+    if (machineIdentity) {
+      authedReq.identity = machineIdentity as unknown as AuthenticatedRequest['identity'];
+    }
+  }
+  next();
+}
 
 // VTID-01018: Helper to extract operator ID from request (default to 'system' for now)
 function getOperatorId(req: Request): string {
@@ -226,9 +249,12 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
-async function runOperatorChatTurn(
+export async function runOperatorChatTurn(
   req: Request,
-  opts: { onEvent?: OperatorTurnEventSink; threadId?: string } = {},
+  // VTID-04310: `channel` tags the recorded thread messages (e.g.
+  // 'voice_delegate' when the Command Hub voice assistant hands a request
+  // to the Operator) so the console can show where the turn came from.
+  opts: { onEvent?: OperatorTurnEventSink; threadId?: string; channel?: string } = {},
 ): Promise<OperatorChatTurnOutcome> {
   const requestId = randomUUID();
   console.log(`[Operator Chat] Request ${requestId} started`);
@@ -467,7 +493,7 @@ async function runOperatorChatTurn(
         userText: message,
         reply: geminiResult.reply,
         tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
-        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null },
+        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null, ...(opts.channel ? { channel: opts.channel } : {}) },
       })
         .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
         .catch((err) => console.warn('[VTID-04022] operator thread record failed:', err instanceof Error ? err.message : err));
@@ -568,7 +594,11 @@ async function runOperatorChatTurn(
   }
 }
 
-router.post('/chat', optionalAuth, async (req: Request, res: Response) => {
+router.post('/chat', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+  // calls emitOasisEvent() internally for the real state transitions this
+  // turn produces — the impact scanner's line-level pattern can't see
+  // through the function-call boundary from this handler body.
   const outcome = await runOperatorChatTurn(req);
   return res.status(outcome.status).json(outcome.body);
 });
@@ -602,7 +632,7 @@ function writeSseFrame(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) => {
+router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
   const validation = OperatorChatMessageSchema.safeParse(req.body);
   if (!validation.success) {
     return res.status(400).json({
@@ -635,6 +665,10 @@ router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) =>
   writeSseFrame(res, 'turn.started', { threadId, started_at: new Date().toISOString() });
 
   try {
+    // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+    // calls emitOasisEvent() internally for the real state transitions this
+    // turn produces — the impact scanner's line-level pattern can't see
+    // through the function-call boundary from this handler body.
     const outcome = await runOperatorChatTurn(req, {
       threadId,
       onEvent: (event) => {
@@ -655,6 +689,42 @@ router.post('/chat/stream', optionalAuth, async (req: Request, res: Response) =>
     if (!closed) writeSseFrame(res, 'done', { threadId });
     if (!res.writableEnded) res.end();
   }
+});
+
+/**
+ * GET /threads → /api/v1/operator/threads
+ * VTID-04409: the caller's own server-side Operator threads (newest
+ * activity first, summary clipped), so the console can list and reopen a
+ * thread started on another device or by voice. exafy_admin only.
+ */
+router.get('/threads', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
+  const r = await listOperatorThreads({ userId: req.identity?.user_id ?? null, limit: Number.isFinite(limit) ? limit : undefined });
+  if (!r.ok) {
+    return res.status(r.error === 'disabled' ? 200 : 503).json({ ok: r.error === 'disabled', error: r.error, threads: [] });
+  }
+  return res.json({ ok: true, threads: r.threads });
+});
+
+/**
+ * GET /threads/:threadId/messages → /api/v1/operator/threads/:threadId/messages
+ * VTID-04309: the server-side thread transcript (operator_threads /
+ * operator_messages), so turns recorded outside the browser — Command Hub
+ * voice turns — appear in the Operator Console. exafy_admin only; a thread
+ * owned by someone else reads as 404. `?since=<iso>` returns newer messages.
+ */
+router.get('/threads/:threadId/messages', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { threadId } = req.params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_THREAD_ID' });
+  }
+  const since = typeof req.query.since === 'string' && !Number.isNaN(Date.parse(req.query.since)) ? req.query.since : null;
+  const r = await listOperatorThreadMessages(threadId.toLowerCase(), { userId: req.identity?.user_id ?? null, sinceIso: since });
+  if (!r.ok) {
+    const status = r.error === 'not_found' ? 404 : r.error === 'disabled' ? 200 : 503;
+    return res.status(status).json({ ok: r.error === 'disabled', error: r.error, messages: [] });
+  }
+  return res.json({ ok: true, messages: r.messages });
 });
 
 /**
@@ -699,14 +769,15 @@ router.get('/chat/:threadId', async (req: Request, res: Response) => {
 /**
  * GET /health → /api/v1/operator/health
  */
-router.get('/health', (_req: Request, res: Response) => {
-  return res.status(200).json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'vtid_ledger' }, { table: 'oasis_events' }], {
     ok: true,
     service: 'operator-api',
     timestamp: new Date().toISOString(),
     status: 'healthy',
     vtid: 'VTID-0509'
-  });
+  }));
 });
 
 /**
@@ -910,6 +981,8 @@ router.post('/upload', async (req: Request, res: Response) => {
 import deployOrchestrator from '../services/deploy-orchestrator';
 import { triggerWorkflow, getWorkflowRuns } from '../services/github-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { evaluatePublishGate, OVERRIDE_REASON_MIN } from '../services/testing/publish-gate';
+import { withDependencyHealth } from '../services/dependency-probe';
 // VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
 // import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
 
@@ -1707,6 +1780,32 @@ async function publishAwsFlow(
   }
   const stagingRevShort = staging.marker || stagingCommit.slice(0, 12);
 
+  // Step 3b (VTID-04646): STAGING-VERIFY gate. Only a passing run for this
+  // exact commit clears it; otherwise an exafy admin must write down why they
+  // publish anyway (body.override_reason, >= 10 chars), which is recorded.
+  const gate = await evaluatePublishGate({ commit: stagingCommit, service: 'gateway', overrideReason: req.body?.override_reason });
+  if (!gate.allowed) {
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PUBLISH',
+      type: 'production.publish.blocked',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `publish(aws) refused: ${gate.reason}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_commit: stagingCommit, platform: 'aws-ecs', staging_verify: gate.verification, reason: gate.reason },
+    });
+    return res.status(409).json({
+      ok: false,
+      error: 'staging_not_verified',
+      detail: `${gate.reason} Publish anyway only with a written reason (override_reason, at least ${OVERRIDE_REASON_MIN} characters); it is recorded.`,
+      source_commit: stagingCommit,
+      staging_verify: gate.verification,
+      override_allowed: true,
+    });
+  }
+
   // Step 4 (AWS): bake-time guard against the serving container's boot time.
   const ageMs = staging.bootedAt
     ? Date.now() - Date.parse(staging.bootedAt)
@@ -1749,8 +1848,27 @@ async function publishAwsFlow(
       platform: 'aws-ecs',
       staging_age_seconds: Math.floor(ageMs / 1000),
       confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
+      staging_verify_gate: gate.status,
+      staging_verify: gate.verification,
+      override_reason: gate.override_reason,
     },
   });
+
+  // VTID-04646: an overridden gate gets its own event, so a publish that
+  // skipped verification is findable without reading every requested event.
+  if (gate.status === 'overridden') {
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.verification_overridden',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `publish(aws) of ${stagingCommit.slice(0, 7)} without a passing STAGING-VERIFY: ${gate.override_reason}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_commit: stagingCommit, gate_reason: gate.reason, override_reason: gate.override_reason, staging_verify: gate.verification },
+    });
+  }
 
   // Step 7: dispatch the promotion. promote-staging + expected_commit means
   // the workflow ships the EXACT ECR image staging runs and fails (before

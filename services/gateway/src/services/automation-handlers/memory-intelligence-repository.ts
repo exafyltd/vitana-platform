@@ -103,27 +103,31 @@ export async function updateFactEmbedding(
   return supabase.from('memory_facts').update(patch).eq('id', rowId);
 }
 
+// VTID-04342: AP-0910 also drains memory_items (the canonical episodic store),
+// whose rows were never embedded on write.
+export async function fetchMemoryItemsMissingEmbedding(supabase: SupabaseClient, tenantId: string, limit: number) {
+  return supabase
+    .from('memory_items')
+    .select('id, content')
+    .eq('tenant_id', tenantId)
+    .is('embedding', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+}
+
+export async function updateMemoryItemEmbedding(
+  supabase: SupabaseClient,
+  rowId: string,
+  patch: { embedding: string; embedding_model: string; embedding_updated_at: string },
+) {
+  return supabase.from('memory_items').update(patch).eq('id', rowId);
+}
+
 export async function fetchAllActiveFactUserIds(supabase: SupabaseClient, tenantId: string, limit: number) {
   return supabase.from('memory_facts').select('user_id').eq('tenant_id', tenantId).is('superseded_at', null).limit(limit);
 }
 
-// ==================== write_fact RPC ====================
-
-export async function rpcWriteFact(
-  supabase: SupabaseClient,
-  args: {
-    p_tenant_id: string;
-    p_user_id: string;
-    p_fact_key: string;
-    p_fact_value: string;
-    p_entity: string;
-    p_fact_value_type: string;
-    p_provenance_source: string;
-    p_provenance_confidence: number;
-  },
-) {
-  return supabase.rpc('write_fact', args);
-}
+// write_fact now goes through services/memory/remember.ts (VTID-04364).
 
 // ==================== knowledge_docs ====================
 

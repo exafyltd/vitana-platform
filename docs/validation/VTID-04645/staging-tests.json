@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04645",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04618-memory-owned-by-user.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts", "cwd": "services/gateway",
+      "reason": "the change is wording in the memory self-check sent to the voice model; a read-only suite cannot hold a spoken session, so the unit suites pin the text and the payload, and the spoken check is run by hand on staging" }
+  ]
+}

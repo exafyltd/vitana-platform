@@ -1,0 +1,16 @@
+# unit / flow suites (local)
+npx jest test/navigation test/nav-golden test/orb/live/navigation-turn-scope.test.ts test/frontend/orb-widget-speak-then-navigate.test.ts
+#   -> 10 suites, 335 tests passed (before the policy test was added); navigation suites 307/307 after
+npx jest test/frontend/orb-widget   -> 28 suites, 217 tests passed
+node --check src/frontend/command-hub/orb-widget.js -> ok
+
+# real voice model (local process, no Supabase env, nothing written anywhere)
+env -u SUPABASE_URL -u SUPABASE_SERVICE_ROLE NAV_V2_ENABLED=true \
+  NAV_REGISTRY_URL=https://vitanaland.com/nav-registry.json BEDROCK_ROLE_ARN=local \
+  npx tsx <harness>   # amazon.nova-2-sonic-v1:0 eu-north-1, Polly PCM 16 kHz input
+#   before: 12/14 scenarios as expected (C02 open messages, C04 events: content tool, no navigation)
+#   after:  13/14 (C02 fixed; C04 "What events are happening today? Show me." answered from events data)
+
+# browser (headless Chromium, fake gateway, all Supabase/prod traffic intercepted, dead proxy)
+#   before: S10 close-while-pending navigated after 14.7 s
+#   after:  S10 and S10b stayed on /home for 21 s; S1-S9, S11, S12 unchanged

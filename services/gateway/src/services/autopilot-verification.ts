@@ -92,8 +92,9 @@ const CONFIG = {
 
 // Service to URL mapping for health checks
 const SERVICE_URLS: Record<string, string> = {
-  'gateway': process.env.GATEWAY_URL || 'https://gateway-lovable-vitana-vers1.uc.r.appspot.com',
-  'oasis-operator': process.env.OASIS_OPERATOR_URL || 'https://oasis-operator-lovable-vitana-vers1.uc.r.appspot.com',
+  // VTID-04380: the appspot default was a decommissioned GCP host (CLAUDE.md §1).
+  'gateway': process.env.GATEWAY_URL || 'https://gateway.vitanaland.com',
+  'oasis-operator': process.env.OASIS_OPERATOR_URL || 'https://dr-oasis-operator.vitanaland.com',
   'oasis-projector': process.env.OASIS_PROJECTOR_URL || 'https://oasis-projector-lovable-vitana-vers1.uc.r.appspot.com',
 };
 

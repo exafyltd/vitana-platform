@@ -70,7 +70,7 @@ export async function checkForSimilarTask(
 
   try {
     const embeddingStr = `[${embeddingResult.embedding.join(',')}]`;
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/find_similar_vtid_tasks`, {
+    const resp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/find_similar_vtid_tasks_v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -135,7 +135,7 @@ export async function stampTaskEmbedding(vtid: string, title: string, descriptio
         Prefer: 'return=minimal'
       },
       body: JSON.stringify({
-        embedding: embeddingStr,
+        embedding_v2: embeddingStr, // VTID-04460: Titan V2 column
         embedding_updated_at: new Date().toISOString()
       })
     });

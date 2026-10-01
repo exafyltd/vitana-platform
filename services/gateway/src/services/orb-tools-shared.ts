@@ -27,6 +27,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+import { recordToolDecision } from './orchestrator/policy-shadow';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
@@ -44,6 +45,7 @@ import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './
 import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
 import { FEEDBACK_SETTINGS_TOOL_HANDLERS, FEEDBACK_SETTINGS_TOOL_DECLARATIONS } from './orb-tools/feedback-settings-tools';
 import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/discovery-tools';
+import { COMMUNITY_AUTOPILOT_TOOL_HANDLERS, activateForVoice } from './orb-tools/community-autopilot-tools';
 import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
 import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
 import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
@@ -105,6 +107,8 @@ import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLA
 import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
 import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
 import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
+// VTID-04562: developer knowledge tools (live snapshot + domain atlas).
+import { DEVELOPER_KNOWLEDGE_TOOL_HANDLERS, DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS } from './orb-tools/developer-knowledge-tools';
 // WAVE-MVA-1 — Marketplace Voice Assistant (expansion v3, plan sections
 // A17–A30): guided-shopping orchestrators + intent/preferences, and the
 // discovery/recommendation/explanation/compare/suitability/cart-confirm
@@ -183,6 +187,14 @@ export interface OrbToolIdentity {
    * `session.upstreamProvider` wherever a session is in hand.
    */
   upstream_provider?: string | null;
+  /**
+   * VTID-04382 — the screen the member was on when the tool fired
+   * (session.current_route). The typed feedback tools file their ticket on
+   * the surface this resolves to, the way report_to_specialist does.
+   */
+  current_route?: string | null;
+  /** VTID-04430: the client build stamp; typed feedback tickets store it. */
+  app_version?: string | null;
 }
 
 export type OrbToolResult =
@@ -285,15 +297,22 @@ async function _runRetrievalSearch(
         text: 'No relevant memories found for this query.',
       };
     }
-    const top = memoryHits.slice(0, 8);
+    // VTID-04750: stored facts first, and say that they win. Production
+    // 2026-09-29: an old conversation note (1997) beat the current stored
+    // birthday (1999).
+    const isFact = (h: { category_key?: string }) => String(h.category_key || '').startsWith('fact:');
+    const top = [...memoryHits.filter(isFact), ...memoryHits.filter((h) => !isFact(h))].slice(0, 8);
     let formatted = top
       .map((h) => `[${h.category_key || 'memory'}] ${(h.content || '').substring(0, 300)}`)
       .join('\n');
     if (formatted.length > MAX) formatted = formatted.substring(0, MAX) + '\n... (truncated)';
+    const note = top.some(isFact) && top.some((h) => !isFact(h))
+      ? '\n[fact:…] lines are the current stored values; other lines are older notes that can be out of date — when they disagree, the fact is correct.'
+      : '';
     return {
       ok: true,
       result: { items: top },
-      text: `Found ${top.length} relevant memories:\n${formatted}`,
+      text: `Found ${top.length} relevant memories:\n${formatted}${note}`,
     };
   }
 
@@ -350,6 +369,190 @@ async function _runRetrievalSearch(
     result: { items: knowledgeHits },
     text: `Found ${knowledgeHits.length} relevant knowledge entries:\n${formatted}`,
   };
+}
+
+/**
+ * VTID-04581: save a fact the member just stated, and report what is already
+ * stored (profile field, same value, or a conflicting value) so the model
+ * can answer truthfully in the same turn. See services/memory/remember-fact-tool.ts.
+ */
+/**
+ * VTID-04588/04591: the readers and writer remember_fact uses — shared by the
+ * tool and by the gateway backstop that runs it when the model does not.
+ */
+export async function buildRememberFactDeps(sb: SupabaseClient) {
+  const { profileColumnFor } = await import('./memory/remember-fact-tool');
+  const { rememberFact } = await import('./memory/remember');
+  return {
+    async readCurrentFact(tenantId: string, userId: string, factKey: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(1);
+      const row = Array.isArray(data) ? data[0] : null;
+      return row ? { fact_value: String(row.fact_value), extracted_at: row.extracted_at ?? null } : null;
+    },
+    async supersedeOthers(tenantId: string, userId: string, factKey: string, keepId: string) {
+      const { data, error } = await sb
+        .from('memory_facts')
+        .update({ superseded_at: new Date().toISOString(), superseded_by: keepId })
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('fact_key', factKey)
+        .is('superseded_at', null)
+        .neq('id', keepId)
+        .select('id');
+      if (error) throw new Error(error.message);
+      return Array.isArray(data) ? data.length : 0;
+    },
+    async listCurrentFacts(tenantId: string, userId: string) {
+      const { data } = await sb
+        .from('memory_facts')
+        .select('fact_key, fact_value, extracted_at, provenance_source')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(500);
+      return (Array.isArray(data) ? data : []).map((r: any) => ({
+        fact_key: String(r.fact_key),
+        fact_value: String(r.fact_value),
+        extracted_at: r.extracted_at ?? null,
+        // VTID-04707: the about-me answer is judged on what the member stated.
+        provenance_source: r.provenance_source ?? null,
+      }));
+    },
+    async readProfileValue(userId: string, key: Parameters<typeof profileColumnFor>[0]) {
+      const column = profileColumnFor(key);
+      if (!column) return null;
+      const { data } = await sb.from('profiles').select(column).eq('user_id', userId).maybeSingle();
+      const value = data ? (data as unknown as Record<string, unknown>)[column] : null;
+      return typeof value === 'string' && value.trim() ? value.trim() : null;
+    },
+    async write(...args: Parameters<typeof rememberFact>) {
+      const result = await rememberFact(...args);
+      if (result.ok) {
+        // VTID-04627: a fact saved now must be in the next session's snapshot.
+        const { refreshSnapshotAfterMemoryEdit } = await import('./conversation/brain-core-snapshot');
+        refreshSnapshotAfterMemoryEdit({ tenantId: args[0].tenant_id, userId: args[0].user_id });
+      }
+      return result;
+    },
+  };
+}
+
+export async function tool_remember_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'remember_fact requires a tenant_id on the session.' };
+  const { runRememberFact, formatRememberFactResult } = await import('./memory/remember-fact-tool');
+  const result = await runRememberFact(
+    {
+      tenant_id: id.tenant_id,
+      user_id: id.user_id,
+      fact_key: String(args.fact_key ?? ''),
+      fact_value: String(args.fact_value ?? ''),
+      about: typeof args.about === 'string' ? args.about : undefined,
+      confirm_replace: args.confirm_replace === true || args.confirm_replace === 'true',
+      thread_id: id.thread_id ?? id.session_id ?? null,
+    },
+    await buildRememberFactDeps(sb),
+  );
+  console.log(`[VTID-04581] remember_fact ${result.fact_key} -> ${result.status}${result.error ? ` error=${result.error}` : ''}`);
+  return { ok: true, result, text: formatRememberFactResult(result) };
+}
+
+/**
+ * VTID-04684: the readers and writers forget_fact uses — shared by the tool
+ * and by the gateway backstop that runs it when the model does not.
+ */
+export async function buildForgetFactDeps(sb: SupabaseClient) {
+  const { deleteGardenEntry } = await import('./memory/garden');
+  return {
+    async listCurrentFacts(tenantId: string, userId: string) {
+      const { data, error } = await sb
+        .from('memory_facts')
+        .select('id, fact_key, fact_value, extracted_at')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .is('superseded_at', null)
+        .order('extracted_at', { ascending: false })
+        .limit(500);
+      if (error) throw new Error(error.message);
+      return (Array.isArray(data) ? data : []).map((r: any) => ({
+        id: String(r.id),
+        fact_key: String(r.fact_key),
+        fact_value: String(r.fact_value),
+        extracted_at: r.extracted_at ?? null,
+      }));
+    },
+    async forgetFact(tenantId: string, userId: string, factId: string) {
+      const r = await deleteGardenEntry(sb, { tenant_id: tenantId, user_id: userId }, 'fact', factId);
+      return { ok: r.ok, error: r.ok ? undefined : r.error };
+    },
+    async deleteItemsMentioning(tenantId: string, userId: string, value: string) {
+      const v = String(value || '').trim();
+      if (v.length < 3) return 0;
+      const pattern = `%${v.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const { data, error } = await sb
+        .from('memory_items')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .ilike('content', pattern)
+        .select('id');
+      if (error) throw new Error(error.message);
+      let removed = Array.isArray(data) ? data.length : 0;
+      // VTID-04701: the transcript turns and session summaries that carry the
+      // value go too — the next session's context reads both (live B-FORG-01).
+      // Best-effort each: memory_items is the primary store and already gone.
+      const turns = await sb
+        .from('memory_transcript_turns')
+        .delete()
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .ilike('content', pattern)
+        .select('id');
+      if (turns.error) console.warn(`[VTID-04701] transcript turns not cleared: ${turns.error.message}`);
+      else removed += Array.isArray(turns.data) ? turns.data.length : 0;
+      const summaries = await sb
+        .from('user_session_summaries')
+        .delete()
+        .eq('user_id', userId)
+        .ilike('summary', pattern)
+        .select('id');
+      if (summaries.error) console.warn(`[VTID-04701] session summaries not cleared: ${summaries.error.message}`);
+      else removed += Array.isArray(summaries.data) ? summaries.data.length : 0;
+      return removed;
+    },
+    refreshSnapshot(tenantId: string, userId: string) {
+      void import('./conversation/brain-core-snapshot')
+        .then((m) => m.refreshSnapshotAfterMemoryEdit({ tenantId, userId }))
+        .catch(() => {});
+    },
+  };
+}
+
+export async function tool_forget_fact(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!id.tenant_id) return { ok: false, error: 'forget_fact requires a tenant_id on the session.' };
+  const { runForgetFact, formatForgetFactResult } = await import('./memory/forget-fact');
+  const result = await runForgetFact(
+    { tenant_id: id.tenant_id, user_id: id.user_id, request: String(args.what ?? args.fact_key ?? '') },
+    await buildForgetFactDeps(sb),
+  );
+  console.log(`[VTID-04684] forget_fact -> ${result.status} ${result.forgotten.map((f) => f.fact_key).join(',')}`);
+  return { ok: true, result, text: formatForgetFactResult(result) };
 }
 
 export async function tool_search_memory(
@@ -440,7 +643,7 @@ export async function tool_report_to_specialist(
   identity: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const { executeReportToSpecialist } = await import('./report-to-specialist-core');
+  const { executeReportToSpecialist, reportToSpecialistToolMessage } = await import('./report-to-specialist-core');
 
   // VTID-03099: build gate_input from the user's recent RAW transcript
   // turns so the two-gate RPC matches forward_request_phrases against
@@ -481,12 +684,26 @@ export async function tool_report_to_specialist(
       gate_input: gateInput,
       source: 'orb-livekit-tool',
       screen_path: '/orb/livekit-voice',
+      session_id: identity.session_id ?? null,
     },
   );
 
+  // VTID-04332: every reply text begins with a STATUS the VTID-03033 rule
+  // recognizes. On this path the gateway does not swap the persona itself —
+  // the LiveKit orb-agent does (perform_handoff) when a specialist was
+  // picked, and the agent builds its own model-facing STATUS text from
+  // `result`. `text` here serves the HTTP /orb/tool callers and mirrors the
+  // agent's mapping: a routed ticket is handoff_created, an unrouted one
+  // ticket_filed_no_handoff.
   switch (result.decision) {
     case 'failed':
-      return { ok: false, error: result.error };
+      // The error string is what HTTP callers relay to a model, so it
+      // carries the STATUS line; the raw cause goes to the log.
+      console.error(`[VTID-04332] report_to_specialist (shared) failed: ${result.error}`);
+      return {
+        ok: false,
+        error: reportToSpecialistToolMessage(result, { handoffQueued: false }).text,
+      };
     case 'vague':
       return {
         ok: true,
@@ -509,10 +726,10 @@ export async function tool_report_to_specialist(
       const roleLabel = result.persona
         ? personaLabel[result.persona] ?? 'a specialist colleague'
         : 'our team';
-      const ticketNum = result.ticket.ticket_number ?? '(pending)';
-      const llmInstruction = result.persona
-        ? `Ticket ${ticketNum} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call): "I'll connect you with ${roleLabel}." / "Let me bring ${roleLabel} in." / "Einen Moment, ${roleLabel} übernimmt." Then STOP — do NOT introduce the colleague yourself.`
-        : `Ticket ${ticketNum} created. Our team will look at this. Tell the user warmly that you've filed the report and they'll hear back — vary your phrasing. Then STOP.`;
+      const llmInstruction = reportToSpecialistToolMessage(result, {
+        handoffQueued: !!result.persona,
+        roleLabel,
+      }).text;
       return {
         ok: true,
         result: {
@@ -699,10 +916,17 @@ export async function tool_search_events(
   // which the frontend orb widget already knows how to open as a drawer.
   // Heuristic: 1 event in best[] AND no live_rooms, OR top.score gaps
   // runner-up by >= EVENT_AUTONAV_GAP. Comparable matches → list-only.
+  //
+  // VTID-04533: auto-redirect ALSO requires `open_event === true`. Opening the
+  // drawer closes the voice session, and before this a question that happened
+  // to match one event ("are there any other events except these two?")
+  // opened that event and ended the conversation instead of being answered.
   const EVENT_AUTONAV_GAP = 0.15;
+  const wantsOpen = args.open_event === true;
   const top = sr?.best?.[0];
   const second = sr?.best?.[1];
   const dominant =
+    wantsOpen &&
     !!top &&
     !hasRooms &&
     (
@@ -1796,11 +2020,29 @@ export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdenti
     steps_voice_en: result.steps_voice_en,
     steps_voice_de: result.steps_voice_de,
     redirect_route: result.redirect_route,
+    // VTID-04521: navigate_to_screen takes a screen id, not a route.
+    redirect_screen_id: await redirectScreenIdFor(result.redirect_route),
     redirect_offer_en: result.redirect_offer_en,
     redirect_offer_de: result.redirect_offer_de,
     citation: result.citation,
   };
   return { ok: true, result: payload, text: '' };
+}
+
+/** VTID-04521: the screen id for an explain_feature redirect_route. */
+async function redirectScreenIdFor(route: string | null | undefined): Promise<string | null> {
+  if (!route) return null;
+  try {
+    if (process.env.NAV_V2_ENABLED === 'true') {
+      const { findRegistryScreenByRoute } = await import('../navigation/nav-dispatch');
+      const s = findRegistryScreenByRoute(route);
+      if (s) return s.id;
+    }
+    const { lookupByRoute } = await import('../lib/navigation-catalog');
+    return lookupByRoute(route)?.screen_id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function tool_resolve_recipient(
@@ -2594,8 +2836,9 @@ export async function tool_send_chat_message(
  * registry; LiveKit's tool runner uses it via the same registry. Single
  * source — no per-pipeline divergence.
  *
- * Verifies ownership (rec.user_id must match the actor or be null),
- * flips status new→activated only if not already activated, and emits
+ * Delegates to the canonical community activation (VTID-04493): owner,
+ * community source and activatable status are checked there, and the same
+ * calendar slot / OASIS event / notification as the popup are produced. Emits
  * guide.initiative.executed telemetry fire-and-forget so the funnel
  * dashboards stay accurate regardless of which surface drove activation.
  */
@@ -2641,38 +2884,39 @@ export async function tool_activate_recommendation(
   if (!recId) {
     return { ok: false, error: 'id is required' };
   }
+  // VTID-04464 (CA-0): activation acts on the caller's own queue, so an
+  // anonymous session can never activate anything.
+  if (!id.user_id) {
+    return { ok: false, error: 'not_signed_in' };
+  }
   try {
-    const { data: rec, error: fetchErr } = await sb
-      .from('autopilot_recommendations')
-      .select('id, title, summary, status, user_id')
-      .eq('id', recId)
-      .maybeSingle();
-
-    if (fetchErr) {
-      return { ok: false, error: fetchErr.message };
+    // VTID-04493 (CA-1): one activation for every surface. The canonical
+    // community activation checks owner + source_type + status and books the
+    // calendar slot, emits the OASIS event and notifies — the same result the
+    // popup's Go button produces. This tool used to only flip the status.
+    const outcome = await activateForVoice(id.user_id, recId, id.tenant_id, { confirmed: args.confirm === true });
+    if (!outcome.ok) {
+      return { ok: false, error: outcome.error ?? 'activation_failed' };
     }
-    if (!rec) {
-      return { ok: false, error: 'recommendation_not_found' };
+    // VTID-04503: a medium-risk action needs the member's confirmation after a
+    // read-back. Nothing has changed yet; the pending offer is kept.
+    if (outcome.needs_app) {
+      return {
+        ok: true,
+        result: { finish_in_app: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done by voice: this one is published only from the app preview. Tell the member in your own words that the draft is waiting in their Autopilot to review and post. ${outcome.readback ?? ''}`,
+      };
     }
-    const recRow = rec as { id: string; title: string | null; summary: string | null; status: string | null; user_id: string | null };
-    if (recRow.user_id && recRow.user_id !== id.user_id) {
-      return { ok: false, error: 'recommendation_belongs_to_another_user' };
-    }
-
-    const alreadyActive = recRow.status === 'activated';
-    if (!alreadyActive) {
-      const { error: updErr } = await sb
-        .from('autopilot_recommendations')
-        .update({ status: 'activated', updated_at: new Date().toISOString() })
-        .eq('id', recId);
-      if (updErr) {
-        return { ok: false, error: updErr.message };
-      }
+    if (outcome.needs_confirmation) {
+      return {
+        ok: true,
+        result: { awaiting_confirmation: true, recommendation_id: recId, readback: outcome.readback ?? null },
+        text: `Not done yet. Read this back to the member in your own words and, if they agree, call activate_recommendation again with confirm=true: ${outcome.readback ?? ''}`,
+      };
     }
 
-    // Fire-and-forget telemetry. Mirrors the inline Vertex case path so
-    // funnel dashboards (`guide.initiative.executed`) keep counting both
-    // voice and REST activations under the same event type.
+    // Fire-and-forget telemetry: funnel dashboards (`guide.initiative.executed`)
+    // keep counting voice activations under the same event type.
     import('./guide')
       .then(({ emitGuideTelemetry }) => {
         emitGuideTelemetry('guide.initiative.executed', {
@@ -2680,30 +2924,32 @@ export async function tool_activate_recommendation(
           initiative_key: 'autopilot_top_recommendation',
           on_yes_tool: 'activate_recommendation',
           recommendation_id: recId,
-          already_active: alreadyActive,
+          already_active: outcome.already_active,
         }).catch(() => {});
       })
       .catch(() => {});
 
-    // DEV-COMHU-0505 (review follow-up): consume the pending CTA ONLY now that
-    // activation has verified+succeeded, so a transient fetch/update error
-    // above leaves the row intact for the user's retry. Fire-and-forget.
+    // DEV-COMHU-0505: consume the pending CTA ONLY after activation succeeded,
+    // so a transient error leaves it intact for the user's retry.
     if (recIdFromPendingCta && id.user_id) {
       void import('./orb/orb-session-state')
         .then(({ clearOrbSessionState }) => clearOrbSessionState(sb, id.user_id, 'pending_cta'))
         .catch(() => {});
     }
 
-    const title = recRow.title ?? 'that recommendation';
+    const title = outcome.title ?? 'that recommendation';
     return {
       ok: true,
       result: {
-        title: recRow.title,
-        already_active: alreadyActive,
+        title: outcome.title,
+        already_active: outcome.already_active,
+        calendar_event_id: outcome.calendar_event_id,
+        action_result: outcome.action_result ?? null,
       },
-      text: alreadyActive
-        ? `"${title}" was already on your active list — I'll keep it there.`
-        : `Done — "${title}" is on your active list. Open Autopilot when you're ready to start it.`,
+      text: outcome.already_active
+        ? `"${title}" was already active; nothing changed.`
+        : `Activated "${title}"` +
+          (outcome.calendar_event_id ? '; a calendar slot was booked for it.' : '.'),
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'activate_recommendation error';
@@ -3139,6 +3385,30 @@ export async function tool_navigate_to_screen(
     : null;
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
+
+  // VTID-04517: with NAV_V2_ENABLED the screen registry decides. Screens that
+  // need an entity id (a member's profile, one meetup) and role surfaces the
+  // registry does not cover yet still use the legacy path below.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
+      const screen = nav.findRegistryScreen(screenIdArg);
+      if (screen && !nav.needsEntity(screen)) {
+        return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
+      }
+      if (!screen) {
+        // An id the registry does not know is usually invented. Resolve what
+        // the model said it wanted instead of fuzzy-matching the id string.
+        const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+        const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+        // VTID-04629: the member's own words first, as navigate does.
+        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
+        if (r) return r;
+      }
+    }
+  }
 
   const { emitOasisEvent } = await import('./oasis-event-service');
 
@@ -3576,6 +3846,36 @@ export async function tool_navigate(
   const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
   const isAnonymous = !id.user_id || !id.tenant_id;
 
+  // VTID-04517: with NAV_V2_ENABLED the registry resolver answers. `intent`
+  // says whether the member asked to open something or where it is; only an
+  // explicit open moves the screen. Falls back to the legacy navigator below
+  // when the resolver cannot run, or on role surfaces it does not cover yet.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    if (!nav.isLegacySurface(currentRoute)) {
+      const intent = args.intent === 'open' ? 'open' : 'where';
+      // VTID-04521: a "where" answer ends with an offer; hold it so a bare
+      // "yes" opens that screen (the continuation bind consumes pending_cta).
+      const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
+        ? async (o: { screen_id: string; title: string; route: string }) => {
+            const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+            await recordPendingOffer(sb, id.user_id as string, {
+              tool: 'navigate_to_screen',
+              payload: { screen_id: o.screen_id, route: o.route, title: o.title },
+              source: 'navigator_v2_offer',
+              key: `nav:${o.screen_id}`,
+              ttlMinutes: 5,
+            });
+          }
+        : undefined;
+      const r = await nav.navigateByRequest(question, intent, {
+        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+        memberWords: transcriptExcerpt,
+      });
+      if (r) return r;
+    }
+  }
+
   const { consultNavigator } = await import('./navigator-consult');
   const { emitOasisEvent } = await import('./oasis-event-service');
 
@@ -3680,18 +3980,14 @@ export async function tool_navigate(
     // LLM → navigate_to_screen, and that fresh confident nav supersedes this.
     if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
       try {
-        const { writeOrbSessionState } = await import('./orb/orb-session-state');
-        await writeOrbSessionState(
-          sb,
-          id.user_id,
-          'pending_cta',
-          {
-            tool: 'navigate_to_screen',
-            payload: { screen_id: top.screen_id, route: top.route, title: top.title },
-            offered_at: new Date().toISOString(),
-          },
-          5,
-        );
+        const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+        await recordPendingOffer(sb, id.user_id, {
+          tool: 'navigate_to_screen',
+          payload: { screen_id: top.screen_id, route: top.route, title: top.title },
+          source: 'navigator_ambiguous',
+          key: `nav:${top.screen_id}`,
+          ttlMinutes: 5,
+        });
       } catch (e) {
         console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
       }
@@ -3925,22 +4221,18 @@ export async function tool_navigate(
     // without the model having to re-derive anything.
     if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
       try {
-        const { writeOrbSessionState } = await import('./orb/orb-session-state');
-        await writeOrbSessionState(
-          sb,
-          id.user_id,
-          'pending_cta',
-          {
-            tool: 'navigate_to_screen',
-            payload: {
-              screen_id: consultResult.primary.screen_id,
-              route: consultResult.primary.route,
-              title: consultResult.primary.title,
-            },
-            offered_at: new Date().toISOString(),
+        const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+        await recordPendingOffer(sb, id.user_id, {
+          tool: 'navigate_to_screen',
+          payload: {
+            screen_id: consultResult.primary.screen_id,
+            route: consultResult.primary.route,
+            title: consultResult.primary.title,
           },
-          5,
-        );
+          source: 'navigator_reopened',
+          key: `nav:${consultResult.primary.screen_id}`,
+          ttlMinutes: 5,
+        });
       } catch (e) {
         console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
       }
@@ -4321,6 +4613,14 @@ export async function tool_get_current_screen(
     ? (args.recent_routes as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
   const lang = (id.lang || 'en') as string;
+  // VTID-04425: the host's screen title and small app state, reported
+  // mid-session via context_update. Values were validated on arrival.
+  const screenState = args.screen_state && typeof args.screen_state === 'object' && !Array.isArray(args.screen_state)
+    && Object.keys(args.screen_state as Record<string, unknown>).length > 0
+    ? (args.screen_state as Record<string, unknown>)
+    : null;
+  const withState = <T extends Record<string, unknown>>(o: T): T & { screen_state?: Record<string, unknown> } =>
+    (screenState ? { ...o, screen_state: screenState } : o);
 
   if (!route) {
     return {
@@ -4340,34 +4640,28 @@ export async function tool_get_current_screen(
       if (e) trailTitles.push(getContent(e, lang).title);
       if (trailTitles.length >= 4) break;
     }
+    const screen = withState({
+      title: content.title,
+      description: content.description,
+      category: entry.category,
+      screen_id: entry.screen_id,
+      route: entry.route,
+      recent_screens: trailTitles,
+    });
     return {
       ok: true,
-      result: {
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      },
-      text: JSON.stringify({
-        title: content.title,
-        description: content.description,
-        category: entry.category,
-        screen_id: entry.screen_id,
-        route: entry.route,
-        recent_screens: trailTitles,
-      }),
+      result: screen,
+      text: JSON.stringify(screen),
     };
   }
 
   // Unknown route — catalog miss.
-  const fallback = {
+  const fallback = withState({
     title: 'Unknown screen',
     description: 'The user is on a route that is not in the navigation catalog.',
     route,
-    recent_screens: [],
-  };
+    recent_screens: [] as string[],
+  });
   return {
     ok: true,
     result: fallback,
@@ -5503,21 +5797,28 @@ export async function tool_offer_action(
       : {};
   const ttlRaw = Number(args.ttl_minutes);
   const ttl = Number.isFinite(ttlRaw) && ttlRaw > 0 && ttlRaw <= 30 ? ttlRaw : 5;
-  const { writeOrbSessionState } = await import('./orb/orb-session-state');
-  const res = await writeOrbSessionState(
-    sb,
-    id.user_id,
-    'pending_cta',
-    { tool, payload, offered_at: new Date().toISOString() },
-    ttl,
-  );
+  // VTID-04355: the one writer — records the offer and its outcome events.
+  const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+  const res = await recordPendingOffer(sb, id.user_id, {
+    tool,
+    payload,
+    source: 'offer_action',
+    key: typeof args.key === 'string' && args.key.trim() ? args.key.trim() : null,
+    ttlMinutes: ttl,
+  });
   if (!res.ok) return { ok: false, error: res.reason ?? 'offer_action: failed to store pending action.' };
+  // VTID-04355: only a well-formed navigate_to_screen is run by the acceptance
+  // gate. Telling the model every offer "runs automatically" made it stand
+  // down on "yes" for offers nothing then ran.
+  const { isAutoRunnableOffer } = await import('./assistant-continuation/acceptance-gate');
+  const autoRuns = isAutoRunnableOffer({ tool, payload });
   return {
     ok: true,
-    result: { stored: true, tool },
-    // LLM-facing guidance (not user-visible): ask the yes/no and wait — the
-    // offered action fires automatically on acceptance, so don't re-resolve it.
-    text: 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the offered action runs automatically — do not re-resolve or re-search it.',
+    result: { stored: true, tool, auto_runs: autoRuns },
+    // LLM-facing guidance (not user-visible).
+    text: autoRuns
+      ? 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the navigation runs automatically — do not re-resolve or re-search it.'
+      : `OFFER_REGISTERED: Ask your yes/no question naturally and wait. Nothing runs automatically for this offer: if the user accepts, call \`${tool}\` yourself with exactly this payload: ${JSON.stringify(payload)}. If they decline, drop it.`,
   };
 }
 
@@ -5627,6 +5928,8 @@ type OrbToolHandler = (
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
+  remember_fact: tool_remember_fact,
+  forget_fact: tool_forget_fact,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
@@ -5718,6 +6021,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...CHAT_PRIVACY_TOOL_HANDLERS,
   ...FEEDBACK_SETTINGS_TOOL_HANDLERS,
   ...DISCOVERY_TOOL_HANDLERS,
+  // VTID-04493: member Autopilot list/activate — declared in live-tool-catalog.ts.
+  ...COMMUNITY_AUTOPILOT_TOOL_HANDLERS,
   ...AWARENESS_TOOL_HANDLERS,
   ...DEVELOPER_TOOL_HANDLERS,
   ...P0_GAP_TOOL_HANDLERS,
@@ -5764,6 +6069,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
   ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
+  ...DEVELOPER_KNOWLEDGE_TOOL_HANDLERS,
   // WAVE-MVA-1 (Marketplace Voice Assistant)
   ...MARKETPLACE_GUIDE_TOOL_HANDLERS,
   ...MARKETPLACE_JOURNEY_TOOL_HANDLERS,
@@ -5827,6 +6133,8 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   // WAVE-6-VOICE-CATALOG-V2
   ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
+  // VTID-04562
+  ...DEVELOPER_KNOWLEDGE_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by
@@ -5867,6 +6175,11 @@ export async function dispatchOrbTool(
     return { ok: false, error: `unknown tool: ${name}` };
   }
 
+  // VTID-04362 (Orchestrator v2 P2, shadow): record what the capability
+  // policy WOULD decide for this call. Never blocks; recordToolDecision
+  // swallows its own errors. Read the window at GET /api/v1/orchestrator/policy/shadow.
+  recordToolDecision({ tool: name, role: identity.role, channel: 'voice', session_id: identity.session_id ?? null });
+
   // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
   //
   // Non-invasive: with FEATURE_ROLE_POLICY_ENFORCE off (default) this only
@@ -5885,7 +6198,17 @@ export async function dispatchOrbTool(
   }
 
   try {
-    return await handler(args, identity, sb);
+    const result = await handler(args, identity, sb);
+    // VTID-04355: an accepted offer the model runs itself is cleared only once
+    // its tool has actually succeeded. In-process check first, so a tool call
+    // with no awaiting offer costs nothing.
+    if (result.ok && identity.user_id) {
+      const { getAwaitingOffer, settleOfferOnToolSuccess } = await import('./assistant-continuation/offer-outcomes');
+      if (getAwaitingOffer(identity.user_id)?.tool === name) {
+        void settleOfferOnToolSuccess(sb, identity.user_id, name).catch(() => {});
+      }
+    }
+    return result;
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : 'unknown error' };
   }
@@ -5925,12 +6248,22 @@ export interface VertexLikeIdentity {
   lang?: string | null;
   is_anonymous?: boolean | null;
   is_mobile?: boolean | null;
+  /** VTID-04382: forwarded so the typed feedback tools pick the surface. */
+  current_route?: string | null;
+  /** VTID-04430: forwarded so typed feedback tickets carry the app version. */
+  app_version?: string | null;
 }
 
 export interface VertexLikeToolResult {
   success: boolean;
   result: string;
   error?: string;
+  /**
+   * VTID-04385: the handler's structured result, untouched, for callers that
+   * need more than the LLM-facing string (e.g. the ticket a typed feedback
+   * tool just filed). Never sent to the model.
+   */
+  data?: unknown;
 }
 
 export async function dispatchOrbToolForVertex(
@@ -5955,6 +6288,8 @@ export async function dispatchOrbToolForVertex(
       lang: identity.lang ?? null,
       is_anonymous: identity.is_anonymous ?? null,
       is_mobile: identity.is_mobile ?? null,
+      current_route: identity.current_route ?? null,
+      app_version: identity.app_version ?? null,
     },
     sb,
   );
@@ -5974,5 +6309,5 @@ export async function dispatchOrbToolForVertex(
   } else {
     resultStr = '';
   }
-  return { success: true, result: resultStr };
+  return { success: true, result: resultStr, data: r.result };
 }

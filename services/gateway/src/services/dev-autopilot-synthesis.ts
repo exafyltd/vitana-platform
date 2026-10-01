@@ -11,8 +11,14 @@
  * that both stages share.
  */
 
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from './recommendation-quality/scoring-service';
 import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import {
+  devRecommendationExpiresAtIso,
+  recentlyRejectedFingerprintsPath,
+  toFingerprintSet,
+} from './dev-recommendation-policy';
 
 const LOG_PREFIX = '[dev-autopilot-synthesis]';
 const SCAN_VTID = 'VTID-DEV-AUTOPILOT';
@@ -72,6 +78,8 @@ export interface ScanResult {
   signal_count?: number;
   new_finding_count?: number;
   updated_finding_count?: number;
+  /** VTID-04666: signals skipped because the same finding was rejected in the last 30 days. */
+  suppressed_rejected_count?: number;
   error?: string;
 }
 
@@ -235,7 +243,9 @@ function scoreSignal(signal: DevAutopilotSignal): {
     impact_score: impact,
     effort_score: effort,
     risk_class: risk,
-    auto_exec_eligible: risk === 'low' && impact >= 5,
+    // VTID-04667: large_file refactors (2,000+ line files) are never
+    // auto-executed, independent of how their risk class is tuned.
+    auto_exec_eligible: risk === 'low' && impact >= 5 && signal.type !== 'large_file',
   };
 }
 
@@ -313,6 +323,22 @@ function domainForPath(path: string): string {
 // — so adding scanner #14 inherits the behaviour automatically.
 const ROLLUP_THRESHOLD = Number.parseInt(process.env.AUTOPILOT_ROLLUP_THRESHOLD || '5', 10);
 
+// VTID-04277: the rollup rule assumes a cluster of same-(scanner,type,severity)
+// signals is mechanically fungible — "apply the same fix class to every file,
+// typically a one-line change per file" (buildRollupSignal below). That is
+// true for a scanner that sweeps real files and emits one signal per hit
+// (dead_code, todo, missing_tests, ...), but false for safety-gap-scanner-v1:
+// it emits from a small, fixed, hand-authored catalog of ~10 DISTINCT
+// engineering tasks (a new RLS-write-deny suite, an admin auth-coverage test,
+// a schema-vs-migrations validator, ...), each with its own scope and no
+// mechanical relationship to the others. Once >=ROLLUP_THRESHOLD of that
+// catalog's test files are missing, the collapse produced a finding claiming
+// "N files with the same fix class" (they don't have one) and listed
+// directory-scoped source_file entries (e.g. services/gateway/src/routes/admin)
+// under "Files:" — live rows b0aa6815/e89e7537 are exactly this shape.
+// safety_gap signals always pass through individually instead.
+const ROLLUP_EXEMPT_TYPES = new Set<SignalType>(['safety_gap']);
+
 interface RollupGroup {
   scanner: string;
   signal_type: SignalType;
@@ -325,7 +351,12 @@ function groupSignalsForRollup(signals: DevAutopilotSignal[]): {
   rollups: RollupGroup[];
 } {
   const groups = new Map<string, RollupGroup>();
+  const passthrough: DevAutopilotSignal[] = [];
   for (const s of signals) {
+    if (ROLLUP_EXEMPT_TYPES.has(s.type)) {
+      passthrough.push(s);
+      continue;
+    }
     const scanner = s.scanner || 'unknown';
     const key = `${scanner}|${s.type}|${s.severity}`;
     let g = groups.get(key);
@@ -335,7 +366,6 @@ function groupSignalsForRollup(signals: DevAutopilotSignal[]): {
     }
     g.signals.push(s);
   }
-  const passthrough: DevAutopilotSignal[] = [];
   const rollups: RollupGroup[] = [];
   for (const g of groups.values()) {
     if (g.signals.length >= ROLLUP_THRESHOLD) rollups.push(g);
@@ -418,6 +448,35 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     payload: { run_id: runId, signal_count: input.signals.length, triggered_by: input.triggered_by },
   });
 
+  // Everything below runs against the run row created above. Any throw in
+  // here (a signal with unexpected shape, an unanticipated exception from a
+  // scoring helper, etc.) used to propagate straight out of ingestScan and
+  // leave the row stuck at status='ingesting' forever — no error, no
+  // completed_at, invisible except by noticing new_finding_count never moved.
+  // Wrapping the body means every exit path finalizes the row: 'done' on
+  // success, 'failed' with the real error on any throw.
+  try {
+    return await ingestScanBody(supa, runId, input);
+  } catch (err) {
+    const message = String(err instanceof Error ? err.stack || err.message : err);
+    console.error(`${LOG_PREFIX} ingestScan threw for run ${runId}: ${message}`);
+    const failFinalize = await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error: message.slice(0, 2000),
+      }),
+    });
+    if (!failFinalize.ok) {
+      console.error(`${LOG_PREFIX} run-failure PATCH ALSO failed for ${runId}: ${failFinalize.error}`);
+    }
+    return { ok: false, error: message, run_id: runId };
+  }
+}
+
+async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput): Promise<ScanResult> {
   // 2. Persist raw signals (for audit + dedup traceability) — one row per
   // RAW signal, before rollup. Audit always sees the full pre-collapse list.
   if (input.signals.length > 0) {
@@ -464,14 +523,42 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
   // 3. Dedup + upsert findings
   let newCount = 0;
   let updatedCount = 0;
-  const now = new Date().toISOString();
+  let suppressedRejected = 0;
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  // VTID-04666: every dev finding expires unless the scanner keeps seeing it.
+  const expiresAt = devRecommendationExpiresAtIso(nowMs);
+
+  // VTID-04666: fingerprints a human rejected in the last 30 days stay
+  // blocked. One lookup per run. A failed lookup is logged and treated as
+  // "none rejected" — the pre-VTID-04666 behaviour, never a failed scan.
+  const rejectedLookup = await supaRequest<Array<{ signal_fingerprint: string }>>(
+    supa,
+    recentlyRejectedFingerprintsPath('dev_autopilot', nowMs),
+  );
+  if (!rejectedLookup.ok) {
+    console.warn(`${LOG_PREFIX} rejected-fingerprint lookup failed (not blocking any): ${rejectedLookup.error}`);
+  }
+  const recentlyRejected = toFingerprintSet(rejectedLookup.ok ? rejectedLookup.data : []);
 
   for (const signal of effectiveSignals) {
     const fingerprint = fingerprintSignal(signal);
-    // Lookup existing live finding with this fingerprint
+    // Lookup existing live finding with this fingerprint.
+    // VTID-04274: must include 'activated' alongside 'new'/'snoozed' — a
+    // finding that already has a VTID and an in-flight execution is still
+    // the SAME live problem, not a resolved one. Excluding it here is what
+    // let signal_fingerprint 42c32f9e7e689576 ("CVE: package.json") spawn a
+    // second, fully duplicate finding + VTID + execution the next time the
+    // scan ran while the first was still status='activated' — confirmed
+    // live via autopilot_recommendations rows 9e1bdb97 (activated) and
+    // 7a93bca4 (new), same fingerprint, ~21 hours apart. Only the genuinely
+    // terminal statuses (completed/rejected/auto_archived) should allow a
+    // fresh row — if the identical signal reappears after being closed,
+    // that is either a regression worth a new finding or a real
+    // coincidental collision, not something to silently re-merge.
     const existing = await supaRequest<FindingRow[]>(
       supa,
-      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed)&select=id,seen_count,last_seen_at,status&limit=1`,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed,activated)&select=id,seen_count,last_seen_at,status&limit=1`,
     );
     if (!existing.ok) {
       console.warn(`${LOG_PREFIX} lookup failed for ${fingerprint}: ${existing.error}`);
@@ -488,9 +575,18 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
           last_seen_at: now,
           updated_at: now,
           source_run_id: runId,
+          // VTID-04666: still seen → still live; push the expiry forward.
+          expires_at: expiresAt,
         }),
       });
       if (bumped.ok) updatedCount++;
+      continue;
+    }
+
+    // VTID-04666: no live row, but a human rejected this exact finding
+    // recently — do not re-surface it.
+    if (recentlyRejected.has(fingerprint)) {
+      suppressedRejected++;
       continue;
     }
 
@@ -517,6 +613,7 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
         first_seen_at: now,
         last_seen_at: now,
         seen_count: 1,
+        expires_at: expiresAt,
         spec_snapshot: {
           signal_type: signal.type,
           file_path: signal.file_path,
@@ -534,9 +631,22 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     if (inserted.ok) newCount++;
   }
 
-  // 4. Finalize run
+  // VTID-04668: score the rows this run created (priority_score + quality,
+  // legacy impact/effort mapped back). PATCH after insert; never throws, so
+  // a scoring failure can never fail the scan.
+  if (newCount > 0) {
+    await scoreNewDeveloperRecommendations(new Date(nowMs - SCORING_CLOCK_SKEW_MS).toISOString());
+  }
+
+  // 4. Finalize run. Previously fired without checking the result, so a
+  // failed PATCH (network blip, transient PostgREST error) left the row
+  // silently stuck at 'ingesting' forever — the run's own status can no
+  // longer be trusted to reflect whether ingestion actually finished. Log
+  // loudly on failure per ALWAYS 10 ("fail loudly"); ingestScan itself still
+  // returns ok:true here since the findings were successfully written —
+  // only the run row's own bookkeeping failed.
   const completedAt = new Date().toISOString();
-  await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
+  const finalize = await supaRequest(supa, `/rest/v1/dev_autopilot_runs?run_id=eq.${runId}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
@@ -546,14 +656,23 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
       updated_finding_count: updatedCount,
     }),
   });
+  if (!finalize.ok) {
+    console.error(`${LOG_PREFIX} run finalize PATCH failed for ${runId} (findings were still written): ${finalize.error}`);
+  }
 
   await emitOasisEvent({
     vtid: SCAN_VTID,
     type: 'dev_autopilot.scan.completed',
     source: 'dev-autopilot',
     status: 'success',
-    message: `Dev Autopilot scan ${runId.slice(0, 8)}: ${newCount} new, ${updatedCount} updated`,
-    payload: { run_id: runId, new: newCount, updated: updatedCount, total_signals: input.signals.length },
+    message: `Dev Autopilot scan ${runId.slice(0, 8)}: ${newCount} new, ${updatedCount} updated, ${suppressedRejected} suppressed (recently rejected)`,
+    payload: {
+      run_id: runId,
+      new: newCount,
+      updated: updatedCount,
+      suppressed_rejected: suppressedRejected,
+      total_signals: input.signals.length,
+    },
   });
 
   // 5. Eager Stage B — plan the top K new findings so the UI has actionable
@@ -582,6 +701,7 @@ export async function ingestScan(input: ScanInput): Promise<ScanResult> {
     signal_count: input.signals.length,
     new_finding_count: newCount,
     updated_finding_count: updatedCount,
+    suppressed_rejected_count: suppressedRejected,
   };
 }
 

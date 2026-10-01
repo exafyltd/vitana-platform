@@ -1,0 +1,12 @@
+$ node scripts/test-catalog/build.mjs --platform . --frontend ../vitana-v1 --out catalog.json
+test catalog: 1644 files, 19444 cases, 116 suites, 60 workflows (19 scheduled, ~373 runs/day)
+
+$ npx jest test/routes/testing-catalog.test.ts test/routes/testing.test.ts test/scripts/test-catalog-lib.test.ts
+Tests: 61 passed, 61 total
+
+$ npx tsc --noEmit
+(no errors)
+
+$ npx jest --silent   (full gateway suite)
+Test Suites: 1 skipped, 1320 passed, 1320 of 1321 total
+Tests:       29 skipped, 6 todo, 21271 passed, 21306 total

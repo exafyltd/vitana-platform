@@ -1,0 +1,4 @@
+npx tsc --noEmit -p services/gateway   # exit 0
+npx jest test/services/orchestrator test/routes/orchestrator.test.ts   # 62 tests pass
+npx jest   # full suite, outputs/full-jest.txt
+read-only SQL for outputs/repriced-spend-7d.md (Supabase MCP)

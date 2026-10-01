@@ -36,6 +36,34 @@ import * as repo from './autopilot-recommendations-repository';
 // check to the shared manual-activation allowlist (adds community/health)
 // - kept in sync with what bridgeActivationToExecution() itself accepts.
 import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
+import { completeCalendarEntriesForSource } from '../services/calendar-producers';
+import { resolveLineupRole } from '../services/community-autopilot/lineup-role';
+import {
+  parseAction,
+  checkActionPolicy,
+  defaultActionForTemplate,
+  executeRecommendationAction,
+  type ActionChannel,
+  type ActionOutcome,
+  type RecommendationAction,
+} from '../services/community-autopilot/action-registry';
+import { capOpenLineup } from '../services/community-autopilot/lineup-cap';
+import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
+import {
+  buildDismissRecord,
+  DISMISS_REASON_CODES,
+  isDismissReasonCode,
+  type DismissReasonCode,
+  type DismissRecord,
+} from '../services/recommendation-quality/acceptance';
+import { MAX_OPEN_PER_ROLE } from '../services/community-autopilot/ranker';
+import {
+  DRAFTABLE_KINDS,
+  currentDraft,
+  generateDraft,
+  sanitizeDraft,
+  withDraft,
+} from '../services/community-autopilot/drafts';
 
 // VTID-03972: this route backs the badge-count poll fired on every AppLayout
 // mount + every 60s (GET /count) and the popup list (GET /), including from
@@ -173,8 +201,15 @@ const LOG_PREFIX = '[VTID-01180]';
 // on every route except /health.
 router.use(optionalAuth);
 const OPEN_PATHS = new Set(['/health']);
+// VTID-04505: the scheduled community scan is called by the EventBridge
+// dispatcher with the internal service token, not a member JWT.
+function hasGatewayInternalToken(req: Request): boolean {
+  const token = process.env.GATEWAY_INTERNAL_TOKEN;
+  return !!token && req.get('X-Gateway-Internal') === token;
+}
 router.use((req: Request, res: Response, next) => {
   if (OPEN_PATHS.has(req.path)) return next();
+  if (req.path === '/community-scan' && hasGatewayInternalToken(req)) return next();
   if (!(req as AuthenticatedRequest).identity?.user_id) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
@@ -216,7 +251,8 @@ async function buildCommunityRecsResponse(
   }
 
   // Retired-action filter: only keep refs that map to a real community action.
-  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+  // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
 
   // Wave/horizon enrichment (mirrors GET /).
   const templateToWave = buildTemplateToWaveMap();
@@ -240,6 +276,9 @@ async function buildCommunityRecsResponse(
       startDay <= 7  ? 'thisWeek' :
       startDay <= 30 ? 'month'    : 'future';
   }
+
+  // VTID-04523: at most MAX_OPEN_PER_ROLE open suggestions (owner decision 3).
+  recommendations = capOpenLineup(recommendations).kept;
 
   const locale = await resolveRecommendationLocale(userId);
   return annotateWithPillarImpact(recommendations, locale).slice(0, limit);
@@ -368,6 +407,36 @@ function getActiveRole(req: Request): string | null {
 }
 
 // =============================================================================
+// VTID-04500 (Community Autopilot CA-2): the server decides the lineup.
+// The requested role (?role= / X-Vitana-Active-Role) is only a hint: a system
+// role needs exafy_admin or check_role_permitted, anything unrecognised narrows
+// to the member's own community lineup, and with no hint the member's effective
+// role is used. Returns null ONLY for an exafy admin with no hint (the Command
+// Hub's legacy RPC view).
+// =============================================================================
+async function resolveRequestRole(req: Request): Promise<string | null> {
+  const identity = (req as AuthenticatedRequest).identity;
+  const requested = getActiveRole(req);
+  if (!identity?.user_id) return requested ? 'none' : null;
+  if (!requested && identity.exafy_admin) return null;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return 'community';
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+  const decision = await resolveLineupRole(sb, {
+    userId: identity.user_id,
+    tenantId: identity.tenant_id ?? (req.get('X-Vitana-Tenant') || null),
+    exafyAdmin: identity.exafy_admin === true,
+    requested,
+  });
+  if (decision.narrowed) {
+    console.warn(`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} — community lineup`);
+  }
+  return decision.lineup;
+}
+
+// =============================================================================
 // Helper: Direct PostgREST query for role-filtered recommendations
 //
 // VTID-02969: Exported so other voice / proactive surfaces (e.g.
@@ -375,20 +444,28 @@ function getActiveRole(req: Request): string | null {
 // the Autopilot popup hits. There must be only one canonical "which
 // recommendations does this user see" source.
 // =============================================================================
+export interface RoleQueryOptions {
+  /** VTID-04668: include open developer rows below the quality floor. */
+  includeBelowFloor?: boolean;
+}
+
 export async function queryRecommendationsByRole(
   role: string,
   userId: string | null,
   statuses: string[],
   limit: number,
   offset: number,
-): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string }> {
+  opts: RoleQueryOptions = {},
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number; awaiting_review_count?: number }> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !supabaseKey) {
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
+  // VTID-04667: source_type lets the Command Hub show "Create task" instead of
+  // "Activate" for recommendation types that have no executor.
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,economic_axis,autonomy_level,contribution_vector,action';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -402,17 +479,34 @@ export async function queryRecommendationsByRole(
   // popup/count. Repeated `or` params are ANDed by PostgREST.
   params.append('or', '(expires_at.is.null,expires_at.gt.now())');
 
-  if (role === 'community') {
+  // VTID-04668: the developer lineup is ordered by priority and filtered by
+  // the quality floor in JS, so it reads a window and pages after that.
+  let developerLineup = false;
+
+  if (role === 'community' || role === 'patient') {
     // Community role: only personal recs from community analyzer
     if (!userId) return { ok: true, data: [], count: 0 };
     params.set('user_id', `eq.${userId}`);
     params.set('source_type', 'eq.community');
-  } else if (role === 'developer') {
-    // Developer role: system-wide recs (user_id IS NULL), non-community source types
+  } else if (role === 'developer' || role === 'admin' || role === 'infra') {
+    // System roles: system-wide recs (user_id IS NULL), non-community source types.
+    // Callers must have authorized the role first (resolveLineupRole).
     params.set('user_id', 'is.null');
     params.set('source_type', 'neq.community');
+    // VTID-04666: an operator_onramp row is an operator request that was
+    // already executed, not a recommendation. Repeated column filters are
+    // ANDed by PostgREST.
+    params.append('source_type', 'neq.operator_onramp');
+    developerLineup = true;
+    params.set('select', `${select},priority_score,quality`);
+    params.set('order', 'priority_score.desc.nullslast,impact_score.desc,created_at.desc');
+    params.set('limit', String(DEVELOPER_LINEUP_WINDOW));
+    params.set('offset', '0');
+  } else {
+    // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
+    // NO filter, returning every user's personal suggestions.
+    return { ok: true, data: [], count: 0 };
   }
-  // admin role or unknown: no extra filters (returns everything)
 
   const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
   try {
@@ -434,6 +528,19 @@ export async function queryRecommendationsByRole(
       return { ok: false, error: `${response.status}: ${errorText}` };
     }
     const data = await response.json() as any[];
+    if (developerLineup) {
+      const listed = applyDeveloperQualityListing(data, {
+        includeBelowFloor: opts.includeBelowFloor === true,
+        tiebreak: compareDeveloperLineup,
+      });
+      return {
+        ok: true,
+        data: listed.rows.slice(offset, offset + Math.max(0, limit)),
+        count: listed.rows.length,
+        below_floor_count: listed.below_floor_count,
+        awaiting_review_count: listed.awaiting_review_count,
+      };
+    }
     const contentRange = response.headers.get('content-range');
     const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
     return { ok: true, data, count: totalCount };
@@ -442,6 +549,17 @@ export async function queryRecommendationsByRole(
   } finally {
     timeout.clear();
   }
+}
+
+/** VTID-04668: rows read for the developer lineup before filter/sort/paging. */
+export const DEVELOPER_LINEUP_WINDOW = 1000;
+
+/** Lineup tie-break after priority: impact desc, then newest. */
+function compareDeveloperLineup(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const ia = typeof a.impact_score === 'number' ? a.impact_score : -1;
+  const ib = typeof b.impact_score === 'number' ? b.impact_score : -1;
+  if (ia !== ib) return ib - ia;
+  return (Date.parse(String(b.created_at || '')) || 0) - (Date.parse(String(a.created_at || '')) || 0);
 }
 
 // =============================================================================
@@ -519,7 +637,7 @@ async function queryRecommendationsFallback(
 router.get('/', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     // Parse query params
     const statusParam = req.query.status as string || 'new';
@@ -545,7 +663,8 @@ router.get('/', async (req: Request, res: Response) => {
     if (role) {
       // Fetch extra rows to account for duplicates that will be collapsed by dedup
       const fetchLimit = role === 'community' ? Math.max((limit + 1) * 4, 80) : limit + 1;
-      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
+      const includeBelowFloor = String(req.query.include_below_floor || '') === '1';
+      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset, { includeBelowFloor });
       console.log(`${LOG_PREFIX} queryRecommendationsByRole result`, {
         ok: result.ok,
         count: result.data?.length ?? 0,
@@ -640,7 +759,8 @@ router.get('/', async (req: Request, res: Response) => {
       // This hides old DB rows like organize_meetup / mentor_new without needing a DB migration.
       if (role === 'community') {
         const beforeFilter = recommendations.length;
-        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+        // VTID-04504: a row carrying a typed action is never retired by its source_ref.
+        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
         if (recommendations.length < beforeFilter) {
           console.log(`${LOG_PREFIX} Retired-action filter: ${beforeFilter} → ${recommendations.length} (${beforeFilter - recommendations.length} retired recs hidden)`);
         }
@@ -679,6 +799,16 @@ router.get('/', async (req: Request, res: Response) => {
         } catch (rankErr: any) {
           console.warn(`${LOG_PREFIX} community re-rank failed (non-fatal):`, rankErr?.message);
         }
+      }
+
+      // VTID-04523: the member sees at most MAX_OPEN_PER_ROLE open suggestions
+      // (owner decision 3). Applied after ranking, so these are the top ones;
+      // activated/completed rows are unaffected.
+      let lineupCapped = 0;
+      if (role === 'community') {
+        const cap = capOpenLineup(recommendations);
+        recommendations = cap.kept;
+        lineupCapped = cap.capped;
       }
 
       // Enrich community recommendations with wave metadata
@@ -728,8 +858,13 @@ router.get('/', async (req: Request, res: Response) => {
         ok: true,
         recommendations: annotateWithPillarImpact(recommendations, roleLocale),
         count: recommendations.length,
-        has_more: hasMore,
+        // Capped open rows are not a next page: paging must not re-reveal them.
+        has_more: hasMore && lineupCapped === 0,
         ...(waves ? { waves } : {}),
+        // VTID-04668: open developer rows left out because they are below the quality floor.
+        ...(typeof result.below_floor_count === 'number' ? { below_floor_count: result.below_floor_count } : {}),
+        // VTID-04669: open developer rows waiting for their quality review.
+        ...(typeof result.awaiting_review_count === 'number' ? { awaiting_review_count: result.awaiting_review_count } : {}),
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
         _debug: {
@@ -796,14 +931,16 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/count', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     console.log(`${LOG_PREFIX} Recommendations count requested`, { role: role || 'none', userId: userId || 'null' });
 
     // Role-based count: query table directly with same filters
     if (role) {
       const result = await queryRecommendationsByRole(role, userId, ['new'], 0, 0);
-      const count = result.ok ? (result.count || 0) : 0;
+      const rawCount = result.ok ? (result.count || 0) : 0;
+      // VTID-04523: the badge matches the lineup, which shows at most MAX_OPEN_PER_ROLE.
+      const count = role === 'community' ? Math.min(rawCount, MAX_OPEN_PER_ROLE) : rawCount;
       console.log(`${LOG_PREFIX} Count result (role-based)`, { role, userId: userId || 'null', count, ok: result.ok, error: result.error || 'none' });
       return res.status(200).json({
         ok: true,
@@ -998,7 +1135,8 @@ export async function listCommunityAutopilotRecommendations(
     }
 
     // Retired-action filter: only refs that map to a real community action.
-    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+    // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
 
     // G4 index-weighted re-rank (same module the popup uses).
     try {
@@ -1014,6 +1152,9 @@ export async function listCommunityAutopilotRecommendations(
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} listCommunity re-rank failed (non-fatal):`, rankErr?.message);
     }
+
+    // VTID-04523: voice lists the same top MAX_OPEN_PER_ROLE the popup shows.
+    recs = capOpenLineup(recs).kept;
 
     return recs.slice(0, clamped).map(rec => ({
       id: rec.id,
@@ -1130,6 +1271,53 @@ export interface ActivateCommunityResult {
   completion_message?: string;
   calendar_event_id?: string | null;
   replenished?: number;
+  /** VTID-04503: the typed action needs a voice read-back before it may run. */
+  needs_confirmation?: boolean;
+  readback?: string;
+  /** VTID-04503: what the suggestion's typed action did, when it has one. */
+  action_result?: ActionOutcome | null;
+  /** VTID-04504: this suggestion is finished in the app (e.g. a public post). */
+  needs_app?: boolean;
+}
+
+/**
+ * VTID-04504: make sure a drafted action has its text. An override (the
+ * member's edit) is sanitized and stored; a missing draft is generated once and
+ * stored. A failed generation leaves the action as it was — the app preview
+ * then shows an empty editor rather than blocking the member.
+ */
+export async function ensureRecommendationDraft(a: {
+  supabaseUrl: string;
+  svcKey: string;
+  userId: string;
+  recId: string;
+  title: string;
+  summary: string | null;
+  action: RecommendationAction;
+  override?: string;
+  regenerate?: boolean;
+}): Promise<{ action: RecommendationAction; generated: boolean; error?: string }> {
+  let text = typeof a.override === 'string' ? sanitizeDraft(a.action.kind, a.override) : '';
+  let generated = false;
+  let error: string | undefined;
+  if (!text && (a.regenerate || !currentDraft(a.action))) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(a.supabaseUrl, a.svcKey, { auth: { persistSession: false } });
+    const g = await generateDraft(sb, a.userId, { title: a.title, summary: a.summary, action: a.action });
+    if (g.ok && g.text) { text = g.text; generated = true; } else { error = g.error; }
+  }
+  if (!text) return { action: a.action, generated: false, error };
+  const next = withDraft(a.action, text);
+  const patch = await fetch(
+    `${a.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${a.recId}&user_id=eq.${a.userId}&status=in.(new,snoozed)`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', apikey: a.svcKey, Authorization: `Bearer ${a.svcKey}` },
+      body: JSON.stringify({ action: next, updated_at: new Date().toISOString() }),
+    },
+  ).catch(() => null);
+  if (!patch || !patch.ok) console.warn(`${LOG_PREFIX} draft store failed for ${a.recId.slice(0, 8)} (non-fatal)`);
+  return { action: next, generated };
 }
 
 /**
@@ -1141,7 +1329,14 @@ export interface ActivateCommunityResult {
 export async function activateCommunityAutopilotRecommendation(
   userId: string | null,
   id: string,
-  opts: { tenantId?: string; skipReplenish?: boolean } = {},
+  opts: {
+    tenantId?: string;
+    skipReplenish?: boolean;
+    channel?: ActionChannel;
+    confirmed?: boolean;
+    /** VTID-04504: the member's edited draft from the app preview. */
+    draftText?: string;
+  } = {},
 ): Promise<ActivateCommunityResult> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -1151,7 +1346,7 @@ export async function activateCommunityAutopilotRecommendation(
 
   // Fetch the recommendation to get source_type, source_ref, user_id, status
   const recResp = await fetch(
-    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain&limit=1`,
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain,action&limit=1`,
     { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
   );
   if (!recResp.ok) {
@@ -1167,7 +1362,14 @@ export async function activateCommunityAutopilotRecommendation(
   if (rec.source_type !== 'community') {
     return { ok: false, httpStatus: 403, error: 'Not a community recommendation' };
   }
-  if (rec.user_id && userId && rec.user_id !== userId) {
+  // VTID-04464 (CA-0): a community recommendation is only ever activated by
+  // its owner. The previous check (`rec.user_id && userId && …`) passed when
+  // either side was null, so an ownerless row — or an anonymous caller — got
+  // through. Both must be present and equal.
+  if (!userId) {
+    return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  }
+  if (!rec.user_id || rec.user_id !== userId) {
     return { ok: false, httpStatus: 403, error: 'Recommendation belongs to another user' };
   }
 
@@ -1191,6 +1393,40 @@ export async function activateCommunityAutopilotRecommendation(
     return { ok: false, httpStatus: 400, error: `Cannot activate recommendation in status: ${rec.status}` };
   }
 
+  // VTID-04503: a typed action is checked BEFORE anything changes, so a voice
+  // "yes" to a medium-risk action gets a read-back and the row stays as it was.
+  const templateAction = COMMUNITY_ACTIONS[rec.source_ref];
+  let typedAction = parseAction(rec.action) ?? defaultActionForTemplate(!!templateAction?.calendar_event);
+  const channel: ActionChannel = opts.channel ?? 'app';
+  // VTID-04504: a drafted kind carries the member's words. An edit from the app
+  // preview wins; otherwise a missing draft is written now, so the voice
+  // read-back and the execution use the same text. Stored on the row.
+  if (typedAction && DRAFTABLE_KINDS.has(typedAction.kind)) {
+    const drafted = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action: typedAction, override: opts.draftText,
+    });
+    typedAction = drafted.action;
+  }
+  if (typedAction) {
+    const blocked = checkActionPolicy(typedAction, {
+      userId, tenantId: opts.tenantId || null, recommendationId: id,
+      recommendationTitle: rec.title, channel, confirmed: opts.confirmed,
+    });
+    if (blocked && blocked.status === 'needs_confirmation') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_confirmation: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
+    if (blocked && blocked.status === 'needs_app') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_app: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
+  }
+
   // Look up the community action
   const action = COMMUNITY_ACTIONS[rec.source_ref] || {
     action_type: 'notify' as const,
@@ -1199,7 +1435,9 @@ export async function activateCommunityAutopilotRecommendation(
 
   // Update recommendation status to 'activated' via PostgREST — NO VTID
   const patchResp = await fetch(
-    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}`,
+    // VTID-04464: scoped to the owner and the activatable states, so a row
+    // that changed between the read above and this write is never flipped.
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&user_id=eq.${userId}&status=in.(new,snoozed)`,
     {
       method: 'PATCH',
       headers: {
@@ -1223,31 +1461,79 @@ export async function activateCommunityAutopilotRecommendation(
   let calendarEvent = null;
   if (action.calendar_event && userId) {
     try {
-      const { computeNextAvailableSlot, createCalendarEvent } = await import('../services/calendar-service');
+      const { computeNextAvailableSlot } = await import('../services/calendar-service');
+      const { upsertCalendarEntryFromSource } = await import('../services/calendar-producers');
       const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
       const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
-      calendarEvent = await createCalendarEvent(userId, {
-        title: action.calendar_event.title_template || rec.title,
-        description: rec.summary || action.completion_message,
-        start_time: slot.toISOString(),
-        end_time: endSlot.toISOString(),
-        event_type: action.calendar_event.event_type,
-        status: 'confirmed',
-        priority: 'medium',
-        role_context: 'community',
-        source_type: 'autopilot',
-        source_ref_id: id,
-        source_ref_type: 'autopilot_recommendation',
-        priority_score: 60,
-        wellness_tags: action.calendar_event.wellness_tags,
-        metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
-      } as any);
+      // VTID-04356: through the producer contract, keyed on the recommendation,
+      // so activating again after a snooze moves the one entry instead of
+      // adding a second, and a completed entry is never reopened.
+      const upserted = await upsertCalendarEntryFromSource(
+        userId,
+        { source_type: 'autopilot', source_ref_type: 'autopilot_recommendation', source_ref_id: id },
+        {
+          title: action.calendar_event.title_template || rec.title,
+          description: rec.summary || action.completion_message,
+          start_time: slot.toISOString(),
+          end_time: endSlot.toISOString(),
+          event_type: action.calendar_event.event_type,
+          priority: 'medium',
+          role_context: 'community',
+          priority_score: 60,
+          wellness_tags: action.calendar_event.wellness_tags,
+          metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
+        } as any,
+      );
+      calendarEvent = upserted.event;
       if (calendarEvent) {
         console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
       }
     } catch (calErr: any) {
       console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
     }
+  }
+
+  // VTID-04503: run the suggestion's typed action, once (agent_runs idempotency).
+  let actionResult: ActionOutcome | null = null;
+  if (typedAction) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+      let tenantId = opts.tenantId || null;
+      if (!tenantId) {
+        const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+        tenantId = tenantRow?.tenant_id ?? null;
+      }
+      actionResult = await executeRecommendationAction(supa, typedAction, {
+        userId,
+        tenantId,
+        recommendationId: id,
+        recommendationTitle: rec.title,
+        channel,
+        confirmed: opts.confirmed,
+        slotStartIso: (calendarEvent as any)?.start_time ?? null,
+        calendarEventId: (calendarEvent as any)?.id ?? null,
+      });
+    } catch (actErr: any) {
+      actionResult = { status: 'failed', kind: typedAction.kind, run_id: null, error: actErr?.message ?? String(actErr) };
+    }
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: (actionResult.status === 'executed' || actionResult.status === 'navigate' || actionResult.status === 'already_executed'
+        ? 'community_autopilot.action.executed'
+        : 'community_autopilot.action.failed') as any,
+      source: 'community-autopilot',
+      status: actionResult.status === 'failed' || actionResult.status === 'invalid' ? 'warning' : 'info',
+      message: `Autopilot action ${typedAction.kind}: ${actionResult.status}`,
+      payload: {
+        recommendation_id: id,
+        user_id: userId,
+        channel,
+        kind: typedAction.kind,
+        outcome: actionResult.status,
+        run_id: (actionResult as any).run_id ?? null,
+      },
+    }).catch(() => {});
   }
 
   // Emit OASIS event
@@ -1320,7 +1606,155 @@ export async function activateCommunityAutopilotRecommendation(
     completion_message: action.completion_message,
     calendar_event_id: calendarEvent?.id || null,
     replenished,
+    action_result: actionResult,
   };
+}
+
+// =============================================================================
+// POST /recommendations/:id/draft - VTID-04504 (CA-4)
+// =============================================================================
+/**
+ * The app preview sheet asks for the suggestion's draft before the member
+ * agrees. Body: `{ regenerate?: boolean, text?: string }` — `text` saves the
+ * member's own edit, `regenerate` asks for a fresh draft. Community only, owner
+ * only, drafted kinds only. Nothing is published or sent here.
+ */
+router.post('/:id/draft', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+    const { id } = req.params;
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,title,summary,source_type,user_id,status,action&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const rec = r.ok ? ((await r.json()) as any[])[0] : null;
+    if (!rec) return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    if (rec.source_type !== 'community') return res.status(403).json({ ok: false, error: 'Not a community recommendation' });
+    if (!rec.user_id || rec.user_id !== userId) return res.status(403).json({ ok: false, error: 'Recommendation belongs to another user' });
+    if (rec.status !== 'new' && rec.status !== 'snoozed') {
+      return res.status(400).json({ ok: false, error: `Cannot draft recommendation in status: ${rec.status}` });
+    }
+    const action = parseAction(rec.action);
+    if (!action || !DRAFTABLE_KINDS.has(action.kind)) {
+      return res.status(400).json({ ok: false, error: 'This suggestion has nothing to draft' });
+    }
+    const text = typeof req.body?.text === 'string' ? req.body.text : undefined;
+    const out = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action, override: text, regenerate: req.body?.regenerate === true,
+    });
+    return res.json({
+      ok: true,
+      recommendation_id: id,
+      kind: out.action.kind,
+      draft: currentDraft(out.action),
+      generated: out.generated,
+      action: out.action,
+      error: out.error ?? null,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} draft failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'draft failed' });
+  }
+});
+
+// =============================================================================
+// VTID-04657: bounded, reported bridge from Activate into Dev Autopilot
+// =============================================================================
+
+export type ActivationExecutionReport =
+  | { state: 'queued'; execution_id: string; note?: string }
+  | { state: 'pending'; note: string }
+  | { state: 'failed'; error: string; violations?: string[] }
+  | { state: 'not_executable'; source_type: string | null; note: string };
+
+/** How long Activate waits for the bridge before answering `pending`. Plan
+ *  generation is an LLM call, so a finding with no plan can take longer. */
+export const ACTIVATION_BRIDGE_BUDGET_MS = Number(process.env.AUTOPILOT_ACTIVATION_BRIDGE_BUDGET_MS) || 8000;
+
+export async function bridgeActivationWithBudget(
+  recommendationId: string,
+  approvedBy: string | null,
+  vtid: string,
+  budgetMs: number = ACTIVATION_BRIDGE_BUDGET_MS,
+): Promise<ActivationExecutionReport> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) {
+    return { state: 'failed', error: 'Supabase not configured' };
+  }
+
+  let srcType: string | null = null;
+  try {
+    const srcResp = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recommendationId}&select=source_type&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
+    srcType = srcRows[0]?.source_type ?? null;
+  } catch (err: any) {
+    return { state: 'failed', error: `source_type lookup failed: ${err?.message ?? 'unknown'}` };
+  }
+
+  if (!isManuallyBridgeableSourceType(srcType)) {
+    return {
+      state: 'not_executable',
+      source_type: srcType,
+      note: 'This recommendation type has no automated executor — a VTID and a draft spec were created for a person to pick up.',
+    };
+  }
+
+  const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
+  const bridge = bridgeActivationToExecution(recommendationId, approvedBy)
+    .then((br): ActivationExecutionReport => {
+      if (br.ok && br.execution_id) {
+        return { state: 'queued', execution_id: br.execution_id, ...(br.skipped ? { note: br.skipped } : {}) };
+      }
+      if (br.ok) return { state: 'failed', error: br.skipped || 'bridge returned no execution' };
+      const violations = ((br.decision as { violations?: Array<{ rule?: string; message?: string }> } | undefined)?.violations || [])
+        .map((v) => v.rule || v.message || '')
+        .filter(Boolean);
+      return { state: 'failed', error: br.error || 'bridge failed', ...(violations.length ? { violations } : {}) };
+    })
+    .catch((err: any): ActivationExecutionReport => ({ state: 'failed', error: err?.message ?? 'bridge threw' }));
+
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<ActivationExecutionReport>((resolve) => {
+    timer = setTimeout(() => resolve({
+      state: 'pending',
+      note: 'Still preparing the execution plan — it continues in the background.',
+    }), budgetMs);
+  });
+  const report = await Promise.race([bridge, timeout]);
+  if (timer) clearTimeout(timer);
+
+  // A late result is still logged and, on failure, recorded in OASIS.
+  const record = async (r: ActivationExecutionReport) => {
+    if (r.state === 'queued') {
+      console.log(`${LOG_PREFIX} Bridged ${recommendationId.slice(0, 8)} → execution ${r.execution_id.slice(0, 8)}`);
+      return;
+    }
+    if (r.state !== 'failed') return;
+    console.warn(`${LOG_PREFIX} Bridge failed for ${recommendationId.slice(0, 8)}: ${r.error}`);
+    await emitOasisEvent({
+      vtid,
+      type: 'autopilot.recommendation.activation_bridge_failed',
+      source: 'autopilot-recommendations',
+      status: 'error',
+      message: `Activation of ${recommendationId.slice(0, 8)} did not reach execution: ${r.error}`,
+      payload: { recommendation_id: recommendationId, vtid, source_type: srcType, error: r.error, violations: r.violations ?? [] },
+    }).catch(() => undefined);
+  };
+  if (report.state === 'pending') {
+    bridge.then(record).catch(() => undefined);
+  } else {
+    await record(report);
+  }
+  return report;
 }
 
 // =============================================================================
@@ -1347,7 +1781,7 @@ export async function activateCommunityAutopilotRecommendation(
 router.post('/:id/activate', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
     const { id } = req.params;
 
     if (!id) {
@@ -1362,7 +1796,8 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     if (role === 'community') {
       // Single source: REST and ORB voice share this activation flow.
       const tenantId = req.get('X-Vitana-Tenant') || '';
-      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId });
+      const draftText = typeof req.body?.draft_text === 'string' ? req.body.draft_text : undefined;
+      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId, draftText });
       if (!result.ok) {
         return res.status(result.httpStatus).json({ ok: false, error: result.error });
       }
@@ -1378,6 +1813,9 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         completion_message: result.completion_message,
         calendar_event_id: result.calendar_event_id ?? null,
         replenished: result.replenished ?? 0,
+        // VTID-04503: a typed action's outcome (null when the row has none).
+        action_result: result.action_result ?? null,
+        needs_app: result.needs_app === true,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });
@@ -1594,45 +2032,23 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Bridge activations into the executor (cooldown skipped) for every
     // manually-bridgeable source_type (VTID-04108: dev_autopilot* plus
     // community/health). Without this, "Activate" only writes the
-    // vtid_ledger row and the card sits in IN PROGRESS forever — there is
-    // no other code path that picks up vtid_ledger rows for these
-    // findings. The reaper tick in
-    // dev-autopilot-execute.ts catches any failures from this fire-and-forget
-    // call. Fire-and-forget on purpose so a slow LLM plan generation doesn't
-    // block the activate response.
+    // vtid_ledger row and the card sits in IN PROGRESS forever.
+    //
+    // VTID-04657: this used to be fire-and-forget and the route answered
+    // ok:true whatever happened, so every refusal (status guard, safety gate,
+    // plan generation) stayed in the gateway log while the Command Hub said
+    // "Activated!". The route now waits a bounded time for the bridge and
+    // reports the real outcome as `execution`; a bridge still running when
+    // the budget expires keeps going and is reported as `pending`, and the
+    // activation reaper retries anything that never got an execution row.
+    let execution: ActivationExecutionReport | undefined;
     if (!response.already_activated && response.vtid) {
-      try {
-        const supabaseUrl = process.env.SUPABASE_URL;
-        const svcKey = process.env.SUPABASE_SERVICE_ROLE;
-        if (supabaseUrl && svcKey) {
-          const srcResp = await fetch(
-            `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=source_type&limit=1`,
-            { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
-          );
-          const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
-          const srcType = srcRows[0]?.source_type;
-          if (isManuallyBridgeableSourceType(srcType)) {
-            const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
-            bridgeActivationToExecution(id, userId || null)
-              .then((br) => {
-                if (br.ok) {
-                  console.log(`${LOG_PREFIX} Bridged ${id.slice(0, 8)} → execution ${br.execution_id?.slice(0, 8) || '?'} (${br.skipped || 'enqueued'})`);
-                } else {
-                  console.warn(`${LOG_PREFIX} Bridge failed for ${id.slice(0, 8)}: ${br.error}`);
-                }
-              })
-              .catch((bridgeErr: any) => {
-                console.error(`${LOG_PREFIX} Bridge error for ${id.slice(0, 8)}: ${bridgeErr.message}`);
-              });
-          }
-        }
-      } catch (bridgeErr: any) {
-        console.error(`${LOG_PREFIX} Bridge dispatch error (non-fatal):`, bridgeErr.message);
-      }
+      execution = await bridgeActivationWithBudget(id, userId || null, response.vtid);
     }
 
     return res.status(200).json({
       ...response,
+      ...(execution ? { execution } : {}),
       vtid_ref: 'VTID-01180',
       timestamp: new Date().toISOString(),
     });
@@ -1643,6 +2059,54 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// VTID-04670: store a dismiss reason on a developer recommendation
+// =============================================================================
+/**
+ * Reads the row, and only when it is a developer row (user_id NULL, not
+ * community) merges `dismiss` into its quality JSON. The PATCH repeats
+ * user_id=is.null so a community row can never be written by this path.
+ * Never throws.
+ */
+async function recordDeveloperDismiss(id: string, dismiss: DismissRecord): Promise<boolean> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) return false;
+  const headers = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' };
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,user_id,source_type,quality&limit=1`,
+      { headers, signal: timeout.signal },
+    );
+    if (!r.ok) return false;
+    const rows = (await r.json()) as Array<{ user_id: string | null; source_type: string | null; quality: unknown }>;
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row || row.user_id || row.source_type === 'community') return false;
+    const prior = row.quality && typeof row.quality === 'object' && !Array.isArray(row.quality)
+      ? (row.quality as Record<string, unknown>) : {};
+    const p = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&user_id=is.null`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ quality: { ...prior, dismiss } }),
+        signal: timeout.signal,
+      },
+    );
+    if (!p.ok) {
+      console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${p.status}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${err?.message || err}`);
+    return false;
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
 // POST /recommendations/:id/reject - Reject/dismiss recommendation
 // =============================================================================
 /**
@@ -1650,18 +2114,42 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
  *
  * Body:
  * {
- *   reason?: string // Optional reason for rejection
+ *   reason?: string       // Optional reason for rejection (free text, passed to the RPC)
+ *   reason_code?: string  // VTID-04670: one of DISMISS_REASON_CODES; unknown → 400
+ *   note?: string         // VTID-04670: optional, ≤ 300 chars
  * }
+ *
+ * VTID-04670: the RPC stores no reason, so for a DEVELOPER row (user_id
+ * NULL, not community) with a reason code the route PATCHes
+ * quality.dismiss = {reason_code, note, by, at} after the RPC succeeded.
+ * Community rows are never touched. The PATCH is best-effort: the reject
+ * itself already happened, so a failure is logged and reported as
+ * dismiss_recorded:false, never as a failed reject.
  */
 router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body;
+    const { reason } = req.body || {};
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
+    }
+
+    // VTID-04670: validate the structured reason before anything is written.
+    const rawCode = (req.body || {}).reason_code;
+    let reasonCode: DismissReasonCode | null = null;
+    if (rawCode !== undefined && rawCode !== null && rawCode !== '') {
+      if (!isDismissReasonCode(rawCode)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Unknown reason_code; expected one of ${DISMISS_REASON_CODES.join(', ')}`,
+        });
+      }
+      reasonCode = rawCode;
+    } else if (isDismissReasonCode(reason)) {
+      reasonCode = reason;
     }
 
     console.log(`${LOG_PREFIX} Rejecting recommendation ${id.slice(0, 8)}...`);
@@ -1680,6 +2168,11 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
     }
 
+    // VTID-04670: record the structured dismiss reason on developer rows.
+    const dismissRecorded = reasonCode
+      ? await recordDeveloperDismiss(id, buildDismissRecord(reasonCode, (req.body || {}).note, userId))
+      : false;
+
     // VTID-03301: dismissing the last rec also empties the queue — kick the
     // same guarded regeneration the /complete path uses. Community only;
     // fire-and-forget so reject stays fast.
@@ -1692,6 +2185,7 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ...response,
+      ...(reasonCode ? { reason_code: reasonCode, dismiss_recorded: dismissRecorded } : {}),
       vtid: 'VTID-01180',
       timestamp: new Date().toISOString(),
     });
@@ -1773,12 +2267,58 @@ router.post('/:id/snooze', async (req: Request, res: Response) => {
  *   duration_ms: 45000
  * }
  */
+// =============================================================================
+// POST /recommendations/community-scan - VTID-04505 (CA-5)
+// =============================================================================
+/**
+ * The twice-daily member scan (hourly tick; members at local 07:00 / 17:00).
+ * Caller: the EventBridge dispatcher (X-Gateway-Internal) or an exafy admin.
+ * Writes nothing unless COMMUNITY_AUTOPILOT_SCAN_ENABLED=true and not
+ * `dry_run`. Never notifies anyone: rows only appear in the member's own
+ * Autopilot. Body: `{ dry_run?, user_id?, max_members? }`.
+ */
+router.post('/community-scan', async (req: Request, res: Response) => {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!hasGatewayInternalToken(req) && identity?.exafy_admin !== true) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+    const { runCommunityScan } = await import('../services/community-autopilot/scan-runner');
+    const body = req.body ?? {};
+    const summary = await runCommunityScan(sb, {
+      dryRun: body.dry_run === true,
+      onlyUserId: typeof body.user_id === 'string' ? body.user_id : undefined,
+      maxMembers: typeof body.max_members === 'number' ? body.max_members : undefined,
+    });
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'community_autopilot.scan.completed' as any,
+      source: 'community-autopilot',
+      status: 'info',
+      message: `Community scan: ${summary.members_scanned} members, ${summary.rows_inserted} suggestions${summary.dry_run ? ' (dry run)' : ''}`,
+      payload: {
+        enabled: summary.enabled, dry_run: summary.dry_run, members_considered: summary.members_considered,
+        members_due: summary.members_due, members_scanned: summary.members_scanned, rows_inserted: summary.rows_inserted,
+      },
+    }).catch(() => {});
+    return res.json({ ok: true, ...summary });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} community-scan failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'scan failed' });
+  }
+});
+
 router.post('/generate', async (req: Request, res: Response) => {
   const LOG = '[VTID-01185]';
 
   try {
     const userId = getUserId(req);
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
 
     // =========================================================================
     // VTID-03301: Community on-demand regeneration.
@@ -2094,7 +2634,7 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const recId = req.params.id;
-    const role = getActiveRole(req);
+    const role = await resolveRequestRole(req);
     console.log(`${LOG_PREFIX} Completing recommendation ${recId.slice(0, 8)}... (role: ${role || 'none'})`);
 
     // VTID-03180: route delegates to the canonical RPC so the state transition
@@ -2125,6 +2665,12 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
 
     const sourceRef: string | null = response.source_ref || null;
     const alreadyCompleted: boolean = response.already_completed === true;
+
+    // VTID-04331: completing the recommendation ticks its calendar entry off
+    // too, so the calendar never shows an open task for finished work.
+    if (!alreadyCompleted) {
+      completeCalendarEntriesForSource(userId, 'autopilot_recommendation', recId).catch(() => 0);
+    }
 
     // OASIS event — visibility only, never block the response on this.
     try {

@@ -14,30 +14,12 @@
  * columns, same params, same return shapes — no behavior change
  * today. Client-agnostic (takes `sb` as a param).
  *
- * `writeDiaryHealthSignalFact` deliberately stays a plain query
- * function (not wrapped in `.then()`) — the caller attaches its own
- * `.then(...)` for the fire-and-forget error log, exactly as the
- * source did.
+ * The diary→memory fact write moved to the shared rememberFact() path
+ * (VTID-04364).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export async function upsertHealthFeatureDaily(sb: SupabaseClient, row: Record<string, unknown>) {
   return sb.from('health_features_daily').upsert(row, { onConflict: 'tenant_id,user_id,date,feature_key' });
-}
-
-export async function writeDiaryHealthSignalFact(
-  sb: SupabaseClient,
-  args: {
-    p_tenant_id: string;
-    p_user_id: string;
-    p_fact_key: string;
-    p_fact_value: string;
-    p_entity: string;
-    p_fact_value_type: string;
-    p_provenance_source: string;
-    p_provenance_confidence: number;
-  },
-) {
-  return sb.rpc('write_fact', args);
 }

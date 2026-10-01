@@ -1,0 +1,37 @@
+{
+  "vtid": "VTID-04268",
+  "title": "Dev Autopilot config screen becomes writable (safe numeric knobs)",
+  "profile": "gateway_backend",
+  "executor": "claude-code-session",
+  "files_changed": [
+    "services/gateway/src/services/dev-autopilot-config-update.ts",
+    "services/gateway/src/routes/dev-autopilot.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/routes/dev-autopilot.test.ts",
+    "services/gateway/test/vtid-04268-dev-autopilot-config-writable.test.ts",
+    "services/gateway/test/vtid-04268-command-hub-config-panel-wiring.test.ts",
+    "docs/validation/VTID-04268/acceptance.md",
+    "docs/validation/VTID-04268/commands.log",
+    "docs/validation/VTID-04268/outputs/execution.json"
+  ],
+  "checks": {
+    "new_validator_suite": { "suite": "vtid-04268-dev-autopilot-config-writable.test.ts", "passing": 20, "total": 20 },
+    "new_frontend_wiring_suite": { "suite": "vtid-04268-command-hub-config-panel-wiring.test.ts", "passing": 8, "total": 8 },
+    "route_suite": { "suite": "test/routes/dev-autopilot.test.ts", "passing": "full suite green" },
+    "targeted_regression_sweep": { "suites": 25, "passing": 513, "total": 513 },
+    "broader_dev_autopilot_sweep": { "suites": 28, "passing": 661, "total": 661 },
+    "csp_gate": "clean — 'No CSP pattern hits in added lines.'",
+    "tsc_noemit": "clean",
+    "symbol_index_regeneration": "none this run"
+  },
+  "excluded_by_design": [
+    "allow_scope",
+    "deny_scope",
+    "kill_switch"
+  ],
+  "live_verification": "not yet performed — the next staging Command Hub session opening the Advanced config panel and saving a field is the exercise; the real signal is the resulting GET /config poll reflecting the new value plus a dev_autopilot.config.updated row in oasis_events"
+}

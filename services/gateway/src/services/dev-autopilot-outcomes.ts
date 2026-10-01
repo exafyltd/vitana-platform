@@ -228,6 +228,61 @@ export function appendAgentRun(existing: unknown, run: AgentRunUsage, cap = 20):
   return base;
 }
 
+/**
+ * VTID-04267: Dev Autopilot spend surfacing. The Command Hub Dev Autopilot
+ * panel showed a "Budget: —/N today" chip that never resolved past the
+ * dash — no endpoint ever computed real spend, only the daily
+ * APPROVAL-COUNT budget (a separate axis, see dev-autopilot-safety.ts's
+ * daily_budget). The real per-run cost is already recorded (agent_runs[]
+ * above), just never aggregated into a "today" figure anywhere.
+ *
+ * dev_autopilot_outcomes has no `updated_at` column (a PATCH that appends
+ * a run does not change `created_at`), so "today's spend" can't be a
+ * server-side date-filtered query — callers fetch a bounded recent window
+ * of rows and this pure function sums whichever `agent_runs[]` entries
+ * actually carry a `recorded_at` from today (UTC), regardless of which
+ * row they live on. Pure and unit-testable independent of Supabase.
+ */
+export interface SpendSummary {
+  spend_usd_today: number;
+  input_tokens_today: number;
+  output_tokens_today: number;
+  runs_today: number;
+}
+
+export function summarizeSpendToday(
+  outcomeRows: Array<{ metadata: unknown }>,
+  now: Date = new Date(),
+): SpendSummary {
+  const todayStartUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  let spend = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let runs = 0;
+  for (const row of outcomeRows) {
+    const meta = row && typeof row.metadata === 'object' && row.metadata !== null && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+    const agentRuns = Array.isArray(meta.agent_runs) ? (meta.agent_runs as unknown[]) : [];
+    for (const raw of agentRuns) {
+      if (!raw || typeof raw !== 'object') continue;
+      const run = raw as Partial<AgentRunUsage>;
+      const recordedAtMs = typeof run.recorded_at === 'string' ? Date.parse(run.recorded_at) : NaN;
+      if (Number.isNaN(recordedAtMs) || recordedAtMs < todayStartUtc) continue;
+      spend += Number(run.cost_usd) || 0;
+      inputTokens += Number(run.input_tokens) || 0;
+      outputTokens += Number(run.output_tokens) || 0;
+      runs += 1;
+    }
+  }
+  return {
+    spend_usd_today: Math.round(spend * 1_000_000) / 1_000_000,
+    input_tokens_today: inputTokens,
+    output_tokens_today: outputTokens,
+    runs_today: runs,
+  };
+}
+
 export async function recordAgentRunUsage(finding_id: string, run: AgentRunUsage): Promise<void> {
   const supa = getSupa();
   if (!supa) return;

@@ -40,6 +40,7 @@ import {
 import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 import { createRevertPullRequest, mergePullRequest } from './github-service';
+import { isRealCiClose, isRevertMergedOnMain, PR_CLOSED_UNMERGED_KEY, PR_REVERTED_KEY } from './dev-autopilot-pipeline-guards';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -110,20 +111,114 @@ export function resolveRetryThreshold(failureStage?: FailureStage, failureClass?
 }
 
 /**
- * Write a row into self_healing_log so the Self-Healing UI surfaces this
- * autopilot failure alongside the system-level health probes. Without this,
- * the bridge's escalation only updates dev_autopilot_executions and the
- * operator never sees the failure on the canonical self-healing screen.
+ * VTID-04475: where one incident's self_healing_log row lives.
+ *
+ * Before this, every failed stage of every execution in a retry chain wrote
+ * a NEW row under a synthetic `VTID-DA-<exec8>`, and an execution that came
+ * from a self-healing incident got those rows on top of the incident's own
+ * row — one incident, several rows in the Self-Healing screen and in the
+ * orchestrator run list (which projects self_healing_log).
+ *
+ * Now there is one row per incident:
+ *   - execution from a self-healing finding (spec_snapshot.scanner ===
+ *     'self-healing', activated_vtid set by the injector) → the incident's
+ *     own row, keyed by that VTID;
+ *   - any other execution → one row per retry chain, keyed by the ROOT
+ *     execution (`VTID-DA-<root8>`), so a child retry updates its parent's
+ *     row instead of adding one.
+ * Any lookup failure falls back to the old per-execution key — never worse
+ * than before.
+ */
+export interface IncidentLogKey { vtid: string; mode: 'incident' | 'chain' | 'fallback' }
+
+const MAX_CHAIN_WALK = 10;
+
+export async function resolveIncidentLogKey(s: SupaConfig, exec: ExecutionRow): Promise<IncidentLogKey> {
+  const fallback: IncidentLogKey = { vtid: `VTID-DA-${exec.id.slice(0, 8)}`, mode: 'fallback' };
+  try {
+    const f = await supa<Array<{ activated_vtid?: string | null; spec_snapshot?: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot&limit=1`,
+    );
+    if (!f.ok) return fallback;
+    const finding = f.data?.[0];
+    const scanner = finding?.spec_snapshot && typeof finding.spec_snapshot === 'object'
+      ? (finding.spec_snapshot as Record<string, unknown>).scanner : undefined;
+    if (scanner === 'self-healing' && typeof finding?.activated_vtid === 'string' && finding.activated_vtid) {
+      return { vtid: finding.activated_vtid, mode: 'incident' };
+    }
+    let rootId = exec.id;
+    let parentId = exec.parent_execution_id || null;
+    const seen = new Set<string>([exec.id]);
+    for (let i = 0; parentId && i < MAX_CHAIN_WALK; i++) {
+      if (seen.has(parentId)) break;
+      seen.add(parentId);
+      const p = await supa<Array<{ id: string; parent_execution_id?: string | null }>>(
+        s,
+        `/rest/v1/dev_autopilot_executions?id=eq.${parentId}&select=id,parent_execution_id&limit=1`,
+      );
+      if (!p.ok) return fallback;
+      const row = p.data?.[0];
+      if (!row) break;
+      rootId = row.id;
+      parentId = row.parent_execution_id || null;
+    }
+    return { vtid: `VTID-DA-${rootId.slice(0, 8)}`, mode: 'chain' };
+  } catch {
+    return fallback;
+  }
+}
+
+interface LogRow { id: string; attempt_number?: number | null; diagnosis?: Record<string, unknown> | null; outcome?: string | null; failure_class?: string | null }
+
+/** Pure: the PATCH body that folds a new stage outcome into an existing incident row. Exported for tests. */
+export function mergeIncidentLogUpdate(
+  existing: LogRow,
+  next: { failure_class: string; confidence: number; diagnosis: Record<string, unknown>; outcome: string; attempt_number: number; endpoint: string },
+): Record<string, unknown> {
+  const prevDiag = existing.diagnosis && typeof existing.diagnosis === 'object' ? existing.diagnosis : {};
+  const prevHistory = Array.isArray((prevDiag as Record<string, unknown>).stage_history)
+    ? ((prevDiag as Record<string, unknown>).stage_history as unknown[]) : [];
+  const entry = {
+    at: new Date().toISOString(),
+    failure_class: next.failure_class,
+    outcome: next.outcome,
+    confidence: next.confidence,
+    summary: typeof next.diagnosis.summary === 'string' ? next.diagnosis.summary : undefined,
+    execution_id: next.diagnosis.execution_id,
+    stage: next.diagnosis.stage,
+  };
+  return {
+    failure_class: next.failure_class,
+    confidence: next.confidence,
+    outcome: next.outcome,
+    attempt_number: Math.max(Number(existing.attempt_number) || 0, next.attempt_number),
+    resolved_at: next.outcome === 'pending' ? null : new Date().toISOString(),
+    diagnosis: {
+      ...prevDiag,
+      ...next.diagnosis,
+      // The class the incident was first recorded with (e.g. the injector's
+      // endpoint failure) survives the bridge's stage updates.
+      original_failure_class: (prevDiag as Record<string, unknown>).original_failure_class ?? existing.failure_class ?? next.failure_class,
+      stage_history: [...prevHistory, entry].slice(-20),
+    },
+  };
+}
+
+/**
+ * Record an autopilot failure/retry on the self-healing log — ONE row per
+ * incident (VTID-04475, see resolveIncidentLogKey). Updates the incident's
+ * latest row when it exists, inserts it otherwise.
  *
  * Best-effort: a write failure here must not block the bridge's primary
  * job (transitioning the execution row + emitting OASIS events). If
  * self_healing_log isn't writable, log and move on.
  */
-async function writeSelfHealingLogEntry(
+export async function writeSelfHealingLogEntry(
   s: SupaConfig,
   args: {
     execution_id: string;
-    vtid: string;
+    exec: ExecutionRow;
     endpoint: string;
     failure_class: string;
     confidence: number;
@@ -133,15 +228,30 @@ async function writeSelfHealingLogEntry(
   },
 ): Promise<void> {
   try {
+    const key = await resolveIncidentLogKey(s, args.exec);
+    const diagnosis = { ...args.diagnosis, incident_key_mode: key.mode };
+    const existing = await supa<LogRow[]>(
+      s,
+      `/rest/v1/self_healing_log?vtid=eq.${encodeURIComponent(key.vtid)}&select=id,attempt_number,diagnosis,outcome,failure_class&order=created_at.desc&limit=1`,
+    );
+    const row = existing.ok ? existing.data?.[0] : undefined;
+    if (row) {
+      await supa(s, `/rest/v1/self_healing_log?id=eq.${row.id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify(mergeIncidentLogUpdate(row, { ...args, diagnosis })),
+      });
+      return;
+    }
     await supa(s, '/rest/v1/self_healing_log', {
       method: 'POST',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
-        vtid: args.vtid,
+        vtid: key.vtid,
         endpoint: args.endpoint,
         failure_class: args.failure_class,
         confidence: args.confidence,
-        diagnosis: args.diagnosis,
+        diagnosis,
         outcome: args.outcome,
         attempt_number: args.attempt_number,
         resolved_at: args.outcome === 'pending' ? null : new Date().toISOString(),
@@ -285,7 +395,7 @@ async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
 export async function revertExecutionPR(
   exec: ExecutionRow,
   stage: FailureStage,
-): Promise<{ ok: boolean; revert_pr_url?: string; error?: string }> {
+): Promise<{ ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean }> {
   if (!exec.pr_url) {
     return { ok: true }; // Nothing to revert — session never produced a PR
   }
@@ -357,7 +467,7 @@ export async function revertExecutionPR(
       return { ok: true, revert_pr_url: revertPr.html_url, error: `revert PR open but auto-merge failed: ${merged.message}` };
     }
     console.log(`${LOG_PREFIX} auto-reverted ${exec.id.slice(0, 8)} via PR #${revertPr.number} (merged ${merged.sha?.slice(0, 8) || '?'})`);
-    return { ok: true, revert_pr_url: revertPr.html_url };
+    return { ok: true, revert_pr_url: revertPr.html_url, reverted_on_main: true };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -515,6 +625,24 @@ export async function spawnChildExecution(
 // Main entry point
 // =============================================================================
 
+/**
+ * VTID-04378: a `failed_escalated` execution is terminal for its ledger VTID —
+ * nothing will retry it without a human. The bridge writes that status with a
+ * raw PATCH, which bypassed applyExecTerminalSideEffects, so the on-ramp /
+ * auto-approve VTID sat `in_progress` forever. `reverted` is deliberately NOT
+ * closed here: a child execution carries the same finding and VTID onward.
+ * Lazy require: execute already requires this module the same way.
+ */
+function closeLedgerForEscalation(s: SupaConfig, executionId: string): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { applyExecTerminalSideEffects } = require('./dev-autopilot-execute');
+    applyExecTerminalSideEffects(s, executionId, 'failed_escalated');
+  } catch (err) {
+    console.error(`${LOG_PREFIX} ledger close for escalated ${executionId.slice(0, 8)} failed:`, err);
+  }
+}
+
 export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<BridgeResult> {
   const s = getSupabase();
   if (!s) {
@@ -567,9 +695,10 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         completed_at: new Date().toISOString(),
       }),
     });
+    closeLedgerForEscalation(s, exec.id);
     await writeSelfHealingLogEntry(s, {
       execution_id: exec.id,
-      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      exec,
       endpoint: `dev_autopilot.execution.${input.failure_stage}`,
       failure_class: 'environmental_blocker',
       confidence: 1.0,
@@ -648,9 +777,10 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
         completed_at: new Date().toISOString(),
       }),
     });
+    closeLedgerForEscalation(s, exec.id);
     await writeSelfHealingLogEntry(s, {
       execution_id: exec.id,
-      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      exec,
       endpoint: `dev_autopilot.execution.${input.failure_stage}`,
       failure_class: 'dev_autopilot_triage_failed',
       confidence: 0,
@@ -689,7 +819,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
 
   // 2. Attempt auto-revert (best-effort — failure here shouldn't block the
   //    bridge from recording the triage report + escalating).
-  const revert: { ok: boolean; revert_pr_url?: string; error?: string } = fixMode
+  const revert: { ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean } = fixMode
     ? { ok: true }
     : await revertExecutionPR(exec, input.failure_stage);
   if (fixMode) console.log(`${LOG_PREFIX} fix mode for ${exec.id.slice(0, 8)}: PR #${fixMode.pr_number} stays open on ${fixMode.branch}`);
@@ -736,6 +866,16 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       bridge_confidence: report.confidence,
       bridge_reason_decision: canRetry ? 'child_spawned' : 'escalated',
       bridge_fix_mode: !!fixMode,
+      // VTID-04280: the bridge closed this PR itself — record it so the
+      // PR-flood guard does not refuse this row's own self-heal child.
+      ...(isRealCiClose(input.failure_stage, revert.revert_pr_url)
+        ? { [PR_CLOSED_UNMERGED_KEY]: new Date().toISOString() }
+        : {}),
+      // VTID-04428: the merged change was reverted on main — its PR no longer
+      // blocks this row's self-heal child (the flood guard used to refuse it).
+      ...(isRevertMergedOnMain(input.failure_stage, revert)
+        ? { [PR_REVERTED_KEY]: new Date().toISOString() }
+        : {}),
     },
   };
 
@@ -752,9 +892,10 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
           completed_at: new Date().toISOString(),
         }),
       });
+      closeLedgerForEscalation(s, exec.id);
       await writeSelfHealingLogEntry(s, {
         execution_id: exec.id,
-        vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+        exec,
         endpoint: `dev_autopilot.execution.${input.failure_stage}`,
         failure_class: 'dev_autopilot_child_spawn_failed',
         confidence: report.confidence_numeric,
@@ -801,7 +942,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     // default for in-progress repairs).
     await writeSelfHealingLogEntry(s, {
       execution_id: exec.id,
-      vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+      exec,
       endpoint: `dev_autopilot.execution.${input.failure_stage}`,
       failure_class: 'dev_autopilot_self_heal_in_progress',
       confidence: report.confidence_numeric,
@@ -856,10 +997,11 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       completed_at: new Date().toISOString(),
     }),
   });
+  closeLedgerForEscalation(s, exec.id);
 
   await writeSelfHealingLogEntry(s, {
     execution_id: exec.id,
-    vtid: `VTID-DA-${exec.id.slice(0, 8)}`,
+    exec,
     endpoint: `dev_autopilot.execution.${input.failure_stage}`,
     failure_class: cfg?.kill_switch ? 'dev_autopilot_kill_switch_blocked'
       : (exec.auto_fix_depth || 0) >= maxDepth ? 'dev_autopilot_max_retries_reached'

@@ -44,8 +44,9 @@ function jsonRes(status: number, body: unknown) {
   } as any;
 }
 
+// VTID-04429: the ledger close may retry once, so allow extra microtask hops.
 async function flush() {
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  for (let i = 0; i < 30; i++) await Promise.resolve();
 }
 
 describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSideEffects)', () => {
@@ -127,8 +128,9 @@ describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSi
     expect(mockedVtidLifecycleFailed).toHaveBeenCalledTimes(1);
   });
 
-  it('never PATCHes vtid_ledger for a status other than completed/failed/cancelled', async () => {
-    for (const status of ['queued', 'cooling', 'running', 'ci', 'merging', 'deploying', 'verifying', 'reverted', 'self_healed', 'failed_escalated']) {
+  // VTID-04378: failed_escalated now closes the ledger as failed (see vtid-04378-ledger-terminalization).
+  it('never PATCHes vtid_ledger for a non-terminal status (or reverted/self_healed)', async () => {
+    for (const status of ['queued', 'cooling', 'running', 'ci', 'merging', 'deploying', 'verifying', 'reverted', 'self_healed']) {
       applyExecTerminalSideEffects({ url: process.env.SUPABASE_URL!, key: process.env.SUPABASE_SERVICE_ROLE! }, EXECUTION_ID, status);
     }
     await flush();
@@ -175,7 +177,8 @@ describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSi
       if (u.includes('/vtid_ledger?')) return jsonRes(500, { error: 'boom' });
       return jsonRes(200, []);
     }) as any;
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // VTID-04378: logged as an error now (a stuck ledger row has no other path to close).
+    const warnSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(() =>
       applyExecTerminalSideEffects({ url: process.env.SUPABASE_URL!, key: process.env.SUPABASE_SERVICE_ROLE! }, EXECUTION_ID, 'completed'),
@@ -183,7 +186,7 @@ describe('VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSi
     await flush();
 
     expect(mockedVtidLifecycleCompleted).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('vtid_ledger terminalize failed'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('vtid_ledger terminalize FAILED'));
     warnSpy.mockRestore();
   });
 

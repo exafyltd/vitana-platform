@@ -5,7 +5,10 @@
  * real user.
  */
 
-import { fetchExcludedTestServiceAccountIds } from '../../src/lib/excluded-test-service-accounts';
+import {
+  fetchExcludedTestServiceAccountIds,
+  fetchExcludedTestServiceAccountIdsStrict,
+} from '../../src/lib/excluded-test-service-accounts';
 
 function makeFakeSupabase(resultsByTable: Record<string, { data?: any; error?: any }>) {
   return {
@@ -60,5 +63,27 @@ describe('fetchExcludedTestServiceAccountIds', () => {
     const ids = await fetchExcludedTestServiceAccountIds(sb);
 
     expect(ids.size).toBe(0);
+  });
+});
+
+describe('fetchExcludedTestServiceAccountIdsStrict (VTID-04735, money paths)', () => {
+  it('returns the union when both tables read', async () => {
+    const sb = makeFakeSupabase({
+      service_bot_accounts: { data: [{ user_id: 'bot-1' }], error: null },
+      notification_test_actors: { data: [{ user_id: 'test-1' }], error: null },
+    });
+    const r = await fetchExcludedTestServiceAccountIdsStrict(sb);
+    expect(r.ok).toBe(true);
+    expect(r.ok && [...r.ids].sort()).toEqual(['bot-1', 'test-1']);
+  });
+
+  it.each(['service_bot_accounts', 'notification_test_actors'])('fails closed on an error result from %s', async (table) => {
+    const sb = makeFakeSupabase({ [table]: { data: null, error: { message: 'boom' } } });
+    expect(await fetchExcludedTestServiceAccountIdsStrict(sb)).toEqual({ ok: false, error: 'boom' });
+  });
+
+  it('fails closed when the lookup throws', async () => {
+    const sb = { from: () => { throw new Error('network down'); } } as any;
+    expect(await fetchExcludedTestServiceAccountIdsStrict(sb)).toEqual({ ok: false, error: 'network down' });
   });
 });

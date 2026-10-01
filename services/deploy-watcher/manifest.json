@@ -1,9 +1,0 @@
-{
-  "name": "deploy-watcher",
-  "version": "1.0.0",
-  "type": "service",
-  "description": "Deployment watcher service",
-  "runtime": "nodejs",
-  "port": 8080,
-  "healthcheck": "/health"
-}

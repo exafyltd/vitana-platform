@@ -1,0 +1,40 @@
+    ✓ returns the REAL elapsed day count, never "Day 0" for an established user (2 ms)
+    ✓ resolves a real wave name, not the "Discovery" catch-all, when within an enabled wave (1 ms)
+    ✓ falls back to app_users.created_at when the user_journey row is missing (no journey → still not day 0 for an old signup)
+    ✓ returns null (never a fabricated day count) when neither row exists (1 ms)
+
+PASS test/telemetry.test.ts
+  Gateway Environment
+    ✓ should have test environment configured (1 ms)
+    ✓ should have DATABASE_URL configured
+    ✓ should have SUPABASE_URL configured
+  Gateway Basic Functionality
+    ✓ should perform basic arithmetic (1 ms)
+    ✓ should handle async operations
+    ✓ should validate VTID format
+  Gateway Telemetry Concepts
+    ✓ should structure telemetry event correctly
+    ✓ should validate event timestamps
+
+PASS test/vtid-03821-execution-telemetry-vtid.test.ts
+  runExecutionSession telemetry vtid resolution (VTID-03821, source check)
+    ✓ selects activated_vtid alongside spec_snapshot in the unconditional findingMetaR query (2 ms)
+    ✓ computes telemetryVtid preferring activated_vtid, falling back to the synthetic id
+    ✓ the routed-LLM path tags callRoutedLlm with telemetryVtid, not a bare synthetic id (1 ms)
+    ✓ the worker-queue path tags vtid_like with telemetryVtid too (commit-message/trace consistency)
+    ✓ telemetryVtid is computed before the worker-queue-vs-direct-API branch that consumes it (18 ms)
+
+PASS test/vtid-04272-jest-transform-ignore-nested-node-modules.test.ts
+  VTID-04272: jest transformIgnorePatterns matches nested node_modules packages
+    ✓ does not match (i.e. WILL transform) a top-level allow-listed package under node_modules/ (1 ms)
+    ✓ does not match (i.e. WILL transform) an allow-listed package nested under another package (6 ms)
+    ✓ does not match (i.e. WILL transform) a pnpm-nested allow-listed package (1 ms)
+    ✓ still matches (i.e. Jest will IGNORE) an unrelated package, top-level or nested
+    ✓ the raw pattern source requires a trailing slash after the alternation (anchors on the package boundary)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1081 passed, 1081 of 1082 total
+Tests:       29 skipped, 6 todo, 17562 passed, 17597 total
+Snapshots:   42 passed, 42 total
+Time:        87.677 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

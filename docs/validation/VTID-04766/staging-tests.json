@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04766",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04766-people.test.ts", "cwd": "services/gateway",
+      "reason": "built from production session live-755a02b7; storing a fact is a write, which staging tests never do" }
+  ]
+}

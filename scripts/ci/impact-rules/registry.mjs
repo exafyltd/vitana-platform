@@ -66,8 +66,8 @@ export const IMPACT_RULES = [
   },
   {
     rule: 'new-env-var-requires-workflow-binding',
-    title: 'New process.env.X without a binding in .github/workflows',
-    description: 'A new process.env.X reference in source code should be explicitly bound in at least one of .github/workflows/*.yml, .env.example, or the Cloud Run deploy config. Unbound env vars read as undefined in production.',
+    title: 'New process.env.X without a binding in any workflow / .env.example / call site',
+    description: 'A new process.env.X reference in source code should be explicitly bound in at least one of .github/workflows/*.yml, .env.example, or the Cloud Run deploy config. Unbound env vars read as undefined in production. A defensive same-line fallback (`process.env.X ?? \'default\'` or `|| __dirname`) counts as a binding — the remedy this rule has always recommended (VTID-04287).',
     category: 'companion',
     severity: 'warning',
     enabled: true,
@@ -127,7 +127,7 @@ export const IMPACT_RULES = [
   {
     rule: 'transport-flow-parity',
     title: 'Transport owns conversation-flow decision logic instead of delegating',
-    description: 'The conversation flow must be ONE transport-independent brain (services/gateway/src/services/conversation). Transports (routes/orb-live.ts = Vertex, routes/orb-livekit.ts = LiveKit) must be thin adapters: gather context → call the brain → render. This rule fires when a PR touching a transport file leaves its own register / recency / wake_opener decision logic inline (counts the inline wake_opener branches + per-language directive maps). Blocker as of the end of Step 1c (VTID-03366): every Vertex opening rung (sync + safe-fast) now delegates and orb-live.ts carries zero inline branches, so the rule enforces "one brain, every surface" — reintroducing inline decision logic into a transport fails CI. (Was warning throughout the 1a–1c strangler-fig extraction.)',
+    description: 'The conversation flow must be ONE transport-independent brain (services/gateway/src/services/conversation). Transports (routes/orb-live.ts = Vertex, routes/orb-livekit.ts = LiveKit) must be thin adapters: gather context → call the brain → render. This rule fires when a PR touching a transport file leaves its own register / recency / wake_opener decision logic inline (counts the inline wake_opener branches + per-language directive maps). Blocker as of the end of Step 1c (VTID-03366): every Vertex opening rung (sync + safe-fast) now delegates and orb-live.ts carries zero inline branches, so the rule enforces "one brain, every surface" — reintroducing inline decision logic into a transport fails CI. (Was warning throughout the 1a–1c strangler-fig extraction.) VTID-04417 (Plan v1 WS-1.5): also fails a transport (orb-live.ts, orb-livekit.ts, live-session-controller.ts) that calls computeGreetingDecision directly instead of decideOpeningFlow, or builds the voice context by calling buildBootstrapContextPack / buildBrainSystemInstruction(Cached) directly instead of the shared session-context builder; deliberate exceptions carry a `brain-parity-allow:` marker with a reason.',
     category: 'semantic',
     severity: 'blocker',
     enabled: true,

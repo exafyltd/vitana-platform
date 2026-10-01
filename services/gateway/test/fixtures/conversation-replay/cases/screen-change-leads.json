@@ -1,0 +1,74 @@
+{
+ "schema_version": 1,
+ "id": "screen-change-leads",
+ "description": "Once the member is on the screen a lead would navigate to, that lead drops below the others.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "providers": [
+   {
+    "providerKey": "journey_guide",
+    "status": "returned",
+    "candidate": {
+     "id": "c-jg",
+     "kind": "wake_brief",
+     "dedupeKey": "journey_guide:step3",
+     "priority": 60,
+     "userFacingLine": "The next step on your journey is setting a sleep target.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/health/sleep"
+     }
+    }
+   },
+   {
+    "providerKey": "unread_messages_announce",
+    "status": "returned",
+    "candidate": {
+     "id": "c-um",
+     "kind": "wake_brief",
+     "dedupeKey": "unread:2",
+     "priority": 55,
+     "userFacingLine": "You have two unread messages from your group.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/messages"
+     }
+    }
+   }
+  ],
+  "winner": "journey_guide"
+ },
+ "turns": [
+  {
+   "route": "/home",
+   "user": "What else is there for me today"
+  },
+  {
+   "route": "/health/sleep",
+   "screen_title": "Sleep",
+   "user": "What else is there for me today"
+  }
+ ],
+ "expect": {
+  "opener_kind": "legacy_default",
+  "candidate_provider": "journey_guide",
+  "turns": [
+   {
+    "route_groups": [
+     "journey"
+    ],
+    "top_lead_provider": "journey_guide"
+   },
+   {
+    "route_groups": [
+     "health"
+    ],
+    "top_lead_provider": "unread_messages_announce"
+   }
+  ]
+ }
+}

@@ -17,20 +17,11 @@ import express, { Router } from 'express';
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
-process.env.COGNEE_EXTRACTOR_URL = 'http://localhost:9999';
 
 // Mock the OASIS event service
 const mockEmitOasisEvent = jest.fn().mockResolvedValue({ ok: true, event_id: 'test-event-id' });
 jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: mockEmitOasisEvent,
-}));
-
-// Mock the cognee extractor client
-jest.mock('../src/services/cognee-extractor-client', () => ({
-  cogneeExtractorClient: {
-    extractAsync: jest.fn(),
-    isEnabled: jest.fn().mockReturnValue(true),
-  },
 }));
 
 // Mock the Supabase user client

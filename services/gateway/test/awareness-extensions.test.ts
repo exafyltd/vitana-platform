@@ -77,7 +77,7 @@ beforeEach(() => {
     user_journey: {
       rows: [{ recent_greeting_openings: ['Guten Morgen, Anna!'] }],
     },
-    app_users: {
+    profiles: {
       rows: [
         {
           first_name: 'Anna',

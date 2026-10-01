@@ -100,6 +100,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autopilotRouter = require('./routes/autopilot').default;
   // VTID-01089: Autopilot Matchmaking Prompts (One-Tap Consent + Rate Limits + Opt-out)
   const autopilotPromptsRouter = require('./routes/autopilot-prompts').default;
+  // VTID-04508: Community Autopilot CA-7 personal invite links
+  const communityInvitesRouter = require('./routes/community-invites').default;
   const assistantRouter = require('./routes/assistant').default;
   const orbLiveRouter = require('./routes/orb-live').default;
   // VTID-LIVEKIT-FOUNDATION: ORB LiveKit pipeline (parallel/standby to Vertex orb-live).
@@ -148,6 +150,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const healthRouter = require('./routes/health').default;
   // VTID-01105: Memory Gateway Routes - memory write/context for ORB
   const memoryRouter = require('./routes/memory').default;
+  // VTID-04388: Memory Garden on the canonical store
+  const memoryGardenRouter = require('./routes/memory-garden').default;
+  // VTID-04407/04408: developer memory (morning pack, Operator thread handoffs)
+  const devMemoryRouter = require('./routes/dev-memory').default;
   // VTID-01099: Memory Governance Routes - visibility, lock, delete, export
   const memoryGovernanceRouter = require('./routes/memory-governance').default;
   // VTID-01184: Supabase Semantic Memory Routes - pgvector search + embeddings
@@ -189,6 +195,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerHealthConsentRouter = require('./routes/partner-health-consent').default;
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   const partnerOrgsRouter = require('./routes/partner-orgs').default;
+  // VTID-04478: Commerce partner onboarding engine (checklist, submit, lifecycle)
+  const partnerOnboardingRouter = require('./routes/partner-onboarding').default;
+  const partnerOnboardingCatalogueRouter = require('./routes/partner-onboarding-catalogue').default;
+  const partnerOnboardingConnectionsRouter = require('./routes/partner-onboarding-connections').default;
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -361,6 +371,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
+  // VTID-04319: Orchestrator v2 read-only control-plane API (context, unified runs, agent cards)
+  const orchestratorRouter = require('./routes/orchestrator').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -473,6 +485,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Conversation-flow roadmap Step 4 — Command Hub "Conversation" section (READ-ONLY:
   // config / Simulator preview / Monitor / Tool Health). Admin-gated in-router.
   const conversationHubRouter = require('./routes/conversation-hub').default;
+  // VTID-04473: Jev (TypeSafe System One) typed decisions — internal roles only.
+  const jevDecisionsRouter = require('./routes/jev-decisions').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -493,6 +507,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const contentModerationRouter = require('./routes/tenant-admin/content-moderation').default;
   // Community Admin — admin-scoped reads of meetups, groups, live rooms, creators
   const communityAdminRouter = require('./routes/tenant-admin/community-admin').default;
+  // VTID-04674: Admin › Notifications — on/off switch per notification type
+  const adminNotificationControlsRouter = require('./routes/admin-notification-controls').default;
   // VTID-NAV-02: Admin Navigator — DB-backed catalog CRUD, simulate, coverage, telemetry
   const adminNavigatorRouter = require('./routes/admin-navigator').default;
   // BOOTSTRAP-CMDHUB-I18N-OPS: Localization operations — locale status + workflow dispatch
@@ -522,6 +538,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
+  // VTID-04663: Service Health checks for signals the database already computes.
+  const { opsHealthChecksRouter } = require('./routes/ops-health-checks');
+  // VTID-04664: Service Health checks for systems that had none.
+  const { opsRuntimeHealthRouter } = require('./routes/ops-runtime-health');
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -819,6 +839,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01180: Autopilot Recommendations API v1 (correct implementation with activate endpoint)
   mountRouterSync(app, '/api/v1/autopilot/recommendations', autopilotRecommendationsRouter, { owner: 'autopilot-recommendations' });
 
+  // VTID-04508: Community Autopilot CA-7 — personal invite links + attribution
+  mountRouterSync(app, '/api/v1/invites', communityInvitesRouter, { owner: 'community-invites' });
+
   // VTID-02402: VAEA Phase 1.5 — read + CRUD for Business Hub panel
   mountRouterSync(app, '/api/v1/vaea', vaeaRouter, { owner: 'vaea' });
 
@@ -826,6 +849,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
+  mountRouterSync(app, '/api/v1/orchestrator', orchestratorRouter, { owner: 'orchestrator' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
@@ -835,6 +859,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // backed by the connector framework.
   const capabilitiesRouter = require('./routes/capabilities').default;
   mountRouterSync(app, '/api/v1/capabilities', capabilitiesRouter, { owner: 'capabilities' });
+
+  // VTID-04402: Connected Apps hub — one toggle per mail / calendar /
+  // contacts app (Google, Microsoft, Apple iCloud, Android contacts).
+  const connectedAppsRouter = require('./routes/connected-apps').default;
+  mountRouterSync(app, '/api/v1/connected-apps', connectedAppsRouter, { owner: 'connected-apps' });
 
   // VTID-01942: Vitana Media Hub search — backs the vitana_hub connector
   // (music / podcast / shorts capability routing falls back here when the
@@ -992,7 +1021,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-03063 (B0d-real Xf.3): Candidate Inspector — read-only operator
   // surface that groups recent B0d-real OASIS events by decision_id.
   // GET /api/v1/voice/next-action/inspector?user_id=<uuid>&hours=24.
-  // Auth: requireExafyAdmin (exposes operator-grade decision metadata).
+  // Auth: requireAuth + requireExafyAdmin (exposes operator-grade decision
+  // metadata; requireAuth was missing until VTID-04491, so it always 401'd).
   const voiceNextActionInspectorRouter = require('./routes/voice-next-action-inspector').default;
   mountRouterSync(app, '/api/v1', voiceNextActionInspectorRouter, { owner: 'voice-next-action-inspector' });
 
@@ -1030,7 +1060,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/conversation', conversationRouter, { owner: 'conversation-intelligence' });
 
   // VITANA-BRAIN: Temporary test endpoint for brain integration testing (Phase 1)
-  app.post('/api/v1/brain/test', async (req, res) => {
+  // VTID-04339: admin only — it runs a full brain turn (LLM spend + memory
+  // reads/writes) for any user_id/tenant_id supplied in the body.
+  const brainTestAuth = require('./middleware/auth-supabase-jwt');
+  app.post('/api/v1/brain/test', brainTestAuth.requireAuth, brainTestAuth.requireExafyAdmin, async (req, res) => {
     try {
       const { processBrainTurn } = require('./services/vitana-brain');
       const { message, user_id, tenant_id, role, channel } = req.body;
@@ -1078,6 +1111,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory', memoryGovernanceRouter, { owner: 'memory-governance' });
   // VTID-01184: Supabase Semantic Memory - pgvector similarity search + embedding pipeline
   mountRouterSync(app, '/api/v1/memory', semanticMemoryRouter, { owner: 'semantic-memory' });
+  // VTID-04388: /api/v1/memory/garden/{entries,categories}
+  mountRouterSync(app, '/api/v1', memoryGardenRouter, { owner: 'memory-garden' });
+  mountRouterSync(app, '/api/v1/dev-memory', devMemoryRouter, { owner: 'dev-memory' });
 
   // VTID-01095: Daily Scheduler - daily recompute pipeline
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
@@ -1113,6 +1149,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-health/consent', partnerHealthConsentRouter, { owner: 'partner-health-consent' });
   // VTID-03932: Commerce Partner Onboarding — self-service partner org registration + roster
   mountRouterSync(app, '/api/v1/partner-orgs', partnerOrgsRouter, { owner: 'partner-orgs' });
+  // VTID-04478: Commerce partner onboarding engine
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingRouter, { owner: 'partner-onboarding' });
+  // VTID-04488: onboarding catalogue step (/:orgId/catalogue/*); its paths do
+  // not collide with the engine router's, so requests fall through to it.
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingCatalogueRouter, { owner: 'partner-onboarding-catalogue' });
+  // VTID-04499: onboarding connections step (/:orgId/connections)
+  mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1299,6 +1342,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Conversation-flow Step 4 — read-only Command Hub Conversation section
   mountRouterSync(app, '/api/v1', conversationHubRouter, { owner: 'conversation-hub' });
+  // VTID-04473: Jev typed decisions (inert until TYPESAFE_API_KEY + JEV_DECISIONS_ENABLED)
+  mountRouterSync(app, '/api/v1', jevDecisionsRouter, { owner: 'jev-decisions' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
@@ -1309,6 +1354,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // VTID-04674: notification type switches (tenant admin / exafy_admin)
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/notification-controls', adminNotificationControlsRouter, { owner: 'admin-notification-controls' });
   // BOOTSTRAP-PRODUCT-ANALYTICS: admin product analytics reads (summary,
   // assistant, journeys, features, interests, raw event feed)
   const tenantProductAnalyticsRouter = require('./routes/tenant-admin/product-analytics').default;
@@ -1350,6 +1397,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
+  // VTID-04663: GET /api/v1/ops/health/* — Command Hub Service Health checks (public, cached, read-only)
+  mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
+  // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks
+  mountRouterSync(app, '/api/v1/ops/runtime', opsRuntimeHealthRouter, { owner: 'ops-runtime-health' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
@@ -1645,6 +1696,70 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-04320: in-process reminder dispatch (tick every 30s, sweeper every
+      // 5min). Nothing external has called /reminders-tick since the GCP
+      // scheduler went away, so reminders stopped firing entirely.
+      try {
+        const { startRemindersDispatchLoop } = require('./services/reminders-dispatch');
+        if (startRemindersDispatchLoop()) {
+          console.log('⏰ Reminder dispatch loop started (in-process)');
+        } else {
+          console.log('⏸️ Reminder dispatch loop disabled — set REMINDERS_INPROCESS_DISPATCH_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Reminder dispatch loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04338: default reminders for calendar entries — reconciles the
+      // reminders table against upcoming entries every minute.
+      try {
+        const { startCalendarRemindersLoop } = require('./services/calendar-reminders');
+        if (startCalendarRemindersLoop()) {
+          console.log('📅 Calendar default-reminders loop started');
+        } else {
+          console.log('⏸️ Calendar default-reminders loop disabled — set CALENDAR_DEFAULT_REMINDERS_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar default-reminders loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04374: calendar maintenance — moves Autopilot/journey suggestions
+      // the user did not get to (hourly) and refreshes priority scores (6-hourly).
+      // Its only caller used to be GCP Cloud Scheduler, which is gone.
+      try {
+        const { startCalendarMaintenanceLoop } = require('./services/calendar-rescheduler');
+        if (startCalendarMaintenanceLoop()) {
+          console.log('🗓️ Calendar maintenance loop started');
+        } else {
+          console.log('⏸️ Calendar maintenance loop disabled — set CALENDAR_MAINTENANCE_ENABLED=true to enable');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar maintenance loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04372: Google Calendar two-way sync — built, switched off. Starts
+      // only with CALENDAR_GOOGLE_SYNC_ENABLED=true and the Google OAuth client.
+      try {
+        const { startGoogleSyncLoop } = require('./services/calendar-google-sync');
+        if (startGoogleSyncLoop()) {
+          console.log('🗓️ Calendar Google sync loop started');
+        } else {
+          console.log('⏸️ Calendar Google sync loop off — needs CALENDAR_GOOGLE_SYNC_ENABLED=true and GOOGLE_OAUTH_CLIENT_ID/SECRET');
+        }
+      } catch (error) {
+        console.warn('⚠️ Calendar Google sync loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-04402: Connected Apps background sync — Outlook / iCloud busy
+      // times every 15 min, Google / iCloud contacts daily. Only touches apps a
+      // member switched on. Off with CONNECTED_APPS_SYNC_LOOP=false.
+      try {
+        const { startConnectedAppsLoop } = require('./services/connected-apps/hub');
+        if (startConnectedAppsLoop()) console.log('🔗 Connected Apps sync loop started');
+      } catch (error) {
+        console.warn('⚠️ Connected Apps sync loop initialization failed (non-fatal):', error);
+      }
+
       // VTID-03107: Billing v1 — trial lifecycle notification worker.
       // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
       try {
@@ -1875,6 +1990,56 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       } catch (error) {
         console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
       }
+
+      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // frontend's /nav-registry.json and builds the screen index in the
+      // background; the bundled vectors make that near-instant unless the
+      // registry gained texts. Non-fatal: tools fall back to the legacy
+      // navigator until the index exists.
+      if (process.env.NAV_V2_ENABLED === 'true') {
+        const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
+        warmNavService()
+          .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))
+          .catch((err: any) => console.warn('⚠️ Registry navigation warm failed (non-fatal):', err.message));
+      }
+
+      // VTID-04525 (Conversation hub B1): record one conversation.system.snapshot
+      // per stack when this build changed the conversation system (tools,
+      // opening providers or flags). Deferred so boot is never slowed; a no-op
+      // when the fingerprint matches the last recorded one; never throws.
+      setTimeout(() => {
+        try {
+          const intro = require('./services/conversation/conversation-system-introspection');
+          const { getSupabase } = require('./lib/supabase');
+          const { fetchSystemSnapshotEvents } = require('./routes/conversation-hub-repository');
+          const { emitOasisEvent } = require('./services/oasis-event-service');
+          const { VITANA_ENV } = require('./env');
+          intro.recordConversationSystemSnapshot({
+            env: VITANA_ENV,
+            readLatest: async (env: string) => {
+              const sb = getSupabase();
+              if (!sb) throw new Error('Database not configured');
+              const { data, error } = await fetchSystemSnapshotEvents(sb, env, 1);
+              if (error) throw new Error(error.message);
+              return data && data[0] ? (data[0].metadata as any) : null;
+            },
+            emit: (payload: any) => emitOasisEvent({
+              vtid: 'VTID-04525',
+              type: 'conversation.system.snapshot',
+              source: 'gateway',
+              status: 'info',
+              message: `Conversation system changed: ${payload.counts.tools} tools, ${payload.counts.providers} opening providers, ${payload.counts.flags} flags`,
+              payload,
+              surface: 'system',
+              actor_role: 'system',
+            }),
+          }).then((r: { recorded: boolean; reason: string; fingerprint?: string }) =>
+            console.log(`🧭 Conversation system snapshot: ${r.recorded ? 'recorded' : 'not recorded'} (${r.reason}) ${r.fingerprint ?? ''}`),
+          );
+        } catch (error) {
+          console.warn('⚠️ Conversation system snapshot failed (non-fatal):', error);
+        }
+      }, 45_000).unref();
 
       // Agents Registry: bootstrap Tier 2 (embedded) agents — they live in this
       // process so if the gateway is up, they are up. Marks each as healthy.

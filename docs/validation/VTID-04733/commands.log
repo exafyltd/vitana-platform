@@ -1,0 +1,8 @@
+# Authoring session had no npm access (registry returned 403 for every package),
+# so Jest and tsc could not be run locally. CI is the first execution of these.
+$ npm view jest version          # services/gateway
+npm error 403 Forbidden - GET https://registry.npmjs.org/jest
+$ bash -n scripts/aws/setup-eventbridge-whats-new.sh
+exit 0
+$ (vitana-v1) node -e "validateEntry(good) / validateEntry(bad)"   # validator exercised directly
+good -> []   bad -> [id != file name, Sie-form German, deepLink not an in-app path]

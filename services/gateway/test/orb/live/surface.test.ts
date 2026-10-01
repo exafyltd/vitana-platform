@@ -20,8 +20,9 @@ describe('resolveOrbSurface', () => {
   });
   test('work surfaces, persona keys and navigator roles', () => {
     expect(isWorkSurface('vitanaland')).toBe(false);
-    expect(['command-hub', 'admin', 'backoffice'].every((s) => isWorkSurface(s as any))).toBe(true);
-    expect(SURFACE_PERSONA_KEY).toEqual({ vitanaland: null, 'command-hub': 'dev_orb', admin: 'admin_orb', backoffice: 'backoffice_orb' });
+    expect(['command-hub', 'admin', 'backoffice', 'commerce'].every((s) => isWorkSurface(s as any))).toBe(true);
+    expect(SURFACE_PERSONA_KEY).toEqual({ vitanaland: null, 'command-hub': 'dev_orb', admin: 'admin_orb', backoffice: 'backoffice_orb', commerce: 'commerce_orb' });
+    expect(navigatorRoleForSurface('commerce')).toBe('commerce');
     expect(navigatorRoleForSurface('backoffice')).toBe('backoffice');
     expect(navigatorRoleForSurface('admin')).toBe('admin');
     expect(navigatorRoleForSurface('command-hub')).toBe('developer');

@@ -32,6 +32,12 @@ export interface PlatformDetectionResult {
   name_hint?: string | null;
   confidence?: 'high' | 'low' | 'none';
   signals?: string[];
+  /**
+   * VTID-04481: the storefront's own name (og:site_name, else <title>), for
+   * pre-filling a partner's display name. A suggestion only, never written
+   * anywhere without the partner confirming it.
+   */
+  site_name?: string | null;
 }
 
 const MAX_HOPS = 3;
@@ -185,6 +191,31 @@ const FINGERPRINTS: Fingerprint[] = [
   },
 ];
 
+const SITE_NAME_MAX = 120;
+
+function decodeBasicEntities(text: string): string {
+  return text
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+/** VTID-04481: og:site_name, else <title>; whitespace collapsed, capped. */
+export function extractSiteName(body: string): string | null {
+  const og =
+    body.match(/<meta[^>]+property=["']og:site_name["'][^>]*content=["']([^"']*)["']/i) ??
+    body.match(/<meta[^>]+content=["']([^"']*)["'][^>]*property=["']og:site_name["']/i);
+  const title = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const raw = og?.[1] || title?.[1] || '';
+  const clean = decodeBasicEntities(raw).replace(/\s+/g, ' ').trim();
+  if (!clean) return null;
+  return clean.length > SITE_NAME_MAX ? clean.slice(0, SITE_NAME_MAX).trim() : clean;
+}
+
 export async function detectPlatform(rawUrl: string): Promise<PlatformDetectionResult> {
   let url: URL;
   try {
@@ -203,6 +234,7 @@ export async function detectPlatform(rawUrl: string): Promise<PlatformDetectionR
     return { ok: false, error: e instanceof Error ? e.message : 'fetch_failed' };
   }
 
+  const site_name = extractSiteName(fetched.body);
   const signals: string[] = [];
   for (const fp of FINGERPRINTS) {
     if (fp.match(fetched.body, fetched.headers)) {
@@ -214,6 +246,7 @@ export async function detectPlatform(rawUrl: string): Promise<PlatformDetectionR
         name_hint: fp.name_hint,
         confidence: 'high',
         signals,
+        site_name,
       };
     }
   }
@@ -228,8 +261,9 @@ export async function detectPlatform(rawUrl: string): Promise<PlatformDetectionR
       name_hint: 'WordPress (no commerce plugin detected)',
       confidence: 'low',
       signals: ['wordpress'],
+      site_name,
     };
   }
 
-  return { ok: true, connector_id: null, provider_id: null, name_hint: null, confidence: 'none', signals: [] };
+  return { ok: true, connector_id: null, provider_id: null, name_hint: null, confidence: 'none', signals: [], site_name };
 }

@@ -18,6 +18,7 @@
  * pattern, same module-level `running` guard.
  */
 
+import { refreshMicrosoftAccessToken } from './connected-apps/microsoft-oauth';
 import { emitOasisEvent } from './oasis-event-service';
 
 const LOG_PREFIX = '[oauth-token-refresher]';
@@ -59,7 +60,7 @@ async function fetchExpiringRows(lookaheadMs: number): Promise<ExpiringRow[]> {
     `?select=id,user_id,provider,refresh_token,token_expires_at` +
     `&is_active=eq.true` +
     `&refresh_token=not.is.null` +
-    `&provider=in.(google,youtube)` +
+    `&provider=in.(google,youtube,microsoft)` +
     `&token_expires_at=lt.${encodeURIComponent(cutoff)}` +
     `&order=token_expires_at.asc&limit=${BATCH_LIMIT}`;
 
@@ -122,7 +123,7 @@ async function refreshGoogleAccessToken(refreshToken: string): Promise<{
   };
 }
 
-async function persistRefresh(rowId: string, accessToken: string, expiresIn: number): Promise<void> {
+async function persistRefresh(rowId: string, accessToken: string, expiresIn: number, refreshToken?: string): Promise<void> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return;
   const newExpiry = new Date(Date.now() + expiresIn * 1000).toISOString();
   await fetch(`${SUPABASE_URL}/rest/v1/social_connections?id=eq.${rowId}`, {
@@ -131,6 +132,8 @@ async function persistRefresh(rowId: string, accessToken: string, expiresIn: num
     body: JSON.stringify({
       access_token: accessToken,
       token_expires_at: newExpiry,
+      // VTID-04403: Microsoft rotates refresh tokens — keep the newest.
+      ...(refreshToken ? { refresh_token: refreshToken } : {}),
       updated_at: new Date().toISOString(),
     }),
   });
@@ -151,11 +154,14 @@ async function tombstoneRow(rowId: string, reason: string): Promise<void> {
 
 async function refreshOne(row: ExpiringRow): Promise<void> {
   if (!row.refresh_token) return;
-  // Both google and youtube share Google's OAuth client.
-  const result = await refreshGoogleAccessToken(row.refresh_token);
+  // Both google and youtube share Google's OAuth client; microsoft has its own.
+  const result: { ok: boolean; access_token?: string; refresh_token?: string; expires_in?: number; error?: string; permanent?: boolean } =
+    row.provider === 'microsoft'
+      ? await refreshMicrosoftAccessToken(row.refresh_token)
+      : await refreshGoogleAccessToken(row.refresh_token);
 
   if (result.ok && result.access_token && result.expires_in) {
-    await persistRefresh(row.id, result.access_token, result.expires_in);
+    await persistRefresh(row.id, result.access_token, result.expires_in, result.refresh_token);
     console.log(`${LOG_PREFIX} Refreshed ${row.provider} for user ${row.user_id.slice(0, 8)}…`);
     void emitOasisEvent({
       vtid: 'VTID-01928',

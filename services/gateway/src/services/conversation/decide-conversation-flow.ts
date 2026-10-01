@@ -105,6 +105,12 @@ export interface ConversationDecision {
   effects: GreetingEffects;
   /** Offer/confirmation contract (Step 2). Null in Step 1b. */
   offer: OfferContract | null;
+  /**
+   * VTID-04416 (Plan v1 WS-1.4): the full opening decision the transport
+   * renders today. Carried so the live paths can go through this entry point
+   * without changing what they render (the golden snapshots pin it).
+   */
+  greeting: GreetingDecision;
 }
 
 /**
@@ -125,6 +131,7 @@ function greetingToConversationDecision(
     diag: g.diag,
     effects: g.effects,
     offer: null, // Step 2
+    greeting: g,
   };
 }
 
@@ -136,4 +143,84 @@ function greetingToConversationDecision(
 export function decideConversationFlow(ctx: ConversationContext): ConversationDecision {
   const greeting = computeGreetingDecision(ctx.greeting);
   return greetingToConversationDecision(ctx.transport, greeting);
+}
+
+/**
+ * VTID-04416 (Plan v1 WS-1.4): the opening decision for a live transport.
+ * Every voice opening goes through `decideConversationFlow` — the one brain
+ * entry point — and gets back the same `GreetingDecision` it rendered before,
+ * so this is behaviour-identical by construction. Transports must call this,
+ * never `computeGreetingDecision` directly (the transport-flow-parity rule
+ * enforces it, VTID-04417).
+ */
+/**
+ * VTID-04420 (Plan v1 WS-2.1): the continuation providers are the brain's
+ * candidate sources (WHAT to say); the greeting rungs are the phrasing layer
+ * (HOW to say it). A higher rung can outrank the ranker's winner — a day
+ * close, a new-day briefing, a tapped topic — and until now nothing recorded
+ * that, so "the provider won but the user never heard it" was invisible.
+ *
+ * Returns, for one opening, which provider's candidate won the ranker and
+ * whether the rung that fired actually spoke it. Pure; the transport adds the
+ * result to its `greeting_sent` diag.
+ */
+export interface CandidateOutcome {
+  /** Provider whose candidate won the ranker, or null when none returned one. */
+  candidate_provider: string | null;
+  /** The winning candidate's kind (wake_brief, check_in, feature_discovery …). */
+  candidate_kind: string | null;
+  /** The winning candidate's dedupe key (rotation / outcome tracking). */
+  candidate_key: string | null;
+  /** True when the rung that fired speaks the winning candidate's line. */
+  candidate_spoken: boolean;
+  /** The rung that fired instead of the candidate, when one outranked it. */
+  candidate_outranked_by: WakeOpener | null;
+  /** How many providers returned a candidate for this opening. */
+  candidates_returned: number;
+}
+
+/** Rungs that render the ranker's selected candidate as the opening. */
+const CANDIDATE_RENDERING_OPENERS: ReadonlySet<string> = new Set(['override_v2']);
+
+interface CandidateDecisionLike {
+  selectedContinuation: { id?: string; kind: string; dedupeKey?: string } | null;
+  sourceProviderResults: Array<{ providerKey: string; status: string; candidate?: { id?: string } }>;
+}
+
+export function resolveCandidateOutcome(
+  wakeOpener: WakeOpener | string | null | undefined,
+  decision: CandidateDecisionLike | null | undefined,
+): CandidateOutcome {
+  const results = decision?.sourceProviderResults ?? [];
+  const returned = results.filter((r) => r.status === 'returned').length;
+  const selected = decision?.selectedContinuation ?? null;
+  if (!selected || selected.kind === 'none_with_reason') {
+    return {
+      candidate_provider: null,
+      candidate_kind: null,
+      candidate_key: null,
+      candidate_spoken: false,
+      candidate_outranked_by: null,
+      candidates_returned: returned,
+    };
+  }
+  const winner = results.find(
+    (r) => r.candidate && (r.candidate === selected || (selected.id && r.candidate.id === selected.id)),
+  );
+  const spoken = CANDIDATE_RENDERING_OPENERS.has(String(wakeOpener ?? ''));
+  return {
+    candidate_provider: winner?.providerKey ?? null,
+    candidate_kind: selected.kind,
+    candidate_key: selected.dedupeKey ?? null,
+    candidate_spoken: spoken,
+    candidate_outranked_by: spoken ? null : ((wakeOpener as WakeOpener | null | undefined) ?? 'legacy_default'),
+    candidates_returned: returned,
+  };
+}
+
+export function decideOpeningFlow(
+  greeting: GreetingDecisionContext,
+  meta: { transport: ConversationTransport; role?: string | null },
+): GreetingDecision {
+  return decideConversationFlow({ transport: meta.transport, role: meta.role ?? null, greeting }).greeting;
 }

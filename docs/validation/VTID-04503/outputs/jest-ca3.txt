@@ -1,0 +1,19 @@
+    ✓ only known kinds parse; malformed rows are informational (4 ms)
+    ✓ the registry decides risk, never the row (1 ms)
+    ✓ a slot-booking template gets a reminder at its slot; others get nothing (1 ms)
+    ✓ no high-risk kind exists in the community lane (1 ms)
+    ✓ low risk runs on a spoken yes; medium needs a read-back on voice but not in the app (1 ms)
+    ✓ invalid params never run
+    ✓ runs an ORB-tool kind through the shared handler and records one agent_runs row (3 ms)
+    ✓ a second execution of the same action never runs twice
+    ✓ a failed attempt is recorded and may be retried (1 ms)
+    ✓ set_reminder uses the reminders service at the booked slot (1 ms)
+    ✓ client kinds navigate without a server run (1 ms)
+    ✓ a voice medium-risk action without confirmation writes nothing
+    ✓ runs exactly the stored offer and consumes it (3 ms)
+    ✓ a read-back keeps the offer open; confirm=true is passed through (1 ms)
+    ✓ no open offer → nothing runs (1 ms)
+    ✓ an offer that reaches other people is not run on a spoken yes (2 ms)
+    ✓ a stale offer_id is refused
+    ✓ anonymous is refused (1 ms)
+Tests:       18 passed, 18 total

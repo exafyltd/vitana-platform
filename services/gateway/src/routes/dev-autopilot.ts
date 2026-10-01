@@ -20,8 +20,19 @@ import { bridgeFailureToSelfHealing, FailureStage } from '../services/dev-autopi
 import { writeAutopilotFailure } from '../services/dev-autopilot-self-heal-log';
 import { dryRunPreflight, RiskClass } from '../services/dev-autopilot-safety';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { recordOutcome } from '../services/dev-autopilot-outcomes';
+import { recordOutcome, summarizeSpendToday } from '../services/dev-autopilot-outcomes';
+import { validateConfigUpdate } from '../services/dev-autopilot-config-update';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { buildSupervisorSnapshot } from '../services/dev-autopilot-supervisor';
+import { feedbackTicketRefFor } from '../services/feedback-ticket-ref';
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from '../services/recommendation-quality/scoring-service';
+import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
+import {
+  devRecommendationExpiresAtIso,
+  recentlyRejectedFingerprintsPath,
+  comparePendingApprovals,
+  toFingerprintSet,
+} from '../services/dev-recommendation-policy';
 
 const router = Router();
 
@@ -251,10 +262,25 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
   }
 
   const { createHash } = await import('node:crypto');
-  const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  // VTID-04666: every impact finding expires unless it keeps being seen.
+  const expiresAt = devRecommendationExpiresAtIso(nowMs);
   let newCount = 0;
   let updatedCount = 0;
   let skippedInfo = 0;
+  let suppressedRejected = 0;
+
+  // VTID-04666: fingerprints a human rejected in the last 30 days stay
+  // blocked (one lookup per request; a failed lookup blocks nothing).
+  const rejectedLookup = await supaGet<Array<{ signal_fingerprint: string }>>(
+    supa,
+    recentlyRejectedFingerprintsPath('dev_autopilot_impact', nowMs),
+  );
+  if (!rejectedLookup.ok) {
+    console.warn(`[dev-autopilot] impact-ingest rejected-fingerprint lookup failed (not blocking any): ${rejectedLookup.error}`);
+  }
+  const recentlyRejected = toFingerprintSet(rejectedLookup.ok ? rejectedLookup.data : []);
 
   for (const f of body.findings) {
     if (!f || !f.rule || !f.message) continue;
@@ -265,10 +291,14 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
       .digest('hex')
       .slice(0, 32);
 
-    // Lookup existing live finding with this fingerprint
+    // Lookup existing live finding with this fingerprint. VTID-04274: must
+    // include 'activated' alongside 'new'/'snoozed' — see the sibling fix
+    // in dev-autopilot-synthesis.ts for the live duplicate this excluded
+    // status caused (a finding already has a VTID and an in-flight
+    // execution is still the same live problem, not a resolved one).
     const existing = await supaGet<Array<{ id: string; seen_count: number | null }>>(
       supa,
-      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed)&select=id,seen_count&limit=1`,
+      `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&signal_fingerprint=eq.${fingerprint}&status=in.(new,snoozed,activated)&select=id,seen_count&limit=1`,
     );
     const hit = existing.ok && existing.data && existing.data[0];
     if (hit) {
@@ -276,8 +306,16 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
         seen_count: (hit.seen_count || 1) + 1,
         last_seen_at: now,
         updated_at: now,
+        // VTID-04666: still seen → still live; push the expiry forward.
+        expires_at: expiresAt,
       });
       updatedCount++;
+      continue;
+    }
+
+    // VTID-04666: rejected by a human within 30 days — do not re-surface.
+    if (recentlyRejected.has(fingerprint)) {
+      suppressedRejected++;
       continue;
     }
 
@@ -308,6 +346,7 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
       first_seen_at: now,
       last_seen_at: now,
       seen_count: 1,
+      expires_at: expiresAt,
       spec_snapshot: {
         rule: f.rule,
         category: f.category || 'companion',
@@ -324,11 +363,17 @@ router.post('/impact-ingest', requireScanToken, async (req: Request, res: Respon
     if (inserted.ok) newCount++;
   }
 
+  // VTID-04668: score what this request created. Never throws.
+  if (newCount > 0) {
+    await scoreNewDeveloperRecommendations(new Date(nowMs - SCORING_CLOCK_SKEW_MS).toISOString());
+  }
+
   return res.json({
     ok: true,
     new_count: newCount,
     updated_count: updatedCount,
     skipped_info: skippedInfo,
+    ...(suppressedRejected > 0 ? { suppressed_rejected: suppressedRejected } : {}),
   });
 });
 
@@ -374,6 +419,31 @@ router.get('/runs/:run_id', requireDevRole, async (req: Request, res: Response) 
   const row = (r.data || [])[0];
   if (!row) return res.status(404).json({ ok: false, error: 'run not found' });
   return res.json({ ok: true, run: row });
+});
+
+// =============================================================================
+// GET /supervisor — VTID-04281: one correlated snapshot for the Autopilot tabs
+// =============================================================================
+// Scan cadence, 7-day execution funnel + failure reasons, a blocker diagnosis
+// for every open finding, impact-rule hits, effective autonomy and alerts.
+// Cached 15 s: every Autopilot tab polls it for its status strip.
+const SUPERVISOR_CACHE_MS = 15_000;
+let supervisorCache: { at: number; body: unknown } | null = null;
+
+router.get('/supervisor', requireDevRole, async (req: Request, res: Response) => {
+  const fresh = req.query.fresh === '1';
+  if (!fresh && supervisorCache && Date.now() - supervisorCache.at < SUPERVISOR_CACHE_MS) {
+    return res.json(supervisorCache.body);
+  }
+  try {
+    const body = await buildSupervisorSnapshot();
+    if (!body.ok) return res.status(500).json(body);
+    supervisorCache = { at: Date.now(), body };
+    return res.json(body);
+  } catch (err) {
+    console.error('[dev-autopilot] supervisor snapshot failed:', err);
+    return res.status(500).json({ ok: false, error: String(err) });
+  }
 });
 
 // =============================================================================
@@ -633,11 +703,27 @@ const PENDING_APPROVALS_PREDICATE =
   // not.is.true covers both FALSE (default for new rows) and NULL (legacy rows
   // pre-dating the column's existence) — anything not affirmatively auto-exec.
   '&auto_exec_eligible=not.is.true' +
-  '&or=(snoozed_until.is.null,snoozed_until.lt.now())';
+  '&or=(snoozed_until.is.null,snoozed_until.lt.now())' +
+  // VTID-04666: expired findings (not seen for 30 days) leave the inbox.
+  // Repeated `or` params are ANDed by PostgREST.
+  '&or=(expires_at.is.null,expires_at.gt.now())';
 
 const PENDING_APPROVALS_SELECT =
   'id,title,summary,domain,risk_class,impact_score,effort_score,' +
-  'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot';
+  'source_type,seen_count,last_seen_at,signal_fingerprint,spec_snapshot,' +
+  // VTID-04333: source_ref + activated_vtid drive the feedback_ticket field.
+  'source_ref,activated_vtid,' +
+  // VTID-04666: created_at is the last sort key.
+  'created_at,' +
+  // VTID-04668: evidence-based priority + its components.
+  'priority_score,quality';
+
+/**
+ * VTID-04666: the inbox is sorted in JS (sortPendingApprovals) because
+ * PostgREST orders risk_class as text (medium > low > high). To keep paging
+ * correct the whole open set is read up to this cap, sorted, then sliced.
+ */
+const PENDING_APPROVALS_SORT_WINDOW = 1000;
 
 router.get('/pending-approvals', requireDevRole, async (req: Request, res: Response) => {
   const supa = getSupabase();
@@ -645,47 +731,57 @@ router.get('/pending-approvals', requireDevRole, async (req: Request, res: Respo
 
   const limit = Math.min(parseInt(String(req.query.limit || '200'), 10), 500);
   const offset = Math.max(parseInt(String(req.query.offset || '0'), 10), 0);
+  const includeBelowFloor = String(req.query.include_below_floor || '') === '1';
 
-  // Sort riskiest-first then highest impact then most recent activity.
-  const order = 'order=risk_class.desc.nullslast,impact_score.desc.nullslast,last_seen_at.desc';
+  // VTID-04668: highest evidence-based priority first (unscored rows last),
+  // then the VTID-04666 explicit risk rank (high > medium > low), impact,
+  // newest. Rows below the quality floor are left out unless
+  // ?include_below_floor=1. The DB order below only decides which rows fall
+  // inside the window; the final order is applyDeveloperQualityListing.
+  const order = 'order=priority_score.desc.nullslast,impact_score.desc.nullslast,created_at.desc';
   const path =
     `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
-    `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${limit}&offset=${offset}`;
+    `&select=${PENDING_APPROVALS_SELECT}&${order}&limit=${PENDING_APPROVALS_SORT_WINDOW}`;
 
   const r = await supaGet<unknown[]>(supa, path);
   if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
-  const recommendations = r.data || [];
-  return res.json({ ok: true, recommendations, count: recommendations.length });
+  const listed = applyDeveloperQualityListing((r.data || []) as Array<Record<string, unknown>>, {
+    includeBelowFloor,
+    tiebreak: comparePendingApprovals,
+  });
+  const recommendations = listed.rows
+    .slice(offset, offset + limit)
+    .map((rec) => ({ ...rec, feedback_ticket: feedbackTicketRefFor(rec) }));
+  return res.json({
+    ok: true,
+    recommendations,
+    count: recommendations.length,
+    below_floor_count: listed.below_floor_count,
+    // VTID-04669: rows that pass the floor but have not been reviewed yet.
+    awaiting_review_count: listed.awaiting_review_count,
+  });
 });
 
 router.get('/pending-approvals/count', requireDevRole, async (_req: Request, res: Response) => {
   const supa = getSupabase();
   if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
 
-  // PostgREST exact count: HEAD with Prefer: count=exact returns total in
-  // Content-Range. We use a tiny GET to sidestep adding a HEAD helper.
+  // VTID-04668: the badge counts exactly what the popup shows — rows below
+  // the quality floor are filtered in JS from the stored score, so the count
+  // reads the same window with only the columns that decision needs.
   const path =
     `/rest/v1/autopilot_recommendations?${PENDING_APPROVALS_PREDICATE}` +
-    `&select=id&limit=1`;
+    `&select=id,status,priority_score,quality&limit=${PENDING_APPROVALS_SORT_WINDOW}`;
 
-  try {
-    const url = `${supa.url}${path}`;
-    const resp = await fetch(url, {
-      headers: {
-        apikey: supa.key,
-        Authorization: `Bearer ${supa.key}`,
-        Prefer: 'count=exact',
-      },
-    });
-    if (!resp.ok) {
-      return res.status(500).json({ ok: false, error: `${resp.status}: ${await resp.text()}` });
-    }
-    const range = resp.headers.get('content-range') || '';
-    const total = parseInt(range.split('/').pop() || '0', 10) || 0;
-    return res.json({ ok: true, count: total });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
-  }
+  const r = await supaGet<unknown[]>(supa, path);
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const listed = applyDeveloperQualityListing((r.data || []) as Array<Record<string, unknown>>);
+  return res.json({
+    ok: true,
+    count: listed.rows.length,
+    below_floor_count: listed.below_floor_count,
+    awaiting_review_count: listed.awaiting_review_count,
+  });
 });
 
 // =============================================================================
@@ -753,6 +849,8 @@ router.get('/queue', requireDevRole, async (req: Request, res: Response) => {
     });
     return {
       ...f,
+      // VTID-04333: { ticket_id, ticket_number, linked_vtid } | null
+      feedback_ticket: feedbackTicketRefFor(f),
       auto_actionable: pf.auto_actionable,
       block_reason: pf.block_reason,
       block_message: pf.block_message,
@@ -779,7 +877,8 @@ router.get('/findings/:id', requireDevRole, async (req: Request, res: Response) 
     supa,
     `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${id}&order=version.desc`,
   );
-  return res.json({ ok: true, finding: rec, plan_versions: plansR.data || [] });
+  const finding = { ...(rec as Record<string, unknown>), feedback_ticket: feedbackTicketRefFor(rec as Record<string, unknown>) };
+  return res.json({ ok: true, finding, plan_versions: plansR.data || [] });
 });
 
 // =============================================================================
@@ -1240,6 +1339,37 @@ router.get('/executions', requireDevRole, async (req: Request, res: Response) =>
     console.warn(`${LOG_PREFIX} last_event_at enrichment failed:`, err);
   }
 
+  // VTID-04282: attach the finding's title/scanner/file so the Live view can
+  // say WHAT each execution is fixing. Best-effort, one query.
+  const findingIds = Array.from(new Set(executions
+    .map((e) => (typeof e.finding_id === 'string' ? e.finding_id : null))
+    .filter((id): id is string => id !== null)));
+  if (findingIds.length > 0) {
+    const recR = await supaGet<Array<{ id: string; title: string; source_type: string | null; spec_snapshot: Record<string, unknown> | null; source_ref: string | null; activated_vtid: string | null }>>(
+      supa,
+      `/rest/v1/autopilot_recommendations?id=in.(${findingIds.join(',')})&select=id,title,source_type,spec_snapshot,source_ref,activated_vtid`,
+    );
+    if (recR.ok && recR.data) {
+      const byId = new Map(recR.data.map((r) => [r.id, r]));
+      for (const exec of executions) {
+        const rec = typeof exec.finding_id === 'string' ? byId.get(exec.finding_id) : undefined;
+        // VTID-04333: { ticket_id, ticket_number, linked_vtid } | null
+        exec.feedback_ticket = rec ? feedbackTicketRefFor(rec) : null;
+        if (rec && !exec.recommendation) {
+          const snap = rec.spec_snapshot || {};
+          exec.recommendation = {
+            title: rec.title,
+            source_type: rec.source_type,
+            spec_snapshot: { scanner: snap.scanner ?? snap.rule ?? null, file_path: snap.file_path ?? null },
+          };
+        }
+      }
+    }
+  }
+  for (const exec of executions) {
+    if (exec.feedback_ticket === undefined) exec.feedback_ticket = null;
+  }
+
   return res.json({ ok: true, executions });
 });
 
@@ -1274,6 +1404,55 @@ router.post('/config/kill-switch', requireDevRole, async (req: Request, res: Res
     message: `Dev Autopilot kill switch ${armed ? 'ARMED' : 'disarmed'}`,
   });
   return res.json({ ok: true, armed });
+});
+
+// VTID-04268: writable config for the safe, bounded numeric knobs only —
+// see services/dev-autopilot-config-update.ts for what's deliberately
+// excluded (allow_scope/deny_scope, kill_switch).
+router.post('/config/update', requireDevRole, async (req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  const result = validateConfigUpdate(req.body);
+  if (!result.ok) return res.status(400).json({ ok: false, error: result.error });
+  const r = await supaPatch(supa, `/rest/v1/dev_autopilot_config?id=eq.1`, {
+    ...result.patch,
+    updated_at: new Date().toISOString(),
+  });
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: SCAN_VTID,
+    type: 'dev_autopilot.config.updated',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: `Dev Autopilot config updated: ${Object.keys(result.patch).join(', ')}`,
+    payload: result.patch,
+  });
+  return res.json({ ok: true, config: result.patch });
+});
+
+// =============================================================================
+// GET /spend — VTID-04267: today's real Dev Autopilot agent spend, read
+// from the per-run cost/token data already recorded on
+// dev_autopilot_outcomes.metadata.agent_runs[] (VTID-04017). The Command
+// Hub Dev Autopilot panel's "Budget" chip only ever showed the daily
+// APPROVAL-COUNT budget (dev_autopilot_config.daily_budget) — this is a
+// different axis, real dollars actually spent today.
+// =============================================================================
+
+router.get('/spend', requireDevRole, async (_req: Request, res: Response) => {
+  const supa = getSupabase();
+  if (!supa) return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+  // dev_autopilot_outcomes has no updated_at column to filter on server
+  // side (a run-append PATCH doesn't touch created_at), so this fetches a
+  // bounded recent window and filters by each run's own recorded_at in
+  // application code — see summarizeSpendToday's own header comment.
+  const r = await supaGet<Array<{ metadata: unknown }>>(
+    supa,
+    `/rest/v1/dev_autopilot_outcomes?select=metadata&order=created_at.desc&limit=200`,
+  );
+  if (!r.ok) return res.status(500).json({ ok: false, error: r.error });
+  const summary = summarizeSpendToday(r.data || []);
+  return res.json({ ok: true, ...summary });
 });
 
 export default router;

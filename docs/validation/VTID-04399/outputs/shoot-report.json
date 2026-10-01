@@ -1,0 +1,42 @@
+{
+ "tag": "desktop",
+ "report": [
+  {
+   "name": "monitor",
+   "tiles": 23,
+   "warn": 6,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "FIRST SPEECH P50 | 3876 ms | 204 sessions",
+    "FIRST SPEECH P90 | 5433 ms | target < 3 s",
+    "CONTEXT WAIT TIMED OUT | 91.5% | 162 of 177",
+    "STARTED WITH NO CONTEXT | 33.1% | 52 of 157 signed-in · target < 5%",
+    "CONTEXT SOURCE | 0 from snapshot | unknown 157",
+    "STARTED | 477"
+   ]
+  }
+ ],
+ "errors": []
+}
+{
+ "tag": "mobile",
+ "report": [
+  {
+   "name": "monitor",
+   "tiles": 23,
+   "warn": 6,
+   "horizontalOverflow": false,
+   "activeAfterClick": "7 days",
+   "firstTiles": [
+    "FIRST SPEECH P50 | 3876 ms | 204 sessions",
+    "FIRST SPEECH P90 | 5433 ms | target < 3 s",
+    "CONTEXT WAIT TIMED OUT | 91.5% | 162 of 177",
+    "STARTED WITH NO CONTEXT | 33.1% | 52 of 157 signed-in · target < 5%",
+    "CONTEXT SOURCE | 0 from snapshot | unknown 157",
+    "STARTED | 477"
+   ]
+  }
+ ],
+ "errors": []
+}

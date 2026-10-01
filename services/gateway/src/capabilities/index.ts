@@ -203,8 +203,20 @@ export async function resolveConnectorFor(
 
   const { data: active } = await repo.fetchActiveSocialConnectionProviders(supabase, userId);
   const activeIds = new Set((active ?? []).map((r) => r.provider));
+  // VTID-04402: the Connected Apps toggles decide for google / microsoft /
+  // apple — a member who turned Gmail off keeps Google Calendar, and the
+  // assistant must not read their mail. Fails open to the token check.
+  let hubAvail = new Map<string, boolean>();
+  try {
+    const { hubConnectorAvailability } = await import('../services/connected-apps/hub');
+    hubAvail = await hubConnectorAvailability(userId, capabilityId);
+  } catch (err: unknown) {
+    console.warn(`[capabilities] connected-apps availability unavailable: ${err instanceof Error ? err.message : err}`);
+  }
   const isAvailable = (cId: string, auth: string): boolean => {
     if (auth === 'none') return true;
+    if (hubAvail.has(cId)) return hubAvail.get(cId) === true;
+    if (auth === 'app_password') return false;
     return storageProvidersFor(cId, capabilityId).some((p) => activeIds.has(p));
   };
 

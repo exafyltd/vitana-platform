@@ -1,0 +1,5 @@
+Supabase (read-only): select ci_vital_systems_health(), ci_orb_session_state_health(); select * from ci_ledger_integrity_check(7)   # all healthy, 0 violations
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04663-ops-health-checks.test.ts test/vtid-04662-service-health-registered-routes.test.ts test/vtid-04661-service-health-panel.test.ts   # 98/98
+node node_modules/.bin/jest test/vtid-04560-role-separation-regression.test.ts   # 97/97 (atlas drift guard: ops-health-checks claimed by /^ops-/)
+npx tsc --noEmit -p .   # clean

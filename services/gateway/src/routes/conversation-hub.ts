@@ -16,6 +16,9 @@
  *   GET /admin/conversation/preview           → Simulator: dry-run the decision for a user (no speaking)
  *   GET /admin/conversation/decisions         → Monitor: recent greeting decisions (oasis_events)
  *   GET /admin/conversation/tool-failures     → Tool Health: recent tool failures (oasis_events)
+ *   GET /admin/conversation/metrics/summary   → Monitor dashboard: window totals/rates (hourly rollup, VTID-04371)
+ *   GET /admin/conversation/metrics/series    → one hourly series for a chart (hourly rollup, VTID-04371)
+ *   GET /admin/conversation/metrics/learning  → Learning health: nightly jobs, profile freshness, coverage (VTID-04371)
  *
  * See docs/CONVERSATION_FLOW_HANDOFF.md §8–§9.
  */
@@ -41,6 +44,32 @@ import {
 } from '../services/conversation/screen-surface';
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 import * as repo from './conversation-hub-repository';
+import { SIGNAL_DIARY_THEMES, isDiaryRollupEnabled, summarizeDiaryThemeStamps } from '../services/memory/diary-theme-rollup';
+import { inspectSession, isValidSessionId, isValidUserId, listRecentSessions } from '../services/conversation/session-brain-inspector';
+import { readOfferOutcomeStats, OFFER_STATS_MAX_DAYS } from '../services/conversation/offer-outcome-stats';
+import { readShadowComparison, SHADOW_MAX_DAYS } from '../services/conversation/shadow-comparison';
+import {
+  summarizeToolExecutions,
+  summarizeGuards,
+  summarizeOpenings,
+  GUARD_STAGES,
+  AGGREGATE_MAX_HOURS,
+  AGGREGATE_MAX_ROWS,
+} from '../services/conversation/conversation-aggregates';
+import { VITANA_ENV } from '../env';
+import {
+  summarizeConversationMetrics,
+  buildMetricSeries,
+  summarizeLearningJobs,
+  summarizeNarrativeFreshness,
+  LEARNING_AUTOMATIONS,
+  type MetricRow,
+  type AutomationRunRow,
+} from '../services/conversation/conversation-metrics';
+// Same value as SIGNAL_PROFILE_NARRATIVE in services/user-model-synthesis.ts,
+// kept local so this router does not load the synthesis module (and the LLM
+// router) at import time. A test pins the two together.
+export const PROFILE_NARRATIVE_SIGNAL = 'user_profile_narrative_v1';
 
 const router = Router();
 
@@ -290,6 +319,287 @@ router.get('/admin/conversation/tool-failures', ...adminOnly, async (req: Authen
     return res.json({ ok: true, data: { window_hours: windowHours, count: rows.length, failures: rows } });
   } catch (e) {
     return jsonError(res, 500, e instanceof Error ? e.message : 'tool-failures read failed');
+  }
+});
+
+// ---------------------------------------------------------------------------
+// VTID-04371 (WS-0.7) — dashboards over the hourly rollup
+// (`conversation_metrics_hourly`, filled by pg_cron at :07). These handlers
+// never read oasis_events.
+// ---------------------------------------------------------------------------
+
+function metricsWindowHours(raw: unknown): number {
+  return Math.min(Math.max(Number(raw) || 24, 1), 720);
+}
+
+function windowStartIso(windowHours: number, nowMs = Date.now()): string {
+  const currentHour = Math.floor(nowMs / 3_600_000) * 3_600_000;
+  return new Date(currentHour - windowHours * 3_600_000).toISOString();
+}
+
+function toMetricRows(data: Array<Record<string, unknown>> | null | undefined): MetricRow[] {
+  return (data || []).map((r) => ({
+    hour_start: String(r.hour_start),
+    metric: String(r.metric),
+    dimension: String(r.dimension ?? ''),
+    value: Number(r.value),
+    sample_count: Number(r.sample_count) || 0,
+    computed_at: r.computed_at ? String(r.computed_at) : undefined,
+  }));
+}
+
+/**
+ * VTID-04419 (Plan v1 WS-1.7): brain inspector.
+ * GET /admin/conversation/sessions?hours=24&user_id=&limit=30
+ * Recent voice sessions (newest first), from session-start events in a bounded
+ * window. Never returns the user's email or user agent.
+ */
+router.get('/admin/conversation/sessions', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const hours = Math.min(Math.max(Number(req.query.hours) || 24, 1), 168);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 100);
+  const userId = typeof req.query.user_id === 'string' && req.query.user_id.trim() ? req.query.user_id.trim() : null;
+  if (userId && !isValidUserId(userId)) return jsonError(res, 400, 'user_id must be a UUID');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { sessions, error } = await listRecentSessions(supabase, { hours, userId, limit });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: { hours, count: sessions.length, sessions } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'sessions read failed');
+  }
+});
+
+/**
+ * VTID-04421 (WS-2.4): GET /admin/conversation/offer-outcomes
+ * Per-provider counts of offers made, accepted, declined, ignored and still
+ * open, from conversation_offer_outcomes. Optional user_id narrows to one user.
+ */
+router.get('/admin/conversation/offer-outcomes', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 7, 1), OFFER_STATS_MAX_DAYS);
+  const userId = typeof req.query.user_id === 'string' && req.query.user_id.trim() ? req.query.user_id.trim() : null;
+  if (userId && !isValidUserId(userId)) return jsonError(res, 400, 'user_id must be a UUID');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { rows, error } = await readOfferOutcomeStats(supabase, { days, userId });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: { days, user_id: userId, providers: rows } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'offer outcomes read failed');
+  }
+});
+
+/**
+ * VTID-04525 (Conversation hub B1): GET /admin/conversation/system[?refresh=1]
+ * What the conversation system is made of on THIS process, built from the
+ * same code a live session runs: every tool and where it is declared, how
+ * each provider's byte budget trims the catalog, the opening providers, the
+ * greeting rungs and every conversation flag. Cached 5 min per process.
+ * Loaded lazily: the tool catalog pulls in the whole ORB tool surface, which
+ * this router must not load at import time.
+ */
+router.get('/admin/conversation/system', ...adminOnly, (req: AuthenticatedRequest, res: Response) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getConversationSystemSnapshot } = require('../services/conversation/conversation-system-introspection');
+    return res.json({ ok: true, data: getConversationSystemSnapshot({ refresh: req.query.refresh === '1' }) });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'system introspection failed');
+  }
+});
+
+/**
+ * VTID-04525 (B1): GET /admin/conversation/system/history?limit=10
+ * The last recorded `conversation.system.snapshot` events for this stack:
+ * one per build that changed the conversation system, with its diff against
+ * the build before. The full tool/flag lists are not returned.
+ */
+router.get('/admin/conversation/system/history', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 50);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { data, error } = await repo.fetchSystemSnapshotEvents(supabase, VITANA_ENV, limit);
+    if (error) return jsonError(res, 500, error.message);
+    const snapshots = (data || []).map((r: { created_at: string; metadata: Record<string, unknown> | null }) => {
+      const m = r.metadata || {};
+      return { recorded_at: r.created_at, fingerprint: m.fingerprint ?? null, commit: m.commit ?? null, counts: m.counts ?? null, diff: m.diff ?? null };
+    });
+    return res.json({ ok: true, data: { env: VITANA_ENV, snapshots } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'system history read failed');
+  }
+});
+
+/**
+ * VTID-04525 (Conversation hub B3): GET /admin/conversation/aggregates?hours=24
+ * Tool calls / failures / latency per tool, guard fires (loop guard, opening
+ * refusals, reply cap, backend-data mutes, catalog trims, instruction budget)
+ * and the opening mix, over a bounded window. Tool rows carry `env` and are
+ * split by it; diag rows do not carry a reliable env, so guard and opening
+ * counts cover both stacks.
+ */
+router.get('/admin/conversation/aggregates', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const hours = Math.min(Math.max(Number(req.query.hours) || 24, 1), AGGREGATE_MAX_HOURS);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const sinceIso = new Date(Date.now() - hours * 3_600_000).toISOString();
+    const [tools, guards, openings] = await Promise.all([
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.tool.executed', sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.diag', stages: GUARD_STAGES, sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+      repo.fetchOasisTopicWindow(supabase, { topic: 'orb.live.diag', stages: ['greeting_sent'], sinceIso, maxRows: AGGREGATE_MAX_ROWS }),
+    ]);
+    const failed = tools.error || guards.error || openings.error;
+    if (failed) return jsonError(res, 500, failed.message);
+    return res.json({
+      ok: true,
+      data: {
+        window_hours: hours,
+        since: sinceIso,
+        tools: summarizeToolExecutions(tools.data || []),
+        guards: summarizeGuards(guards.data || []),
+        openings: summarizeOpenings(openings.data || []),
+        truncated: { tools: tools.truncated, guards: guards.truncated, openings: openings.truncated },
+        note: 'Tool counts are split by env. Guard and opening counts cover staging and production together (diag rows carry no reliable env).',
+      },
+    });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'aggregates read failed');
+  }
+});
+
+/**
+ * VTID-04422 (WS-2.2): GET /admin/conversation/shadow-ranking
+ * How often the shadow relevance score agrees with the live fixed-priority
+ * ranker, the winner pairs where they differ, and recent disagreements.
+ */
+router.get('/admin/conversation/shadow-ranking', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 7, 1), SHADOW_MAX_DAYS);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { summary, error } = await readShadowComparison(supabase, { days });
+    if (error) return jsonError(res, 500, error);
+    return res.json({ ok: true, data: summary });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'shadow ranking read failed');
+  }
+});
+
+/**
+ * VTID-04419: GET /admin/conversation/sessions/:sessionId/brain
+ * For one session: the context that was built (builder, packing, gate,
+ * snapshot, reconnect rebuilds), the opening decision, the tool catalog trim,
+ * errors, the outcome, and a compact timeline.
+ */
+router.get('/admin/conversation/sessions/:sessionId/brain', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const sessionId = req.params.sessionId;
+  if (!isValidSessionId(sessionId)) return jsonError(res, 400, 'invalid session id');
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { summary, error } = await inspectSession(supabase, sessionId);
+    if (error) return jsonError(res, 500, error);
+    if (!summary.found) return jsonError(res, 404, 'session not found in the last 14 days');
+    return res.json({ ok: true, data: summary });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'session inspect failed');
+  }
+});
+
+/**
+ * GET /admin/conversation/metrics/summary?window_hours=24
+ * Window totals and rates: first speech, context-wait timeouts, reconnects and
+ * premature closes, errors by kind, turns and duration per session, opener
+ * distribution and repeat rate, offers, finalize coverage.
+ */
+router.get('/admin/conversation/metrics/summary', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const windowHours = metricsWindowHours(req.query.window_hours);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const { data, error } = await repo.fetchConversationMetricsSince(supabase, windowStartIso(windowHours));
+    if (error) return jsonError(res, 500, error.message);
+    return res.json({ ok: true, data: summarizeConversationMetrics(toMetricRows(data), windowHours) });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'metrics summary read failed');
+  }
+});
+
+/**
+ * GET /admin/conversation/metrics/series?metric=&dimension=&window_hours=
+ * One hourly series, oldest first; hours without a row are null.
+ */
+router.get('/admin/conversation/metrics/series', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const metric = typeof req.query.metric === 'string' ? req.query.metric.trim() : '';
+  const dimension = typeof req.query.dimension === 'string' ? req.query.dimension.trim() : '';
+  if (!/^[a-z0-9_]{1,64}$/.test(metric)) return jsonError(res, 400, 'metric is required (a-z, 0-9, _)');
+  if (dimension.length > 120) return jsonError(res, 400, 'dimension is too long');
+  const windowHours = Math.min(metricsWindowHours(req.query.window_hours), 336);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  try {
+    const nowMs = Date.now();
+    const { data, error } = await repo.fetchConversationMetricSeries(supabase, metric, dimension, windowStartIso(windowHours, nowMs));
+    if (error) return jsonError(res, 500, error.message);
+    const series = buildMetricSeries(toMetricRows(data as Array<Record<string, unknown>>), metric, dimension, windowHours, nowMs);
+    return res.json({ ok: true, data: { metric, dimension, window_hours: windowHours, series } });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'metrics series read failed');
+  }
+});
+
+/**
+ * GET /admin/conversation/metrics/learning?window_hours=168
+ * Learning health: last run of each nightly learning job (AP-0906..AP-0913),
+ * profile-narrative freshness, and finalize/fact coverage from the rollup.
+ * Each part degrades on its own: a failed read is reported, not fatal.
+ */
+router.get('/admin/conversation/metrics/learning', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
+  const windowHours = metricsWindowHours(req.query.window_hours ?? 168);
+  const supabase = getSupabase();
+  if (!supabase) return jsonError(res, 503, 'Database not configured');
+  const nowMs = Date.now();
+  const sinceIso = windowStartIso(windowHours, nowMs);
+  const errors: string[] = [];
+  try {
+    const [runs, narratives, metrics, diaryThemes] = await Promise.all([
+      repo.fetchLearningAutomationRuns(supabase, LEARNING_AUTOMATIONS),
+      repo.fetchProfileNarrativeStamps(supabase, PROFILE_NARRATIVE_SIGNAL),
+      repo.fetchConversationMetricsSince(supabase, sinceIso),
+      // VTID-04444 (WS-4.2): diary theme rollup coverage — stamps and counts only.
+      // A throw here is reported like any failed read, never a 500.
+      Promise.resolve()
+        .then(() => repo.fetchDiaryThemeStamps(supabase, SIGNAL_DIARY_THEMES))
+        .catch((e: unknown) => ({ data: null, error: { message: e instanceof Error ? e.message : String(e) } })),
+    ]);
+    if (runs.error) errors.push(`automation_runs: ${runs.error.message}`);
+    if (narratives.error) errors.push(`user_assistant_state: ${narratives.error.message}`);
+    if (diaryThemes?.error) errors.push(`user_assistant_state (diary themes): ${diaryThemes.error.message}`);
+    if (metrics.error) errors.push(`conversation_metrics_hourly: ${metrics.error.message}`);
+    const summary = metrics.error ? null : summarizeConversationMetrics(toMetricRows(metrics.data), windowHours);
+    return res.json({
+      ok: true,
+      data: {
+        window_hours: windowHours,
+        jobs: runs.error ? null : summarizeLearningJobs((runs.data || []) as AutomationRunRow[], Date.parse(sinceIso), nowMs),
+        profile_narrative: narratives.error
+          ? null
+          : summarizeNarrativeFreshness((narratives.data || []) as Array<Record<string, unknown>>, nowMs),
+        coverage: summary ? summary.learning : null,
+        diary_themes: !diaryThemes || diaryThemes.error
+          ? null
+          : {
+              enabled: isDiaryRollupEnabled(),
+              ...summarizeDiaryThemeStamps((diaryThemes.data || []) as Array<Record<string, unknown>>, nowMs),
+            },
+        errors,
+      },
+    });
+  } catch (e) {
+    return jsonError(res, 500, e instanceof Error ? e.message : 'learning health read failed');
   }
 });
 

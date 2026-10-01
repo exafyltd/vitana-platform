@@ -233,6 +233,32 @@ describe('runListFollows', () => {
     expect(res.text).toContain('never deflect');
   });
 
+  // VTID-04585: staging 2026-09-25 — Nova answered "Wem folge ich?" with
+  // list_followers and told a user who follows Mariia Maksina "nobody follows
+  // you". Either tool now carries both directions, labelled.
+  it('list_followers still names who the user follows (wrong pick answers correctly)', async () => {
+    (fetchFollowEdges as jest.Mock).mockResolvedValue({
+      followers: [],
+      following: [{ person: person('p-1', 'Mariia Maksina'), since: '2026-06-01' }],
+    });
+    const res = await runListFollows('followers', IDENT);
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain('Nobody follows the user yet');
+    expect(res.text).toContain('OTHER DIRECTION (following): The user follows 1 member(s): Mariia Maksina.');
+    expect(res.text).toContain('Never answer one with the other');
+    expect((res as any).result.other).toEqual({ direction: 'following', count: 1, names: ['Mariia Maksina'] });
+  });
+
+  it('list_following also names the followers', async () => {
+    (fetchFollowEdges as jest.Mock).mockResolvedValue({
+      followers: [{ person: person('p-2', 'Kemal'), since: '2026-06-02' }],
+      following: [{ person: person('p-1', 'Mariia Maksina'), since: '2026-06-01' }],
+    });
+    const res = await runListFollows('following', IDENT);
+    expect(res.text).toMatch(/^the user follows 1 member\(s\): Mariia Maksina\./);
+    expect(res.text).toContain('OTHER DIRECTION (followers): 1 member(s) follow the user: Kemal.');
+  });
+
   it('fails CLOSED on privacy-filter errors', async () => {
     (fetchExclusions as jest.Mock).mockRejectedValue(new Error('db down'));
     const res = await runListFollows('following', IDENT);
@@ -276,6 +302,32 @@ describe('runRecentConversations', () => {
     const res = await runRecentConversations({}, IDENT);
     expect(res.ok).toBe(true);
     expect(res.text).toContain('no direct-message conversations');
+  });
+
+  // VTID-04585: staging 2026-09-25 — Nova answered "Wem folge ich?" with
+  // list_followers and told a user who follows Mariia Maksina "nobody follows
+  // you". Either tool now carries both directions, labelled.
+  it('list_followers still names who the user follows (wrong pick answers correctly)', async () => {
+    (fetchFollowEdges as jest.Mock).mockResolvedValue({
+      followers: [],
+      following: [{ person: person('p-1', 'Mariia Maksina'), since: '2026-06-01' }],
+    });
+    const res = await runListFollows('followers', IDENT);
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain('Nobody follows the user yet');
+    expect(res.text).toContain('OTHER DIRECTION (following): The user follows 1 member(s): Mariia Maksina.');
+    expect(res.text).toContain('Never answer one with the other');
+    expect((res as any).result.other).toEqual({ direction: 'following', count: 1, names: ['Mariia Maksina'] });
+  });
+
+  it('list_following also names the followers', async () => {
+    (fetchFollowEdges as jest.Mock).mockResolvedValue({
+      followers: [{ person: person('p-2', 'Kemal'), since: '2026-06-02' }],
+      following: [{ person: person('p-1', 'Mariia Maksina'), since: '2026-06-01' }],
+    });
+    const res = await runListFollows('following', IDENT);
+    expect(res.text).toMatch(/^the user follows 1 member\(s\): Mariia Maksina\./);
+    expect(res.text).toContain('OTHER DIRECTION (followers): 1 member(s) follow the user: Kemal.');
   });
 
   it('fails CLOSED on privacy-filter errors', async () => {

@@ -19,6 +19,7 @@
 import { Router, Request, Response } from 'express';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './autopilot-prompts-repository';
+import { withDependencyHealth } from '../services/dependency-probe';
 import {
   UpdatePrefsRequestSchema,
   GeneratePromptsRequestSchema,
@@ -395,8 +396,9 @@ router.post('/prompts/:id/action', async (req: Request, res: Response) => {
  *
  * Health check for autopilot prompts service.
  */
-router.get('/prompts/health', (_req: Request, res: Response) => {
-  return res.status(200).json({
+router.get('/prompts/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'autopilot_prompts' }], {
     ok: true,
     service: 'autopilot-prompts',
     vtid: VTID,
@@ -409,7 +411,7 @@ router.get('/prompts/health', (_req: Request, res: Response) => {
       quiet_hours: true,
       oasis_events: true,
     },
-  });
+  }));
 });
 
 export default router;

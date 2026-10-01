@@ -1,0 +1,9 @@
+tsc exit 0
+    ✓ opportunity-surfacing.ts
+    ✓ vtid-terminalize.ts
+Test Suites: 4 passed, 4 total
+Tests:       133 passed, 133 total
+Snapshots:   0 total
+Time:        3.202 s
+Ran all test suites matching /test\/vtid-04716-feature-data-layers.test.ts|test\/vtid-04665-dependency-probe.test.ts|test\/d39-taste-alignment.test.ts|test\/routes\/autopilot-prompts.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

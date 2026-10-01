@@ -26,6 +26,7 @@
  * registers one and sets both vars.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { resolveConnectionSurface, type ConnectionSurface } from './vcaop-portal/connection-surface';
 
 const SHOP_DOMAIN_RE = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes to complete the OAuth round trip
@@ -52,10 +53,15 @@ export function isValidShopDomain(shop: string): boolean {
  * integrity check, and the expiry bounds how long a leaked/replayed state
  * stays useful.
  */
-export function signState(manifestId: string): string {
+export function signState(manifestId: string, surface?: ConnectionSurface): string {
   const { clientSecret } = config()!;
   const expires = Date.now() + STATE_TTL_MS;
-  const payload = `${manifestId}.${expires}`;
+  // VTID-04711: the initiating surface is part of the signed payload, so the
+  // callback can record it and nobody can swap it. Omitted for the merchant
+  // surface, which keeps its token byte-for-byte the pre-04711 shape.
+  const payload = surface && surface !== 'merchant_self_service'
+    ? `${manifestId}.${expires}.${surface}`
+    : `${manifestId}.${expires}`;
   const sig = createHmac('sha256', clientSecret).update(payload).digest('hex');
   return Buffer.from(`${payload}.${sig}`).toString('base64url');
 }
@@ -66,7 +72,7 @@ export function signState(manifestId: string): string {
  * no session to check `state` against, so the manifest id has to come FROM
  * the (signature-verified) state itself, not be supplied separately.
  */
-export function decodeAndVerifyState(state: string): { manifestId: string } | null {
+export function decodeAndVerifyState(state: string): { manifestId: string; surface: ConnectionSurface } | null {
   const cfg = config();
   if (!cfg) return null;
   let decoded: string;
@@ -76,17 +82,21 @@ export function decodeAndVerifyState(state: string): { manifestId: string } | nu
     return null;
   }
   const parts = decoded.split('.');
-  if (parts.length !== 3) return null;
-  const [manifestId, expiresStr, sig] = parts;
+  // 3 parts: manifest.expires.sig (merchant surface, and every pre-04711 token);
+  // 4 parts: manifest.expires.surface.sig (VTID-04711).
+  if (parts.length !== 3 && parts.length !== 4) return null;
+  const [manifestId, expiresStr] = parts;
+  const surfaceRaw = parts.length === 4 ? parts[2] : undefined;
+  const sig = parts[parts.length - 1];
   if (!manifestId) return null;
   const expires = Number(expiresStr);
   if (!Number.isFinite(expires) || Date.now() > expires) return null;
-  const payload = `${manifestId}.${expiresStr}`;
+  const payload = parts.slice(0, -1).join('.');
   const expectedSig = createHmac('sha256', cfg.clientSecret).update(payload).digest('hex');
   const a = Buffer.from(sig, 'hex');
   const b = Buffer.from(expectedSig, 'hex');
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  return { manifestId };
+  return { manifestId, surface: resolveConnectionSurface(surfaceRaw) };
 }
 
 export function buildAuthorizeUrl(shop: string, state: string, redirectUri: string): string | null {

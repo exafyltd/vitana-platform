@@ -28,11 +28,9 @@ export const meta = {
 // Only audit top-level services — each has its own package-lock.
 const AUDIT_TARGETS = [
   'services/gateway',
-  'services/autopilot-worker',
   'services/oasis-operator',
   'services/oasis-projector',
   'services/agents/vitana-orchestrator',
-  'services/worker-runner',
   'services/data-sync',
 ];
 

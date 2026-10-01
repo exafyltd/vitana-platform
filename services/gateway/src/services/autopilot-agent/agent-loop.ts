@@ -15,6 +15,8 @@
 
 import type { LLMRouterMessage, LLMRouterResult, LLMRouterTool, LLMRouterToolCall } from '../llm-router';
 import type { FinishArgs, ToolOutcome } from './agent-tools';
+import { DEFAULT_STALL, ProgressLedger, REPLAN_PROMPT, type StallOptions, type TurnCall } from './agent-progress';
+import { ExplorationBudget, buildCommitPrompt, buildHandoffPrompt, explorationStopError, type ExplorationThresholds } from './agent-exploration';
 
 export interface AgentStep {
   turn: number;
@@ -52,6 +54,35 @@ export interface AgentLoopOptions {
    * turns remain before `maxTurns`. Defaults to `WRAP_UP_MARGIN_TURNS`.
    */
   wrapUpMarginTurns?: number;
+  /**
+   * VTID-04394: progress-ledger stall detection. `false` turns it off;
+   * default `DEFAULT_STALL` (re-plan after 6 idle turns, stop after 10).
+   */
+  stall?: StallOptions | false;
+  /**
+   * VTID-04466: exploration budget for a run that has not edited anything —
+   * a commit nudge, a hand-off instruction, then a stop. Off unless given
+   * (the runner passes it for the first round of a non-fix run only).
+   */
+  exploration?: ExplorationThresholds | null;
+  /**
+   * VTID-04764 (Jev P1 A1): called once per completed tool turn with the
+   * loop's state and the action the loop itself chose. Observe-only: it is
+   * not awaited and cannot change the loop; a throw is swallowed.
+   */
+  onTurnSnapshot?: (snapshot: AgentTurnSnapshot) => void;
+}
+
+export type AgentLoopAction = 'continue' | 'replan' | 'handoff' | 'commit' | 'wrap_up';
+
+export interface AgentTurnSnapshot {
+  turn: number;
+  maxTurns: number;
+  toolCalls: number;
+  hasEdited: boolean;
+  idleTurns: number;
+  loopAction: AgentLoopAction;
+  calls: Array<{ name: string; isError?: boolean; passedCheck?: boolean; path?: string }>;
 }
 
 export interface AgentLoopResult {
@@ -67,11 +98,29 @@ export interface AgentLoopResult {
   model?: string;
   fallbackUsed: boolean;
   usage: { inputTokens: number; outputTokens: number };
+  /** VTID-04394: the run went in circles and was stopped by the progress ledger. */
+  stalled?: boolean;
+  /** VTID-04466: stopped by the exploration budget (no edit by its stop point). */
+  explorationExhausted?: boolean;
 }
 
 export const CONTINUE_PROMPT = 'Tool results above. Continue — read, edit, run checks as needed; when done and checks pass, call finish.';
 export const NUDGE_PROMPT = 'You answered with text only. This runner acts only on tool calls: either continue with read_file / search_text / edit_file / run_check, or call finish(summary, pr_title, pr_body) if the change is complete and verified.';
 const MAX_CONSECUTIVE_NUDGES = 3;
+
+/**
+ * VTID-04381: a reply cut off at the output-token limit is not an answer.
+ * Its last tool call can be half-written (DeepSeek returns non-JSON arguments,
+ * which the router used to drop silently) and its text is incomplete — so the
+ * loop used to either run a partial set of calls or read the turn as
+ * "answered with text only" and burn the nudge budget with a misleading error.
+ * Now the turn's calls are NOT executed, the model is told why, and three cut
+ * turns in a row end the run with the real reason.
+ */
+export const MAX_CONSECUTIVE_TRUNCATIONS = 3;
+export const TRUNCATED_PROMPT =
+  'Your last reply was cut off at the output-token limit, so none of its tool calls were run. '
+  + 'Make smaller moves: one tool call per turn, and split a large write_file into several edit_file calls of a few dozen lines each.';
 const TOOL_RESULT_MAX_CHARS = 30_000;
 
 /**
@@ -181,11 +230,14 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
   let turns = 0;
   let toolCalls = 0;
   let nudges = 0;
+  let truncations = 0;
   let hasEdited = false;
   let provider: string | undefined;
   let model: string | undefined;
   let fallbackUsed = false;
   const step = (s: AgentStep) => { try { o.onStep?.(s); } catch { /* never let telemetry break the loop */ } };
+  const ledger = o.stall === false ? null : new ProgressLedger(o.stall ?? DEFAULT_STALL);
+  const exploration = o.exploration ? new ExplorationBudget(o.exploration) : null;
 
   const cancelledResult = (): AgentLoopResult => {
     step({ turn: turns, kind: 'error', detail: 'cancelled by operator' });
@@ -217,6 +269,20 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     step({ turn: turns, kind: 'llm', detail: calls.length ? `${calls.length} tool call(s): ${calls.map((c) => c.name).join(', ')}` : `text (${(r.text || '').length} chars)`, ms });
 
     history.push({ role: 'user', content: prompt });
+    if (r.truncated) {
+      // VTID-04381: record what the model said (text only — its tool calls get
+      // no results, and a tool_use without a result is rejected by Bedrock).
+      history.push({ role: 'assistant', content: r.text || '[reply cut off at the output-token limit]' });
+      truncations += 1;
+      if (truncations >= MAX_CONSECUTIVE_TRUNCATIONS) {
+        step({ turn: turns, kind: 'error', detail: `output limit hit ${truncations} turns in a row`, isError: true });
+        return { ok: false, error: `model reply hit the output-token limit ${truncations} turns in a row (stop_reason=${r.stopReason || 'unknown'})`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
+      }
+      step({ turn: turns, kind: 'nudge', detail: `truncated (stop_reason=${r.stopReason || 'unknown'}) — ${calls.length} call(s) not run` });
+      prompt = TRUNCATED_PROMPT;
+      continue;
+    }
+    truncations = 0;
     if (calls.length === 0) {
       history.push({ role: 'assistant', content: r.text || '' });
       nudges += 1;
@@ -231,6 +297,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
     nudges = 0;
     history.push({ role: 'assistant', toolCalls: calls, content: r.text || undefined });
     const results: Array<{ id?: string; name: string; result: string; isError?: boolean }> = [];
+    const turnCalls: TurnCall[] = [];
     let finished: FinishArgs | undefined;
     for (const c of calls) {
       if (o.isCancelled?.()) return cancelledResult();
@@ -239,6 +306,7 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
       const out = await o.execute(c.name, c.arguments || {});
       step({ turn: turns, kind: 'tool', name: c.name, detail: out.isError ? out.result.slice(0, 300) : summarizeArgs(c), ms: now() - s0, isError: out.isError });
       results.push({ id: c.id, name: c.name, result: clip(out.result), isError: out.isError });
+      turnCalls.push({ name: c.name, args: c.arguments || {}, isError: out.isError, passedCheck: c.name === 'run_check' && !out.isError });
       if (out.finished && !finished) finished = out.finished;
       if (!out.isError && MUTATING_TOOLS.has(c.name)) hasEdited = true;
     }
@@ -247,12 +315,56 @@ export async function runAgentLoop(o: AgentLoopOptions): Promise<AgentLoopResult
       step({ turn: turns, kind: 'finish', detail: finished.pr_title });
       return { ok: true, finished, history, turns, toolCalls, provider, model, fallbackUsed, usage };
     }
+    const verdict = ledger ? ledger.record(turns, turnCalls) : 'progress';
+    if (verdict === 'stalled') {
+      step({ turn: turns, kind: 'error', detail: `stalled: ${ledger!.idleTurns} turns without progress`, isError: true, data: { idle_turns: ledger!.idleTurns, replanned: ledger!.hasReplanned } });
+      return { ok: false, stalled: true, error: `agent stalled: ${ledger!.idleTurns} turns without progress (repeated tool calls)`, history, turns, toolCalls, provider, model, fallbackUsed, usage };
+    }
     const turnsRemaining = maxTurns - turns;
-    if (hasEdited && turnsRemaining <= wrapUpMarginTurns) {
+    const explore = exploration ? exploration.record(turns, hasEdited) : 'continue';
+    if (explore === 'stop') {
+      step({ turn: turns, kind: 'error', detail: `exploration budget: ${turns} turns without an edit`, isError: true, data: { turns } });
+      return { ok: false, explorationExhausted: true, error: explorationStopError(turns), history, turns, toolCalls, provider, model, fallbackUsed, usage };
+    }
+    if (verdict === 'replan') {
+      step({ turn: turns, kind: 'nudge', detail: `re-plan: ${ledger!.idleTurns} turns without progress`, data: { idle_turns: ledger!.idleTurns } });
+      prompt = REPLAN_PROMPT;
+    } else if (explore === 'handoff') {
+      step({ turn: turns, kind: 'nudge', detail: `exploration hand-off: ${turns} turns without an edit`, data: { turns } });
+      prompt = buildHandoffPrompt(turns, maxTurns);
+      exploration!.delivered('handoff');
+    } else if (explore === 'commit') {
+      step({ turn: turns, kind: 'nudge', detail: `exploration commit nudge: ${turns} turns without an edit`, data: { turns } });
+      prompt = buildCommitPrompt(turns, maxTurns);
+      exploration!.delivered('commit');
+    } else if (hasEdited && turnsRemaining <= wrapUpMarginTurns) {
       step({ turn: turns, kind: 'nudge', detail: `wrap-up: ${turnsRemaining} turn(s) remain after an edit — forcing finish` });
       prompt = buildWrapUpPrompt(turnsRemaining);
     } else {
       prompt = CONTINUE_PROMPT;
+    }
+    if (o.onTurnSnapshot) {
+      const loopAction: AgentLoopAction =
+        verdict === 'replan' ? 'replan'
+          : explore === 'handoff' ? 'handoff'
+            : explore === 'commit' ? 'commit'
+              : prompt === CONTINUE_PROMPT ? 'continue' : 'wrap_up';
+      try {
+        o.onTurnSnapshot({
+          turn: turns,
+          maxTurns,
+          toolCalls,
+          hasEdited,
+          idleTurns: ledger ? ledger.idleTurns : 0,
+          loopAction,
+          calls: turnCalls.map((c) => ({
+            name: c.name,
+            isError: c.isError,
+            passedCheck: c.passedCheck,
+            path: typeof c.args?.path === 'string' ? (c.args.path as string) : undefined,
+          })),
+        });
+      } catch { /* observe-only: never let the progress check break the loop */ }
     }
   }
   step({ turn: turns, kind: 'error', detail: 'max turns reached', isError: true });

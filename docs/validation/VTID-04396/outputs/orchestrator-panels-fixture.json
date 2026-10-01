@@ -1,0 +1,390 @@
+{
+ "budgets": {
+  "enforced": false,
+  "since": "2026-09-22T00:00:00.000Z",
+  "truncated": false,
+  "envelope": {
+   "monthly_usd": 6000,
+   "monthly_cap_usd": 10000
+  },
+  "limits": {
+   "platform_per_day_usd": 200,
+   "agent_per_day_usd": {
+    "autopilot-agent": 60,
+    "db-i18n-translator": 40,
+    "dev-autopilot-planning": 25
+   },
+   "agent_default_per_day_usd": 10,
+   "run_per_day_usd": 8
+  },
+  "spend": {
+   "platform_usd": 113.16,
+   "calls": 13012,
+   "repriced_calls": 4380,
+   "unpriced_calls": 0
+  },
+  "would_deny": [
+   {
+    "scope": "run",
+    "key": "VTID-04228",
+    "spent_usd": 58.39,
+    "limit_usd": 8,
+    "used_pct": 729.9,
+    "over": true
+   },
+   {
+    "scope": "run",
+    "key": "VTID-04287",
+    "spent_usd": 19.85,
+    "limit_usd": 8,
+    "used_pct": 248.1,
+    "over": true
+   },
+   {
+    "scope": "agent",
+    "key": "dev-autopilot-planning",
+    "spent_usd": 58.39,
+    "limit_usd": 25,
+    "used_pct": 233.6,
+    "over": true
+   }
+  ],
+  "lines": [
+   {
+    "scope": "run",
+    "key": "VTID-04228",
+    "spent_usd": 58.39,
+    "limit_usd": 8,
+    "used_pct": 729.9,
+    "over": true
+   },
+   {
+    "scope": "run",
+    "key": "VTID-04287",
+    "spent_usd": 19.85,
+    "limit_usd": 8,
+    "used_pct": 248.1,
+    "over": true
+   },
+   {
+    "scope": "agent",
+    "key": "dev-autopilot-planning",
+    "spent_usd": 58.39,
+    "limit_usd": 25,
+    "used_pct": 233.6,
+    "over": true
+   },
+   {
+    "scope": "agent",
+    "key": "db-i18n-translator",
+    "spent_usd": 33.32,
+    "limit_usd": 40,
+    "used_pct": 83.3,
+    "over": false
+   },
+   {
+    "scope": "platform",
+    "key": "platform",
+    "spent_usd": 113.16,
+    "limit_usd": 200,
+    "used_pct": 56.6,
+    "over": false
+   },
+   {
+    "scope": "agent",
+    "key": "autopilot-agent",
+    "spent_usd": 19.85,
+    "limit_usd": 60,
+    "used_pct": 33.1,
+    "over": false
+   },
+   {
+    "scope": "agent",
+    "key": "self-healing-triage",
+    "spent_usd": 1.2,
+    "limit_usd": 10,
+    "used_pct": 12,
+    "over": false
+   },
+   {
+    "scope": "agent",
+    "key": "gemini-operator",
+    "spent_usd": 0.3,
+    "limit_usd": 10,
+    "used_pct": 3,
+    "over": false
+   },
+   {
+    "scope": "agent",
+    "key": "inline-fact-extractor",
+    "spent_usd": 0.1,
+    "limit_usd": 10,
+    "used_pct": 1,
+    "over": false
+   }
+  ]
+ },
+ "shadow": {
+  "shadow": {
+   "enforced": false,
+   "since": "2026-09-23T10:00:00.000Z",
+   "total_calls": 42,
+   "by_decision": {
+    "allow": 34,
+    "escalate": 6,
+    "deny": 2
+   },
+   "aggregates": [
+    {
+     "role": "anonymous",
+     "tool": "log_water",
+     "domain": "health",
+     "tier": "commit",
+     "decision": "deny",
+     "reason": "role ceiling for health is none",
+     "count": 1,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "professional",
+     "tool": "create_service",
+     "domain": "professional",
+     "tier": "commit",
+     "decision": "deny",
+     "reason": "role ceiling for professional is draft",
+     "count": 1,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "community",
+     "tool": "send_chat_message",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "count": 3,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "community",
+     "tool": "create_community_post",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "count": 1,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "developer",
+     "tool": "dev_publish_to_prod",
+     "domain": "dev",
+     "tier": "high",
+     "decision": "escalate",
+     "reason": "high-risk dev action queues for maker-checker approval (web)",
+     "count": 1,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "admin",
+     "tool": "admin_grant_role",
+     "domain": "admin",
+     "tier": "high",
+     "decision": "escalate",
+     "reason": "high-risk admin action queues for maker-checker approval (web)",
+     "count": 1,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "community",
+     "tool": "log_water",
+     "domain": "health",
+     "tier": "commit",
+     "decision": "allow",
+     "reason": "user-own low-risk commit confirmed by voice",
+     "count": 14,
+     "last_at": "2026-09-23T14:41:16.350Z"
+    },
+    {
+     "role": "community",
+     "tool": "search_events",
+     "domain": "community",
+     "tier": "read",
+     "decision": "allow",
+     "reason": "read within draft",
+     "count": 9,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "developer",
+     "tool": "dev_recent_events",
+     "domain": "dev",
+     "tier": "read",
+     "decision": "allow",
+     "reason": "read within draft",
+     "count": 5,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "anonymous",
+     "tool": "search_events",
+     "domain": "community",
+     "tier": "read",
+     "decision": "allow",
+     "reason": "read within read",
+     "count": 4,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    },
+    {
+     "role": "patient",
+     "tool": "log_biomarker",
+     "domain": "health",
+     "tier": "commit",
+     "decision": "allow",
+     "reason": "user-own low-risk commit confirmed by voice",
+     "count": 2,
+     "last_at": "2026-09-23T14:41:16.351Z"
+    }
+   ],
+   "recent_non_allow": [
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "admin",
+     "tool": "admin_grant_role",
+     "domain": "admin",
+     "tier": "high",
+     "decision": "escalate",
+     "reason": "high-risk admin action queues for maker-checker approval (web)",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "professional",
+     "tool": "create_service",
+     "domain": "professional",
+     "tier": "commit",
+     "decision": "deny",
+     "reason": "role ceiling for professional is draft",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "anonymous",
+     "tool": "log_water",
+     "domain": "health",
+     "tier": "commit",
+     "decision": "deny",
+     "reason": "role ceiling for health is none",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "developer",
+     "tool": "dev_publish_to_prod",
+     "domain": "dev",
+     "tier": "high",
+     "decision": "escalate",
+     "reason": "high-risk dev action queues for maker-checker approval (web)",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "community",
+     "tool": "create_community_post",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "community",
+     "tool": "send_chat_message",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "community",
+     "tool": "send_chat_message",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "session_id": "harness"
+    },
+    {
+     "at": "2026-09-23T14:41:16.351Z",
+     "role": "community",
+     "tool": "send_chat_message",
+     "domain": "community",
+     "tier": "commit",
+     "decision": "escalate",
+     "reason": "voice is capped at draft; confirm commit in chat or web",
+     "session_id": "harness"
+    }
+   ],
+   "dropped_keys": 0,
+   "errors": 0
+  },
+  "catalog": {
+   "tools": 548,
+   "unclassified": [],
+   "by_domain_tier": {
+    "community": {
+     "read": 127,
+     "commit": 113,
+     "draft": 3
+    },
+    "health": {
+     "commit": 12,
+     "read": 14,
+     "draft": 2
+    },
+    "dev": {
+     "read": 96,
+     "high": 25,
+     "commit": 30,
+     "draft": 3
+    },
+    "admin": {
+     "read": 65,
+     "high": 15,
+     "commit": 39,
+     "draft": 2
+    },
+    "professional": {
+     "commit": 2
+    }
+   }
+  }
+ },
+ "delegations": {
+  "targets": [
+   {
+    "agent_id": "operator",
+    "description": "The Vitana Operator (developer agent): queues and reviews code tasks, looks up VTIDs, executions and platform state. Code changes always wait for human approval.",
+    "surfaces": [
+     "command-hub"
+    ],
+    "domain": "dev",
+    "tier": "draft"
+   }
+  ],
+  "jobs": {
+   "total": 3,
+   "by_agent": {
+    "operator": {
+     "running": 1,
+     "succeeded": 2,
+     "failed": 0,
+     "cancelled": 0
+    }
+   }
+  }
+ }
+}

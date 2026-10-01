@@ -1,0 +1,30 @@
+    ✓ /orb-session-ledger answers 200 JSON that the panel reads as healthy (3 ms)
+    ✓ /push-dispatch answers 200 JSON that the panel reads as healthy (3 ms)
+    ✓ the five vital checks share one cached RPC call (13 ms)
+    ✓ push dispatch reads only the dispatcher 48 h window of push-eligible unsent rows (4 ms)
+    ✓ a failing RPC is reported as down with its reason, never green (3 ms)
+    ✓ the ledger check calls ci_ledger_integrity_check with a 7-day window (2 ms)
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04721-scheduled-workflow-fixes.test.ts
+  VTID-04721 scheduled workflow fixes
+    ✓ push alert only judges the 48h window the dispatcher acts on (1 ms)
+    ✓ push alert hint no longer points at GCP
+    ✓ screen-load reports send the token the staging gateway checks (1 ms)
+    ✓ check 4 treats a gateway commit under 25 min old as a deploy in flight
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04345-morning-memory-check.test.ts
+  VTID-04345 morning memory check
+    ✓ check 21 calls ci_memory_health over PostgREST (1 ms)
+    ✓ the self-audit stays the last numbered check and TOTAL_CHECKS matches (1 ms)
+    ✓ judges the failure shapes that went unnoticed before (1 ms)
+    ✓ the RPC is service_role only and returns counts, not content
+Test Suites: 4 passed, 4 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        0.792 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04721-scheduled-workflow-fixes.test.ts|test\/vtid-04345-morning-memory-check.test.ts|test\/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts|test\/vtid-04663-ops-health-checks.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

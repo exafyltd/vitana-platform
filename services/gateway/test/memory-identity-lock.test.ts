@@ -67,7 +67,7 @@ describe('IDENTITY_AUTHORIZED_SOURCES', () => {
     expect(isIdentityAuthorizedSource('user_stated')).toBe(false);
     expect(isIdentityAuthorizedSource('assistant_inferred')).toBe(false);
     expect(isIdentityAuthorizedSource('system_observed')).toBe(false);
-    expect(isIdentityAuthorizedSource('cognee-extractor')).toBe(false);
+    expect(isIdentityAuthorizedSource('inline-fact-extractor')).toBe(false);
   });
 });
 
@@ -81,7 +81,7 @@ describe('assertIdentityLockOk — Maria → Kemal regression', () => {
       assertIdentityLockOk({
         fact_key: 'user_first_name',
         provenance_source: 'assistant_inferred',
-        actor_id: 'cognee-extractor',
+        actor_id: 'inline-fact-extractor',
       })
     ).toThrow(IdentityLockViolation);
   });
@@ -141,7 +141,7 @@ describe('assertIdentityLockOk — Maria → Kemal regression', () => {
       assertIdentityLockOk({
         fact_key: 'favorite_food',
         provenance_source: 'assistant_inferred',
-        actor_id: 'cognee-extractor',
+        actor_id: 'inline-fact-extractor',
       })
     ).not.toThrow();
   });
@@ -151,7 +151,7 @@ describe('assertIdentityLockOk — Maria → Kemal regression', () => {
       assertIdentityLockOk({
         fact_key: 'user_first_name',
         provenance_source: 'assistant_inferred',
-        actor_id: 'cognee-extractor',
+        actor_id: 'inline-fact-extractor',
       });
       fail('expected IdentityLockViolation');
     } catch (err) {

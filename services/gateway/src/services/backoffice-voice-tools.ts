@@ -15,6 +15,9 @@ import { resolveAccess } from './backoffice/erp-access-resolver';
 import { submitCommand, allowedCommandsFor, type OrchestratorCaller } from './backoffice/command-orchestrator';
 import { getCommandStore } from './backoffice/command-store';
 import { getCommandSpec } from '../constants/backoffice-commands';
+import { hasCapability } from './backoffice/erp-access';
+import { recallCustomerMemory } from './memory/customer';
+import { getSupabase } from '../lib/supabase';
 
 export interface BackOfficeToolContext {
   tenantId: string;
@@ -111,11 +114,41 @@ export async function handleBackOfficeMyAccess(ctx: BackOfficeToolContext, _args
   return { success: true, result: JSON.stringify({ role: access.role, is_exafy_admin: access.is_exafy_admin, capabilities: access.capabilities, voice_ceiling: 'draft' }) };
 }
 
+/**
+ * VTID-04411: what the team has recorded about one customer — every executed
+ * CRM/sales command about them, newest first. Read-only; needs crm.view or
+ * sales.view.
+ */
+export async function handleBackOfficeCustomerMemory(ctx: BackOfficeToolContext, args: { customer?: string; limit?: number }): Promise<ToolResult> {
+  const g = guard(ctx); if (g) return g;
+  const ref = typeof args.customer === 'string' ? args.customer.trim() : '';
+  if (!ref) return deny('customer_required');
+  const access = await resolveAccess({ user_id: ctx.userId, is_exafy_admin: ctx.isExafyAdmin, tenant_id: ctx.tenantId, active_role: ctx.activeRole });
+  if (!access.is_exafy_admin && !hasCapability(access, 'crm.view') && !hasCapability(access, 'sales.view')) return deny('capability_required: crm.view or sales.view');
+  const sb = getSupabase();
+  if (!sb) return deny('memory_unavailable');
+  try {
+    const entries = await recallCustomerMemory(sb, ctx.tenantId, ref, { limit: typeof args.limit === 'number' ? args.limit : 15 });
+    return {
+      success: true,
+      result: JSON.stringify({
+        customer: ref,
+        count: entries.length,
+        note: entries.length === 0 ? 'Nothing recorded for this customer yet (only commands executed through the BackOffice are remembered).' : undefined,
+        entries: entries.map((e) => ({ when: e.occurred_at, what: e.content })),
+      }),
+    };
+  } catch (err) {
+    return deny(`memory_read_failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 export const BACKOFFICE_TOOL_HANDLERS: Record<string, (ctx: BackOfficeToolContext, args: any) => Promise<ToolResult>> = {
   backoffice_list_commands: handleBackOfficeListCommands,
   backoffice_command: handleBackOfficeCommand,
   backoffice_pending_approvals: handleBackOfficePendingApprovals,
   backoffice_my_access: handleBackOfficeMyAccess,
+  backoffice_customer_memory: handleBackOfficeCustomerMemory,
 };
 export const BACKOFFICE_TOOL_NAMES = Object.keys(BACKOFFICE_TOOL_HANDLERS);
 
@@ -165,5 +198,24 @@ export const BACKOFFICE_TOOL_SCHEMAS = [
     name: 'backoffice_my_access',
     description: 'Return the user\'s effective ERP capabilities and role so you can say precisely what they may and may not do here.',
     parameters: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'backoffice_customer_memory',
+    description: [
+      'Recall what the team has recorded about ONE customer, lead, contact or',
+      'opportunity: every BackOffice command executed about them (activities,',
+      'tasks, updates, quotations, invoices), newest first. Use it before',
+      'answering "what do we know about X" or before a follow-up call.',
+      'customer is the name or id exactly as the user said it. Quote only what',
+      'the entries say; if there are none, say nothing is recorded yet.',
+    ].join('\n'),
+    parameters: {
+      type: 'object',
+      properties: {
+        customer: { type: 'string', description: 'customer / lead / contact / opportunity name or id' },
+        limit: { type: 'number' },
+      },
+      required: ['customer'],
+    },
   },
 ];

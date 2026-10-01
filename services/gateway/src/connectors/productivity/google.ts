@@ -119,6 +119,11 @@ function insufficientScopeResult(capability: string): ActionResult {
       capability,
       needed_scopes: cap.needed,
       reconnect_url: reconnectUrl,
+      // VTID-04402: the Connected Apps toggle that grants it.
+      reconnect_app: capability.startsWith('email.') ? 'gmail'
+        : capability.startsWith('calendar.') ? 'google-calendar'
+        : capability.startsWith('contacts.') ? 'google-contacts'
+        : undefined,
       message:
         cap.needed.length > 0
           ? `${capability} needs the ${cap.needed.join(', ')} permission(s) — re-connect Google to grant them.`
@@ -503,9 +508,46 @@ const googleConnector: Connector = {
         };
       }
 
-      case 'email.send':
+      // VTID-04402: Gmail send — plain-text message via the users.messages.send API.
+      case 'email.send': {
+        const to = String(action.args?.to ?? '').trim();
+        const subject = String(action.args?.subject ?? '').trim();
+        const bodyText = String(action.args?.body ?? '');
+        if (!to || !subject) return { ok: false, error: 'email.send: "to" and "subject" are required' };
+        if (/[\r\n]/.test(to) || /[\r\n]/.test(subject)) return { ok: false, error: 'email.send: invalid header value' };
+        const encSubject = /^[\x20-\x7e]*$/.test(subject)
+          ? subject
+          : `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
+        const mime = [
+          `To: ${to}`,
+          `Subject: ${encSubject}`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset="UTF-8"',
+          'Content-Transfer-Encoding: base64',
+          '',
+          Buffer.from(bodyText, 'utf8').toString('base64'),
+        ].join('\r\n');
+        const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ raw: Buffer.from(mime, 'utf8').toString('base64url') }),
+        });
+        const json: any = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          if (isInsufficientScope({ ok: false, status: resp.status, json })) return insufficientScopeResult('email.send');
+          return { ok: false, error: json?.error?.message ?? resp.statusText };
+        }
+        return { ok: true, external_id: json?.id, raw: { action: 'ack', to, subject, summary: `Email sent to ${to}.` } };
+      }
+
+      // VTID-04405: importing runs from the Connected Apps hub (Google
+      // Contacts toggle / sync), which owns de-duplication and matching.
       case 'contacts.import':
-        return { ok: false, error: `Capability ${action.capability} declared but not yet implemented` };
+        return {
+          ok: false,
+          error: 'use_connected_apps',
+          raw: { hint: 'Turn on Google Contacts in Connected Apps, or tap Sync there.', reconnect_app: 'google-contacts' },
+        };
 
       default:
         return { ok: false, error: `Unknown capability ${action.capability}` };

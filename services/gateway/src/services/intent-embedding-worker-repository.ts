@@ -19,11 +19,11 @@ export async function fetchUnembeddedUserIntents(sb: SupabaseClient, batchSize: 
   return sb
     .from('user_intents')
     .select('intent_id, intent_kind, category, title, scope, kind_payload')
-    .is('embedding', null)
+    .is('embedding_v2', null) // VTID-04460: Titan V2 column
     .order('created_at', { ascending: true })
     .limit(batchSize);
 }
 
 export async function updateUserIntentEmbedding(sb: SupabaseClient, intentId: string, embedding: unknown) {
-  return sb.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+  return sb.from('user_intents').update({ embedding_v2: embedding as any }).eq('intent_id', intentId);
 }

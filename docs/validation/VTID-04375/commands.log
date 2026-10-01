@@ -1,0 +1,3 @@
+npx tsc --noEmit -p services/gateway   # exit 0
+npx jest test/services/orchestrator test/routes/orchestrator.test.ts   # 76 tests pass
+npx jest   # full suite, outputs/full-jest.txt

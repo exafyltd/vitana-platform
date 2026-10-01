@@ -17,6 +17,7 @@
  * directive so the app's built-in <audio>/<video> player picks it up
  * instead (smoother UX, keeps the user inside the app).
  */
+import { gatewayBaseUrl } from '../../env';
 import type {
   ActionRequest,
   ActionResult,
@@ -27,7 +28,7 @@ import type {
 
 const INTERNAL_HUB_BASE = process.env.GATEWAY_INTERNAL_URL
   || process.env.GATEWAY_PUBLIC_URL
-  || 'https://gateway-q74ibpv6ia-uc.a.run.app';
+  || gatewayBaseUrl();
 
 type HubHit = {
   id: string;

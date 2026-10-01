@@ -8,6 +8,7 @@
  * the same row and share link rather than minting duplicates.
  */
 
+import { communityAppBaseUrl } from '../env';
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
@@ -101,7 +102,7 @@ router.post('/recommendations', async (req: Request, res: Response) => {
     } catch { /* non-fatal */ }
   }
 
-  const origin = (process.env.COMMUNITY_APP_URL || 'https://community-app-q74ibpv6ia-uc.a.run.app').replace(/\/+$/, '');
+  const origin = communityAppBaseUrl();
   const share_url = `${origin}/discover/product/${product_id}?rec=${recommendationId}`;
 
   res.json({ ok: true, recommendation_id: recommendationId, share_url, product_title: product.title });

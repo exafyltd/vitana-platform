@@ -1,0 +1,6 @@
+$ npx tsc --noEmit                                   # clean
+$ node --check src/frontend/command-hub/orb-widget.js  # ok
+$ node scripts/generate-command-hub-symbol-index.mjs  # 800 functions across 11 files
+$ npx jest test/vtid-04430-ticket-app-version.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/orb-tools/feedback-settings-tools.test.ts  # 87 passed
+# mutation: removing app_version from the core insert fails the 04332 suite (1 failed, 33 passed)
+# vitana-v1: npx vite build -> dist/index.html carries content="local"; vitest app-version-stamp 5 passed

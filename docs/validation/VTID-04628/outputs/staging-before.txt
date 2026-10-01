@@ -1,0 +1,7 @@
+Staging console, build 02f62277 (VTID-04624 live, VTID-04628 not yet deployed), 2026-09-26 ~10:40 UTC
+Q: "how many registered users do we have in vitanaland"
+provider=bedrock model=eu.anthropic.claude-sonnet-4-6 tools=[dev_run_sql_readonly]
+Result: the tool reached the live DB; the first statement failed ("column id does not exist" —
+the allowlist tables key by user_id). With one tool round per turn the model could not retry and
+told the user to run SQL themselves. VTID-04628 adds the retry rounds; the tool description now
+names user_id as the join key and says to correct and re-run a failed statement.

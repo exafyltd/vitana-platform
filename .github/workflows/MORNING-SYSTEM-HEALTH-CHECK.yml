@@ -87,7 +87,7 @@ env:
   # (VTID-03508). Staging frontend is AWS ECS via AWS-STAGE-DEPLOY-FRONTEND.yml.
   COMMUNITY_STAGING_URL: https://preview-aws.vitanaland.com
   REPORT: /tmp/morning-report.md
-  TOTAL_CHECKS: 21
+  TOTAL_CHECKS: 22
 
 jobs:
   morning-check:
@@ -144,7 +144,15 @@ jobs:
           if [ -n "$DEPLOYED" ] && [ "${EXPECTED:0:${#DEPLOYED}}" = "$DEPLOYED" ]; then
             R=PASS; D="staging=$DEPLOYED matches latest gateway-touching commit"
           elif [ -n "$DEPLOYED" ]; then
-            R=FAIL; D="staging=$DEPLOYED, latest gateway commit=$EXPECTED (drift — check STAGE-DEPLOY.yml)"
+            # VTID-04721: a staging deploy takes ~9 min, so a gateway commit
+            # merged just before this run is still rolling out. Under 25 min
+            # old that is a deploy in flight, not drift.
+            AGE_MIN=$(( ( $(date +%s) - $(git log -1 --format=%ct "$EXPECTED" 2>/dev/null || echo 0) ) / 60 ))
+            if [ "$AGE_MIN" -lt 25 ]; then
+              R=PASS; D="staging=$DEPLOYED, deploy of $EXPECTED in flight (${AGE_MIN}min old)"
+            else
+              R=FAIL; D="staging=$DEPLOYED, latest gateway commit=$EXPECTED (${AGE_MIN}min old — check AWS-STAGE-DEPLOY-GATEWAY.yml)"
+            fi
           else
             R=FAIL; D="could not read build-info: $(echo "$BODY" | head -c 200)"
           fi
@@ -408,7 +416,9 @@ jobs:
           echo "| 19 | Maxina STAGING reachability | $R | HTTP $CODE |" >> "$REPORT"
 
       # 20 — Screen Load Timing spot-check (reuses the e2e spec that already
-      # feeds Command Hub's Overview grid)
+      # feeds Command Hub's Overview grid). VTID-04648: on STAGING, read-only —
+      # a browser suite is a test and tests never target production (rule 48).
+      # E2E_READONLY=1 skips test-user provisioning; no service-role key.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -418,22 +428,34 @@ jobs:
       - name: Install Playwright chromium
         working-directory: e2e
         run: npx playwright install chromium --with-deps
-      - name: '20. Screen Load Timing spot-check'
+      - name: '20. Screen Load Timing spot-check (staging)'
         working-directory: e2e
         env:
-          COMMUNITY_URL: https://vitanaland.com
-          GATEWAY_URL: https://gateway.vitanaland.com
-          SCREEN_LOAD_ENV: production
+          COMMUNITY_URL: ${{ env.COMMUNITY_STAGING_URL }}
+          GATEWAY_URL: ${{ env.STAGING_GATEWAY_URL }}
+          SCREEN_LOAD_ENV: staging
+          E2E_READONLY: '1'
           SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          # VTID-04721: the staging gateway's GATEWAY_SERVICE_TOKEN is the
+          # Supabase service-role key (AWS-STAGE-DEPLOY-GATEWAY.yml maps it to
+          # vitana/supabase/prod/service-role-key); the repo secret of the same
+          # name is a different value, so every report came back 401.
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SCREEN_LOAD_REPORT_STATUS_FILE: ${{ runner.temp }}/morning-screen-load-report-status.txt
         run: |
           set +e
           npx playwright test --project=mobile-shared screen-load-timing.spec.ts
-          if [ $? -eq 0 ]; then R=PASS; D="within threshold"; else R=FAIL; D="see e2e/playwright-report"; fi
-          echo "| 20 | Screen Load Timing spot-check | $R | $D |" >> "$REPORT"
+          RC=$?
+          # VTID-04661: a report the gateway rejected fails this check too.
+          STATUS_FILE="$SCREEN_LOAD_REPORT_STATUS_FILE"
+          CODE=$(head -1 "$STATUS_FILE" 2>/dev/null)
+          if [ $RC -ne 0 ]; then R=FAIL; D="see e2e/playwright-report"
+          elif [ -z "$CODE" ]; then R=FAIL; D="no report sent (no results, or GATEWAY_SERVICE_TOKEN unset)"
+          else case "$CODE" in 2??) R=PASS; D="within threshold, report accepted (HTTP $CODE)" ;; *) R=FAIL; D="report rejected by the gateway (HTTP $CODE)" ;; esac
+          fi
+          echo "| 20 | Screen Load Timing spot-check (staging) | $R | $D |" >> "$REPORT"
 
       # 21 — Scheduled-workflow self-audit: catches exactly the failure mode
       # that motivated this workflow (crons quietly failing every run for
@@ -452,10 +474,53 @@ jobs:
       # were fixed. Fix: judge THIS run's own health from the checks already
       # written to $REPORT (1-20) instead of asking GitHub about a past run.
       #
+      # 21 — Memory system health (VTID-04345). The memory pipeline has
+      # failed silently more than once: embeddings stopped 2026-04-28 with no
+      # error anywhere, and the AP-0910 embedding backfill's scheduler died
+      # with GCP (last run 2026-07-06). Judged from ci_memory_health():
+      # something is being written, memory reaches the prompt, >=90% of rows
+      # older than 2h are embedded, no new DLQ rows, AP-0910 ran in the last
+      # 3h, and no same-value fact churn (VTID-04341 regression guard).
+      - name: '21. Memory system health (VTID-04345)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o mem.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_memory_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 21 | Memory system health | FAIL | RPC HTTP $HTTP (if 404, apply 20260923140000_vtid_04345_ci_memory_health.sql) |" >> "$REPORT"
+            exit 0
+          fi
+          j() { jq -r "$1 // 0" mem.json 2>/dev/null; }
+          WRITES=$(( $(j .facts_written_24h) + $(j .items_written_24h) ))
+          CTX=$(j .context_built_24h); CTX_MEM=$(j .context_with_memory_24h); CTX_DIARY=$(j .context_with_diary_24h)
+          ROWS=$(( $(j .facts_active_2h) + $(j .items_2h) ))
+          EMB=$(( $(j .facts_active_embedded_2h) + $(j .items_embedded_2h) ))
+          if [ "$ROWS" -gt 0 ]; then COV=$(( EMB * 100 / ROWS )); else COV=100; fi
+          DLQ=$(j .dlq_new_24h); LANG=$(j .preferred_language_writes_24h)
+          AP=$(jq -r '.ap0910_last_run // ""' mem.json)
+          AP_AGE_H=999
+          if [ -n "$AP" ]; then AP_AGE_H=$(( ( $(date -u +%s) - $(date -u -d "$AP" +%s) ) / 3600 )); fi
+          BAD=""
+          [ "$WRITES" -eq 0 ] && BAD="$BAD no-memory-writes-24h;"
+          [ "$CTX" -gt 0 ] && [ "$CTX_MEM" -eq 0 ] && BAD="$BAD memory-never-reached-prompt;"
+          [ "$COV" -lt 90 ] && BAD="$BAD embedding-coverage-${COV}pct;"
+          [ "$DLQ" -gt 0 ] && BAD="$BAD dlq-${DLQ}-new;"
+          [ "$AP_AGE_H" -gt 3 ] && BAD="$BAD AP-0910-last-run-${AP_AGE_H}h-ago;"
+          [ "$LANG" -gt 25 ] && BAD="$BAD preferred_language-churn-${LANG};"
+          D="writes/24h $WRITES, prompt-with-memory $CTX_MEM/$CTX, with-diary $CTX_DIARY, embedded ${COV}% ($EMB/$ROWS), dlq-new $DLQ, AP-0910 ${AP_AGE_H}h ago"
+          if [ -z "$BAD" ]; then R=PASS; else R=FAIL; D="$BAD $D"; fi
+          echo "| 21 | Memory system health | $R | $D |" >> "$REPORT"
+
       # VTID-03666: watchlist extended with the three newer ALERT-*.yml
       # workflows that did not exist when this list was first written —
       # leaving them off defeats the exact purpose of this self-audit.
-      - name: '21. Scheduled-workflow self-audit'
+      - name: '22. Scheduled-workflow self-audit'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -470,6 +535,13 @@ jobs:
             "ALERT-OASIS-LEDGER-INTEGRITY.yml"
             "ALERT-ORB-SESSION-STATE-HEALTH.yml"
             "ALERT-ORB-BOOTSTRAP-LATENCY.yml"
+            # VTID-04263: ALERT-PUSH-DISPATCH-HEALTH.yml existed (VTID-03656)
+            # but was never added here — it failed on every ~20-min run for
+            # an extended period (a 1000+-row, ~208-day-old unsent backlog)
+            # with zero visibility in this daily roll-up. Do not repeat that
+            # gap for a future ALERT-*.yml without adding it here too.
+            "ALERT-PUSH-DISPATCH-HEALTH.yml"
+            "ALERT-APP-USERS-IDENTITY-DRIFT.yml"
           )
           BAD=""
           for WF in "${WATCHLIST[@]}"; do
@@ -481,7 +553,7 @@ jobs:
               BAD="$BAD $WF"
             fi
           done
-          # Self: judged from THIS run's own checks 1-20, not a past run.
+          # Self: judged from THIS run's own checks 1-21, not a past run.
           SELF_FAILS=$(grep -c '| FAIL |' "$REPORT" || true)
           if [ "$SELF_FAILS" -gt 0 ]; then
             BAD="$BAD MORNING-SYSTEM-HEALTH-CHECK.yml(self:${SELF_FAILS}/$((TOTAL_CHECKS - 1))_checks_failed_today)"
@@ -492,7 +564,7 @@ jobs:
           else
             R=FAIL; D="failing:$BAD"
           fi
-          echo "| 21 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
+          echo "| 22 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
 
       - name: Publish + gate
         if: always()
@@ -514,4 +586,4 @@ jobs:
             fi
             exit 1
           fi
-          echo "All $TOTAL_CHECKS morning checks passed — every vital Vitanaland/Maxina system (gateway AWS prod+staging, Supabase, ORB voice on both Vertex and Nova Sonic, Live Rooms, AI-provider governance, DB-content language coverage, the community frontend, and the crons that watch all of the above) is green."
+          echo "All $TOTAL_CHECKS morning checks passed — every vital Vitanaland/Maxina system (gateway AWS prod+staging, Supabase, ORB voice on both Vertex and Nova Sonic, Live Rooms, AI-provider governance, DB-content language coverage, the memory system, the community frontend, and the crons that watch all of the above) is green."

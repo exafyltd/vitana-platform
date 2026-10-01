@@ -14,11 +14,9 @@
  *   Loop 14 — Devices     → primary-device pattern
  *
  * All seven loops are deliberately idempotent SQL aggregators that re-derive
- * their target tables from raw signals. None of them depend on an LLM call —
- * lightweight on-write extraction (sentiment + entities) already happens
- * synchronously in Phase 5+; the heavyweight LLM diary extractor is wired
- * here as a stub so the orchestration is plumbed but no Anthropic budget is
- * spent until the brain unification ships.
+ * their target tables from raw signals. Only loop 10 can call an LLM, and only
+ * with CONSOLIDATOR_DIARY_ROLLUP_ENABLED=true (VTID-04444, WS-4.2): the diary
+ * theme rollup on the `memory` routing stage. Unset, loop 10 is a count.
  *
  * Plan reference: .claude/plans/the-vitana-system-has-wild-puffin.md (Phase 8)
  */
@@ -27,6 +25,7 @@ import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 import { emitOasisEvent } from './oasis-event-service';
 import * as repo from './nightly-consolidator-repository';
+import { isDiaryRollupEnabled, runDiaryThemeRollup } from './memory/diary-theme-rollup';
 
 const VTID = 'VTID-02632';
 
@@ -388,18 +387,33 @@ function balanceFactor(scores: Array<number | null | undefined>): number {
 }
 
 // ---------------------------------------------------------------------------
-// Loop 10 — Diary consolidation (lightweight pass — heavyweight LLM stubbed)
+// Loop 10 — Diary consolidation
 // ---------------------------------------------------------------------------
-// On-write extraction (sentiment + entities) already happens synchronously in
-// the diary writer. This loop verifies the chain by counting today's entries
-// and emits a telemetry signal. The real LLM consolidator (theme/personality
-// rollups) is wired here as a stub — the brain unification effort owns that.
+// VTID-04444 (WS-4.2): with CONSOLIDATOR_DIARY_ROLLUP_ENABLED=true this runs
+// the diary theme rollup (memory/diary-theme-rollup.ts) — themes per user
+// from the last 30 days of diary_entries, stored as diary_themes_v1 and read
+// by the nightly profile synthesis. Unset, it is the previous count-only
+// pass, byte for byte.
 
 async function loop10DiaryConsolidation(
   scope?: { tenant_id: string; user_id: string }
 ): Promise<Omit<LoopReport, 'duration_ms'>> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, loop: 'loop_10_diary', processed: 0, errors: 1, notes: 'no supabase' };
+
+  if (isDiaryRollupEnabled()) {
+    const r = await runDiaryThemeRollup(supabase, { scope });
+    const outcomes = Object.entries(r.outcomes).map(([k, v]) => `${k}=${v}`).join(' ');
+    return {
+      ok: r.errors === 0,
+      loop: 'loop_10_diary',
+      processed: r.written,
+      errors: r.errors,
+      notes: [`diary theme rollup: ${r.candidates} candidate(s), ${r.model_calls} model call(s)`, outcomes, ...r.notes]
+        .filter(Boolean)
+        .join('; '),
+    };
+  }
 
   const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
   const { count, error } = await repo.countDiaryEntriesSince(supabase, since, scope);

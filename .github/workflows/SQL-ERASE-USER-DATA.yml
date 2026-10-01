@@ -1,0 +1,43 @@
+name: SQL-ERASE-USER-DATA
+run-name: 'erase_user_data() against a throwaway Postgres [VTID: VTID-04765] (${{ github.ref_name }})'
+
+# VTID-04765 — runs the account-erasure function against a disposable
+# Postgres service container: FK retry order, partitioned tables, delete
+# triggers, retained tables, auth-cascading tables, a failing table, and
+# that another user's rows are untouched. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*erase_user_data*.sql'
+      - 'scripts/ci/sql-tests/**'
+      - '.github/workflows/SQL-ERASE-USER-DATA.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the erase_user_data test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-erase-user-data-test.sh 2>&1 | tee /tmp/erase.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-04765 erase_user_data' /tmp/erase.log

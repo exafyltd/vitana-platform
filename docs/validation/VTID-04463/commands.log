@@ -1,0 +1,22 @@
+# VTID-04463 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04463"}; ledger row set in_progress/approved with a real title
+
+# Locale JSON validity (all 11 files parse)
+for f in services/gateway/src/i18n/locales/*.json; do node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))"; done
+
+# Isolated strict typecheck of the new modules (+ catalog.ts they import), stub Node types
+tsc --ignoreConfig --noEmit --strict --target es2022 --lib es2022,dom --module commonjs \
+  --moduleResolution node --ignoreDeprecations 6.0 --skipLibCheck --resolveJsonModule \
+  --esModuleInterop services/gateway/src/services/email/*.ts node-stub.d.ts
+# -> exit 0
+
+# Behavioural smoke run (ts-node, stubbed fetch, no network) -> outputs/smoke-render-and-send.txt
+
+# Jest: NOT runnable in this session. The npm registry returns 403 and the checkout has
+# no node_modules. CI (validate-pr: Gateway Jest + tsc) is the first execution of:
+#   services/gateway/test/vtid-04463-partner-invite-email.test.ts
+#   services/gateway/test/partner-orgs.test.ts
+#   services/gateway/test/i18n/catalog-coverage.test.ts

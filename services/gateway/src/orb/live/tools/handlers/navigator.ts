@@ -67,6 +67,10 @@ export type NavigatorHandler = (
  * degrades to an "unknown screen" payload rather than failing the
  * tool call.
  */
+function screenStateOf(sc: NonNullable<SessionContext['screenContext']>): Record<string, unknown> {
+  return { ...(sc.screen_title ? { screen_title: sc.screen_title } : {}), ...sc.app_state };
+}
+
 export async function getCurrentScreenHandler(
   _args: Record<string, unknown>,
   ctx: SessionContext,
@@ -83,6 +87,7 @@ export async function getCurrentScreenHandler(
         description: 'The user is on a route that is not in the navigation catalog.',
         route: ctx.currentRoute,
         recent_screens: [],
+        ...(ctx.screenContext ? { screen_state: screenStateOf(ctx.screenContext) } : {}),
       }),
     };
   }
@@ -93,6 +98,8 @@ export async function getCurrentScreenHandler(
     {
       current_route: ctx.currentRoute,
       recent_routes: [...ctx.recentRoutes],
+      // VTID-04425: what the host reported mid-session via context_update.
+      ...(ctx.screenContext ? { screen_state: screenStateOf(ctx.screenContext) } : {}),
     },
     {
       user_id: ctx.identity?.user_id ?? '',

@@ -1,0 +1,6 @@
+# VTID-04740
+POST /api/v1/vtid/allocate -> VTID-04740 (ledger in_progress/approved)
+read-only: counts and constraint names before the change (0 orders, 0 commissions, 49 clicks)
+Supabase apply_migration vtid_04740_referrer_on_click_anonymous_buyers -> success (owner approval in session)
+read-only verification -> outputs/live-schema.txt
+typescript transpileModule on changed files -> 0 diagnostics; CI Jest runs the suites

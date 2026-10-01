@@ -45,9 +45,9 @@ describe('surface gating', () => {
     expect(names(anon)).not.toEqual(expect.arrayContaining(BACKOFFICE_TOOL_NAMES));
     expect(applySurfaceGate([], 'backoffice', 'authenticated')).toEqual([]);
   });
-  test('command-hub surface is untouched by this VTID', () => {
+  test('command-hub surface never gains backoffice tools (its own gate is VTID-04310)', () => {
     const before = names(buildLiveApiTools('authenticated', '/command-hub', 'developer'));
     expect(before).not.toEqual(expect.arrayContaining(BACKOFFICE_TOOL_NAMES));
-    expect(before).toContain('search_memory'); // existing behaviour: developer surface keeps the community catalog (prose steers it)
+    expect(before).toContain('search_memory');
   });
 });

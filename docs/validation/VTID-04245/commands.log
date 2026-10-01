@@ -1,0 +1,11 @@
+# VTID-04245 — 2026-09-21 — manual dependency bump (owner-approved hand-off from the VTID-04237 npm-audit chain)
+cd services/gateway
+# package.json: express-rate-limit ^8.2.2, @modelcontextprotocol/sdk ^1.24.0, overrides + pnpm.overrides @grpc/grpc-js >=1.14.4
+pnpm install --lockfile-only                                       # regenerates pnpm-lock.yaml (lockfileVersion 9.0)
+npm install --package-lock-only --ignore-scripts                   # regenerates package-lock.json (Docker install path)
+npm install --ignore-scripts                                       # local install for tsc/jest (pnpm's strict layout breaks tsc here)
+npx tsc --noEmit -p tsconfig.json                                  # clean
+npx jest test/vtid-04245-dependency-floors.test.ts                 # 10/10
+npx jest test/voice-send-chat-rate-limit-isolation.test.ts \
+         test/console-task-02-onramp-rate-limit.test.ts \
+         test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts   # see outputs/route-suites.txt

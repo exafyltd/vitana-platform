@@ -97,7 +97,9 @@ describe('VTID-04165 autopilot_reject_execution: the reason must be real', () =>
       reason: long.trim().slice(0, 500),
       rejected_by: 'operator-chat:u-admin',
     });
-    expect(rejectCalls().map((c) => c.method)).toEqual(['GET', 'PATCH']);
+    // VTID-04378: a trailing GET is the ledger close looking up the finding.
+    expect(rejectCalls().map((c) => c.method).slice(0, 2)).toEqual(['GET', 'PATCH']);
+    expect(rejectCalls().filter((c) => c.method === 'PATCH')).toHaveLength(1);
     const patch = patches()[0];
     expect(patch.path).toBe(`/rest/v1/dev_autopilot_executions?id=eq.${EXEC}&status=eq.awaiting_approval`);
     expect(patch.body.status).toBe('cancelled');

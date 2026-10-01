@@ -1,54 +1,41 @@
 /**
- * routes/scheduled-notifications.ts — community_meetup_attendance error-
- * visibility fix (docs/AURORA-B2-DEAD-CALLSITE-AUDIT.md Addendum 9, the
- * "left unfixed" meetup-RSVP-reminder gap).
+ * routes/scheduled-notifications.ts — the meetup-RSVP reminder job.
  *
- * `repo.fetchMeetupRsvps()` queries `community_meetup_attendance`, which
- * does not exist in live Supabase, so every real call to it errors. Both
- * call sites here (meetup_starting_soon, meetup_starting_now) previously
- * destructured only `{ data: rsvps }`, discarding the error — meaning
- * nobody who RSVP'd to a community meetup has ever received a "starting
- * soon"/"starting now" reminder, with the cron reporting success every
- * time and nothing in logs marking it as a failure.
+ * History: `repo.fetchMeetupRsvps()` queried `community_meetup_attendance`,
+ * a table that does not exist in live Supabase (docs/AURORA-B2-DEAD-
+ * CALLSITE-AUDIT.md Addendum 9). This file first pinned that both call
+ * sites at least logged the error instead of swallowing it — the missing
+ * table itself was left as a product decision.
  *
- * routes/scheduled-notifications.ts (1000+ lines, many cron endpoints) has
- * no existing test harness to route-test this specific fire-and-forget
- * notification loop through cheaply; per this codebase's established
- * pattern for large/stateful modules impractical to fully mock (see the
- * sibling live-attendees-error-logging.test.ts / community-group-members-
- * error-logging.test.ts), this pins the fix at the source level instead:
- * both call sites now destructure `error` and log it via console.warn,
- * while the empty-array fallback (and the underlying missing-table
- * product decision) stays byte-for-byte unchanged.
+ * VTID-04374 made that decision: re-checked live 2026-09-23 —
+ * `community_meetup_attendance` still does not exist, `community_meetups`
+ * has never had a row, and no `meetup_starting_*` notification was ever
+ * sent. Community events a member signs up for reach the calendar
+ * (global_event_participants → calendar_events, VTID-04321) and get the
+ * calendar's own reminders (VTID-04338). The job is retired to a no-op, so
+ * this file now pins that nothing reads the missing table any more.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
-const SRC = path.join(__dirname, '..', '..', 'src', 'routes', 'scheduled-notifications.ts');
+const ROUTES = path.join(__dirname, '..', '..', 'src', 'routes');
 
-describe('routes/scheduled-notifications.ts — fetchMeetupRsvps error logging', () => {
-  const src = fs.readFileSync(SRC, 'utf8');
-  const callSites = src.split('fetchMeetupRsvps(supa,').slice(1);
+describe('routes/scheduled-notifications.ts — retired meetup reminders', () => {
+  const src = fs.readFileSync(path.join(ROUTES, 'scheduled-notifications.ts'), 'utf8');
+  const repo = fs.readFileSync(path.join(ROUTES, 'scheduled-notifications-repository.ts'), 'utf8');
 
-  it('has exactly the two known call sites (meetup_starting_soon + meetup_starting_now)', () => {
-    expect(callSites.length).toBe(2);
+  it('no code path reads the missing attendance table', () => {
+    expect(src).not.toContain('fetchMeetupRsvps');
+    expect(repo).not.toContain('fetchMeetupRsvps');
+    expect(repo).not.toContain('community_meetup_attendance');
   });
 
-  it('every call site destructures `error` from the call, not just `data`', () => {
-    const matches = [...src.matchAll(/const \{ data: (\w+), error: (\w+) \} = await repo\.fetchMeetupRsvps\(/g)];
-    expect(matches.length).toBe(2);
-  });
-
-  it('every call site logs the error via console.warn when present, before falling back to an empty array', () => {
-    for (const [, dataVar, errVar] of [...src.matchAll(/const \{ data: (\w+), error: (\w+) \} = await repo\.fetchMeetupRsvps\(/g)]) {
-      const idx = src.indexOf(`error: ${errVar} } = await repo.fetchMeetupRsvps(`);
-      const after = src.slice(idx, idx + 300);
-      expect(after).toMatch(new RegExp(`if \\(${errVar}\\) \\{`));
-      expect(after).toContain('console.warn(');
-      // The fallback that swallows a missing/errored result must be
-      // byte-for-byte unchanged: still `(x || [])`.
-      expect(after).toContain(`(${dataVar} || [])`);
-    }
+  it('the route answers old callers with an explicit retired no-op', () => {
+    const route = src.slice(src.indexOf("router.post('/meetup-reminders'"));
+    const body = route.slice(0, route.indexOf('});') + 3);
+    expect(body).toContain('retired: true');
+    expect(body).toContain('dispatched: 0');
+    expect(body).not.toContain('notifyUser');
   });
 });

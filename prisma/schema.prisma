@@ -404,11 +404,15 @@ model PartnerTenant {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  // VTID-04471: owning partner organization (Supabase-managed table, FK in migration 0007)
+  partnerOrganizationId String? @map("partner_organization_id") @db.Uuid
+
   manifests IntegrationManifest[]
 
   @@index([tenantId], map: "idx_partner_tenant_tenant")
   @@index([status], map: "idx_partner_tenant_status")
   @@index([ownerUserId], map: "idx_partner_tenant_owner")
+  @@index([partnerOrganizationId], map: "idx_partner_tenant_partner_org")
   @@map("partner_tenant")
 }
 

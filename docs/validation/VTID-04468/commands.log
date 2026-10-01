@@ -1,0 +1,4 @@
+POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat (operator-autopilot service account) -> autopilot_run_task / autopilot_review_execution / autopilot_approve_execution
+Supabase (read-only): dev_autopilot_executions, oasis_events filtered by metadata->>'execution_id'
+GitHub: PR #3667 state, AWS-STAGE-DEPLOY-GATEWAY runs
+git diff origin/main...origin/dev-autopilot/b3d4f2b3 (review of the held diff)

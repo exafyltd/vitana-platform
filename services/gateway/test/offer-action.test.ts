@@ -94,3 +94,39 @@ test('clamps ttl_minutes into 1..30 (default 5 when out of range)', async () => 
   expect(minutesOut).toBeGreaterThan(4);
   expect(minutesOut).toBeLessThan(6);
 });
+
+// VTID-04355: the acceptance gate only runs a well-formed navigate_to_screen
+// offer itself. offer_action must tell the model which case it is in, so a
+// non-navigation offer is not left waiting for an automatic run that never
+// comes.
+describe('offer_action guidance matches what the gate runs (VTID-04355)', () => {
+  test('well-formed navigation offer → auto_runs true, told it runs automatically', async () => {
+    process.env[FLAG] = 'true';
+    const { sb } = makeSbStub();
+    const r: any = await tool_offer_action(
+      { tool: 'navigate_to_screen', payload: { screen_id: 'AUTOPILOT.MY_JOURNEY', route: '/autopilot/my-journey' } },
+      ID,
+      sb,
+    );
+    expect(r.ok).toBe(true);
+    expect(r.result.auto_runs).toBe(true);
+    expect(r.text).toContain('runs automatically');
+  });
+
+  test.each([
+    ['a non-navigation tool', { tool: 'activate_recommendation', payload: { recommendation_id: 'r-1' } }],
+    ['a navigation offer without route', { tool: 'navigate_to_screen', payload: { screen_id: 'AUTOPILOT.MY_JOURNEY' } }],
+  ])('%s → auto_runs false, told to call the tool itself with the stored payload', async (_label, args) => {
+    process.env[FLAG] = 'true';
+    const { sb, upserts } = makeSbStub();
+    const r: any = await tool_offer_action(args, ID, sb);
+    expect(r.ok).toBe(true);
+    expect(r.result.stored).toBe(true);
+    expect(r.result.auto_runs).toBe(false);
+    expect(r.text).toContain('Nothing runs automatically');
+    expect(r.text).toContain(`call \`${args.tool}\` yourself`);
+    expect(r.text).toContain(JSON.stringify(args.payload));
+    expect(r.text).not.toContain('runs automatically —');
+    expect(upserts).toHaveLength(1);
+  });
+});

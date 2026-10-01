@@ -1,0 +1,6 @@
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+Test Suites: 265 passed, 265 total
+Tests:       6 todo, 4394 passed, 4400 total
+
+[exited with code 0]

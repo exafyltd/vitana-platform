@@ -189,7 +189,6 @@ router.get('/admin/memory/health', async (_req: AuthenticatedRequest, res: Respo
   const flagKeys = [
     'memory_broker_enabled',
     'consolidator_enabled',
-    'cognee_extraction_enabled',
     'index_delta_learner_enabled',
     'tier0_redis_enabled',
     'vitana_brain_enabled',
@@ -265,7 +264,7 @@ router.get('/admin/memory/embeddings', async (_req: AuthenticatedRequest, res: R
   if (!supabase) return res.json({ ok: false, error: 'no supabase' });
 
   const collections = [
-    { key: 'memory_items',     model: 'text-embedding-3-small', dimensions: 1536 },
+    { key: 'memory_items',     model: 'amazon.titan-embed-text-v2:0', dimensions: 1024 },
     { key: 'mem_episodes',     model: 'text-embedding-3-small', dimensions: 1536 },
     { key: 'memory_diary_entries', model: 'text-embedding-3-small', dimensions: 1536 },
   ];

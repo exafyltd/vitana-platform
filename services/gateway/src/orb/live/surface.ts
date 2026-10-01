@@ -15,9 +15,21 @@
  */
 import type { PersonalitySurfaceKey } from '../../services/ai-personality-service';
 
-export type OrbSurface = 'vitanaland' | 'command-hub' | 'admin' | 'backoffice';
+export type OrbSurface = 'vitanaland' | 'command-hub' | 'admin' | 'backoffice' | 'commerce';
 
-export const ORB_SURFACES: readonly OrbSurface[] = ['vitanaland', 'command-hub', 'admin', 'backoffice'];
+export const ORB_SURFACES: readonly OrbSurface[] = ['vitanaland', 'command-hub', 'admin', 'backoffice', 'commerce'];
+
+/**
+ * VTID-04326 — the commerce portal (partner organisations: onboarding, team,
+ * health-order inbox, partner connections). Owner decision 2026-09-23
+ * (Orchestrator plan §8.3): business mode is its own ORB surface, so a
+ * partner org member's voice session never carries the community persona,
+ * personal health/diary memory or community tools into business work.
+ */
+export function isCommerceRoute(route: string): boolean {
+  const r = route.toLowerCase();
+  return r === '/commerce' || r.startsWith('/commerce/') || r === '/partner' || r.startsWith('/partner/');
+}
 
 export function isOrbSurface(v: unknown): v is OrbSurface {
   return typeof v === 'string' && (ORB_SURFACES as readonly string[]).includes(v);
@@ -30,8 +42,13 @@ export function resolveOrbSurface(opts: {
 }): OrbSurface {
   const explicit = typeof opts.explicit === 'string' ? opts.explicit.trim() : '';
   if (explicit && isOrbSurface(explicit)) return explicit;
-  if (opts.isMobile) return 'vitanaland';
   const route = (opts.currentRoute || '').toLowerCase();
+  // Commerce is checked before the mobile rule on purpose: the commerce
+  // portal is fully adapted to mobile (VTID-03989), and "mobile is always
+  // community" would put the community companion — with personal health
+  // memory — in front of a partner org's business work.
+  if (isCommerceRoute(route)) return 'commerce';
+  if (opts.isMobile) return 'vitanaland';
   if (route.startsWith('/command-hub')) return 'command-hub';
   if (route === '/backoffice' || route.startsWith('/backoffice/')) return 'backoffice';
   if (route === '/admin' || route.startsWith('/admin/')) return 'admin';
@@ -49,6 +66,7 @@ export const SURFACE_PERSONA_KEY: Record<OrbSurface, PersonalitySurfaceKey | nul
   'command-hub': 'dev_orb',
   admin: 'admin_orb',
   backoffice: 'backoffice_orb',
+  commerce: 'commerce_orb',
 };
 
 /** Navigator role per surface — the Navigator only ever offers routes of the surface the user is in. */
@@ -57,6 +75,7 @@ export function navigatorRoleForSurface(surface: OrbSurface): string {
     case 'command-hub': return 'developer';
     case 'admin': return 'admin';
     case 'backoffice': return 'backoffice';
+    case 'commerce': return 'commerce';
     default: return 'community';
   }
 }

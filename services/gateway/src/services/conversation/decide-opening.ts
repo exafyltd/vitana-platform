@@ -172,7 +172,8 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
     register === 'continue'
       ? `REGISTER: CONTINUE (the user reopened seconds ago — they never really left).\n` +
         `- Do NOT greet. No "hello", no time-of-day, no name salutation. Just pick the thread back up.\n` +
-        `- One short sentence: carry on from where you were, then the suggested next step.`
+        `- One short sentence: carry on from where you were, then the suggested next step.\n` +
+        `- If you cannot see what you were talking about, do not invent it and do not describe the situation — just offer the suggested next step.`
       : register === 'quick_resume'
         ? `REGISTER: QUICK RESUME (the user reopened a few minutes ago).\n` +
           `- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "${input.firstName ? input.firstName + ', ' : ''}" warm reconnect at most.\n` +
@@ -222,16 +223,24 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
 
 ## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
 
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
 The user just reopened Vitana. This is NOT the first session of the day — the
 full morning briefing already happened. Compose a SHORT, natural first line in
 the user's language that fits the register below. Vitana ALWAYS guides: the line
-MUST end with the suggested next step as a concrete offer ("ich würde
-vorschlagen, wir …" / "I'd suggest we …"), phrased as doing it WITH the user.
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
 
 ${framing}
 ${buildPreviousGreetingSection(input.previousUtterance ?? null)}
 ## LANGUAGE
-${(lang || 'en').toLowerCase()}. Speak only in the user's language.
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
 ${nameLine}
 
 ## RULES
@@ -248,21 +257,23 @@ ${nameLine}
   that have NOT changed. NEVER restate their counts or announce them as news.
   At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
-- EXECUTION — do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
-  names the real tool that performs this action. When the user accepts, CALL that
-  tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
   respond_to_match, create_index_improvement_plan). Only promise what that tool
   does. If ${'`execute_with_tool`'} is null, you have NO one-shot tool — then GUIDE
   the user through it step by step on the screen; do NOT claim you'll do it
   yourself. Never say "I couldn't do that" for an action that has a tool — call it.
 - SCREEN AWARENESS: when ${'`current_screen`'} is set, the user is ALREADY on that
-  screen. NEVER tell them to open it or go there ("schau dir deine Matches an"
-  while they are on the matches screen is forbidden). When
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
   ${'`complete_on_current_screen`'} is true, the ${'`suggested_next_step`'} is a
   DEEPER move to COMPLETE the action here — pick ONE concrete option from its
-  ${'`what`'} and propose doing it together right now (e.g. on matches: "lass uns
-  einen davon auswählen und eine gemeinsame Aktivität starten", or tell them who
-  one match is). The goal is to FINISH the action, not to navigate.
+  ${'`what`'} and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
 - Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
 
 ## STRUCTURED PAYLOAD

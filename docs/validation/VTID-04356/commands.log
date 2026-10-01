@@ -1,0 +1,8 @@
+# VTID-04356 — commands run
+psql (local PG16, throwaway): schema.sql -> migration -> scenarios.sql      # 34/34 ok, S10 WARNING expected
+psql as role authenticated: select calendar_sync_health_plan(null)           # permission denied
+npx jest test/vtid-04356-calendar-source-producers.test.ts                   # 22/22
+npx jest test/vtid-04331-calendar-data-model.test.ts test/routes/autopilot-recommendations.test.ts test/vtid-04338-calendar-default-reminders.test.ts
+npx tsc --noEmit
+Supabase MCP apply_migration vtid_04356_calendar_source_producers           # live, 2026-09-23
+Supabase MCP read-only: counts by source_type, steps linked, triggers, has_function_privilege

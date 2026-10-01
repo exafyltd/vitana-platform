@@ -1,0 +1,14 @@
+# VTID-04320 / VTID-04321 — commands run (2026-09-23)
+# read-only diagnosis against the live project (Supabase MCP execute_sql):
+select status, delivery_via, count(*), count(calendar_event_id) from reminders group by 1,2   -> 0 linked, last fired 2026-07-07
+select next_fire_at, dispatch_attempts from reminders where status='pending'                 -> 5 rows, 1-12 days overdue, attempts 0
+select triggers on global_event_participants                                                  -> none
+# local verification of the migration (throwaway Postgres 16, not the shared project):
+psql -f outputs/rsvp-trigger-local-schema.sql -f supabase/migrations/20260923120000_... -f outputs/rsvp-trigger-scenarios.sql  -> 8/8 scenarios as expected (outputs/rsvp-trigger-local-pg.txt)
+# live apply (owner-approved step 1):
+apply_migration vtid_04321_rsvp_calendar_global_events                                        -> success; both triggers present
+# gateway:
+npx tsc --noEmit -p .                                                                         -> exit 0
+jest vtid-04320 + vtid-04321 + action-executors + calendar-role-context + scheduled-notifications*  -> 6 suites, 88 tests passed
+jest (every suite reading AWS-STAGE-DEPLOY-GATEWAY.yml, incl. the VTID-03788 bash/size guard)  -> 23 suites, 217 tests passed
+jest (full gateway suite)                                                                     -> 1082 passed, 1 skipped; 17561 tests passed, 0 failed

@@ -42,6 +42,7 @@ import {
 } from '../types/taste-alignment';
 import * as repo from './taste-alignment-repository';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // =============================================================================
@@ -121,14 +122,15 @@ router.get('/', (_req: Request, res: Response) => {
 /**
  * GET /health - Health check
  */
-router.get('/health', (_req: Request, res: Response) => {
-  return res.status(200).json({
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ rpc: 'taste_profile_get' }, { rpc: 'taste_reaction_record' }], {
     ok: true,
     status: 'healthy',
     vtid: VTID,
     layer: 'D39',
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 /**

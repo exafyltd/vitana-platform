@@ -1,0 +1,14 @@
+    ✓ is a no-op at or under the cap (1 ms)
+    ✓ keeps typed-action rows first, then higher impact, then newer; retires the rest (1 ms)
+    ✓ ignores expired rows (they no longer show) and returns nothing at or under the cap
+    ✓ dry run: reports what would be retired and writes nothing (1 ms)
+    ✓ a failed update retires nothing and does not throw (10 ms)
+    ✓ nothing to retire at or under the cap: no write (1 ms)
+    ✓ role=community: retired-action recs (unknown source_ref) are filtered out (6 ms)
+    ✓ an app activation runs the typed action and returns its result (5 ms)
+    ✓ GET role=community: rows with a typed action survive the retired-source filter (3 ms)
+    ✓ GET role=developer: not capped (developer findings are a different surface) (3 ms)
+    ✓ GET /count role=community: the badge never exceeds 3 (3 ms)
+    ✓ GET /count role=developer: unchanged (3 ms)
+    ✓ voice list: lists the same top 3, including typed-action scan rows (2 ms)
+Tests:       96 passed, 96 total

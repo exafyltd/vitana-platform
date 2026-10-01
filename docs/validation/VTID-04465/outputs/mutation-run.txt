@@ -1,0 +1,41 @@
+# VTID-04465 mutation run — each mutant = the suite + ONE jest.mock that breaks one real pipeline module.
+# Mutant files were generated under test/operator-pipeline/__mutants__/, run, and deleted; no source file was edited.
+
+== mut-approval-hold.test.ts
+    ✕ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (312 ms)
+Tests:       1 failed, 18 passed, 19 total
+
+== mut-authz.test.ts
+    ✕ an anonymous console request is refused before any VTID, finding or execution exists (84 ms)
+    ✕ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (93 ms)
+    ✕ an anonymous request that reuses an admin's thread does not inherit the admin marker (122 ms)
+    ✕ a wrong machine token is not a credential (82 ms)
+Tests:       4 failed, 15 passed, 19 total
+
+== mut-breaker.test.ts
+    ✕ auto-approve → agent reads until the cap → failure → the next auto-approve pass snoozes the finding (177 ms)
+Tests:       1 failed, 18 passed, 19 total
+
+== mut-env-ownership.test.ts
+    ✕ staging's CI watcher ignores a production-claimed PR; production's merges it (83 ms)
+    ✕ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (85 ms)
+Tests:       2 failed, 17 passed, 19 total
+
+== mut-fix-mode.test.ts
+    ✕ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (226 ms)
+Tests:       1 failed, 18 passed, 19 total
+
+== mut-outage.test.ts
+    ✕ after one outage failure the next tick claims at most one execution (a probe) (266 ms)
+    ✕ three outage failures in a row: the next tick claims nothing — no retry storm (310 ms)
+Tests:       2 failed, 17 passed, 19 total
+
+== mut-pr-contract.test.ts
+    ✕ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (284 ms)
+    ✕ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (138 ms)
+    ✕ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (134 ms)
+Tests:       3 failed, 16 passed, 19 total
+
+== mut-stranded-filter.test.ts
+    ✕ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (126 ms)
+Tests:       1 failed, 18 passed, 19 total

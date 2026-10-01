@@ -29,6 +29,11 @@ import { fetchPreferenceFacts } from './preference-facts';
 import { getAwarenessConfig } from './awareness-registry';
 import { getJourneyEngagementBonus } from './guided-journey/journey-index-award';
 import * as repo from './user-context-profiler-repository';
+// VTID-04438 (WS-4.1): pure render helpers for the structured profile.
+import {
+  profileSectionsFilled as profileSectionsFilledFn,
+  renderProfileBlock as renderProfileBlockFn,
+} from './conversation/user-profile';
 
 const TTL_MS = 10 * 60 * 1000;
 const DEFAULT_WINDOW_DAYS = 14;
@@ -978,7 +983,11 @@ export async function getUserContextSummary(
     (cfg && !cfg.isEnabled('profile.narrative.enabled')) || !opts.tenantId
       ? Promise.resolve(null)
       : import('./user-model-synthesis')
-          .then((m) => m.readUserProfileNarrative(client, opts.tenantId!, userId))
+          .then((m) =>
+            m.readUserProfileNarrative(client, opts.tenantId!, userId).then((n) =>
+              n ? { ...n, age_label: m.describeNarrativeAge(n.age_ms) } : null,
+            ),
+          )
           .catch(() => null);
 
   // VTID-03037: account/tenure fetch. Always in the batch — no awareness-
@@ -1004,7 +1013,7 @@ export async function getUserContextSummary(
       VitanaIndexFetchResult | null,
       { ok: boolean; facts: any[] },
       AccountRow,
-      { narrative: string; generated_at: string } | null,
+      (import('./user-model-synthesis').StoredProfileNarrative & { age_label: string }) | null,
     ],
     'getUserContextSummary.mainFetch',
   );
@@ -1017,8 +1026,14 @@ export async function getUserContextSummary(
     buildAccountSection(account, now),
     // Synthesized narrative FIRST after account — it's the connected picture;
     // the sections below are its raw evidence.
+    // VTID-04340: label the real age instead of claiming "nightly" — the
+    // reader already drops narratives past the max age.
+    // VTID-04438 (WS-4.1): a structured profile renders as its own block;
+    // a prose-only one keeps the VTID-04340 line.
     narrative
-      ? `[PROFILE SYNTHESIS — nightly, connect-the-dots summary]\n${narrative.narrative}`
+      ? (narrative.structured && profileSectionsFilledFn(narrative.structured) > 1
+        ? renderProfileBlockFn(narrative.structured, narrative.age_label)
+        : `[PROFILE SYNTHESIS — generated ${narrative.age_label} ago, connect-the-dots summary]\n${narrative.narrative}`)
       : '',
     (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
     (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',

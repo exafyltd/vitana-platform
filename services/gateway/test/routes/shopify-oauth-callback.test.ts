@@ -18,9 +18,9 @@ app.use('/api/v1/vcaop/shopify-oauth', shopifyOAuthCallbackRouter);
 const CLIENT_SECRET = 'test-client-secret';
 const ORIGINAL_ENV = { ...process.env };
 
-function signState(manifestId: string, expiresInMs = 10 * 60 * 1000): string {
+function signState(manifestId: string, expiresInMs = 10 * 60 * 1000, surface?: string): string {
   const expires = Date.now() + expiresInMs;
-  const payload = `${manifestId}.${expires}`;
+  const payload = surface ? `${manifestId}.${expires}.${surface}` : `${manifestId}.${expires}`;
   const sig = createHmac('sha256', CLIENT_SECRET).update(payload).digest('hex');
   return Buffer.from(`${payload}.${sig}`).toString('base64url');
 }
@@ -106,6 +106,30 @@ describe('forgery defenses', () => {
 });
 
 describe('happy path', () => {
+  // VTID-04711: the callback records the surface that started the flow.
+  async function completeWith(state: string) {
+    const query = { code: 'the-code', shop: 'a.myshopify.com', state, timestamp: '1' };
+    const hmac = hmacFor(query);
+    const manifests = tableStub({ data: { id: 'm-1', connector_id: 'shopify', status: 'authorization_required' } });
+    const oasisEvents = tableStub({});
+    const tables: Record<string, any> = { integration_manifest: manifests, partner_oauth_credential: tableStub({}), oasis_events: oasisEvents };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    (global.fetch as jest.Mock).mockResolvedValue(
+      new Response(JSON.stringify({ access_token: 'shpat_xyz', scope: 'read_products' }), { status: 200 }),
+    );
+    const res = await request(app).get('/api/v1/vcaop/shopify-oauth/callback').query({ ...query, hmac });
+    expect(res.status).toBe(200);
+    return oasisEvents.insert.mock.calls[0][0].metadata.surface;
+  }
+
+  test('records the onboarding surface carried in the state', async () => {
+    expect(await completeWith(signState('m-1', undefined, 'partner_onboarding'))).toBe('partner_onboarding');
+  });
+
+  test('a state without a surface records the merchant surface', async () => {
+    expect(await completeWith(signState('m-1'))).toBe('merchant_self_service');
+  });
+
   test('verified callback exchanges the code, stores the credential, and advances state', async () => {
     const state = signState('m-1');
     const query = { code: 'the-code', shop: 'a.myshopify.com', state, timestamp: '1' };

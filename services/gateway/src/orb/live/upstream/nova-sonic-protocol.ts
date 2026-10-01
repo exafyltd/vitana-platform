@@ -356,6 +356,39 @@ export class NovaOutputNormalizer {
    * next content block starts (new generation activity).
    */
   private turnCompleteEmitted = false;
+  /**
+   * VTID-04736 / VTID-04747: the gateway just sent Nova something it answers —
+   * a tool result, or a text note (a memory backstop, the muted-leak
+   * recovery). That answer is a new turn, but it opens with an ASSISTANT
+   * block, which (VTID-03592) never re-arms the latch. So the answer's
+   * END_TURN was swallowed whenever the latch was already used: by a filler
+   * line spoken around a tool call, or by the turn the note followed.
+   * isModelSpeaking then stayed true — the display said "Vitana spricht"
+   * while she was silent — and the 20s audio-stall watchdog killed and
+   * reconnected the session (production live-cbda9130 and live-11ec418b,
+   * 2026-09-29).
+   *
+   * Re-arm at the first SPECULATIVE assistant block after the send, once.
+   * Never on a FINAL block: that is the tail of the turn in flight. When the
+   * filler's own SPECULATIVE block starts after the send (an instant tool
+   * result) this still misses; the session layer's soft turn end
+   * (VTID-04747, soft-turn-end.ts) covers that and any other lost END_TURN.
+   */
+  private awaitingAnswer = false;
+
+  /** The gateway sent a tool result or a text note; see awaitingAnswer. */
+  noteClientTurnSent(): void {
+    this.awaitingAnswer = true;
+  }
+
+  /** @deprecated VTID-04736 name; use noteClientTurnSent. */
+  noteToolResultSent(): void {
+    this.noteClientTurnSent();
+  }
+
+  private markTurnComplete(): void {
+    this.turnCompleteEmitted = true;
+  }
 
   normalize(raw: unknown): NovaNormalizedEvent[] {
     const eventObj = (raw as { event?: Record<string, unknown> })?.event;
@@ -412,6 +445,11 @@ export class NovaOutputNormalizer {
       // any non-assistant, e.g. TOOL) blocks still reset, so a genuine next
       // turn is unaffected.
       if ((meta.role ?? '').toUpperCase() !== 'ASSISTANT') {
+        this.turnCompleteEmitted = false;
+      } else if (this.awaitingAnswer && meta.generationStage === 'SPECULATIVE') {
+        // VTID-04736 / VTID-04747: the answer to a tool result or a text
+        // note is a new turn.
+        this.awaitingAnswer = false;
         this.turnCompleteEmitted = false;
       }
       out.push({ kind: 'ignored', eventName: 'contentStart' });
@@ -490,7 +528,7 @@ export class NovaOutputNormalizer {
         const ceId = (contentEnd.contentId as string) ?? (contentEnd.contentName as string) ?? '';
         const ceMeta = this.contentMeta.get(ceId);
         if (ceMeta?.role === 'ASSISTANT' && !this.turnCompleteEmitted) {
-          this.turnCompleteEmitted = true;
+          this.markTurnComplete();
           out.push({ kind: 'turnComplete' });
         } else {
           out.push({ kind: 'ignored', eventName: 'contentEnd' });
@@ -504,7 +542,7 @@ export class NovaOutputNormalizer {
     if (completionEnd) {
       const stopReason = completionEnd.stopReason as string | undefined;
       if ((!stopReason || stopReason === 'END_TURN') && !this.turnCompleteEmitted) {
-        this.turnCompleteEmitted = true;
+        this.markTurnComplete();
         out.push({ kind: 'turnComplete' });
       } else {
         out.push({ kind: 'ignored', eventName: 'completionEnd' });

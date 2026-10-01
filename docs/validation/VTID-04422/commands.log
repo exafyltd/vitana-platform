@@ -1,0 +1,14 @@
+# VTID-04422 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04422; vtid_ledger in_progress / approved.
+Supabase MCP apply_migration vtid_04422_conversation_scoring_weights -> {"success":true}; version 1 active.
+Read-only: pg_indexes on orb_wake_timelines -> pkey(session_id), (tenant_id,user_id,started_at DESC), (started_at DESC); 92 rows in 7 days.
+npx tsc --noEmit -p .   -> clean
+npx jest test/services/conversation/vtid-04422 test/services/conversation/vtid-04419 -> 37 passed (+1 inspector shadow test)
+npx jest test/services/conversation test/services/assistant-continuation test/command-hub test/orb/live/session test/services/wake-timeline
+  -> first run: 1 failure, the locked wake-timeline event list (16 names); updated deliberately to 17 with the reason in the test header
+npx jest test/services/wake-timeline test/routes -> 129 suites, 2007 passed, 1 skipped
+Pre-merge curl (staging, anonymous): GET /api/v1/admin/conversation/shadow-ranking -> 404 text/html (not deployed yet)
+Command Hub: symbol index regenerated; CSP gate clean; ?v= 20261009-vtid-04422-shadow-ranking
+Harness: node outputs/harness-server.js; node outputs/harness-shoot.js > outputs/shoot-report.json
+  -> 40 synthetic openings, 60% agreement, 16 "login_briefing → unread_messages_announce"; no page errors, no overflow.
+  The screenshot showed "last undefined day(s)" on an empty response; fixed with a fallback to the requested window.

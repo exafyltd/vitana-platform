@@ -16,6 +16,7 @@
  * block and succeed ~50% of the time.
  */
 import { buildVertexWakeBriefBlock } from '../../../../src/orb/live/session/live-session-controller';
+import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../../../../src/orb/live/instruction/wake-brief-marker';
 
 const LINE = 'So, das war Was ist Vitanaland. Hast du Fragen dazu, oder sollen wir direkt gemeinsam loslegen?';
 
@@ -55,19 +56,31 @@ describe('VTID-03797 guided-topic SPOKEN FIRST UTTERANCE block', () => {
     });
   });
 
-  describe('non-guided sessions are untouched (the ~50%-working path)', () => {
+  // VTID-04589: the non-guided block is stated positively. The quoted line is
+  // still delivered as written and the marker still suppresses the short-gap
+  // pool, but the prohibition stack Nova's content filter blocked is gone.
+  describe('non-guided sessions: the line, stated positively (VTID-04589)', () => {
     const block = buildVertexWakeBriefBlock(LINE, 'de', 'newday_overview:2026-08-29');
 
-    it('keeps the verbatim directive exactly as before', () => {
-      expect(block).toMatch(/## SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM \(VTID-03079 \/ VTID-03097\)/);
-      expect(block).toMatch(/MUST\s*\n?be EXACTLY this text/);
-      expect(block).toMatch(/letter-for-letter/);
+    it('delivers the quoted line as written, behind the override marker', () => {
+      expect(block).toContain(VERTEX_WAKE_BRIEF_OVERRIDE_MARKER);
+      expect(block).toMatch(/## FIRST SPOKEN TURN THIS SESSION \(VTID-03079 \/ VTID-03097 \/ VTID-04589\)/);
+      expect(block).toMatch(/spoken as written, in one turn, then wait for the\s+user's reply/);
       expect(block).toContain(`"${LINE}"`);
+      expect(block).toMatch(/short-gap greeting phrases are not used for this turn/);
+      expect(block).toContain('Dedupe key: newday_overview:2026-08-29 (spoken once, this turn only).');
+    });
+
+    it('carries no prohibition stack', () => {
+      expect(block).not.toMatch(/REQUIRED VERBATIM/);
+      expect(block).not.toMatch(/letter-for-letter/i);
+      expect(block).not.toMatch(/do not paraphrase|do not translate|do not shorten/i);
+      expect(block).not.toMatch(/\bNOT\b/);
     });
 
     it('applies to a null dedupe key too', () => {
       const noKey = buildVertexWakeBriefBlock(LINE, 'de', null);
-      expect(noKey).toMatch(/REQUIRED VERBATIM/);
+      expect(noKey).toMatch(/FIRST SPOKEN TURN THIS SESSION/);
       expect(noKey).toContain(`"${LINE}"`);
       expect(noKey).not.toContain('Dedupe key:');
     });
@@ -75,7 +88,8 @@ describe('VTID-03797 guided-topic SPOKEN FIRST UTTERANCE block', () => {
     it('does not accidentally match a key that merely contains the prefix', () => {
       // startsWith, not includes — a key like `x:guided_topic:T001` is not ours.
       const notGuided = buildVertexWakeBriefBlock(LINE, 'de', 'reminder:guided_topic:T001');
-      expect(notGuided).toMatch(/REQUIRED VERBATIM/);
+      expect(notGuided).toMatch(/FIRST SPOKEN TURN THIS SESSION/);
+      expect(notGuided).toContain(`"${LINE}"`);
     });
   });
 

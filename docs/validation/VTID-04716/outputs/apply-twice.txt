@@ -1,0 +1,10 @@
+pass1 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql: ok
+pass1 20260928200100_vtid_04718_overload_detection_data_layer.sql: ok
+pass1 20260928200200_vtid_04719_taste_alignment_data_layer.sql: ok
+pass1 20260928200300_vtid_04720_preference_modeling_data_layer.sql: ok
+pass1 20260928200400_vtid_04717_risk_mitigations.sql: ok
+pass2 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql: ok
+pass2 20260928200100_vtid_04718_overload_detection_data_layer.sql: ok
+pass2 20260928200200_vtid_04719_taste_alignment_data_layer.sql: ok
+pass2 20260928200300_vtid_04720_preference_modeling_data_layer.sql: ok
+pass2 20260928200400_vtid_04717_risk_mitigations.sql: ok

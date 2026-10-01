@@ -24,12 +24,25 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { walk, readFileSafe, relFromRepo, SOURCE_EXTS } from './scanners/_shared.mjs';
 import { SCANNERS } from './scanners/registry.mjs';
 
 const REPO_ROOT = process.cwd();
 const LARGE_FILE_THRESHOLD = 1000;
 const TODO_PATTERN = /\b(TODO|FIXME|HACK|XXX)\b[:\s]?([^\n]*)/;
+
+// VTID-04275: these files' own SOURCE necessarily contains the literal
+// strings TODO/FIXME/HACK/XXX as part of implementing todo detection
+// (regex patterns, type unions, string comparisons, scanner metadata) — a
+// bare word-boundary scan flags that code against itself. Real cost:
+// this exact file's own `severity: m[1] === 'FIXME' || ...` comparison
+// line, and scanners/registry.mjs's own "TODO / FIXME / HACK markers"
+// title string, both produced phantom findings with nothing to resolve.
+export const TODO_SCANNER_SELF_MATCH_DENYLIST = new Set([
+  'scripts/ci/dev-autopilot-scan.mjs',
+  'scripts/ci/scanners/registry.mjs',
+]);
 
 // missing-tests-scanner-v1 tunables — ops can override without a redeploy.
 const MISSING_TESTS_MIN_LOC = Number.parseInt(process.env.MISSING_TESTS_MIN_LOC || '50', 10);
@@ -59,11 +72,12 @@ function relFromRepoLocal(p) { return relFromRepo(REPO_ROOT, p); }
 // Kept inline to avoid churn; new scanners live under scripts/ci/scanners/*.mjs.
 // =============================================================================
 
-function scanTodos(files) {
+export function scanTodos(files) {
   const signals = [];
   for (const file of files) {
     const ext = path.extname(file);
     if (!SOURCE_EXTS.has(ext)) continue;
+    if (TODO_SCANNER_SELF_MATCH_DENYLIST.has(relFromRepoLocal(file))) continue;
     const src = readFileSafe(file);
     if (!src) continue;
     const lines = src.split('\n');
@@ -350,7 +364,12 @@ async function main() {
   console.log(`[dev-autopilot-scan] POST ok ${res.status}: ${text}`);
 }
 
-main().catch(err => {
-  console.error(`[dev-autopilot-scan] unhandled error:`, err);
-  process.exit(1);
-});
+// VTID-04275: only run the full driver (network POST, env-var checks) when
+// this file is executed directly — importing it for `scanTodos` (a test,
+// another scanner) must not trigger a live POST attempt as a side effect.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(err => {
+    console.error(`[dev-autopilot-scan] unhandled error:`, err);
+    process.exit(1);
+  });
+}

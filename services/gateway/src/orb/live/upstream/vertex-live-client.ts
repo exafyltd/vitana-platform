@@ -493,6 +493,10 @@ export class VertexLiveClient implements UpstreamLiveClient {
         serverContent.groundingMetadata?.interrupted;
       if (interrupted) {
         this.interruptedHandler?.({});
+        // VTID-04418: stop at the interruption, like the raw handler always
+        // did — audio later in the same frame would set the model back to
+        // speaking right after the user barged in.
+        return;
       }
 
       // Audio chunks live under model_turn.parts[].inline_data

@@ -64,6 +64,23 @@ const PATTERNS = [
   {
     name: 'URL with embedded credentials',
     re: /\b(?:https?|postgres|postgresql|mysql|mongodb):\/\/[^\s'"`]*:[^\s'"`@/]+@[^\s'"`]+/g,
+    // VTID-04273: two shapes read as "an embedded credential" to the bare
+    // regex above but can never be a real leak, and both showed up
+    // verbatim in a live 8-file rollup finding:
+    //   - `${...}` / a bare `$VAR` between the `:` and the `@` means the
+    //     URL is being CONSTRUCTED from a variable at runtime (a TS
+    //     template literal or a bash expansion) — there is no literal
+    //     value in the source to leak. Matched e.g.
+    //     `https://x-access-token:${token}@github.com/...` and
+    //     `postgresql://${USER_NAME}:${ENC_PASS}@${READER}:5432/...`.
+    //   - `@127.0.0.1` / `@localhost` is a loopback host: whatever
+    //     credential precedes it is reachable only from the machine that
+    //     already has it (the CI runner's own ephemeral Postgres service
+    //     container, or a local dev instance), never a real exposure.
+    //     Matched the well-known `postgres:postgres@127.0.0.1` /
+    //     `postgres:postgres@localhost` GitHub Actions service-container
+    //     default in two workflow files and two docs that quote them.
+    ignore: /\$\{|\$[A-Za-z_][A-Za-z0-9_]*|@(?:127\.0\.0\.1|localhost)\b/,
   },
 ];
 
@@ -71,6 +88,10 @@ const PATTERNS = [
 const GLOBAL_PLACEHOLDER_HINTS = [
   'xxx', 'xxxxx', 'YOUR_', 'PLACEHOLDER', 'EXAMPLE', 'DUMMY', 'FAKE',
   'MOCK', '<', '>', 'REDACTED', '...', 'replace-me', 'change-me',
+  // VTID-04273: a masked preview like `user:***@host` in an evidence/log
+  // file — the real value was already redacted before this file was
+  // written, so the string itself carries no secret to leak.
+  '***',
 ];
 
 function isPlaceholder(match) {

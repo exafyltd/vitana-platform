@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04629",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npm run test:nav-redirect", "cwd": "services/gateway",
+      "reason": "the voice redirect suite now carries the post-creation cases (R51-R57), the newsfeed paraphrase (P05) and the invented-screen-id cases (I01-I03) this change fixes" },
+    { "kind": "existing", "ref": "npx jest test/navigation test/nav-golden", "cwd": "services/gateway",
+      "reason": "pins the navigate / navigate_to_screen dispatch and the golden registry resolution this change touches" }
+  ]
+}

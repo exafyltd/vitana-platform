@@ -18,6 +18,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RoleTarget, RunStatus } from '../types/automations';
+import { fetchTenantMembersWithEffectiveRole } from './orchestrator/active-role';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
 
 export async function fetchAutopilotPromptMaxPerDay(sb: SupabaseClient, userId: string) {
   return sb.from('autopilot_prompt_prefs').select('max_prompts_per_day').eq('user_id', userId).maybeSingle();
@@ -53,17 +55,31 @@ export function updateAutomationRun(
   return sb.from('automation_runs').update(patch).eq('id', runId);
 }
 
+/**
+ * VTID-04318: targets on the EFFECTIVE role (role_preferences first, then
+ * user_tenants.active_role — the rule the ORB uses, see
+ * orchestrator/active-role.ts) instead of user_tenants.active_role alone,
+ * and never returns a test/service/automation account (CLAUDE.md rules
+ * 43-45; fetchExcludedTestServiceAccountIds fails open to "no exclusions").
+ * The role filter moved from SQL into memory because the effective role
+ * spans two tables; `active_role` on each returned row IS the effective role.
+ */
 export async function fetchUsersByRole(
   sb: SupabaseClient,
   tenantId: string,
   selectColumns: string,
   targetRoles: RoleTarget,
 ): Promise<{ data: any; error: any }> {
-  let query = sb.from('user_tenants').select(selectColumns).eq('tenant_id', tenantId);
-  if (targetRoles !== 'all') {
-    query = query.in('active_role', targetRoles);
-  }
-  return query;
+  const [members, excluded] = await Promise.all([
+    fetchTenantMembersWithEffectiveRole(sb, tenantId, selectColumns),
+    fetchExcludedTestServiceAccountIds(sb),
+  ]);
+  if (members.error) return { data: null, error: members.error };
+  const wanted = targetRoles === 'all' ? null : new Set<string>(targetRoles as string[]);
+  const data = (members.data || []).filter(
+    (m) => !excluded.has(m.user_id) && (wanted === null || (m.active_role !== null && wanted.has(m.active_role))),
+  );
+  return { data, error: null };
 }
 
 export async function fetchAutomationRunHistory(sb: SupabaseClient, tenantId: string, automationId: string | undefined, limit: number) {

@@ -1,0 +1,6 @@
+cd services/gateway
+node node_modules/.bin/tsc --noEmit -p .    # exit 0
+node node_modules/.bin/jest test/vtid-04472-ledger-deferred-to-bridge.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04378-ledger-terminalization.test.ts   # outputs/jest.txt
+# mutation: sed "{ deferLedger: toStatus === 'failed' }" -> "{ deferLedger: false }" in dev-autopilot-watcher.ts
+node node_modules/.bin/jest test/vtid-04465-operator-pipeline-regression.test.ts -t "fix-mode lineage"   # 1 failed (expected), then source restored
+# neighbours: dev-autopilot-bridge, dev-autopilot-watcher, watcher-failure-reason, vtid-03895, vtid-04456 support suite — 157/157 with the above

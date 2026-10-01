@@ -11,6 +11,11 @@
  * - GET  /api/v1/conversation/tools      - Tool registry
  * - GET  /api/v1/conversation/health     - Health check
  *
+ * Auth (VTID-04447): /turn, /stream, /history and /threads/active require a
+ * Supabase JWT. user_id comes from the token (a different one is refused);
+ * tenant_id defaults to the token's active tenant and may name another tenant
+ * only if the caller is a member. See conversation-identity.ts.
+ *
  * Architecture:
  * ```
  * ORB UI ─┐
@@ -70,9 +75,7 @@ import { getPersonalityConfigSync } from '../services/ai-personality-service';
 // Memory auto-write for conversation turns
 import { classifyCategory } from './memory';
 import { writeMemoryItemWithIdentity } from '../services/orb-memory-bridge';
-// VTID-01225: Cognee entity extraction from conversation turns
-import { cogneeExtractorClient } from '../services/cognee-extractor-client';
-// VTID-01225: Inline fact extraction fallback when Cognee is unavailable
+// VTID-01225: Inline fact extraction (sole extraction path since VTID-04344)
 import { extractAndPersistFacts, isInlineExtractionAvailable } from '../services/inline-fact-extractor';
 // VTID-01230: Session buffer for short-term memory + extraction dedup
 import { addTurn as addSessionTurn } from '../services/session-memory-buffer';
@@ -82,7 +85,12 @@ import { deduplicatedExtract } from '../services/extraction-dedup-manager';
 // Supabase client for persistent message storage
 import { getSupabase } from '../lib/supabase';
 import * as repo from './conversation-repository';
+// VTID-04447: every conversation route is bound to the caller's verified identity
+import { requireAuth } from '../middleware/auth-supabase-jwt';
+import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { bindConversationBodyIdentity, bindConversationQueryIdentity } from './conversation-identity';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 // =============================================================================
@@ -181,7 +189,7 @@ function getOrCreateThread(
 // POST /turn - Process a conversation turn
 // =============================================================================
 
-router.post('/turn', async (req: Request, res: Response) => {
+router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Request, res: Response) => {
   const requestId = randomUUID();
   const startTime = Date.now();
 
@@ -704,25 +712,9 @@ ${channelInstructions}`;
     }
 
     // Step 6: VTID-01225 - Fire-and-forget fact extraction from conversation
-    // Primary: Cognee extractor service (full entity/relationship/signal extraction)
-    // Fallback: Inline Gemini extraction (structured facts only, no graph)
+    // via the deduplicated inline extractor (structured facts).
     const conversationText = `User: ${message.text}\nAssistant: ${reply}`;
     if (conversationText.length > 50) {
-      if (cogneeExtractorClient.isEnabled()) {
-        try {
-          cogneeExtractorClient.extractAsync({
-            transcript: conversationText,
-            tenant_id,
-            user_id,
-            session_id: thread.thread_id,
-            active_role: role,
-          });
-          console.log(`[VTID-01225] Cognee extraction queued for conversation turn: ${thread.thread_id}`);
-        } catch (cogneeError: any) {
-          console.warn(`[VTID-01225] Cognee extraction trigger failed:`, cogneeError.message);
-        }
-      }
-
       // VTID-01230: Deduplicated inline fact extraction (replaces raw extractAndPersistFacts)
       // Prevents redundant Gemini API calls when the same text is processed multiple times
       const extractResult = deduplicatedExtract({
@@ -818,7 +810,8 @@ ${channelInstructions}`;
 // POST /stream - Stream response (for ORB voice)
 // =============================================================================
 
-router.post('/stream', async (req: Request, res: Response) => {
+router.post('/stream', requireAuth, bindConversationBodyIdentity(), async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: VTID-04447 only adds auth to this existing handler; its behaviour is unchanged
   const requestId = randomUUID();
 
   try {
@@ -984,15 +977,6 @@ Instructions:
 
       const streamedText = `User: ${input.message.text}\nAssistant: ${geminiResult.reply}`;
       if (streamedText.length > 50) {
-        if (cogneeExtractorClient.isEnabled()) {
-          cogneeExtractorClient.extractAsync({
-            transcript: streamedText,
-            tenant_id: input.tenant_id,
-            user_id: input.user_id,
-            session_id: thread.thread_id,
-            active_role: input.role,
-          });
-        }
         deduplicatedExtract({
           conversationText: streamedText,
           tenant_id: input.tenant_id,
@@ -1027,7 +1011,7 @@ Instructions:
 // GET /history/:threadId - Fetch persisted message history for a thread
 // =============================================================================
 
-router.get('/history/:threadId', async (req: Request, res: Response) => {
+router.get('/history/:threadId', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const { threadId } = req.params;
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
   const before = req.query.before as string | undefined; // cursor-based pagination
@@ -1042,7 +1026,7 @@ router.get('/history/:threadId', async (req: Request, res: Response) => {
   }
 
   try {
-    const { data, error } = await repo.fetchConversationHistoryQuery(supabase, threadId, limit, before);
+    const { data, error } = await repo.fetchConversationHistoryQuery(supabase, threadId, limit, before, req.identity!.user_id);
 
     if (error) {
       console.error('[conversation] History fetch failed:', error.message);
@@ -1066,7 +1050,7 @@ router.get('/history/:threadId', async (req: Request, res: Response) => {
 // GET /threads/active - Get user's most recent active thread
 // =============================================================================
 
-router.get('/threads/active', async (req: Request, res: Response) => {
+router.get('/threads/active', requireAuth, bindConversationQueryIdentity(), async (req: Request, res: Response) => {
   const tenant_id = req.query.tenant_id as string;
   const user_id = req.query.user_id as string;
 
@@ -1141,14 +1125,15 @@ router.get('/tools', (_req: Request, res: Response) => {
 // GET /health - Health check
 // =============================================================================
 
-router.get('/health', (_req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
   // VTID-03472: web_search's primary backend is Claude's web_search tool via
   // direct Anthropic API (ANTHROPIC_API_KEY), with Perplexity as a fallback —
   // report available when EITHER is configured. Never GCP/Vertex.
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 
-  res.status(200).json({
+  res.status(200).json(await withDependencyHealth([{ table: 'conversation_messages' }], {
     ok: true,
     service: 'conversation-api',
     vtid: 'VTID-01216',
@@ -1160,7 +1145,7 @@ router.get('/health', (_req: Request, res: Response) => {
       web_search: hasAnthropic || !!PERPLEXITY_API_KEY,
       streaming: true,
     },
-  });
+  }));
 });
 
 export default router;

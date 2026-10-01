@@ -1,0 +1,3 @@
+    ✕ a spoken yes never publishes: voice gets needs_app, even when "confirmed" (6 ms)
+    ✕ voice cannot carry it out (1 ms)
+Tests:       2 failed, 13 passed, 15 total

@@ -1,0 +1,7 @@
+$ npx tsc --noEmit -p services/gateway        # clean
+$ npx jest test/vtid-04363-autopilot-loop-owner.test.ts <27 workflow/supervisor/executor suites>
+Test Suites: 28 passed, 28 total
+Tests:       265 passed, 265 total
+$ npx jest dev-autopilot autopilot
+Test Suites: 63 passed, 63 total
+Tests:       1555 passed, 1555 total

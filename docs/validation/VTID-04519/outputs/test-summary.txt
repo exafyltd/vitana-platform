@@ -1,0 +1,3 @@
+tsc --noEmit: clean
+navigation + nav-golden + lib + routes: 2252 passed, 1 skipped
+full gateway suite: 1236 suites passed, 1 skipped; 19824 tests passed, 29 skipped, 6 todo, 0 failed

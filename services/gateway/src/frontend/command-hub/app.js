@@ -32,21 +32,40 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 // expired token.
 //
 // This interceptor wraps window.fetch BEFORE any other code runs. For any
-// non-/auth/* request that comes back 401 in a developer session, it tries
-// /api/v1/auth/refresh once (concurrent calls share a single in-flight
+// non-/auth/* request that comes back 401 in an extended-session role, it
+// tries /api/v1/auth/refresh once (concurrent calls share a single in-flight
 // promise so the single-use refresh token isn't burned twice), then replays
 // the original request with a fresh Authorization header. The caller never
 // sees the 401, so the existing "401 → doLogout()" handlers stay untouched
 // and only fire when refresh genuinely fails.
 //
-// Non-developer roles (community, admin, staff, professional, patient) still
-// get their original 401 → doLogout() flow because the interceptor short-
-// circuits when active_role !== 'developer'.
+// VTID-04259: this used to gate strictly on active_role === 'developer'.
+// Command Hub access itself is granted to developer/admin/infra/staff (see
+// the "Access control" block further down this file) — of those, only
+// literal 'developer' ever got the 6h idle/refresh treatment. Everyone else
+// who could actually reach the Command Hub (which is only ~3 real people
+// today) fell straight through to the strict "log out the instant the JWT
+// exp passes, no refresh" path below, at whatever the Supabase project's
+// JWT lifetime is (often well under a day) — this is why real operators
+// were getting logged out every 10-20 minutes instead of staying in for a
+// full workday. The gate now covers every role the Command Hub itself
+// admits, via EXTENDED_SESSION_ROLES (shared with the idle-logout monitor
+// further down), not just one of the four.
+//
+// Roles OUTSIDE the Command Hub (community, professional, patient) still
+// get the original 401 → doLogout() flow, since the interceptor short-
+// circuits when active_role is not one of EXTENDED_SESSION_ROLES.
 // ===========================================================================
 (function installAuthFetchInterceptor() {
     if (!window.fetch) return;
     if (window.__vitanaFetchInterceptorInstalled) return;
     window.__vitanaFetchInterceptorInstalled = true;
+
+    // VTID-04259: same role set the Command Hub's own access-control check
+    // (further down this file) admits — developer/admin/infra/staff. Shared
+    // via window so the later idle-logout monitor uses the identical list.
+    var EXTENDED_SESSION_ROLES = window.__VITANA_EXTENDED_SESSION_ROLES ||
+        (window.__VITANA_EXTENDED_SESSION_ROLES = ['developer', 'admin', 'infra', 'staff']);
 
     var origFetch = window.fetch.bind(window);
     var refreshingPromise = null;
@@ -55,11 +74,33 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
         var s = window.__vitana_state;
         return (s && s.meContext && s.meContext.active_role) || null;
     }
+    function isExtendedSessionRole(role) {
+        return EXTENDED_SESSION_ROLES.indexOf(role) !== -1;
+    }
     function getRefreshToken() {
         var s = window.__vitana_state;
         if (s && s.refreshToken) return s.refreshToken;
         try { return localStorage.getItem('vitana.refreshToken'); } catch (_) { return null; }
     }
+
+    // VTID-04259: Supabase rotates the refresh token on every use. With
+    // Command Hub open in more than one tab (routine for 3 people juggling
+    // it), two tabs holding the same stored refresh token will race — the
+    // loser's refresh fails with an invalid/already-used token and used to
+    // fall straight through to doLogout(), which read as a random early
+    // logout unrelated to idle time. When ANOTHER tab refreshes and writes
+    // new tokens to localStorage, pick them up here instead of trying to
+    // reuse the one this tab already knows is stale.
+    try {
+        window.addEventListener('storage', function (ev) {
+            if (ev.key !== 'vitana.authToken' && ev.key !== 'vitana.refreshToken') return;
+            if (!ev.newValue) return;
+            var s = window.__vitana_state;
+            if (!s) return;
+            if (ev.key === 'vitana.authToken') s.authToken = ev.newValue;
+            if (ev.key === 'vitana.refreshToken') s.refreshToken = ev.newValue;
+        });
+    } catch (_) {}
 
     function performRefresh() {
         if (refreshingPromise) return refreshingPromise;
@@ -121,7 +162,7 @@ console.log('🔥 COMMAND HUB BUNDLE: VTID-01174 LIVE 🔥');
 
         var resp = await origFetch(input, init);
         if (resp.status !== 401) return resp;
-        if (getActiveRole() !== 'developer') return resp;
+        if (!isExtendedSessionRole(getActiveRole())) return resp;
 
         var newToken = await performRefresh();
         if (!newToken) return resp;
@@ -319,12 +360,23 @@ const ROLE_DEFAULT_SCREENS = {
  * VTID-01230: Community and Admin redirect to vitanaland.com (external app).
  */
 // External redirect targets per role (roles not listed stay in Command Hub)
+// VTID-04561: environment-aware — the staging Command Hub switches into the
+// staging community app, never into production (it used to hardcode
+// vitanaland.com on every host).
+function communityAppOriginForHost(hostname) {
+    var h = String(hostname || '').toLowerCase();
+    if (h.indexOf('preview-aws-gateway') === 0 || h.indexOf('preview-gateway') === 0) return 'https://preview-aws.vitanaland.com';
+    return 'https://vitanaland.com';
+}
+var COMMUNITY_APP_ORIGIN = communityAppOriginForHost(typeof window !== 'undefined' && window.location ? window.location.hostname : '');
 var ROLE_EXTERNAL_REDIRECTS = {
-    'community': 'https://vitanaland.com/comm/events-meetups?tab=hot',
-    'admin': 'https://vitanaland.com/admin/dashboard',
-    'professional': 'https://vitanaland.com/professional/dashboard',
-    'staff': 'https://vitanaland.com/staff/dashboard',
-    'patient': 'https://vitanaland.com/patient/dashboard'
+    'community': COMMUNITY_APP_ORIGIN + '/comm/events-meetups?tab=hot',
+    'admin': COMMUNITY_APP_ORIGIN + '/admin/dashboard',
+    'professional': COMMUNITY_APP_ORIGIN + '/professional/dashboard',
+    'staff': COMMUNITY_APP_ORIGIN + '/staff/dashboard',
+    'patient': COMMUNITY_APP_ORIGIN + '/patient/dashboard',
+    // VTID-04561: BackOffice lives in the community app too.
+    'backoffice': COMMUNITY_APP_ORIGIN + '/backoffice/dashboard'
 };
 
 function navigateToRoleDefaultScreen(role) {
@@ -768,7 +820,196 @@ function startNewOperatorThread() {
     state.operatorChatHistory = [];
     state.chatMessages = [];
     saveOperatorThreadHistory(thread.id, []);
+    notifyOrbOperatorThread();
     renderApp();
+}
+
+/**
+ * VTID-04309: Command Hub voice turns are recorded server-side into the
+ * active Operator Console thread (the widget sends operator_thread_id at
+ * session start). Tell the widget which thread is on screen.
+ */
+function notifyOrbOperatorThread() {
+    if (window.VitanaOrb && typeof window.VitanaOrb.updateContext === 'function' && state.operatorActiveThreadId) {
+        window.VitanaOrb.updateContext({ operator_thread_id: state.operatorActiveThreadId });
+    }
+}
+
+/**
+ * VTID-04309: pull voice turns recorded server-side for the active thread
+ * into the console transcript (and its saved history), newest after the
+ * last one already merged. Called after each voice turn, when a voice
+ * session ends, and when a thread is opened. Never throws.
+ */
+var _operatorVoiceSyncInFlight = false;
+async function syncOperatorVoiceTurns() {
+    var threadId = state.operatorActiveThreadId;
+    if (!threadId || _operatorVoiceSyncInFlight || !state.authToken) return;
+    _operatorVoiceSyncInFlight = true;
+    try {
+        var history = state.operatorChatHistory || [];
+        var seen = {};
+        var lastVoiceIso = null;
+        history.forEach(function (h) {
+            if (h.serverMessageId) seen[h.serverMessageId] = true;
+            if (h.serverCreatedAt && (!lastVoiceIso || h.serverCreatedAt > lastVoiceIso)) lastVoiceIso = h.serverCreatedAt;
+        });
+        var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
+            + (lastVoiceIso ? '?since=' + encodeURIComponent(lastVoiceIso) : '');
+        var res = await fetch(url, { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
+        var added = 0;
+        (body.messages || []).forEach(function (m) {
+            // voice = spoken turns; voice_delegate = the Operator turn the
+            // voice assistant handed a request to (VTID-04310).
+            var channel = m && m.meta ? m.meta.channel : null;
+            if (!m || seen[m.id] || (channel !== 'voice' && channel !== 'voice_delegate')) return;
+            if (m.role !== 'user' && m.role !== 'assistant') return;
+            var ts = Date.parse(m.created_at) || Date.now();
+            history.push({ role: m.role, content: m.content, ts: ts, channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+            state.chatMessages.push({
+                type: m.role === 'user' ? 'user' : 'system',
+                content: m.content,
+                timestamp: new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: ts,
+                channel: channel
+            });
+            added++;
+        });
+        if (added > 0) {
+            state.operatorChatHistory = history;
+            saveOperatorThreadHistory(threadId, history);
+            touchActiveOperatorThread();
+            renderApp();
+        }
+    } catch (e) {
+        console.warn('[VTID-04309] voice turn sync failed:', e);
+    } finally {
+        _operatorVoiceSyncInFlight = false;
+    }
+}
+
+/**
+ * VTID-04437: the caller's own server-side threads (operator_threads, via
+ * GET /api/v1/operator/threads) merged into the local index, so a thread
+ * started on another device — or by voice — shows up in the sidebar. The
+ * local index stays the source for titles, archive state and order; a
+ * thread deleted here is remembered and never re-added from the server.
+ */
+var OPERATOR_THREADS_DISMISSED_KEY = 'operator_console_threads_dismissed';
+
+function loadDismissedOperatorThreadIds() {
+    try {
+        var parsed = JSON.parse(localStorage.getItem(OPERATOR_THREADS_DISMISSED_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+}
+
+function dismissOperatorThreadId(threadId) {
+    try {
+        var ids = loadDismissedOperatorThreadIds().filter(function (id) { return id !== threadId; });
+        ids.unshift(threadId);
+        localStorage.setItem(OPERATOR_THREADS_DISMISSED_KEY, JSON.stringify(ids.slice(0, 500)));
+    } catch (e) { /* no-op */ }
+}
+
+/**
+ * Pure merge: returns the new index and how
+ * many threads were added. Server threads are listed newest-first.
+ */
+function mergeServerOperatorThreads(localIndex, serverThreads, dismissedIds) {
+    var index = (localIndex || []).slice();
+    var byId = {};
+    index.forEach(function (t) { byId[t.id] = t; });
+    var dismissed = {};
+    (dismissedIds || []).forEach(function (id) { dismissed[id] = true; });
+    var added = 0;
+    (serverThreads || []).forEach(function (st) {
+        if (!st || !st.id || dismissed[st.id]) return;
+        var lastAt = Date.parse(st.last_message_at || st.created_at || '') || 0;
+        var local = byId[st.id];
+        if (local) {
+            if (lastAt > (local.updatedAt || 0)) local.updatedAt = lastAt;
+            if ((!local.title || local.title === 'New conversation') && st.title) local.title = st.title;
+            return;
+        }
+        var thread = {
+            id: st.id,
+            title: st.title || 'Conversation',
+            conversationId: st.id,
+            createdAt: Date.parse(st.created_at || '') || lastAt || Date.now(),
+            updatedAt: lastAt || Date.now(),
+            fromServer: true
+        };
+        index.push(thread);
+        byId[st.id] = thread;
+        added++;
+    });
+    return { index: index, added: added };
+}
+
+var _operatorServerThreadsSynced = false;
+async function syncOperatorThreadsFromServer(requestedThreadId) {
+    if (_operatorServerThreadsSynced || !state.authToken) return;
+    _operatorServerThreadsSynced = true;
+    try {
+        var res = await fetch('/api/v1/operator/threads?limit=50', { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        var merged = mergeServerOperatorThreads(state.operatorThreads, body.threads || [], loadDismissedOperatorThreadIds());
+        if (merged.added === 0 && !requestedThreadId) {
+            saveOperatorThreadsIndex(merged.index);
+            return;
+        }
+        state.operatorThreads = merged.index;
+        saveOperatorThreadsIndex(state.operatorThreads);
+        if (requestedThreadId && requestedThreadId !== state.operatorActiveThreadId
+            && state.operatorThreads.some(function (t) { return t.id === requestedThreadId; })) {
+            switchOperatorThread(requestedThreadId);
+            return;
+        }
+        renderApp();
+    } catch (e) {
+        console.warn('[VTID-04437] server thread list failed:', e);
+    }
+}
+
+/**
+ * VTID-04437: a thread with no local history (opened from another device,
+ * or voice-only) loads its whole server transcript — typed and voice turns.
+ */
+async function loadOperatorThreadFromServer(threadId) {
+    if (!threadId || !state.authToken) return;
+    try {
+        var res = await fetch('/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages', { headers: buildContextHeaders({}) });
+        if (!res.ok) return;
+        var body = await res.json();
+        if (threadId !== state.operatorActiveThreadId) return;
+        if ((state.operatorChatHistory || []).length > 0) return; // something was typed meanwhile
+        var history = [];
+        (body.messages || []).forEach(function (m) {
+            if (!m || (m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
+            var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
+            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+        });
+        if (history.length === 0) return;
+        state.operatorChatHistory = history;
+        saveOperatorThreadHistory(threadId, history);
+        state.chatMessages = history.map(function (msg) {
+            return {
+                type: msg.role === 'user' ? 'user' : 'system',
+                content: msg.content,
+                timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: msg.ts,
+                channel: msg.channel
+            };
+        });
+        renderApp();
+    } catch (e) {
+        console.warn('[VTID-04437] thread transcript load failed:', e);
+    }
 }
 
 /** Switch the active thread and restore its history into the UI. */
@@ -792,11 +1033,16 @@ function switchOperatorThread(threadId) {
             content: msg.content,
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             ts: msg.ts,
-            followExecIds: msg.followExecIds
+            followExecIds: msg.followExecIds,
+            channel: msg.channel
         };
     });
     reattachFollowedExecutions(state.chatMessages);
+    notifyOrbOperatorThread();
     renderApp();
+    // VTID-04437: an empty local history means the thread lives server-side.
+    if (history.length === 0) loadOperatorThreadFromServer(thread.id);
+    else syncOperatorVoiceTurns();
 }
 
 /**
@@ -888,6 +1134,8 @@ function deleteOperatorThread(threadId) {
     state.operatorThreads = state.operatorThreads.filter(function (t) { return t.id !== threadId; });
     saveOperatorThreadsIndex(state.operatorThreads);
     try { localStorage.removeItem(operatorThreadHistoryKey(threadId)); } catch (e) { /* no-op */ }
+    // VTID-04437: the server keeps its copy; never re-add it from the list.
+    dismissOperatorThreadId(threadId);
 
     if (state.operatorActiveThreadId === threadId) {
         var next = state.operatorThreads
@@ -1213,6 +1461,9 @@ function initOperatorChatSession() {
     try {
         requestedThreadId = new URLSearchParams(window.location.search).get('operator_thread');
     } catch (e) { /* no-op */ }
+    // VTID-04437: merge the caller's server-side threads (async; a deep link
+    // to a thread only the server knows opens it once the list arrives).
+    syncOperatorThreadsFromServer(requestedThreadId);
 
     var active = (requestedThreadId && index.find(function (t) { return t.id === requestedThreadId; })) || index[0];
     if (!active) {
@@ -3462,7 +3713,8 @@ const NAVIGATION_CONFIG = [
             { "key": "live", "path": "/command-hub/autopilot/live/" },
             { "key": "engine", "path": "/command-hub/autopilot/engine/" },
             { "key": "growth", "path": "/command-hub/autopilot/growth/" },
-            { "key": "mission-alignment", "path": "/command-hub/autopilot/mission-alignment/" }
+            { "key": "mission-alignment", "path": "/command-hub/autopilot/mission-alignment/" },
+            { "key": "orchestrator", "path": "/command-hub/autopilot/orchestrator/" }
         ]
     },
     {
@@ -3547,11 +3799,11 @@ const NAVIGATION_CONFIG = [
         "section": "testing-qa",
         "basePath": "/command-hub/testing-qa/",
         "tabs": [
-            { "key": "unit-tests", "path": "/command-hub/testing-qa/unit-tests/" },
-            { "key": "integration-tests", "path": "/command-hub/testing-qa/integration-tests/" },
-            { "key": "validator-tests", "path": "/command-hub/testing-qa/validator-tests/" },
-            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" },
-            { "key": "ci-reports", "path": "/command-hub/testing-qa/ci-reports/" }
+            { "key": "overview", "path": "/command-hub/testing-qa/overview/" },
+            { "key": "catalog", "path": "/command-hub/testing-qa/catalog/" },
+            { "key": "runs", "path": "/command-hub/testing-qa/runs/" },
+            { "key": "run-tests", "path": "/command-hub/testing-qa/run-tests/" },
+            { "key": "e2e", "path": "/command-hub/testing-qa/e2e/" }
         ]
     },
     {
@@ -3946,6 +4198,16 @@ const state = {
     // Phase 2 batch UX: selected ids in the popup. Use Set for O(1) toggle.
     autopilotSelectedIds: new Set(),
     autopilotBatchInFlight: false, // disables footer buttons during a batch op
+    // VTID-04671: the popup's quality counters (below_floor_count /
+    // awaiting_review_count from GET /pending-approvals), the rec whose
+    // dismiss-reason picker is open (+ its draft), open "Why" sections, and
+    // recs activated from the popup whose execution is followed live until
+    // the popup closes.
+    autopilotRecommendationsMeta: { below_floor_count: null, awaiting_review_count: null },
+    autopilotDismissPickerFor: null,
+    autopilotDismissDraft: { reason_code: null, note: '' },
+    autopilotWhyOpen: {},
+    autopilotActivatedRecs: [], // [{ rec, vtid, execution_id }]
 
     // VTID-0407: Governance Blocked Modal
     showGovernanceBlockedModal: false,
@@ -4455,7 +4717,7 @@ const state = {
     // ──── New Module States (51-screen build) ────
 
     // Shared service health (feeds both header pill and dashboard grid)
-    serviceHealth: { items: [], loading: false, fetched: false, lastRefreshed: null },
+    serviceHealth: { items: [], groups: null, source: null, loading: false, fetched: false, lastRefreshed: null },
 
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
@@ -4598,6 +4860,19 @@ const state = {
     // Testing & QA — E2E runs + suites
     testingE2e: { runs: [], suites: [], loading: false, error: null, fetched: false, runningId: null },
     // Testing & QA — Unit Tests
+    // Testing & QA — Overview / Catalog / Runs (VTID-04642)
+    testingQa: {
+        summary: { data: null, loading: false, error: null },
+        catalog: { data: null, loading: false, error: null },
+        runs: { data: null, loading: false, error: null },
+        launchable: { data: null, loading: false, error: null },
+        launches: { data: null, loading: false, error: null },
+        launchForms: {},
+        catalogFilters: { environment: '', q: '' },
+        runsFilters: { environment: '', conclusion: '', repo: '' },
+        expandedSuite: null,
+        suiteFiles: {}
+    },
     testingUnit: { runs: [], loading: false, error: null, fetched: false },
     // Testing & QA — Integration Tests
     testingIntegration: { runs: [], loading: false, error: null, fetched: false },
@@ -4646,7 +4921,6 @@ const state = {
         error: null,
         fetched: false,
     },
-    cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
     testingSelectedRunResults: [],
@@ -6077,6 +6351,11 @@ function renderHeader() {
             if (data.ok) {
                 state.autopilotRecommendations = data.recommendations || [];
                 state.autopilotRecommendationsCount = state.autopilotRecommendations.length;
+                // VTID-04671: what the quality floor / review held back.
+                state.autopilotRecommendationsMeta = {
+                    below_floor_count: typeof data.below_floor_count === 'number' ? data.below_floor_count : null,
+                    awaiting_review_count: typeof data.awaiting_review_count === 'number' ? data.awaiting_review_count : null
+                };
             } else {
                 state.autopilotRecommendationsError = data.error || 'Unknown error';
             }
@@ -6244,14 +6523,17 @@ function renderHeader() {
     // Compute service health score (shared with dashboard grid)
     let capsTotal = 0;
     let capsHealthy = 0;
+    let capsNoAccess = 0;
     if (state.serviceHealth.items.length > 0) {
-        capsTotal = state.serviceHealth.items.length;
-        capsHealthy = state.serviceHealth.items.filter(function (s) { return s.healthy; }).length;
+        const shCounts = serviceHealthCounts(state.serviceHealth.items);
+        capsTotal = shCounts.total;
+        capsHealthy = shCounts.healthy;
+        capsNoAccess = shCounts.noAccess;
     } else if (state.cicdHealth?.capabilities) {
         // Fallback while service health loads
         for (const v of Object.values(state.cicdHealth.capabilities)) { capsTotal++; if (v) capsHealthy++; }
     }
-    const capsFailing = capsTotal - capsHealthy;
+    const capsFailing = capsTotal - capsHealthy - capsNoAccess;
 
     // Score-based pill: shows green/red counts at a glance
     const statusPill = document.createElement('button');
@@ -6272,7 +6554,7 @@ function renderHeader() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' failing' + (capsNoAccess ? ', ' + capsNoAccess + ' not checked' : '') + ' of ' + capsTotal + ' services') : 'Loading health...';
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -6298,9 +6580,13 @@ function renderHeader() {
         var hmHeader = document.createElement('div');
         hmHeader.className = 'modal-header';
         hmHeader.style.cssText = 'display:flex; justify-content:space-between; align-items:center;';
-        var titleColor = capsFailing > 0 ? '#ef4444' : '#10b981';
+        // VTID-04661: colour via class, not an inline style (CSP gate).
+        var titleClass = capsFailing > 0 ? 'health-modal__title health-modal__title--bad' : 'health-modal__title health-modal__title--ok';
         hmHeader.innerHTML =
-            '<span style="color:' + titleColor + '">Service Health (' + capsHealthy + '/' + capsTotal + ')</span>' +
+            '<span class="' + titleClass + '">Service Health (' + capsHealthy + '/' + capsTotal + ')' +
+            (capsFailing > 0 ? ' <span class="health-modal__summary health-modal__summary--bad">' + capsFailing + ' failing</span>' : '') +
+            (capsNoAccess > 0 ? ' <span class="health-modal__summary health-modal__summary--muted">' + capsNoAccess + ' not checked</span>' : '') +
+            '</span>' +
             '<button class="drawer-close-btn" style="position:static;">&times;</button>';
         hmHeader.querySelector('.drawer-close-btn').setAttribute('aria-label', 'Close service health');
         hmHeader.querySelector('.drawer-close-btn').onclick = function () {
@@ -6320,7 +6606,10 @@ function renderHeader() {
 
         if (state.serviceHealth.items.length > 0) {
             // Group items by their group field (preserved from endpoint definition)
-            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling', 'Community & Social', 'Domain & Context', 'Visual & VTID'];
+            // VTID-04661: every group present is drawn — known groups first in
+            // registry order, then any other. The old hardcoded list silently
+            // dropped 'Frontend & Performance' (Screen Load Time).
+            var groupOrder = orderedHealthGroups(state.serviceHealth.items, state.serviceHealth.groups);
             var grouped = {};
             for (var gi = 0; gi < state.serviceHealth.items.length; gi++) {
                 var grp = state.serviceHealth.items[gi].group || 'Other';
@@ -6341,11 +6630,13 @@ function renderHeader() {
                 });
 
                 // Group header
-                var groupFailed = groupItems.filter(function (s) { return !s.healthy; }).length;
+                var groupDown = groupItems.filter(function (s) { return serviceHealthDot(s) === 'red'; }).length;
+                var groupDegraded = groupItems.filter(function (s) { return serviceHealthDot(s) === 'yellow'; }).length;
                 var grpHeader = document.createElement('div');
                 grpHeader.className = 'health-grid__group-header';
                 grpHeader.innerHTML = groupName +
-                    (groupFailed > 0 ? ' <span class="health-grid__group-badge--bad">' + groupFailed + ' down</span>' : '');
+                    (groupDown > 0 ? ' <span class="health-grid__group-badge--bad">' + groupDown + ' down</span>' : '') +
+                    (groupDegraded > 0 ? ' <span class="health-grid__group-badge--warn">' + groupDegraded + ' degraded</span>' : '');
                 hmBody.appendChild(grpHeader);
 
                 // Grid for this group
@@ -6354,20 +6645,19 @@ function renderHeader() {
 
                 for (var shi = 0; shi < groupItems.length; shi++) {
                     (function (svc) {
-                        var dot = 'green';
-                        if (!svc.healthy && (svc.status === 'degraded' || svc.status === 'warning')) dot = 'yellow';
-                        if (!svc.healthy && (svc.status === 'down' || svc.status === 'error' || svc.status === 'unhealthy')) dot = 'red';
-                        if (!svc.healthy && dot === 'green') dot = 'red';
+                        var dot = serviceHealthDot(svc);
+                        var dotClass = SERVICE_HEALTH_DOT_CLASS[dot];
 
                         var cell = document.createElement('div');
-                        cell.className = 'health-grid__cell' + (svc.healthy ? '' : ' health-grid__cell--bad');
+                        // VTID-04664: a not-checked cell (grey) is muted, not styled as a failure.
+                        cell.className = svc.healthy ? 'health-grid__cell' : (dot === 'grey' ? 'health-grid__cell health-grid__cell--muted' : 'health-grid__cell health-grid__cell--bad');
                         cell.title = svc.name + ': ' + (svc.healthy ? 'OK' : svc.status) + (svc.latency_ms >= 0 ? ' (' + svc.latency_ms + 'ms)' : '');
                         cell.innerHTML =
-                            '<span class="health-dot health-dot-' + dot + '"></span>' +
+                            '<span class="health-dot ' + dotClass + '"></span>' +
                             '<span class="health-grid__cell-name">' + svc.name + '</span>';
                         cell.onclick = function () {
                             var detailHTML = '<div class="health-detail__header">' +
-                                '<span class="health-dot health-dot-' + dot + '"></span>' +
+                                '<span class="health-dot ' + dotClass + '"></span>' +
                                 '<strong>' + svc.name + '</strong>' +
                                 '<span class="health-detail__status health-detail__status--' + (svc.healthy ? 'ok' : 'bad') + '">' +
                                 (svc.healthy ? 'OK' : svc.status.toUpperCase()) + '</span>' +
@@ -7448,16 +7738,316 @@ function renderConversationConfigView() {
     return ui.panel;
 }
 
+// VTID-04371 (WS-0.7): Monitor dashboard + Assistant › Metrics learning health,
+// both read from the hourly rollup (conversation_metrics_hourly), never from
+// oasis_events directly. Class-based styling only (CSP gate).
+var CONV_METRIC_WINDOWS = [{ hours: 24, label: '24 h' }, { hours: 168, label: '7 days' }, { hours: 720, label: '30 days' }];
+
+function _convPct(r) {
+    if (!r || r.rate == null) return '—';
+    return (Math.round(r.rate * 1000) / 10) + '%';
+}
+
+function _convWhen(iso) {
+    if (!iso) return null;
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+function _convMs(v) {
+    if (!v || v.value == null) return '—';
+    return v.value >= 10000 ? (Math.round(v.value / 100) / 10) + ' s' : Math.round(v.value) + ' ms';
+}
+
+function _convTile(label, value, sub, tone) {
+    var t = _convEl('div', { cls: 'conv-metric-tile' + (tone ? ' conv-metric-tile--' + tone : '') });
+    t.appendChild(_convEl('div', { text: label, cls: 'conv-metric-tile__label' }));
+    t.appendChild(_convEl('div', { text: value, cls: 'conv-metric-tile__value' }));
+    if (sub) t.appendChild(_convEl('div', { text: sub, cls: 'conv-metric-tile__sub' }));
+    return t;
+}
+
+function _convTileGrid(tiles) {
+    var g = _convEl('div', { cls: 'conv-metric-grid' });
+    tiles.forEach(function (t) { g.appendChild(t); });
+    return g;
+}
+
+function _convHeading(text) {
+    return _convEl('h3', { text: text, cls: 'conv-metric-heading' });
+}
+
+function _convBreakdownRows(list) {
+    return (list || []).map(function (b) {
+        return { key: b.key, count: b.count, share: b.share == null ? '—' : (Math.round(b.share * 1000) / 10) + '%' };
+    });
+}
+
+function _convWindowPicker(current, onPick) {
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_METRIC_WINDOWS.forEach(function (w) {
+        var b = _convEl('button', { text: w.label, cls: 'conv-metric-window' + (w.hours === current ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { onPick(w.hours); });
+        bar.appendChild(b);
+    });
+    return bar;
+}
+
+function _convRenderPerformance(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderPerformance(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/summary?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        body.appendChild(_convEl('div', {
+            text: d.hours_with_data + ' hour(s) with data in the last ' + d.window_hours + ' h · rollup last computed ' + (_convWhen(d.last_computed_at) || 'never') +
+                ' · window percentiles are sample-weighted means of hourly values (approximate)',
+            cls: 'conv-metric-muted'
+        }));
+        var s = d.sessions, sp = d.speed, r = d.reliability, o = d.openers, of = d.offers;
+        body.appendChild(_convHeading('Speed'));
+        body.appendChild(_convTileGrid([
+            _convTile('First speech p50', _convMs(sp.first_audio_ms_p50), sp.first_audio_ms_p50.samples + ' sessions'),
+            _convTile('First speech p90', _convMs(sp.first_audio_ms_p90), 'target < 3 s', sp.first_audio_ms_p90.value != null && sp.first_audio_ms_p90.value > 3000 ? 'warn' : null),
+            _convTile('Context wait timed out', _convPct(sp.context_wait_timeouts), sp.context_wait_timeouts.numerator + ' of ' + sp.context_wait_timeouts.denominator, sp.context_wait_timeouts.rate > 0.5 ? 'warn' : null),
+            // VTID-04399: signed-in sessions that set the model up with no
+            // memory context at all — the WS-1.2 target is under 5%.
+            sp.context_setup_empty ? _convTile('Started with no context', _convPct(sp.context_setup_empty),
+                sp.context_setup_empty.numerator + ' of ' + sp.context_setup_empty.denominator + ' signed-in · target < 5%',
+                sp.context_setup_empty.rate != null && sp.context_setup_empty.rate > 0.05 ? 'warn' : null) : null,
+            sp.context_sources ? _convTile('Context source', String(sp.core_snapshot_used || 0) + ' from snapshot',
+                sp.context_sources.map(function (b) { return b.key + ' ' + b.count; }).join(' · ') || 'no data') : null
+        ].filter(Boolean)));
+        body.appendChild(_convHeading('Sessions'));
+        body.appendChild(_convTileGrid([
+            _convTile('Started', String(s.started)),
+            _convTile('With a stop event', _convPct(s.stop_coverage), s.stopped + ' stopped · ' + s.stop_duplicates + ' duplicate stop(s)', s.stop_coverage.rate != null && s.stop_coverage.rate < 0.9 ? 'warn' : null),
+            _convTile('Silent (no model audio)', _convPct(s.silent), s.silent.numerator + ' of ' + s.silent.denominator, s.silent.rate > 0.1 ? 'warn' : null),
+            _convTile('User turns / session', s.user_turns_avg.value == null ? '—' : String(s.user_turns_avg.value)),
+            _convTile('Duration p50', _convMs(s.duration_ms_p50))
+        ]));
+        body.appendChild(_convHeading('Reliability'));
+        body.appendChild(_convTileGrid([
+            _convTile('Upstream errors', String(r.upstream_errors)),
+            _convTile('Premature-close retries', String(r.premature_close_retries)),
+            _convTile('Reconnects', String(r.reconnects)),
+            _convTile('Greeting recoveries', String(r.greeting_recoveries)),
+            _convTile('Watchdog fired', String(r.watchdog_fired)),
+            _convTile('Tool failures', String(r.tool_failures))
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Error kind' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(r.upstream_errors_by_kind)));
+        body.appendChild(_convHeading('Openers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Greetings sent', String(r.greetings_sent)),
+            _convTile('Same opener within 24 h', _convPct(o.repeat_24h), o.repeat_24h.numerator + ' of ' + o.repeat_24h.denominator + ' (other sessions only)', o.repeat_24h.rate > 0.5 ? 'warn' : null)
+        ]));
+        body.appendChild(_convTable([{ key: 'key', label: 'Opener' }, { key: 'count', label: 'Count' }, { key: 'share', label: 'Share' }], _convBreakdownRows(o.distribution)));
+        body.appendChild(_convHeading('Offers'));
+        body.appendChild(_convTileGrid([
+            _convTile('Made', String(of.made)),
+            _convTile('Accepted', _convPct(of.acceptance), of.accepted + ' accepted'),
+            _convTile('Declined', String(of.declined)),
+            _convTile('Replaced', String(of.replaced)),
+            _convTile('Unanswered', String(of.unanswered))
+        ]));
+        body.appendChild(_convHeading('Languages'));
+        body.appendChild(_convTable([{ key: 'key', label: 'Language' }, { key: 'count', label: 'Sessions' }, { key: 'share', label: 'Share' }], _convBreakdownRows(s.by_lang)));
+    }).catch(function (err) { _convError(body, err); });
+}
+
+// VTID-04421 (WS-2.4): suggestion outcomes per provider, from
+// conversation_offer_outcomes (one row per offer, settled by its first outcome).
+var CONV_OFFER_DAYS = [1, 7, 30];
+
+function _convRenderOfferOutcomes(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Suggestion outcomes'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderOfferOutcomes(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/offer-outcomes?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        var rows = d.providers || [];
+        var tot = rows.reduce(function (a, r) {
+            a.made += r.made; a.accepted += r.accepted; a.declined += r.declined; a.ignored += r.ignored; a.open += r.open; return a;
+        }, { made: 0, accepted: 0, declined: 0, ignored: 0, open: 0 });
+        var settled = tot.accepted + tot.declined + tot.ignored;
+        body.appendChild(_convTileGrid([
+            _convTile('Suggestions made', String(tot.made), 'last ' + (d.days || days) + ' day(s)'),
+            _convTile('Accepted', settled ? Math.round(tot.accepted / settled * 1000) / 10 + '%' : '—', tot.accepted + ' of ' + settled + ' settled'),
+            _convTile('Declined', String(tot.declined)),
+            _convTile('Ignored', String(tot.ignored), 'replaced, or unanswered for a day'),
+            _convTile('Still open', String(tot.open))
+        ]));
+        body.appendChild(_convTable(
+            [{ key: 'provider', label: 'Provider' }, { key: 'made', label: 'Made' }, { key: 'accepted', label: 'Accepted' },
+             { key: 'declined', label: 'Declined' }, { key: 'ignored', label: 'Ignored' }, { key: 'open', label: 'Open' }, { key: 'rate', label: 'Acceptance' }],
+            rows.map(function (r) {
+                return { provider: r.provider, made: r.made, accepted: r.accepted, declined: r.declined, ignored: r.ignored, open: r.open,
+                    rate: r.acceptance_rate == null ? '—' : Math.round(r.acceptance_rate * 1000) / 10 + '%' };
+            })
+        ));
+        if (!rows.length) body.appendChild(_convEl('div', { text: 'No suggestions recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
+// VTID-04422 (WS-2.2): the live fixed-priority ranking vs the shadow
+// relevance score, over the sessions in the window.
+function _convRenderShadowRanking(host, days) {
+    host.innerHTML = '';
+    host.appendChild(_convHeading('Ranking: live vs shadow score'));
+    var bar = _convEl('div', { cls: 'conv-metric-windows' });
+    CONV_OFFER_DAYS.forEach(function (dd) {
+        var b = _convEl('button', { text: dd + ' d', cls: 'conv-metric-window' + (dd === days ? ' is-active' : '') });
+        b.type = 'button';
+        b.addEventListener('click', function () { _convRenderShadowRanking(host, dd); });
+        bar.appendChild(b);
+    });
+    host.appendChild(bar);
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/shadow-ranking?days=' + days).then(function (d) {
+        body.innerHTML = '';
+        // VTID-04491: since VTID-04454 the score can choose the opening
+        // (BRAIN_SCORED_OPENING). Say which mode the window actually ran in
+        // instead of always claiming the score "changes nothing".
+        var weightsText = (Object.keys(d.weights_versions || {}).map(function (v) { return 'v' + v + ' (' + d.weights_versions[v] + ')'; }).join(', ') || 'none yet');
+        var scoredN = d.scored_openings || 0;
+        body.appendChild(_convEl('div', {
+            text: (scoredN > 0
+                ? 'Scored ranking: the weighted score chose ' + scoredN + ' of ' + (d.sessions_ranked || 0) + ' openings in this window; the fixed-priority pick is recorded next to it for comparison. Weights: '
+                : 'Shadow mode in this window: the weighted score was recorded next to the fixed-priority ranking and did not choose any opening. Weights: ') +
+                weightsText + '.',
+            cls: 'conv-metric-muted'
+        }));
+        body.appendChild(_convTileGrid([
+            _convTile('Openings ranked', String(d.sessions_ranked || 0), 'of ' + (d.sessions_read || 0) + ' sessions in ' + (d.days || days) + ' day(s)'),
+            _convTile('Agreement', d.agree_rate == null ? '—' : Math.round(d.agree_rate * 1000) / 10 + '%', d.agree + ' same winner'),
+            _convTile('Would differ', String(d.sessions_ranked - d.agree), 'the shadow score picks another provider',
+                d.sessions_ranked && (d.sessions_ranked - d.agree) / d.sessions_ranked > 0.5 ? 'warn' : null),
+            // VTID-04435 (WS-4.3): openings scored with the user's own weights (their outcomes, within fixed limits).
+            _convTile('Personal weights', String(d.personalized || 0), (d.personal_changed_winner || 0) + ' changed the shadow pick'),
+            // VTID-04491: openings the score actually chose, and how many it changed vs the fixed-priority pick.
+            _convTile('Scored openings', String(scoredN), (d.scored_changed_opening || 0) + ' differ from the fixed-priority pick')
+        ]));
+        if ((d.disagreements || []).length) {
+            body.appendChild(_convTable([{ key: 'live', label: 'Live pick' }, { key: 'shadow', label: 'Shadow pick' }, { key: 'count', label: 'Openings' }], d.disagreements));
+        }
+        if ((d.wins || []).length) {
+            body.appendChild(_convTable([{ key: 'provider', label: 'Provider' }, { key: 'live', label: 'Live wins' }, { key: 'shadow', label: 'Shadow wins' }], d.wins));
+        }
+        if (!d.sessions_ranked) body.appendChild(_convEl('div', { text: 'No shadow rankings recorded in this window yet.', cls: 'conv-metric-muted' }));
+    }).catch(function (err) { _convError(body, err); });
+}
+
 function renderConversationMonitorView() {
-    var ui = _convPanel('Conversation · Monitor', 'Recent greeting decisions (oasis_events greeting_sent) — which opener fired, register, recency bucket, chosen NBA, and the screen the user was on.');
+    var ui = _convPanel('Conversation · Monitor', 'Performance from the hourly rollup, then the most recent greeting decisions (oasis_events greeting_sent).');
+    ui.body.innerHTML = '';
+    var perf = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(perf);
+    _convRenderPerformance(perf, 24);
+    var offers = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(offers);
+    _convRenderOfferOutcomes(offers, 7);
+    var shadow = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(shadow);
+    _convRenderShadowRanking(shadow, 7);
+    var feed = _convEl('div', { cls: 'conv-metric-section' });
+    feed.appendChild(_convHeading('Recent greeting decisions'));
+    var feedBody = _convEl('div');
+    feedBody.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    feed.appendChild(feedBody);
+    ui.body.appendChild(feed);
     _convFetch('/admin/conversation/decisions?limit=100').then(function (data) {
-        ui.body.innerHTML = '';
-        ui.body.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', css: 'color:#8a94a6;margin-bottom:10px;font-size:12px;' }));
-        ui.body.appendChild(_convTable(
+        feedBody.innerHTML = '';
+        feedBody.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', cls: 'conv-metric-muted' }));
+        feedBody.appendChild(_convTable(
             [{ key: 'created_at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' }, { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'NBA' }, { key: 'nba_domain', label: 'Domain' }, { key: 'current_route', label: 'Route' }, { key: 'lang', label: 'Lang' }],
             data.decisions || []
         ));
-    }).catch(function (err) { _convError(ui.body, err); });
+    }).catch(function (err) { _convError(feedBody, err); });
+    return ui.panel;
+}
+
+function _convRenderLearning(host, hours) {
+    host.innerHTML = '';
+    host.appendChild(_convWindowPicker(hours, function (h) { _convRenderLearning(host, h); }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+    host.appendChild(body);
+    _convFetch('/admin/conversation/metrics/learning?window_hours=' + hours).then(function (d) {
+        body.innerHTML = '';
+        (d.errors || []).forEach(function (e) {
+            body.appendChild(_convEl('div', { text: 'Could not read ' + e, cls: 'conv-metric-error' }));
+        });
+        var c = d.coverage;
+        if (c) {
+            body.appendChild(_convHeading('What each session leaves behind'));
+            body.appendChild(_convTileGrid([
+                _convTile('Sessions finalized', String(c.sessions_finalized)),
+                _convTile('Summary written', _convPct(c.summary_coverage), c.summary_coverage.numerator + ' of ' + c.summary_coverage.denominator, c.summary_coverage.rate != null && c.summary_coverage.rate < 0.8 ? 'warn' : null),
+                _convTile('Memory committed', _convPct(c.memory_committed)),
+                _convTile('Facts learned', String(c.facts_extracted), c.facts_per_finalized_session == null ? null : c.facts_per_finalized_session + ' per finalized session'),
+                _convTile('Open threads', String(c.threads_written), c.threads_touched + ' re-touched'),
+                _convTile('Promises recorded', String(c.promises_written))
+            ]));
+        }
+        var n = d.profile_narrative;
+        if (n) {
+            body.appendChild(_convHeading('Profile narrative (nightly synthesis)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Users with a narrative', String(n.users_with_narrative)),
+                _convTile('Fresh (≤ 7 days)', String(n.fresh_7d), 'older ones are no longer injected', n.users_with_narrative > 0 && n.fresh_7d === 0 ? 'warn' : null),
+                _convTile('Newest', _convWhen(n.newest_generated_at) || '—'),
+                // VTID-04438 (WS-4.1): profile quality and how much of each user's picture the learning saw.
+                _convTile('Structured profiles', String(n.structured || 0),
+                    n.avg_sections_filled == null ? 'none yet' : n.avg_sections_filled + ' of 6 parts filled on average'),
+                _convTile('Inputs seen', (n.with_conversations || 0) + ' · ' + (n.with_diary || 0) + ' · ' + (n.with_outcomes || 0),
+                    'profiles built with conversations · diary · suggestion outcomes')
+            ]));
+        }
+        // VTID-04444 (WS-4.2): the diary theme rollup (consolidator loop 10 / AP-0915).
+        var dt = d.diary_themes;
+        if (dt) {
+            body.appendChild(_convHeading('Diary themes (nightly rollup)'));
+            body.appendChild(_convTileGrid([
+                _convTile('Rollup', dt.enabled ? 'on' : 'off', dt.enabled ? 'runs nightly (AP-0915)' : 'off by default, flag not set'),
+                _convTile('Users with themes', String(dt.users_with_themes || 0),
+                    dt.avg_themes == null ? 'none yet' : dt.avg_themes + ' themes on average'),
+                _convTile('Fresh (≤ 14 days)', String(dt.fresh || 0), 'older ones are not read by the profile',
+                    dt.enabled && dt.users_with_themes > 0 && !dt.fresh ? 'warn' : null),
+                _convTile('Newest', _convWhen(dt.newest_generated_at) || '—')
+            ]));
+        }
+        if (d.jobs) {
+            body.appendChild(_convHeading('Nightly learning jobs'));
+            body.appendChild(_convTable(
+                [{ key: 'automation_id', label: 'Job' }, { key: 'last_started_at', label: 'Last run' }, { key: 'age_hours', label: 'Age (h)' }, { key: 'last_status', label: 'Status' }, { key: 'runs_in_window', label: 'Runs in window' }, { key: 'state', label: 'State' }, { key: 'last_error', label: 'Last error' }],
+                d.jobs.map(function (j) { return Object.assign({}, j, { last_started_at: _convWhen(j.last_started_at), state: j.stale ? 'STALE' : 'ok' }); })
+            ));
+        }
+    }).catch(function (err) { _convError(body, err); });
+}
+
+function renderAssistantLearningHealthView() {
+    var ui = _convPanel('Assistant · Metrics — Learning health', 'Is the assistant learning? Nightly job runs, profile freshness, facts per session and summary coverage (hourly rollup + automation_runs).');
+    ui.body.innerHTML = '';
+    var host = _convEl('div', { cls: 'conv-metric-section' });
+    ui.body.appendChild(host);
+    _convRenderLearning(host, 168);
     return ui.panel;
 }
 
@@ -7472,6 +8062,233 @@ function renderConversationToolHealthView() {
         ));
     }).catch(function (err) { _convError(ui.body, err); });
     return ui.panel;
+}
+
+// ─── VTID-04419 (Plan v1 WS-1.7): brain inspector ───────────────────────────
+// Per voice session: what context was built and trimmed, what the opening
+// decision was and why, the tool catalog trim, errors and the outcome. Mounted
+// in Conversation → Simulator and Conversation → Journey Context. Read-only;
+// admin endpoints GET /admin/conversation/sessions[/:id/brain]. Class-based
+// styling only (CSP).
+function _convBrainChips(label, keys, tone) {
+    var row = _convEl('div', { cls: 'conv-brain__chips' });
+    row.appendChild(_convEl('span', { text: label, cls: 'conv-brain__chips-label' }));
+    if (!keys || !keys.length) {
+        row.appendChild(_convEl('span', { text: 'none', cls: 'conv-metric-muted' }));
+        return row;
+    }
+    keys.forEach(function (k) {
+        row.appendChild(_convEl('span', { text: k, cls: 'conv-brain__chip' + (tone ? ' conv-brain__chip--' + tone : '') }));
+    });
+    return row;
+}
+
+function _convBrainFail(host, err) {
+    host.innerHTML = '';
+    host.appendChild(_convEl('div', { text: 'Could not load: ' + (err && err.message ? err.message : err), cls: 'conv-brain__error' }));
+}
+
+function _convBrainRender(host, d) {
+    host.innerHTML = '';
+    var c = d.context || {}, o = d.outcome || {}, u = d.user || {};
+    host.appendChild(_convEl('div', {
+        text: d.session_id + ' · started ' + (_convWhen(d.started_at) || '?') + ' · ' + (u.lang || '?') + ' · ' + (u.transport || '?') +
+            (u.origin ? ' · ' + u.origin : '') + (u.user_id ? ' · user ' + u.user_id : ''),
+        cls: 'conv-brain__meta'
+    }));
+    var gate = c.gate;
+    host.appendChild(_convHeading('Context'));
+    host.appendChild(_convTileGrid([
+        _convTile('Builder', c.builder || (c.skipped_reason ? c.skipped_reason : 'not recorded'),
+            c.brain_error ? 'brain failed: ' + c.brain_error : (c.bootstrap_latency_ms != null ? 'built in ' + _convMs({ value: c.bootstrap_latency_ms }) : null),
+            c.brain_error ? 'warn' : null),
+        _convTile('Context at setup', c.setup_context_chars == null ? '—' : c.setup_context_chars + ' chars',
+            'source: ' + (c.setup_context_source || (gate && gate.context_source) || 'unknown'),
+            c.setup_context_chars === 0 ? 'warn' : null),
+        _convTile('Context wait', gate ? (gate.timed_out ? 'timed out' : 'in time') : '—',
+            gate && gate.waited_ms != null ? 'waited ' + gate.waited_ms + ' ms' : null, gate && gate.timed_out ? 'warn' : null),
+        _convTile('Stored snapshot', c.snapshot_used ? 'used' : 'not used',
+            c.snapshot_used && c.snapshot_used.chars != null ? c.snapshot_used.chars + ' chars' : null),
+        _convTile('Reconnect rebuilds', String((c.rebuilt_on_reconnect || []).length),
+            (c.rebuilt_on_reconnect || []).map(function (r) { return r.builder + (r.started_builder && r.started_builder !== r.builder ? ' (started ' + r.started_builder + ')' : ''); }).join(' · ') || null)
+    ]));
+    var p = c.packing;
+    if (p) {
+        host.appendChild(_convEl('div', {
+            text: 'Bootstrap packing: ' + (p.chars_before == null ? '?' : p.chars_before) + ' → ' + (p.chars_after == null ? '?' : p.chars_after) + ' chars' + (p.packed ? ' (trimmed to budget)' : ' (under budget, unchanged)'),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convBrainChips('Kept', p.kept));
+        host.appendChild(_convBrainChips('Shortened', p.shortened, 'warn'));
+        host.appendChild(_convBrainChips('Dropped', p.dropped, 'bad'));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No packing report for this session.', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Decision'));
+    if (d.decision && d.decision.length) {
+        host.appendChild(_convTable(
+            [{ key: 'at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' },
+             { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'Next step' }, { key: 'current_route', label: 'Screen' },
+             { key: 'candidate', label: 'Candidate' }],
+            d.decision.map(function (x) {
+                return { at: _convWhen(x.at) || '', wake_opener: x.wake_opener || '', register: x.register || '', bucket: x.bucket || '',
+                    nba: (x.nba || '') + (x.nba_domain ? ' (' + x.nba_domain + ')' : ''), current_route: x.current_route || '',
+                    // VTID-04420: which provider's candidate won the ranker, and whether this opener spoke it.
+                    candidate: x.candidate_provider ? x.candidate_provider + (x.candidate_spoken ? ' · spoken' : ' · outranked') : (x.candidate_spoken === false ? 'none' : '') };
+            })
+        ));
+    } else {
+        host.appendChild(_convEl('div', { text: 'No opening decision recorded (for example, a silent reconnect).', cls: 'conv-metric-muted' }));
+    }
+
+    // VTID-04420 (WS-2.1): every continuation provider's result for the opening.
+    host.appendChild(_convHeading('Candidates'));
+    var cand = d.candidates;
+    if (cand && cand.providers && cand.providers.length) {
+        host.appendChild(_convEl('div', {
+            text: 'Ranker picked: ' + (cand.selected_kind === 'none_with_reason' ? 'nothing (' + (cand.none_with_reason || 'no reason') + ')' : (cand.selected_kind || 'unknown')) +
+                (cand.duration_ms != null ? ' · ranked in ' + cand.duration_ms + ' ms' : ''),
+            cls: 'conv-metric-muted'
+        }));
+        host.appendChild(_convTable(
+            [{ key: 'key', label: 'Provider' }, { key: 'status', label: 'Result' }, { key: 'latency', label: 'Latency' }, { key: 'reason', label: 'Reason' }],
+            cand.providers.map(function (x) {
+                return { key: x.key, status: x.status, latency: x.latency_ms == null ? '' : x.latency_ms + ' ms', reason: x.reason || '' };
+            })
+        ));
+        // VTID-04422 (WS-2.2): the shadow relevance ranking for this opening.
+        var sh = cand.shadow;
+        if (sh) {
+            host.appendChild(_convEl('div', {
+                text: 'Shadow score (weights v' + (sh.weights_version == null ? '?' : sh.weights_version) + '): ' +
+                    (sh.agree ? 'agrees with the live pick (' + (sh.live_winner || 'none') + ')' :
+                        'would pick ' + (sh.shadow_winner || 'none') + ' instead of ' + (sh.live_winner || 'none')),
+                cls: sh.agree ? 'conv-metric-muted' : 'conv-brain__shadow-diff'
+            }));
+            // VTID-04435 (WS-4.3): this user's weight adjustment.
+            if (sh.personal) {
+                var bodyPersonal = 'Personal weights from ' + (sh.personal.evidence == null ? '?' : sh.personal.evidence) + ' settled offers: outcome ×' +
+                    sh.personal.outcome_mult + ', freshness ×' + sh.personal.freshness_mult +
+                    (sh.personal.shared_weights_winner && sh.personal.shared_weights_winner !== sh.shadow_winner
+                        ? ' · shared weights would pick ' + sh.personal.shared_weights_winner : ' · same pick as the shared weights');
+                host.appendChild(_convEl('div', { text: bodyPersonal, cls: 'conv-metric-muted' }));
+            }
+            host.appendChild(_convTable(
+                [{ key: 'provider', label: 'Provider' }, { key: 'score', label: 'Shadow score' }, { key: 'priority', label: 'Fixed priority' }],
+                (sh.scores || []).map(function (x) {
+                    return { provider: x.provider, score: x.score == null ? '' : x.score.toFixed(3), priority: x.priority == null ? '' : String(x.priority) };
+                })
+            ));
+        }
+    } else {
+        host.appendChild(_convEl('div', { text: 'No provider results recorded for this session.', cls: 'conv-metric-muted' }));
+    }
+
+    host.appendChild(_convHeading('Tools, errors and outcome'));
+    var t = d.tools;
+    host.appendChild(_convTileGrid([
+        _convTile('Tool catalog', t && t.bytes_after != null ? Math.round((t.bytes_after || 0) / 1024) + ' KB' : 'not trimmed',
+            t ? [
+                t.bytes_before != null ? 'from ' + Math.round((t.bytes_before || 0) / 1024) + ' KB · ' + (t.dropped_count || 0) + ' dropped' + (t.provider ? ' · ' + t.provider : '') : '',
+                // VTID-04426: context-aware selection and the tools reached through find_tool / use_tool.
+                t.route_groups ? 'screen: ' + (t.route_groups.length ? t.route_groups.join(', ') : 'none') + ' · ' + (t.contextual_kept || 0) + ' screen tools · ' + (t.deferred_reachable || 0) + ' reachable' : '',
+                (t.searches || (t.deferred_used || []).length) ? (t.searches || 0) + ' find_tool · used: ' + ((t.deferred_used || []).join(', ') || 'none') : ''
+            ].filter(Boolean).join(' · ') || null : null),
+        // VTID-04427 (WS-3.2): the live advisor — counts and cost only, the note text is never stored.
+        _convTile('Live advisor', d.advisor ? d.advisor.notes + ' note(s)' : 'not running',
+            d.advisor ? [
+                d.advisor.reads + ' get_guidance (' + d.advisor.fresh_reads + ' fresh)',
+                '$' + (d.advisor.cost_usd || 0).toFixed(4),
+                d.advisor.latency_ms_max == null ? '' : 'slowest ' + (d.advisor.latency_ms_max / 1000).toFixed(1) + ' s',
+                Object.keys(d.advisor.skipped || {}).map(function (k) { return k + ' ×' + d.advisor.skipped[k]; }).join(', '),
+                (d.advisor.suggested_tools || []).length ? 'suggested: ' + d.advisor.suggested_tools.join(', ') : ''
+            ].filter(Boolean).join(' · ') : 'off until the advisor routing stage is approved',
+            d.advisor && d.advisor.skipped && (d.advisor.skipped.timeout || d.advisor.skipped.error) ? 'warn' : null),
+        _convTile('Errors', String((d.errors || []).length),
+            (d.errors || []).map(function (e) { return e.stage + (e.failure_kind ? ':' + e.failure_kind : ''); }).join(' · ') || null,
+            (d.errors || []).length ? 'warn' : null),
+        _convTile('First speech', o.first_audio_ms == null ? '—' : (o.first_audio_ms / 1000).toFixed(1) + ' s', 'session open → first model audio'),
+        _convTile('Reply speed', (o.turn_first_audio_ms || []).length ? (o.turn_first_audio_ms || []).map(function (x) { return 't' + x.turn + ' ' + (x.ms / 1000).toFixed(1) + ' s'; }).join(' · ') : '—',
+            'first model audio after each user turn', (o.turn_first_audio_ms || []).some(function (x) { return x.ms > 3000; }) ? 'warn' : null),
+        _convTile('Ended', o.stopped ? (o.stop_reason || 'stopped') : 'no stop event',
+            (o.stopped && !o.stop_reason ? 'no reason recorded · ' : '') + (o.turns == null ? '' : o.turns + ' turn(s)') +
+            (o.duration_ms == null ? '' : ' · ' + Math.round(o.duration_ms / 1000) + ' s'), o.stopped ? null : 'warn'),
+        _convTile('Finalized', o.finalized ? 'yes' : 'no',
+            o.finalized ? ((o.finalized.memory_committed ? 'memory committed' : 'no memory commit') + ' · ' + (o.finalized.summary_written ? 'summary written' : 'no summary')) : null)
+    ]));
+
+    var tl = _convEl('details', { cls: 'conv-brain__timeline' });
+    tl.appendChild(_convEl('summary', { text: 'Timeline (' + (d.timeline || []).length + ' of ' + d.events_read + ' events' + (d.truncated ? ', truncated' : '') + ')' }));
+    (d.timeline || []).forEach(function (e) {
+        tl.appendChild(_convEl('div', { text: '+' + (e.t_ms / 1000).toFixed(1) + ' s  ' + e.topic + (e.stage ? ' · ' + e.stage : ''), cls: 'conv-brain__tl-row' }));
+    });
+    host.appendChild(tl);
+}
+
+function _convBrainInspector(getUserId) {
+    var box = _convEl('section', { cls: 'conv-brain' });
+    box.appendChild(_convHeading('Brain inspector'));
+    box.appendChild(_convEl('p', {
+        text: 'For one voice session: what context was built and trimmed, what the opening decision was and why, and how the session ended. Read-only.',
+        cls: 'conv-metric-muted'
+    }));
+    var bar = _convEl('div', { cls: 'conv-brain__bar' });
+    var sidInput = _convEl('input', { cls: 'conv-brain__input' });
+    sidInput.placeholder = 'live-… session id';
+    sidInput.setAttribute('aria-label', 'Voice session id');
+    var inspectBtn = _convEl('button', { text: 'Inspect', cls: 'conv-brain__btn' });
+    inspectBtn.type = 'button';
+    var listBtn = _convEl('button', { text: 'Recent sessions', cls: 'conv-brain__btn conv-brain__btn--ghost' });
+    listBtn.type = 'button';
+    bar.appendChild(sidInput);
+    bar.appendChild(inspectBtn);
+    bar.appendChild(listBtn);
+    box.appendChild(bar);
+    var list = _convEl('div', { cls: 'conv-brain__list' });
+    var detail = _convEl('div', { cls: 'conv-brain__detail' });
+    box.appendChild(list);
+    box.appendChild(detail);
+
+    function inspect(id) {
+        id = (id || '').trim();
+        if (!id) return;
+        sidInput.value = id;
+        detail.innerHTML = '';
+        detail.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions/' + encodeURIComponent(id) + '/brain')
+            .then(function (d) { _convBrainRender(detail, d); })
+            .catch(function (err) { _convBrainFail(detail, err); });
+    }
+
+    function loadList() {
+        var uid = typeof getUserId === 'function' ? String(getUserId() || '').trim() : '';
+        list.innerHTML = '';
+        list.appendChild(_convEl('div', { text: 'Loading…', cls: 'conv-metric-muted' }));
+        _convFetch('/admin/conversation/sessions?hours=72&limit=30' + (uid ? '&user_id=' + encodeURIComponent(uid) : ''))
+            .then(function (d) {
+                list.innerHTML = '';
+                if (!d.sessions.length) {
+                    list.appendChild(_convEl('div', { text: 'No voice sessions in the last 72 h' + (uid ? ' for this user' : '') + '.', cls: 'conv-metric-muted' }));
+                    return;
+                }
+                d.sessions.forEach(function (s) {
+                    var row = _convEl('button', {
+                        text: (_convWhen(s.started_at) || '') + ' · ' + (s.lang || '?') + ' · ' + (s.transport || '?') + ' · ' + s.session_id,
+                        cls: 'conv-brain__row'
+                    });
+                    row.type = 'button';
+                    row.addEventListener('click', function () { inspect(s.session_id); });
+                    list.appendChild(row);
+                });
+            })
+            .catch(function (err) { _convBrainFail(list, err); });
+    }
+
+    inspectBtn.addEventListener('click', function () { inspect(sidInput.value); });
+    sidInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') inspect(sidInput.value); });
+    listBtn.addEventListener('click', loadList);
+    return box;
 }
 
 function renderConversationSimulatorView() {
@@ -7532,6 +8349,8 @@ function renderConversationSimulatorView() {
         }).catch(function (err) { _convError(out, err); });
     }
     runBtn.addEventListener('click', run);
+    // VTID-04419: the brain inspector, filtered by the user id above when set.
+    ui.panel.appendChild(_convBrainInspector(function () { return userInput.value; }));
     return ui.panel;
 }
 
@@ -7583,7 +8402,8 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderVoiceLabExperimentsPanel());
     } else if (moduleKey === 'assistant' && tab === 'metrics') {
         state.voiceLab.activeSubTab = 'metrics';
-        container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+        // VTID-04371: was a placeholder (VTID-01218D); now the learning-health view.
+        container.appendChild(renderAssistantLearningHealthView());
 
     // ──── Conversation-flow roadmap Step 4: read-only cockpit ────
     } else if (moduleKey === 'conversation' && tab === 'config') {
@@ -7621,8 +8441,14 @@ function renderModuleContent(moduleKey, tab) {
         // provider switches + TTS voice/language/speed.
         container.appendChild(renderVoiceProvidersView());
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
-        // Voice slice extracted from autonomy/self-healing
-        container.appendChild(renderVoiceSelfHealingPanel());
+        // VTID-04626: rebuilt screen, lives in voice-self-healing.js.
+        if (typeof window.renderVoiceSelfHealingScreen === 'function') {
+            container.appendChild(window.renderVoiceSelfHealingScreen());
+        } else {
+            var vshMissing = document.createElement('p');
+            vshMissing.textContent = 'Voice Self-Healing failed to load (voice-self-healing.js). Reload the page.';
+            container.appendChild(vshMissing);
+        }
     } else if (moduleKey === 'voice' && tab === 'test-contracts') {
         // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
         container.appendChild(renderTestContractsPanel());
@@ -7846,16 +8672,16 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderModelsPlaygroundView());
 
     // ──── Testing & QA Module ────
-    } else if (moduleKey === 'testing-qa' && tab === 'unit-tests') {
-        container.appendChild(renderTestingUnitView());
-    } else if (moduleKey === 'testing-qa' && tab === 'integration-tests') {
-        container.appendChild(renderTestingIntegrationView());
-    } else if (moduleKey === 'testing-qa' && tab === 'validator-tests') {
-        container.appendChild(renderTestingValidatorView());
+    } else if (moduleKey === 'testing-qa' && tab === 'overview') {
+        container.appendChild(renderTestingOverviewView());
+    } else if (moduleKey === 'testing-qa' && tab === 'catalog') {
+        container.appendChild(renderTestingCatalogView());
+    } else if (moduleKey === 'testing-qa' && tab === 'runs') {
+        container.appendChild(renderTestingRunsView());
+    } else if (moduleKey === 'testing-qa' && tab === 'run-tests') {
+        container.appendChild(renderTestingRunTestsView());
     } else if (moduleKey === 'testing-qa' && tab === 'e2e') {
         container.appendChild(renderTestingE2eView());
-    } else if (moduleKey === 'testing-qa' && tab === 'ci-reports') {
-        container.appendChild(renderTestingCiReportsView());
 
     // ──── Admin: Analytics ────
     } else if (moduleKey === 'admin' && tab === 'analytics') {
@@ -7889,23 +8715,34 @@ function renderModuleContent(moduleKey, tab) {
 
     // ──── Autopilot tabs ────
     } else if (moduleKey === 'autopilot' && tab === 'registry') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotRegistryView());
     } else if (moduleKey === 'autopilot' && tab === 'scanners') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotScannersView());
     } else if (moduleKey === 'autopilot' && tab === 'impact-rules') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotImpactRulesView());
     } else if (moduleKey === 'autopilot' && tab === 'auto-approve') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotAutoApproveView());
     } else if (moduleKey === 'autopilot' && tab === 'runs') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotRunsView());
     } else if (moduleKey === 'autopilot' && tab === 'live') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotLiveView());
     } else if (moduleKey === 'autopilot' && tab === 'engine') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotEngineView());
     } else if (moduleKey === 'autopilot' && tab === 'growth') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotGrowthView());
     } else if (moduleKey === 'autopilot' && tab === 'mission-alignment') {
+        container.appendChild(renderAutopilotSupervisorStrip()); // VTID-04282
         container.appendChild(renderAutopilotMissionAlignmentView());
+    } else if (moduleKey === 'autopilot' && tab === 'orchestrator') {
+        container.appendChild(renderAutopilotOrchestratorView()); // VTID-04354
 
     // ──── Knowledge Base → Checklist (VTID-03278: Guided Journey curriculum) ────
     } else if (moduleKey === 'knowledge-base' && tab === 'checklist') {
@@ -11537,6 +12374,11 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
     '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
     '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
+    // VTID-04642: the Testing & QA rebuild replaced four stale tabs; old links land on the new ones.
+    '/command-hub/testing-qa/unit-tests/':        { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/integration-tests/': { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/validator-tests/':   { section: 'testing-qa', tab: 'catalog' },
+    '/command-hub/testing-qa/ci-reports/':        { section: 'testing-qa', tab: 'runs' },
 };
 
 // VTID-02856: Apply optional `subtab` field from a redirect entry to the
@@ -11590,6 +12432,7 @@ function formatTabLabel(key) {
     // DEV-COMHU-2025-0010: Special case handling for VTID labels
     if (key === 'vtid-ledger') return 'VTID Ledger';
     if (key === 'vtids') return 'VTID´s';
+    if (key === 'e2e') return 'E2E'; // VTID-04642
     return key.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
@@ -16620,7 +17463,7 @@ function renderVoiceLabView() {
             content.appendChild(renderVoiceLabPlaceholderPanel('Sessions', 'VTID-01218C'));
             break;
         case 'metrics':
-            content.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+            content.appendChild(renderAssistantLearningHealthView()); // VTID-04371
             break;
         case 'personality':
             content.appendChild(renderVoiceLabPersonalityPanel());
@@ -23182,6 +24025,16 @@ function renderOperatorChat() {
                 bubbleClasses += ' message-error';
             }
             bubble.className = bubbleClasses;
+            // VTID-04309: turns spoken with the voice assistant are marked.
+            if (msg.channel === 'voice' || msg.channel === 'voice_delegate') {
+                bubble.classList.add('message-voice');
+                const voiceTag = document.createElement('div');
+                voiceTag.className = 'message-voice-tag';
+                voiceTag.textContent = msg.channel === 'voice_delegate'
+                    ? (isSent ? 'Handed to Operator (voice)' : 'Operator')
+                    : (isSent ? 'You (voice)' : 'Vitana (voice)');
+                bubble.appendChild(voiceTag);
+            }
             // VTID-03822: render markdown (bold/links/lists/headings) instead of
             // plain text — replies routinely come back with markdown, which
             // rendered as a wall of literal asterisks/backticks before this.
@@ -23810,6 +24663,51 @@ function renderOperatorExecutionFollow(execId) {
     return panel;
 }
 
+// VTID-04265: the Autopilot Live view's own step/tool-call transcript for a
+// Dev Autopilot execution — reuses the exact SSE stream (followOperatorExecution,
+// GET /executions/:id/stream) and step-frame rendering the Operator Console
+// chat panel already built (VTID-04033), rather than a second implementation
+// of the same transport. Deliberately leaner than renderOperatorExecutionFollow:
+// no "open in Autopilot Live" chip, since the panel already lives on that card.
+function renderAutopilotLiveStepsPanel(execId) {
+    var slot = state.operatorExecFollow[execId] || { steps: [], terminal: null };
+    var panel = document.createElement('div');
+    panel.className = 'chat-exec-follow' + (slot.terminal ? ' chat-exec-follow--done' : ' chat-exec-follow--live');
+
+    var status = document.createElement('div');
+    if (slot.terminal) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--done';
+        status.textContent = OPERATOR_EXEC_TERMINAL_LABELS[slot.terminal] || String(slot.terminal).replace('dev_autopilot.execution.', '');
+    } else if (slot.error) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = slot.error;
+    } else if (slot.streamError) {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
+        status.textContent = 'stream reconnecting…';
+    } else {
+        status.className = 'chat-exec-follow-status chat-exec-follow-status--live';
+        status.textContent = 'live · following';
+    }
+    panel.appendChild(status);
+
+    if (slot.steps.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'chat-tool-activity-line' + (slot.terminal ? '' : ' chat-tool-activity-line--running');
+        empty.textContent = slot.terminal ? 'No step events were recorded.' : String.fromCodePoint(0x2026) + ' Waiting for the executor to pick it up';
+        panel.appendChild(empty);
+    }
+    slot.steps.forEach(function (step) {
+        var line = document.createElement('div');
+        var st = step && step.status;
+        var isErr = st === 'error' || (step && step.metadata && step.metadata.is_error);
+        line.className = 'chat-tool-activity-line chat-exec-follow-line' + (isErr ? ' chat-tool-activity-line--failed' : st === 'success' ? ' chat-tool-activity-line--ok' : '');
+        line.textContent = describeFollowedStep(step);
+        try { line.title = new Date(step.created_at).toLocaleTimeString(); } catch (_e) { /* no title */ }
+        panel.appendChild(line);
+    });
+    return panel;
+}
+
 function renderOperatorLiveTranscript() {
     var wrap = document.createElement('div');
     wrap.className = 'chat-tool-activity chat-tool-activity--live';
@@ -23988,6 +24886,10 @@ async function sendChatMessage() {
         // back to the one-shot /chat reply when streaming is unavailable.
         const result = await requestOperatorTurn({
             message: messageText,
+            // VTID-04309: the server-side thread is the console thread. Without
+            // it every request got a random thread (144 of 152 live threads
+            // had exactly one turn), so rolling summaries never accrued.
+            threadId: state.operatorActiveThreadId || undefined,
             conversation_id: state.operatorConversationId,
             context: context.length > 0 ? context : undefined,
             attachments: attachments.length > 0 ? attachments : undefined
@@ -25004,6 +25906,339 @@ function renderPublishModal() {
     return overlay;
 }
 
+// --- VTID-04667: recommendation types with an executor ---
+// Mirrors MANUALLY_BRIDGEABLE_SOURCE_TYPES in
+// services/gateway/src/services/autopilot-executable-source-types.ts
+// (EXECUTABLE_RECOMMENDATION_SOURCE_TYPES + community + health). Keep in step —
+// test/vtid-04667-executable-source-types-drift.test.ts fails on drift.
+var EXECUTABLE_REC_SOURCE_TYPES = [
+    'missing-test-scanner',
+    'test-contract-failure-scanner',
+    'dev_autopilot',
+    'dev_autopilot_impact',
+    'operator_onramp',
+    'community',
+    'health'
+];
+
+// "Create task" for a type nothing executes yet (oasis, roadmap, behavior, …);
+// "Activate" otherwise, and when the listing did not say (older gateway).
+function recActivateLabel(rec) {
+    var t = rec && rec.source_type;
+    if (!t) return 'Activate';
+    return EXECUTABLE_REC_SOURCE_TYPES.indexOf(t) === -1 ? 'Create task' : 'Activate';
+}
+
+// --- VTID-04657: what Activate actually did to the execution ---
+function describeActivationOutcome(data) {
+    var vtid = data.vtid || '';
+    var ex = data.execution;
+    if (!ex) return 'Activated. VTID: ' + vtid;
+    if (ex.state === 'queued') return 'Activated ' + vtid + ' — execution ' + String(ex.execution_id || '').slice(0, 8) + ' queued.';
+    if (ex.state === 'pending') return 'Activated ' + vtid + ' — plan still being prepared; execution follows.';
+    if (ex.state === 'not_executable') return 'Activated ' + vtid + ' — no automated executor for this type; spec draft created for a person.';
+    var why = ex.error || 'unknown reason';
+    if (ex.violations && ex.violations.length) why += ' (' + ex.violations.join(', ') + ')';
+    return 'Activated ' + vtid + ' but execution did NOT start: ' + why;
+}
+
+function activationToastLevel(data) {
+    var ex = data.execution;
+    if (!ex || ex.state === 'queued') return 'success';
+    if (ex.state === 'failed') return 'error';
+    return 'info';
+}
+
+// --- VTID-04671: the card shows evidence, value, odds and cost ---
+// Dismiss reasons, mirrored from DISMISS_REASON_CODES in
+// services/gateway/src/services/recommendation-quality/acceptance.ts
+// (VTID-04670) — test/vtid-04671-recommendation-card.test.ts fails on drift.
+var REC_DISMISS_REASONS = [
+    { code: 'not_a_real_problem', label: 'Not a real problem' },
+    { code: 'not_worth_it', label: 'Not worth it' },
+    { code: 'duplicate', label: 'Duplicate' },
+    { code: 'already_fixed', label: 'Already fixed' },
+    { code: 'wrong_fix', label: 'Wrong fix proposed' },
+    { code: 'other', label: 'Other' }
+];
+var REC_DISMISS_NOTE_MAX = 300;
+
+// The P2/P3 quality JSON on a developer recommendation, or null.
+function recQualityOf(rec) {
+    var q = rec && rec.quality;
+    return q && typeof q === 'object' && !Array.isArray(q) ? q : null;
+}
+
+function formatRecTokens(n) {
+    var v = Number(n);
+    if (!isFinite(v) || v <= 0) return '0';
+    if (v >= 1000000) return (Math.round(v / 100000) / 10) + 'M';
+    if (v >= 1000) return Math.round(v / 1000) + 'k';
+    return String(Math.round(v));
+}
+
+function recMetric(label, value, title) {
+    var el = document.createElement('span');
+    el.className = 'rec-q-metric';
+    if (title) el.title = title;
+    var k = document.createElement('span');
+    k.className = 'rec-q-metric-label';
+    k.textContent = label;
+    var v = document.createElement('strong');
+    v.className = 'rec-q-metric-value';
+    v.textContent = value;
+    el.appendChild(k);
+    el.appendChild(v);
+    return el;
+}
+
+// Priority, value, confidence, success odds, expected cost and the
+// Executable / Needs a person badge. Falls back to the legacy impact/effort
+// line when the row has no P2 score (community rows, older rows).
+function renderRecQualityMetrics(rec) {
+    var row = document.createElement('div');
+    row.className = 'rec-q-metrics';
+    var executable = EXECUTABLE_REC_SOURCE_TYPES.indexOf(rec && rec.source_type) !== -1;
+    var badge = document.createElement('span');
+    badge.className = 'rec-q-badge ' + (executable ? 'rec-q-badge--exec' : 'rec-q-badge--manual');
+    badge.textContent = executable ? 'Executable' : 'Needs a person';
+    badge.title = executable
+        ? 'An automated executor can carry this out after Activate.'
+        : 'No automated executor for this type: Activate creates a task for a person.';
+    row.appendChild(badge);
+
+    var q = recQualityOf(rec);
+    if (!q) {
+        row.appendChild(recMetric('Impact', (rec.impact_score || 5) + '/10'));
+        row.appendChild(recMetric('Effort', (rec.effort_score || 5) + '/10'));
+        return row;
+    }
+    var basis = q.basis && typeof q.basis === 'object' ? q.basis : {};
+    var pr = Number(rec.priority_score);
+    var hasPriority = rec.priority_score !== null && rec.priority_score !== undefined && isFinite(pr);
+    row.appendChild(recMetric('Priority', hasPriority ? pr.toFixed(2) : '—',
+        'value × confidence × success odds ÷ expected cost'));
+    row.appendChild(recMetric('Value', Math.round(Number(q.value || 0) * 100) + '%',
+        [basis.audience, basis.severity, basis.frequency, basis.trend].filter(Boolean).join(' · ')));
+    row.appendChild(recMetric('Confidence', Math.round(Number(q.confidence || 0) * 100) + '%',
+        Array.isArray(basis.confidence) ? basis.confidence.join(' · ') : ''));
+    row.appendChild(recMetric('Success odds', Math.round(Number(q.success_odds || 0) * 100) + '%', basis.success_odds || ''));
+    row.appendChild(recMetric('Expected cost', '$' + Number(q.expected_cost_usd || 0).toFixed(2) + ' · ' + formatRecTokens(q.expected_input_tokens) + ' tokens',
+        basis.cost || ''));
+    return row;
+}
+
+function appendRecWhyList(parent, heading, items, render) {
+    if (!Array.isArray(items) || items.length === 0) return;
+    var h = document.createElement('div');
+    h.className = 'rec-why-heading';
+    h.textContent = heading;
+    parent.appendChild(h);
+    var ul = document.createElement('ul');
+    ul.className = 'rec-why-list';
+    items.forEach(function (it) {
+        var li = document.createElement('li');
+        render(li, it);
+        ul.appendChild(li);
+    });
+    parent.appendChild(ul);
+}
+
+// The expandable "Why" section from quality.review (VTID-04669): problem,
+// evidence, files with risk, acceptance criteria, why now. A scored row the
+// review has not kept yet gets an "awaiting review" note instead.
+function renderRecWhySection(rec) {
+    var q = recQualityOf(rec);
+    if (!q) return null;
+    var review = q.review && typeof q.review === 'object' ? q.review : null;
+    if (!review || review.verdict !== 'keep') {
+        var note = document.createElement('div');
+        note.className = 'rec-why-awaiting';
+        note.textContent = 'Awaiting quality review — the evidence check has not run on this card yet.';
+        return note;
+    }
+    var details = document.createElement('details');
+    details.className = 'rec-why';
+    if (state.autopilotWhyOpen && state.autopilotWhyOpen[rec.id]) details.open = true;
+    details.ontoggle = function () {
+        if (!state.autopilotWhyOpen) state.autopilotWhyOpen = {};
+        state.autopilotWhyOpen[rec.id] = details.open;
+    };
+    var sum = document.createElement('summary');
+    sum.className = 'rec-why-summary';
+    sum.textContent = 'Why';
+    details.appendChild(sum);
+    var bodyEl = document.createElement('div');
+    bodyEl.className = 'rec-why-body';
+    if (review.problem) {
+        var p = document.createElement('p');
+        p.className = 'rec-why-problem';
+        p.textContent = String(review.problem);
+        bodyEl.appendChild(p);
+    }
+    appendRecWhyList(bodyEl, 'Evidence', review.evidence, function (li, it) { li.textContent = String(it); });
+    appendRecWhyList(bodyEl, 'Files', review.files, function (li, it) {
+        var path = document.createElement('code');
+        path.className = 'rec-why-path';
+        path.textContent = String((it && it.path) || it || '');
+        li.appendChild(path);
+        if (it && it.risk) {
+            var risk = document.createElement('span');
+            risk.className = 'rec-why-risk';
+            risk.textContent = ' — ' + String(it.risk);
+            li.appendChild(risk);
+        }
+    });
+    appendRecWhyList(bodyEl, 'Done when', review.acceptance, function (li, it) { li.textContent = String(it); });
+    if (review.why_now) {
+        var h = document.createElement('div');
+        h.className = 'rec-why-heading';
+        h.textContent = 'Why now';
+        bodyEl.appendChild(h);
+        var wn = document.createElement('p');
+        wn.className = 'rec-why-now';
+        wn.textContent = String(review.why_now);
+        bodyEl.appendChild(wn);
+    }
+    details.appendChild(bodyEl);
+    return details;
+}
+
+// POST the dismiss with its reason (VTID-04670 stores it as quality.dismiss).
+async function submitRecDismiss(rec, reasonCode, note) {
+    var body = { reason: reasonCode, reason_code: reasonCode };
+    var trimmed = String(note || '').trim().slice(0, REC_DISMISS_NOTE_MAX);
+    if (trimmed) body.note = trimmed;
+    var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
+        method: 'POST',
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body)
+    });
+    return response.json();
+}
+
+// The reason picker a Dismiss opens: the six codes + an optional note. Its
+// open/draft state lives in state so a live re-render keeps it.
+function renderRecDismissPicker(rec, onDismissed) {
+    var draft = state.autopilotDismissDraft;
+    var picker = document.createElement('div');
+    picker.className = 'rec-dismiss-picker';
+    picker.setAttribute('role', 'group');
+    picker.setAttribute('aria-label', 'Why dismiss this recommendation?');
+    var q = document.createElement('div');
+    q.className = 'rec-dismiss-question';
+    q.textContent = 'Why dismiss it?';
+    picker.appendChild(q);
+    var opts = document.createElement('div');
+    opts.className = 'rec-dismiss-options';
+    REC_DISMISS_REASONS.forEach(function (r) {
+        var label = document.createElement('label');
+        label.className = 'rec-dismiss-option' + (draft.reason_code === r.code ? ' rec-dismiss-option--on' : '');
+        var input = document.createElement('input');
+        input.type = 'radio';
+        input.name = 'rec-dismiss-' + rec.id;
+        input.value = r.code;
+        input.checked = draft.reason_code === r.code;
+        input.onchange = function () {
+            state.autopilotDismissDraft.reason_code = r.code;
+            renderApp();
+        };
+        label.appendChild(input);
+        var span = document.createElement('span');
+        span.textContent = r.label;
+        label.appendChild(span);
+        opts.appendChild(label);
+    });
+    picker.appendChild(opts);
+    var noteId = 'rec-dismiss-note-' + rec.id;
+    var noteLabel = document.createElement('label');
+    noteLabel.className = 'rec-dismiss-note-label';
+    noteLabel.setAttribute('for', noteId);
+    noteLabel.textContent = 'Note (optional)';
+    picker.appendChild(noteLabel);
+    var noteEl = document.createElement('textarea');
+    noteEl.id = noteId;
+    noteEl.className = 'rec-dismiss-note';
+    noteEl.maxLength = REC_DISMISS_NOTE_MAX;
+    noteEl.rows = 2;
+    noteEl.value = draft.note || '';
+    noteEl.oninput = function () { state.autopilotDismissDraft.note = noteEl.value; };
+    picker.appendChild(noteEl);
+    var actions = document.createElement('div');
+    actions.className = 'rec-dismiss-actions';
+    var confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-secondary rec-dismiss-confirm';
+    confirmBtn.textContent = 'Dismiss';
+    confirmBtn.disabled = !draft.reason_code;
+    confirmBtn.onclick = async function () {
+        if (!state.autopilotDismissDraft.reason_code) return;
+        confirmBtn.disabled = true;
+        try {
+            var data = await submitRecDismiss(rec, state.autopilotDismissDraft.reason_code, state.autopilotDismissDraft.note);
+            if (data.ok) {
+                state.autopilotDismissPickerFor = null;
+                state.autopilotDismissDraft = { reason_code: null, note: '' };
+                onDismissed();
+                showToast('Recommendation dismissed', 'info');
+            } else {
+                confirmBtn.disabled = false;
+                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (err) {
+            confirmBtn.disabled = false;
+            showToast('Dismiss error: ' + (err.message || 'Network error'), 'error');
+        }
+    };
+    actions.appendChild(confirmBtn);
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = function () {
+        state.autopilotDismissPickerFor = null;
+        state.autopilotDismissDraft = { reason_code: null, note: '' };
+        renderApp();
+    };
+    actions.appendChild(cancelBtn);
+    picker.appendChild(actions);
+    return picker;
+}
+
+function openRecDismissPicker(rec) {
+    state.autopilotDismissPickerFor = rec.id;
+    state.autopilotDismissDraft = { reason_code: null, note: '' };
+    renderApp();
+}
+
+// A recommendation activated from the popup whose execution was queued: the
+// card stays, showing the live execution state from the same SSE tail the
+// Operator Console follow panel uses (VTID-04033 followOperatorExecution,
+// rendered by renderAutopilotLiveStepsPanel).
+function renderActivatedRecCard(entry) {
+    var card = document.createElement('div');
+    card.className = 'recommendation-card rec-activated';
+    var head = document.createElement('div');
+    head.className = 'rec-activated-head';
+    var t = document.createElement('span');
+    t.className = 'rec-activated-title';
+    t.textContent = (entry.rec && entry.rec.title) || 'Recommendation';
+    head.appendChild(t);
+    var chip = document.createElement('a');
+    chip.className = 'chat-exec-follow-chip';
+    chip.href = '/command-hub/autopilot/live/#autopilot-live-exec-' + entry.execution_id;
+    chip.textContent = (entry.vtid ? entry.vtid + ' · ' : '') + 'execution ' + String(entry.execution_id).slice(0, 8);
+    chip.title = 'Open this execution on Autopilot Live';
+    head.appendChild(chip);
+    card.appendChild(head);
+    card.appendChild(renderAutopilotLiveStepsPanel(entry.execution_id));
+    return card;
+}
+
+function resetAutopilotRecommendationsPopupState() {
+    state.autopilotDismissPickerFor = null;
+    (state.autopilotActivatedRecs || []).forEach(function (e) { closeOperatorExecutionFollow(e.execution_id); });
+    state.autopilotActivatedRecs = [];
+}
+
 // --- VTID-01180: Autopilot Recommendations Modal ---
 
 /**
@@ -25044,6 +26279,7 @@ function renderAutopilotRecommendationsModal() {
     overlay.onclick = function (e) {
         if (e.target === overlay) {
             state.showAutopilotRecommendationsModal = false;
+            resetAutopilotRecommendationsPopupState();
             renderApp();
         }
     };
@@ -25089,6 +26325,7 @@ function renderAutopilotRecommendationsModal() {
     closeBtn.style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary, #888); padding: 4px 8px;';
     closeBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
+        resetAutopilotRecommendationsPopupState();
         renderApp();
     };
     header.appendChild(closeBtn);
@@ -25100,6 +26337,11 @@ function renderAutopilotRecommendationsModal() {
     body.className = 'modal-body';
     body.style.cssText = 'padding: 16px 20px; overflow-y: auto; flex: 1;';
 
+    // VTID-04671: activated recs keep their card with the live execution state.
+    (state.autopilotActivatedRecs || []).forEach(function (entry) {
+        body.appendChild(renderActivatedRecCard(entry));
+    });
+
     if (state.autopilotRecommendationsLoading) {
         var loadingDiv = document.createElement('div');
         loadingDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
@@ -25110,7 +26352,7 @@ function renderAutopilotRecommendationsModal() {
         errorDiv.style.cssText = 'text-align: center; padding: 40px; color: #f87171;';
         errorDiv.textContent = 'Error: ' + state.autopilotRecommendationsError;
         body.appendChild(errorDiv);
-    } else if (state.autopilotRecommendations.length === 0) {
+    } else if (state.autopilotRecommendations.length === 0 && (state.autopilotActivatedRecs || []).length === 0) {
         var emptyDiv = document.createElement('div');
         emptyDiv.style.cssText = 'text-align: center; padding: 40px; color: var(--text-secondary, #888);';
         emptyDiv.innerHTML = '<div style="font-size: 48px; margin-bottom: 16px;">\u2705</div>';
@@ -25169,6 +26411,18 @@ function renderAutopilotRecommendationsModal() {
         countLabel.textContent = state.autopilotRecommendations.length + ' awaiting your decision';
     }
     leftFooter.appendChild(countLabel);
+    // VTID-04671: what the quality floor and the review held back.
+    var meta = state.autopilotRecommendationsMeta || {};
+    var held = [];
+    if (typeof meta.below_floor_count === 'number' && meta.below_floor_count > 0) held.push(meta.below_floor_count + ' below the quality floor');
+    if (typeof meta.awaiting_review_count === 'number' && meta.awaiting_review_count > 0) held.push(meta.awaiting_review_count + ' awaiting review');
+    if (held.length) {
+        var heldLabel = document.createElement('span');
+        heldLabel.className = 'rec-footer-held';
+        heldLabel.textContent = 'Hidden: ' + held.join(' · ');
+        heldLabel.title = 'Cards are shown once they pass the quality floor and the evidence review.';
+        leftFooter.appendChild(heldLabel);
+    }
     footer.appendChild(leftFooter);
 
     var rightFooter = document.createElement('div');
@@ -25213,6 +26467,7 @@ function renderAutopilotRecommendationsModal() {
     closeFooterBtn.style.cssText = 'padding: 8px 16px;';
     closeFooterBtn.onclick = function () {
         state.showAutopilotRecommendationsModal = false;
+        resetAutopilotRecommendationsPopupState();
         state.autopilotSelectedIds = new Set();
         renderApp();
     };
@@ -25226,6 +26481,7 @@ function renderAutopilotRecommendationsModal() {
     attachModalA11y(modal, {
         onClose: function () {
             state.showAutopilotRecommendationsModal = false;
+            resetAutopilotRecommendationsPopupState();
             renderApp();
         }
     });
@@ -25290,21 +26546,11 @@ function createRecommendationCard(rec) {
     summaryEl.textContent = rec.summary;
     card.appendChild(summaryEl);
 
-    // Scores row
-    var scoresRow = document.createElement('div');
-    scoresRow.style.cssText = 'display: flex; gap: 16px; margin-bottom: 12px;';
-
-    var impactEl = document.createElement('span');
-    impactEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
-    impactEl.innerHTML = 'Impact: <strong style="color: #22c55e;">' + (rec.impact_score || 5) + '/10</strong>';
-    scoresRow.appendChild(impactEl);
-
-    var effortEl = document.createElement('span');
-    effortEl.style.cssText = 'font-size: 12px; color: var(--text-secondary, #888);';
-    effortEl.innerHTML = 'Effort: <strong style="color: #eab308;">' + (rec.effort_score || 5) + '/10</strong>';
-    scoresRow.appendChild(effortEl);
-
-    card.appendChild(scoresRow);
+    // VTID-04671: priority, value, confidence, success odds, expected cost and
+    // the Executable / Needs a person badge (was Impact N/10 · Effort N/10).
+    card.appendChild(renderRecQualityMetrics(rec));
+    var whyEl = renderRecWhySection(rec);
+    if (whyEl) card.appendChild(whyEl);
 
     // Action buttons
     var actionsRow = document.createElement('div');
@@ -25313,7 +26559,9 @@ function createRecommendationCard(rec) {
     // Activate button
     var activateBtn = document.createElement('button');
     activateBtn.className = 'btn btn-primary';
-    activateBtn.textContent = 'Activate';
+    // VTID-04667: "Create task" when this type has no executor.
+    var activateIdleLabel = recActivateLabel(rec);
+    activateBtn.textContent = activateIdleLabel;
     activateBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: #22c55e; border: none; color: white; border-radius: 4px; cursor: pointer;';
     activateBtn.onclick = async function () {
         activateBtn.disabled = true;
@@ -25329,16 +26577,29 @@ function createRecommendationCard(rec) {
                 delete state.autopilotRecommendationErrors[rec.id];
                 state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
                 state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                card.remove();
-                updateRecommendationModalFooter();
+                // VTID-04671: a queued execution keeps its card with the live state.
+                var ex = data.execution;
+                if (ex && ex.state === 'queued' && ex.execution_id) {
+                    state.autopilotActivatedRecs.push({ rec: rec, vtid: data.vtid || '', execution_id: ex.execution_id });
+                    followOperatorExecution(ex.execution_id, 'approved');
+                    renderApp();
+                } else {
+                    card.remove();
+                    updateRecommendationModalFooter();
+                }
                 await fetchTasks();
-                showToast('Activated! VTID: ' + data.vtid, 'success');
+                // VTID-04657: report what happened to the execution, not just the VTID.
+                showToast(describeActivationOutcome(data), activationToastLevel(data));
             } else {
                 var errMsg = data.error || 'Unknown error';
                 state.autopilotRecommendationErrors[rec.id] = errMsg;
+                activateBtn.disabled = false;
+                activateBtn.textContent = activateIdleLabel;
                 try { showToast('Activation failed: ' + errMsg, 'error'); } catch (e) { console.error('[Activate] Toast error:', e); renderApp(); }
             }
         } catch (err) {
+            activateBtn.disabled = false;
+            activateBtn.textContent = activateIdleLabel;
             state.autopilotRecommendationErrors[rec.id] = err.message || 'Network error';
             try { showToast('Activation error: ' + (err.message || 'Network error'), 'error'); } catch (e) { console.error('[Activate] Toast error:', e); }
         }
@@ -25383,34 +26644,20 @@ function createRecommendationCard(rec) {
     rejectBtn.className = 'btn btn-secondary';
     rejectBtn.textContent = 'Dismiss';
     rejectBtn.style.cssText = 'padding: 6px 14px; font-size: 13px; background: transparent; border: 1px solid var(--border-color, rgba(255,255,255,0.2)); color: var(--text-secondary, #888); border-radius: 4px; cursor: pointer;';
-    rejectBtn.onclick = async function () {
-        rejectBtn.disabled = true;
-        try {
-            var response = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
-                method: 'POST',
-                headers: buildContextHeaders({ 'Content-Type': 'application/json' })
-            });
-            var data = await response.json();
-            if (data.ok) {
-                state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
-                state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
-                card.remove();
-                updateRecommendationModalFooter();
-                showToast('Recommendation dismissed', 'info');
-            } else {
-                rejectBtn.disabled = false;
-                rejectBtn.textContent = 'Dismiss';
-                showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
-            }
-        } catch (err) {
-            rejectBtn.disabled = false;
-            rejectBtn.textContent = 'Dismiss';
-            showToast('Dismiss error: ' + err.message, 'error');
-        }
-    };
+    // VTID-04671: Dismiss asks why (reason codes stored by VTID-04670).
+    rejectBtn.setAttribute('aria-expanded', state.autopilotDismissPickerFor === rec.id ? 'true' : 'false');
+    rejectBtn.onclick = function () { openRecDismissPicker(rec); };
     actionsRow.appendChild(rejectBtn);
 
     card.appendChild(actionsRow);
+
+    if (state.autopilotDismissPickerFor === rec.id) {
+        card.appendChild(renderRecDismissPicker(rec, function () {
+            state.autopilotRecommendations = state.autopilotRecommendations.filter(function (r) { return r.id !== rec.id; });
+            state.autopilotRecommendationsCount = Math.max(0, state.autopilotRecommendationsCount - 1);
+            renderApp();
+        }));
+    }
 
     // Show inline error if activation/snooze/dismiss failed previously
     if (state.autopilotRecommendationErrors[rec.id]) {
@@ -26570,6 +27817,107 @@ let cicdHealthPollInterval = null;
 // service-health-registry.ts) can't be reached. That route is now the
 // canonical source — keep this list in sync when adding/removing a check,
 // but a routine change belongs there first, not here.
+// VTID-04661: display order of the Service Health groups. The registry
+// route serves the canonical copy (SERVICE_HEALTH_GROUPS); this is the
+// fallback. Any group NOT listed here is still drawn, after these — the
+// panel used to drop such groups, which is how 'Screen Load Time' was
+// counted in "54/55" but never shown.
+var FALLBACK_HEALTH_GROUPS = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+    'Community & Social', 'Domain & Context', 'Visual & VTID', 'Frontend & Performance',
+    'Self-Healing & Ops', 'Data & Memory', 'Commerce', 'Governance & Integrity',
+    'Deploy & Release', 'AWS Runtime', 'Dev Autopilot', 'Voice & Media', 'Data & Scheduling', 'Business & Support'];
+
+/**
+ * VTID-04661: every group present in `items`, the known ones first in
+ * `preferred` order, then the rest alphabetically. Never drops a group.
+ */
+function orderedHealthGroups(items, preferred) {
+    var order = (preferred && preferred.length) ? preferred : FALLBACK_HEALTH_GROUPS;
+    var present = {};
+    for (var i = 0; i < items.length; i++) present[items[i].group || 'Other'] = true;
+    var out = order.filter(function (g) { return present[g]; });
+    Object.keys(present).sort().forEach(function (g) { if (out.indexOf(g) < 0) out.push(g); });
+    return out;
+}
+
+/**
+ * VTID-04661: browser copy of classifyHealthResponse()
+ * (services/gateway/src/services/service-health-probe.ts) — a parity test
+ * keeps the two in step. Used only when the server-side summary is
+ * unavailable and the panel probes each check itself.
+ *   - no response            -> down
+ *   - 401/403                -> no_access (could not look; not an outage)
+ *   - 2xx + body.status      -> that status (healthy only if ok/healthy/ok_governance_limited)
+ *   - 2xx + {ok:false}       -> down (used to read as healthy)
+ *   - 2xx otherwise          -> healthy
+ *   - other + known bad body.status -> that status, else down
+ */
+var HEALTHY_PROBE_STATUSES = ['ok', 'healthy', 'ok_governance_limited'];
+var KNOWN_BAD_PROBE_STATUSES = ['down', 'degraded', 'warning', 'error', 'unhealthy', 'unavailable', 'misconfigured'];
+function classifyHealthProbe(httpStatus, body) {
+    if (httpStatus === null || httpStatus === undefined) return { status: 'down', healthy: false };
+    if (httpStatus === 401 || httpStatus === 403) return { status: 'no_access', healthy: false };
+    var obj = (body && typeof body === 'object' && !Array.isArray(body)) ? body : null;
+    var reported = (obj && typeof obj.status === 'string') ? obj.status.toLowerCase() : null;
+    if (httpStatus >= 200 && httpStatus < 300) {
+        if (obj && obj.ok === false && (!reported || HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0)) return { status: 'down', healthy: false };
+        if (reported) return { status: reported, healthy: HEALTHY_PROBE_STATUSES.indexOf(reported) >= 0 };
+        return { status: 'healthy', healthy: true };
+    }
+    if (reported && KNOWN_BAD_PROBE_STATUSES.indexOf(reported) >= 0) return { status: reported, healthy: false };
+    return { status: 'down', healthy: false };
+}
+
+/** VTID-04661: probe one check from the browser and classify it. */
+function probeHealthEndpointInBrowser(ep, headers, timeoutMs) {
+    var start = Date.now();
+    return fetchWT(ep.url, { headers: headers }, timeoutMs || 6000)
+        .then(function (r) {
+            var latency = Date.now() - start;
+            return r.json().catch(function () { return null; }).then(function (body) {
+                var c = classifyHealthProbe(r.status, body);
+                return { name: ep.name, url: ep.url, group: ep.group, status: c.status, healthy: c.healthy, http_status: r.status, latency_ms: latency, details: body };
+            });
+        })
+        .catch(function () {
+            return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, http_status: null, latency_ms: -1, details: null };
+        });
+}
+
+/**
+ * VTID-04661: panel counts. `failing` excludes no_access — a check the
+ * probe could not look at is shown grey and counted separately, never as
+ * an outage and never as healthy.
+ */
+function serviceHealthCounts(items) {
+    var healthy = 0, noAccess = 0;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].healthy) healthy++;
+        else if (items[i].status === 'no_access' || items[i].status === 'not_configured') noAccess++;
+    }
+    return { total: items.length, healthy: healthy, noAccess: noAccess, failing: items.length - healthy - noAccess };
+}
+
+/** VTID-04661: dot colour for one check. */
+function serviceHealthDot(svc) {
+    if (svc.healthy) return 'green';
+    // VTID-04664: not_configured = deliberately off on this stack — grey, not red.
+    if (svc.status === 'no_access' || svc.status === 'not_configured') return 'grey';
+    if (svc.status === 'degraded' || svc.status === 'warning') return 'yellow';
+    return 'red';
+}
+
+/**
+ * VTID-04661: literal class names, so styles.css's dead-rule checker
+ * (scripts/find-dead-css-classes.mjs) can see every dot class in use.
+ */
+var SERVICE_HEALTH_DOT_CLASS = {
+    green: 'health-dot-green',
+    yellow: 'health-dot-yellow',
+    red: 'health-dot-red',
+    grey: 'health-dot-grey'
+};
+
 var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'Gateway',              url: '/health',                                  group: 'Core Infrastructure' },
     { name: 'Gateway Alive',        url: '/alive',                                   group: 'Core Infrastructure' },
@@ -26631,7 +27979,72 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     // here. 'down' means either a screen failed to load or the
     // scheduled job itself hasn't reported in 3h+; 'degraded' means
     // it's reporting but slow (p75 over budget).
-    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
+    { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' },
+    // VTID-04662: existing health routes, now registered.
+    { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant' },
+    { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+    { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+    { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+    { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+    { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+    { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory' },
+    { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory' },
+    { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+    { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+    { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+    { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+    { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+    { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+    { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+    { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+    { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
+    // VTID-04663: database-computed signals.
+    { name: 'LLM Routing Policy', url: '/api/v1/ops/health/llm-routing', group: 'AI & Assistant' },
+    { name: 'Anthropic Credit Failures', url: '/api/v1/ops/health/anthropic-credit', group: 'AI & Assistant' },
+    { name: 'Google LLM Fallback', url: '/api/v1/ops/health/google-fallback', group: 'AI & Assistant' },
+    { name: 'Locale Coverage', url: '/api/v1/ops/health/locale-coverage', group: 'Governance & Integrity' },
+    { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
+    { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
+    { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
+    { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-04664: systems that had no check.
+    { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
+    { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
+    { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
+    { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
+    { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release' },
+    { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
+    { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
+    { name: 'ECS Community App Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS Community App Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Operator', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr', group: 'AWS Runtime' },
+    { name: 'ECS OASIS Projector', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector', group: 'AWS Runtime' },
+    { name: 'ECS Worker Runner', url: '/api/v1/ops/runtime/aws/ecs/vitana-worker-runner', group: 'AWS Runtime' },
+    { name: 'ECS Verification Engine', url: '/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine', group: 'AWS Runtime' },
+    { name: 'ECS ORB Agent', url: '/api/v1/ops/runtime/aws/ecs/vitana-orb-agent', group: 'AWS Runtime' },
+    { name: 'Autopilot Kill Switch', url: '/api/v1/ops/runtime/autopilot/kill-switch', group: 'Dev Autopilot' },
+    { name: 'Autopilot Stuck Runs', url: '/api/v1/ops/runtime/autopilot/stuck-runs', group: 'Dev Autopilot' },
+    { name: 'Autopilot Approval Backlog', url: '/api/v1/ops/runtime/autopilot/approval-backlog', group: 'Dev Autopilot' },
+    { name: 'Autopilot Success Rate', url: '/api/v1/ops/runtime/autopilot/success-rate', group: 'Dev Autopilot' },
+    { name: 'Autopilot Scan Freshness', url: '/api/v1/ops/runtime/autopilot/scan-freshness', group: 'Dev Autopilot' },
+    { name: 'Autopilot Dispatch', url: '/api/v1/ops/runtime/autopilot/dispatch-failures', group: 'Dev Autopilot' },
+    { name: 'Polly TTS', url: '/api/v1/ops/runtime/voice/polly', group: 'Voice & Media' },
+    { name: 'Fish TTS', url: '/api/v1/ops/runtime/voice/fish', group: 'Voice & Media' },
+    { name: 'Serbian Voice Bridge', url: '/api/v1/ops/runtime/voice/serbian-bridge', group: 'Voice & Media' },
+    { name: 'Voice Session Errors', url: '/api/v1/ops/runtime/voice/session-errors', group: 'Voice & Media' },
+    { name: 'Bedrock', url: '/api/v1/ops/runtime/ai/bedrock', group: 'Voice & Media' },
+    { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
+    { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
+    { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
+    { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling' },
+    { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
+    { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
+    { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },
+    { name: 'Support Tickets', url: '/api/v1/ops/runtime/support/stuck-tickets', group: 'Business & Support' },
+    { name: 'ERP Bridge', url: '/api/v1/ops/runtime/business/erp-bridge', group: 'Business & Support' },
+    { name: 'Jev Decisions', url: '/api/v1/ops/runtime/business/jev', group: 'Business & Support' }
 ];
 
 /**
@@ -26644,53 +28057,58 @@ async function fetchServiceHealth(silentRefresh) {
     if (state.serviceHealth.loading) return;
     state.serviceHealth.loading = true;
 
-    // VTID-04087: fetch the endpoint list from the gateway's own registry
-    // (GET /api/v1/admin/health-registry) so a new health check can be
-    // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
-    // is only the last-resort copy used when that fetch fails (offline,
-    // route down, malformed response) — keep it in sync when adding/removing
-    // a check, but the registry route is the canonical source now.
-    var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+    // VTID-01982: send the operator's bearer token so admin-gated health
+    // routes answer instead of returning 401.
+    var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
     try {
-        var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
-        if (registryResp.ok) {
-            var registryBody = await registryResp.json();
-            if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
-                healthEndpoints = registryBody.endpoints;
-            }
-        }
-    } catch (registryError) {
-        console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
-    }
-    try {
-        // VTID-01982: send the operator's bearer token so health probes against
-        // routers gated by requireAuth/requireExafyAdmin (diary, automations,
-        // capacity, alignment, routing, situational, availability, mobility,
-        // user-prefs, taste, overload, mitigation, opportunities,
-        // vtid-terminalize) don't return 401 and trip a false "down" badge.
-        var probeHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
-        var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: probeHeaders }, 6000)
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        var rawStatus = ok ? (body.status || 'healthy') : 'degraded';
-                        var isHealthy = (rawStatus === 'ok' || rawStatus === 'healthy' || rawStatus === 'ok_governance_limited');
-                        return { name: ep.name, url: ep.url, group: ep.group, status: rawStatus, healthy: isHealthy, latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, group: ep.group, status: ok ? 'healthy' : 'degraded', healthy: ok, latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, group: ep.group, status: 'down', healthy: false, latency_ms: -1, details: null };
-                });
-        }));
+        var items = null;
 
-        var items = results.map(function (r) {
-            return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
-        });
+        // VTID-04661: preferred path — the gateway probes every check once,
+        // server side, and serves a cached, classified summary
+        // (GET /api/v1/admin/health/summary). One request instead of one per
+        // check. Admin-only; any failure falls through to the browser path.
+        try {
+            var summaryResp = await fetchWT('/api/v1/admin/health/summary', { headers: probeHeaders }, 15000);
+            if (summaryResp.ok) {
+                var summaryBody = await summaryResp.json();
+                if (summaryBody && Array.isArray(summaryBody.items) && summaryBody.items.length > 0) {
+                    items = summaryBody.items;
+                    if (Array.isArray(summaryBody.groups)) state.serviceHealth.groups = summaryBody.groups;
+                    state.serviceHealth.source = 'server';
+                }
+            }
+        } catch (summaryError) {
+            console.warn('[ServiceHealth] Summary fetch failed, probing from the browser:', summaryError);
+        }
+
+        if (!items) {
+            // VTID-04087: fetch the endpoint list from the gateway's own registry
+            // (GET /api/v1/admin/health-registry) so a new health check can be
+            // added there without also hand-editing this array. FALLBACK_HEALTH_ENDPOINTS
+            // is only the last-resort copy used when that fetch fails (offline,
+            // route down, malformed response) — keep it in sync when adding/removing
+            // a check, but the registry route is the canonical source now.
+            var healthEndpoints = FALLBACK_HEALTH_ENDPOINTS;
+            try {
+                var registryResp = await fetchWT('/api/v1/admin/health-registry', {}, 4000);
+                if (registryResp.ok) {
+                    var registryBody = await registryResp.json();
+                    if (registryBody && Array.isArray(registryBody.endpoints) && registryBody.endpoints.length > 0) {
+                        healthEndpoints = registryBody.endpoints;
+                    }
+                    if (registryBody && Array.isArray(registryBody.groups)) state.serviceHealth.groups = registryBody.groups;
+                }
+            } catch (registryError) {
+                console.warn('[ServiceHealth] Registry fetch failed, using fallback list:', registryError);
+            }
+            var results = await Promise.allSettled(healthEndpoints.map(function (ep) {
+                return probeHealthEndpointInBrowser(ep, probeHeaders, 6000);
+            }));
+            items = results.map(function (r) {
+                return r.status === 'fulfilled' ? r.value : { name: 'Unknown', status: 'down', healthy: false, latency_ms: -1, details: null };
+            });
+            state.serviceHealth.source = 'browser';
+        }
 
         state.serviceHealth.items = items;
         state.serviceHealth.fetched = true;
@@ -26726,8 +28144,9 @@ function updateServiceHealthPill() {
     var items = state.serviceHealth.items;
     if (!items || items.length === 0) return;
 
-    var healthy = items.filter(function (s) { return s.healthy; }).length;
-    var failing = items.length - healthy;
+    var counts = serviceHealthCounts(items);
+    var healthy = counts.healthy;
+    var failing = counts.failing;
 
     pill.className = 'header-pill';
     if (failing === 0) {
@@ -26742,7 +28161,7 @@ function updateServiceHealthPill() {
             '<span class="pill-score-sep">/</span>' +
             '<span class="pill-score pill-score--red">' + failing + '</span>';
     }
-    pill.title = healthy + ' healthy, ' + failing + ' down (of ' + items.length + ' services)';
+    pill.title = healthy + ' healthy, ' + failing + ' failing' + (counts.noAccess ? ', ' + counts.noAccess + ' not checked' : '') + ' (of ' + items.length + ' services)';
 }
 
 /**
@@ -28102,7 +29521,7 @@ async function fetchOverviewDashboard() {
         healthCheckPromise = Promise.resolve({ status: 'fulfilled', value: state.serviceHealth.items.map(function (s) { return { status: 'fulfilled', value: s }; }) });
     } else {
         var healthEndpoints = state.serviceHealth.items.length > 0
-            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url }; })
+            ? state.serviceHealth.items.map(function (s) { return { name: s.name, url: s.url, group: s.group }; })
             : [
                 { name: 'Gateway', url: '/health' },
                 { name: 'CI/CD',   url: '/api/v1/cicd/health' },
@@ -28116,21 +29535,9 @@ async function fetchOverviewDashboard() {
             ];
         // VTID-01982: pass the operator's bearer token to /health probes
         var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
+        // VTID-04661: same classification as the Service Health panel.
         healthCheckPromise = Promise.allSettled(healthEndpoints.map(function (ep) {
-            var start = Date.now();
-            return fetchWT(ep.url, { headers: dashHeaders })
-                .then(function (r) {
-                    var latency = Date.now() - start;
-                    var ok = r.ok;
-                    return r.json().then(function (body) {
-                        return { name: ep.name, url: ep.url, status: ok ? (body.status || 'healthy') : 'degraded', latency_ms: latency, details: body };
-                    }).catch(function () {
-                        return { name: ep.name, url: ep.url, status: ok ? 'healthy' : 'degraded', latency_ms: latency, details: null };
-                    });
-                })
-                .catch(function () {
-                    return { name: ep.name, url: ep.url, status: 'down', latency_ms: -1, details: null };
-                });
+            return probeHealthEndpointInBrowser(ep, dashHeaders);
         }));
     }
 
@@ -28767,8 +30174,7 @@ function renderOverviewSystemView() {
             var hasGroups = services.some(function (s) { return s.group; });
             if (hasGroups) {
                 // Build group buckets preserving group order from the endpoint list
-                var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-                                  'Community & Social', 'Domain & Context', 'Visual & VTID'];
+                var groupOrder = orderedHealthGroups(services, state.serviceHealth.groups);
                 var groupMap = {};
                 services.forEach(function (s) {
                     var g = s.group || 'Other';
@@ -28800,7 +30206,9 @@ function renderOverviewSystemView() {
                     var svcList = document.createElement('div');
                     svcList.className = 'overview-health-chip-row';
                     svcs.forEach(function (s) {
-                        var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                        // VTID-04661: a check the probe could not look at is grey, not red.
+                        var dotClass = (s.status === 'no_access' || s.status === 'not_configured') ? 'grey'
+                            : (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                             : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                             : 'red';
                         var chip = document.createElement('span');
@@ -29245,7 +30653,8 @@ function renderOverviewSystemView() {
             impactEl.className = 'rec-impact';
             impactEl.textContent = 'Impact: ' + (rec.impact_score || 0) + '/10';
             cardMeta.appendChild(riskEl);
-            cardMeta.appendChild(impactEl);
+            // VTID-04671: scored developer recs show the quality metrics instead.
+            if (!recQualityOf(rec)) cardMeta.appendChild(impactEl);
             if (rec.summary) {
                 var summaryEl = document.createElement('div');
                 summaryEl.className = 'rec-summary';
@@ -29257,11 +30666,14 @@ function renderOverviewSystemView() {
                 card.appendChild(cardTop);
                 card.appendChild(cardMeta);
             }
+            if (recQualityOf(rec)) card.appendChild(renderRecQualityMetrics(rec));
             var cardActions = document.createElement('div');
             cardActions.className = 'rec-actions';
             var activateBtn = document.createElement('button');
             activateBtn.className = 'btn btn-sm btn-primary';
-            activateBtn.textContent = 'Activate';
+            // VTID-04667: "Create task" when this type has no executor.
+            var activateIdleLabel = recActivateLabel(rec);
+            activateBtn.textContent = activateIdleLabel;
             activateBtn.onclick = async function (e) {
                 e.stopPropagation();
                 activateBtn.disabled = true;
@@ -29275,45 +30687,36 @@ function renderOverviewSystemView() {
                         state.overviewPipelineSummary.fetched = false;
                         fetchPipelineSummary();
                         await fetchTasks();
-                        showToast('Recommendation activated!', 'success');
+                        showToast(describeActivationOutcome(data), activationToastLevel(data));
                     } else {
                         activateBtn.disabled = false;
-                        activateBtn.textContent = 'Activate';
+                        activateBtn.textContent = activateIdleLabel;
                         showToast('Activation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (err) {
                     activateBtn.disabled = false;
-                    activateBtn.textContent = 'Activate';
+                    activateBtn.textContent = activateIdleLabel;
                     showToast('Activation error: ' + err.message, 'error');
                 }
             };
             var dismissBtn = document.createElement('button');
             dismissBtn.className = 'btn btn-sm';
             dismissBtn.textContent = 'Dismiss';
-            dismissBtn.onclick = async function (e) {
+            // VTID-04671: Dismiss asks why (reason codes stored by VTID-04670).
+            dismissBtn.onclick = function (e) {
                 e.stopPropagation();
-                dismissBtn.disabled = true;
-                try {
-                    var resp = await fetch('/api/v1/autopilot/recommendations/' + rec.id + '/reject', {
-                        method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' })
-                    });
-                    var data = await resp.json();
-                    if (data.ok) {
-                        state.overviewPipelineSummary.fetched = false;
-                        fetchPipelineSummary();
-                        showToast('Recommendation dismissed', 'success');
-                    } else {
-                        dismissBtn.disabled = false;
-                        showToast('Dismiss failed: ' + (data.error || 'Unknown error'), 'error');
-                    }
-                } catch (err) {
-                    dismissBtn.disabled = false;
-                    showToast('Dismiss error: ' + err.message, 'error');
-                }
+                openRecDismissPicker(rec);
             };
             cardActions.appendChild(activateBtn);
             cardActions.appendChild(dismissBtn);
             card.appendChild(cardActions);
+            if (state.autopilotDismissPickerFor === rec.id) {
+                card.appendChild(renderRecDismissPicker(rec, function () {
+                    state.overviewPipelineSummary.fetched = false;
+                    fetchPipelineSummary();
+                    renderApp();
+                }));
+            }
             recsSection.appendChild(card);
         });
     }
@@ -34547,193 +35950,619 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
-// BOOTSTRAP-TEST-COVERAGE: static phase summary, see docs/TEST_COVERAGE_PLAN.md
-// for the full narrative (bugs found, follow-ups surfaced per phase). Update
-// this array when a new phase completes.
-var GATEWAY_COVERAGE_PHASES = [
-    { phase: '1', name: 'Un-quarantine sweep', suites: 11, tests: null, bugs: 1, status: 'done' },
-    { phase: '2', name: 'Tenancy & RBAC', suites: 24, tests: 381, bugs: 0, status: 'done' },
-    { phase: '3', name: 'Memory & intelligence stack', suites: 22, tests: 625, bugs: 2, status: 'done' },
-    { phase: '5', name: 'Autopilot subsystem', suites: 16, tests: 676, bugs: 1, status: 'done' },
-    { phase: '6', name: 'Vitana Brain + awareness engines', suites: 15, tests: 689, bugs: 3, status: 'done' },
-    { phase: '7', name: 'Voice/ORB tools (Nova-prioritized)', suites: 26, tests: 765, bugs: 2, status: 'done' },
-    { phase: '8', name: 'Frontend domain logic (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '9', name: 'Sibling services & packages', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '10', name: 'Edge functions (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
-    { phase: '11', name: 'Coverage ratchet (make CI checks required)', suites: null, tests: null, bugs: 0, status: 'pending' },
+// ─── Testing & QA: Overview / Catalog / Runs (VTID-04642) ───────────────
+// The supervisor's view of every automated test in both repositories:
+//   Overview — health per environment, what is failing or flaky, the latest
+//              STAGING-VERIFY verdict per service, and the coverage gaps.
+//   Catalog  — every suite and workflow from the generated test catalog
+//              (VTID-04637): where it runs, how often, and whether it ran.
+//   Runs     — every CI run of a test / gate / monitor / e2e workflow, from
+//              the results store (VTID-04641).
+// All three read exafy_admin routes. Styling lives in styles.css (tq-*).
+
+var TQ_ENVIRONMENTS = [
+    { key: 'dev_pr', label: 'Development / PR', note: 'Every pull request and push to main' },
+    { key: 'nightly', label: 'Nightly', note: 'Scheduled full suites' },
+    { key: 'staging', label: 'Staging', note: 'Tests against the staging deployment' },
+    { key: 'production', label: 'Production', note: 'Read-only monitors and health checks' }
 ];
+var TQ_HEALTH_LABEL = { failing: 'Failing', flaky: 'Flaky', passing: 'Passing', no_recent_runs: 'No runs in 30 days' };
 
-function renderGatewayCoveragePhasesTable() {
-    var wrap = document.createElement('div');
-    wrap.style.marginBottom = '1.5rem';
+function tqEnvLabel(key) {
+    for (var i = 0; i < TQ_ENVIRONMENTS.length; i++) if (TQ_ENVIRONMENTS[i].key === key) return TQ_ENVIRONMENTS[i].label;
+    return key;
+}
 
-    var titleRow = document.createElement('div');
-    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;';
-    titleRow.innerHTML = '<h3 style="margin:0;">Coverage Bootstrap — Phase Structure</h3>' +
-        '<span class="status-badge status-active" style="font-size:0.75rem;">593 suites / 11,716 tests (gateway)</span>';
-    wrap.appendChild(titleRow);
+function tqRepoShort(repo) {
+    return repo === 'exafyltd/vitana-v1' || repo === 'frontend' ? 'vitana-v1' : 'platform';
+}
 
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.style.marginTop = 0;
-    subtitle.textContent = 'BOOTSTRAP-TEST-COVERAGE — full narrative (bugs found, findings surfaced per phase) in docs/TEST_COVERAGE_PLAN.md.';
-    wrap.appendChild(subtitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Phase</th><th>Scope</th><th>Suites</th><th>Tests</th><th>Bugs Found</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    GATEWAY_COVERAGE_PHASES.forEach(function (p) {
-        var row = document.createElement('tr');
-        row.innerHTML =
-            '<td style="font-weight:600;">' + escapeHtml(p.phase) + '</td>' +
-            '<td>' + escapeHtml(p.name) + '</td>' +
-            '<td style="text-align:center;">' + (p.suites == null ? '—' : p.suites) + '</td>' +
-            '<td style="text-align:center;">' + (p.tests == null ? '—' : p.tests) + '</td>' +
-            '<td style="text-align:center;' + (p.bugs > 0 ? 'color:#f59e0b;font-weight:600;' : '') + '">' + p.bugs + '</td>' +
-            '<td><span class="status-badge status-' + (p.status === 'done' ? 'active' : 'pending') + '">' + (p.status === 'done' ? 'Done' : 'Pending') + '</span></td>';
-        tbody.appendChild(row);
+function tqFetchJson(url, opts) {
+    var init = opts || {};
+    init.headers = buildContextHeaders(init.headers || {});
+    return fetch(url, init).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+            if (!r.ok || body.ok === false) {
+                var msg = body.message || body.error || ('HTTP ' + r.status);
+                if (r.status === 401 || r.status === 403) msg = 'Sign in as an exafy admin to see test results (' + msg + ').';
+                throw new Error(msg);
+            }
+            return body;
+        });
     });
+}
+
+function tqLoad(key, url) {
+    var slot = state.testingQa[key];
+    if (slot.loading || slot.data || slot.error) return;
+    slot.loading = true;
+    tqFetchJson(url).then(function (body) {
+        slot.data = body; slot.loading = false; renderApp();
+    }).catch(function (err) {
+        slot.error = err.message; slot.loading = false; renderApp();
+    });
+}
+
+function tqReload(key) {
+    state.testingQa[key] = { data: null, loading: false, error: null };
+}
+
+function tqEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = text;
+    return el;
+}
+
+function tqStatusBlock(slot, what) {
+    if (slot.loading || (!slot.data && !slot.error)) return tqEl('div', 'placeholder-content', 'Loading ' + what + '…');
+    if (slot.error) return tqEl('div', 'placeholder-content error-text', 'Could not load ' + what + ': ' + slot.error);
+    return null;
+}
+
+function tqHeader(title, subtitle) {
+    var box = tqEl('div', 'tq-header');
+    box.appendChild(tqEl('h2', null, title));
+    box.appendChild(tqEl('p', 'section-subtitle', subtitle));
+    return box;
+}
+
+// Full class names, spelled out: find-dead-css-classes.mjs only sees literal
+// class strings, so a concatenated 'tq-pill-' + kind reads as dead CSS.
+var TQ_PILL_CLASS = {
+    ok: 'tq-pill tq-pill-ok',
+    bad: 'tq-pill tq-pill-bad',
+    warn: 'tq-pill tq-pill-warn',
+    neutral: 'tq-pill tq-pill-neutral',
+    env: 'tq-pill tq-pill-env'
+};
+
+function tqPill(text, kind) {
+    return tqEl('span', TQ_PILL_CLASS[kind] || TQ_PILL_CLASS.neutral, text);
+}
+
+function tqConclusionKind(conclusion) {
+    if (conclusion === 'success') return 'ok';
+    if (conclusion === 'failure' || conclusion === 'timed_out') return 'bad';
+    if (conclusion === 'cancelled' || conclusion === 'skipped') return 'neutral';
+    return 'warn';
+}
+
+function tqHealthKind(health) {
+    return { passing: 'ok', failing: 'bad', flaky: 'warn', no_recent_runs: 'neutral' }[health] || 'neutral';
+}
+
+function tqPct(v) {
+    return v === null || v === undefined ? '—' : v + '%';
+}
+
+function tqLink(href, text) {
+    var a = tqEl('a', 'tq-link', text);
+    a.href = href; a.target = '_blank'; a.rel = 'noopener';
+    return a;
+}
+
+function tqTable(headers) {
+    var wrap = tqEl('div', 'tq-table-wrap');
+    var table = tqEl('table', 'list-table tq-table');
+    var thead = document.createElement('thead');
+    var tr = document.createElement('tr');
+    headers.forEach(function (h) { tr.appendChild(tqEl('th', null, h)); });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
     table.appendChild(tbody);
     wrap.appendChild(table);
-    return wrap;
+    return { wrap: wrap, tbody: tbody };
 }
 
-function renderTestingUnitView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Unit Tests</h2><p class="section-subtitle">Unit test results from the CI/CD pipeline. Vitest (frontend) / Jest (gateway).</p>';
+function tqCell(row, content, className) {
+    var td = tqEl('td', className || null);
+    if (content && content.nodeType) td.appendChild(content);
+    else td.textContent = content === undefined || content === null ? '—' : String(content);
+    row.appendChild(td);
+    return td;
+}
 
-    // Info card
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Test Framework</h3><ul>' +
-        '<li><strong>Frontend:</strong> Vitest — <code>temp_vitana_v1/src/__tests__/</code></li>' +
-        '<li><strong>Gateway:</strong> Jest — <code>services/gateway/tests/</code></li>' +
-        '<li><strong>Coverage:</strong> c8/istanbul</li>' +
-        '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
-    container.appendChild(info);
+function tqEnvPills(envs) {
+    var box = tqEl('span', 'tq-pill-row');
+    (envs || []).forEach(function (e) { box.appendChild(tqPill(tqEnvLabel(e), 'env')); });
+    if (!envs || envs.length === 0) box.appendChild(tqPill('none', 'neutral'));
+    return box;
+}
 
-    // BOOTSTRAP-TEST-COVERAGE: phase-by-phase breakdown of the gateway unit
-    // test coverage bootstrap project (docs/TEST_COVERAGE_PLAN.md). Static
-    // summary — updated as new phases land — so testers/reviewers can see
-    // what's covered without reading the full plan doc.
-    container.appendChild(renderGatewayCoveragePhasesTable());
+function tqGoToTab(tabKey) {
+    handleTabClick(tabKey);
+}
 
-    // Quick run buttons
-    container.appendChild(renderTestingQuickRunButtons('unit', [
-        { label: 'Gateway Tests (Jest)', projects: ['gateway-jest'] },
-        { label: 'Frontend Tests (Vitest)', projects: ['frontend-vitest'] },
-    ]));
+// ─── Overview ─────────────────────────────────────────────────────────────
 
-    // Runs history
-    fetchTestingRuns('unit', 'testingUnit');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
+function renderTestingOverviewView() {
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Testing & QA', 'Every automated test in vitana-platform and vitana-v1: where it runs, how it did in the last 30 days, and what is missing.'));
 
-    if (state.testingUnit.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingUnit.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingUnit.error; container.appendChild(e);
+    var s = state.testingQa.summary;
+    var status = tqStatusBlock(s, 'test results');
+    if (status) {
+        container.appendChild(status);
     } else {
-        container.appendChild(renderTestRunsTable(state.testingUnit.runs));
+        var sum = s.data;
+        // Environments
+        var grid = tqEl('div', 'tq-env-grid');
+        TQ_ENVIRONMENTS.forEach(function (env) {
+            var e = (sum.environments || []).filter(function (x) { return x.environment === env.key; })[0] || {};
+            var card = tqEl('div', 'tq-env-card' + (e.failing ? ' tq-env-card-bad' : e.flaky ? ' tq-env-card-warn' : ''));
+            card.appendChild(tqEl('div', 'tq-env-title', env.label));
+            card.appendChild(tqEl('div', 'tq-env-note', env.note));
+            card.appendChild(tqEl('div', 'tq-env-rate', tqPct(e.pass_rate_7d)));
+            card.appendChild(tqEl('div', 'tq-env-sub', 'pass rate, last 7 days · ' + (e.runs_7d || 0) + ' runs'));
+            var pills = tqEl('div', 'tq-pill-row');
+            pills.appendChild(tqPill((e.workflows || 0) + ' workflows', 'neutral'));
+            if (e.failing) pills.appendChild(tqPill(e.failing + ' failing', 'bad'));
+            if (e.flaky) pills.appendChild(tqPill(e.flaky + ' flaky', 'warn'));
+            if (e.no_recent_runs) pills.appendChild(tqPill(e.no_recent_runs + ' idle', 'neutral'));
+            card.appendChild(pills);
+            grid.appendChild(card);
+        });
+        container.appendChild(grid);
+
+        // Staging verification
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Staging verification'));
+        container.appendChild(tqEl('p', 'tq-muted', 'After every staging deploy, STAGING-VERIFY runs the smoke suite and each change\'s own suite. Production is only offered after it passes.'));
+        var sv = sum.staging_verify || [];
+        if (sv.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'No staging verification recorded yet.'));
+        } else {
+            var svGrid = tqEl('div', 'tq-sv-grid');
+            sv.forEach(function (v) {
+                var card = tqEl('div', 'tq-sv-card');
+                var top = tqEl('div', 'tq-sv-top');
+                top.appendChild(tqEl('strong', null, v.service));
+                top.appendChild(tqPill(v.outcome, v.outcome === 'passed' ? 'ok' : v.outcome === 'failed' ? 'bad' : 'neutral'));
+                card.appendChild(top);
+                card.appendChild(tqEl('div', 'tq-muted', 'commit ' + String(v.commit || '').slice(0, 7) + ' · ' + formatRelativeTime(v.at) + ' · ' + (v.tests || 0) + ' tests'));
+                (v.failed || []).slice(0, 5).forEach(function (f) {
+                    card.appendChild(tqEl('div', 'tq-sv-fail', (f.suite ? f.suite + ' › ' : '') + f.name + (f.problems && f.problems[0] ? ' — ' + String(f.problems[0]).slice(0, 160) : '')));
+                });
+                if (v.run_url) card.appendChild(tqLink(v.run_url, 'Open run'));
+                svGrid.appendChild(card);
+            });
+            container.appendChild(svGrid);
+        }
+
+        // Needs attention
+        var attention = (sum.workflows || []).filter(function (w) { return w.health === 'failing' || w.health === 'flaky'; });
+        container.appendChild(tqEl('h3', 'tq-section-title', 'Needs attention (' + attention.length + ')'));
+        if (attention.length === 0) {
+            container.appendChild(tqEl('div', 'placeholder-content', 'Nothing failing or flaky in the last 30 days.'));
+        } else {
+            var t = tqTable(['Health', 'Workflow', 'Repo', 'Environments', 'Failing streak', 'Last success', 'Last run']);
+            attention.forEach(function (w) {
+                var row = document.createElement('tr');
+                tqCell(row, tqPill(TQ_HEALTH_LABEL[w.health] || w.health, tqHealthKind(w.health)));
+                tqCell(row, w.workflow_name || w.workflow_file);
+                tqCell(row, tqRepoShort(w.repo));
+                tqCell(row, tqEnvPills(w.environments));
+                tqCell(row, w.failing_streak ? w.failing_streak + ' runs' : (w.flaky_commits_30d + ' flaky commits'));
+                tqCell(row, w.last_success_at ? formatRelativeTime(w.last_success_at) : 'never (30 days)');
+                tqCell(row, w.last_run && w.last_run.html_url ? tqLink(w.last_run.html_url, (w.last_run.conclusion || '') + ' · ' + formatRelativeTime(w.last_run.run_created_at)) : '—');
+                t.tbody.appendChild(row);
+            });
+            container.appendChild(t.wrap);
+        }
+
+        // Sync state
+        var sync = sum.sync || {};
+        var syncLine = tqEl('div', 'tq-sync');
+        var states = (sync.state || []).map(function (x) {
+            return tqRepoShort(x.repo) + ': ' + (x.last_synced_at ? 'synced ' + formatRelativeTime(x.last_synced_at) : 'never synced') + (x.last_error ? ' (error: ' + x.last_error + ')' : '');
+        });
+        syncLine.appendChild(tqEl('span', 'tq-muted', (sum.runs || 0) + ' runs in the last 30 days. ' + (states.join(' · ') || 'Not synced yet.') + (sync.pending ? ' Sync in progress.' : '') + (sync.sync_error ? ' Sync error: ' + sync.sync_error : '')));
+        var syncBtn = tqEl('button', 'task-spec-pipeline-btn', 'Sync from GitHub now');
+        syncBtn.onclick = function () {
+            syncBtn.disabled = true; syncBtn.textContent = 'Syncing…';
+            tqFetchJson('/api/v1/testing/results/sync', { method: 'POST' }).then(function () {
+                tqReload('summary'); tqReload('runs'); renderApp();
+            }).catch(function (err) {
+                syncBtn.disabled = false; syncBtn.textContent = 'Sync failed: ' + err.message;
+            });
+        };
+        syncLine.appendChild(syncBtn);
+        container.appendChild(syncLine);
+    }
+
+    // Coverage snapshot from the catalog
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Coverage'));
+    var c = state.testingQa.catalog;
+    var cStatus = tqStatusBlock(c, 'the test catalog');
+    if (cStatus) {
+        container.appendChild(cStatus);
+    } else {
+        var cs = c.data.summary || {};
+        var stats = tqEl('div', 'tq-stat-row');
+        [['Test files', cs.files], ['Test cases', cs.cases], ['Suites', cs.suites], ['Scheduled runs / day', cs.scheduled_runs_per_day],
+         ['Suites never run in CI', (cs.never_run_suites || []).length], ['Workflows flagged', (cs.flagged_workflows || []).length]].forEach(function (p) {
+            var st = tqEl('div', 'tq-stat');
+            st.appendChild(tqEl('div', 'tq-stat-value', p[1] === undefined || p[1] === null ? '—' : typeof p[1] === 'number' ? Math.round(p[1]).toLocaleString('en-US') : String(p[1])));
+            st.appendChild(tqEl('div', 'tq-stat-label', p[0]));
+            stats.appendChild(st);
+        });
+        container.appendChild(stats);
+        var gaps = cs.never_run_suites || [];
+        if (gaps.length) {
+            var gapBox = tqEl('div', 'databases-arch-note');
+            gapBox.appendChild(tqEl('h3', null, 'Suites no workflow runs'));
+            var ul = document.createElement('ul');
+            gaps.forEach(function (g) { ul.appendChild(tqEl('li', null, g)); });
+            gapBox.appendChild(ul);
+            container.appendChild(gapBox);
+        }
+        var btn = tqEl('button', 'task-spec-pipeline-btn', 'Open the full catalog');
+        btn.onclick = function () { tqGoToTab('catalog'); };
+        container.appendChild(btn);
+        container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + ' from the code on main.'));
     }
     return container;
 }
 
-function renderTestingIntegrationView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Integration Tests</h2><p class="section-subtitle">Cross-service integration test results.</p>';
+// ─── Catalog ──────────────────────────────────────────────────────────────
 
-    // Scope info
-    var info = document.createElement('div');
-    info.className = 'databases-arch-note';
-    info.innerHTML = '<h3>Integration Test Scope</h3><ul>' +
-        '<li><strong>Gateway \u2192 OASIS Operator:</strong> Event emission, projection sync</li>' +
-        '<li><strong>Gateway \u2192 Worker Runner:</strong> Task claiming, execution callbacks</li>' +
-        '<li><strong>Gateway \u2192 Verification Engine:</strong> Governance evaluation flow</li>' +
-        '<li><strong>Gateway \u2192 Supabase:</strong> RLS enforcement, data persistence</li>' +
-        '<li><strong>SSE Streaming:</strong> Event delivery, reconnection</li></ul>';
-    container.appendChild(info);
-
-    // Quick run buttons
-    container.appendChild(renderTestingQuickRunButtons('integration', [
-        { label: 'Full Integration Suite', projects: ['integration-full'] },
-    ]));
-
-    // Runs history
-    fetchTestingRuns('integration', 'testingIntegration');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1rem';
-    container.appendChild(runsTitle);
-
-    if (state.testingIntegration.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingIntegration.error) {
-        var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingIntegration.error; container.appendChild(e);
-    } else {
-        container.appendChild(renderTestRunsTable(state.testingIntegration.runs));
-    }
-    return container;
+function tqWorkflowHealthIndex() {
+    var s = state.testingQa.summary.data;
+    var index = {};
+    ((s && s.workflows) || []).forEach(function (w) { index[tqRepoShort(w.repo) + '|' + w.workflow_file] = w; });
+    return index;
 }
 
-function renderTestingValidatorView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Validator Tests</h2><p class="section-subtitle">Governance validator agent test scenarios.</p>';
+function renderTestingCatalogView() {
+    tqLoad('catalog', '/api/v1/testing/catalog');
+    tqLoad('summary', '/api/v1/testing/results/summary');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test catalog', 'Generated from the code on every merge: every suite, the workflows that run it, where and how often. Suites nothing runs are gaps.'));
 
-    // Quick run button
-    container.appendChild(renderTestingQuickRunButtons('validator', [
-        { label: 'Run All Validator Tests', projects: ['validator-governance'] },
-    ]));
+    var c = state.testingQa.catalog;
+    var status = tqStatusBlock(c, 'the test catalog');
+    if (status) { container.appendChild(status); return container; }
 
-    // Scenarios table
-    var scenarios = [
-        { name: 'Deploy Gate - Clean Build', expected: 'ALLOW', rule: 'GOV-001' },
-        { name: 'Deploy Gate - Failing Tests', expected: 'BLOCK', rule: 'GOV-001' },
-        { name: 'Spec Validation - Complete Spec', expected: 'APPROVE', rule: 'GOV-003' },
-        { name: 'Spec Validation - Missing Criteria', expected: 'REJECT', rule: 'GOV-003' },
-        { name: 'Resource Limit - Within Budget', expected: 'ALLOW', rule: 'GOV-005' },
-        { name: 'Resource Limit - Over Budget', expected: 'BLOCK', rule: 'GOV-005' }
-    ];
-    var scenariosTitle = document.createElement('h3');
-    scenariosTitle.textContent = 'Test Scenarios';
-    container.appendChild(scenariosTitle);
-
-    var table = document.createElement('table');
-    table.className = 'list-table';
-    table.innerHTML = '<thead><tr><th>Scenario</th><th>Expected</th><th>Rule</th><th>Status</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    scenarios.forEach(function (s) {
-        var row = document.createElement('tr');
-        row.innerHTML = '<td style="font-weight:600;">' + s.name + '</td>' +
-            '<td><span class="status-badge status-' + (s.expected === 'ALLOW' || s.expected === 'APPROVE' ? 'active' : 'blocked') + '">' + s.expected + '</span></td>' +
-            '<td style="font-family:monospace;">' + s.rule + '</td>' +
-            '<td><span class="status-badge status-pending">Not Run</span></td>';
-        tbody.appendChild(row);
+    var f = state.testingQa.catalogFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    var envSel = document.createElement('select');
+    envSel.className = 'tq-select';
+    envSel.setAttribute('aria-label', 'Environment');
+    [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })).concat([['never_run', 'Never run in CI']]).forEach(function (o) {
+        var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+        if (f.environment === o[0]) opt.selected = true;
+        envSel.appendChild(opt);
     });
-    table.appendChild(tbody);
-    container.appendChild(table);
+    envSel.onchange = function () { f.environment = envSel.value; renderApp(); };
+    bar.appendChild(envSel);
+    var search = document.createElement('input');
+    search.type = 'search'; search.className = 'tq-input'; search.placeholder = 'Search suites and workflows';
+    search.setAttribute('aria-label', 'Search suites and workflows');
+    search.value = f.q;
+    search.oninput = function () { f.q = search.value; clearTimeout(tqSearchTimer); tqSearchTimer = setTimeout(renderApp, 250); };
+    bar.appendChild(search);
+    container.appendChild(bar);
 
-    // Runs history
-    fetchTestingRuns('validator', 'testingValidator');
-    var runsTitle = document.createElement('h3');
-    runsTitle.textContent = 'Run History';
-    runsTitle.style.marginTop = '1.5rem';
-    container.appendChild(runsTitle);
+    var q = (f.q || '').toLowerCase();
+    var health = tqWorkflowHealthIndex();
+    var suites = (c.data.suites || []).filter(function (s) {
+        var envOk = !f.environment || (f.environment === 'never_run' ? s.never_run : (s.environments || []).indexOf(f.environment) >= 0);
+        return envOk && (!q || (s.name + ' ' + s.id).toLowerCase().indexOf(q) >= 0);
+    });
 
-    if (state.testingValidator.loading) {
-        var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l);
-    } else if (state.testingValidator.error) {
-        var e2 = document.createElement('div'); e2.className = 'placeholder-content error-text'; e2.textContent = 'Error: ' + state.testingValidator.error; container.appendChild(e2);
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Suites (' + suites.length + ')'));
+    var t = tqTable(['Suite', 'Repo', 'Runner', 'Files', 'Cases', 'Environments', 'Runs', 'Latest result']);
+    suites.forEach(function (s) {
+        var row = document.createElement('tr');
+        row.className = 'tq-row-click';
+        makeClickable(row, function () {
+            state.testingQa.expandedSuite = state.testingQa.expandedSuite === s.id ? null : s.id;
+            renderApp();
+        }, { label: 'Show files of ' + s.name });
+        var nameCell = tqCell(row, s.name);
+        if (s.never_run) { nameCell.appendChild(document.createTextNode(' ')); nameCell.appendChild(tqPill('never run', 'bad')); }
+        tqCell(row, tqRepoShort(s.repo));
+        tqCell(row, s.runner);
+        tqCell(row, s.files);
+        tqCell(row, s.cases);
+        tqCell(row, tqEnvPills(s.environments));
+        tqCell(row, (s.schedules || []).length ? s.schedules.map(function (x) { return x.human; }).join(', ') : (s.runs_in || []).length ? 'on PR / push' : '—');
+        var worst = null;
+        (s.runs_in || []).forEach(function (file) {
+            var w = health[tqRepoShort(s.repo) + '|' + file];
+            if (w && (!worst || ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(w.health) < ['failing', 'flaky', 'passing', 'no_recent_runs'].indexOf(worst.health))) worst = w;
+        });
+        tqCell(row, worst ? tqPill((TQ_HEALTH_LABEL[worst.health] || worst.health) + ' · ' + worst.workflow_file, tqHealthKind(worst.health)) : '—');
+        t.tbody.appendChild(row);
+        if (state.testingQa.expandedSuite === s.id) t.tbody.appendChild(renderTestingSuiteFilesRow(s, 8));
+    });
+    container.appendChild(t.wrap);
+
+    var workflows = (c.data.workflows || []).filter(function (w) {
+        return (!f.environment || f.environment === 'never_run' || (w.environments || []).indexOf(f.environment) >= 0) &&
+            (!q || (w.file + ' ' + w.name).toLowerCase().indexOf(q) >= 0);
+    });
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Workflows (' + workflows.length + ')'));
+    var wt = tqTable(['Workflow', 'Repo', 'Kind', 'Schedule', 'Environments', 'Pass rate 7d', 'Latest result', 'Flags']);
+    workflows.forEach(function (w) {
+        var row = document.createElement('tr');
+        tqCell(row, w.file);
+        tqCell(row, tqRepoShort(w.repo));
+        tqCell(row, w.kind);
+        tqCell(row, (w.schedules || []).map(function (x) { return x.human; }).join(', ') || (w.manual_trigger ? 'on demand / on events' : 'on events'));
+        tqCell(row, tqEnvPills(w.environments));
+        var h = health[tqRepoShort(w.repo) + '|' + w.file];
+        tqCell(row, h ? tqPct(h.pass_rate_7d) : '—');
+        tqCell(row, h && h.last_run ? (h.last_run.html_url ? tqLink(h.last_run.html_url, (h.last_run.conclusion || '') + ' · ' + formatRelativeTime(h.last_run.run_created_at)) : h.last_run.conclusion) : 'no run recorded');
+        var flags = tqEl('span', 'tq-pill-row');
+        (w.flags || []).forEach(function (fl) { flags.appendChild(tqPill(fl.replace(/_/g, ' '), 'bad')); });
+        tqCell(row, (w.flags || []).length ? flags : '—');
+        wt.tbody.appendChild(row);
+    });
+    container.appendChild(wt.wrap);
+    container.appendChild(tqEl('p', 'tq-muted', 'Catalog built ' + formatRelativeTime(c.data.generated_at) + '. Sources: ' + Object.keys(c.data.sources || {}).map(function (k) {
+        var src = c.data.sources[k]; return tqRepoShort(src.repo || k) + (src.missing ? ' (missing)' : ' @' + String(src.sha || '').slice(0, 7));
+    }).join(', ') + '.'));
+    return container;
+}
+
+var tqSearchTimer = null;
+
+function renderTestingSuiteFilesRow(suite, colspan) {
+    var tr = tqEl('tr', 'tq-detail-row');
+    var td = tqEl('td');
+    td.colSpan = colspan;
+    var slot = state.testingQa.suiteFiles[suite.id];
+    if (!slot) {
+        slot = state.testingQa.suiteFiles[suite.id] = { loading: true, data: null, error: null };
+        tqFetchJson('/api/v1/testing/catalog/suite?id=' + encodeURIComponent(suite.id)).then(function (b) {
+            slot.data = b; slot.loading = false; renderApp();
+        }).catch(function (e) { slot.error = e.message; slot.loading = false; renderApp(); });
+    }
+    if (slot.loading) td.appendChild(tqEl('div', 'tq-muted', 'Loading files…'));
+    else if (slot.error) td.appendChild(tqEl('div', 'error-text', slot.error));
+    else {
+        var ul = tqEl('ul', 'tq-file-list');
+        (slot.data.files || []).forEach(function (file) {
+            ul.appendChild(tqEl('li', null, file.path + ' — ' + file.cases + ' cases' + (file.domain ? ' · ' + file.domain : '')));
+        });
+        td.appendChild(ul);
+    }
+    tr.appendChild(td);
+    return tr;
+}
+
+// ─── Runs ─────────────────────────────────────────────────────────────────
+
+function tqRunsUrl() {
+    var f = state.testingQa.runsFilters;
+    var params = ['limit=100'];
+    if (f.environment) params.push('environment=' + encodeURIComponent(f.environment));
+    if (f.conclusion) params.push('conclusion=' + encodeURIComponent(f.conclusion));
+    if (f.repo) params.push('repo=' + encodeURIComponent(f.repo));
+    return '/api/v1/testing/results/runs?' + params.join('&');
+}
+
+function renderTestingRunsView() {
+    tqLoad('runs', tqRunsUrl());
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Test runs', 'Every CI run of a test, gate, monitor or end-to-end workflow in both repositories, newest first.'));
+
+    var f = state.testingQa.runsFilters;
+    var bar = tqEl('div', 'tq-filter-bar');
+    function select(label, key, options) {
+        var sel = document.createElement('select');
+        sel.className = 'tq-select';
+        sel.setAttribute('aria-label', label);
+        options.forEach(function (o) {
+            var opt = document.createElement('option'); opt.value = o[0]; opt.textContent = o[1];
+            if (f[key] === o[0]) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        sel.onchange = function () { f[key] = sel.value; tqReload('runs'); renderApp(); };
+        bar.appendChild(sel);
+    }
+    select('Environment', 'environment', [['', 'All environments']].concat(TQ_ENVIRONMENTS.map(function (e) { return [e.key, e.label]; })));
+    select('Result', 'conclusion', [['', 'All results'], ['failure', 'Failed'], ['success', 'Passed'], ['cancelled', 'Cancelled'], ['timed_out', 'Timed out']]);
+    select('Repository', 'repo', [['', 'Both repositories'], ['exafyltd/vitana-platform', 'vitana-platform'], ['exafyltd/vitana-v1', 'vitana-v1']]);
+    var runBtn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', 'Run gateway tests now');
+    runBtn.title = 'Dispatches TEST-SUITE.yml on main';
+    runBtn.onclick = function () { triggerTestRun('unit', ['gateway-jest'], runBtn); };
+    bar.appendChild(runBtn);
+    container.appendChild(bar);
+
+    var r = state.testingQa.runs;
+    var status = tqStatusBlock(r, 'runs');
+    if (status) { container.appendChild(status); return container; }
+    var runs = r.data.runs || [];
+    if (r.data.sync_error) container.appendChild(tqEl('div', 'placeholder-content error-text', 'Sync from GitHub failed: ' + r.data.sync_error + '. Showing stored runs.'));
+    if (runs.length === 0) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No runs match these filters yet.'));
+        return container;
+    }
+    var t = tqTable(['When', 'Result', 'Workflow', 'Repo', 'Environments', 'Trigger', 'Commit', 'Duration', 'Failed jobs']);
+    runs.forEach(function (run) {
+        var row = document.createElement('tr');
+        tqCell(row, formatRelativeTime(run.run_created_at));
+        tqCell(row, tqPill(run.conclusion || 'unknown', tqConclusionKind(run.conclusion)));
+        tqCell(row, run.html_url ? tqLink(run.html_url, run.workflow_name || run.workflow_file) : (run.workflow_name || run.workflow_file));
+        tqCell(row, tqRepoShort(run.repo));
+        tqCell(row, tqEnvPills(run.environments));
+        tqCell(row, (run.event || '') + (run.branch ? ' · ' + run.branch : ''));
+        tqCell(row, String(run.head_sha || '').slice(0, 7), 'tq-mono');
+        tqCell(row, run.duration_s !== null && run.duration_s !== undefined ? (run.duration_s >= 60 ? Math.round(run.duration_s / 60) + ' min' : run.duration_s + ' s') : '—');
+        var failed = (run.jobs || []).filter(function (j) { return j.conclusion === 'failure' || j.conclusion === 'timed_out'; });
+        tqCell(row, failed.length ? failed.map(function (j) { return j.name; }).join(', ') : '—');
+        t.tbody.appendChild(row);
+    });
+    container.appendChild(t.wrap);
+    return container;
+}
+
+// ─── Testing & QA: Run Tests (VTID-04643) ────────────────────────────────
+// Starts a reviewed test workflow (the gateway's launch list): development and
+// staging tests, and read-only production health checks. Deploys are never
+// started here. Every launch asks why and is recorded in OASIS.
+
+function renderTestingRunTestsView() {
+    tqLoad('launchable', '/api/v1/testing/launchable');
+    tqLoad('launches', '/api/v1/testing/launches');
+    var container = tqEl('div', 'tq-view');
+    container.appendChild(tqHeader('Run tests', 'Start a reviewed test workflow. Development and staging tests run against code or staging; production only gets read-only health checks. Deploys go through PUBLISH, never through here.'));
+
+    var l = state.testingQa.launchable;
+    var status = tqStatusBlock(l, 'the launch list');
+    if (status) { container.appendChild(status); return container; }
+
+    var groups = [
+        { env: 'dev_pr', title: 'Development / PR', note: 'Runs on a GitHub runner against the code on main. Touches no deployment.' },
+        { env: 'staging', title: 'Staging', note: 'Runs read-only against the staging deployment.' },
+        { env: 'production', title: 'Production (read-only health checks)', note: 'Reads only. Nothing here writes to production.' }
+    ];
+    groups.forEach(function (g) {
+        var items = (l.data.launchable || []).filter(function (x) { return x.environment === g.env; });
+        if (!items.length) return;
+        container.appendChild(tqEl('h3', 'tq-section-title', g.title));
+        container.appendChild(tqEl('p', 'tq-muted', g.note));
+        var grid = tqEl('div', 'tq-launch-grid');
+        items.forEach(function (item) { grid.appendChild(renderTestingLaunchCard(item, l.data.e2e_projects || [])); });
+        container.appendChild(grid);
+    });
+
+    var not = l.data.not_launchable || [];
+    if (not.length) {
+        var det = tqEl('details', 'tq-details');
+        det.appendChild(tqEl('summary', null, 'Not launchable from here (' + not.length + ')'));
+        var t = tqTable(['Workflow', 'Repo', 'Kind', 'Why not']);
+        not.forEach(function (w) {
+            var row = document.createElement('tr');
+            tqCell(row, w.file);
+            tqCell(row, tqRepoShort(w.repo));
+            tqCell(row, w.kind);
+            tqCell(row, w.reason);
+            t.tbody.appendChild(row);
+        });
+        det.appendChild(t.wrap);
+        container.appendChild(det);
+    }
+
+    container.appendChild(tqEl('h3', 'tq-section-title', 'Recent manual runs'));
+    var rl = state.testingQa.launches;
+    var rs = tqStatusBlock(rl, 'recent runs');
+    if (rs) { container.appendChild(rs); return container; }
+    var launches = rl.data.launches || [];
+    if (!launches.length) {
+        container.appendChild(tqEl('div', 'placeholder-content', 'No manual runs yet.'));
     } else {
-        container.appendChild(renderTestRunsTable(state.testingValidator.runs));
+        var lt = tqTable(['When', 'Who', 'Workflow', 'Environment', 'Why']);
+        launches.forEach(function (x) {
+            var row = document.createElement('tr');
+            tqCell(row, formatRelativeTime(x.at));
+            tqCell(row, x.by || '—');
+            tqCell(row, x.label || x.workflow);
+            tqCell(row, tqPill(tqEnvLabel(x.environment), 'env'));
+            tqCell(row, x.reason);
+            lt.tbody.appendChild(row);
+        });
+        container.appendChild(lt.wrap);
     }
     return container;
+}
+
+function renderTestingLaunchCard(item, e2eProjects) {
+    var key = item.repo + '|' + item.file;
+    var form = state.testingQa.launchForms[key] || (state.testingQa.launchForms[key] = { reason: '', projects: [], busy: false, result: null, error: null });
+    var card = tqEl('div', 'tq-launch-card');
+    var top = tqEl('div', 'tq-sv-top');
+    top.appendChild(tqEl('strong', null, item.label));
+    top.appendChild(tqPill(tqRepoShort(item.repo), 'neutral'));
+    card.appendChild(top);
+    card.appendChild(tqEl('div', 'tq-mono tq-muted', item.file));
+    card.appendChild(tqEl('div', 'tq-launch-effect', item.effect));
+    if (!item.in_catalog) card.appendChild(tqEl('div', 'tq-sv-fail', 'Not found in the current test catalog; the workflow may have been renamed.'));
+
+    if (item.inputs === 'e2e_projects') {
+        var box = tqEl('fieldset', 'tq-projects');
+        box.appendChild(tqEl('legend', null, 'Playwright projects'));
+        e2eProjects.forEach(function (p) {
+            var lab = tqEl('label', 'tq-check');
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = form.projects.indexOf(p.project) >= 0;
+            cb.onchange = function () {
+                var i = form.projects.indexOf(p.project);
+                if (cb.checked && i < 0) form.projects.push(p.project);
+                if (!cb.checked && i >= 0) form.projects.splice(i, 1);
+            };
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode(' ' + p.label));
+            box.appendChild(lab);
+        });
+        card.appendChild(box);
+    }
+    if (item.inputs === 'staging_verify_gateway') {
+        card.appendChild(tqEl('div', 'tq-muted', 'Runs against the commit the staging gateway reports at start.'));
+    }
+
+    var reason = document.createElement('input');
+    reason.type = 'text';
+    reason.className = 'tq-input tq-reason';
+    reason.placeholder = 'Why are you running this? (recorded)';
+    reason.setAttribute('aria-label', 'Reason for running ' + item.label);
+    reason.value = form.reason;
+    reason.oninput = function () { form.reason = reason.value; };
+    card.appendChild(reason);
+
+    var btn = tqEl('button', 'task-spec-pipeline-btn task-spec-pipeline-btn-generate', form.busy ? 'Starting…' : 'Start');
+    btn.disabled = form.busy;
+    btn.onclick = function () {
+        form.busy = true; form.error = null; form.result = null; renderApp();
+        tqFetchJson('/api/v1/testing/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo: item.repo, workflow: item.file, reason: form.reason, projects: form.projects })
+        }).then(function (body) {
+            form.busy = false; form.result = body; form.reason = '';
+            tqReload('launches');
+            renderApp();
+        }).catch(function (err) {
+            form.busy = false; form.error = err.message; renderApp();
+        });
+    };
+    card.appendChild(btn);
+    if (form.error) card.appendChild(tqEl('div', 'tq-sv-fail', form.error));
+    if (form.result) {
+        var ok = tqEl('div', 'tq-launch-ok');
+        ok.appendChild(tqPill('started', 'ok'));
+        ok.appendChild(document.createTextNode(' '));
+        ok.appendChild(tqLink(form.result.actions_url, 'Follow in GitHub Actions'));
+        ok.appendChild(tqEl('span', 'tq-muted', ' · the result appears in Runs when it finishes.'));
+        card.appendChild(ok);
+    }
+    return card;
 }
 
 function renderTestingE2eView() {
@@ -34743,73 +36572,27 @@ function renderTestingE2eView() {
     // Title row with badge
     var titleRow = document.createElement('div');
     titleRow.style.cssText = 'display:flex;align-items:center;gap:1rem;margin-bottom:0.25rem;';
-    titleRow.innerHTML = '<h2 style="margin:0;">E2E Tests</h2><span class="status-badge status-active" style="font-size:0.75rem;">272+ routes</span>';
+    var e2eTitle = document.createElement('h2');
+    e2eTitle.className = 'testing-e2e-title';
+    e2eTitle.textContent = 'E2E Tests';
+    var e2eBadge = document.createElement('span');
+    e2eBadge.className = 'status-badge status-active testing-e2e-badge';
+    e2eBadge.textContent = 'staging';
+    titleRow.appendChild(e2eTitle);
+    titleRow.appendChild(e2eBadge);
     container.appendChild(titleRow);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) \u00d7 6 roles.';
+    subtitle.textContent = 'Playwright UI tests across 3 UIs (Desktop, Mobile, Command Hub) and 5 roles, on staging.';
     container.appendChild(subtitle);
 
-    // ─── Cloud Run Migration Testing Banner ─────────────────────────
-    var cloudRunBanner = document.createElement('div');
-    cloudRunBanner.style.cssText = 'background:linear-gradient(135deg,rgba(59,130,246,0.08),rgba(168,85,247,0.08));border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;';
-
-    var bannerTitle = document.createElement('div');
-    bannerTitle.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
-    bannerTitle.innerHTML = '<span style="font-size:1.1rem;">&#9729;</span><strong style="font-size:0.95rem;">Cloud Run Migration Testing</strong>';
-    cloudRunBanner.appendChild(bannerTitle);
-
-    var bannerDesc = document.createElement('div');
-    bannerDesc.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
-    bannerDesc.textContent = 'Run smoke tests against the Cloud Run community-app deployment to verify all 272 routes work before decommissioning Lovable CDN.';
-    cloudRunBanner.appendChild(bannerDesc);
-
-    var bannerBtnRow = document.createElement('div');
-    bannerBtnRow.style.cssText = 'display:flex;gap:0.5rem;flex-wrap:wrap;';
-
-    var critBtn = document.createElement('button');
-    critBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    critBtn.style.fontSize = '0.8rem';
-    critBtn.textContent = 'Cloud Run \u2014 Critical Path';
-    critBtn.title = 'Runs desktop-community + mobile-community against Cloud Run URL';
-    critBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], critBtn, state.cloudRunUrl || '');
-    };
-    bannerBtnRow.appendChild(critBtn);
-
-    var fullBtn = document.createElement('button');
-    fullBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
-    fullBtn.style.fontSize = '0.8rem';
-    fullBtn.textContent = 'Cloud Run \u2014 Full Suite';
-    fullBtn.title = 'Runs all desktop + mobile projects against Cloud Run URL';
-    fullBtn.onclick = function () {
-        triggerTestRun('e2e',
-            ['desktop-community', 'desktop-patient', 'desktop-professional', 'desktop-staff', 'desktop-admin', 'desktop-shared',
-             'mobile-community', 'mobile-patient', 'mobile-professional', 'mobile-staff', 'mobile-admin', 'mobile-shared'],
-            fullBtn, state.cloudRunUrl || ''
-        );
-    };
-    bannerBtnRow.appendChild(fullBtn);
-
-    var lovableBtn = document.createElement('button');
-    lovableBtn.className = 'task-spec-pipeline-btn';
-    lovableBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
-    lovableBtn.textContent = 'Lovable CDN \u2014 Critical Path';
-    lovableBtn.title = 'Runs desktop-community + mobile-community against Lovable (baseline)';
-    lovableBtn.onclick = function () {
-        triggerTestRun('e2e', ['desktop-community', 'mobile-community'], lovableBtn);
-    };
-    bannerBtnRow.appendChild(lovableBtn);
-    cloudRunBanner.appendChild(bannerBtnRow);
-
-    // Cloud Run URL display
-    var urlRow = document.createElement('div');
-    urlRow.style.cssText = 'margin-top:0.6rem;font-size:0.75rem;color:var(--color-text-secondary);';
-    urlRow.innerHTML = '<strong>Cloud Run URL:</strong> <code style="background:var(--color-bg-primary);padding:0.15rem 0.4rem;border-radius:3px;">' +
-        (state.cloudRunUrl || 'Not configured \u2014 set in state after first deploy') + '</code>';
-    cloudRunBanner.appendChild(urlRow);
-
-    container.appendChild(cloudRunBanner);
+    // VTID-04635: E2E runs target staging only. The gateway sends the staging
+    // community app URL itself and refuses any other host; production is
+    // never tested (CLAUDE.md rule 48).
+    var stagingNote = document.createElement('div');
+    stagingNote.className = 'databases-arch-note';
+    stagingNote.innerHTML = '<h3>Runs against staging</h3><p>Every E2E run here targets <code>https://preview-aws.vitanaland.com</code> (community app) and <code>https://preview-aws-gateway.vitanaland.com</code> (Command Hub). Production is never tested. Runs are dispatched to <code>E2E-TEST-RUN.yml</code>; results appear in GitHub Actions until the rebuilt Runs tab records them.</p>';
+    container.appendChild(stagingNote);
 
     // Fetch suites + runs
     fetchTestingSuites();
@@ -37508,60 +39291,6 @@ function renderLivekitTestView() {
     return container;
 }
 
-function renderTestingCiReportsView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    var title = document.createElement('h2');
-    title.textContent = 'CI Reports';
-    container.appendChild(title);
-    var subtitle = document.createElement('p');
-    subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Cloud Build CI/CD pipeline execution reports.';
-    container.appendChild(subtitle);
-
-    if (!state.testingCi.fetched && !state.testingCi.loading) {
-        state.testingCi.loading = true;
-        renderApp();
-        fetch('/api/v1/cicd/health', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                state.testingCi.runs = data.builds || data.data || (Array.isArray(data) ? data : [data]);
-                state.testingCi.fetched = true;
-                state.testingCi.loading = false;
-                renderApp();
-            }).catch(function (err) { state.testingCi.error = err.message; state.testingCi.loading = false; renderApp(); });
-    }
-    if (state.testingCi.loading) { var l = document.createElement('div'); l.className = 'placeholder-content'; l.textContent = 'Loading...'; container.appendChild(l); return container; }
-    if (state.testingCi.error) { var e = document.createElement('div'); e.className = 'placeholder-content error-text'; e.textContent = 'Error: ' + state.testingCi.error; container.appendChild(e); return container; }
-
-    var items = state.testingCi.runs;
-    if (!Array.isArray(items) || items.length === 0) {
-        var info = document.createElement('div');
-        info.className = 'databases-arch-note';
-        info.innerHTML = '<h3>CI/CD Pipeline</h3><p>' + (typeof items === 'object' ? '<pre>' + escapeHtml(JSON.stringify(items, null, 2)) + '</pre>' : 'No CI reports available.') + '</p>';
-        container.appendChild(info);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'list-table';
-        table.innerHTML = '<thead><tr><th>Build ID</th><th>Status</th><th>Branch</th><th>Started</th><th>Duration</th></tr></thead>';
-        var tbody = document.createElement('tbody');
-        items.forEach(function (b) {
-            var row = document.createElement('tr');
-            var st = (b.status || 'unknown').toLowerCase();
-            row.innerHTML = '<td style="font-family:monospace;">' + (b.id || b.build_id || '-') + '</td>' +
-                '<td><span class="status-badge status-' + st + '">' + st + '</span></td>' +
-                '<td>' + (b.branch || b.source || '-') + '</td>' +
-                '<td>' + formatEventTimestamp(b.started_at || b.created_at) + '</td>' +
-                '<td>' + (b.duration || '-') + '</td>';
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        container.appendChild(table);
-    }
-    autoAddLoadMore(container, 'testingCi');
-    return container;
-}
-
 // ===========================================================================
 // Admin Analytics — Render Function
 // ===========================================================================
@@ -38788,26 +40517,42 @@ document.addEventListener('DOMContentLoaded', async () => {
             fetchAutopilotRecommendationsCount()
         ]).catch(err => console.error('Data Fetch Error:', err));
 
-        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2): session monitor.
+        // VTID-AUTH-GUARD + BOOTSTRAP-DEV-6H-SESSION (v2) + VTID-04259: session monitor.
         //
         // The actual JWT refresh is now handled by the global fetch interceptor
-        // installed at the top of this file (it catches any 401 in a developer
-        // session, refreshes via /api/v1/auth/refresh, and replays the request
-        // transparently). This loop has two remaining jobs:
+        // installed at the top of this file (it catches any 401 in an
+        // extended-session role, refreshes via /api/v1/auth/refresh, and
+        // replays the request transparently). This loop has two remaining jobs:
         //
-        //   1. For developer sessions: enforce a 6-hour idle-logout — if the
-        //      user hasn't done anything (mousedown/keydown/scroll/touchstart)
-        //      in 6h, log them out. We also proactively top up the token a
-        //      few minutes before expiry so polling fetches don't have to eat
-        //      a 401 round-trip.
-        //   2. For non-developer roles: keep the previous "logout when JWT
-        //      exp passes" behavior so community/admin/staff sessions still
-        //      end at the 1h Supabase expiry as before.
-        var DEV_IDLE_LOGOUT_MS = 6 * 60 * 60 * 1000;   // 6 hours
+        //   1. For Command Hub roles (developer/admin/infra/staff — the same
+        //      set the access-control check above already admits): enforce a
+        //      24-hour idle-logout — if the user hasn't done anything
+        //      (mousedown/keydown/scroll/touchstart) in 24h (a full workday),
+        //      log them out. We also proactively top up the token a few
+        //      minutes before expiry so polling fetches don't have to eat a
+        //      401 round-trip. VTID-04259: was previously 6h AND gated on
+        //      active_role === 'developer' only — every other Command Hub
+        //      role (admin/infra/staff) fell through to branch 2 below and
+        //      got logged out the instant the raw Supabase JWT expired
+        //      (often well under an hour), which is why real operators were
+        //      seeing repeated logouts every 10-20 minutes rather than
+        //      staying in for a full day as intended.
+        //   2. For roles that can't reach the Command Hub at all (community,
+        //      professional, patient — this code only runs after the
+        //      Command Hub's own 403 gate above already passed, so this
+        //      branch is effectively unreachable here, kept only as a
+        //      defensive fallback): keep the previous "logout when JWT exp
+        //      passes" behavior.
+        var DEV_IDLE_LOGOUT_MS = 24 * 60 * 60 * 1000;  // 24 hours (VTID-04259: was 6h)
         var TOKEN_REFRESH_LEAD_MS = 5 * 60 * 1000;      // top up if <5m left
 
         function isDeveloperSession() {
-            return (state.meContext && state.meContext.active_role === 'developer');
+            // VTID-04259: widened from a literal 'developer' check to every
+            // role the Command Hub itself admits — see EXTENDED_SESSION_ROLES
+            // at the top of this file (the fetch interceptor's own copy).
+            var role = state.meContext && state.meContext.active_role;
+            var roles = window.__VITANA_EXTENDED_SESSION_ROLES || ['developer', 'admin', 'infra', 'staff'];
+            return roles.indexOf(role) !== -1;
         }
         function markActivity() { state.lastActivityAt = Date.now(); }
         ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(function (evt) {
@@ -38868,11 +40613,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             window.VitanaOrb.init({
                 authToken: state.authToken || '',
                 showFab: false, // Command Hub has its own sidebar trigger
-                initialContext: { current_route: window.location.pathname },
+                initialContext: {
+                    current_route: window.location.pathname,
+                    // VTID-04560: this screen is the developer's Command Hub, so the
+                    // developer Vitana answers — declared, then verified server-side.
+                    surface: 'command-hub',
+                    view_role: 'developer',
+                    // VTID-04309: voice turns land in this Operator Console thread.
+                    operator_thread_id: state.operatorActiveThreadId || ''
+                },
                 onClose: function () {
                     state.orb.overlayVisible = false;
                     renderApp();
+                    syncOperatorVoiceTurns();
                 },
+                // VTID-04309: show each spoken turn in the Operator Console.
+                onTurnComplete: function () { syncOperatorVoiceTurns(); },
+                onConversationEnd: function () { syncOperatorVoiceTurns(); },
                 // VITANA-BRAIN: Handle ORB navigation directives with SPA routing.
                 // Surface scoping: Command Hub serves /command-hub/* only. If the
                 // Navigator ever returns a non-Command-Hub route (it shouldn't —
@@ -40234,13 +41991,19 @@ if (!state.devAutopilot) {
         lineages: {},
         expandedExecIds: {},
         expandedDiffExecIds: {}, // VTID-04029: execution ids whose approval diff is open
-        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
-        // VTID-03896/03897: per-execution step feed. `steps[execId]` holds
-        // { loading, steps[], error, es } where `es` is the live EventSource
-        // (not serializable/renderable — only ever read/closed by the
-        // stream helpers below, never iterated for display).
+        // VTID-04265: execution ids whose step/tool-call transcript is open
+        // on Autopilot Live. Reuses this same key name/purpose that
+        // VTID-03896/03897 originally declared here (`steps[execId]`
+        // holding { loading, steps[], error, es }) but never wired up —
+        // confirmed dead (no other reference anywhere in this file) before
+        // reclaiming it, rather than leaving two same-named, differently-
+        // commented keys in one object literal (the second silently wins
+        // at construction, which is harmless here since both start `{}`,
+        // but is confusing to read). The actual step data now lives in the
+        // pre-existing state.operatorExecFollow bucket (VTID-04033) instead
+        // of a dedicated `steps` map — see renderAutopilotLiveStepsPanel.
         expandedStepsExecIds: {},
-        steps: {},
+        diffs: {}, // VTID-04029: execId → { loading, error, status, pending }
         // In-flight action keys (e.g. 'approve:<id>') so buttons can disable
         // themselves cleanly via state instead of touching detached DOM after
         // showToast() (which re-renders and invalidates refs).
@@ -40255,6 +42018,13 @@ if (!state.devAutopilot) {
         // Active setInterval ids keyed by findingId, so the generation
         // progress card re-renders every second with live elapsed + %.
         generationTimers: {},
+        // VTID-04268: Advanced config panel — draft edits (field → string
+        // as typed), save-in-flight flag, and the last save error (if any).
+        // Draft is separate from state.devAutopilot.config so an in-flight
+        // edit survives the 10s poll re-render without being clobbered.
+        configDraft: {},
+        configSaving: false,
+        configSaveError: null,
     };
 }
 
@@ -40266,11 +42036,15 @@ function fetchDevAutopilotState() {
         fetch('/api/v1/dev-autopilot/queue?status=new&limit=200', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, findings: [] }; }),
         fetch('/api/v1/dev-autopilot/config', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, config: null }; }),
         fetch('/api/v1/dev-autopilot/executions?status=active&limit=100', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false, executions: [] }; }),
+        // VTID-04267: today's real agent spend (dollars, from the per-run
+        // cost already recorded on dev_autopilot_outcomes.metadata.agent_runs[]).
+        fetch('/api/v1/dev-autopilot/spend', { headers }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         state.devAutopilot.runs = (results[0] && results[0].runs) || [];
         state.devAutopilot.queue = (results[1] && results[1].findings) || [];
         state.devAutopilot.config = (results[2] && results[2].config) || null;
         state.devAutopilot.executions = (results[3] && results[3].executions) || [];
+        state.devAutopilot.spend = (results[4] && results[4].ok) ? results[4] : null;
         state.devAutopilot.fetched = true;
         state.devAutopilot.loading = false;
         state.devAutopilot.error = null;
@@ -40280,6 +42054,133 @@ function fetchDevAutopilotState() {
         state.devAutopilot.loading = false;
         renderApp();
     });
+}
+
+// VTID-04268: safe, bounded numeric config knobs. Kept in sync with the
+// server-side allowlist in services/dev-autopilot-config-update.ts — never
+// includes allow_scope/deny_scope (executor file-access scope, too
+// security-sensitive for a text field) or kill_switch (its own control).
+var DEV_AUTOPILOT_CONFIG_FIELDS = [
+    { key: 'daily_budget', label: 'Daily budget ($)', min: 0, max: 1000 },
+    { key: 'cooldown_minutes', label: 'Cooldown (minutes)', min: 0, max: 1440 },
+    { key: 'concurrency_cap', label: 'Concurrency cap', min: 1, max: 50 },
+    { key: 'auto_archive_days', label: 'Auto-archive (days)', min: 1, max: 365 },
+    { key: 'reject_suppression_days', label: 'Reject suppression (days)', min: 0, max: 365 },
+    { key: 'eager_plan_top_k', label: 'Eager plan top K', min: 1, max: 100 },
+    { key: 'select_all_cap', label: 'Select-all cap', min: 1, max: 500 },
+    { key: 'max_auto_fix_depth', label: 'Max auto-fix depth', min: 0, max: 20 },
+    { key: 'post_deploy_verification_window_minutes', label: 'Post-deploy verification window (minutes)', min: 1, max: 1440 },
+];
+
+function devAutopilotSaveConfig() {
+    var cfg = state.devAutopilot.config || {};
+    var patch = {};
+    var invalid = null;
+    DEV_AUTOPILOT_CONFIG_FIELDS.forEach(function (f) {
+        if (invalid) return;
+        var draftVal = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, f.key)
+            ? state.devAutopilot.configDraft[f.key]
+            : cfg[f.key];
+        if (draftVal === undefined || draftVal === null || draftVal === '') return;
+        var n = Number(draftVal);
+        if (!Number.isFinite(n) || !Number.isInteger(n)) {
+            invalid = f.label + ' must be a whole number';
+            return;
+        }
+        if (n < f.min || n > f.max) {
+            invalid = f.label + ' must be between ' + f.min + ' and ' + f.max;
+            return;
+        }
+        if (n !== cfg[f.key]) patch[f.key] = n;
+    });
+    if (invalid) {
+        state.devAutopilot.configSaveError = invalid;
+        renderApp();
+        return;
+    }
+    if (Object.keys(patch).length === 0) {
+        state.devAutopilot.configSaveError = 'No changes to save';
+        renderApp();
+        return;
+    }
+    state.devAutopilot.configSaving = true;
+    state.devAutopilot.configSaveError = null;
+    renderApp();
+    var headers = buildContextHeaders({ 'Content-Type': 'application/json' });
+    fetch('/api/v1/dev-autopilot/config/update', { method: 'POST', headers: headers, body: JSON.stringify(patch) })
+        .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
+        .then(function (res) {
+            state.devAutopilot.configSaving = false;
+            if (!res.body || res.body.ok !== true) {
+                state.devAutopilot.configSaveError = (res.body && res.body.error) || ('HTTP ' + res.status);
+                renderApp();
+                return;
+            }
+            state.devAutopilot.configDraft = {};
+            showToast('Config updated: ' + Object.keys(patch).join(', '), 'success');
+            fetchDevAutopilotState();
+        })
+        .catch(function (err) {
+            state.devAutopilot.configSaving = false;
+            state.devAutopilot.configSaveError = err && err.message ? err.message : String(err);
+            renderApp();
+        });
+}
+
+function renderDevAutopilotConfigPanel() {
+    var section = document.createElement('details');
+    section.className = 'dev-autopilot-config-panel';
+    var summary = document.createElement('summary');
+    summary.className = 'dev-autopilot-config-summary';
+    summary.textContent = 'Advanced config';
+    section.appendChild(summary);
+
+    var body = document.createElement('div');
+    body.className = 'dev-autopilot-config-body';
+    var cfg = state.devAutopilot.config || {};
+
+    DEV_AUTOPILOT_CONFIG_FIELDS.forEach(function (f) {
+        var wrap = document.createElement('label');
+        wrap.className = 'dev-autopilot-config-field';
+        wrap.textContent = f.label;
+        var input = document.createElement('input');
+        input.type = 'number';
+        input.min = String(f.min);
+        input.max = String(f.max);
+        input.step = '1';
+        input.className = 'dev-autopilot-config-input';
+        var current = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, f.key)
+            ? state.devAutopilot.configDraft[f.key]
+            : cfg[f.key];
+        input.value = current === undefined || current === null ? '' : current;
+        input.disabled = !!state.devAutopilot.configSaving;
+        input.oninput = function (e) {
+            state.devAutopilot.configDraft[f.key] = e.target.value;
+        };
+        wrap.appendChild(input);
+        body.appendChild(wrap);
+    });
+
+    section.appendChild(body);
+
+    if (state.devAutopilot.configSaveError) {
+        var errEl = document.createElement('div');
+        errEl.className = 'dev-autopilot-config-error';
+        errEl.textContent = state.devAutopilot.configSaveError;
+        section.appendChild(errEl);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'dev-autopilot-config-actions';
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'btn btn-primary dev-autopilot-config-save-btn';
+    saveBtn.textContent = state.devAutopilot.configSaving ? 'Saving…' : 'Save config';
+    saveBtn.disabled = !!state.devAutopilot.configSaving;
+    saveBtn.onclick = function () { devAutopilotSaveConfig(); };
+    actions.appendChild(saveBtn);
+    section.appendChild(actions);
+
+    return section;
 }
 
 function renderDevAutopilotView() {
@@ -40328,6 +42229,41 @@ function renderDevAutopilotView() {
     refreshBtn.onclick = function () { fetchDevAutopilotState(); };
     header.appendChild(refreshBtn);
 
+    // VTID-04264: kill switch toggle, wired to the existing GET /config /
+    // POST /config/kill-switch routes (services/gateway/src/routes/dev-autopilot.ts).
+    // Those routes already worked — the panel only ever displayed the
+    // kill_switch value as a read-only chip below, with no way to flip it
+    // without a direct DB write.
+    var killSwitchArmed = !!(state.devAutopilot.config && state.devAutopilot.config.kill_switch);
+    var killSwitchBtn = document.createElement('button');
+    killSwitchBtn.className = 'btn dev-autopilot-kill-switch-btn ' + (killSwitchArmed ? 'btn-success' : 'btn-danger');
+    killSwitchBtn.textContent = killSwitchArmed ? 'Disarm kill switch' : 'Arm kill switch';
+    killSwitchBtn.title = killSwitchArmed
+        ? 'Kill switch is ARMED — Dev Autopilot execution is paused. Click to resume.'
+        : 'Arm the kill switch to pause all Dev Autopilot execution (scan/plan still run; approve/execute is blocked).';
+    killSwitchBtn.onclick = function () {
+        var nextArmed = !killSwitchArmed;
+        if (nextArmed && !confirm('This will ARM the Dev Autopilot kill switch and block new executions. Continue?')) return;
+        killSwitchBtn.disabled = true;
+        killSwitchBtn.textContent = 'Updating…';
+        fetch('/api/v1/dev-autopilot/config/kill-switch', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ armed: nextArmed }),
+        }).then(function (r) { return r.json(); }).then(function (result) {
+            if (!result || result.ok === false) {
+                throw new Error((result && result.error) || 'Request failed');
+            }
+            state.devAutopilot.fetched = false;
+            return fetchDevAutopilotState();
+        }).catch(function (err) {
+            killSwitchBtn.disabled = false;
+            killSwitchBtn.textContent = killSwitchArmed ? 'Disarm kill switch' : 'Arm kill switch';
+            showToast('Kill switch error: ' + (err && err.message ? err.message : err), 'error');
+        });
+    };
+    header.appendChild(killSwitchBtn);
+
     container.appendChild(header);
 
     if (state.devAutopilot.error) {
@@ -40346,15 +42282,22 @@ function renderDevAutopilotView() {
     var cfg = state.devAutopilot.config || {};
     var queueCount = (state.devAutopilot.queue || []).length;
     var activeRuns = (state.devAutopilot.executions || []).length;
+    // VTID-04267: real dollars spent today, from GET /spend (sums the
+    // per-run cost already recorded on dev_autopilot_outcomes.metadata.
+    // agent_runs[]) — a separate axis from the "Budget" chip's daily
+    // APPROVAL-COUNT (dev_autopilot_config.daily_budget).
+    var spend = state.devAutopilot.spend;
     var chips = [
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
+        { label: 'Spend today', value: spend ? ('$' + Number(spend.spend_usd_today || 0).toFixed(4) + ' · ' + spend.runs_today + ' run' + (spend.runs_today === 1 ? '' : 's')) : '—', color: '#f97316', title: TURN_COST_ESTIMATE_NOTE },
         { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
         { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
         { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },
     ];
     chips.forEach(function (c) {
         var el = document.createElement('div');
+        if (c.title) el.title = c.title;
         el.innerHTML = '<span style="color: var(--text-secondary, #888); margin-right: 6px;">' + c.label + ':</span><strong style="color: ' + c.color + ';">' + c.value + '</strong>';
         statusStrip.appendChild(el);
     });
@@ -40391,6 +42334,9 @@ function renderDevAutopilotView() {
     }
     runsSection.appendChild(runsBody);
     container.appendChild(runsSection);
+
+    // VTID-04268: writable config for the safe numeric knobs.
+    container.appendChild(renderDevAutopilotConfigPanel());
 
     // Filter toolbar
     container.appendChild(renderDevAutopilotToolbar());
@@ -40576,6 +42522,10 @@ function renderDevAutopilotFindingCard(finding) {
     titleEl.textContent = finding.title;
     titleEl.style.cssText = 'font-weight: 600; font-size: 14px; color: var(--text-color, #fff);';
     titleLine.appendChild(titleEl);
+
+    // VTID-04334: a finding opened from a member report links to its ticket.
+    var cardFbRef = feedbackTicketRefFrom(finding);
+    if (cardFbRef) titleLine.appendChild(renderFeedbackTicketBadge(cardFbRef));
 
     var riskColors = { low: '#22c55e', medium: '#eab308', high: '#f97316' };
     var riskBadge = document.createElement('span');
@@ -41178,6 +43128,27 @@ function devAutopilotToggleDiff(execId) {
     }
     state.devAutopilot.expandedDiffExecIds[execId] = true;
     ensureExecutionDiffLoaded(execId);
+    renderApp();
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04265: step/tool-call transcript toggle on the Autopilot Live cards —
+// opens the same followOperatorExecution SSE stream the Operator Console
+// chat panel follows (VTID-04033), closes it on collapse (the stream replays
+// full history from the start on every fresh connect, so nothing is lost by
+// re-opening later).
+// ---------------------------------------------------------------------------
+
+function devAutopilotToggleSteps(execId) {
+    state.devAutopilot.expandedStepsExecIds = state.devAutopilot.expandedStepsExecIds || {};
+    if (state.devAutopilot.expandedStepsExecIds[execId]) {
+        delete state.devAutopilot.expandedStepsExecIds[execId];
+        closeOperatorExecutionFollow(execId);
+        renderApp();
+        return;
+    }
+    state.devAutopilot.expandedStepsExecIds[execId] = true;
+    followOperatorExecution(execId);
     renderApp();
 }
 
@@ -41884,6 +43855,12 @@ function autonomyPulseDoAction(item, action) {
         var execId = item.metadata.execution_id;
         if (action === 'cancel') {
             promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/cancel', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'approve') {
+            // VTID-04266: an awaiting_approval execution — same route the
+            // Autopilot Live / Dev Autopilot cards already call.
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/approve', { method: 'POST', headers, body: '{}' });
+        } else if (action === 'reject') {
+            promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/reject', { method: 'POST', headers, body: '{}' });
         }
     }
     // self_healing apply_heal / discard_heal — Self-Healing endpoints live
@@ -42154,514 +44131,8 @@ function autonomyTraceFormatTs(iso) {
     } catch (_e) { return iso; }
 }
 
-// VTID-01991: Voice Self-Healing panel state. Polls live-monitor + summary
-// every 10s. State pinned to window so polling survives view re-renders.
-if (!state.voiceHealing) {
-    state.voiceHealing = {
-        mode: null,
-        modeLoading: false,
-        summary: null,
-        liveMonitor: null,
-        loading: true,
-        error: null,
-        pollingTimer: null,
-        lastFetchAt: 0,
-    };
-}
-
-async function fetchVoiceHealingPanel() {
-    var vh = state.voiceHealing;
-    vh.lastFetchAt = Date.now();
-    try {
-        var [modeRes, summaryRes, liveRes] = await Promise.all([
-            fetch('/api/v1/voice-lab/healing/mode').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-            fetch('/api/v1/voice-lab/healing/summary').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-            fetch('/api/v1/voice-lab/healing/live-monitor').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
-        ]);
-        vh.mode = modeRes && modeRes.mode ? modeRes.mode : null;
-        vh.summary = summaryRes && summaryRes.ok ? summaryRes : null;
-        vh.liveMonitor = liveRes && liveRes.ok ? liveRes : null;
-        vh.loading = false;
-        vh.error = null;
-    } catch (err) {
-        vh.error = err && err.message ? err.message : String(err);
-        vh.loading = false;
-    }
-    // Re-render the panel in place (queryselector to find existing node).
-    var existing = document.querySelector('.vh-panel');
-    if (existing && existing.parentNode) {
-        var fresh = renderVoiceSelfHealingPanel();
-        existing.parentNode.replaceChild(fresh, existing);
-    }
-}
-
-function startVoiceHealingPolling() {
-    var vh = state.voiceHealing;
-    if (vh.pollingTimer) return;
-    vh.pollingTimer = setInterval(function() {
-        // Only poll if the panel is currently in the DOM
-        if (document.querySelector('.vh-panel')) {
-            fetchVoiceHealingPanel();
-        } else {
-            clearInterval(vh.pollingTimer);
-            vh.pollingTimer = null;
-        }
-    }, 10_000);
-}
-
-function flipVoiceHealingMode(nextMode, allocatedVtid) {
-    var vh = state.voiceHealing;
-    vh.modeLoading = true;
-    fetch('/api/v1/voice-lab/healing/mode', {
-        method: 'POST',
-        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ mode: nextMode, vtid: allocatedVtid || 'VTID-VOICE-HEALING' }),
-    }).then(function(r) { return r.json(); }).then(function(r) {
-        vh.modeLoading = false;
-        if (r && r.ok) {
-            showToast('Mode flipped: ' + (r.previous || '?') + ' → ' + r.new, 'success');
-            fetchVoiceHealingPanel();
-        } else {
-            showToast('Mode flip failed: ' + (r && r.error ? r.error : 'unknown'), 'error');
-        }
-    }).catch(function(err) {
-        vh.modeLoading = false;
-        showToast('Mode flip error: ' + err.message, 'error');
-    });
-}
-
-// =============================================================================
-// VTID-01999: Voice Healing Report Drawer
-// =============================================================================
-// Slide-in side drawer that renders an Architecture Investigator report
-// inline, with decision actions (Acknowledge / Accept / Reject + notes).
-// No navigation away from the Self-Healing screen.
-
-function _vhEsc(s) {
-    if (s === null || s === undefined) return '';
-    return String(s).replace(/[&<>"']/g, function(c) {
-        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
-    });
-}
-
-function closeVoiceHealingReportDrawer() {
-    var existing = document.getElementById('vh-report-drawer-root');
-    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-    if (typeof _vhStopExecPoll === 'function') _vhStopExecPoll();
-}
-
-// VTID-02021: Execution Progress polling state. Lives outside the drawer
-// render so it survives re-renders. Cleared when drawer closes.
-var _vhExecPollTimer = null;
-function _vhStopExecPoll() {
-    if (_vhExecPollTimer) { clearInterval(_vhExecPollTimer); _vhExecPollTimer = null; }
-}
-async function _vhFetchAndRenderExecution(reportId) {
-    var section = document.getElementById('vh-execution-progress');
-    if (!section) { _vhStopExecPoll(); return; }
-    var resp;
-    try {
-        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId) + '/execution');
-    } catch (err) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#f87171;font-size:0.82rem;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
-        return;
-    }
-    if (!resp.ok) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#f87171;font-size:0.82rem;">HTTP ' + resp.status + '</div>';
-        return;
-    }
-    var data = await resp.json();
-    var vtids = (data && data.vtids) || [];
-    var statusColor = function(s, t) {
-        if (t === true) return '#4ade80';
-        if (s === 'in_progress') return '#fbbf24';
-        if (s === 'failed' || s === 'blocked' || s === 'cancelled') return '#f87171';
-        if (s === 'completed') return '#4ade80';
-        return '#94a3b8';
-    };
-    if (vtids.length === 0) {
-        section.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.82rem;">No work items linked to this report yet.</div>';
-        return;
-    }
-    var done = vtids.filter(function(v) { return v.is_terminal; }).length;
-    var rowsHtml = vtids.map(function(v) {
-        var color = statusColor(v.status, v.is_terminal);
-        var stepIdx = v.metadata && v.metadata.step_index;
-        var stepLabel = (typeof stepIdx === 'number') ? ('#' + (stepIdx + 1) + ' ') : '';
-        var statusLabel = v.is_terminal ? (v.terminal_outcome || v.status) : v.status;
-        var titleClean = (v.title || '').replace(/^INVESTIGATOR:\s*/, '');
-        return '<a href="/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(v.vtid) + '" target="_blank" rel="noopener" style="display:block;padding:8px 10px;background:#1e293b;border:1px solid #334155;border-radius:4px;margin-bottom:6px;color:#e2e8f0;text-decoration:none;">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:0.8rem;">' +
-                '<span style="color:#cbd5e1;">' + _vhEsc(stepLabel) + '<code style="color:#60a5fa;">' + _vhEsc(v.vtid) + '</code></span>' +
-                '<span style="color:' + color + ';font-weight:bold;font-size:0.7rem;letter-spacing:0.05em;text-transform:uppercase;">' + _vhEsc(statusLabel) + '</span>' +
-            '</div>' +
-            '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;">' + _vhEsc(titleClean.slice(0, 160)) + (titleClean.length > 160 ? '…' : '') + '</div>' +
-            (v.claimed_by ? '<div style="color:#94a3b8;font-size:0.7rem;margin-top:2px;">claimed by ' + _vhEsc(v.claimed_by) + '</div>' : '') +
-            '</a>';
-    }).join('');
-    section.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-            '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.74rem;">' + done + '/' + vtids.length + ' done · auto-refresh 10s · ' + new Date().toLocaleTimeString() + '</div>' +
-        '</div>' +
-        rowsHtml +
-        '<div style="margin-top:6px;color:#94a3b8;font-size:0.72rem;">Click a row to open the standard VTID Ledger detail view in a new tab.</div>';
-}
-function loadVoiceHealingExecution(reportId) {
-    _vhStopExecPoll();
-    _vhFetchAndRenderExecution(reportId);
-    _vhExecPollTimer = setInterval(function() {
-        if (!document.getElementById('vh-execution-progress')) {
-            _vhStopExecPoll();
-            return;
-        }
-        _vhFetchAndRenderExecution(reportId);
-    }, 10000);
-}
-
-async function openVoiceHealingReportDrawer(reportId) {
-    _vhStopExecPoll();
-    closeVoiceHealingReportDrawer();
-
-    var root = document.createElement('div');
-    root.id = 'vh-report-drawer-root';
-    root.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;justify-content:flex-end;';
-
-    var backdrop = document.createElement('div');
-    backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.55);';
-    backdrop.onclick = closeVoiceHealingReportDrawer;
-    root.appendChild(backdrop);
-
-    var drawer = document.createElement('div');
-    drawer.style.cssText = 'position:relative;width:min(720px,90vw);height:100%;background:#0f172a;border-left:1px solid #1e293b;color:#e2e8f0;overflow-y:auto;box-shadow:-8px 0 24px rgba(0,0,0,0.5);';
-    drawer.innerHTML = '<div style="padding:18px 22px;color:#94a3b8;">Loading report ' + _vhEsc(reportId) + '…</div>';
-    root.appendChild(drawer);
-    document.body.appendChild(root);
-
-    var resp;
-    try {
-        resp = await fetch('/api/v1/voice-lab/healing/reports/' + encodeURIComponent(reportId));
-    } catch (err) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Fetch failed: ' + _vhEsc(err.message) + '</div>';
-        return;
-    }
-    if (!resp.ok) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">HTTP ' + resp.status + ' — ' + _vhEsc(await resp.text()) + '</div>';
-        return;
-    }
-    var body = await resp.json();
-    if (!body.ok || !body.report) {
-        drawer.innerHTML = '<div style="padding:18px 22px;color:#f87171;">Report not available.</div>';
-        return;
-    }
-    drawer.innerHTML = '';
-    drawer.appendChild(_vhRenderReportContent(body.report));
-}
-
-function _vhRenderReportContent(row) {
-    var c = document.createElement('div');
-    c.style.cssText = 'padding:0;display:flex;flex-direction:column;height:100%;';
-
-    var report = row.report || {};
-    var isStub = row.schema_version === 'v1-stub' || report.investigator_status === 'failed';
-    var rec = report.recommendation || {};
-    var hyps = (report.internal_findings && report.internal_findings.hypotheses) || [];
-    var alts = report.alternatives || [];
-    var ev = report.evidence || {};
-
-    // ── Sticky header ──
-    var header = document.createElement('div');
-    header.style.cssText = 'position:sticky;top:0;background:#0f172a;border-bottom:1px solid #1e293b;padding:18px 22px 14px 22px;z-index:1;';
-    var statusColor = row.status === 'open' ? '#fbbf24' :
-                      row.status === 'accepted' ? '#4ade80' :
-                      row.status === 'rejected' ? '#f87171' :
-                      row.status === 'acknowledged' ? '#60a5fa' : '#94a3b8';
-    header.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">' +
-            '<div>' +
-                '<div style="font-size:0.7rem;color:#94a3b8;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:4px;">Architecture Investigator Report' + (isStub ? ' — STUB (investigator failed)' : '') + '</div>' +
-                '<div style="font-size:1.05rem;font-weight:bold;color:#e2e8f0;">' + _vhEsc(row.class) + '</div>' +
-                '<div style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">' +
-                    'signature: <code style="color:#cbd5e1;">' + _vhEsc(row.normalized_signature || '—') + '</code>' +
-                    ' · trigger: <code style="color:#cbd5e1;">' + _vhEsc(row.trigger_reason) + '</code>' +
-                    ' · ' + new Date(row.generated_at).toLocaleString() +
-                '</div>' +
-            '</div>' +
-            '<button id="vh-drawer-close" style="background:transparent;border:1px solid #334155;color:#94a3b8;padding:6px 10px;cursor:pointer;border-radius:4px;font-size:0.85rem;">✕ Close</button>' +
-        '</div>' +
-        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
-            '<span style="padding:3px 8px;border:1px solid ' + statusColor + ';color:' + statusColor + ';border-radius:3px;font-size:0.7rem;letter-spacing:0.05em;">STATUS: ' + (row.status || 'open').toUpperCase() + '</span>' +
-            (row.acknowledged_by ? '<span style="font-size:0.72rem;color:#94a3b8;">by ' + _vhEsc(row.acknowledged_by) + ' at ' + new Date(row.acknowledged_at).toLocaleString() + '</span>' : '') +
-        '</div>';
-    c.appendChild(header);
-
-    var body = document.createElement('div');
-    body.style.cssText = 'padding:18px 22px;flex:1;font-size:0.85rem;line-height:1.55;';
-
-    if (isStub) {
-        body.innerHTML =
-            '<div style="background:#7c2d12;border:1px solid #ea580c;color:#fed7aa;padding:12px 14px;border-radius:6px;margin-bottom:16px;">' +
-                '<strong>Investigator could not produce a structured report.</strong><br>' +
-                '<span style="font-size:0.8rem;">Reason: <code>' + _vhEsc(report.failure_reason) + '</code></span>' +
-            '</div>' +
-            '<div style="margin-bottom:14px;"><strong>Failure detail:</strong></div>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.78rem;color:#cbd5e1;overflow-x:auto;white-space:pre-wrap;">' + _vhEsc(report.failure_detail || '(none)') + '</pre>' +
-            '<div style="margin-top:18px;margin-bottom:8px;"><strong>Evidence at failure:</strong></div>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.74rem;color:#94a3b8;overflow-x:auto;">' + _vhEsc(JSON.stringify(report.evidence_at_failure || {}, null, 2)) + '</pre>';
-    } else {
-        // ── Recommendation (lead) ──
-        var trackColor = rec.track === 'replace_vendor' ? '#f87171' :
-                         rec.track === 'redesign_pipeline' ? '#fbbf24' :
-                         rec.track === 'patch_around' ? '#fbbf24' :
-                         rec.track === 'stay_and_patch' ? '#4ade80' :
-                         '#94a3b8';
-        var recHtml =
-            '<div style="background:#1e293b;border:1px solid ' + trackColor + ';border-radius:6px;padding:14px;margin-bottom:18px;">' +
-                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                    '<strong style="color:' + trackColor + ';font-size:0.95rem;">RECOMMENDATION: ' + _vhEsc(rec.track || '?').toUpperCase().replace(/_/g, ' ') + '</strong>' +
-                    '<span style="color:#94a3b8;font-size:0.78rem;">confidence: <strong style="color:' + (rec.confidence >= 0.7 ? '#4ade80' : rec.confidence >= 0.5 ? '#fbbf24' : '#f87171') + ';">' + (typeof rec.confidence === 'number' ? rec.confidence.toFixed(2) : '?') + '</strong></span>' +
-                '</div>' +
-                '<div style="color:#e2e8f0;margin-bottom:8px;font-weight:500;">' + _vhEsc(rec.summary || '') + '</div>' +
-                '<div style="color:#cbd5e1;font-size:0.82rem;margin-bottom:8px;"><strong>Rationale:</strong> ' + _vhEsc(rec.rationale || '') + '</div>' +
-                (rec.contradiction_check ? '<div style="color:#94a3b8;font-size:0.78rem;font-style:italic;border-top:1px dashed #334155;padding-top:8px;margin-top:8px;"><strong>What would change my mind:</strong> ' + _vhEsc(rec.contradiction_check) + '</div>' : '') +
-            '</div>';
-
-        // ── Proposed next steps ──
-        if (rec.proposed_next_steps && rec.proposed_next_steps.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Proposed next steps</div>' +
-                '<ul style="margin:0;padding-left:20px;">' +
-                rec.proposed_next_steps.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
-                '</ul></div>';
-        }
-
-        // ── Required human decisions ──
-        if (rec.required_human_decisions && rec.required_human_decisions.length) {
-            recHtml += '<div style="margin-bottom:18px;background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;">' +
-                '<div style="color:#fbbf24;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">⚠ Required human decisions</div>' +
-                '<ul style="margin:0;padding-left:20px;">' +
-                rec.required_human_decisions.map(function(s) { return '<li style="margin-bottom:4px;">' + _vhEsc(s) + '</li>'; }).join('') +
-                '</ul></div>';
-        }
-
-        // ── Hypotheses ──
-        if (hyps.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Top hypotheses (' + hyps.length + ')</div>';
-            hyps.slice(0, 4).forEach(function(h) {
-                var hConf = typeof h.confidence === 'number' ? h.confidence : 0;
-                var hConfColor = hConf >= 0.7 ? '#4ade80' : hConf >= 0.5 ? '#fbbf24' : '#f87171';
-                recHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:4px;padding:10px 12px;margin-bottom:8px;">' +
-                    '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;"><strong style="color:#cbd5e1;font-size:0.85rem;">' + _vhEsc(h.hypothesis) + '</strong><span style="color:' + hConfColor + ';font-size:0.78rem;flex-shrink:0;">' + hConf.toFixed(2) + '</span></div>';
-                if (h.top_3_disconfirming_data_points && h.top_3_disconfirming_data_points.length) {
-                    recHtml += '<div style="color:#94a3b8;font-size:0.74rem;margin-top:4px;"><strong>Disconfirming evidence:</strong></div>' +
-                        '<ul style="margin:2px 0 0 0;padding-left:18px;color:#94a3b8;font-size:0.74rem;">' +
-                        h.top_3_disconfirming_data_points.map(function(d) { return '<li>' + _vhEsc(d) + '</li>'; }).join('') +
-                        '</ul>';
-                }
-                recHtml += '</div>';
-            });
-            recHtml += '</div>';
-        }
-
-        // ── Alternatives ──
-        if (alts.length) {
-            recHtml += '<div style="margin-bottom:18px;">' +
-                '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:6px;">Alternative architectures (' + alts.length + ')</div>' +
-                '<table style="width:100%;border-collapse:collapse;font-size:0.78rem;">' +
-                '<thead><tr style="text-align:left;color:#94a3b8;border-bottom:1px solid #334155;"><th style="padding:4px 6px;">Name</th><th style="padding:4px 6px;">Type</th><th style="padding:4px 6px;">Latency</th><th style="padding:4px 6px;">Effort</th></tr></thead><tbody>';
-            alts.forEach(function(a) {
-                recHtml += '<tr style="border-bottom:1px solid #1e293b;"><td style="padding:5px 6px;">' + _vhEsc(a.name) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.vendor_or_oss) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.latency_profile) + '</td><td style="padding:5px 6px;color:#94a3b8;">' + _vhEsc(a.integration_effort) + '</td></tr>';
-                if (a.pros && a.pros.length) {
-                    recHtml += '<tr><td colspan="4" style="padding:0 6px 6px 12px;color:#cbd5e1;font-size:0.74rem;"><strong>Pros:</strong> ' + a.pros.map(_vhEsc).join('; ') + (a.cons && a.cons.length ? ' · <strong>Cons:</strong> ' + a.cons.map(_vhEsc).join('; ') : '') + (a.links && a.links.length ? ' · <strong>Links:</strong> ' + a.links.map(function(l) { return '<a href="' + _vhEsc(l) + '" target="_blank" rel="noopener" style="color:#60a5fa;">' + _vhEsc(l) + '</a>'; }).join(' ') : '') + '</td></tr>';
-                }
-            });
-            recHtml += '</tbody></table></div>';
-        }
-
-        // ── Raw evidence ──
-        recHtml += '<details style="margin-bottom:18px;">' +
-            '<summary style="cursor:pointer;color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;">Raw evidence</summary>' +
-            '<pre style="background:#1e293b;padding:10px 12px;border-radius:4px;font-size:0.72rem;color:#94a3b8;margin-top:8px;overflow-x:auto;">' + _vhEsc(JSON.stringify(ev, null, 2)) + '</pre>' +
-            '</details>';
-
-        body.innerHTML = recHtml;
-    }
-    c.appendChild(body);
-
-    // ── VTID-02021: Execution Progress section (only for accepted reports) ──
-    // After Accept & Execute, this section appears showing the live status of
-    // every VTID created from the report's proposed_next_steps. Polls every
-    // 10s. Each row is a click-through to the standard VTID Ledger detail
-    // view.
-    if (row.status === 'accepted' || row.status === 'acknowledged') {
-        var execSection = document.createElement('div');
-        execSection.id = 'vh-execution-progress';
-        execSection.style.cssText = 'padding:14px 22px;border-top:1px solid #1e293b;background:#0b1220;';
-        execSection.innerHTML = '<div style="color:#94a3b8;font-size:0.78rem;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:8px;">Execution progress</div>' +
-            '<div style="color:#94a3b8;font-size:0.82rem;">Loading…</div>';
-        c.appendChild(execSection);
-        // Kick off fetch + poll
-        loadVoiceHealingExecution(row.id);
-    }
-
-    // ── Decision footer (sticky) ──
-    var footer = document.createElement('div');
-    footer.style.cssText = 'position:sticky;bottom:0;background:#0f172a;border-top:1px solid #1e293b;padding:14px 22px;';
-    if (row.decision_notes) {
-        var prevNotes = document.createElement('div');
-        prevNotes.style.cssText = 'color:#94a3b8;font-size:0.78rem;margin-bottom:8px;';
-        prevNotes.innerHTML = '<strong>Prior notes:</strong> ' + _vhEsc(row.decision_notes);
-        footer.appendChild(prevNotes);
-    }
-    var notesArea = document.createElement('textarea');
-    notesArea.placeholder = 'Decision notes (optional) — will be saved with status change';
-    notesArea.style.cssText = 'width:100%;min-height:48px;background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:8px;border-radius:4px;font-family:inherit;font-size:0.82rem;box-sizing:border-box;resize:vertical;';
-    footer.appendChild(notesArea);
-
-    var actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:8px;margin-top:10px;justify-content:flex-end;flex-wrap:wrap;';
-    // VTID-02021: three buttons with distinct semantics.
-    //   Acknowledge — "I read it" (no work created). PATCH only.
-    //   Accept & Execute — "I approve, schedule the work." POSTs /execute,
-    //     creates one VTID per proposed_next_step, opens the Execution
-    //     Progress section, polls live status. ONLY available for non-stub
-    //     reports with at least one proposed step.
-    //   Reject — "Don't act on this." PATCH only.
-    // VTID-02032: once a report has been decided (accepted/rejected/
-    // acknowledged) the action buttons must not reappear. Show a clear
-    // "already processed" notice instead of re-actionable buttons. The
-    // backend /execute endpoint also returns 409 to defend against races.
-    var alreadyDecided = row.status && row.status !== 'open';
-    if (alreadyDecided) {
-        var processedNotice = document.createElement('div');
-        processedNotice.style.cssText = 'padding:10px 14px;margin-top:8px;background:rgba(74,222,128,0.08);' +
-            'border:1px solid rgba(74,222,128,0.30);border-radius:6px;color:#86efac;font-size:0.85rem;line-height:1.5;';
-        var processedTitle = document.createElement('strong');
-        processedTitle.textContent = 'Report already ' + row.status;
-        if (row.acknowledged_by) {
-            processedTitle.textContent += ' by ' + row.acknowledged_by;
-        }
-        processedNotice.appendChild(processedTitle);
-        var processedHint = document.createElement('div');
-        processedHint.style.cssText = 'margin-top:4px;color:rgba(229,231,235,0.78);font-style:italic;';
-        processedHint.textContent = row.status === 'accepted'
-            ? 'The proposed steps were scheduled. See Execution Progress above for live status.'
-            : 'No action will be taken on this recommendation.';
-        processedNotice.appendChild(processedHint);
-        footer.appendChild(processedNotice);
-        c.appendChild(footer);
-        setTimeout(function() {
-            var closeBtn = document.getElementById('vh-drawer-close');
-            if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
-        }, 0);
-        return c;
-    }
-    var hasExecutableSteps =
-        !isStub &&
-        rec.proposed_next_steps &&
-        Array.isArray(rec.proposed_next_steps) &&
-        rec.proposed_next_steps.length > 0;
-    var actionDefs = [
-        { kind: 'patch', status: 'acknowledged', label: 'Acknowledge', color: '#60a5fa' },
-    ];
-    if (hasExecutableSteps) {
-        actionDefs.push({
-            kind: 'execute',
-            label: 'Accept & Execute (' + rec.proposed_next_steps.length + ' step' + (rec.proposed_next_steps.length === 1 ? '' : 's') + ')',
-            color: '#4ade80',
-        });
-    } else {
-        actionDefs.push({ kind: 'patch', status: 'accepted', label: 'Accept (no executable steps)', color: '#4ade80' });
-    }
-    actionDefs.push({ kind: 'patch', status: 'rejected', label: 'Reject', color: '#f87171' });
-    actionDefs.forEach(function(def) {
-        var btn = document.createElement('button');
-        btn.textContent = def.label;
-        btn.style.cssText = 'padding:8px 14px;background:' + def.color + '22;border:1px solid ' + def.color + ';color:' + def.color + ';cursor:pointer;border-radius:4px;font-size:0.82rem;';
-        btn.onclick = async function() {
-            btn.disabled = true;
-            btn.textContent = def.kind === 'execute' ? 'Scheduling…' : 'Saving…';
-            try {
-                var url, method, body;
-                if (def.kind === 'execute') {
-                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id) + '/execute';
-                    method = 'POST';
-                    body = JSON.stringify({ decision_notes: notesArea.value || null });
-                } else {
-                    url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(row.id);
-                    method = 'PATCH';
-                    body = JSON.stringify({ status: def.status, decision_notes: notesArea.value || null });
-                }
-                var r = await fetch(url, {
-                    method: method,
-                    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-                    body: body,
-                });
-                var data = await r.json();
-                if (data && data.ok) {
-                    if (def.kind === 'execute') {
-                        var n = data.executed_vtids ? data.executed_vtids.length : 0;
-                        showToast(
-                            'Scheduled ' + n + ' work item(s) — track them in Self-Healing History',
-                            'success',
-                        );
-                    } else {
-                        showToast('Report ' + (def.status || 'updated'), 'success');
-                    }
-                    // VTID-02032: regardless of action kind, close the drawer
-                    // and refresh the panel. The report row now has status
-                    // != 'open' so it drops out of the open-list naturally;
-                    // re-opening would just show the "already processed"
-                    // notice — closing is the cleaner outcome.
-                    closeVoiceHealingReportDrawer();
-                    fetchVoiceHealingPanel();
-                    if (typeof state !== 'undefined' && state.actionRequired) {
-                        // Bump the Action Required panel so the closed
-                        // report drops off promptly.
-                        state.actionRequired.fetched = false;
-                        if (typeof fetchActionRequired === 'function') fetchActionRequired(true);
-                    }
-                } else if (r.status === 409 && data && data.status) {
-                    // VTID-02032: backend reports the row was already decided
-                    // by someone else (or a duplicate click). Don't error —
-                    // close the drawer and treat as a no-op, since the
-                    // intended outcome (status != 'open') is already true.
-                    showToast(
-                        'Report was already ' + data.status +
-                        (data.acknowledged_by ? ' by ' + data.acknowledged_by : '') +
-                        ' — no duplicate action created',
-                        'info',
-                    );
-                    closeVoiceHealingReportDrawer();
-                    fetchVoiceHealingPanel();
-                } else {
-                    showToast('Failed: ' + ((data && data.error) || 'unknown'), 'error');
-                    btn.disabled = false;
-                    btn.textContent = def.label;
-                }
-            } catch (err) {
-                showToast('Error: ' + err.message, 'error');
-                btn.disabled = false;
-                btn.textContent = def.label;
-            }
-        };
-        actions.appendChild(btn);
-    });
-    footer.appendChild(actions);
-    c.appendChild(footer);
-
-    // Close button binding (delegated within drawer DOM)
-    setTimeout(function() {
-        var closeBtn = document.getElementById('vh-drawer-close');
-        if (closeBtn) closeBtn.onclick = closeVoiceHealingReportDrawer;
-    }, 0);
-
-    return c;
-}
+// VTID-04626: the Voice Self-Healing panel, its report drawer and polling
+// moved to voice-self-healing.js (window.renderVoiceSelfHealingScreen).
 
 // ─── VTID-02856: Voice section helpers ──────────────────────────────────
 
@@ -44197,6 +45668,9 @@ function renderJourneyContextView() {
     grid.appendChild(renderJourneyContextNextActionInspectorPanel(jc.nextActionInspector));
 
     c.appendChild(grid);
+    // VTID-04419 (Plan v1 WS-1.7): the brain inspector for this user's voice
+    // sessions (the userId above filters the session list).
+    c.appendChild(_convBrainInspector(function () { return jc.userId; }));
     return c;
 }
 
@@ -45233,341 +46707,6 @@ function renderJourneyContextNextActionInspectorPanel(insp) {
                     String(r.detail || ''),
                 ));
             });
-        }
-    });
-
-    return panel;
-}
-
-// VTID-02867: Inline expandable "Open architecture reports (N)" section.
-// Fetches voice_architecture_reports where status='open' and lets the
-// operator Accept (via /healing/reports/:id/execute) or Reject (via
-// PATCH /healing/reports/:id { status:'rejected' }) without leaving
-// the Self-Healing tab.
-function renderInlineArchitectureReports() {
-    var wrap = document.createElement('div');
-    wrap.style.cssText = 'margin-bottom:12px;padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
-
-    if (!state.voiceArchReports) {
-        state.voiceArchReports = { loaded: false, loading: false, error: null, rows: [], expanded: false, busy: {} };
-    }
-    var ar = state.voiceArchReports;
-
-    if (!ar.loaded && !ar.loading) {
-        ar.loading = true;
-        // Endpoint doesn't yet take a status filter, so we fetch up to 50 and
-        // client-side filter to status='open' (typically a small set).
-        fetch('/api/v1/voice-lab/healing/reports?limit=50', { headers: buildContextHeaders() })
-            .then(function (r) { return r.json(); })
-            .then(function (resp) {
-                ar.loading = false;
-                if (resp && (resp.ok || Array.isArray(resp.reports))) {
-                    var all = resp.reports || resp.rows || [];
-                    ar.rows = all.filter(function (r) { return r.status === 'open'; });
-                    ar.loaded = true;
-                } else {
-                    ar.error = (resp && resp.error) || 'failed';
-                }
-                renderApp();
-            })
-            .catch(function (err) {
-                ar.loading = false;
-                ar.error = err.message || String(err);
-                renderApp();
-            });
-    }
-
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:10px;cursor:pointer;';
-    var caret = ar.expanded ? '▼' : '▶';
-    var count = ar.rows.length;
-    header.innerHTML = '<span style="color:#94a3b8;">' + caret + '</span>'
-        + '<strong style="color:#e2e8f0;">Open architecture reports</strong>'
-        + '<span style="background:rgba(245,158,11,.15);color:#f59e0b;padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + (ar.loading ? '…' : count) + '</span>';
-    header.onclick = function () { ar.expanded = !ar.expanded; renderApp(); };
-    wrap.appendChild(header);
-
-    if (ar.error) {
-        var e = document.createElement('div');
-        e.style.cssText = 'color:#dc2626;font-size:0.75rem;margin-top:8px;';
-        e.textContent = 'Error: ' + ar.error;
-        wrap.appendChild(e);
-        return wrap;
-    }
-
-    if (!ar.expanded) return wrap;
-    if (ar.loading) {
-        var l = document.createElement('div');
-        l.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
-        l.textContent = 'Loading…';
-        wrap.appendChild(l);
-        return wrap;
-    }
-    if (!count) {
-        var none = document.createElement('div');
-        none.style.cssText = 'color:#94a3b8;font-size:0.75rem;margin-top:8px;';
-        none.textContent = 'No open architecture reports.';
-        wrap.appendChild(none);
-        return wrap;
-    }
-
-    ar.rows.forEach(function (rpt) {
-        var row = document.createElement('div');
-        row.style.cssText = 'margin-top:8px;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:4px;';
-        if (ar.busy[rpt.id]) row.style.opacity = '0.55';
-        var rec = (rpt.report && rpt.report.recommendation) || {};
-        var track = rec.track || '?';
-        var conf = typeof rec.confidence === 'number' ? (rec.confidence * 100).toFixed(0) + '%' : '?';
-        var summary = (rec.summary || '').slice(0, 220);
-        row.innerHTML = '<div style="color:#e2e8f0;font-size:0.8rem;"><strong>' + escapeHtml(rpt.class) + '</strong>'
-            + ' <span style="background:rgba(168,85,247,.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:0.65rem;">' + escapeHtml(track) + '</span>'
-            + ' <span style="color:#94a3b8;font-size:0.7rem;">' + conf + ' confidence</span></div>'
-            + '<div style="color:#94a3b8;font-size:0.72rem;margin-top:4px;">' + escapeHtml(summary) + '</div>';
-        var btnRow = document.createElement('div');
-        btnRow.style.cssText = 'display:flex;gap:6px;margin-top:8px;';
-        var acceptBtn = document.createElement('button');
-        acceptBtn.textContent = 'Accept & Execute';
-        acceptBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(34,197,94,.15);color:#22c55e;border:1px solid #22c55e;border-radius:4px;cursor:pointer;';
-        acceptBtn.disabled = ar.busy[rpt.id];
-        acceptBtn.onclick = function () { handleArchReportAction(rpt, 'accept'); };
-        var rejectBtn = document.createElement('button');
-        rejectBtn.textContent = 'Reject';
-        rejectBtn.style.cssText = 'padding:4px 10px;font-size:0.7rem;background:rgba(220,38,38,.12);color:#dc2626;border:1px solid #dc2626;border-radius:4px;cursor:pointer;';
-        rejectBtn.disabled = ar.busy[rpt.id];
-        rejectBtn.onclick = function () { handleArchReportAction(rpt, 'reject'); };
-        btnRow.appendChild(acceptBtn);
-        btnRow.appendChild(rejectBtn);
-        row.appendChild(btnRow);
-        wrap.appendChild(row);
-    });
-
-    return wrap;
-}
-
-function handleArchReportAction(rpt, action) {
-    var ar = state.voiceArchReports;
-    ar.busy[rpt.id] = true;
-    renderApp();
-    var url, opts;
-    if (action === 'accept') {
-        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id) + '/execute';
-        opts = { method: 'POST', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({}) };
-    } else {
-        url = '/api/v1/voice-lab/healing/reports/' + encodeURIComponent(rpt.id);
-        opts = { method: 'PATCH', headers: buildContextHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ status: 'rejected' }) };
-    }
-    fetch(url, opts).then(function (r) { return r.json(); }).then(function (resp) {
-        ar.busy[rpt.id] = false;
-        if (resp && resp.ok) {
-            ar.loaded = false; // refetch
-            renderApp();
-            showToast(action === 'accept' ? ('Accepted: ' + (resp.executed_vtids || []).join(', ')) : 'Rejected', 'success');
-        } else {
-            renderApp();
-            showToast(resp.error || (action + ' failed'), 'error');
-        }
-    }).catch(function (err) {
-        ar.busy[rpt.id] = false;
-        renderApp();
-        showToast(err.message || (action + ' failed'), 'error');
-    });
-}
-
-function renderVoiceSelfHealingPanel() {
-    var panel = document.createElement('section');
-    panel.className = 'vh-panel';
-    panel.style.cssText = 'margin-bottom:24px;padding:16px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;';
-
-    var vh = state.voiceHealing;
-
-    // ── Header ──
-    var header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:12px;';
-    var titleDiv = document.createElement('div');
-    titleDiv.innerHTML = '<h3 style="margin:0;color:#e2e8f0;">ORB Voice Self-Healing</h3>' +
-        '<p style="margin:4px 0 0 0;color:#94a3b8;font-size:0.85rem;">Live monitor + healing loop state. VTID-01984 watchdog fix verification + VTID-01956..01965 self-healing infrastructure.</p>';
-    header.appendChild(titleDiv);
-
-    // Mode badge + flip control
-    var modeWrap = document.createElement('div');
-    modeWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
-    var modeColor = vh.mode === 'live' ? '#4ade80' : (vh.mode === 'shadow' ? '#fbbf24' : '#94a3b8');
-    var modeBadge = document.createElement('span');
-    modeBadge.style.cssText = 'padding:4px 10px;background:' + modeColor + '22;color:' + modeColor + ';border:1px solid ' + modeColor + ';border-radius:4px;font-size:0.75rem;font-weight:bold;letter-spacing:0.05em;';
-    modeBadge.textContent = 'MODE: ' + (vh.mode || '...').toUpperCase();
-    modeWrap.appendChild(modeBadge);
-
-    if (vh.mode && !vh.modeLoading) {
-        var nextMap = { off: 'shadow', shadow: 'live', live: 'off' };
-        var nextMode = nextMap[vh.mode];
-        var flipBtn = document.createElement('button');
-        flipBtn.className = 'infra-btn infra-btn--small';
-        flipBtn.textContent = 'Flip → ' + nextMode;
-        flipBtn.style.cssText = 'padding:4px 10px;font-size:0.75rem;';
-        flipBtn.onclick = function() {
-            var promptVtid = window.prompt(
-                'Allocate a fresh VTID first (Vitana governance), then paste it here. ' +
-                'Format: VTID-NNNNN.\\n\\n' +
-                'Or click OK to use the placeholder VTID-VOICE-HEALING.',
-                'VTID-VOICE-HEALING'
-            );
-            if (promptVtid === null) return; // cancelled
-            if (!confirm('Flip voice self-healing mode: ' + vh.mode + ' → ' + nextMode + '?')) return;
-            flipVoiceHealingMode(nextMode, promptVtid.trim());
-        };
-        modeWrap.appendChild(flipBtn);
-    }
-    header.appendChild(modeWrap);
-    panel.appendChild(header);
-
-    if (vh.loading) {
-        var loading = document.createElement('div');
-        loading.style.cssText = 'color:#94a3b8;padding:8px 0;font-size:0.85rem;';
-        loading.textContent = 'Loading voice healing state...';
-        panel.appendChild(loading);
-        if (!vh.lastFetchAt) {
-            fetchVoiceHealingPanel();
-            startVoiceHealingPolling();
-        }
-        return panel;
-    }
-
-    // ── VTID-02867: Open Architecture Reports inline ──
-    panel.appendChild(renderInlineArchitectureReports());
-
-    // ── Watchdog Fix Verification (VTID-01984) ──
-    var lm = vh.liveMonitor;
-    if (lm) {
-        var watchdogBox = document.createElement('div');
-        watchdogBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
-        var fixWorking = lm.watchdog_skipped_24h > 0 && lm.rollup_24h.bad_pct < 50;
-        var verdictColor = fixWorking ? '#4ade80' : (lm.watchdog_skipped_24h > 0 ? '#fbbf24' : '#94a3b8');
-        watchdogBox.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                '<strong style="color:#e2e8f0;font-size:0.9rem;">Watchdog Fix Verification (VTID-01984)</strong>' +
-                '<span style="color:' + verdictColor + ';font-size:0.8rem;">' +
-                    (fixWorking ? '✓ Fix is working' : (lm.watchdog_skipped_24h > 0 ? '~ Partial — monitoring' : '⏳ No data yet')) +
-                '</span>' +
-            '</div>' +
-            '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:0.8rem;color:#cbd5e1;">' +
-                '<span>Watchdog skipped (24h): <strong style="color:#4ade80;">' + lm.watchdog_skipped_24h + '</strong></span>' +
-                '<span>Watchdog fired forwarding (24h): <strong style="color:' + (lm.watchdog_fired_forwarding_24h > 5 ? '#f87171' : '#cbd5e1') + ';">' + lm.watchdog_fired_forwarding_24h + '</strong></span>' +
-                '<span>Watchdog fired any (24h): ' + lm.watchdog_fired_any_24h + '</span>' +
-                '<span>BAD-ratio sessions (24h): <strong style="color:' + (lm.rollup_24h.bad_pct > 30 ? '#f87171' : '#4ade80') + ';">' + lm.rollup_24h.bad_count + '/' + lm.rollup_24h.total_sessions + ' (' + lm.rollup_24h.bad_pct + '%)</strong></span>' +
-            '</div>';
-        panel.appendChild(watchdogBox);
-    }
-
-    // ── Per-class summary table ──
-    var summary = vh.summary;
-    if (summary && summary.per_class) {
-        var summaryBox = document.createElement('div');
-        summaryBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;margin-bottom:12px;';
-        var debt = summary.unknown_class_debt;
-        var debtColor = debt && debt.slo_band === 'over_slo' ? '#f87171' : (debt && debt.slo_band === 'week1' ? '#fbbf24' : '#4ade80');
-        summaryBox.innerHTML =
-            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-                '<strong style="color:#e2e8f0;font-size:0.9rem;">Per-Class Status</strong>' +
-                '<span style="color:#94a3b8;font-size:0.75rem;">' +
-                    'Unknown debt: <span style="color:' + debtColor + ';">' + (debt ? debt.unknown_pct_24h + '% (' + debt.slo_band + ')' : '-') +
-                    '</span></span>' +
-            '</div>';
-        var tbl = document.createElement('table');
-        tbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;color:#cbd5e1;';
-        tbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
-            '<th style="padding:4px 6px;">Class</th>' +
-            '<th style="padding:4px 6px;text-align:right;">24h</th>' +
-            '<th style="padding:4px 6px;text-align:right;">7d</th>' +
-            '<th style="padding:4px 6px;text-align:right;">30d</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Success</th>' +
-            '<th style="padding:4px 6px;">Quarantine</th>' +
-            '<th style="padding:4px 6px;">Investigation</th>' +
-            '</tr></thead>';
-        var tbody = document.createElement('tbody');
-        summary.per_class.forEach(function(c) {
-            var tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
-            var qColor = c.quarantine_status === 'quarantined' ? '#f87171' :
-                         c.quarantine_status === 'probation' ? '#fbbf24' :
-                         c.quarantine_status === 'released' ? '#94a3b8' : '#cbd5e1';
-            tr.innerHTML =
-                '<td style="padding:4px 6px;font-family:monospace;">' + escapeHtml(c.class) + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_24h + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_7d + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + c.dispatch_count_30d + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + (c.fix_success_rate_7d !== null ? c.fix_success_rate_7d + '%' : '-') + '</td>' +
-                '<td style="padding:4px 6px;color:' + qColor + ';">' + c.quarantine_status + '</td>' +
-                '<td style="padding:4px 6px;">' + (c.latest_investigation_report_id ? '<a href="#" style="color:#60a5fa;" data-vh-report="' + c.latest_investigation_report_id + '">view</a>' : '-') + '</td>';
-            tbody.appendChild(tr);
-        });
-        tbl.appendChild(tbody);
-        summaryBox.appendChild(tbl);
-        panel.appendChild(summaryBox);
-    }
-
-    // ── Recent ORB sessions (live monitor) ──
-    if (lm && lm.recent_sessions && lm.recent_sessions.length > 0) {
-        var sessionsBox = document.createElement('div');
-        sessionsBox.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;';
-        var headLine = document.createElement('div');
-        headLine.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
-        headLine.innerHTML =
-            '<strong style="color:#e2e8f0;font-size:0.9rem;">Recent ORB Sessions (last 20)</strong>' +
-            '<span style="color:#94a3b8;font-size:0.75rem;">Auto-refresh every 10s — last updated ' + new Date(lm.generated_at).toLocaleTimeString() + '</span>';
-        sessionsBox.appendChild(headLine);
-        var stbl = document.createElement('table');
-        stbl.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.78rem;color:#cbd5e1;';
-        stbl.innerHTML = '<thead><tr style="text-align:left;border-bottom:1px solid #334155;color:#94a3b8;">' +
-            '<th style="padding:4px 6px;">Ended</th>' +
-            '<th style="padding:4px 6px;">Session</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Audio in</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Audio out</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Ratio</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Turns</th>' +
-            '<th style="padding:4px 6px;text-align:right;">Dur</th>' +
-            '<th style="padding:4px 6px;">Health</th>' +
-            '</tr></thead>';
-        var stbody = document.createElement('tbody');
-        lm.recent_sessions.forEach(function(s) {
-            var tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
-            var hColor = s.health === 'bad' ? '#f87171' : (s.health === 'warn' ? '#fbbf24' : '#4ade80');
-            var ended = new Date(s.ended_at).toLocaleTimeString();
-            var sid = s.session_id.length > 16 ? s.session_id.substring(0, 16) + '…' : s.session_id;
-            tr.innerHTML =
-                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;color:#94a3b8;">' + escapeHtml(ended) + '</td>' +
-                '<td style="padding:4px 6px;font-family:monospace;font-size:0.72rem;">' + escapeHtml(sid) + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.audio_in_chunks + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.audio_out_chunks + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;color:' + hColor + ';">' + s.ratio + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + s.turn_count + '</td>' +
-                '<td style="padding:4px 6px;text-align:right;">' + Math.round(s.duration_ms / 1000) + 's</td>' +
-                '<td style="padding:4px 6px;color:' + hColor + ';font-weight:bold;text-transform:uppercase;font-size:0.7rem;">' + s.health + '</td>';
-            stbody.appendChild(tr);
-        });
-        stbl.appendChild(stbody);
-        sessionsBox.appendChild(stbl);
-        panel.appendChild(sessionsBox);
-    } else if (lm) {
-        var emptyMsg = document.createElement('div');
-        emptyMsg.style.cssText = 'padding:10px 12px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#94a3b8;font-size:0.85rem;';
-        emptyMsg.textContent = 'No recent ORB sessions in the last 24h.';
-        panel.appendChild(emptyMsg);
-    }
-
-    // Start polling on first render
-    if (!vh.pollingTimer) {
-        startVoiceHealingPolling();
-    }
-
-    // VTID-01999: Delegated click handler so [data-vh-report="<id>"] links open
-    // the inline drawer instead of switching screens.
-    panel.addEventListener('click', function(e) {
-        var t = e.target;
-        if (t && t.getAttribute && t.getAttribute('data-vh-report')) {
-            e.preventDefault();
-            var rid = t.getAttribute('data-vh-report');
-            openVoiceHealingReportDrawer(rid);
         }
     });
 
@@ -47006,14 +48145,20 @@ if (!state.autopilot) {
         scanners: { loading: false, data: null, filter: { category: '', maturity: '' } },
         impactRules: { loading: false, data: null, filter: { category: '', severity: '' } },
         autoApprove: { loading: false, data: null },
-        runs: { loading: false, data: null, filters: { automation_id: '', status: '', limit: 50 } },
-        live: { loading: false, activeRuns: null, recentRuns: null, engineStatus: null },
+        runs: { loading: false, data: null, filters: { status: '', limit: 50 } },
+        live: { loading: false, loaded: false, devAutopilotExecutions: null, recentExecutions: null, error: null, signature: null },
         engine: { loading: false, loopStatus: null, cronJobs: null },
         growth: { loading: false, metrics: null, period: '7d' },
         missionAlignment: { loading: false, recs: null, error: null, lastFetchAt: null, statusFilter: 'new' },
+        orchestrator: { loading: false, sections: null, fetchedAt: null, days: 7, plane: '', status: '' }, // VTID-04354
+        // VTID-04282: shared supervisor snapshot for every Autopilot tab.
+        supervisor: { loading: false, data: null, error: null, signature: null, fetchedAt: null, timer: null },
         selectedAutomation: null,
         drawerOpen: false,
     };
+}
+if (!state.autopilot.supervisor) {
+    state.autopilot.supervisor = { loading: false, data: null, error: null, signature: null, fetchedAt: null, timer: null };
 }
 
 // ── Helper: status badge color ───────────────────────────────
@@ -47024,8 +48169,12 @@ function autopilotStatusColor(status) {
         case 'PLANNED': return '#ff9800';
         case 'DEPRECATED': return '#666';
         case 'completed': return '#4caf50';
+        case 'done': return '#4caf50';
         case 'failed': return '#f44336';
         case 'running': return '#2196f3';
+        case 'ingesting': return '#2196f3';
+        case 'ranking': return '#ff9800';
+        case 'planning': return '#ff9800';
         case 'skipped': return '#999';
         default: return '#888';
     }
@@ -47040,6 +48189,315 @@ function autopilotTriggerIcon(type) {
         case 'webhook': return '\u{1F310}'; // globe
         default: return '\u2022';
     }
+}
+
+// =============================================================================
+// VTID-04282: Supervisor layer shared by every Autopilot tab
+// =============================================================================
+// One snapshot (GET /api/v1/dev-autopilot/supervisor, VTID-04281) correlates
+// the tabs: is the loop being fed (scan cadence), is work moving (executions),
+// what is stuck and who must act (a blocker diagnosis per open finding), and
+// why runs fail. Polled every 30 s while an Autopilot tab is open; the view
+// re-renders only when the snapshot changed and nobody is typing.
+
+var AUTOPILOT_SUPERVISOR_POLL_MS = 30000;
+
+async function fetchAutopilotSupervisor(force) {
+    var sup = state.autopilot.supervisor;
+    if (sup.loading) return;
+    sup.loading = true;
+    try {
+        var res = await fetch('/api/v1/dev-autopilot/supervisor' + (force ? '?fresh=1' : ''), { headers: buildContextHeaders({}) });
+        var body = await res.json().catch(function () { return null; });
+        if (res.ok && body && body.ok) {
+            var sig = JSON.stringify([body.scan, body.executions, body.findings, body.alerts, body.config]);
+            var changed = sig !== sup.signature;
+            sup.data = body;
+            sup.error = null;
+            sup.signature = sig;
+            sup.fetchedAt = Date.now();
+            if (changed) autopilotSupervisorRerender();
+        } else {
+            sup.error = (body && body.error) || ('HTTP ' + res.status);
+            autopilotSupervisorRerender();
+        }
+    } catch (err) {
+        sup.error = String(err && err.message ? err.message : err);
+        autopilotSupervisorRerender();
+    } finally {
+        sup.loading = false;
+    }
+}
+
+function autopilotSupervisorRerender() {
+    if (state.currentModuleKey !== 'autopilot') return;
+    var active = document.activeElement;
+    var typing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT');
+    if (typing || state.autopilot.drawerOpen) return;
+    renderApp();
+}
+
+function ensureAutopilotSupervisorPolling() {
+    var sup = state.autopilot.supervisor;
+    if (!sup.data && !sup.loading && !sup.error) setTimeout(function () { fetchAutopilotSupervisor(false); }, 0);
+    if (sup.timer) return;
+    sup.timer = setInterval(function () {
+        if (state.currentModuleKey === 'autopilot') fetchAutopilotSupervisor(false);
+    }, AUTOPILOT_SUPERVISOR_POLL_MS);
+}
+
+function autopilotSupervisorAgo(iso) {
+    if (!iso) return 'never';
+    return formatRelativeTime(iso) || 'just now';
+}
+
+function autopilotSupervisorTile(label, value, sub, tone, tab) {
+    var tile = document.createElement('div');
+    tile.className = 'ap-sup-tile ap-sup-tone-' + (tone || 'neutral');
+    var v = document.createElement('div');
+    v.className = 'ap-sup-tile-value';
+    v.textContent = value;
+    tile.appendChild(v);
+    var l = document.createElement('div');
+    l.className = 'ap-sup-tile-label';
+    l.textContent = label;
+    tile.appendChild(l);
+    if (sub) {
+        var s = document.createElement('div');
+        s.className = 'ap-sup-tile-sub';
+        s.textContent = sub;
+        tile.appendChild(s);
+    }
+    if (tab && tab !== state.currentTab) {
+        makeClickable(tile, function () { handleTabClick(tab); }, { label: label + ': open the ' + tab + ' tab' });
+    }
+    return tile;
+}
+
+function renderAutopilotSupervisorStrip() {
+    ensureAutopilotSupervisorPolling();
+    var sup = state.autopilot.supervisor;
+    var strip = document.createElement('section');
+    strip.className = 'ap-sup-strip';
+    strip.setAttribute('aria-label', 'Autopilot supervisor status');
+
+    var head = document.createElement('div');
+    head.className = 'ap-sup-head';
+    var h = document.createElement('span');
+    h.className = 'ap-sup-title';
+    h.textContent = 'Self-healing loop — live status';
+    head.appendChild(h);
+    var meta = document.createElement('span');
+    meta.className = 'ap-sup-meta';
+    meta.textContent = sup.fetchedAt ? ('updated ' + autopilotSupervisorAgo(new Date(sup.fetchedAt).toISOString()) + ' · auto-refresh 30 s') : 'loading…';
+    head.appendChild(meta);
+    var refresh = document.createElement('button');
+    refresh.className = 'ap-sup-refresh';
+    refresh.textContent = sup.loading ? 'Refreshing…' : 'Refresh';
+    refresh.onclick = function () { fetchAutopilotSupervisor(true); };
+    head.appendChild(refresh);
+    strip.appendChild(head);
+
+    if (sup.error && !sup.data) {
+        var err = document.createElement('div');
+        err.className = 'ap-sup-alert ap-sup-sev-critical';
+        err.textContent = 'Supervisor data unavailable: ' + sup.error;
+        strip.appendChild(err);
+        return strip;
+    }
+    var d = sup.data;
+    if (!d) return strip;
+
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    var scan = d.scan;
+    tiles.appendChild(autopilotSupervisorTile('Last scan',
+        scan.last_success_at ? autopilotSupervisorAgo(scan.last_success_at) : 'never',
+        scan.overdue ? 'OVERDUE — expected every ~12 h' : ('next ' + new Date(scan.next_scheduled_at).toISOString().slice(11, 16) + ' UTC · ' + scan.runs_7d + ' runs / 7d'),
+        scan.overdue ? 'bad' : (scan.failed_7d > 0 ? 'warn' : 'good'), 'runs'));
+    var by = d.findings.by_actor || {};
+    tiles.appendChild(autopilotSupervisorTile('Open findings', String(d.findings.open),
+        (by.system || 0) + ' stuck · ' + (by.human || 0) + ' need you · ' + (by.moving || 0) + ' moving',
+        (by.system || 0) > 0 ? 'warn' : 'neutral', 'scanners'));
+    var ex = d.executions;
+    tiles.appendChild(autopilotSupervisorTile('Active executions', String(ex.active),
+        ex.awaiting_approval > 0 ? (ex.awaiting_approval + ' awaiting your approval') : ('last started ' + autopilotSupervisorAgo(ex.last_execution_at)),
+        ex.awaiting_approval > 0 ? 'warn' : (ex.active > 0 ? 'good' : 'neutral'), 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Success rate (7d)',
+        ex.success_rate_7d === null ? '—' : (ex.success_rate_7d + '%'),
+        ex.succeeded_7d + ' fixed · ' + ex.failed_7d + ' failed · ' + autopilotOriginSplit(ex),
+        ex.success_rate_7d === null ? 'neutral' : (ex.success_rate_7d >= 70 ? 'good' : (ex.success_rate_7d >= 40 ? 'warn' : 'bad')), 'live'));
+    var au = d.autonomy;
+    tiles.appendChild(autopilotSupervisorTile('Effective autonomy',
+        au.open_findings_autonomous_percent === null ? '—' : (au.open_findings_autonomous_percent + '%'),
+        'of open findings need no human · detector coverage ' + au.config_coverage_percent + '%',
+        au.open_findings_autonomous_percent === null ? 'neutral' : (au.open_findings_autonomous_percent >= 90 ? 'good' : 'warn'), 'auto-approve'));
+    tiles.appendChild(autopilotSupervisorTile('Kill switch', d.config.kill_switch ? 'ON' : 'off',
+        'budget ' + d.config.budget_left_today + '/' + d.config.daily_budget + ' left · slots ' + d.config.concurrency_left + '/' + d.config.concurrency_cap,
+        d.config.kill_switch ? 'bad' : 'good', 'auto-approve'));
+    strip.appendChild(tiles);
+
+    (d.alerts || []).forEach(function (a) {
+        var row = document.createElement('div');
+        row.className = 'ap-sup-alert ap-sup-sev-' + a.severity;
+        row.textContent = (a.severity === 'critical' ? '⛔ ' : a.severity === 'warning' ? '⚠️ ' : 'ℹ️ ') + a.text;
+        if (a.tab && a.tab !== state.currentTab) {
+            var go = document.createElement('button');
+            go.className = 'ap-sup-alert-go';
+            go.textContent = 'Open ' + a.tab + ' →';
+            go.onclick = function () { handleTabClick(a.tab); };
+            row.appendChild(go);
+        }
+        strip.appendChild(row);
+    });
+    return strip;
+}
+
+function renderAutopilotEffectiveAutonomy() {
+    var section = document.createElement('section');
+    section.className = 'ap-sup-autonomy';
+    var d = state.autopilot.supervisor.data;
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = 'Effective autonomy — what the system actually does unattended';
+    section.appendChild(h);
+    if (!d) {
+        var wait = document.createElement('div');
+        wait.className = 'ap-sup-empty';
+        wait.textContent = 'Loading…';
+        section.appendChild(wait);
+        return section;
+    }
+    var au = d.autonomy;
+    var ex = d.executions;
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    tiles.appendChild(autopilotSupervisorTile('Open findings, no human needed',
+        au.open_findings_autonomous_percent === null ? '—' : au.open_findings_autonomous_percent + '%',
+        (d.findings.by_actor.human || 0) + ' of ' + d.findings.open + ' open findings wait for a human decision',
+        au.open_findings_autonomous_percent !== null && au.open_findings_autonomous_percent >= 90 ? 'good' : 'warn', null));
+    tiles.appendChild(autopilotSupervisorTile('Executions auto-approved (7d)',
+        au.executions_auto_approved_percent === null ? '—' : au.executions_auto_approved_percent + '%',
+        ex.auto_approved_7d + ' started unattended · ' + ex.human_approved_7d + ' human-requested or approved', 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Unattended success (7d)',
+        ex.success_rate_7d === null ? '—' : ex.success_rate_7d + '%',
+        'autonomy only counts if the fixes land', ex.success_rate_7d !== null && ex.success_rate_7d >= 70 ? 'good' : 'bad', 'live'));
+    section.appendChild(tiles);
+    var note = document.createElement('p');
+    note.className = 'ap-sup-note';
+    note.textContent = 'Raising coverage by adding detectors to the allowlist only helps if their findings then succeed unattended. '
+        + 'The two lists below are the actual gap to 100%: findings a human must decide on, and findings the system itself is stuck on.';
+    section.appendChild(note);
+    section.appendChild(renderAutopilotOpenFindingsPanel('Needs a human decision',
+        function (f) { return f.blocker.actor === 'human'; }, 'Nothing is waiting for a human.'));
+    section.appendChild(renderAutopilotOpenFindingsPanel('Stuck on a system blocker',
+        function (f) { return f.blocker.actor === 'system'; }, 'Nothing is stuck on a system blocker.'));
+    return section;
+}
+
+/** VTID-04282: the community AP engine behind Registry/Growth has no live trigger since GCP. */
+function renderAutopilotCommunityEngineBanner() {
+    var d = state.autopilot.supervisor.data;
+    var box = document.createElement('div');
+    if (!d) return box;
+    var ce = d.community_engine || {};
+    var dead = ce.days_since_last_run === null || ce.days_since_last_run >= 2;
+    box.className = 'ap-sup-alert ' + (dead ? 'ap-sup-sev-critical' : 'ap-sup-sev-info');
+    box.textContent = ce.last_run_at
+        ? ('Community automation engine last ran ' + ce.last_run_at.slice(0, 10) + ' (' + ce.days_since_last_run + ' days ago). '
+            + (dead ? 'Its CRON/heartbeat triggers were Cloud Scheduler jobs that stopped when GCP was shut down (2026-08-16); nothing re-triggers these automations until they are moved to AWS EventBridge. Re-enabling them sends real notifications to members, so that switch is a product decision.' : 'Runs are being recorded.'))
+        : 'Community automation engine has no recorded runs.';
+    return box;
+}
+
+function renderAutopilotSelfImprovementCard() {
+    var section = document.createElement('section');
+    section.className = 'ap-sup-autonomy';
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = 'Self-improvement (Dev Autopilot, last 7 days)';
+    section.appendChild(h);
+    var d = state.autopilot.supervisor.data;
+    if (!d) return section;
+    var ex = d.executions;
+    var tiles = document.createElement('div');
+    tiles.className = 'ap-sup-tiles';
+    tiles.appendChild(autopilotSupervisorTile('New findings', String(d.scan.new_findings_7d), d.scan.runs_7d + ' scans', 'neutral', 'runs'));
+    tiles.appendChild(autopilotSupervisorTile('Executions', String(ex.total_7d), autopilotOriginSplit(ex), 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('PRs opened', String(ex.prs_opened_7d), null, 'neutral', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Fixes landed', String(ex.succeeded_7d), 'completed or self-healed', ex.succeeded_7d > 0 ? 'good' : 'warn', 'live'));
+    tiles.appendChild(autopilotSupervisorTile('Failed', String(ex.failed_7d), ex.top_failure_reasons[0] ? ex.top_failure_reasons[0].reason : null, ex.failed_7d > ex.succeeded_7d ? 'bad' : 'neutral', 'live'));
+    section.appendChild(tiles);
+    return section;
+}
+
+function autopilotOriginSplit(ex) {
+    var o = ex.by_origin_7d || {};
+    var self = (o.scanner ? o.scanner.total : 0) + (o.impact ? o.impact.total : 0);
+    var op = o.operator ? o.operator.total : 0;
+    return self + ' self-healing + ' + op + ' operator-requested runs';
+}
+
+function impactRuleHitsByRule() {
+    var out = {};
+    var d = state.autopilot.supervisor.data;
+    ((d && d.impact_rules) || []).forEach(function (h) { out[h.rule] = h; });
+    return out;
+}
+
+/** Open findings with their blocker diagnosis. filter(item) narrows the list. */
+function renderAutopilotOpenFindingsPanel(title, filter, emptyText) {
+    var panel = document.createElement('section');
+    panel.className = 'ap-sup-findings';
+    var h = document.createElement('h3');
+    h.className = 'ap-sup-section-title';
+    h.textContent = title;
+    panel.appendChild(h);
+    var d = state.autopilot.supervisor.data;
+    if (!d) {
+        var wait = document.createElement('div');
+        wait.className = 'ap-sup-empty';
+        wait.textContent = 'Loading pipeline status…';
+        panel.appendChild(wait);
+        return panel;
+    }
+    var items = (d.findings.items || []).filter(filter || function () { return true; });
+    if (items.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'ap-sup-empty';
+        empty.textContent = emptyText || 'Nothing open.';
+        panel.appendChild(empty);
+        return panel;
+    }
+    items.forEach(function (f) {
+        var row = document.createElement('div');
+        row.className = 'ap-sup-finding';
+        var chip = document.createElement('span');
+        chip.className = 'ap-sup-chip ap-sup-actor-' + f.blocker.actor;
+        chip.textContent = f.blocker.label;
+        chip.title = f.blocker.detail;
+        row.appendChild(chip);
+        var body = document.createElement('div');
+        body.className = 'ap-sup-finding-body';
+        var t = document.createElement('div');
+        t.className = 'ap-sup-finding-title';
+        t.textContent = f.title;
+        body.appendChild(t);
+        var findingFbRef = feedbackTicketRefFrom(f); // VTID-04334
+        if (findingFbRef) body.appendChild(renderFeedbackTicketBadge(findingFbRef));
+        var m = document.createElement('div');
+        m.className = 'ap-sup-finding-meta';
+        m.textContent = [f.detector || f.source_type, f.file_path, 'risk ' + (f.risk_class || '?'), 'effort ' + (f.effort_score == null ? '?' : f.effort_score),
+            f.has_plan ? 'planned' : 'no plan', f.attempts + ' attempt(s)', 'open ' + f.age_days + 'd'].filter(Boolean).join(' · ');
+        body.appendChild(m);
+        var why = document.createElement('div');
+        why.className = 'ap-sup-finding-why';
+        why.textContent = f.blocker.detail;
+        body.appendChild(why);
+        row.appendChild(body);
+        panel.appendChild(row);
+    });
+    return panel;
 }
 
 // ── Helper: create summary card ───────────────────────────────
@@ -47099,8 +48557,9 @@ function renderAutopilotRegistryView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Browse all AP-XXXX automations, filter by domain/status/trigger, and manually execute.';
+    subtitle.textContent = 'The community-facing AP-XXXX automations (a separate engine from the Dev Autopilot self-healing loop). "Planned" means no handler has been written yet — those rows only move when code ships.';
     container.appendChild(subtitle);
+    container.appendChild(renderAutopilotCommunityEngineBanner()); // VTID-04282
 
     var reg = state.autopilot.registry;
 
@@ -47125,7 +48584,7 @@ function renderAutopilotRegistryView() {
     cardsRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     cardsRow.appendChild(createSummaryCard('Total', sum.total || reg.data.length, '#fff'));
     cardsRow.appendChild(createSummaryCard('Executable', sum.executable || 0, '#4caf50'));
-    cardsRow.appendChild(createSummaryCard('Planned', sum.planned || 0, '#ff9800'));
+    cardsRow.appendChild(createSummaryCard('Planned (no handler)', sum.planned || 0, '#ff9800'));
     // Count by trigger type
     var cronCount = reg.data.filter(function (a) { return a.triggerType === 'cron'; }).length;
     var heartbeatCount = reg.data.filter(function (a) { return a.triggerType === 'heartbeat'; }).length;
@@ -47345,6 +48804,16 @@ function renderAutopilotRegistryView() {
 // =============================================================================
 // Tab 2: Run History
 // =============================================================================
+// Surfaces GET /api/v1/dev-autopilot/runs — the Dev Autopilot scan run
+// history (dev_autopilot_runs table): each row is one scanner sweep
+// (github_actions | manual | api triggered), not a consumer AP-XXXX
+// automation execution. This tab used to call /api/v1/automations/runs,
+// a different subsystem entirely (the VTID-01250 tenant-scoped consumer
+// automation engine) that 400s here with "tenant_id required" since the
+// Command Hub sends no tenant context — every sibling Autopilot tab
+// (Scanners, Impact Rules, Auto Approve, Live) already reads from
+// /api/v1/dev-autopilot/*, so this was the one tab pointed at the wrong
+// backend and rendering permanently empty.
 
 async function fetchAutopilotRuns() {
     if (state.autopilot.runs.loading) return;
@@ -47352,10 +48821,9 @@ async function fetchAutopilotRuns() {
     renderApp();
     try {
         var params = new URLSearchParams();
-        if (state.autopilot.runs.filters.automation_id) params.set('automation_id', state.autopilot.runs.filters.automation_id);
         if (state.autopilot.runs.filters.limit) params.set('limit', String(state.autopilot.runs.filters.limit));
 
-        var res = await fetch('/api/v1/automations/runs?' + params.toString(), { headers: buildContextHeaders({}) });
+        var res = await fetch('/api/v1/dev-autopilot/runs?' + params.toString(), { headers: buildContextHeaders({}) });
         if (res.ok) {
             var data = await res.json();
             state.autopilot.runs.data = data.runs || [];
@@ -47443,6 +48911,13 @@ function renderAutopilotScannersView() {
     summaryRow.appendChild(createSummaryCard('Stable', stable, '#06b6d4'));
     summaryRow.appendChild(createSummaryCard('Open findings', openTotal, '#ffb74d'));
     container.appendChild(summaryRow);
+
+    // VTID-04282: every open finding with the gate that is holding it, so
+    // "N open" is never a number without a next step.
+    container.appendChild(renderAutopilotOpenFindingsPanel(
+        'Open findings — what is holding each one',
+        function (f) { return f.source_type === 'dev_autopilot'; },
+        'No open scanner findings — every finding has been fixed, rejected or archived.'));
 
     // Filters
     var filter = scanners.filter;
@@ -47625,9 +49100,21 @@ function renderAutopilotImpactRulesView() {
     summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     summaryRow.appendChild(createSummaryCard('Rules', total, '#fff'));
     summaryRow.appendChild(createSummaryCard('Enabled', enabled, '#4caf50'));
-    summaryRow.appendChild(createSummaryCard('Blockers', blocker, '#f44336'));
-    summaryRow.appendChild(createSummaryCard('Warnings', warning, '#ffb74d'));
+    summaryRow.appendChild(createSummaryCard('Blocker-severity rules', blocker, '#f44336'));
+    summaryRow.appendChild(createSummaryCard('Warning-severity rules', warning, '#ffb74d'));
+    // VTID-04282: severity is what a rule does to a PR when it fires, not a
+    // count of open problems. The real signal is how often each rule fires.
+    var ruleHits = impactRuleHitsByRule();
+    var openHits = Object.keys(ruleHits).reduce(function (acc, k) { return acc + (ruleHits[k].open || 0); }, 0);
+    var hits30 = Object.keys(ruleHits).reduce(function (acc, k) { return acc + (ruleHits[k].hits_30d || 0); }, 0);
+    summaryRow.appendChild(createSummaryCard('Open hits', state.autopilot.supervisor.data ? openHits : '…', '#60a5fa'));
+    summaryRow.appendChild(createSummaryCard('Hits (30d)', state.autopilot.supervisor.data ? hits30 : '…', '#9ca3af'));
     container.appendChild(summaryRow);
+    var sevNote = document.createElement('p');
+    sevNote.className = 'ap-sup-note';
+    sevNote.textContent = '"Blocker" is a rule\u2019s severity: when it fires on a PR, the PR check fails. It is not an open problem. '
+        + 'Each card shows how often the rule actually fired; open hits flow into the same plan \u2192 approve \u2192 execute pipeline as scanner findings.';
+    container.appendChild(sevNote);
 
     var filter = s.filter;
     var filtersRow = document.createElement('div');
@@ -47716,6 +49203,16 @@ function renderAutopilotImpactRulesView() {
             desc.style.cssText = 'margin:0.4rem 0 0 0;color:#bbb;font-size:0.82rem;line-height:1.4;';
             card.appendChild(desc);
 
+            // VTID-04282: live hit counts for this rule.
+            var hit = ruleHits[r.rule];
+            var hitLine = document.createElement('div');
+            hitLine.className = 'ap-sup-rule-hits' + (hit && hit.open > 0 ? ' ap-sup-rule-hits-open' : '');
+            hitLine.textContent = !state.autopilot.supervisor.data ? 'Loading hit counts…'
+                : (!hit || hit.hits_30d === 0) ? 'No hits in 30 days.'
+                : (hit.open + ' open · ' + hit.hits_30d + ' in 30 days (' + hit.rejected_30d + ' rejected) · last fired ' + autopilotSupervisorAgo(hit.last_fired_at))
+                  + (r.auto_approved ? ' · auto-approved' : ' · needs a human to approve');
+            card.appendChild(hitLine);
+
             section.appendChild(card);
         });
         container.appendChild(section);
@@ -47787,7 +49284,7 @@ function renderAutopilotAutoApproveView() {
     progHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem;';
     var progLabel = document.createElement('div');
     progLabel.style.cssText = 'color:#ccc;font-size:0.95rem;font-weight:600;';
-    progLabel.textContent = 'Autonomy progress';
+    progLabel.textContent = 'Detector coverage (allowlist)';
     progHeader.appendChild(progLabel);
     var progPct = document.createElement('div');
     progPct.style.cssText = 'color:#4ade80;font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;';
@@ -47807,6 +49304,10 @@ function renderAutopilotAutoApproveView() {
     progFoot.textContent = progress.auto_approved_surfaces + ' of ' + progress.total_surfaces + ' detection surfaces run unattended · ultimate goal: 100%';
     progressSection.appendChild(progFoot);
     container.appendChild(progressSection);
+
+    // VTID-04282: coverage counts allowlist entries, not outcomes. Show what
+    // actually happens to open findings and this week's executions next to it.
+    container.appendChild(renderAutopilotEffectiveAutonomy());
 
     // Master state cards
     var cardsRow = document.createElement('div');
@@ -47932,11 +49433,11 @@ function renderAutopilotRunsView() {
     container.style.padding = '1.5rem';
 
     var title = document.createElement('h2');
-    title.textContent = 'Automation Runs';
+    title.textContent = 'Dev Autopilot \u2014 Scan Runs';
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Execution history of all autopilot automations with status, timing, and user impact.';
+    subtitle.textContent = 'History of scanner sweeps (github_actions | manual | api triggered) that feed the autopilot finding queue, with status, signal/finding counts, and timing.';
     container.appendChild(subtitle);
 
     var runs = state.autopilot.runs;
@@ -47955,40 +49456,37 @@ function renderAutopilotRunsView() {
 
     if (!runs.data) return container;
 
-    // Summary
-    var completed = runs.data.filter(function (r) { return r.status === 'completed'; }).length;
+    // Summary \u2014 statuses match dev_autopilot_runs.status:
+    // running | ingesting | ranking | planning | done | failed
+    var done = runs.data.filter(function (r) { return r.status === 'done'; }).length;
     var failed = runs.data.filter(function (r) { return r.status === 'failed'; }).length;
-    var running = runs.data.filter(function (r) { return r.status === 'running'; }).length;
-    var skipped = runs.data.filter(function (r) { return r.status === 'skipped'; }).length;
+    var inProgress = runs.data.filter(function (r) {
+        return r.status === 'running' || r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning';
+    }).length;
+    var totalFindings = runs.data.reduce(function (sum, r) { return sum + (r.new_finding_count || 0); }, 0);
 
     var summaryRow = document.createElement('div');
     summaryRow.style.cssText = 'display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;';
     summaryRow.appendChild(createSummaryCard('Total', runs.data.length, '#fff'));
-    summaryRow.appendChild(createSummaryCard('Completed', completed, '#4caf50'));
+    summaryRow.appendChild(createSummaryCard('Done', done, '#4caf50'));
     summaryRow.appendChild(createSummaryCard('Failed', failed, '#f44336'));
-    summaryRow.appendChild(createSummaryCard('Running', running, '#2196f3'));
-    summaryRow.appendChild(createSummaryCard('Skipped', skipped, '#999'));
+    summaryRow.appendChild(createSummaryCard('In Progress', inProgress, '#2196f3'));
+    summaryRow.appendChild(createSummaryCard('New Findings', totalFindings, '#ff9800'));
     container.appendChild(summaryRow);
 
     // Filters
     var filtersRow = document.createElement('div');
     filtersRow.style.cssText = 'display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center;';
 
-    var automationFilter = document.createElement('input');
-    automationFilter.type = 'text';
-    automationFilter.placeholder = 'Filter by AP-XXXX...';
-    automationFilter.value = runs.filters.automation_id;
-    automationFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;width:160px;';
-    automationFilter.onchange = function () {
-        runs.filters.automation_id = this.value;
-        state.autopilot.runs.data = null;
-        fetchAutopilotRuns();
-    };
-    filtersRow.appendChild(automationFilter);
-
     var statusFilter = document.createElement('select');
     statusFilter.style.cssText = 'padding:6px 10px;border-radius:6px;background:#1a1a2e;color:#ccc;border:1px solid #333;font-size:0.85rem;';
-    statusFilter.innerHTML = '<option value="">All Statuses</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="running">Running</option><option value="skipped">Skipped</option>';
+    statusFilter.innerHTML = '<option value="">All Statuses</option>' +
+        '<option value="done">Done</option>' +
+        '<option value="failed">Failed</option>' +
+        '<option value="running">Running</option>' +
+        '<option value="ingesting">Ingesting</option>' +
+        '<option value="ranking">Ranking</option>' +
+        '<option value="planning">Planning</option>';
     statusFilter.value = runs.filters.status || '';
     statusFilter.onchange = function () { runs.filters.status = this.value; renderApp(); };
     filtersRow.appendChild(statusFilter);
@@ -48012,47 +49510,54 @@ function renderAutopilotRunsView() {
     var table = document.createElement('table');
     table.style.cssText = 'width:100%;min-width:860px;border-collapse:collapse;font-size:0.85rem;table-layout:fixed;';
 
+    // CSS classes (see the ap-runs-* rules in styles.css), not an inline
+    // presentation attribute \u2014 matching the already-shipping idiom used
+    // elsewhere in this file for table cells (e.g. event-timestamp,
+    // vtid-cell) rather than building markup with a hand-written CSS
+    // string per element.
     var colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = '<col style="width:170px"><col style="width:90px"><col style="width:85px"><col style="width:110px"><col style="width:65px"><col style="width:70px"><col style="width:75px"><col>';
+    colgroup.innerHTML = '<col class="ap-runs-col-time"><col class="ap-runs-col-runid"><col class="ap-runs-col-trigger"><col class="ap-runs-col-status"><col class="ap-runs-col-signals"><col class="ap-runs-col-new"><col class="ap-runs-col-duration"><col>';
     table.appendChild(colgroup);
 
     var thead = document.createElement('thead');
-    thead.innerHTML = '<tr style="border-bottom:1px solid #333;text-align:left;">' +
-        '<th style="padding:8px;color:#888;">Time</th>' +
-        '<th style="padding:8px;color:#888;">AP ID</th>' +
-        '<th style="padding:8px;color:#888;">Trigger</th>' +
-        '<th style="padding:8px;color:#888;">Status</th>' +
-        '<th style="padding:8px;color:#888;">Users</th>' +
-        '<th style="padding:8px;color:#888;">Actions</th>' +
-        '<th style="padding:8px;color:#888;">Duration</th>' +
-        '<th style="padding:8px;color:#888;">Error</th>' +
+    thead.innerHTML = '<tr class="ap-runs-thead-row">' +
+        '<th class="ap-runs-th">Time</th>' +
+        '<th class="ap-runs-th">Run ID</th>' +
+        '<th class="ap-runs-th">Trigger</th>' +
+        '<th class="ap-runs-th">Status</th>' +
+        '<th class="ap-runs-th">Signals</th>' +
+        '<th class="ap-runs-th">New</th>' +
+        '<th class="ap-runs-th">Duration</th>' +
+        '<th class="ap-runs-th">Error</th>' +
         '</tr>';
     table.appendChild(thead);
 
     var tbody = document.createElement('tbody');
     filteredRuns.forEach(function (r) {
         var row = document.createElement('tr');
-        row.style.cssText = 'border-bottom:1px solid #222;';
-        row.onmouseenter = function () { this.style.background = '#1a1a3e'; };
-        row.onmouseleave = function () { this.style.background = ''; };
+        row.className = 'ap-runs-row';
 
         var startedAt = r.started_at ? new Date(r.started_at) : null;
         var completedAt = r.completed_at ? new Date(r.completed_at) : null;
-        var duration = (startedAt && completedAt) ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : (r.status === 'running' ? '...' : '-');
+        var stillRunning = r.status === 'running' || r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning';
+        var duration = (startedAt && completedAt) ? ((completedAt - startedAt) / 1000).toFixed(1) + 's' : (stillRunning ? '...' : '-');
         var timeStr = startedAt ? startedAt.toLocaleString() : '-';
 
-        var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'running' ? '\u{1F535}' : '\u26A0\uFE0F';
+        var statusIcon = r.status === 'done' ? '\u2705' : r.status === 'failed' ? '\u274C' : stillRunning ? '\u{1F535}' : '\u26A0\uFE0F';
+        var runIdShort = r.run_id ? String(r.run_id).slice(0, 8) : '-';
+        var badgeClass = (r.status === 'done' || r.status === 'failed' || r.status === 'running' ||
+            r.status === 'ingesting' || r.status === 'ranking' || r.status === 'planning')
+            ? 'ap-runs-badge-' + r.status : 'ap-runs-badge-default';
 
-        var runCellClip = 'padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         row.innerHTML =
-            '<td style="' + runCellClip + 'font-size:0.8rem;color:#999;">' + timeStr + '</td>' +
-            '<td style="' + runCellClip + 'font-family:monospace;color:#64b5f6;">' + r.automation_id + '</td>' +
-            '<td style="' + runCellClip + '">' + (r.trigger_type || '-') + '</td>' +
-            '<td style="' + runCellClip + '"><span style="background:' + autopilotStatusColor(r.status) + '22;color:' + autopilotStatusColor(r.status) + ';padding:2px 8px;border-radius:4px;font-size:0.75rem;">' + statusIcon + ' ' + r.status + '</span></td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.users_affected || 0) + '</td>' +
-            '<td style="' + runCellClip + 'text-align:center;">' + (r.actions_taken || 0) + '</td>' +
-            '<td style="' + runCellClip + 'color:#999;">' + duration + '</td>' +
-            '<td style="' + runCellClip + 'color:#f44336;font-size:0.75rem;" title="' + (r.error_message || '').replace(/"/g, '&quot;') + '">' + (r.error_message || '') + '</td>';
+            '<td class="ap-runs-cell ap-runs-cell-time">' + timeStr + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-runid" title="' + (r.run_id || '') + '">' + runIdShort + '</td>' +
+            '<td class="ap-runs-cell">' + (r.triggered_by || '-') + '</td>' +
+            '<td class="ap-runs-cell"><span class="ap-runs-badge ' + badgeClass + '">' + statusIcon + ' ' + r.status + '</span></td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.signal_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-center">' + (r.new_finding_count || 0) + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-dim">' + duration + '</td>' +
+            '<td class="ap-runs-cell ap-runs-cell-error" title="' + (r.error || '').replace(/"/g, '&quot;') + '">' + (r.error || '') + '</td>';
 
         tbody.appendChild(row);
     });
@@ -48063,7 +49568,7 @@ function renderAutopilotRunsView() {
     if (filteredRuns.length === 0) {
         var empty = document.createElement('div');
         empty.style.cssText = 'text-align:center;color:#666;padding:2rem;';
-        empty.textContent = 'No automation runs found.';
+        empty.textContent = 'No scan runs found.';
         container.appendChild(empty);
     }
 
@@ -48075,53 +49580,48 @@ function renderAutopilotRunsView() {
 // =============================================================================
 
 async function fetchAutopilotLive() {
+    // VTID-04282: this used to read /api/v1/automations/runs(/active) — the
+    // tenant-scoped community AP engine, which 400s without a tenant and has
+    // not run since 2026-08-15 — so "Active Runs" and "Last 10 Runs" could
+    // never show anything. It also updated state on every 10 s poll without
+    // re-rendering, so the screen stayed frozen on its first load. It now
+    // reads the Dev Autopilot executions and re-renders when they change.
     if (state.autopilot.live.loading) return;
-    var isInitialLoad = !state.autopilot.live.engineStatus;
-    state.autopilot.live.loading = true;
-    if (isInitialLoad) renderApp();
+    var live = state.autopilot.live;
+    live.loading = true;
     try {
-        var [activeRes, runsRes, healthRes, devApRes] = await Promise.all([
-            fetch('/api/v1/automations/runs/active', { headers: buildContextHeaders({}) }),
-            fetch('/api/v1/automations/runs?limit=10', { headers: buildContextHeaders({}) }),
-            fetch('/api/v1/automations/health', { headers: buildContextHeaders({}) }),
-            // Dev Autopilot active executions — anything not yet in a terminal
-            // state. The Live view is the canonical home; the developer-page
-            // status strip's "N active runs →" badge links here.
+        var [activeRes, recentRes] = await Promise.all([
             fetch('/api/v1/dev-autopilot/executions?status=active&limit=50', { headers: buildContextHeaders({}) }),
+            fetch('/api/v1/dev-autopilot/executions?status=all&limit=15', { headers: buildContextHeaders({}) }),
         ]);
         if (activeRes.ok) {
-            var data = await activeRes.json();
-            state.autopilot.live.activeRuns = data.runs || [];
+            var activeBody = await activeRes.json();
+            live.devAutopilotExecutions = activeBody.executions || activeBody.data || [];
         } else {
-            state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
+            live.devAutopilotExecutions = live.devAutopilotExecutions || [];
         }
-        if (runsRes.ok) {
-            var data = await runsRes.json();
-            state.autopilot.live.recentRuns = data.runs || [];
+        if (recentRes.ok) {
+            var recentBody = await recentRes.json();
+            live.recentExecutions = recentBody.executions || [];
         } else {
-            state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
+            live.recentExecutions = live.recentExecutions || [];
         }
-        if (healthRes.ok) {
-            state.autopilot.live.engineStatus = await healthRes.json();
-        }
-        if (devApRes.ok) {
-            var data = await devApRes.json();
-            state.autopilot.live.devAutopilotExecutions = data.executions || data.data || [];
-        } else {
-            state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
-        }
+        live.error = (activeRes.ok && recentRes.ok) ? null : ('executions: HTTP ' + (activeRes.ok ? recentRes.status : activeRes.status));
     } catch (err) {
-        console.error('[Autopilot] fetchLive error:', err);
-        state.autopilot.live.activeRuns = state.autopilot.live.activeRuns || [];
-        state.autopilot.live.recentRuns = state.autopilot.live.recentRuns || [];
-        state.autopilot.live.devAutopilotExecutions = state.autopilot.live.devAutopilotExecutions || [];
+        live.error = String(err && err.message ? err.message : err);
+        live.devAutopilotExecutions = live.devAutopilotExecutions || [];
+        live.recentExecutions = live.recentExecutions || [];
     } finally {
-        state.autopilot.live.loading = false;
-        // Only full render on initial load; subsequent 10s polls update state
-        // silently. The view refreshes on next user-driven render or tab switch.
-        if (isInitialLoad) {
-            renderApp();
-        }
+        live.loading = false;
+        var sig = JSON.stringify([live.devAutopilotExecutions, live.recentExecutions, live.error].map(function (x) {
+            return Array.isArray(x) ? x.map(function (e) { return e.id + ':' + e.status + ':' + (e.last_event_at || ''); }) : x;
+        }));
+        var changed = sig !== live.signature;
+        live.signature = sig;
+        live.loaded = true;
+        // Keep an open steps transcript / diff panel intact: they are driven
+        // by their own streams, so only re-render when the rows changed.
+        if (changed && state.currentModuleKey === 'autopilot' && state.currentTab === 'live') autopilotSupervisorRerender();
     }
 }
 
@@ -48134,148 +49634,146 @@ function renderAutopilotLiveView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Real-time view of engine status, active runs, and recent completions.';
+    subtitle.textContent = 'Dev Autopilot self-healing executions: what is running now, what just finished and why, and the pipeline gates that feed it.';
     container.appendChild(subtitle);
 
     var live = state.autopilot.live;
 
-    if (!live.engineStatus && !live.loading) {
+    if (!live.loaded && !live.loading) {
         setTimeout(function () { fetchAutopilotLive(); }, 0);
     }
-
-    // Auto-refresh every 10 seconds
-    if (!state.autopilot.live._refreshTimer) {
-        state.autopilot.live._refreshTimer = setInterval(function () {
+    // Auto-refresh every 10 seconds while this tab is open.
+    if (!live._refreshTimer) {
+        live._refreshTimer = setInterval(function () {
             if (state.currentModuleKey === 'autopilot' && state.currentTab === 'live') {
                 fetchAutopilotLive();
             }
         }, 10000);
     }
 
-    if (live.loading && !live.engineStatus) {
-        var loader = document.createElement('div');
-        loader.className = 'loading-indicator';
-        loader.textContent = 'Loading live status...';
-        container.appendChild(loader);
-        return container;
-    }
-
-    // Two-column layout
+    // VTID-04282: pipeline + recent outcomes, from real Dev Autopilot data.
     var grid = document.createElement('div');
-    grid.style.cssText = 'display:grid;grid-template-columns:320px 1fr;gap:1.5rem;';
+    grid.className = 'ap-live-grid';
 
-    // Left column: Engine Status
-    var leftCol = document.createElement('div');
-
-    var engineCard = document.createElement('div');
-    engineCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-
-    var eng = live.engineStatus || {};
-    engineCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Engine Status</h3>' +
-        '<div style="margin-bottom:0.75rem;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Automations</span>' +
-        '<span style="font-weight:600;">' + (eng.total_automations || 0) + ' total</span></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Executable</span>' +
-        '<span style="color:#4caf50;font-weight:600;">' + (eng.executable || 0) + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #222;">' +
-        '<span style="color:#888;">Planned</span>' +
-        '<span style="color:#ff9800;font-weight:600;">' + (eng.planned || 0) + '</span></div>' +
-        '</div>';
-
-    leftCol.appendChild(engineCard);
-
-    // Manual controls
-    var controlsCard = document.createElement('div');
-    controlsCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-    controlsCard.innerHTML = '<h3 style="margin-bottom:1rem;font-size:1rem;">Manual Controls</h3>';
-
-    var heartbeatBtn = document.createElement('button');
-    heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-    heartbeatBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#e91e6322;color:#e91e63;border:1px solid #e91e6344;cursor:pointer;margin-bottom:8px;font-size:0.85rem;';
-    heartbeatBtn.onclick = function () {
-        heartbeatBtn.disabled = true;
-        heartbeatBtn.textContent = 'Running...';
-        fetch('/api/v1/automations/heartbeat', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({})
-        }).then(function (r) { return r.json(); }).then(function (data) {
-            heartbeatBtn.disabled = false;
-            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-            if (data.ok) {
-                showToast('Heartbeat: ' + (data.executed || []).length + ' executed, ' + (data.skipped || []).length + ' skipped, ' + (data.failed || []).length + ' failed', 'success');
-            } else {
-                showToast('Heartbeat failed: ' + (data.error || 'Unknown'), 'error');
-            }
-            fetchAutopilotLive();
-        }).catch(function (err) {
-            heartbeatBtn.disabled = false;
-            heartbeatBtn.textContent = '\u2764 Trigger Heartbeat';
-            showToast('Error: ' + err.message, 'error');
-        });
-    };
-    controlsCard.appendChild(heartbeatBtn);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.style.cssText = 'display:block;width:100%;padding:8px;border-radius:6px;background:#333;color:#ccc;border:1px solid #444;cursor:pointer;font-size:0.85rem;';
-    refreshBtn.onclick = function () { fetchAutopilotLive(); };
-    controlsCard.appendChild(refreshBtn);
-
-    leftCol.appendChild(controlsCard);
-    grid.appendChild(leftCol);
-
-    // Right column: Active + Recent runs
-    var rightCol = document.createElement('div');
-
-    // Active runs
-    var activeCard = document.createElement('div');
-    activeCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1rem;';
-    activeCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Active Runs <span style="color:#2196f3;">(' + ((live.activeRuns || []).length) + ')</span></h3>';
-
-    if (live.activeRuns && live.activeRuns.length > 0) {
-        live.activeRuns.forEach(function (r) {
-            var item = document.createElement('div');
-            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;';
-            item.innerHTML = '<span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span>' +
-                '<span style="color:#2196f3;font-size:0.8rem;">\u{1F535} running</span>';
-            activeCard.appendChild(item);
-        });
-    } else {
-        var noActive = document.createElement('div');
-        noActive.style.cssText = 'color:#666;text-align:center;padding:1rem;';
-        noActive.textContent = 'No active runs';
-        activeCard.appendChild(noActive);
+    var pipe = document.createElement('section');
+    pipe.className = 'ap-live-card';
+    var pipeH = document.createElement('h3');
+    pipeH.className = 'ap-sup-section-title';
+    pipeH.textContent = 'Pipeline';
+    pipe.appendChild(pipeH);
+    var sd = state.autopilot.supervisor.data;
+    function kv(k, v, tone) {
+        var row = document.createElement('div');
+        row.className = 'ap-live-kv';
+        var kEl = document.createElement('span');
+        kEl.className = 'ap-live-k';
+        kEl.textContent = k;
+        var vEl = document.createElement('span');
+        vEl.className = 'ap-live-v' + (tone ? ' ap-sup-text-' + tone : '');
+        vEl.textContent = v;
+        row.appendChild(kEl);
+        row.appendChild(vEl);
+        pipe.appendChild(row);
     }
-    rightCol.appendChild(activeCard);
-
-    // Recent completed
-    var recentCard = document.createElement('div');
-    recentCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;';
-    recentCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">Last 10 Runs</h3>';
-
-    if (live.recentRuns && live.recentRuns.length > 0) {
-        live.recentRuns.forEach(function (r) {
-            var item = document.createElement('div');
-            item.style.cssText = 'padding:8px;border-bottom:1px solid #222;display:flex;justify-content:space-between;align-items:center;font-size:0.85rem;';
-            var statusIcon = r.status === 'completed' ? '\u2705' : r.status === 'failed' ? '\u274C' : r.status === 'skipped' ? '\u26A0\uFE0F' : '\u{1F535}';
-            var timeAgo = r.started_at ? new Date(r.started_at).toLocaleTimeString() : '';
-            item.innerHTML = '<span>' + statusIcon + ' <span style="font-family:monospace;color:#64b5f6;">' + r.automation_id + '</span></span>' +
-                '<span style="color:#888;font-size:0.75rem;">' + (r.users_affected || 0) + ' users, ' + (r.actions_taken || 0) + ' actions</span>' +
-                '<span style="color:#666;font-size:0.75rem;">' + timeAgo + '</span>';
-            recentCard.appendChild(item);
-        });
+    if (sd) {
+        kv('Last successful scan', autopilotSupervisorAgo(sd.scan.last_success_at), sd.scan.overdue ? 'bad' : null);
+        kv('Next scheduled scan', new Date(sd.scan.next_scheduled_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC');
+        kv('Scans in 7 days', sd.scan.runs_7d + ' (' + sd.scan.failed_7d + ' failed)', sd.scan.failed_7d > 0 ? 'warn' : null);
+        kv('Executions started (24h)', String(sd.executions.last_24h));
+        kv('Awaiting your approval', String(sd.executions.awaiting_approval), sd.executions.awaiting_approval > 0 ? 'warn' : null);
+        kv('Budget left today', sd.config.budget_left_today + ' / ' + sd.config.daily_budget);
+        kv('Free execution slots', sd.config.concurrency_left + ' / ' + sd.config.concurrency_cap);
+        kv('Kill switch', sd.config.kill_switch ? 'ON' : 'off', sd.config.kill_switch ? 'bad' : null);
+        var reasons = sd.executions.top_failure_reasons || [];
+        if (reasons.length > 0) {
+            var rh = document.createElement('div');
+            rh.className = 'ap-live-subhead';
+            rh.textContent = 'Why executions failed (7 days)';
+            pipe.appendChild(rh);
+            reasons.slice(0, 5).forEach(function (r) {
+                var line = document.createElement('div');
+                line.className = 'ap-live-reason';
+                var main = document.createElement('span');
+                main.textContent = r.count + '\u00D7  ' + r.reason;
+                line.appendChild(main);
+                if (r.count_24h != null && r.last_seen_at != null) {
+                    var meta = document.createElement('span');
+                    meta.className = 'ap-live-reason-meta';
+                    meta.textContent = r.count_24h + ' in last 24h \u00B7 last seen ' + autopilotSupervisorAgo(r.last_seen_at);
+                    line.appendChild(meta);
+                }
+                pipe.appendChild(line);
+            });
+        }
     } else {
-        var noRecent = document.createElement('div');
-        noRecent.style.cssText = 'color:#666;text-align:center;padding:1rem;';
-        noRecent.textContent = 'No runs yet';
-        recentCard.appendChild(noRecent);
+        var pw = document.createElement('div');
+        pw.className = 'ap-sup-empty';
+        pw.textContent = state.autopilot.supervisor.error ? ('Unavailable: ' + state.autopilot.supervisor.error) : 'Loading…';
+        pipe.appendChild(pw);
     }
-    rightCol.appendChild(recentCard);
+    grid.appendChild(pipe);
 
-    grid.appendChild(rightCol);
+    var recent = document.createElement('section');
+    recent.className = 'ap-live-card';
+    var recentH = document.createElement('h3');
+    recentH.className = 'ap-sup-section-title';
+    recentH.textContent = 'Recent executions';
+    recent.appendChild(recentH);
+    if (live.error) {
+        var le = document.createElement('div');
+        le.className = 'ap-sup-alert ap-sup-sev-critical';
+        le.textContent = 'Could not load executions: ' + live.error;
+        recent.appendChild(le);
+    }
+    var recentRows = live.recentExecutions || [];
+    if (!live.loaded) {
+        var rl = document.createElement('div');
+        rl.className = 'ap-sup-empty';
+        rl.textContent = 'Loading…';
+        recent.appendChild(rl);
+    } else if (recentRows.length === 0) {
+        var re0 = document.createElement('div');
+        re0.className = 'ap-sup-empty';
+        re0.textContent = 'No executions yet.';
+        recent.appendChild(re0);
+    }
+    recentRows.forEach(function (e) {
+        var row = document.createElement('div');
+        row.className = 'ap-live-exec';
+        var st = document.createElement('span');
+        st.className = 'ap-live-status ap-live-status-' + String(e.status || '').replace(/[^a-z_]/g, '');
+        st.textContent = e.status;
+        row.appendChild(st);
+        var body = document.createElement('div');
+        body.className = 'ap-live-exec-body';
+        var t = document.createElement('div');
+        t.className = 'ap-sup-finding-title';
+        t.textContent = (e.recommendation && e.recommendation.title) || ('Execution ' + String(e.id || '').slice(0, 8));
+        body.appendChild(t);
+        // VTID-04334: a run that came from a member report says so.
+        var fbRef = feedbackTicketRefFrom(e);
+        if (fbRef) body.appendChild(renderFeedbackTicketBadge(fbRef));
+        var m = document.createElement('div');
+        m.className = 'ap-sup-finding-meta';
+        var err = e.metadata && e.metadata.error ? String(e.metadata.error) : '';
+        var src = e.recommendation && e.recommendation.source_type;
+        var origin = fbRef ? 'member report' : (src === 'operator_onramp' ? 'operator-requested' : (e.approved_by ? 'human-approved' : (src ? 'auto-approved (' + src + ')' : 'auto-approved')));
+        m.textContent = [autopilotSupervisorAgo(e.updated_at || e.created_at), origin,
+            e.auto_fix_depth > 0 ? 'self-heal depth ' + e.auto_fix_depth : null, err ? err.slice(0, 140) : null].filter(Boolean).join(' · ');
+        body.appendChild(m);
+        row.appendChild(body);
+        if (e.pr_url) {
+            var pr = document.createElement('a');
+            pr.className = 'ap-live-pr';
+            pr.href = e.pr_url;
+            pr.target = '_blank';
+            pr.rel = 'noopener';
+            pr.textContent = 'PR #' + (e.pr_number || '?');
+            row.appendChild(pr);
+        }
+        recent.appendChild(row);
+    });
+    grid.appendChild(recent);
     container.appendChild(grid);
 
     // Dev Autopilot Active Executions — separate section below the grid.
@@ -48339,6 +49837,9 @@ function renderAutopilotLiveView() {
                 || ('Execution ' + (exec.id ? exec.id.slice(0, 8) : 'unknown'));
             topLine.textContent = taskTitle;
             label.appendChild(topLine);
+            // VTID-04334: member-report badge → the ticket's Feedback drawer.
+            var execFbRef = feedbackTicketRefFrom(exec);
+            if (execFbRef) label.appendChild(renderFeedbackTicketBadge(execFbRef));
             var bottomLine = document.createElement('div');
             bottomLine.style.cssText = 'color:#888;font-size:0.74rem;font-family:monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;';
             var scanner = (exec.recommendation && exec.recommendation.spec_snapshot && exec.recommendation.spec_snapshot.scanner) || exec.scanner || '';
@@ -48369,6 +49870,18 @@ function renderAutopilotLiveView() {
                 prLink.style.cssText = 'color:#60a5fa;text-decoration:none;font-size:0.78rem;font-family:monospace;';
                 card.appendChild(prLink);
             }
+
+            // VTID-04265: step/tool-call transcript — available on every
+            // status, not only awaiting_approval, so an operator can watch a
+            // running agent's turns instead of waiting for it to finish or
+            // block. Reuses the same SSE stream + rendering as the Operator
+            // Console chat panel (VTID-04033); see devAutopilotToggleSteps.
+            var liveStepsOpen = !!(state.devAutopilot.expandedStepsExecIds || {})[exec.id];
+            var liveStepsBtn = document.createElement('button');
+            liveStepsBtn.textContent = liveStepsOpen ? '▾ Steps' : '▸ Steps';
+            liveStepsBtn.className = 'dev-autopilot-ghost-toggle';
+            liveStepsBtn.onclick = function () { devAutopilotToggleSteps(exec.id); };
+            card.appendChild(liveStepsBtn);
 
             // VTID-04032: a running agent (or a row still cooling) can be
             // cancelled from here — the row is marked cancelled, its ECS task
@@ -48419,6 +49932,13 @@ function renderAutopilotLiveView() {
                     card.appendChild(liveDiffWrap);
                 }
             }
+
+            if (liveStepsOpen) {
+                var liveStepsWrap = document.createElement('div');
+                liveStepsWrap.className = 'dev-autopilot-live-diff-wrap';
+                liveStepsWrap.appendChild(renderAutopilotLiveStepsPanel(exec.id));
+                card.appendChild(liveStepsWrap);
+            }
             devApSection.appendChild(card);
         });
     }
@@ -48448,6 +49968,23 @@ function renderAutopilotEngineView() {
     cronCard.style.cssText = 'background:#1a1a2e;border:1px solid #333;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;';
     cronCard.innerHTML = '<h3 style="margin-bottom:0.75rem;font-size:1rem;">\u23F0 Cloud Scheduler CRON Jobs</h3>' +
         '<p style="color:#888;font-size:0.8rem;margin-bottom:1rem;">These jobs are managed via scripts/setup-cloud-scheduler.sh and POST to /api/v1/automations/cron/&lt;AP-ID&gt;</p>';
+
+    // VTID-04269: this table was always STATIC reference data copied from
+    // scripts/setup-cloud-scheduler.sh's job list \u2014 no gateway route or DB
+    // table backs it with a live query, and there is no reliable live
+    // source to wire up instead (GCP Cloud Scheduler's own listing API
+    // isn't reachable from this gateway, and GCP billing on the project
+    // that script targets by default was disabled 2026-08-16 \u2014 CLAUDE.md
+    // \u00A71). Per the same repo's own VTID-03676 finding, only the
+    // push-dispatch job has a confirmed AWS EventBridge replacement; these
+    // 10 rows' actual running status today is unconfirmed. Labelling that
+    // honestly rather than presenting the table as live infrastructure
+    // state, per this file's own established remedy for the same defect
+    // shape (VTID-04064's buildGcpStaticViewDisabledNotice()).
+    var cronStaticNotice = document.createElement('div');
+    cronStaticNotice.className = 'autopilot-static-cron-notice';
+    cronStaticNotice.textContent = 'Static reference values from scripts/setup-cloud-scheduler.sh, not a live query. GCP Cloud Scheduler billing was disabled 2026-08-16; only push-dispatch has a confirmed AWS EventBridge replacement (VTID-03676) \u2014 whether these jobs are still actually firing is unconfirmed.';
+    cronCard.appendChild(cronStaticNotice);
 
     var cronJobs = [
         { id: 'AP-0101', name: 'Daily Match Delivery', schedule: '0 8 * * *', tz: 'Europe/Berlin' },
@@ -48645,8 +50182,10 @@ function renderAutopilotGrowthView() {
     container.appendChild(title);
     var subtitle = document.createElement('p');
     subtitle.className = 'section-subtitle';
-    subtitle.textContent = 'Automation impact metrics, top performers, and user reach.';
+    subtitle.textContent = 'Self-improvement from the Dev Autopilot, and user reach of the community AP-XXXX automations.';
     container.appendChild(subtitle);
+    container.appendChild(renderAutopilotSelfImprovementCard()); // VTID-04282
+    container.appendChild(renderAutopilotCommunityEngineBanner()); // VTID-04282
 
     var growth = state.autopilot.growth;
 
@@ -48875,6 +50414,420 @@ function renderMissionAlignmentBreakdown(title, keys, counts, total, formatter, 
     return card;
 }
 
+// =============================================================================
+// VTID-04354 (Orchestrator v2, P7 v0): Autopilot › Orchestrator — a read-only
+// view over GET /api/v1/orchestrator/{runs/summary,runs,agents,policy}.
+// Every section loads on its own: a 403 / 404 / 502 on one endpoint shows
+// that section's error and leaves the others intact. Nothing here writes.
+// =============================================================================
+
+var ORCH_ENDPOINTS = {
+    summary: function (o) { return '/api/v1/orchestrator/runs/summary?days=' + encodeURIComponent(o.days); },
+    runs: function (o) {
+        var q = '/api/v1/orchestrator/runs?limit=50';
+        if (o.plane) q += '&plane=' + encodeURIComponent(o.plane);
+        if (o.status) q += '&status=' + encodeURIComponent(o.status);
+        return q;
+    },
+    agents: function () { return '/api/v1/orchestrator/agents'; },
+    policy: function () { return '/api/v1/orchestrator/policy'; },
+    // VTID-04396: the P2/P3 read sides.
+    shadow: function () { return '/api/v1/orchestrator/policy/shadow'; },
+    budgets: function () { return '/api/v1/orchestrator/budgets'; },
+    delegations: function () { return '/api/v1/orchestrator/delegations'; },
+};
+
+var ORCH_RUN_STATUSES = ['queued', 'running', 'waiting_signal', 'awaiting_approval', 'succeeded', 'failed', 'cancelled'];
+
+function orchestratorFetchSection(key, url) {
+    return fetch(url, { credentials: 'include', headers: buildContextHeaders() })
+        .then(function (r) {
+            return r.json().catch(function () { return { ok: false, error: 'HTTP ' + r.status + ' (not JSON — route not deployed?)' }; })
+                .then(function (j) { return { key: key, ok: !!(j && j.ok), data: j && j.data, error: (j && j.ok) ? null : ((j && j.error) || ('HTTP ' + r.status)) }; });
+        })
+        .catch(function (err) { return { key: key, ok: false, data: null, error: String(err) }; });
+}
+
+function fetchOrchestratorView() {
+    var o = state.autopilot.orchestrator;
+    o.loading = true;
+    renderApp();
+    var keys = Object.keys(ORCH_ENDPOINTS);
+    Promise.all(keys.map(function (k) { return orchestratorFetchSection(k, ORCH_ENDPOINTS[k](o)); }))
+        .then(function (results) {
+            o.loading = false;
+            o.sections = {};
+            results.forEach(function (res) { o.sections[res.key] = res; });
+            o.fetchedAt = new Date().toISOString();
+            renderApp();
+        });
+}
+
+function orchEl(tag, className, text) {
+    var el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined && text !== null) el.textContent = String(text);
+    return el;
+}
+
+function orchSectionShell(title, section) {
+    var box = orchEl('section', 'orch-section');
+    box.appendChild(orchEl('h3', 'orch-section-title', title));
+    if (!section) {
+        box.appendChild(orchEl('div', 'orch-muted', 'Loading…'));
+        return { box: box, ok: false };
+    }
+    if (!section.ok) {
+        box.appendChild(orchEl('div', 'orch-error', section.error || 'Unavailable'));
+        return { box: box, ok: false };
+    }
+    return { box: box, ok: true };
+}
+
+// Literal class names (not built by concatenation) so the dead-CSS scan
+// (scripts/find-dead-css-classes.mjs) can see every rule is used.
+var ORCH_PILL_CLASS = {
+    succeeded: 'orch-pill--succeeded', active: 'orch-pill--active', healthy: 'orch-pill--healthy',
+    failed: 'orch-pill--failed', disabled: 'orch-pill--disabled',
+    running: 'orch-pill--running', queued: 'orch-pill--queued',
+    awaiting_approval: 'orch-pill--awaiting_approval', waiting_signal: 'orch-pill--waiting_signal',
+    allow: 'orch-pill--allow', escalate: 'orch-pill--escalate', deny: 'orch-pill--deny',
+    over: 'orch-pill--deny', cancelled: 'orch-pill--disabled',
+};
+var ORCH_TIER_CLASS = {
+    none: 'orch-tier--none', read: 'orch-tier--read', draft: 'orch-tier--draft',
+    commit: 'orch-tier--commit', high: 'orch-tier--commit', org: 'orch-tier--org',
+};
+
+function orchStatusPill(status) {
+    var extra = ORCH_PILL_CLASS[status] ? ' ' + ORCH_PILL_CLASS[status] : '';
+    return orchEl('span', 'orch-pill' + extra, status || 'unknown');
+}
+
+function renderOrchestratorSummary(section, o) {
+    var s = orchSectionShell('Runs by plane — last ' + o.days + ' days', section);
+    if (!s.ok) return s.box;
+    var planes = (section.data && section.data.planes) || [];
+    if (section.data && section.data.truncated) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'Counts truncated — the window holds more rows than one read returns.'));
+    }
+    if (!planes.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No runs in this window.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-plane-grid');
+    planes.forEach(function (p) {
+        var card = orchEl('button', 'orch-plane-card' + (o.plane === p.plane ? ' is-active' : ''));
+        card.type = 'button';
+        card.title = 'Filter the run list to this plane';
+        card.appendChild(orchEl('div', 'orch-plane-name', p.plane));
+        card.appendChild(orchEl('div', 'orch-plane-total', p.total));
+        var chips = orchEl('div', 'orch-plane-chips');
+        ORCH_RUN_STATUSES.forEach(function (st) {
+            var n = p.by_status && p.by_status[st];
+            if (!n) return;
+            var chip = orchStatusPill(st);
+            chip.textContent = st + ' ' + n;
+            chips.appendChild(chip);
+        });
+        card.appendChild(chips);
+        card.onclick = function () {
+            o.plane = o.plane === p.plane ? '' : p.plane;
+            fetchOrchestratorView();
+        };
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
+function renderOrchestratorRuns(section, o) {
+    var s = orchSectionShell('Unified runs' + (o.plane ? ' — ' + o.plane : '') + (o.status ? ' · ' + o.status : ''), section);
+    var filters = orchEl('div', 'orch-filter-row');
+    ['', 'running', 'awaiting_approval', 'failed', 'succeeded'].forEach(function (st) {
+        var b = orchEl('button', 'orch-filter-btn' + (o.status === st ? ' is-active' : ''), st || 'all');
+        b.type = 'button';
+        b.onclick = function () { if (o.status === st) return; o.status = st; fetchOrchestratorView(); };
+        filters.appendChild(b);
+    });
+    s.box.insertBefore(filters, s.box.children[1] || null);
+    if (!s.ok) return s.box;
+    var runs = (section.data && section.data.runs) || [];
+    if (!runs.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No runs match.'));
+        return s.box;
+    }
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var head = orchEl('tr');
+    ['When', 'Plane', 'Agent', 'Status', 'VTID', 'Title / error'].forEach(function (h) { head.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(head); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    runs.forEach(function (r) {
+        var tr = orchEl('tr');
+        tr.appendChild(orchEl('td', 'orch-nowrap', r.created_at ? fmtOrchTime(r.created_at) : '—'));
+        tr.appendChild(orchEl('td', null, r.plane));
+        tr.appendChild(orchEl('td', 'orch-mono', r.agent_id));
+        var st = orchEl('td'); st.appendChild(orchStatusPill(r.status)); tr.appendChild(st);
+        tr.appendChild(orchEl('td', 'orch-mono', r.vtid || '—'));
+        var t = orchEl('td', 'orch-title-cell', r.title || '—');
+        if (r.error) t.appendChild(orchEl('div', 'orch-run-error', r.error));
+        tr.appendChild(t);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+function fmtOrchTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+}
+
+function renderOrchestratorAgents(section) {
+    var s = orchSectionShell('Agent registry', section);
+    if (!s.ok) return s.box;
+    var agents = (section.data && section.data.agents) || [];
+    if (!agents.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No agents registered.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-agent-grid');
+    agents.forEach(function (a) {
+        var card = orchEl('div', 'orch-agent-card' + (a.enabled === false ? ' is-disabled' : ''));
+        var top = orchEl('div', 'orch-agent-top');
+        top.appendChild(orchEl('span', 'orch-agent-name', a.display_name || a.agent_id));
+        top.appendChild(orchStatusPill(a.enabled === false ? 'disabled' : (a.status || 'unknown')));
+        card.appendChild(top);
+        card.appendChild(orchEl('div', 'orch-mono orch-muted', a.agent_id));
+        if (a.description) card.appendChild(orchEl('div', 'orch-agent-desc', a.description));
+        var meta = orchEl('div', 'orch-agent-meta');
+        [
+            ['stage', a.llm_stage], ['model', a.llm_model || a.llm_provider], ['max tier', a.max_tier],
+            ['surfaces', Array.isArray(a.surfaces_allowed) ? a.surfaces_allowed.join(', ') : null],
+            ['roles', Array.isArray(a.roles_allowed) ? a.roles_allowed.join(', ') : null],
+            ['owner', a.owner],
+        ].forEach(function (kv) {
+            if (kv[1] === undefined || kv[1] === null || kv[1] === '') return;
+            var row = orchEl('div', 'orch-kv');
+            row.appendChild(orchEl('span', 'orch-k', kv[0]));
+            row.appendChild(orchEl('span', 'orch-v', kv[1]));
+            meta.appendChild(row);
+        });
+        card.appendChild(meta);
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
+function renderOrchestratorPolicy(section) {
+    var s = orchSectionShell('Default role grants (shadow — not enforced yet)', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var def = d.defaults || {};
+    var domains = def.domains || [];
+    var roles = def.roles || {};
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Your role: ' + (d.platform_role || '—') + ' · channel: ' + (d.channel || '—') + ' · voice is capped at ' + ((def.channels || {}).voice || '—') + '; high-risk actions need a second approver over ' + (def.approval_channels || []).join('/') + '.'));
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table orch-policy-table');
+    var head = orchEl('tr');
+    head.appendChild(orchEl('th', null, 'Role'));
+    domains.forEach(function (dm) { head.appendChild(orchEl('th', null, dm)); });
+    var thead = orchEl('thead'); thead.appendChild(head); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    Object.keys(roles).forEach(function (role) {
+        var tr = orchEl('tr', role === d.platform_role ? 'is-current' : null);
+        tr.appendChild(orchEl('td', 'orch-mono', role));
+        domains.forEach(function (dm) {
+            var tier = (roles[role] && roles[role][dm]) || (dm === 'commerce' ? 'org' : 'none');
+            tr.appendChild(orchEl('td', 'orch-tier ' + (ORCH_TIER_CLASS[tier] || ORCH_TIER_CLASS.none), tier));
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Commerce authority comes from organisation membership (owner/admin commit, member draft), never from the platform role.'));
+    return s.box;
+}
+
+function fmtUsd(n) {
+    var v = Number(n) || 0;
+    return '$' + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+}
+
+// VTID-04396: today's LLM spend against the P2 budgets (VTID-04370).
+function renderOrchestratorBudgets(section) {
+    var s = orchSectionShell('LLM spend today vs budgets (shadow — nothing is blocked yet)', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var spend = d.spend || {};
+    var env = d.envelope || {};
+    var limits = d.limits || {};
+    var platformLimit = Number(limits.platform_per_day_usd) || 0;
+    var head = orchEl('div', 'orch-budget-head');
+    head.appendChild(orchEl('div', 'orch-budget-total', fmtUsd(spend.platform_usd) + ' of ' + fmtUsd(platformLimit) + ' today'));
+    var bar = orchEl('progress', 'orch-budget-bar');
+    bar.max = 100;
+    bar.value = platformLimit > 0 ? Math.min(100, (Number(spend.platform_usd) || 0) / platformLimit * 100) : 0;
+    head.appendChild(bar);
+    s.box.appendChild(head);
+    s.box.appendChild(orchEl('div', 'orch-muted', 'Envelope ' + fmtUsd(env.monthly_usd) + '/month (cap ' + fmtUsd(env.monthly_cap_usd) + '). ' +
+        (spend.calls || 0) + ' calls since ' + fmtOrchTime(d.since) + '; ' + (spend.repriced_calls || 0) + ' repriced from tokens, ' +
+        (spend.unpriced_calls || 0) + ' with no known price.' + (d.truncated ? ' Truncated: more rows than one read returns.' : '')));
+    var deny = d.would_deny || [];
+    s.box.appendChild(orchEl('div', deny.length ? 'orch-error' : 'orch-muted',
+        deny.length ? deny.length + ' budget line(s) over limit — enforcement would deny: ' + deny.map(function (l) { return l.key; }).join(', ')
+                    : 'No budget line is over its limit.'));
+    var lines = (d.lines || []).slice(0, 15);
+    if (!lines.length) return s.box;
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var hr = orchEl('tr');
+    ['Scope', 'Key', 'Spent', 'Limit', 'Used'].forEach(function (h) { hr.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(hr); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    lines.forEach(function (l) {
+        var tr = orchEl('tr', l.over ? 'is-over' : null);
+        tr.appendChild(orchEl('td', null, l.scope));
+        tr.appendChild(orchEl('td', 'orch-mono', l.key));
+        tr.appendChild(orchEl('td', 'orch-nowrap', fmtUsd(l.spent_usd)));
+        tr.appendChild(orchEl('td', 'orch-nowrap', fmtUsd(l.limit_usd)));
+        var used = orchEl('td');
+        used.appendChild(l.over ? orchStatusPill('over') : orchEl('span', null, (l.used_pct || 0) + '%'));
+        tr.appendChild(used);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+// VTID-04396: what the capability policy WOULD decide for real ORB tool calls (VTID-04362).
+function renderOrchestratorShadow(section) {
+    var s = orchSectionShell('Policy shadow — what enforcement would change', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var sh = d.shadow || {};
+    var by = sh.by_decision || {};
+    var chips = orchEl('div', 'orch-plane-chips');
+    ['allow', 'escalate', 'deny'].forEach(function (k) {
+        var c = orchStatusPill(k);
+        c.textContent = k + ' ' + (by[k] || 0);
+        chips.appendChild(c);
+    });
+    s.box.appendChild(chips);
+    s.box.appendChild(orchEl('div', 'orch-muted', (sh.total_calls || 0) + ' ORB tool calls since ' + fmtOrchTime(sh.since) +
+        ' on this gateway task (the window resets on deploy).' + (d.catalog ? ' Catalog: ' + d.catalog.tools + ' tools, ' +
+        (d.catalog.unclassified || []).length + ' unclassified.' : '')));
+    var rows = (sh.aggregates || []).filter(function (a) { return a.decision !== 'allow'; }).slice(0, 20);
+    if (!rows.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No call so far would have been escalated or denied.'));
+        return s.box;
+    }
+    var wrap = orchEl('div', 'orch-table-wrap');
+    var table = orchEl('table', 'orch-table');
+    var hr = orchEl('tr');
+    ['Role', 'Tool', 'Domain / tier', 'Would', 'Calls', 'Why'].forEach(function (h) { hr.appendChild(orchEl('th', null, h)); });
+    var thead = orchEl('thead'); thead.appendChild(hr); table.appendChild(thead);
+    var tbody = orchEl('tbody');
+    rows.forEach(function (a) {
+        var tr = orchEl('tr');
+        tr.appendChild(orchEl('td', 'orch-mono', a.role));
+        tr.appendChild(orchEl('td', 'orch-mono', a.tool));
+        tr.appendChild(orchEl('td', null, a.domain + ' / ' + a.tier));
+        var w = orchEl('td'); w.appendChild(orchStatusPill(a.decision)); tr.appendChild(w);
+        tr.appendChild(orchEl('td', null, a.count));
+        tr.appendChild(orchEl('td', 'orch-title-cell', a.reason));
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    s.box.appendChild(wrap);
+    return s.box;
+}
+
+// VTID-04396: delegation targets and in-memory job counts (VTID-04375/04386).
+function renderOrchestratorDelegations(section) {
+    var s = orchSectionShell('Delegation targets', section);
+    if (!s.ok) return s.box;
+    var d = section.data || {};
+    var jobs = (d.jobs && d.jobs.by_agent) || {};
+    var targets = d.targets || [];
+    if (!targets.length) {
+        s.box.appendChild(orchEl('div', 'orch-muted', 'No delegation targets registered.'));
+        return s.box;
+    }
+    var grid = orchEl('div', 'orch-agent-grid');
+    targets.forEach(function (t) {
+        var card = orchEl('div', 'orch-agent-card');
+        var top = orchEl('div', 'orch-agent-top');
+        top.appendChild(orchEl('span', 'orch-agent-name', t.agent_id));
+        var tierPill = orchEl('span', 'orch-tier ' + (ORCH_TIER_CLASS[t.tier] || ORCH_TIER_CLASS.none), t.domain + ' / ' + t.tier);
+        top.appendChild(tierPill);
+        card.appendChild(top);
+        if (t.description) card.appendChild(orchEl('div', 'orch-agent-desc', t.description));
+        card.appendChild(orchEl('div', 'orch-muted', 'Surfaces: ' + (t.surfaces || []).join(', ')));
+        var j = jobs[t.agent_id];
+        var chips = orchEl('div', 'orch-plane-chips');
+        ['running', 'succeeded', 'failed', 'cancelled'].forEach(function (k) {
+            var n = j && j[k];
+            if (!n) return;
+            var c = orchStatusPill(k);
+            c.textContent = k + ' ' + n;
+            chips.appendChild(c);
+        });
+        if (!chips.children.length) chips.appendChild(orchEl('span', 'orch-muted', 'No jobs on this gateway task.'));
+        card.appendChild(chips);
+        grid.appendChild(card);
+    });
+    s.box.appendChild(grid);
+    return s.box;
+}
+
+function renderAutopilotOrchestratorView() {
+    var o = state.autopilot.orchestrator;
+    var container = orchEl('div', 'orch-container');
+    var header = orchEl('div', 'orch-header');
+    var tb = orchEl('div');
+    tb.appendChild(orchEl('h2', null, 'Orchestrator'));
+    tb.appendChild(orchEl('p', 'section-subtitle', 'One read-only view across every agent plane: what ran, what it cost against the budgets, what the policy would change, which agents can be delegated to, and the default grants each role gets. Nothing on this page changes behaviour.'));
+    header.appendChild(tb);
+    var controls = orchEl('div', 'orch-controls');
+    [1, 7, 30].forEach(function (days) {
+        var b = orchEl('button', 'orch-filter-btn' + (o.days === days ? ' is-active' : ''), days + 'd');
+        b.type = 'button';
+        b.onclick = function () { if (o.days === days) return; o.days = days; fetchOrchestratorView(); };
+        controls.appendChild(b);
+    });
+    var refresh = orchEl('button', 'orch-filter-btn', o.loading ? 'Refreshing…' : 'Refresh');
+    refresh.type = 'button';
+    refresh.disabled = !!o.loading;
+    refresh.onclick = function () { fetchOrchestratorView(); };
+    controls.appendChild(refresh);
+    header.appendChild(controls);
+    container.appendChild(header);
+
+    if (!o.sections && !o.loading) {
+        setTimeout(function () { fetchOrchestratorView(); }, 0);
+    }
+    var sec = o.sections || {};
+    container.appendChild(renderOrchestratorSummary(sec.summary, o));
+    container.appendChild(renderOrchestratorRuns(sec.runs, o));
+    container.appendChild(renderOrchestratorAgents(sec.agents));
+    container.appendChild(renderOrchestratorBudgets(sec.budgets));
+    container.appendChild(renderOrchestratorShadow(sec.shadow));
+    container.appendChild(renderOrchestratorDelegations(sec.delegations));
+    container.appendChild(renderOrchestratorPolicy(sec.policy));
+    if (o.fetchedAt) container.appendChild(orchEl('div', 'orch-muted orch-footer', 'Fetched ' + fmtOrchTime(o.fetchedAt)));
+    return container;
+}
+
 function renderAutopilotMissionAlignmentView() {
     var container = document.createElement('div');
     container.className = 'mission-alignment-container';
@@ -49030,7 +50983,7 @@ function renderVitanaAwarenessTestView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Vitana Awareness Test</h2>' +
-        '<p class="section-subtitle">What does the voice ORB actually know before responding? This calls the same bootstrap path a voice session uses and shows every context block that would be injected into the Gemini Live system_instruction.</p>';
+        '<p class="section-subtitle">What does the voice ORB actually know before responding? This calls the same bootstrap path a voice session uses and shows every context block that would be injected into the system instruction of the live voice model (Nova Sonic; Serbian runs on the Vertex bridge).</p>';
 
     // Info card
     var info = document.createElement('div');
@@ -49040,7 +50993,7 @@ function renderVitanaAwarenessTestView() {
         '<li><strong>Memory items</strong> — what personal memory loads for this user?</li>' +
         '<li><strong>Recent turns</strong> — what prior ORB user utterances are fetched?</li>' +
         '<li><strong>User Context Profile</strong> — the deterministic summary of recent activity, routines, preferences.</li>' +
-        '<li><strong>Context instruction</strong> — the final string injected into the Gemini Live prompt.</li>' +
+        '<li><strong>Context instruction</strong> — the final string injected into the live voice model\'s prompt.</li>' +
         '</ul><p style="margin:.5rem 0 0;font-size:.8rem;color:var(--color-text-secondary);">If all checks are green but voice ORB still seems unaware, the issue is downstream of this test (Gemini model attention, anonymous fallback at widget, etc).</p>';
     container.appendChild(info);
 
@@ -49171,7 +51124,7 @@ function renderVitanaAwarenessTestView() {
         results.appendChild(renderList('Recent ORB turns (preview)', (data.recent_turns && data.recent_turns.preview) || []));
 
         results.appendChild(renderSection(
-            'Context instruction — what Gemini Live would see',
+            'Context instruction — what the live voice model would see',
             data.context_instruction ? (data.context_instruction.preview + (data.context_instruction.truncated ? '\n\n[\u2026truncated for display\u2026]' : '')) : '',
             (data.context_instruction ? data.context_instruction.char_count : 0) + ' chars total'
         ));
@@ -49617,7 +51570,7 @@ function renderAdminAwarenessView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
     container.innerHTML = '<h2>Awareness Registry</h2>' +
-        '<p class="section-subtitle">Global control of every context signal the voice ORB and brain inject into the Gemini Live system_instruction. Exafy admins only. Changes apply to all tenants.</p>';
+        '<p class="section-subtitle">Global control of every context signal the voice ORB and brain inject into the system instruction of the live voice model. Exafy admins only. Changes apply to all tenants.</p>';
 
     if (!state.awarenessRegistry.loaded && !state.awarenessRegistry.loading) {
         awarenessFetchConfig();
@@ -49788,7 +51741,7 @@ function renderVoiceToolsCatalogView() {
     wiredSel.className = 'filter-select';
     wiredSel.innerHTML = '<option value="">All pipelines</option>' +
         '<option value="both">Both (live)</option>' +
-        '<option value="vertex_only">Vertex only</option>' +
+        '<option value="vertex_only">Gateway only (Nova Sonic; manifest value "vertex")</option>' +
         '<option value="livekit_only">LiveKit only</option>' +
         '<option value="none">Planned (neither)</option>';
     filters.appendChild(search);
@@ -49833,7 +51786,7 @@ function renderVoiceToolsCatalogView() {
         var hasL = w.indexOf('livekit') >= 0;
         var label, color;
         if (hasV && hasL) { label = 'BOTH';        color = '#22c55e'; }
-        else if (hasV)    { label = 'VERTEX';      color = '#3b82f6'; }
+        else if (hasV)    { label = 'GATEWAY';     color = '#3b82f6'; }
         else if (hasL)    { label = 'LIVEKIT';     color = '#8b5cf6'; }
         else              { label = 'NONE';        color = 'var(--color-text-secondary)'; }
         return '<span style="font-size:.65rem;padding:2px 8px;border-radius:10px;border:1px solid ' + color + ';color:' + color + ';">' + label + '</span>';
@@ -49908,8 +51861,9 @@ function renderVoiceToolsCatalogView() {
         var url = '/api/v1/voice-tools/catalog' + (qs.length ? '?' + qs.join('&') : '');
 
         Promise.all([
-            fetch(url, { credentials: 'include' }).then(function (r) { return r.json(); }),
-            fetch('/api/v1/voice-tools/catalog/stats', { credentials: 'include' }).then(function (r) { return r.json(); }),
+            // VTID-04491: the catalog now requires an exafy_admin bearer.
+            fetch(url, { headers: buildContextHeaders(), credentials: 'include' }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-tools/catalog/stats', { headers: buildContextHeaders(), credentials: 'include' }).then(function (r) { return r.json(); }),
         ]).then(function (results) {
             var catalog = results[0];
             var statsResp = results[1];
@@ -50188,7 +52142,7 @@ function renderAssistantOverviewView() {
     grid.appendChild(renderAssistantOverviewCard(
         'Profile size (you)',
         state.assistantOverview.loading ? '\u2026' : (profileChars + ' chars'),
-        profileChars > 0 ? 'Sections reaching Gemini Live.' : 'Run awareness test to populate.',
+        profileChars > 0 ? 'Sections reaching the live voice model.' : 'Run awareness test to populate.',
         profileChars > 0 ? 'ok' : 'default'
     ));
 
@@ -50735,6 +52689,7 @@ function feedbackStatusPill(status) {
 
 function renderFeedbackInboxView() {
     var container = document.createElement('div');
+    container.className = 'fb-inbox'; // VTID-04334: scopes the Feedback surface tokens
     container.style.cssText = 'padding:1rem;';
     var header = document.createElement('div');
     header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;';
@@ -50773,6 +52728,11 @@ function renderFeedbackInboxView() {
             '<th style="padding:.5rem .75rem;">Surface</th>' +
             '<th style="padding:.5rem .75rem;">Excerpt</th>' +
             '<th style="padding:.5rem .75rem;">Created</th></tr>';
+        // VTID-04334: the ticket's VTID sits next to its number.
+        var vtidTh = document.createElement('th');
+        vtidTh.className = 'fb-inbox-th';
+        vtidTh.textContent = 'VTID';
+        thead.firstChild.insertBefore(vtidTh, thead.firstChild.children[1]);
         table.appendChild(thead);
         var tbody = document.createElement('tbody');
         tickets.forEach(function (t) {
@@ -50785,6 +52745,10 @@ function renderFeedbackInboxView() {
             num.style.cssText = 'padding:.5rem .75rem;font-family:monospace;font-weight:600;';
             num.textContent = t.ticket_number || '-';
             tr.appendChild(num);
+            var vtidCell = document.createElement('td');
+            vtidCell.className = 'fb-inbox-vtid' + (t.linked_vtid ? '' : ' fb-inbox-vtid--empty');
+            vtidCell.textContent = t.linked_vtid || '—';
+            tr.appendChild(vtidCell);
             var kindCell = document.createElement('td'); kindCell.style.cssText = 'padding:.5rem .75rem;'; kindCell.textContent = t.kind; tr.appendChild(kindCell);
             var priCell = document.createElement('td'); priCell.style.cssText = 'padding:.5rem .75rem;'; priCell.textContent = (t.priority || '').toUpperCase(); tr.appendChild(priCell);
             var statusTd = document.createElement('td'); statusTd.style.cssText = 'padding:.5rem .75rem;'; statusTd.appendChild(feedbackStatusPill(t.status)); tr.appendChild(statusTd);
@@ -50805,6 +52769,236 @@ function renderFeedbackInboxView() {
         container.appendChild(error);
     });
     return container;
+}
+
+// ===========================================================================
+// VTID-04334: one ID chain the supervisor can read at a glance
+// (docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md §3.1). The ticket number FB-… is
+// the anchor; it is shown next to its VTID, finding, execution, PR and
+// deploy/verify state in the ticket drawer, and every Autopilot row that came
+// from a member report carries a badge that opens that ticket's drawer.
+// Every field is read defensively: the admin API (VTID-04333) adds
+// linked_vtid / linked_finding_id / linked_pr_url, a latest-execution object
+// and a feedback_ticket object on autopilot rows — when a field is absent the
+// chip says "—" instead of guessing.
+// ===========================================================================
+
+var FEEDBACK_TICKET_SOURCE_PREFIX = 'feedback_ticket:';
+var FEEDBACK_TICKET_TITLE_RE = /^\s*\[(FB-[0-9]{4}-[0-9]{2}-[0-9A-Za-z]+)\]/;
+var FEEDBACK_TERMINAL_STATUSES = ['rejected', 'duplicate', 'user_confirmed', 'wont_fix'];
+var FEEDBACK_RECLASSIFY_KINDS = ['bug', 'ux_issue', 'support_question', 'marketplace_claim', 'account_issue', 'feedback', 'feature_request'];
+var FEEDBACK_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The member ticket an autopilot row (execution, recommendation or finding)
+ * came from, or null. Accepts, in order of trust: the API's
+ * feedback_ticket object, source_ref "feedback_ticket:<id>",
+ * spec_snapshot.feedback, and finally the "[FB-…]" title prefix. Looks at the
+ * row itself and at an embedded `recommendation`.
+ */
+function feedbackTicketRefFrom(row) {
+    if (!row || typeof row !== 'object') return null;
+    var ref = { ticket_id: null, ticket_number: null, linked_vtid: null };
+    var sources = [row, (row.recommendation && typeof row.recommendation === 'object') ? row.recommendation : null];
+    sources.forEach(function (src) {
+        if (!src) return;
+        var ft = src.feedback_ticket;
+        if (ft && typeof ft === 'object') {
+            ref.ticket_id = ref.ticket_id || ft.ticket_id || ft.id || null;
+            ref.ticket_number = ref.ticket_number || ft.ticket_number || null;
+            ref.linked_vtid = ref.linked_vtid || ft.linked_vtid || null;
+        }
+        if (typeof src.source_ref === 'string' && src.source_ref.indexOf(FEEDBACK_TICKET_SOURCE_PREFIX) === 0) {
+            ref.ticket_id = ref.ticket_id || src.source_ref.slice(FEEDBACK_TICKET_SOURCE_PREFIX.length) || null;
+        }
+        var fb = src.spec_snapshot && typeof src.spec_snapshot === 'object' ? src.spec_snapshot.feedback : null;
+        if (fb && typeof fb === 'object') {
+            ref.ticket_id = ref.ticket_id || fb.ticket_id || null;
+            ref.ticket_number = ref.ticket_number || fb.ticket_number || null;
+        }
+        [src.title, src.task_title].forEach(function (title) {
+            if (typeof title !== 'string') return;
+            var m = FEEDBACK_TICKET_TITLE_RE.exec(title);
+            if (m) ref.ticket_number = ref.ticket_number || m[1];
+        });
+    });
+    return (ref.ticket_id || ref.ticket_number) ? ref : null;
+}
+
+/** Opens the Feedback drawer for a ref; resolves a bare ticket number first. */
+function openFeedbackTicketFromRef(ref) {
+    if (!ref) return;
+    if (ref.ticket_id) {
+        openFeedbackTicketDrawer(ref.ticket_id);
+        return;
+    }
+    feedbackResolveTicketId(ref.ticket_number).then(function (id) {
+        if (id) openFeedbackTicketDrawer(id);
+        else showToast('Ticket ' + ref.ticket_number + ' is not among the latest 200 tickets', 'error');
+    }).catch(function (err) {
+        showToast('Could not look up ' + ref.ticket_number + ': ' + err.message, 'error');
+    });
+}
+
+/** Ticket number (FB-…) or UUID → ticket UUID, via the admin list endpoint. */
+function feedbackResolveTicketId(numberOrId) {
+    var needle = String(numberOrId || '').trim();
+    if (!needle) return Promise.resolve(null);
+    if (FEEDBACK_UUID_RE.test(needle)) return Promise.resolve(needle);
+    return fetchFeedbackJSON('/api/v1/admin/feedback/tickets?limit=200').then(function (data) {
+        var match = ((data && data.tickets) || []).find(function (t) {
+            return String(t.ticket_number || '').toUpperCase() === needle.toUpperCase();
+        });
+        return match ? match.id : null;
+    });
+}
+
+/** "Member report FB-… · VTID-…" badge for autopilot rows; opens the ticket. */
+function renderFeedbackTicketBadge(ref) {
+    var badge = document.createElement('button');
+    badge.type = 'button';
+    badge.className = 'fb-member-badge';
+    var label = ref.ticket_number || ('ticket ' + String(ref.ticket_id).slice(0, 8));
+    badge.textContent = 'Member report ' + label + (ref.linked_vtid ? ' · ' + ref.linked_vtid : '');
+    badge.title = 'This run came from a member report — open ' + label + ' in the Feedback drawer';
+    badge.setAttribute('aria-label', 'Open member report ' + label);
+    badge.onclick = function (ev) {
+        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+        openFeedbackTicketFromRef(ref);
+    };
+    return badge;
+}
+
+/** Plain-language deploy/verify state for the drawer's pipeline block. */
+function feedbackDeployVerifyState(exec, ticket) {
+    if (ticket && ticket.rolled_back_at) return { text: 'rolled back', tone: 'warn' };
+    if (!exec) {
+        if (ticket && ticket.status === 'resolved' && ticket.auto_resolved) return { text: 'verified', tone: 'ok' };
+        return { text: '—', tone: null };
+    }
+    var status = String(exec.status || '');
+    var stage = exec.failure_stage ? String(exec.failure_stage) : '';
+    if (status === 'completed') return { text: 'deployed · verified', tone: 'ok' };
+    if (status === 'deploying') return { text: 'deploying', tone: 'live' };
+    if (status === 'verifying') return { text: 'deployed · verifying', tone: 'live' };
+    if (status === 'failed' || status === 'reverted') {
+        if (stage === 'deploying' || stage === 'verifying' || stage === 'deploy' || stage === 'verify') {
+            return { text: 'failed at ' + stage, tone: 'bad' };
+        }
+        return { text: 'not deployed (' + status + ')', tone: 'bad' };
+    }
+    if (status === 'cancelled' || status === 'rejected') return { text: 'not deployed (' + status + ')', tone: null };
+    return { text: 'not deployed yet', tone: null };
+}
+
+function feedbackPipelineChip(key, value, opts) {
+    var o = opts || {};
+    var chip = document.createElement(o.href ? 'a' : (o.onClick ? 'button' : 'span'));
+    chip.className = 'fb-chip' + (value ? '' : ' fb-chip--empty') + (o.tone ? ' fb-chip--' + o.tone : '');
+    if (o.href && value) {
+        chip.href = o.href;
+        if (o.external) { chip.target = '_blank'; chip.rel = 'noopener'; }
+    }
+    if (chip.tagName === 'BUTTON') {
+        chip.type = 'button';
+        if (value) chip.onclick = o.onClick; else chip.disabled = true;
+    }
+    if (o.title) chip.title = o.title;
+    var k = document.createElement('span');
+    k.className = 'fb-chip-k';
+    k.textContent = key;
+    chip.appendChild(k);
+    var v = document.createElement('span');
+    v.className = 'fb-chip-v';
+    v.textContent = value || '—';
+    chip.appendChild(v);
+    return chip;
+}
+
+function feedbackCopyToClipboard(text) {
+    try {
+        navigator.clipboard.writeText(text).then(function () {
+            showToast('Copied ' + text, 'success');
+        }, function () {
+            showToast(text, 'info');
+        });
+    } catch (_) {
+        showToast(text, 'info');
+    }
+}
+
+/**
+ * The drawer's "Pipeline" block: ticket → VTID → finding → execution → PR →
+ * deploy/verify, each a chip. `data` is the whole GET /tickets/:id body.
+ */
+function renderFeedbackPipelineBlock(t, data) {
+    var exec = (data && (data.latest_execution || data.execution)) || t.latest_execution || null;
+    if (exec && typeof exec !== 'object') exec = null;
+    var block = document.createElement('div');
+    block.className = 'fb-pipeline';
+    var head = document.createElement('div');
+    head.className = 'fb-pipeline-head';
+    head.textContent = 'Pipeline';
+    block.appendChild(head);
+    var chips = document.createElement('div');
+    chips.className = 'fb-pipeline-chips';
+
+    var ticketNo = t.ticket_number || null;
+    chips.appendChild(feedbackPipelineChip('Ticket', ticketNo, {
+        onClick: function () { feedbackCopyToClipboard(ticketNo); },
+        title: 'Copy the member-facing ticket number'
+    }));
+    var vtid = t.linked_vtid || null;
+    chips.appendChild(feedbackPipelineChip('VTID', vtid, {
+        onClick: function () { feedbackCopyToClipboard(vtid); },
+        title: vtid ? 'Copy ' + vtid + ' (search it in OASIS → VTID Ledger)' : 'No VTID linked yet'
+    }));
+    var findingId = t.linked_finding_id || (exec && exec.finding_id) || null;
+    chips.appendChild(feedbackPipelineChip('Finding', findingId ? String(findingId).slice(0, 8) : null, {
+        href: '/command-hub/autonomy/autopilot-developer/',
+        title: findingId ? 'Finding ' + findingId + ' — open Dev Autopilot' : 'Not dispatched to Dev Autopilot yet'
+    }));
+    var execLabel = null;
+    if (exec && exec.id) {
+        execLabel = String(exec.id).slice(0, 8) + ' · ' + (exec.status || '?') + (exec.failure_stage ? ' @ ' + exec.failure_stage : '');
+    }
+    var execTone = !exec ? null
+        : (exec.status === 'completed' ? 'ok'
+        : (exec.status === 'failed' || exec.status === 'reverted' ? 'bad'
+        : (exec.status === 'cancelled' || exec.status === 'rejected' ? null : 'live')));
+    chips.appendChild(feedbackPipelineChip('Execution', execLabel, {
+        href: exec && exec.id ? '/command-hub/autopilot/live/#autopilot-live-exec-' + exec.id : null,
+        tone: execTone,
+        title: exec && exec.id ? 'Execution ' + exec.id + ' — open on Autopilot Live' : 'No execution yet'
+    }));
+    var prUrl = t.linked_pr_url || (exec && exec.pr_url) || null;
+    var prNumber = exec && exec.pr_number ? exec.pr_number : null;
+    if (!prNumber && prUrl) {
+        var prMatch = /\/pull\/(\d+)/.exec(prUrl);
+        if (prMatch) prNumber = prMatch[1];
+    }
+    chips.appendChild(feedbackPipelineChip('PR', prUrl ? ('#' + (prNumber || '?')) : null, {
+        href: prUrl, external: true,
+        title: prUrl ? 'Open the pull request on GitHub' : 'No pull request yet'
+    }));
+    var dv = feedbackDeployVerifyState(exec, t);
+    chips.appendChild(feedbackPipelineChip('Deploy / verify', dv.text === '—' ? null : dv.text, { tone: dv.tone }));
+    block.appendChild(chips);
+    return block;
+}
+
+function feedbackActionButton(label, variantClass, handler) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'fb-action-btn ' + variantClass;
+    b.textContent = label;
+    b.onclick = handler;
+    return b;
+}
+
+/** The tenant id the tenant-scoped ticket routes (rollback, reclassify) need. */
+function feedbackTicketTenantId(t) {
+    return (t && t.tenant_id) || (state.meContext && state.meContext.tenant_id) || null;
 }
 
 function openFeedbackTicketDrawer(ticketId) {
@@ -50862,12 +53056,12 @@ function openFeedbackTicketDrawer(ticketId) {
             if (!ok) return;
             try {
                 var resp = await fetch(path, {
-                    method: 'POST',
+                    method: (body && body.method) || 'POST',
                     headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
                     body: JSON.stringify(body && body.payload ? body.payload : {})
                 });
                 var json = await resp.json().catch(function () { return {}; });
-                if (!resp.ok) throw new Error(json.details || json.error || ('HTTP ' + resp.status));
+                if (!resp.ok) throw new Error(json.message || json.details || json.error || ('HTTP ' + resp.status));
                 // Re-render drawer with fresh state
                 document.getElementById('feedback-ticket-drawer').remove();
                 openFeedbackTicketDrawer(ticketId);
@@ -50901,9 +53095,47 @@ function openFeedbackTicketDrawer(ticketId) {
                 if (reason !== null) runAction('Reject', '/api/v1/admin/feedback/tickets/' + ticketId + '/reject', { payload: { reason: reason } });
             }));
         }
+        // VTID-04334: the three supervisor actions whose routes already exist
+        // (feedback-actions.ts mark-duplicate; tenant-specialists.ts rollback
+        // and reclassify) but had no button. Each is offered only when its
+        // route would accept it, so a click never lands on a known 409.
+        if (FEEDBACK_TERMINAL_STATUSES.indexOf(t.status) === -1) {
+            actionBar.appendChild(feedbackActionButton('Mark duplicate', 'fb-action-btn--neutral', function () {
+                var original = prompt('Ticket number (FB-…) or ID of the original ticket this one duplicates?');
+                if (original === null || !original.trim()) return;
+                feedbackResolveTicketId(original).then(function (originalId) {
+                    if (!originalId) { showToast('Mark duplicate failed: ' + original.trim() + ' not found', 'error'); return; }
+                    if (originalId === t.id) { showToast('Mark duplicate failed: a ticket cannot duplicate itself', 'error'); return; }
+                    runAction('Mark duplicate', '/api/v1/admin/feedback/tickets/' + ticketId + '/mark-duplicate', { payload: { duplicate_of: originalId } });
+                }).catch(function (err) { showToast('Mark duplicate failed: ' + err.message, 'error'); });
+            }));
+        }
+        var fbTenantId = feedbackTicketTenantId(t);
+        if (!t.linked_finding_id && FEEDBACK_TERMINAL_STATUSES.indexOf(t.status) === -1 && t.status !== 'resolved') {
+            var reclassifyBtn = feedbackActionButton('Reclassify', 'fb-action-btn--neutral', function () {
+                var kind = prompt('New kind for ' + t.ticket_number + ' (' + FEEDBACK_RECLASSIFY_KINDS.join(', ') + ')?', t.kind || '');
+                if (kind === null) return;
+                kind = kind.trim();
+                if (FEEDBACK_RECLASSIFY_KINDS.indexOf(kind) === -1) { showToast('Reclassify failed: unknown kind "' + kind + '"', 'error'); return; }
+                runAction('Reclassify', '/api/v1/admin/tenants/' + encodeURIComponent(fbTenantId) + '/tickets/' + ticketId + '/reclassify', { method: 'PUT', payload: { kind: kind } });
+            });
+            if (!fbTenantId) { reclassifyBtn.disabled = true; reclassifyBtn.title = 'No tenant context — reclassify is a tenant-scoped route'; }
+            actionBar.appendChild(reclassifyBtn);
+        }
+        if (t.status === 'resolved' && t.auto_resolved && !t.rolled_back_at && t.linked_pr_url) {
+            var rollbackBtn = feedbackActionButton('Rollback fix', 'fb-action-btn--danger', function () {
+                runAction('Rollback', '/api/v1/admin/tenants/' + encodeURIComponent(fbTenantId) + '/tickets/' + ticketId + '/rollback', { confirm: true });
+            });
+            rollbackBtn.title = 'Opens a revert PR for the merge that closed this ticket (allowed for 72h after it resolved)';
+            if (!fbTenantId) { rollbackBtn.disabled = true; rollbackBtn.title = 'No tenant context — rollback is a tenant-scoped route'; }
+            actionBar.appendChild(rollbackBtn);
+        }
         if (actionBar.childNodes.length > 0) {
             panel.appendChild(actionBar);
         }
+
+        // VTID-04334: ticket → VTID → finding → execution → PR → deploy/verify.
+        panel.appendChild(renderFeedbackPipelineBlock(t, data));
 
         function section(label, body) {
             var s = document.createElement('div');

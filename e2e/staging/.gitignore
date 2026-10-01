@@ -1,0 +1,2 @@
+# Copied in by scripts/ci/staging-verify/run.mjs on every run (VTID-04613).
+staging-guard.ts

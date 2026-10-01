@@ -35,6 +35,11 @@
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
+// VTID-04669: with the quality review on, the developer listings show only
+// reviewed-keep rows. This suite pins the listing's query/sort/count
+// behaviour underneath that filter, so it runs with the review off
+// (the review filter itself: test/vtid-04669-quality-review.test.ts).
+process.env.AUTOPILOT_QUALITY_REVIEW_ENABLED = 'false';
 delete process.env.DEFAULT_TENANT_ID;
 
 import supertestBase from 'supertest';
@@ -84,7 +89,12 @@ jest.mock('../../src/services/dev-autopilot-execute', () => ({
 
 jest.mock('../../src/services/calendar-service', () => ({
   computeNextAvailableSlot: jest.fn().mockResolvedValue(new Date('2026-08-01T10:00:00.000Z')),
-  createCalendarEvent: jest.fn().mockResolvedValue({ id: 'cal-evt-1' }),
+}));
+
+// VTID-04356: activation writes through the idempotent producer contract.
+jest.mock('../../src/services/calendar-producers', () => ({
+  upsertCalendarEntryFromSource: jest.fn().mockResolvedValue({ action: 'created', event: { id: 'cal-evt-1' } }),
+  completeCalendarEntriesForSource: jest.fn().mockResolvedValue(0),
 }));
 
 // The route now requires a verified identity (security-audit fix, #2867: this
@@ -97,7 +107,16 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
   optionalAuth: jest.fn((req: any, _res: any, next: any) => {
     const userId = req.get('X-User-ID');
     if (userId) {
-      req.identity = { user_id: userId, email: null, tenant_id: null, exafy_admin: false, role: 'authenticated', aud: null, exp: null, iat: null };
+      // VTID-04500: the route now authorizes system roles server-side. Legacy
+      // tests in this suite exercise developer/no-role paths as an operator,
+      // so the default identity is an exafy admin; `X-Test-Exafy-Admin: 0`
+      // gives a plain member (see the CA-2 lineup tests).
+      req.identity = {
+        user_id: userId, email: null,
+        tenant_id: req.get('X-Test-Tenant') || null,
+        exafy_admin: req.get('X-Test-Exafy-Admin') !== '0',
+        role: 'authenticated', aud: null, exp: null, iat: null,
+      };
     }
     next();
   }),
@@ -128,7 +147,10 @@ jest.mock('@supabase/supabase-js', () => {
     return chain;
   }
 
-  const client = { from: jest.fn(() => makeChain()) };
+  const client = {
+    from: jest.fn(() => makeChain()),
+    rpc: jest.fn(() => Promise.resolve(nextResult())),
+  };
 
   return {
     createClient: jest.fn(() => client),
@@ -510,11 +532,14 @@ describe('GET /api/v1/autopilot/recommendations/count', () => {
     expect(res.status).toBe(400);
   });
 
-  it('role-based: returns count derived from the content-range header', async () => {
+  // VTID-04668: the developer lineup is filtered by the quality floor in JS,
+  // so its count is the number of listed rows in the window, not the
+  // PostgREST content-range total (contract changed on purpose).
+  it('role-based: developer count is the number of listed rows', async () => {
     stubFetch(
       and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')),
-      [],
-      { contentRange: '0-0/42' },
+      Array.from({ length: 42 }, (_, i) => ({ id: `r${i}`, status: 'new' })),
+      { contentRange: '0-41/42' },
     );
 
     const app = mountApp();
@@ -704,6 +729,25 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       expect(res.body.error).toBe('Recommendation belongs to another user');
     });
 
+    it('VTID-04464: 403 when the rec has no owner (user_id null) — no ownership bypass', async () => {
+      stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+        { id: REC_ID, title: 'Ownerless', source_type: 'community', source_ref: 'onboarding_profile', user_id: null, status: 'new' },
+      ]);
+
+      const app = mountApp();
+      const res = await request(app)
+        .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+        .set('X-User-ID', USER_ID)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Recommendation belongs to another user');
+      const patched = (global.fetch as jest.Mock).mock.calls.some(
+        ([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH',
+      );
+      expect(patched).toBe(false);
+    });
+
     it('400 when the rec is not in an activatable state', async () => {
       stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
         { id: REC_ID, title: 'Done already', source_type: 'community', source_ref: 'onboarding_profile', user_id: USER_ID, status: 'rejected' },
@@ -774,7 +818,7 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
       stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
       stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), []);
 
-      const { createCalendarEvent } = require('../../src/services/calendar-service');
+      const { upsertCalendarEntryFromSource } = require('../../src/services/calendar-producers');
       const app = mountApp();
       const res = await request(app)
         .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
@@ -783,9 +827,10 @@ describe('POST /api/v1/autopilot/recommendations/:id/activate', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.calendar_event_id).toBe('cal-evt-1');
-      expect(createCalendarEvent).toHaveBeenCalledWith(
+      expect(upsertCalendarEntryFromSource).toHaveBeenCalledWith(
         USER_ID,
-        expect.objectContaining({ event_type: 'community', source_ref_id: REC_ID }),
+        { source_type: 'autopilot', source_ref_type: 'autopilot_recommendation', source_ref_id: REC_ID },
+        expect.objectContaining({ event_type: 'community', start_time: '2026-08-01T10:00:00.000Z' }),
       );
     });
 
@@ -1368,5 +1413,310 @@ describe('GET /api/v1/autopilot/recommendations/health', () => {
       expect.arrayContaining(['GET /recommendations', 'POST /recommendations/:id/complete']),
     );
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+
+// =============================================================================
+// VTID-04500 (Community Autopilot CA-2): the server decides the lineup
+// =============================================================================
+
+describe('CA-2 role-scoped lineups', () => {
+  beforeEach(() => {
+    stubFetch(and(methodIs('GET'), urlHas('/rest/v1/autopilot_recommendations?')), []);
+  });
+  const recsUrls = () =>
+    (global.fetch as jest.Mock).mock.calls
+      .map(([u]: [string]) => decodeURIComponent(String(u)))
+      .filter((u) => u.includes('/rest/v1/autopilot_recommendations?'));
+  // Every query the request made, joined — a leak would show up in any of them.
+  const lastRecsUrl = () => recsUrls().join('\n');
+
+  it('a plain member sending ?role=admin gets their own community lineup, never everyone\'s', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=admin')
+      .set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain(`user_id=eq.${USER_ID}`);
+    expect(url).toContain('source_type=eq.community');
+  });
+
+  it('a plain member sending ?role=developer without the role granted is narrowed to community', async () => {
+    queueSupabaseResult(false);
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=developer')
+      .set('X-Test-Exafy-Admin', '0')
+      .set('X-Test-Tenant', TENANT_ID);
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain('source_type=eq.community');
+    expect(url).not.toContain('user_id=is.null');
+  });
+
+  it('a member granted developer (check_role_permitted) gets the system lineup', async () => {
+    queueSupabaseResult(true);
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=developer')
+      .set('X-Test-Exafy-Admin', '0')
+      .set('X-Test-Tenant', TENANT_ID);
+    expect(res.status).toBe(200);
+    const url = decodeURIComponent(lastRecsUrl());
+    expect(url).toContain('user_id=is.null');
+    expect(url).toContain('source_type=neq.community');
+  });
+
+  it('a plain member with no hint does not get the legacy all-system RPC view', async () => {
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations').set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    const rpcCalled = (global.fetch as jest.Mock).mock.calls.some(([u]: [string]) =>
+      String(u).includes('/rpc/get_autopilot_recommendations'),
+    );
+    expect(rpcCalled).toBe(false);
+    expect(decodeURIComponent(lastRecsUrl())).toContain('source_type=eq.community');
+  });
+
+  it('a role without a lineup yet (professional) gets an empty list, not someone else\'s', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .get('/api/v1/autopilot/recommendations?role=professional')
+      .set('X-Test-Exafy-Admin', '0');
+    expect(res.status).toBe(200);
+    expect(res.body.count ?? res.body.recommendations?.length ?? 0).toBe(0);
+    expect(lastRecsUrl()).toBe('');
+  });
+
+  it('a plain member cannot take the Dev Autopilot activation path with ?role=developer', async () => {
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Mine', source_type: 'community', source_ref: 'onboarding_profile', user_id: USER_ID, status: 'new' },
+    ]);
+    const app = mountApp();
+    await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=developer`)
+      .set('X-Test-Exafy-Admin', '0')
+      .send({});
+    const devRpc = (global.fetch as jest.Mock).mock.calls.some(([u]: [string]) =>
+      String(u).includes('/rpc/activate_autopilot_recommendation'),
+    );
+    expect(devRpc).toBe(false);
+  });
+});
+
+
+// =============================================================================
+// VTID-04503 (Community Autopilot CA-3): typed actions on activation
+// =============================================================================
+
+describe('CA-3 typed actions', () => {
+  it('a voice activation of a medium-risk action returns a read-back and changes nothing', async () => {
+    const { activateCommunityAutopilotRecommendation } = require('../../src/routes/autopilot-recommendations');
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Join the runners', source_type: 'community', source_ref: 'engage_meetup', user_id: USER_ID,
+        status: 'new', action: { kind: 'join_group', params: { group_id: 'g1', group_name: 'Morning Runners' } } },
+    ]);
+    const r = await activateCommunityAutopilotRecommendation(USER_ID, REC_ID, { channel: 'voice' });
+    expect(r).toMatchObject({ ok: true, needs_confirmation: true });
+    expect(r.readback).toContain('Morning Runners');
+    const patched = (global.fetch as jest.Mock).mock.calls.some(
+      ([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH',
+    );
+    expect(patched).toBe(false);
+  });
+
+  it('an app activation runs the typed action and returns its result', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Explore Discover', source_type: 'community', source_ref: 'onboarding_explore', user_id: USER_ID,
+        status: 'new', action: { kind: 'open_screen', params: { route: '/discover' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), [{ id: 'other' }]);
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.action_result).toEqual({ status: 'navigate', kind: 'open_screen', route: '/discover' });
+    expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'community_autopilot.action.executed',
+      payload: expect.objectContaining({ recommendation_id: REC_ID, kind: 'open_screen', outcome: 'navigate', channel: 'app' }),
+    }));
+  });
+});
+
+// =============================================================================
+// VTID-04504 (Community Autopilot CA-4): drafts
+// =============================================================================
+
+describe('CA-4 drafts', () => {
+  const patches = () => (global.fetch as jest.Mock).mock.calls
+    .filter(([, init]: [string, RequestInit | undefined]) => init?.method === 'PATCH')
+    .map(([, init]: [string, RequestInit]) => JSON.parse(String(init.body)));
+
+  it('a voice "yes" to a public post never publishes it and never activates the row', async () => {
+    const { activateCommunityAutopilotRecommendation } = require('../../src/routes/autopilot-recommendations');
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Share your streak', source_type: 'community', source_ref: 'share_streak', user_id: USER_ID,
+        status: 'new', action: { kind: 'post_to_feed', params: { draft: 'Sieben Tage!' } } },
+    ]);
+    const r = await activateCommunityAutopilotRecommendation(USER_ID, REC_ID, { channel: 'voice', confirmed: true });
+    expect(r).toMatchObject({ ok: true, needs_app: true });
+    expect(patches().some((p) => p.status === 'activated')).toBe(false);
+  });
+
+  it('the app preview edit is stored and carried into the composer route', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Share your streak', source_type: 'community', source_ref: 'share_streak', user_id: USER_ID,
+        status: 'new', action: { kind: 'post_to_feed', params: { draft: 'Sieben Tage!' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    stubFetch(and(methodIs('GET'), urlHas('status=eq.new', 'limit=1')), [{ id: 'other' }]);
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/activate?role=community`)
+      .send({ draft_text: 'Eine Woche geschafft!' });
+    expect(res.status).toBe(200);
+    expect(res.body.action_result.route).toBe(`/home?compose=1&draft=${encodeURIComponent('Eine Woche geschafft!')}`);
+    expect(patches().some((p) => p.action?.params?.draft === 'Eine Woche geschafft!')).toBe(true);
+  });
+
+  it('POST /:id/draft saves the member\'s text for their own drafted suggestion', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'Say hi', source_type: 'community', user_id: USER_ID, status: 'new',
+        action: { kind: 'send_chat_message', params: { recipient_user_id: '11111111-1111-4111-8111-111111111111', body: 'Hi' } } },
+    ]);
+    stubFetch(and(methodIs('PATCH'), urlHas(`id=eq.${REC_ID}`)), {}, { status: 200 });
+    const res = await request(app)
+      .post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`)
+      .send({ text: 'Hallo Ana!' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, kind: 'send_chat_message', draft: 'Hallo Ana!' });
+  });
+
+  it('POST /:id/draft refuses someone else\'s suggestion and suggestions with nothing to draft', async () => {
+    const app = mountApp();
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'x', source_type: 'community', user_id: 'someone-else', status: 'new',
+        action: { kind: 'post_to_feed', params: {} } },
+    ]);
+    const other = await request(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`).send({});
+    expect(other.status).toBe(403);
+
+    fetchStubs.splice(0);
+    stubFetch(and(methodIs('GET'), urlHas(`id=eq.${REC_ID}`)), [
+      { id: REC_ID, title: 'x', source_type: 'community', user_id: USER_ID, status: 'new',
+        action: { kind: 'log_water', params: { amount_ml: 250 } } },
+    ]);
+    const none = await request(app).post(`/api/v1/autopilot/recommendations/${REC_ID}/draft?role=community`).send({});
+    expect(none.status).toBe(400);
+  });
+});
+
+// =============================================================================
+// VTID-04505 (Community Autopilot CA-5): the scheduled scan endpoint
+// =============================================================================
+
+const mockRunCommunityScan = jest.fn(async () => ({
+  enabled: false, dry_run: true, members_considered: 2, members_due: 1, members_scanned: 1, rows_inserted: 0, results: [],
+}));
+jest.mock('../../src/services/community-autopilot/scan-runner', () => ({
+  runCommunityScan: (...a: unknown[]) => (mockRunCommunityScan as any)(...a),
+}));
+
+describe('CA-5 community-scan endpoint', () => {
+  it('a member cannot trigger the scan', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .post('/api/v1/autopilot/recommendations/community-scan')
+      .set('X-Test-Exafy-Admin', '0')
+      .send({});
+    expect(res.status).toBe(403);
+    expect(mockRunCommunityScan).not.toHaveBeenCalled();
+  });
+
+  it('an exafy admin (or the internal token) runs it and gets the summary', async () => {
+    const app = mountApp();
+    const res = await request(app)
+      .post('/api/v1/autopilot/recommendations/community-scan')
+      .send({ dry_run: true });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ok: true, dry_run: true, members_scanned: 1 });
+    expect(mockRunCommunityScan).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ dryRun: true }));
+    expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'community_autopilot.scan.completed' }));
+  });
+});
+
+// =============================================================================
+// VTID-04523: at most 3 open suggestions per role on every read surface
+// =============================================================================
+
+describe('VTID-04523 lineup cap (owner decision 3)', () => {
+  const openRows = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `open-${i + 1}`,
+      title: `Open ${i + 1}`,
+      status: 'new',
+      source_ref: `scan_t${i + 1}`,
+      action: { kind: 'open_screen', params: { route: '/diary' } },
+    }));
+
+  it('GET role=community: serves only the top 3 open rows, keeps activated rows, and reports no next page', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')),
+      [...openRows(6), { id: 'act-1', title: 'Doing it', status: 'activated', source_ref: 'onboarding_profile' }],
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=community&status=new,activated&limit=20');
+
+    expect(res.status).toBe(200);
+    const ids = res.body.recommendations.map((r: any) => r.id);
+    expect(ids).toEqual(['open-1', 'open-2', 'open-3', 'act-1']);
+    expect(res.body.has_more).toBe(false);
+  });
+
+  it('GET role=community: rows with a typed action survive the retired-source filter', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')),
+      [...openRows(1), { id: 'legacy-retired', title: 'Organize', status: 'new', source_ref: 'organize_meetup' }],
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=community');
+    expect(res.body.recommendations.map((r: any) => r.id)).toEqual(['open-1']);
+  });
+
+  it('GET role=developer: not capped (developer findings are a different surface)', async () => {
+    stubFetch(
+      and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')),
+      Array.from({ length: 5 }, (_, i) => ({ id: `dev-${i}`, title: `Dev ${i}`, status: 'new', source_ref: null })),
+    );
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations?role=developer');
+    expect(res.body.recommendations).toHaveLength(5);
+  });
+
+  it('GET /count role=community: the badge never exceeds 3', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')), [], { contentRange: '0-0/15' });
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations/count?role=community');
+    expect(res.body.count).toBe(3);
+  });
+
+  it('GET /count role=developer: unchanged (VTID-04668: counted from the listed rows)', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=neq.community')), Array.from({ length: 15 }, (_, i) => ({ id: `d${i}`, status: 'new' })), { contentRange: '0-14/15' });
+    const app = mountApp();
+    const res = await request(app).get('/api/v1/autopilot/recommendations/count?role=developer');
+    expect(res.body.count).toBe(15);
+  });
+
+  it('voice list: lists the same top 3, including typed-action scan rows', async () => {
+    stubFetch(and(methodIs('GET'), urlHas('/autopilot_recommendations', 'source_type=eq.community')), openRows(6));
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { listCommunityAutopilotRecommendations } = require('../../src/routes/autopilot-recommendations');
+    const recs = await listCommunityAutopilotRecommendations(USER_ID, 10);
+    expect(recs.map((r: any) => r.id)).toEqual(['open-1', 'open-2', 'open-3']);
   });
 });

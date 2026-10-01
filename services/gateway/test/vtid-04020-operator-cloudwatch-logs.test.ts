@@ -20,22 +20,26 @@ jest.mock('@aws-sdk/client-cloudwatch-logs', () => ({
 import { executeTool, setThreadIdentity } from '../src/services/gemini-operator';
 import {
   ALLOWED_LOG_GROUP_RE, LOGS_DEFAULT_LIMIT, LOGS_DEFAULT_MINUTES, LOGS_MAX_LIMIT, LOGS_MAX_MINUTES, LOGS_MESSAGE_MAX_CHARS,
-  boundLogEvents, filterVitanaLogs, normalizeLogsQuery,
+  boundLogEvents, filterVitanaLogs, normalizeLogsQuery, resolveLogGroup,
 } from '../src/services/aws-cloudwatch-logs-readonly';
 
 describe('VTID-04020 normalizeLogsQuery (pure)', () => {
-  it('accepts only /ecs/vitana-<service> groups', () => {
-    expect(ALLOWED_LOG_GROUP_RE.test('/ecs/vitana-gateway')).toBe(true);
-    expect(ALLOWED_LOG_GROUP_RE.test('/ecs/vitana-gateway-awsdr')).toBe(true);
-    expect(ALLOWED_LOG_GROUP_RE.test('/ecs/vitana-autopilot-executor')).toBe(true);
-    for (const bad of ['/ecs/other', '/aws/lambda/vitana-push-dispatch', 'vitana-gateway', '/ecs/vitana-', '/ecs/vitana-Gateway', '/ecs/vitana-x/y', '']) {
-      expect(() => normalizeLogsQuery({ logGroup: bad })).toThrow(/not an \/ecs\/vitana-<service> log group/);
+  it('accepts /vitana/<service> groups and maps the legacy /ecs/vitana-* shape and bare names to them (VTID-04672)', () => {
+    expect(ALLOWED_LOG_GROUP_RE.test('/vitana/gateway')).toBe(true);
+    expect(ALLOWED_LOG_GROUP_RE.test('/vitana/gateway-awsdr')).toBe(true);
+    expect(ALLOWED_LOG_GROUP_RE.test('/vitana/autopilot-executor')).toBe(true);
+    expect(resolveLogGroup('/ecs/vitana-gateway')).toBe('/vitana/gateway');
+    expect(resolveLogGroup('/ecs/vitana-gateway-awsdr')).toBe('/vitana/gateway-awsdr');
+    expect(resolveLogGroup('gateway')).toBe('/vitana/gateway');
+    expect(resolveLogGroup('vitana-autopilot-executor')).toBe('/vitana/autopilot-executor');
+    for (const bad of ['/ecs/other', '/aws/lambda/vitana-push-dispatch', '/vitana/', '/vitana/Gateway', '/vitana/x/y', '/ecs/vitana-', 'a', '']) {
+      expect(() => normalizeLogsQuery({ logGroup: bad })).toThrow(/not a \/vitana\/<service> log group/);
     }
   });
 
-  it('clamps the window and the limit, defaults them, and trims/bounds the filter pattern', () => {
-    expect(normalizeLogsQuery({ logGroup: '/ecs/vitana-gateway' })).toEqual({ logGroup: '/ecs/vitana-gateway', filterPattern: undefined, minutes: LOGS_DEFAULT_MINUTES, limit: LOGS_DEFAULT_LIMIT });
-    expect(normalizeLogsQuery({ logGroup: ' /ecs/vitana-gateway ', minutes: 99_999, limit: 10_000, filterPattern: '  ERROR ' })).toEqual({ logGroup: '/ecs/vitana-gateway', filterPattern: 'ERROR', minutes: LOGS_MAX_MINUTES, limit: LOGS_MAX_LIMIT });
+  it('clamps window/limit, trims the filter pattern', () => {
+    expect(normalizeLogsQuery({ logGroup: '/ecs/vitana-gateway' })).toEqual({ logGroup: '/vitana/gateway', filterPattern: undefined, minutes: LOGS_DEFAULT_MINUTES, limit: LOGS_DEFAULT_LIMIT });
+    expect(normalizeLogsQuery({ logGroup: ' /ecs/vitana-gateway ', minutes: 99_999, limit: 10_000, filterPattern: '  ERROR ' })).toEqual({ logGroup: '/vitana/gateway', filterPattern: 'ERROR', minutes: LOGS_MAX_MINUTES, limit: LOGS_MAX_LIMIT });
     expect(normalizeLogsQuery({ logGroup: '/ecs/vitana-gateway', minutes: -5, limit: 0 }).minutes).toBe(LOGS_DEFAULT_MINUTES);
     expect(normalizeLogsQuery({ logGroup: '/ecs/vitana-gateway', minutes: 7.9, limit: 3.2 })).toMatchObject({ minutes: 7, limit: 3 });
     expect(normalizeLogsQuery({ logGroup: '/ecs/vitana-gateway', filterPattern: 'x'.repeat(500) }).filterPattern!.length).toBe(200);
@@ -65,8 +69,8 @@ describe('VTID-04020 filterVitanaLogs (SDK call shape)', () => {
     sendMock.mockResolvedValue({ events: [{ timestamp: 1_000, logStreamName: 's/1', message: 'hello' }], nextToken: 'more' });
     const r = await filterVitanaLogs({ logGroup: '/ecs/vitana-gateway', filterPattern: 'ERROR', minutes: 10, limit: 5 }, () => 1_000_000);
     expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(sendMock.mock.calls[0][0].input).toEqual({ logGroupName: '/ecs/vitana-gateway', startTime: 1_000_000 - 10 * 60_000, endTime: 1_000_000, limit: 5, filterPattern: 'ERROR', interleaved: true });
-    expect(r).toEqual({ log_group: '/ecs/vitana-gateway', window_minutes: 10, filter_pattern: 'ERROR', events: [{ timestamp: new Date(1_000).toISOString(), stream: '1', message: 'hello' }], truncated: true });
+    expect(sendMock.mock.calls[0][0].input).toEqual({ logGroupName: '/vitana/gateway', startTime: 1_000_000 - 10 * 60_000, endTime: 1_000_000, limit: 5, filterPattern: 'ERROR', interleaved: true });
+    expect(r).toEqual({ log_group: '/vitana/gateway', window_minutes: 10, filter_pattern: 'ERROR', events: [{ timestamp: new Date(1_000).toISOString(), stream: '1', message: 'hello' }], truncated: true });
   });
 
   it('an empty window carries a note and no filterPattern key is sent when none was given', async () => {
@@ -79,7 +83,7 @@ describe('VTID-04020 filterVitanaLogs (SDK call shape)', () => {
   });
 
   it('refuses a non-allowlisted group before any AWS call', async () => {
-    await expect(filterVitanaLogs({ logGroup: '/aws/lambda/x' })).rejects.toThrow(/not an \/ecs\/vitana-<service> log group/);
+    await expect(filterVitanaLogs({ logGroup: '/aws/lambda/x' })).rejects.toThrow(/not a \/vitana\/<service> log group/);
     expect(sendMock).not.toHaveBeenCalled();
   });
 });
@@ -116,7 +120,7 @@ describe('VTID-04020 dev_cloudwatch_logs tool wiring', () => {
     expect((await executeTool('dev_cloudwatch_logs', {}, DEV_THREAD)).error).toMatch(/log_group is required/);
     const r = await executeTool('dev_cloudwatch_logs', { log_group: '/aws/lambda/vitana-push-dispatch' }, DEV_THREAD);
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/CloudWatch logs read failed: .*not an \/ecs\/vitana-<service> log group/);
+    expect(r.error).toMatch(/CloudWatch logs read failed: .*not a \/vitana\/<service> log group/);
     expect(sendMock).not.toHaveBeenCalled();
   });
 
@@ -124,7 +128,7 @@ describe('VTID-04020 dev_cloudwatch_logs tool wiring', () => {
     sendMock.mockResolvedValue({ events: [{ timestamp: 1_758_000_000_000, logStreamName: 'ecs/gateway/t1', message: '[VTID-04007] run_task called (88 chars)' }] });
     const r = await executeTool('dev_cloudwatch_logs', { log_group: '/ecs/vitana-gateway', filter_pattern: '[VTID-04007]', minutes: 15, limit: 20 }, DEV_THREAD);
     expect(r.ok).toBe(true);
-    expect(r.data).toMatchObject({ log_group: '/ecs/vitana-gateway', window_minutes: 15, filter_pattern: '[VTID-04007]', truncated: false });
+    expect(r.data).toMatchObject({ log_group: '/vitana/gateway', window_minutes: 15, filter_pattern: '[VTID-04007]', truncated: false });
     expect((r.data as any).events[0].message).toContain('run_task called');
     expect(sendMock.mock.calls[0][0].input.limit).toBe(20);
   });

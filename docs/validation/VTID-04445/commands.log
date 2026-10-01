@@ -1,0 +1,9 @@
+# VTID-04445
+node scratchpad/voices.cjs                       # Polly DescribeVoices (live, eu-central-1)
+tsx src/scripts/_tmp-nova-voice-probe.ts         # Nova bidirectional stream per voice id (live, eu-north-1), temp script not committed
+python3 f0.py 24000 audio2/*.pcm                  # median pitch per Nova voice
+curl https://api.fish.audio/model?author_id=...   # Fish Official voice catalog (public)
+npx tsc --noEmit -p services/gateway
+npx jest test/orb test/tts test/services/voice-lab test/routes/voice-config.test.ts test/services/voice-config.test.ts  # 237 suites green
+npx jest test/vtid-04445-persona-voice-gender.test.ts   # 16/16; mutation-checked (Nova fr→ambre, Fish tr→Milica both fail it)
+apply_migration vtid_04445_persona_voice_gender          # decision_policy fr/es + agent_voice_configs

@@ -15,7 +15,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/** Reused by the direct POST /nodes route and the Cognee bulk-extraction hydration. */
+/** Used by the direct POST /nodes route. */
 export async function ensureRelationshipNodeRpc(
   sb: SupabaseClient,
   params: { p_node_type: unknown; p_title: unknown; p_ref_id?: unknown; p_domain: unknown; p_metadata: unknown },
@@ -23,7 +23,7 @@ export async function ensureRelationshipNodeRpc(
   return sb.rpc('relationship_ensure_node', params);
 }
 
-/** Reused by the direct POST /edges route and the Cognee bulk-extraction hydration. */
+/** Used by the direct POST /edges route. */
 export async function addRelationshipEdgeRpc(
   sb: SupabaseClient,
   params: { p_from_node_id: unknown; p_to_node_id: unknown; p_relationship_type: unknown; p_origin: unknown; p_context: unknown },
@@ -48,7 +48,7 @@ export async function getRelationshipSignalsRpc(sb: SupabaseClient, params: { p_
   return sb.rpc('relationship_get_signals', params);
 }
 
-/** Reused by the direct PATCH /signals route and the Cognee bulk-extraction hydration. */
+/** Used by the direct PATCH /signals route. */
 export async function updateRelationshipSignalRpc(sb: SupabaseClient, params: { p_signal_key: unknown; p_confidence: unknown; p_evidence: unknown }) {
   return sb.rpc('relationship_update_signal', params);
 }

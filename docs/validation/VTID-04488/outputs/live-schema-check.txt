@@ -1,0 +1,18 @@
+# VTID-04488 — read-only checks against the live project (2026-09-24), before writing the route.
+
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='merchants' AND column_name IN (...);
+-> affiliate_advertiser_id, affiliate_network, avg_delivery_days_eu, created_at, currencies,
+   is_active, merchant_country, owner_user_id, partner_organization_id, source_merchant_id,
+   source_network, storefront_url
+   (every merchants column the catalogue route selects, orders by or writes exists)
+
+SELECT key FROM catalog_verticals WHERE is_active ORDER BY sort_order;
+-> supplements, diagnostics, fitness_equipment, apparel, wine_spirits, beauty_care,
+   devices_wearables, home_living, services, other
+   (the defaults used here — diagnostics for labs, services for practitioners and
+    service providers — are active verticals, so the merchants.vertical_key FK accepts them)
+
+idx_merchants_owner (20260915100000_vtid_03894_supplier_verticals.sql) is a plain, non-unique
+index on owner_user_id; the old portal's single-merchant-per-owner rule lives only in its
+.maybeSingle() lookup — the reason org-created merchants carry no owner_user_id.

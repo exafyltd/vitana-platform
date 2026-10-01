@@ -49,13 +49,17 @@ describe('VTID-03930: Operator codebase orientation block', () => {
     expect(opts.systemPrompt).toContain('dev_search_codebase');
   });
 
-  it('appends the codebase orientation block after a caller-supplied custom system instruction too', async () => {
+  // VTID-04560 (intended contract change): a caller-supplied instruction gets
+  // the orientation block only for a developer/admin caller; a member caller
+  // (community ORB text fallback) never receives engineering context.
+  it('appends the codebase orientation block after a developer caller\'s custom system instruction too', async () => {
     mockedCallViaRouter.mockResolvedValueOnce(routerOk('answer'));
 
     await processWithGemini({
       text: 'anything',
       threadId: 't1',
       systemInstruction: 'CUSTOM ORB MEMORY CONTEXT BLOCK',
+      userRole: 'developer',
     });
 
     const [, , opts] = mockedCallViaRouter.mock.calls[0];

@@ -1,0 +1,5 @@
+cd services/gateway
+npx jest test/vtid-04485-specialist-voice-ack-window.test.ts           # 7/7
+npx jest test/orb <delegation/dispatcher/specialist suites> <above>    # 257 suites, 4445 passed, 6 todo
+npm run test:support                                                   # 82/82
+npx tsc --noEmit -p .                                                  # exit 0

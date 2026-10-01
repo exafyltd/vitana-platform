@@ -80,6 +80,8 @@ export interface AutomationContext {
   tenantId: string;
   targetRoles: RoleTarget;
   supabase: any;               // SupabaseClient (service role)
+  /** VTID-04349: 'shadow' = writes, RPCs and notifications are recorded, not performed. */
+  deliveryMode?: 'live' | 'shadow';
   run: AutomationRun;
   log: (msg: string) => void;
   notify: (userId: string, type: string, payload: NotificationPayload) => void;

@@ -1,0 +1,3 @@
+tsc clean
+full gateway suite: 1 skipped, 1291 passed; 20723 tests passed; 109 snapshots passed
+replay: A 5/5 blocked, B 5/5 blocked, C 5/5 spoke, D 5/5 spoke

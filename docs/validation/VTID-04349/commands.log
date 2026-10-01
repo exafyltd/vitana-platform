@@ -1,0 +1,11 @@
+$ node node_modules/.bin/jest test/vtid-04349-automation-shadow.test.ts
+Tests:       11 passed, 11 total
+# mutation: removed 'runAutoShareToSocial' from SHADOW_UNSAFE_HANDLERS
+Tests:       1 failed, 10 passed, 11 total   (restored after)
+$ npx tsc --noEmit -p .
+(clean)
+$ node node_modules/.bin/jest <49 suites touching automations / the staging workflow>
+Test Suites: 49 passed, 49 total
+Tests:       685 passed, 685 total
+$ DEFAULT_TENANT_ID=2e7528b8-... bash scripts/aws/setup-eventbridge-cron-migration.sh --dry-run
+Jobs: 27   (AP jobs render auth=gateway_internal, gateway_url=preview-aws-gateway)

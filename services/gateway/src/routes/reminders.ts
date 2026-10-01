@@ -398,7 +398,11 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     });
     if (error) throw new Error(error.message);
     if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-    return res.json({ ok: true, data });
+    // VTID-04506: a reminder that belongs to an Autopilot slot finishes the slot
+    // and its suggestion too (before this, none of 226 booked slots ever closed).
+    const { completeReminderLinkedSlot } = await import('../services/community-autopilot/slot-due');
+    const slot = await completeReminderLinkedSlot(data as { calendar_event_id?: string | null }, userId);
+    return res.json({ ok: true, data, autopilot_slot: slot });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /:id/complete error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });

@@ -15,6 +15,7 @@ import {
 } from '../../../src/services/conversation/compute-greeting-decision';
 import {
   decideConversationFlow,
+  decideOpeningFlow,
   type ConversationContext,
   type ConversationTransport,
 } from '../../../src/services/conversation/decide-conversation-flow';
@@ -151,5 +152,30 @@ describe('decideConversationFlow — byte-equal delegation to computeGreetingDec
       social: { people: [], posts: [], events: [] } as unknown as ConversationContext['social'],
     });
     expect(withHandles).toEqual(without);
+  });
+});
+
+// VTID-04416 (Plan v1 WS-1.4): the live Vertex paths now go through the brain
+// entry point. The decision they render must be exactly what
+// computeGreetingDecision returned before, for every golden rung.
+describe('VTID-04416: decideOpeningFlow returns the identical GreetingDecision', () => {
+  for (const { label, ctx } of RUNG_CTXS) {
+    test(`${label}: decideOpeningFlow === computeGreetingDecision`, () => {
+      const g = computeGreetingDecision(ctx);
+      expect(decideOpeningFlow(ctx, { transport: 'vertex', role: 'community' })).toEqual(g);
+      expect(decideConversationFlow({ transport: 'vertex', role: null, greeting: ctx }).greeting).toEqual(g);
+    });
+  }
+
+  test('orb-live.ts calls the brain entry point at every opening decision, never computeGreetingDecision', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require('path') as typeof import('path');
+    const src = fs.readFileSync(path.join(__dirname, '../../../src/routes/orb-live.ts'), 'utf8');
+    expect(src.match(/\bcomputeGreetingDecision\(/g) || []).toHaveLength(0);
+    for (const v of ['_sfDecision', '_decisionNS', '_fallbackNS', '_recoverNS', '_syncDecision']) {
+      expect(src).toMatch(new RegExp(`const ${v} = decideOpeningFlow\\(`));
+    }
   });
 });

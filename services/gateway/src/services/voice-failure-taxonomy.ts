@@ -312,7 +312,12 @@ export function classifyQualityFromSessionStop(
 
   // 3. Low turn progression: long session, few turns. Conversation didn't
   // develop. Catches "user struggling to engage" patterns the others miss.
-  if (dur > 60_000 && turns < 3 && ai >= 50) {
+  // VTID-04626: only when the model spoke LESS than the user was heard. A
+  // long session with few turns where Vitana produced at least as much audio
+  // as the user is a lesson / explanation doing exactly its job (guided
+  // topics, briefings) — 3 of the 5 detections in Sept 2026 were that shape
+  // (e.g. 177 in / 503 out / 1 turn / 64 s) and each spawned an investigator.
+  if (dur > 60_000 && turns < 3 && ai >= 50 && ao < aiFwd) {
     return {
       class: 'voice.low_turn_progression',
       normalized_signature: turns === 0 ? 'low_turn_zero' : 'low_turn_one_or_two',

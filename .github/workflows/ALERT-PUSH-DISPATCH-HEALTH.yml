@@ -55,9 +55,16 @@ jobs:
             echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
             exit 1
           fi
+          # VTID-04721: /push-dispatch only ever looks back 48h
+          # (scheduled-notifications.ts), so a row older than that can never be
+          # sent again. Counting those rows made this alert fail on every run
+          # since February regardless of whether delivery worked. Judge only
+          # the window the dispatcher can still act on.
+          CUTOFF=$(date -u -d '48 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           HTTP=$(curl -sS -o pending.json -w '%{http_code}' -G \
             "${SUPABASE_URL%/}/rest/v1/user_notifications" \
             --data-urlencode 'select=id,type,created_at' \
+            --data-urlencode "created_at=gte.$CUTOFF" \
             --data-urlencode 'push_sent_at=is.null' \
             --data-urlencode 'channel=in.(push,push_and_inapp)' \
             --data-urlencode 'order=created_at.asc' \
@@ -97,7 +104,7 @@ jobs:
 
             if (problems.length) {
               console.log("::error::push-dispatch backlog is growing — " + problems.join("; "));
-              console.log("Check: does the gateway-push-dispatch Cloud Scheduler job exist and is it succeeding? `gcloud scheduler jobs describe gateway-push-dispatch --location=us-central1`. See VTID-03656.");
+              console.log("Check: is the EventBridge schedule firing the vitana-push-dispatch Lambda (eu-central-1)? `aws logs tail /aws/lambda/vitana-push-dispatch --region eu-central-1 --since 1h`. See VTID-03656 / VTID-03676.");
               process.exit(1);
             }
             console.log("push-dispatch backlog within normal bounds.");

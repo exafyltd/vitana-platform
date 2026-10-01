@@ -33,6 +33,14 @@ const LOG_PREFIX = '[VTID-01180]';
 // accept, dismiss, or snooze another user's personalized recommendations by
 // just setting that header. Now requires a verified JWT on every route
 // except /health.
+// VTID-04505 (Community Autopilot CA-5, owner decision 4): this inbox is folded
+// into the Autopilot queue. Its unread items are picked up by the twice-daily
+// community scan (`health_inbox` scanner) and shown in the member's Autopilot.
+// The routes stay for existing callers; new UI reads the Autopilot queue.
+router.use((_req: Request, res: Response, next) => {
+  res.setHeader('X-Vitana-Superseded-By', '/api/v1/autopilot/recommendations');
+  next();
+});
 router.use(optionalAuth);
 const OPEN_PATHS = new Set(['/health']);
 router.use((req: Request, res: Response, next) => {

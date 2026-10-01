@@ -207,11 +207,16 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
     // tool-role message with `tool_name` alongside user/assistant messages
     // without it fails the whole insert outright. `tool_name: null` on the
     // non-tool rows keeps every object's keys identical.
+    // VTID-04309: a voice turn can carry only one side (the greeting has no
+    // user text), so empty user/assistant rows are dropped.
     const messages: Array<Record<string, unknown>> = [
-      { thread_id: input.threadId, role: 'user', tool_name: null, content: clipMessage(input.userText), meta: input.meta || {} },
+      ...(input.userText && input.userText.trim()
+        ? [{ thread_id: input.threadId, role: 'user', tool_name: null, content: clipMessage(input.userText), meta: input.meta || {} }] : []),
       ...(input.tools || []).map((t) => ({ thread_id: input.threadId, role: 'tool', tool_name: t.name, content: clipMessage(t.result, 2_000), meta: {} })),
-      { thread_id: input.threadId, role: 'assistant', tool_name: null, content: clipMessage(input.reply), meta: input.meta || {} },
+      ...(input.reply && input.reply.trim()
+        ? [{ thread_id: input.threadId, role: 'assistant', tool_name: null, content: clipMessage(input.reply), meta: input.meta || {} }] : []),
     ];
+    if (messages.length === 0) return { recorded: false, turns };
     const ins = await rest(s, 'operator_messages', { method: 'POST', body: messages });
     if (!ins.ok) console.warn(`${LOG_PREFIX} message insert failed (${ins.status}): ${ins.error}`);
     return { recorded: ins.ok, turns };
@@ -219,6 +224,82 @@ export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.Pro
     console.warn(`${LOG_PREFIX} recordOperatorTurn error:`, err instanceof Error ? err.message : err);
     return { recorded: false, turns: 0 };
   }
+}
+
+export interface StoredThreadMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_name: string | null;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/**
+ * VTID-04309: read a thread's messages for the Operator Console, so turns
+ * recorded server-side (voice) show up in the console transcript. The
+ * thread must belong to the caller — a thread with another owner reads as
+ * not found. `sinceIso` returns only newer messages (incremental sync).
+ */
+export async function listOperatorThreadMessages(
+  threadId: string,
+  opts: { userId: string | null; sinceIso?: string | null; limit?: number },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: true; messages: StoredThreadMessage[] } | { ok: false; error: 'disabled' | 'not_found' | 'unavailable' }> {
+  if (!isOperatorThreadsEnabled(env)) return { ok: false, error: 'disabled' };
+  const s = getSupa();
+  if (!s) return { ok: false, error: 'unavailable' };
+  const id = encodeURIComponent(threadId);
+  const thread = await rest<Array<{ id: string; user_id: string | null }>>(s, `operator_threads?id=eq.${id}&select=id,user_id&limit=1`);
+  if (!thread.ok) return { ok: false, error: 'unavailable' };
+  const row = thread.data && thread.data[0];
+  if (!row) return { ok: true, messages: [] };
+  const owner = normalizeUserId(opts.userId);
+  if (row.user_id && row.user_id !== owner) return { ok: false, error: 'not_found' };
+  const limit = Math.max(1, Math.min(opts.limit ?? 200, 500));
+  const since = opts.sinceIso ? `&created_at=gt.${encodeURIComponent(opts.sinceIso)}` : '';
+  const msgs = await rest<StoredThreadMessage[]>(s,
+    `operator_messages?thread_id=eq.${id}${since}&select=id,role,content,tool_name,meta,created_at&order=created_at.asc&limit=${limit}`);
+  if (!msgs.ok) return { ok: false, error: 'unavailable' };
+  return { ok: true, messages: msgs.data || [] };
+}
+
+export interface OperatorThreadListItem {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  turns: number;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+export const THREAD_LIST_SUMMARY_CHARS = 280;
+
+/**
+ * VTID-04409: the caller's own Operator threads, newest activity first, so
+ * the console can reopen a thread started on another device or by voice.
+ * A null/non-UUID caller has no threads (voice and machine turns are
+ * recorded without an owner and are not listed).
+ */
+export async function listOperatorThreads(
+  opts: { userId: string | null; limit?: number },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: true; threads: OperatorThreadListItem[] } | { ok: false; error: 'disabled' | 'unavailable' }> {
+  if (!isOperatorThreadsEnabled(env)) return { ok: false, error: 'disabled' };
+  const s = getSupa();
+  if (!s) return { ok: false, error: 'unavailable' };
+  const owner = normalizeUserId(opts.userId);
+  if (!owner) return { ok: true, threads: [] };
+  const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
+  const r = await rest<OperatorThreadListItem[]>(s,
+    `operator_threads?user_id=eq.${encodeURIComponent(owner)}&select=id,title,summary,turns,last_message_at,created_at&order=last_message_at.desc.nullslast&limit=${limit}`);
+  if (!r.ok) return { ok: false, error: 'unavailable' };
+  const threads = (r.data || []).map((t) => ({
+    ...t,
+    turns: t.turns || 0,
+    summary: t.summary ? clipMessage(t.summary, THREAD_LIST_SUMMARY_CHARS) : null,
+  }));
+  return { ok: true, threads };
 }
 
 export async function getThreadSummary(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {

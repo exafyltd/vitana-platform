@@ -20,6 +20,12 @@ process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 
 // Mock the OASIS event service
 const mockEmitOasisEvent = jest.fn().mockResolvedValue({ ok: true, event_id: 'test-event-id' });
+// VTID-04665: the dependency probe has its own suite (vtid-04665-dependency-probe);
+// here it passes the route's own body through so this suite tests the route.
+jest.mock('../src/services/dependency-probe', () => ({
+  withDependencyHealth: async (_deps: unknown, body: unknown) => body,
+}));
+
 jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: mockEmitOasisEvent,
 }));

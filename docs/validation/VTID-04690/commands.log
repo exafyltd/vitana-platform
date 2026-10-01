@@ -1,0 +1,3 @@
+npx jest test/services/memory/vtid-04690-stored-value-echoed.test.ts test/services/vtid-04591-remember-backstop.test.ts  # both green
+npx jest test/services/memory  # 28 suites / 376 tests green
+npx tsc --noEmit -p services/gateway  # clean

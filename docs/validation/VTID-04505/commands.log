@@ -1,0 +1,6 @@
+cd services/gateway && npx tsc --noEmit -p .                                      # clean
+npx jest test/vtid-04505-community-autopilot-scan.test.ts                         # 15 passed
+npx jest test/routes/autopilot-recommendations.test.ts -t "CA-5"                  # 2 passed
+npx jest <10 autopilot/recommendation suites>                                     # 202 passed
+bash -n scripts/aws/setup-eventbridge-cron-migration.sh                           # syntax ok
+# mutation: 2-rejects suppression disabled -> 1 failed (outputs/mutation-reject-suppression-removed.txt)

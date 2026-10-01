@@ -1,0 +1,40 @@
+  services/user-health-context.ts — fetchUserTopicProfile (topicsRes) error logging
+    ✓ checks topicsRes?.error before falling back to the non-fatal empty-affinity behavior (1 ms)
+    ✓ the non-fatal fallback itself is unchanged: still reads topicsRes?.data and pushes the source only when topics is present
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Summary of all failing tests
+FAIL test/orb/context/compile-assistant-decision-context.test.ts
+  ● compileAssistantDecisionContext › parallel execution › runs all five providers concurrently (slowest determines total time)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+        "concept",
+        "journey",
+        "pillar",
+    -   "interaction",
+        "continuity",
+    +   "interaction",
+      ]
+
+      313 |       // interaction (20ms) → continuity (25ms), proving all five
+      314 |       // providers ran in parallel.
+    > 315 |       expect(order).toEqual(['concept', 'journey', 'pillar', 'interaction', 'continuity']);
+          |                     ^
+      316 |       expect(out.continuity).toEqual(stubContinuity);
+      317 |       expect(out.concept_mastery).toEqual(stubConceptMastery);
+      318 |       expect(out.journey_stage).toEqual(stubJourneyStage);
+
+      at Object.<anonymous> (test/orb/context/compile-assistant-decision-context.test.ts:315:21)
+
+
+Test Suites: 1 failed, 1 skipped, 1106 passed, 1107 of 1108 total
+Tests:       1 failed, 29 skipped, 6 todo, 17930 passed, 17966 total
+Snapshots:   42 passed, 42 total
+Time:        93.385 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

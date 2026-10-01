@@ -529,39 +529,27 @@ export async function runNovaSonicTestSuite(options: {
       : { status: 'fail', detail: `shapesOk=${shapesOk} normOk=${normOk}` };
   }));
 
-  checks.push(await runCheck('voice_mapping', 'Voice mapping (one female voice per language)', () => {
-    // VTID-03704 — persona must NOT change the voice any more. That is asserted
-    // here as an equality between two personas rather than as "devon → lennart",
-    // because the persona-split is exactly what made the voice differ across the
-    // sign-in boundary (anonymous has no persona, a signed-in user may carry
-    // `devon`).
-    //
-    // `pt` resolves to `carolina`, NOT null, even though it routes to the
-    // Polly cascade: the cascade gate is inert until
-    // `ORB_CASCADED_VOICE_ENABLED='true'`, so pt sessions still transit Nova
-    // and must not be handed the German fallback. `sr` genuinely resolves
-    // null — Nova publishes no Serbian voice, and Polly has none either, so
-    // it stays on Nova via the documented substitution.
+  checks.push(await runCheck('voice_mapping', 'Voice mapping (Vitana female, Devon male, every language)', () => {
+    // VTID-04445 — owner rule: every Vitana voice is a woman's voice, every
+    // Devon voice a man's voice. The speaking persona picks the table; a
+    // session with no persona (anonymous) is Vitana. `pt` keeps its Nova
+    // voices even though it routes to the cascade (the cascade gate is inert
+    // until ORB_CASCADED_VOICE_ENABLED='true'); `sr`/`tr` have no native Nova
+    // voice and resolve null (tina for Vitana / lennart for Devon via
+    // resolveNovaSonicVoiceOrFallback).
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
-      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'tina' &&
-      // VTID-03809 — en changed from `tina` (German, reused after `tiffany`
-      // was rejected on a 07-28 live listen) to `amy` (Nova 2 Sonic's native
-      // en-GB voice), after a later listener disliked the German accent on
-      // English speech. Still persona-independent, like every other language.
-      resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) === 'amy' &&
-      resolveNovaSonicVoice({ language: 'fr', persona: 'devon' }) === 'ambre' &&
-      resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'lupe' &&
+      resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'lennart' &&
+      resolveNovaSonicVoice({ language: 'en', persona: null }) === 'amy' &&
+      resolveNovaSonicVoice({ language: 'en', persona: 'devon' }) === 'matthew' &&
+      resolveNovaSonicVoice({ language: 'fr', persona: 'devon' }) === 'florian' &&
+      resolveNovaSonicVoice({ language: 'es', persona: 'devon' }) === 'carlos' &&
       resolveNovaSonicVoice({ language: 'pt', persona: 'vitana' }) === 'carolina' &&
-      resolveNovaSonicVoice({ language: 'pt', persona: 'devon' }) === 'carolina' &&
+      resolveNovaSonicVoice({ language: 'pt', persona: 'devon' }) === 'leo' &&
       resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null &&
-      // VTID-03730 — Turkish has no native Nova voice (unlike pt, which does
-      // and is confirmed live per the comment above) and no confirmed voice
-      // id to add here, so it must resolve null and take the documented
-      // `tina` substitution via resolveNovaSonicVoiceOrFallback, same as sr.
       resolveNovaSonicVoice({ language: 'tr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de→tina, en→amy, fr→ambre, es→lupe, pt→carolina (persona-independent); sr/tr→null' }
+      ? { status: 'pass', detail: 'Vitana de→tina en→amy fr→ambre es→lupe pt→carolina; Devon de→lennart en→matthew fr→florian es→carlos pt→leo; sr/tr→null' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 

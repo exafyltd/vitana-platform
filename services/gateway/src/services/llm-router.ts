@@ -29,12 +29,17 @@
  *
  * Reuses (do NOT reimplement):
  *   - getActivePolicy() from llm-routing-policy-service.ts
- *   - startLLMCall / completeLLMCall / failLLMCall from llm-telemetry-service.ts
+ *   - startLLMCallDetached / completeLLMCallDetached / failLLMCallDetached from
+ *     llm-telemetry-service.ts (non-blocking since VTID-04546)
  *   - LLM_SAFE_DEFAULTS / estimateCost from constants/llm-defaults.ts
  */
 
 import { getActivePolicy } from './llm-routing-policy-service';
-import { startLLMCall, completeLLMCall, failLLMCall } from './llm-telemetry-service';
+import {
+  startLLMCallDetached,
+  completeLLMCallDetached,
+  failLLMCallDetached,
+} from './llm-telemetry-service';
 import { invokeBedrock, type BedrockContentBlock } from '../providers/bedrock';
 import {
   LLM_SAFE_DEFAULTS,
@@ -177,6 +182,14 @@ export interface LLMRouterResult {
   model?: string;
   fallbackUsed?: boolean;
   error?: string;
+  /** VTID-04381: the provider's own stop reason (`length`, `max_tokens`, `tool_calls`, `end_turn`, …). */
+  stopReason?: string;
+  /**
+   * VTID-04381: the reply was cut off at the output-token limit. Its text is
+   * incomplete and its last tool call may be missing or half-written — an
+   * agentic caller must not act on it as if the model had finished the turn.
+   */
+  truncated?: boolean;
 }
 
 interface AdapterCallArgs {
@@ -200,6 +213,42 @@ interface AdapterResult {
   toolCalls?: LLMRouterToolCall[];
   usage?: LLMUsage;
   error?: string;
+  /** VTID-04381: provider stop reason, verbatim. */
+  stopReason?: string;
+}
+
+/**
+ * VTID-04381: did the provider stop because it ran out of output tokens?
+ * OpenAI-compatible APIs (DeepSeek, OpenAI) say `length`; the Anthropic
+ * Messages API (Bedrock, Anthropic) says `max_tokens`. Pure; exported for tests.
+ */
+export function isTruncatedStop(stopReason: string | undefined | null): boolean {
+  return stopReason === 'length' || stopReason === 'max_tokens';
+}
+
+/**
+ * VTID-04381: parse EVERY tool call of an OpenAI-compatible reply (DeepSeek
+ * used to read `tool_calls[0]` only, silently dropping the rest). A call whose
+ * arguments are not JSON is counted, not dropped quietly — on a truncated
+ * reply that is the half-written last call. Pure; exported for tests.
+ */
+export function parseOpenAIToolCalls(
+  raw: Array<{ id?: string; function?: { name?: string; arguments?: string } }> | undefined,
+): { calls: LLMRouterToolCall[]; unparseable: number } {
+  const calls: LLMRouterToolCall[] = [];
+  let unparseable = 0;
+  for (const tc of raw || []) {
+    const name = tc?.function?.name;
+    if (!name) continue;
+    const argText = tc.function?.arguments;
+    try {
+      const args = argText ? JSON.parse(argText) : {};
+      calls.push({ name, arguments: args && typeof args === 'object' ? args : {}, ...(tc.id ? { id: tc.id } : {}) });
+    } catch {
+      unparseable += 1;
+    }
+  }
+  return { calls, unparseable };
 }
 
 interface ProviderAdapter {
@@ -754,28 +803,28 @@ const deepseekAdapter: ProviderAdapter = {
       }
       const json = await resp.json() as {
         choices?: Array<{
+          finish_reason?: string;
           message?: {
             content?: string;
-            tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+            tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
           };
         }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      const msg = json.choices?.[0]?.message;
+      const choice = json.choices?.[0];
+      const msg = choice?.message;
       const text = msg?.content ?? '';
-      let toolCall: LLMRouterToolCall | undefined;
-      const tc = msg?.tool_calls?.[0];
-      if (tc?.function?.name && tc.function.arguments) {
-        try {
-          toolCall = { name: tc.function.name, arguments: JSON.parse(tc.function.arguments) };
-        } catch {
-          // Tool call not JSON-parseable — leave undefined.
-        }
+      // VTID-04381: every tool call, with its id; unparseable ones are logged.
+      const parsed = parseOpenAIToolCalls(msg?.tool_calls);
+      if (parsed.unparseable > 0) {
+        console.warn(`[llm-router] DeepSeek returned ${parsed.unparseable} tool call(s) with non-JSON arguments (finish_reason=${choice?.finish_reason ?? 'n/a'})`);
       }
       return {
         ok: true,
         text,
-        toolCall,
+        toolCall: parsed.calls[0],
+        toolCalls: parsed.calls.length > 0 ? parsed.calls : undefined,
+        stopReason: choice?.finish_reason,
         usage: {
           inputTokens: json.usage?.prompt_tokens ?? 0,
           outputTokens: json.usage?.completion_tokens ?? 0,
@@ -805,8 +854,9 @@ const deepseekAdapter: ProviderAdapter = {
  * to avoid duplicating the queue protocol.
  */
 const claudeSubscriptionAdapter: ProviderAdapter = {
-  isAvailable: () =>
-    (process.env.DEV_AUTOPILOT_USE_WORKER || '').toLowerCase() === 'true',
+  // VTID-04327: the autopilot-worker daemon is retired, so this provider is
+  // never available; a stage pointed at it is skipped like any unconfigured one.
+  isAvailable: () => false,
   async call({ prompt, model, maxTokens }): Promise<AdapterResult> {
     try {
       const { runWorkerTask } = await import('./dev-autopilot-worker-queue');
@@ -908,6 +958,7 @@ const bedrockAdapter: ProviderAdapter = {
       text: result.text,
       toolCall: result.toolCall,
       toolCalls: result.toolCalls,
+      stopReason: result.stopReason,
       usage: {
         inputTokens: result.usage?.input_tokens ?? 0,
         outputTokens: result.usage?.output_tokens ?? 0,
@@ -1104,7 +1155,12 @@ async function runProviderCall(
     };
   }
 
-  const ctx = await startLLMCall({
+  // VTID-04546: telemetry is emitted in the background — the llm.call.started
+  // insert no longer sits between the caller and the provider, and the
+  // completed/failed insert no longer sits between the provider and the
+  // caller. Payloads are unchanged; the terminal event is issued only after
+  // the started insert settles (see llm-telemetry-service.ts).
+  const ctx = startLLMCallDetached({
     vtid: opts.vtid ?? null,
     service: opts.service,
     stage,
@@ -1126,7 +1182,7 @@ async function runProviderCall(
   });
 
   if (result.ok) {
-    await completeLLMCall(ctx, {
+    void completeLLMCallDetached(ctx, {
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
       fallbackUsed,
@@ -1153,10 +1209,12 @@ async function runProviderCall(
       provider,
       model,
       fallbackUsed,
+      stopReason: result.stopReason,
+      truncated: isTruncatedStop(result.stopReason),
     };
   }
 
-  await failLLMCall(ctx, {
+  void failLLMCallDetached(ctx, {
     code: 'provider_error',
     message: result.error || 'unknown',
   });

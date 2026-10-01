@@ -1,0 +1,1260 @@
+{
+  "bulk": {
+    "empty": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "events array required"
+      }
+    },
+    "too_many": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "Maximum 200 events per batch"
+      }
+    },
+    "one_bad": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "Event 1: [{\"code\":\"too_small\",\"minimum\":1,\"type\":\"string\",\"inclusive\":true,\"exact\":false,\"message\":\"Title is required\",\"path\":[\"title\"]},{\"code\":\"invalid_type\",\"expected\":\"string\",\"received\":\"undefined\",\"path\":[\"start_time\"],\"message\":\"Required\"}]"
+      }
+    },
+    "ok": {
+      "status": 201,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "created_count": 2,
+        "data": [
+          {
+            "id": "e1",
+            "title": "Walk",
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "event_type": "workout",
+            "status": "confirmed",
+            "role_context": "community",
+            "completion_status": null,
+            "priority_score": 50,
+            "wellness_tags": [
+              "movement"
+            ],
+            "pillar": "exercise",
+            "contribution_vector": null
+          },
+          {
+            "id": "e2",
+            "title": "Walk",
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "event_type": "workout",
+            "status": "confirmed",
+            "role_context": "community",
+            "completion_status": null,
+            "priority_score": 50,
+            "wellness_tags": [
+              "movement"
+            ],
+            "pillar": "exercise",
+            "contribution_vector": null
+          }
+        ]
+      }
+    }
+  },
+  "complete": {
+    "work_item": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "work items are read-only in the calendar"
+      }
+    },
+    "invalid": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": [
+          {
+            "received": "maybe",
+            "code": "invalid_enum_value",
+            "options": [
+              "completed",
+              "skipped",
+              "partial"
+            ],
+            "path": [
+              "completion_status"
+            ],
+            "message": "Invalid enum value. Expected 'completed' | 'skipped' | 'partial', received 'maybe'"
+          }
+        ]
+      }
+    },
+    "completed": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "id": "e1",
+          "user_id": "u1",
+          "title": "Walk",
+          "description": null,
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "location": null,
+          "event_type": "workout",
+          "status": "confirmed",
+          "priority": "medium",
+          "role_context": "community",
+          "source_type": "manual",
+          "source_ref_type": null,
+          "source_ref_id": null,
+          "completed_at": null,
+          "completion_status": "completed",
+          "rrule": null,
+          "timezone": null,
+          "reminder_offsets": null,
+          "emoji": null,
+          "wellness_tags": [
+            "movement"
+          ],
+          "priority_score": 50,
+          "metadata": {},
+          "pillar": "exercise",
+          "contribution_vector": null,
+          "is_recurring": false,
+          "recurring_pattern": null,
+          "attendees_count": 0,
+          "has_rewards": false,
+          "source_message_id": null,
+          "created_at": "2026-10-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z",
+          "activated_at": null,
+          "completion_notes": null,
+          "original_start_time": null,
+          "reschedule_count": 0
+        },
+        "vitana_index": null,
+        "source_completed": true
+      }
+    },
+    "skipped": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "id": "e1",
+          "user_id": "u1",
+          "title": "Walk",
+          "description": null,
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "location": null,
+          "event_type": "workout",
+          "status": "confirmed",
+          "priority": "medium",
+          "role_context": "community",
+          "source_type": "manual",
+          "source_ref_type": null,
+          "source_ref_id": null,
+          "completed_at": null,
+          "completion_status": "completed",
+          "rrule": null,
+          "timezone": null,
+          "reminder_offsets": null,
+          "emoji": null,
+          "wellness_tags": [
+            "movement"
+          ],
+          "priority_score": 50,
+          "metadata": {},
+          "pillar": "exercise",
+          "contribution_vector": null,
+          "is_recurring": false,
+          "recurring_pattern": null,
+          "attendees_count": 0,
+          "has_rewards": false,
+          "source_message_id": null,
+          "created_at": "2026-10-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z",
+          "activated_at": null,
+          "completion_notes": null,
+          "original_start_time": null,
+          "reschedule_count": 0
+        },
+        "vitana_index": null,
+        "source_completed": false
+      }
+    }
+  },
+  "complete.missing": {
+    "status": 404,
+    "type": "application/json",
+    "body": {
+      "ok": false,
+      "error": "Event not found"
+    }
+  },
+  "create": {
+    "invalid": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": [
+          {
+            "code": "invalid_string",
+            "validation": "datetime",
+            "message": "start_time must be ISO 8601",
+            "path": [
+              "start_time"
+            ]
+          }
+        ]
+      }
+    },
+    "ok": {
+      "status": 201,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "id": "e1",
+          "user_id": "u1",
+          "title": "Walk",
+          "description": null,
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "location": null,
+          "event_type": "workout",
+          "status": "confirmed",
+          "priority": "medium",
+          "role_context": "community",
+          "source_type": "manual",
+          "source_ref_type": null,
+          "source_ref_id": null,
+          "completed_at": null,
+          "completion_status": null,
+          "rrule": null,
+          "timezone": null,
+          "reminder_offsets": null,
+          "emoji": null,
+          "wellness_tags": [
+            "movement"
+          ],
+          "priority_score": 50,
+          "metadata": {},
+          "pillar": "exercise",
+          "contribution_vector": null,
+          "is_recurring": false,
+          "recurring_pattern": null,
+          "attendees_count": 0,
+          "has_rewards": false,
+          "source_message_id": null,
+          "created_at": "2026-10-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z",
+          "activated_at": null,
+          "completion_notes": null,
+          "original_start_time": null,
+          "reschedule_count": 0
+        }
+      }
+    }
+  },
+  "create.inputs": [
+    [
+      "u1",
+      {
+        "title": "Walk",
+        "start_time": "2026-10-05T07:30:00Z",
+        "event_type": "personal",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "community",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false
+      }
+    ],
+    [
+      "u1",
+      {
+        "title": "Deploy",
+        "start_time": "2026-10-05T07:30:00Z",
+        "event_type": "personal",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "developer",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false
+      }
+    ],
+    [
+      "u1",
+      {
+        "title": "Review",
+        "start_time": "2026-10-05T07:30:00Z",
+        "event_type": "personal",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "admin",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false
+      }
+    ],
+    [
+      "u1",
+      {
+        "title": "Mine",
+        "start_time": "2026-10-05T07:30:00Z",
+        "event_type": "personal",
+        "status": "confirmed",
+        "priority": "medium",
+        "role_context": "personal",
+        "source_type": "manual",
+        "priority_score": 50,
+        "wellness_tags": [],
+        "metadata": {},
+        "is_recurring": false
+      }
+    ]
+  ],
+  "google": {
+    "state": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "availability": "ready",
+          "enabled": true,
+          "last_push_at": "2026-10-05T00:00:00Z",
+          "last_pull_at": null,
+          "last_error": null,
+          "connect_url": "/api/v1/social-accounts/connect/google?include=calendar_sync&mode=incremental"
+        }
+      }
+    },
+    "enable": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "enabled": true
+        }
+      }
+    },
+    "disable": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "enabled": false
+        }
+      }
+    }
+  },
+  "google.refused": {
+    "not_connected": {
+      "status": 503,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "not_configured"
+      }
+    },
+    "not_configured": {
+      "status": 503,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "not_configured"
+      }
+    }
+  },
+  "journey": {
+    "status": 201,
+    "type": "application/json",
+    "body": {
+      "ok": true,
+      "events_created": 12
+    }
+  },
+  "journey.call": [
+    [
+      "initializeJourneyCalendar",
+      [
+        "u1",
+        "t1",
+        "Date",
+        "de"
+      ]
+    ]
+  ],
+  "move.blocked": {
+    "recurring": {
+      "status": 409,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "NOT_MOVABLE",
+        "reason": "recurring"
+      }
+    },
+    "appointment": {
+      "status": 409,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "NOT_MOVABLE",
+        "reason": "owned_by_source"
+      }
+    },
+    "completed": {
+      "status": 409,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "NOT_MOVABLE",
+        "reason": "completed"
+      }
+    },
+    "not_found": {
+      "status": 404,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "Event not found"
+      }
+    }
+  },
+  "move.invalid": {
+    "work_item": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "WORK_ITEM_READ_ONLY"
+      }
+    },
+    "no_start": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "start_time must be an ISO timestamp"
+      }
+    },
+    "end_before_start": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "end_time must be after start_time"
+      }
+    },
+    "too_far": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "start_time out of range"
+      }
+    },
+    "past": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "start_time out of range"
+      }
+    }
+  },
+  "open.feed": {
+    "status": 200,
+    "type": "text/calendar",
+    "body": "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+    "cache": "private, max-age=900",
+    "robots": "noindex"
+  },
+  "open.feed.malformed": {
+    "status": 404,
+    "type": "text/plain",
+    "body": "Not found"
+  },
+  "open.feed.unknown": {
+    "status": 404,
+    "type": "text/plain",
+    "body": "Not found"
+  },
+  "open.health": {
+    "status": 200,
+    "type": "application/json",
+    "body": {
+      "ok": true,
+      "service": "intelligent-calendar",
+      "phases": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "features": [
+        "role-aware-filtering",
+        "crud-operations",
+        "conflict-detection",
+        "gap-analysis",
+        "bulk-create",
+        "completion-tracking",
+        "rsvp-sync-triggers",
+        "autopilot-calendar-bridge",
+        "90-day-journey-package",
+        "d-layer-memory-integration",
+        "conversational-nl-parser",
+        "smart-rescheduler",
+        "dynamic-prioritizer",
+        "pattern-evolution"
+      ]
+    }
+  },
+  "reads": {
+    "list": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e1",
+            "user_id": "u1",
+            "title": "Walk",
+            "description": null,
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "location": null,
+            "event_type": "workout",
+            "status": "confirmed",
+            "priority": "medium",
+            "role_context": "community",
+            "source_type": "manual",
+            "source_ref_type": null,
+            "source_ref_id": null,
+            "completed_at": null,
+            "completion_status": null,
+            "rrule": null,
+            "timezone": null,
+            "reminder_offsets": null,
+            "emoji": null,
+            "wellness_tags": [
+              "movement"
+            ],
+            "priority_score": 50,
+            "metadata": {},
+            "pillar": "exercise",
+            "contribution_vector": null,
+            "is_recurring": false,
+            "recurring_pattern": null,
+            "attendees_count": 0,
+            "has_rewards": false,
+            "source_message_id": null,
+            "created_at": "2026-10-01T00:00:00.000Z",
+            "updated_at": "2026-10-01T00:00:00.000Z",
+            "activated_at": null,
+            "completion_notes": null,
+            "original_start_time": null,
+            "reschedule_count": 0
+          }
+        ],
+        "count": 1,
+        "limit": 10,
+        "offset": 0
+      }
+    },
+    "list_bad_limit": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": [
+          {
+            "code": "too_big",
+            "maximum": 200,
+            "type": "number",
+            "inclusive": true,
+            "exact": false,
+            "message": "Number must be less than or equal to 200",
+            "path": [
+              "limit"
+            ]
+          }
+        ]
+      }
+    },
+    "upcoming": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e1",
+            "title": "Walk",
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "event_type": "workout",
+            "status": "confirmed",
+            "role_context": "community",
+            "completion_status": null,
+            "priority_score": 50,
+            "wellness_tags": [
+              "movement"
+            ],
+            "pillar": "exercise",
+            "contribution_vector": null
+          }
+        ],
+        "count": 1
+      }
+    },
+    "today": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e1",
+            "title": "Walk",
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "event_type": "workout",
+            "status": "confirmed",
+            "role_context": "community",
+            "completion_status": null,
+            "priority_score": 50,
+            "wellness_tags": [
+              "movement"
+            ],
+            "pillar": "exercise",
+            "contribution_vector": null
+          }
+        ],
+        "count": 1
+      }
+    },
+    "history": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e1",
+            "user_id": "u1",
+            "title": "Walk",
+            "description": null,
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "location": null,
+            "event_type": "workout",
+            "status": "confirmed",
+            "priority": "medium",
+            "role_context": "community",
+            "source_type": "manual",
+            "source_ref_type": null,
+            "source_ref_id": null,
+            "completed_at": null,
+            "completion_status": null,
+            "rrule": null,
+            "timezone": null,
+            "reminder_offsets": null,
+            "emoji": null,
+            "wellness_tags": [
+              "movement"
+            ],
+            "priority_score": 50,
+            "metadata": {},
+            "pillar": "exercise",
+            "contribution_vector": null,
+            "is_recurring": false,
+            "recurring_pattern": null,
+            "attendees_count": 0,
+            "has_rewards": false,
+            "source_message_id": null,
+            "created_at": "2026-10-01T00:00:00.000Z",
+            "updated_at": "2026-10-01T00:00:00.000Z",
+            "activated_at": null,
+            "completion_notes": null,
+            "original_start_time": null,
+            "reschedule_count": 0
+          }
+        ],
+        "count": 1
+      }
+    },
+    "gaps": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "start": "2026-10-05T09:00:00.000Z",
+            "end": "2026-10-05T10:00:00.000Z",
+            "duration_minutes": 60
+          }
+        ],
+        "count": 1
+      }
+    },
+    "conflicts_missing": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "start_time and end_time required"
+      }
+    },
+    "conflicts": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "id": "e1",
+            "title": "Walk",
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "event_type": "workout",
+            "status": "confirmed",
+            "role_context": "community",
+            "completion_status": null,
+            "priority_score": 50,
+            "wellness_tags": [
+              "movement"
+            ],
+            "pillar": "exercise",
+            "contribution_vector": null
+          }
+        ],
+        "has_conflicts": true
+      }
+    }
+  },
+  "reads.calls": [
+    [
+      "listCalendarEvents",
+      [
+        "u1",
+        "professional",
+        {
+          "limit": 10,
+          "offset": 0
+        }
+      ]
+    ],
+    [
+      "getUserUpcomingEvents",
+      [
+        "u1",
+        null,
+        100
+      ]
+    ],
+    [
+      "getUserTodayEvents",
+      [
+        "u1",
+        null,
+        "Europe/Berlin"
+      ]
+    ],
+    [
+      "getUserCalendarHistory",
+      [
+        "u1",
+        null,
+        365,
+        500
+      ]
+    ],
+    [
+      "getCalendarGaps",
+      [
+        "u1",
+        null,
+        "2026-10-05T00:00:00.000Z"
+      ]
+    ],
+    [
+      "checkConflicts",
+      [
+        "u1",
+        null,
+        "2026-10-05T07:00:00Z",
+        "2026-10-05T08:00:00Z"
+      ]
+    ]
+  ],
+  "routes": [
+    "GET /subscription",
+    "POST /subscription",
+    "DELETE /subscription",
+    "GET /google",
+    "POST /google/enable",
+    "POST /google/disable",
+    "GET /feed/:file",
+    "GET /events",
+    "GET /events/window",
+    "GET /events/upcoming",
+    "GET /events/today",
+    "GET /events/history",
+    "GET /events/gaps",
+    "GET /conflicts",
+    "POST /events",
+    "POST /events/bulk",
+    "PATCH /events/:id",
+    "POST /events/:id/move",
+    "POST /events/:id/complete",
+    "DELETE /events/:id",
+    "POST /journey/initialize",
+    "POST /reschedule",
+    "POST /reprioritize",
+    "GET /health"
+  ],
+  "staff.member.reprioritize": {
+    "status": 403,
+    "type": "application/json",
+    "body": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    }
+  },
+  "staff.member.reschedule": {
+    "status": 403,
+    "type": "application/json",
+    "body": {
+      "ok": false,
+      "error": "FORBIDDEN"
+    }
+  },
+  "staff.staff.reprioritize": {
+    "status": 200,
+    "type": "application/json",
+    "body": {
+      "ok": true,
+      "users_processed": 3,
+      "total_updated": 7
+    }
+  },
+  "staff.staff.reschedule": {
+    "status": 200,
+    "type": "application/json",
+    "body": {
+      "ok": true,
+      "rescheduled": 2,
+      "cancelled": 1
+    }
+  },
+  "subscription": {
+    "status": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "active": true,
+          "created_at": "2026-10-01T00:00:00Z",
+          "last_used_at": null
+        }
+      }
+    },
+    "create": {
+      "status": 201,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "feed_path": "/api/v1/calendar/feed/tok_ABC-123.ics"
+        }
+      }
+    },
+    "revoke": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true
+      }
+    }
+  },
+  "update": {
+    "invalid": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": [
+          {
+            "validation": "regex",
+            "code": "invalid_string",
+            "message": "rrule must be FREQ=DAILY|WEEKLY|MONTHLY with INTERVAL/COUNT/UNTIL/BYDAY",
+            "path": [
+              "rrule"
+            ]
+          }
+        ]
+      }
+    },
+    "ok": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "id": "e1",
+          "user_id": "u1",
+          "title": "Walk",
+          "description": null,
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "location": null,
+          "event_type": "workout",
+          "status": "confirmed",
+          "priority": "medium",
+          "role_context": "community",
+          "source_type": "manual",
+          "source_ref_type": null,
+          "source_ref_id": null,
+          "completed_at": null,
+          "completion_status": null,
+          "rrule": null,
+          "timezone": null,
+          "reminder_offsets": null,
+          "emoji": null,
+          "wellness_tags": [
+            "movement"
+          ],
+          "priority_score": 50,
+          "metadata": {},
+          "pillar": "exercise",
+          "contribution_vector": null,
+          "is_recurring": false,
+          "recurring_pattern": null,
+          "attendees_count": 0,
+          "has_rewards": false,
+          "source_message_id": null,
+          "created_at": "2026-10-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z",
+          "activated_at": null,
+          "completion_notes": null,
+          "original_start_time": null,
+          "reschedule_count": 0
+        }
+      }
+    },
+    "delete_ok": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": {
+          "id": "e1",
+          "user_id": "u1",
+          "title": "Walk",
+          "description": null,
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "location": null,
+          "event_type": "workout",
+          "status": "cancelled",
+          "priority": "medium",
+          "role_context": "community",
+          "source_type": "manual",
+          "source_ref_type": null,
+          "source_ref_id": null,
+          "completed_at": null,
+          "completion_status": null,
+          "rrule": null,
+          "timezone": null,
+          "reminder_offsets": null,
+          "emoji": null,
+          "wellness_tags": [
+            "movement"
+          ],
+          "priority_score": 50,
+          "metadata": {},
+          "pillar": "exercise",
+          "contribution_vector": null,
+          "is_recurring": false,
+          "recurring_pattern": null,
+          "attendees_count": 0,
+          "has_rewards": false,
+          "source_message_id": null,
+          "created_at": "2026-10-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z",
+          "activated_at": null,
+          "completion_notes": null,
+          "original_start_time": null,
+          "reschedule_count": 0
+        }
+      }
+    }
+  },
+  "update.missing": {
+    "update": {
+      "status": 404,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "Event not found or update failed"
+      }
+    },
+    "delete": {
+      "status": 404,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "Event not found"
+      }
+    }
+  },
+  "window.invalid": {
+    "missing": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "from and to must be ISO timestamps with to > from"
+      }
+    },
+    "reversed": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "from and to must be ISO timestamps with to > from"
+      }
+    },
+    "too_long": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "window may span at most 62 days"
+      }
+    }
+  },
+  "window.member": {
+    "status": 200,
+    "type": "application/json",
+    "body": {
+      "ok": true,
+      "data": [
+        {
+          "id": "h1::2026-10-05T05:30:00.000Z",
+          "event_id": "h1",
+          "start_time": "2026-10-05T05:30:00.000Z",
+          "end_time": "2026-10-05T05:45:00.000Z",
+          "busy": false,
+          "occurrence_index": 2,
+          "event": {
+            "id": "h1",
+            "user_id": "u1",
+            "title": "Walk",
+            "description": null,
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "location": null,
+            "event_type": "wellness_nudge",
+            "status": "confirmed",
+            "priority": "medium",
+            "role_context": "community",
+            "source_type": "manual",
+            "source_ref_type": null,
+            "source_ref_id": null,
+            "completed_at": null,
+            "completion_status": null,
+            "rrule": "FREQ=DAILY",
+            "timezone": null,
+            "reminder_offsets": null,
+            "emoji": null,
+            "wellness_tags": [
+              "movement"
+            ],
+            "priority_score": 50,
+            "metadata": {},
+            "pillar": "exercise",
+            "contribution_vector": null,
+            "is_recurring": false,
+            "recurring_pattern": null,
+            "attendees_count": 0,
+            "has_rewards": false,
+            "source_message_id": null,
+            "created_at": "2026-10-01T00:00:00.000Z",
+            "updated_at": "2026-10-01T00:00:00.000Z",
+            "activated_at": null,
+            "completion_notes": null,
+            "original_start_time": null,
+            "reschedule_count": 0
+          },
+          "display_emoji": "🌱",
+          "reminders": [
+            {
+              "kind": "before",
+              "minutes": 0
+            }
+          ],
+          "movable": false
+        },
+        {
+          "id": "e1",
+          "event_id": "e1",
+          "start_time": "2026-10-05T07:30:00.000Z",
+          "end_time": "2026-10-05T08:00:00.000Z",
+          "busy": false,
+          "occurrence_index": null,
+          "event": {
+            "id": "e1",
+            "user_id": "u1",
+            "title": "Walk",
+            "description": null,
+            "start_time": "2026-10-05T07:30:00.000Z",
+            "end_time": "2026-10-05T08:00:00.000Z",
+            "location": null,
+            "event_type": "workout",
+            "status": "confirmed",
+            "priority": "medium",
+            "role_context": "community",
+            "source_type": "manual",
+            "source_ref_type": null,
+            "source_ref_id": null,
+            "completed_at": null,
+            "completion_status": null,
+            "rrule": null,
+            "timezone": null,
+            "reminder_offsets": null,
+            "emoji": null,
+            "wellness_tags": [
+              "movement"
+            ],
+            "priority_score": 50,
+            "metadata": {},
+            "pillar": "exercise",
+            "contribution_vector": null,
+            "is_recurring": false,
+            "recurring_pattern": null,
+            "attendees_count": 0,
+            "has_rewards": false,
+            "source_message_id": null,
+            "created_at": "2026-10-01T00:00:00.000Z",
+            "updated_at": "2026-10-01T00:00:00.000Z",
+            "activated_at": null,
+            "completion_notes": null,
+            "original_start_time": null,
+            "reschedule_count": 0
+          },
+          "display_emoji": "🏃",
+          "reminders": [
+            {
+              "kind": "before",
+              "minutes": 30
+            }
+          ],
+          "movable": true
+        },
+        {
+          "id": "d1",
+          "event_id": "d1",
+          "start_time": "2026-10-05T12:00:00.000Z",
+          "end_time": "2026-10-05T13:00:00.000Z",
+          "busy": true,
+          "occurrence_index": null,
+          "event": null
+        },
+        {
+          "id": "ext:google:1",
+          "event_id": "ext:google:1",
+          "start_time": "2026-10-05T15:00:00.000Z",
+          "end_time": "2026-10-05T16:00:00.000Z",
+          "busy": true,
+          "occurrence_index": null,
+          "event": null,
+          "external": "google"
+        }
+      ],
+      "count": 4,
+      "timezone": "Europe/Berlin",
+      "work_lenses": []
+    }
+  },
+  "window.staff.developer": {
+    "lenses": [
+      "developer"
+    ],
+    "ids": [
+      [
+        "h1::2026-10-05T05:30:00.000Z",
+        false,
+        "🌱",
+        false
+      ],
+      [
+        "e1",
+        false,
+        "🏃",
+        true
+      ],
+      [
+        "work:deploy_prod:dep1",
+        false,
+        "🚀",
+        null
+      ],
+      [
+        "d1",
+        true,
+        null,
+        null
+      ],
+      [
+        "ext:google:1",
+        true,
+        null,
+        null
+      ]
+    ]
+  },
+  "window.staff.off": {
+    "lenses": [],
+    "ids": [
+      "h1::2026-10-05T05:30:00.000Z",
+      "e1",
+      "d1"
+    ]
+  }
+}

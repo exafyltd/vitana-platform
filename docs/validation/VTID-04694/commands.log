@@ -1,0 +1,4 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory + every suite referencing remember_fact   # 35 suites, 590 tests passed
+npx jest test/memory-verification-conformance.test.ts   # 135 passed

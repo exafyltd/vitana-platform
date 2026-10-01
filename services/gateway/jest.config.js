@@ -23,7 +23,7 @@ module.exports = {
   // ship `"type": "module"` with no CJS build. The (\.pnpm/)? alternative
   // keeps the allowlist working under pnpm's nested node_modules layout.
   transformIgnorePatterns: [
-    'node_modules/(?!(\\.pnpm/)?(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|htmlparser2|entities|domhandler|domutils|dom-serializer|domelementtype|leac|peberminta))',
+    'node_modules/(?!(.*/)?(\\.pnpm/)?(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill|htmlparser2|entities|domhandler|domutils|dom-serializer|domelementtype|leac|peberminta)/)',
   ],
   transform: {
     '^.+\\.[tj]sx?$': ['ts-jest', {

@@ -24,12 +24,13 @@ import githubService from './github-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
 import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing-probe';
-import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
+import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from './dev-autopilot-execute';
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
+import { isVerificationNoiseTopic } from './oasis-noise-topics';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
 const WATCHER_VTID = 'VTID-DEV-AUTOPILOT';
@@ -189,9 +190,50 @@ async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise
   return null;
 }
 
+/** VTID-04377: the finding's own ledger VTID (VTID-04246), excluded from blast radius. */
+async function loadFindingVtid(s: SupaConfig, findingId: string): Promise<string | null> {
+  if (!findingId) return null;
+  const r = await supa<Array<{ activated_vtid: string | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=activated_vtid&limit=1`,
+  );
+  const v = r.ok && r.data && r.data[0] ? r.data[0].activated_vtid : null;
+  return typeof v === 'string' && v ? v : null;
+}
+
 // =============================================================================
 // Pure analyzers (unit-testable)
 // =============================================================================
+
+/** VTID-04379: max times the watcher merges main into one PR before leaving it to a human. */
+export const MAX_BRANCH_UPDATES = 5;
+
+/** VTID-04379: pure. `merge` = up to date, go on; `update` = merge main in; `give_up` = keeps falling behind. */
+export function decideBranchUpdate(behindBy: number, updatesSoFar: number): 'merge' | 'update' | 'give_up' {
+  if (!(behindBy > 0)) return 'merge';
+  return updatesSoFar >= MAX_BRANCH_UPDATES ? 'give_up' : 'update';
+}
+
+/**
+ * VTID-04612: may a green PR that is behind main merge without another branch
+ * update? Only when main's new commits touch none of the files the PR changes.
+ * The VTID-04379 rule re-ran ~8 minutes of CI on every main merge and gave up
+ * after MAX_BRANCH_UPDATES; with main taking a merge every 5-10 minutes an
+ * operator PR could never land. Overlap, an incomplete file list (truncated
+ * compare, unknown PR files) or no PR files at all keep the update path — the
+ * two green PRs that broke main together (VTID-04219) touched shared files.
+ */
+export function canMergeBehindWithoutUpdate(input: {
+  prFiles: string[] | null;
+  baseChangedFiles: string[] | null;
+  baseTruncated: boolean;
+}): { ok: boolean; overlap: string[] } {
+  const { prFiles, baseChangedFiles, baseTruncated } = input;
+  if (!prFiles || prFiles.length === 0 || !baseChangedFiles || baseTruncated) return { ok: false, overlap: [] };
+  const base = new Set(baseChangedFiles);
+  const overlap = prFiles.filter((f) => base.has(f));
+  return { ok: overlap.length === 0, overlap };
+}
 
 export type CiStateName = 'passing' | 'failing' | 'pending';
 export interface CiAnalysis {
@@ -333,14 +375,59 @@ export interface VerificationAnalysis {
   reason?: string;
 }
 
+export interface VerificationWindowOptions {
+  /** The execution's own ledger VTID(s) (VTID-04246 activated_vtid); never blast radius. */
+  ownVtids?: string[];
+  /**
+   * VTID-04625: how many MORE events of one error type than its baseline the
+   * window must see before that type is blast radius. Default 1 (any rise).
+   * The live watcher passes verificationMinExcess() (3): on a platform with
+   * member traffic, one or two sporadic errors of a rare type are not
+   * evidence against a deploy — measured 2026-09-26, PR #3726 was reverted
+   * for one member voice-session measurement and one console turn.
+   */
+  minExcess?: number;
+}
+
+/** VTID-04625: DEV_AUTOPILOT_VERIFY_MIN_EXCESS (default 3, minimum 1). */
+export function verificationMinExcess(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.DEV_AUTOPILOT_VERIFY_MIN_EXCESS || '', 10);
+  return Number.isFinite(n) && n >= 1 ? n : 3;
+}
+
+// VTID-04377 / VTID-04625: isVerificationNoiseTopic now lives in
+// oasis-noise-topics.ts (VTID-04666) so the recommendation engine applies the
+// same list. Re-exported here unchanged for existing importers.
+export { isVerificationNoiseTopic };
+
 export function analyzeVerificationWindow(
   events: Array<{ type: string; vtid?: string; status?: string; created_at?: string }>,
   windowStartIso: string,
   windowMs: number,
   ourVtidPrefix: string,
+  opts: VerificationWindowOptions = {},
 ): VerificationAnalysis {
   const start = new Date(windowStartIso).getTime();
   const elapsed = Date.now() - start;
+  const ownVtids = new Set((opts.ownVtids || []).filter(Boolean));
+  const attributable = (e: { type: string; vtid?: string; status?: string }): boolean => {
+    if (e.status !== 'error') return false;
+    if (!e.vtid || e.vtid.startsWith(ourVtidPrefix) || ownVtids.has(e.vtid)) return false;
+    // VTID-04377: BOOTSTRAP-* rows are sessions' own untracked work, not runtime errors.
+    if (e.vtid.startsWith('BOOTSTRAP-')) return false;
+    return !isVerificationNoiseTopic(e.type);
+  };
+  // VTID-04377: the baseline is the same-length span BEFORE the window. An
+  // error type that was already firing at that rate is not this merge's doing
+  // — the tenant-wide read used to fail (and revert) a correct PR for any
+  // error that happened to land in its five minutes.
+  const baseline = new Map<string, number>();
+  for (const e of events) {
+    const at = e.created_at ? new Date(e.created_at).getTime() : 0;
+    if (at >= start || at < start - windowMs) continue;
+    if (!attributable(e)) continue;
+    baseline.set(e.type, (baseline.get(e.type) || 0) + 1);
+  }
   // New error events emitted DURING the window that are NOT for our own
   // execution VTID lineage count as blast-radius signal.
   //
@@ -352,26 +439,17 @@ export function analyzeVerificationWindow(
   // autopilot lifecycle errors. "Blast radius" should mean "user-facing
   // production errors after my deploy" — not noise from the autopilot
   // pipeline itself, especially during a multi-execution batch.
-  const blastRadius = events.filter((e) => {
+  // VTID-04043 (kept in isVerificationNoiseTopic): ledger lifecycle and
+  // on-ramp bookkeeping about OTHER VTIDs — measured 2026-09-18, a chat cancel
+  // of VTID-04040 failed + escalated VTID-04038 while its PR #3412 was green.
+  const inWindow = events.filter((e) => {
     const at = e.created_at ? new Date(e.created_at).getTime() : 0;
-    if (at < start) return false;
-    if (e.status !== 'error') return false;
-    if (!e.vtid || e.vtid.startsWith(ourVtidPrefix)) return false;
-    if (typeof e.type === 'string' && (
-      e.type.startsWith('dev_autopilot.') ||
-      e.type.startsWith('self_healing.') ||
-      e.type.startsWith('cicd.') ||
-      // VTID-04043: ledger lifecycle transitions and Operator on-ramp
-      // bookkeeping are task-plane events about OTHER VTIDs, never a
-      // production runtime error. Measured 2026-09-18: a chat cancel of
-      // VTID-04040 emitted `vtid.lifecycle.failed` (status error) inside
-      // f8d79e6c's window and failed + escalated VTID-04038 while its PR
-      // #3412 was green.
-      e.type.startsWith('vtid.lifecycle.') ||
-      e.type.startsWith('operator.execution_onramp.')
-    )) return false;
-    return true;
+    return at >= start && attributable(e);
   });
+  const windowCounts = new Map<string, number>();
+  for (const e of inWindow) windowCounts.set(e.type, (windowCounts.get(e.type) || 0) + 1);
+  const minExcess = Math.max(1, Math.floor(opts.minExcess ?? 1));
+  const blastRadius = inWindow.filter((e) => (windowCounts.get(e.type) || 0) - (baseline.get(e.type) || 0) >= minExcess);
   if (blastRadius.length > 0) {
     return {
       state: 'fail',
@@ -428,16 +506,32 @@ export async function transitionStatus(
   // flips the recommendation `new → completed`, and autoApproveTick re-
   // approves the same finding on the next 30s tick. See
   // applyExecTerminalSideEffects() docstring for incident detail.
-  if (moved) applyExecTerminalSideEffects(s, execId, toStatus);
+  // VTID-04472: every `→ failed` here is followed by bridgeFailure(), which
+  // owns the ledger outcome (see bridgeFailure below).
+  if (moved) applyExecTerminalSideEffects(s, execId, toStatus, { deferLedger: toStatus === 'failed' });
   return moved;
 }
 
+/**
+ * VTID-04472: bridge outcomes that own the VTID ledger after a failure —
+ * a self-heal child continues the VTID; every escalation path closes it
+ * (closeLedgerForEscalation). Anything else (already bridged, no row, a
+ * thrown call) leaves the execution `failed` with nobody to close the
+ * ledger, so the watcher closes it itself.
+ */
+export const BRIDGE_OWNS_LEDGER: ReadonlySet<string> = new Set(['self_heal_injected', 'escalated', 'env_blocker', 'triage_failed']);
+
 async function bridgeFailure(execId: string, stage: FailureStage, error?: string, extras: Record<string, unknown> = {}): Promise<void> {
+  let outcome: string | null = null;
   try {
-    await bridgeFailureToSelfHealing({ execution_id: execId, failure_stage: stage, error, ...extras });
+    const r = await bridgeFailureToSelfHealing({ execution_id: execId, failure_stage: stage, error, ...extras });
+    outcome = r?.outcome ?? null;
   } catch (err) {
     console.error(`${LOG_PREFIX} bridge call failed for ${execId} (${stage}):`, err);
   }
+  if (outcome && BRIDGE_OWNS_LEDGER.has(outcome)) return;
+  const s = getSupabase();
+  if (s) await terminalizeVtidLedgerForExecution(s, execId, 'failed');
 }
 
 // =============================================================================
@@ -519,6 +613,79 @@ export async function ciWatcherTick(): Promise<void> {
     //   'dirty'    — merge conflicts → fail
     //   'unknown' / 'has_hooks' / 'behind' — still settling → wait
     const mState = (prStatus as { pr?: { mergeable_state?: string } }).pr?.mergeable_state;
+
+    // VTID-04379: CI on a PR proves the PR against the main it branched from,
+    // not the main it will land on — two PRs green on their own broke main
+    // together on 2026-09-21 (VTID-04219). Before a clean PR may merge, bring
+    // it up to date; its CI then re-runs on the combined head and a later tick
+    // judges that. `behind` used to be waited on forever.
+    if (mState === 'clean' || mState === 'behind') {
+      const pr = (prStatus as { pr?: { head?: { sha?: string }; base?: { ref?: string } } }).pr;
+      const headSha = pr?.head?.sha;
+      if (headSha) {
+        let behindBy = 0;
+        try {
+          behindBy = await githubService.getBehindBy(GITHUB_REPO, pr?.base?.ref || 'main', headSha);
+        } catch (err) {
+          console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] compare failed: ${err}; refusing merge this tick`);
+          continue;
+        }
+        const updates = Number((exec.metadata as Record<string, unknown> | null)?.branch_updates || 0);
+        let decision = decideBranchUpdate(behindBy, updates);
+        // VTID-04612: a clean PR whose files main has not touched merges on the
+        // CI it already has, instead of chasing main one ~8-minute CI run per
+        // merge. `behind` (strict branch protection) always updates.
+        if (decision !== 'merge' && mState === 'clean') {
+          try {
+            const [prFiles, baseChanges] = await Promise.all([
+              githubService.getPrFiles(GITHUB_REPO, exec.pr_number),
+              githubService.getBaseChangesSince(GITHUB_REPO, pr?.base?.ref || 'main', headSha),
+            ]);
+            const verdict = canMergeBehindWithoutUpdate({
+              prFiles: prFiles.map((f) => f.filename),
+              baseChangedFiles: baseChanges.files,
+              baseTruncated: baseChanges.truncated,
+            });
+            if (verdict.ok) {
+              console.log(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} is ${behindBy} behind main but main touched none of its ${prFiles.length} file(s); merging on its green CI`);
+              decision = 'merge';
+            }
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] overlap check failed: ${err}; keeping the branch-update path`);
+          }
+        }
+        if (decision === 'update') {
+          try {
+            await githubService.updatePullRequestBranch(GITHUB_REPO, exec.pr_number, headSha);
+          } catch (err) {
+            console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] update-branch failed for #${exec.pr_number}: ${err}`);
+            continue;
+          }
+          await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.ci`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              updated_at: new Date().toISOString(),
+              metadata: { ...(exec.metadata || {}), branch_updates: updates + 1, branch_updated_from: headSha, branch_behind_by: behindBy },
+            }),
+          });
+          await emitOasisEvent({
+            vtid: WATCHER_VTID,
+            type: 'dev_autopilot.execution.branch_updated',
+            source: 'dev-autopilot-watcher',
+            status: 'info',
+            message: `Execution ${exec.id.slice(0, 8)}: PR #${exec.pr_number} was ${behindBy} commit(s) behind main — updated, waiting for CI on the new head`,
+            payload: { execution_id: exec.id, pr_url: exec.pr_url, behind_by: behindBy, from_head: headSha, update_number: updates + 1 },
+          });
+          continue;
+        }
+        if (decision === 'give_up') {
+          console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} still behind main after ${updates} updates; leaving it unmerged`);
+          continue;
+        }
+      }
+    }
+
     if (mState === 'unknown' || mState === 'has_hooks' || mState === 'behind' || !mState) {
       continue;
     }
@@ -839,7 +1006,8 @@ async function loadRecentEventsForVerification(
 ): Promise<Array<{ type: string; vtid?: string; status?: string; created_at?: string }>> {
   const r = await supa<Array<{ topic: string; vtid?: string; status?: string; created_at?: string }>>(
     s,
-    `/rest/v1/oasis_events?status=eq.error&created_at=gte.${encodeURIComponent(windowStartIso)}&select=topic,vtid,status,created_at&order=created_at.desc&limit=500`,
+    // VTID-04377: from one window BEFORE the start, for the baseline.
+    `/rest/v1/oasis_events?status=eq.error&created_at=gte.${encodeURIComponent(new Date(new Date(windowStartIso).getTime() - VERIFICATION_WINDOW_MS).toISOString())}&select=topic,vtid,status,created_at&order=created_at.desc&limit=1000`,
   );
   if (!r.ok || !r.data) return [];
   return r.data.map((row) => ({
@@ -882,7 +1050,11 @@ export async function verificationWatcherTick(): Promise<void> {
 
     const events = await loadRecentEventsForVerification(s, windowStart);
     const ourVtidPrefix = `VTID-DA-${exec.id.slice(0, 8)}`;
-    const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix);
+    const ownVtid = await loadFindingVtid(s, exec.finding_id);
+    const verdict = analyzeVerificationWindow(events, windowStart, VERIFICATION_WINDOW_MS, ourVtidPrefix, {
+      ownVtids: ownVtid ? [ownVtid] : [],
+      minExcess: verificationMinExcess(),
+    });
 
     if (verdict.state === 'pending') continue;
 

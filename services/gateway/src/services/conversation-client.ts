@@ -38,6 +38,10 @@ import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { writeMemoryItemWithIdentity } from './orb-memory-bridge';
+import { deduplicatedExtract } from './extraction-dedup-manager';
+
+/** Reply sent when the model call fails (VTID-04540: never extracted from). */
+const TURN_ERROR_REPLY = 'I apologize, but I encountered an error processing your request. Please try again.';
 import { isUnifiedConversationEnabled } from './system-controls-service';
 // VTID-01952 Phase 0 — Identity-mutation intent intercept (Maria → Kemal fix)
 import { handleIdentityIntent } from './identity-intent-handler';
@@ -355,7 +359,7 @@ export async function processConversationTurn(
     const llmStartTime = Date.now();
     let reply = '';
     let toolCalls: ToolCall[] = [];
-    let modelUsed = 'gemini-2.5-pro';
+    let modelUsed = 'unknown';
 
     try {
       const geminiResult = await processWithGemini({
@@ -369,6 +373,8 @@ export async function processConversationTurn(
       });
 
       reply = geminiResult.reply;
+      // VTID-04540: report the model the router actually served, not a label.
+      modelUsed = servedModelLabel(geminiResult.meta) ?? modelUsed;
 
       // Process tool calls
       if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
@@ -431,7 +437,7 @@ export async function processConversationTurn(
         },
       }).catch(() => {});
 
-      reply = 'I apologize, but I encountered an error processing your request. Please try again.';
+      reply = TURN_ERROR_REPLY;
     }
 
     // Per-turn memory proof event (feeds the Memory Alive/Dead admin card).
@@ -466,6 +472,22 @@ export async function processConversationTurn(
     } catch (memoryError: any) {
       console.warn(`[VTID-01216] Memory write failed:`, memoryError.message);
     }
+
+    // VTID-04540: learn facts from this turn. The brain path returns through
+    // here, and nothing else extracted facts from a typed turn: a typed thread
+    // has no session end to catch up at, so every turn is extracted (force
+    // skips the voice-oriented "3 new turns / 60 s" throttle, which dropped the
+    // first two turns of every thread). write_fact skips unchanged values.
+    // Typed turns only: a voice transcript routed here keeps the voice
+    // pipeline's own extraction cadence (session-end commit + throttle).
+    if (input.message_type !== 'voice_transcript') extractTypedTurnFacts({
+      message: input.message,
+      reply,
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      thread_id: thread.thread_id,
+      turn_count: thread.turn_count,
+    });
 
     // Log turn completed
     await emitOasisEvent({
@@ -593,3 +615,55 @@ Sharing Links:
 // Re-export isUnifiedConversationEnabled from system-controls-service
 // This uses DB-backed governance controls instead of env vars (VTID-01216)
 export { isUnifiedConversationEnabled } from './system-controls-service';
+
+// =============================================================================
+// VTID-04540: fact extraction + served-model label for typed turns
+// =============================================================================
+
+/**
+ * "provider/model" of the call that wrote the reply, or null when the meta has
+ * none. A tool-assisted turn reports its final call in reply_provider /
+ * reply_model; a direct turn only has provider / model.
+ */
+export function servedModelLabel(meta: Record<string, unknown> | undefined): string | null {
+  const pick = (a: unknown, b: unknown) =>
+    (typeof a === 'string' && a ? a : null) ?? (typeof b === 'string' && b ? b : null);
+  const model = pick(meta?.reply_model, meta?.model);
+  const provider = pick(meta?.reply_provider, meta?.provider);
+  if (!model) return null;
+  return provider ? `${provider}/${model}` : model;
+}
+
+/**
+ * Fire-and-forget fact extraction for one typed turn. Never throws, never
+ * blocks the reply. Skips the canned error reply so a failed turn cannot
+ * teach Vitana anything.
+ */
+export function extractTypedTurnFacts(args: {
+  message: string;
+  reply: string;
+  tenant_id: string;
+  user_id: string;
+  thread_id: string;
+  turn_count?: number;
+}): { extracted: boolean; skip_reason?: string } {
+  try {
+    if (!args.message?.trim()) return { extracted: false, skip_reason: 'empty_message' };
+    if (args.reply === TURN_ERROR_REPLY) return { extracted: false, skip_reason: 'error_reply' };
+    const result = deduplicatedExtract({
+      conversationText: `User: ${args.message}\nAssistant: ${args.reply}`,
+      tenant_id: args.tenant_id,
+      user_id: args.user_id,
+      session_id: args.thread_id,
+      turn_count: args.turn_count,
+      force: true,
+    });
+    if (!result.extracted) {
+      console.debug(`[VTID-04540] typed-turn extraction skipped: ${result.skip_reason}`);
+    }
+    return result;
+  } catch (err: any) {
+    console.warn(`[VTID-04540] typed-turn extraction failed (non-blocking): ${err?.message}`);
+    return { extracted: false, skip_reason: 'error' };
+  }
+}

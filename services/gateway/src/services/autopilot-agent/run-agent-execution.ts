@@ -22,20 +22,26 @@ import { parseFixMode } from '../dev-autopilot-bridge';
 import { recordAgentRunUsage, type AgentRunUsage } from '../dev-autopilot-outcomes';
 import { estimateCost } from '../../constants/llm-defaults';
 import { applyPrContract } from '../dev-autopilot-pr-contract';
+import { resolveFeedbackTicketRef } from '../feedback-ticket-ref';
+import { fixRoundTurnBudget, resolveFixRoundMinTurns } from './fix-round-budget';
 import { isTestFile } from '../dev-autopilot-safety';
 import { loadAutopilotContext } from '../dev-autopilot/context-loader';
-import type { LLMProvider, LLMRouterMessage } from '../llm-router';
+import type { LLMRouterMessage } from '../llm-router';
 import { agentToolsFor, executeAgentTool } from './agent-tools';
 import { runAgentLoop, type AgentStep } from './agent-loop';
+import { buildStartingMap, explorationThresholds } from './agent-exploration';
 import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, buildScopeFixPrompt, buildValidationFixPrompt } from './agent-prompt';
+import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
-import { makeCheckRunner, runJest, runTsc, selectJestTargets } from './agent-validate';
+import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
 import { buildAgentMemoryContext, recordAgentRunMemory } from './agent-memory-context';
 import type { FinishArgs } from './agent-tools';
+import { devWorkerModel } from '../dev-pipeline-models';
+import { createAgentProgressGate } from '../jev/gates/agent-progress-gate';
 
 const LOG_PREFIX = '[autopilot-agent]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -45,15 +51,18 @@ const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
 const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
 const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
 
-/** STANDING model policy (docs/OPERATOR-AGENT-BUILD-PLAN.md): DeepSeek Flash
- *  4.1 primary; the `worker` stage's policy fallback (Bedrock Claude) applies
- *  through the router unchanged. Env-overridable for a controlled experiment,
- *  never to Google. */
-const AGENT_PRIMARY_PROVIDER = (process.env.AGENT_PRIMARY_PROVIDER || 'deepseek') as LLMProvider;
-const AGENT_PRIMARY_MODEL = process.env.AGENT_PRIMARY_MODEL || 'deepseek-flash';
+/** VTID-04593 (owner decision 2026-09-26): the coding agent runs on Bedrock
+ *  Claude Sonnet 4.6; the `worker` stage's policy fallback applies through the
+ *  router unchanged. Resolved in dev-pipeline-models.ts (env-overridable,
+ *  never to Google or the direct Anthropic API). Replaces the earlier DeepSeek
+ *  Flash primary, under which 9 of 15 operator runs since 2026-09-22 hit the
+ *  turn cap without finishing. */
+const AGENT_PRIMARY = devWorkerModel();
 const AGENT_MAX_TURNS = Number.parseInt(process.env.AGENT_MAX_TURNS || '60', 10);
 const AGENT_DEADLINE_MS = Number.parseInt(process.env.AGENT_DEADLINE_MS || String(22 * 60_000), 10);
 const AGENT_MAX_FIX_ROUNDS = Number.parseInt(process.env.AGENT_MAX_FIX_ROUNDS || '3', 10);
+/** VTID-04244: every fix round gets at least this many turns, whatever the first round consumed. */
+const AGENT_FIX_ROUND_MIN_TURNS = resolveFixRoundMinTurns();
 /** VTID-04112: chars of history resent per turn before older tool results
  *  are trimmed — see agent-loop.ts's HISTORY_CHAR_BUDGET for why. */
 const AGENT_HISTORY_CHAR_BUDGET = Number.parseInt(process.env.AGENT_HISTORY_CHAR_BUDGET || '120000', 10);
@@ -141,8 +150,8 @@ export async function runAgentExecutionSession(
   if (!planR.ok || !planR.data || planR.data.length === 0) return { ok: false, error: 'plan version not found', session_id: sessionId };
   const plan = planR.data[0];
 
-  const findR = await supa<Array<{ activated_vtid: string | null; spec_snapshot: Record<string, unknown> | null }>>(
-    s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot&limit=1`,
+  const findR = await supa<Array<{ activated_vtid: string | null; spec_snapshot: Record<string, unknown> | null; source_ref?: string | null }>>(
+    s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot,source_ref&limit=1`,
   );
   const activatedVtid = findR.ok && findR.data && findR.data[0]?.activated_vtid ? String(findR.data[0].activated_vtid) : null;
   // VTID-04007: open-ended intake — no pre-selected files; the task prompt
@@ -160,6 +169,14 @@ export async function runAgentExecutionSession(
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
+  // VTID-04764 (Jev P1 A1): every-N-turns progress check, observe-only
+  // (JEV_AGENT_PROGRESS_MODE; off = a no-op object). The task summary is the
+  // plan's opening, never file contents.
+  const progressGate = createAgentProgressGate({
+    executionId,
+    findingId: exec.finding_id,
+    task: (plan.plan_markdown || '').slice(0, 1500),
+  });
   // VTID-04017: per-run usage/cost, appended to the finding's outcome row
   // in `finally` whatever happens (best-effort, never throws).
   const run: AgentRunUsage = {
@@ -184,7 +201,7 @@ export async function runAgentExecutionSession(
     },
   });
   const cancelledResult = () => finish({ ok: false, cancelled: true, error: 'cancelled by operator', session_id: sessionId, branch });
-  const override = extractLlmOnRampOverride(exec.metadata) || { provider: AGENT_PRIMARY_PROVIDER, model: AGENT_PRIMARY_MODEL };
+  const override = extractLlmOnRampOverride(exec.metadata) || AGENT_PRIMARY;
   const { callViaRouter } = await import('../llm-router');
 
   let ws: Workspace | null = null;
@@ -265,13 +282,36 @@ export async function runAgentExecutionSession(
 
     const repoDirChanged = async () => (fixMode ? listChangedFilesSince(repoDir, baseSha) : listChangedFiles(repoDir));
     let changed = await repoDirChanged();
+    // VTID-04224 Phase 2: flag-gated file-scoped dev_agent_memory recall,
+    // fail-open — a recall failure must never stall or fail an execution.
+    let devMemoryBlock = '';
+    if (isWorkerMemoryRecallEnabled()) {
+      try {
+        const memFiles = fixMode ? changed.map((c) => c.path) : (plan.files_referenced || []);
+        devMemoryBlock = await buildFileScopedMemoryBlock(memFiles, 'vitana-platform');
+      } catch {
+        devMemoryBlock = '';
+      }
+    }
     let prompt = fixMode
       ? buildFixModeTaskPrompt({
         vtid: telemetryVtid, planMarkdown: plan.plan_markdown, prUrl: fixMode.pr_url, branch, prFiles: changed.map((c) => c.path),
         ciEvidence: priorFailure || '', attempt: (exec.auto_fix_depth || 0) + 1, maxAttempts: (exec.auto_fix_depth || 0) + 1 + AGENT_MAX_FIX_ROUNDS,
+        devMemoryBlock,
         mergeBase: mergeBase ? { status: mergeBase.status, conflicts: mergeBase.conflicts, baseBranch: GITHUB_BASE_BRANCH } : undefined,
       })
-      : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded });
+      : buildAgentTaskPrompt({ vtid: telemetryVtid, planMarkdown: plan.plan_markdown, filesReferenced: plan.files_referenced || [], priorFailure, openEnded, devMemoryBlock });
+    // VTID-04466: the index's answer for this task, before turn 1. Live, the
+    // agent made ~95 navigation calls per capped run and queried the index
+    // ~once per six runs; starting from the map replaces the blind search.
+    if (!fixMode) {
+      const startingMap = buildStartingMap(codeIndex.bundle, plan.plan_markdown, plan.files_referenced || []);
+      if (startingMap) {
+        prompt = `${prompt}\n\n${startingMap}`;
+        onStep({ turn: 0, kind: 'tool', name: 'runner:starting_map', detail: `${startingMap.length} chars from the code index`, data: { starting_map_chars: startingMap.length } });
+      }
+    }
+    const explorationEnabled = !fixMode && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;
@@ -285,8 +325,12 @@ export async function runAgentExecutionSession(
       const loop = await runAgentLoop({
         systemPrompt, prompt, tools: runTools, history,
         execute: (name, args) => executeAgentTool(name, args, toolCtx),
-        callLlm, maxTurns: AGENT_MAX_TURNS - totalTurns, deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
+        callLlm, maxTurns: fixRoundTurnBudget(round, AGENT_MAX_TURNS, totalTurns, AGENT_FIX_ROUND_MIN_TURNS), deadlineMs: Math.max(60_000, AGENT_DEADLINE_MS - (Date.now() - started)), onStep,
         isCancelled: () => cancelRequested, historyCharBudget: AGENT_HISTORY_CHAR_BUDGET,
+        // VTID-04466: first round of a non-fix run only — a fix round starts
+        // from a diff that already exists.
+        exploration: explorationEnabled && round === 0 ? explorationThresholds(AGENT_MAX_TURNS) : null,
+        onTurnSnapshot: progressGate.onTurn,
       });
       history = loop.history; totalTurns += loop.turns;
       memHistory = history; memFinished = loop.finished || memFinished;
@@ -300,7 +344,12 @@ export async function runAgentExecutionSession(
 
       // --- runner-side verification, independent of what the model claims ---
       changed = await repoDirChanged();
-      if (changed.length === 0) return finish({ ok: false, error: 'agent finished with an empty diff — refusing to open an empty PR', session_id: sessionId, branch });
+      if (changed.length === 0) {
+        // VTID-04466: a hand-off finish carries the agent's findings — keep
+        // them on the failure so the operator (and the next attempt) sees them.
+        const findings = (finished.summary || '').trim().slice(0, 1500);
+        return finish({ ok: false, error: `agent finished with an empty diff — refusing to open an empty PR${findings ? `. Agent findings: ${findings}` : ''}`, session_id: sessionId, branch });
+      }
       if (fixMode && mergeBase?.status !== 'merged' && (await listChangedFiles(repoDir)).length === 0) {
         // The PR diff is non-empty (the parent's work) but this run edited
         // nothing — pushing would re-run the same red CI. (VTID-04217: a
@@ -340,7 +389,7 @@ export async function runAgentExecutionSession(
         }
       }
       let jestFailed = '';
-      for (const target of selectJestTargets(changedPaths)) {
+      for (const target of selectRunnerJestTargets(repoDir, changedPaths)) {
         if (cancelRequested) return cancelledResult();
         const r = await runJest(repoDir, target.project, target.patterns);
         onStep({ turn: totalTurns, kind: 'tool', name: 'runner:jest', detail: `${target.project} ${target.patterns.join(' ')} → ${r.ok ? 'pass' : 'FAIL'}`, isError: !r.ok });
@@ -355,8 +404,10 @@ export async function runAgentExecutionSession(
     if (!finished) return finish({ ok: false, error: 'agent did not finish', session_id: sessionId, branch });
 
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
+    // VTID-04333: a feedback-ticket finding carries its FB-… number on the PR.
+    const ticketRef = await resolveFeedbackTicketRef(s, findR.ok && findR.data ? findR.data[0] : null);
     const contract = applyPrContract({
-      vtid: activatedVtid, title: finished.pr_title,
+      vtid: activatedVtid, ticketNumber: ticketRef?.ticket_number ?? null, title: finished.pr_title,
       body: `${finished.pr_body}\n\n---\n_Agent executor (VTID-04006): ${totalTurns} turn(s), provider ${provider || override.provider}, model ${model || override.model}${fallbackUsed ? ', fallback used' : ''}; ${usage.inputTokens} in / ${usage.outputTokens} out tokens. Runner re-verified tsc + jest before this PR was opened._`,
       files: changed.map((c) => ({ path: c.path, action: c.action })),
       executionId, findingId: exec.finding_id, planVersion: exec.plan_version, branch, baseBranch: GITHUB_BASE_BRANCH,
@@ -415,6 +466,7 @@ export async function runAgentExecutionSession(
     run.recorded_at = new Date().toISOString();
     run.cost_usd = estimateCost(run.model || '', run.input_tokens, run.output_tokens);
     await recordAgentRunUsage(exec.finding_id, run).catch(() => undefined);
+    await progressGate.finish(run.outcome);
     // VTID-04223: engineering memory OUT — ≤3 durable facts from the run's
     // transcript via the `memory` routing stage. The task_outcome / failure
     // row is the gateway's (applyExecutionResult), not written here.

@@ -1,0 +1,9 @@
+# Read-only discovery (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select … from information_schema.columns / pg_policies / pg_proc  -- tables, RLS, get_public_vitana_index, get_viewer_relationship
+select feature_key, count(*), count(distinct user_id) from health_features_daily group by 1
+# Apply (Supabase MCP apply_migration: vtid_04483_profile_health_summary)
+supabase/migrations/20260924150000_vtid_04483_profile_health_summary.sql
+# Verify (rolled-back transaction, JWT claims set via set_config)
+begin; select set_config('request.jwt.claims','{"sub":"<test user>","role":"authenticated"}',true);
+select public.get_profile_health_summary('<test user>'), public.get_profile_health_summary('<dragan3>'); rollback;
+select has_function_privilege('anon'|'authenticated', 'public.get_profile_health_summary(uuid)', 'execute')

@@ -1,0 +1,17 @@
+# VTID-04337 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04337"}; ledger row set in_progress/approved with a real title
+
+# Reproduce SEC-2 on the live project, read-only (see outputs/live-rls-recursion-before.txt)
+BEGIN READ ONLY; SET LOCAL ROLE authenticated; SELECT count(*) FROM public.partner_organization_members; ROLLBACK;
+# -> ERROR 42P17 infinite recursion detected in policy
+
+# Local test run: NOT possible in this session. `npx jest` fails with
+# "npm error 403 Forbidden - GET https://registry.npmjs.org/jest": the
+# session's egress policy blocks the npm registry and the checkout has no
+# node_modules. CI (validate-pr: Gateway Jest + tsc) is the first execution
+# of these tests:
+#   services/gateway/test/partner-orgs.test.ts
+#   services/gateway/test/vtid-04337-partner-org-members-rls-no-recursion.test.ts

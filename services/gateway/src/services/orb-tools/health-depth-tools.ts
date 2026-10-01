@@ -75,6 +75,7 @@
  *     orb_directive (no DB write required), per the brief.
  */
 
+import { readTurnCandidates } from '../conversation/turn-candidates';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { fetchVitanaIndexForProfiler } from '../user-context-profiler';
@@ -830,9 +831,28 @@ export async function tool_get_health_education(args: OrbToolArgs, id: OrbToolId
 // 14. get_next_best_action
 // ---------------------------------------------------------------------------
 
-export async function tool_get_next_best_action(_args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient): Promise<OrbToolResult> {
+export async function tool_get_next_best_action(args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient): Promise<OrbToolResult> {
   const gate = authGate('get_next_best_action', id);
   if (gate) return gate;
+  const base = await nextBestHealthAction(args, id, sb);
+  if (!base.ok) return base;
+  // VTID-04423 (WS-2.3): add the conversation brain's re-ranked candidates
+  // for this moment (current screen, past outcomes, what was already heard).
+  // Leads for the model, appended after the health action; never spoken
+  // unprompted — the model only sees them because it called this tool.
+  const brain = await readTurnCandidates(sb, id.user_id, { currentRoute: id.current_route ?? null });
+  if (!brain.ranked.length) return base;
+  return {
+    ...base,
+    result: {
+      ...((base.result as Record<string, unknown>) ?? {}),
+      brain_candidates: brain.ranked.map((c) => ({ provider: c.provider, kind: c.kind, key: c.dedupeKey, tool: c.tool, score: c.score })),
+    },
+    text: `${base.text ?? ''}\n\n${brain.text}`.trim(),
+  };
+}
+
+async function nextBestHealthAction(_args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient): Promise<OrbToolResult> {
   try {
     // Same table + ranking approach tool_create_index_improvement_plan and
     // tool_activate_recommendation already use — so the returned id can be
@@ -1119,6 +1139,7 @@ export const HEALTH_DEPTH_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
       'CALL WHEN the user asks: "what should I do today?", "what\'s my next',
       'step?", "was soll ich heute für meine Gesundheit tun?".',
       'If the result has an autopilot id, offer to call activate_recommendation.',
+      'It may also list other next steps for this person (leads, not lines): propose at most one, in your own words.',
     ].join('\n'),
     parameters: { type: 'object', properties: {}, required: [] },
   },

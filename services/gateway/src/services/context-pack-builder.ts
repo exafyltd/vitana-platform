@@ -26,6 +26,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { registerRuleForLang } from '../i18n/llm-locale';
 import {
   ContextPack,
   MemoryHit,
@@ -72,6 +73,15 @@ import { getUserHealthContext } from './user-health-context';
 // FEATURE_VOICE_RANKING_SHADOW_ENV shadow-compare log. See memory-ranker.ts.
 import { isFeatureLive } from './feature-flags';
 import { rankMemoryHits, shadowCompareHits } from './memory-hit-ranking';
+import { formatPeopleBlock, type KeyedFact } from './memory/people';
+
+/** A structured fact hit's content is "fact_key: fact_value". */
+function factFromHitContent(hit: { content: string }): KeyedFact {
+  const i = hit.content.indexOf(': ');
+  return i < 0
+    ? { fact_key: '', fact_value: '' }
+    : { fact_key: hit.content.slice(0, i), fact_value: hit.content.slice(i + 2) };
+}
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -201,7 +211,9 @@ async function fetchMemoryHitsViaBroker(
       user_id: lens.user_id!,
       intent: 'recall_history',
       channel: 'conversation',
-      role: 'community',
+      // VTID-04367: scope the read to the lens role (personal memory is
+      // always visible; memory written in a work role only in that role).
+      role: lens.active_role || 'community',
       latency_budget_ms: 1500,
       required_blocks: ['EPISODIC'],
       query: query && query.trim().length > 5 ? query : undefined,
@@ -217,7 +229,7 @@ async function fetchMemoryHitsViaBroker(
       content: (h.content ?? '').substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
       importance: h.importance ?? 30,
       occurred_at: h.occurred_at,
-      source: h.source ?? 'mem_episodes',
+      source: h.source ?? 'broker_episodic',
       // The broker's EPISODIC hits arrive in already-ranked order (semantic
       // when query was set, recency otherwise). Encode that rank as a
       // descending relevance_score so the context-pack ranker downstream
@@ -285,7 +297,7 @@ async function fetchMemoryFacts(
           content: `${f.fact_key}: ${f.fact_value}`,
           importance: Math.round(f.provenance_confidence * 100),
           occurred_at: f.extracted_at || new Date().toISOString(),
-          source: f.provenance_source || 'cognee_extraction',
+          source: f.provenance_source || 'memory_extraction',
           relevance_score: 1.0, // Identity core facts are always max relevance
         }));
         console.log(`[VTID-01216] Identity Core: ${identityCoreFacts.length} pinned facts loaded`);
@@ -306,7 +318,7 @@ async function fetchMemoryFacts(
         content: `${r.fact_key}: ${r.fact_value}`,
         importance: Math.round(r.provenance_confidence * 100),
         occurred_at: new Date().toISOString(),
-        source: r.provenance_source || 'cognee_extraction',
+        source: r.provenance_source || 'memory_extraction',
         relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
       }));
       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
@@ -325,7 +337,7 @@ async function fetchMemoryFacts(
         content: `${r.fact_key}: ${r.fact_value}`,
         importance: Math.round(r.provenance_confidence * 100),
         occurred_at: new Date().toISOString(),
-        source: r.provenance_source || 'cognee_extraction',
+        source: r.provenance_source || 'memory_extraction',
         relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
       }));
     } else if (!generalResult.ok && generalResult.error && generalResult.error !== 'missing_lens') {
@@ -961,7 +973,7 @@ export async function buildContextPack(
     );
   }
 
-  // Memory Facts retrieval (cognee extraction pipeline output)
+  // Memory Facts retrieval (fact extraction pipeline output)
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
       fetchMemoryFacts(input.lens, input.query)
@@ -971,7 +983,7 @@ export async function buildContextPack(
     );
   }
 
-  // Relationship Graph retrieval (cognee extraction pipeline output)
+  // Relationship Graph retrieval (relationship graph output)
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
       fetchRelationshipContext(input.lens)
@@ -1433,18 +1445,24 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
 
   context += `</user_context>\n\n`;
 
-  // Structured facts section (from cognee extraction pipeline)
+  // Structured facts section (from fact extraction pipeline)
   const structuredFactHits = pack.memory_hits.filter(h => h.category_key.startsWith('fact:'));
   if (structuredFactHits.length > 0) {
     context += `<structured_facts>\n`;
-    context += `The following are verified structured facts about the user:\n\n`;
+    // VTID-04683: say where these facts came from. A bare "facts about the
+    // user" list that includes a spouse's name read to the model like third-
+    // party personal data, and it refused on privacy grounds.
+    context += `The following are facts the user told you about themselves and their own people (partner, family, friends). They belong to the user: use them whenever the user asks about them.\n\n`;
     for (const hit of structuredFactHits) {
       context += `- ${hit.content}\n`;
     }
     context += `</structured_facts>\n\n`;
+    // VTID-04766: who is who, so a wife's father is never read as the
+    // member's own father.
+    context += formatPeopleBlock(structuredFactHits.map(factFromHitContent));
   }
 
-  // Relationship graph section (from cognee extraction pipeline)
+  // Relationship graph section (from relationship graph)
   if (pack.relationship_context && pack.relationship_context.length > 0) {
     context += `<relationship_graph>\n`;
     context += `The following is the user's relationship graph:\n\n`;
@@ -1459,7 +1477,10 @@ export function formatContextPackForLLM(pack: ContextPack, opts?: { userTimezone
     const nonFactHits = pack.memory_hits.filter(h => !h.category_key.startsWith('fact:'));
     if (nonFactHits.length > 0) {
       context += `<memory_context>\n`;
-      context += `The following information is from the user's personal memory:\n\n`;
+      // VTID-04750: these are notes and conversation excerpts, some of them
+      // old. Production 2026-09-29: the wife's birthday was stored as 1999
+      // (1997 replaced on 09-25), and Vitana said 1997 from an old excerpt.
+      context += `The following are notes and excerpts from earlier conversations with the user. They can be out of date: when one disagrees with a structured fact above, the structured fact is correct — use it and never the older note.\n\n`;
       for (const hit of nonFactHits) {
         context += `[${hit.category_key}] ${hit.content}\n`;
       }
@@ -1676,5 +1697,6 @@ export function extractLanguageFromContextPack(pack: ContextPack): string | null
  */
 export function buildLanguageDirective(languageName: string | null): string {
   if (!languageName) return '';
-  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.\n`;
+  const register = registerRuleForLang(languageName);
+  return `\nLANGUAGE: Respond ONLY in ${languageName}. Do NOT mix languages or switch to English unless the user explicitly asks.${register ? `\n${register}` : ''}\n`;
 }

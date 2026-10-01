@@ -136,6 +136,59 @@ describe('aggregatePulse', () => {
     expect(deploying.severity).toBe('warning');            // self-heal child (depth>0) → warning
   });
 
+  // VTID-04266: awaiting_approval was missing from fetchExecutions'
+  // status filter entirely — the one status that most needs a human's
+  // attention (the agent pushed a branch and is holding for a decision,
+  // VTID-04029) was invisible to this "single pane of glass" endpoint.
+  it('an awaiting_approval execution surfaces as critical with approve/reject actions', () => {
+    const items = aggregatePulse(
+      [],
+      [],
+      [{
+        id: 'e-3',
+        finding_id: 'f-3',
+        status: 'awaiting_approval',
+        pr_url: null,
+        pr_number: null,
+        branch: 'dev-autopilot/xyz',
+        execute_after: null,
+        auto_fix_depth: 0,
+        self_healing_vtid: null,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }],
+    );
+    expect(items).toHaveLength(1);
+    const item = items[0];
+    expect(item.source).toBe('autonomous_execution');
+    expect(item.severity).toBe('critical');
+    expect(item.actions).toEqual(['approve', 'reject', 'view_trace']);
+    expect(item.actions).not.toContain('cancel');
+    expect(item.title).toContain('held for approval');
+    expect(item.description).toContain('dev-autopilot/xyz');
+  });
+
+  it('an awaiting_approval execution is critical even for a depth>0 self-heal child (the human decision outranks the depth-based warning)', () => {
+    const items = aggregatePulse(
+      [],
+      [],
+      [{
+        id: 'e-4',
+        finding_id: 'f-4',
+        status: 'awaiting_approval',
+        pr_url: null,
+        pr_number: null,
+        branch: null,
+        execute_after: null,
+        auto_fix_depth: 2,
+        self_healing_vtid: 'VTID-DA-abcdef01',
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }],
+    );
+    expect(items[0].severity).toBe('critical');
+  });
+
   it('sorts items by severity then freshness', () => {
     const items = aggregatePulse(
       [{
@@ -259,6 +312,28 @@ describe('aggregatePulse', () => {
       // Backward compat — callers that don't pass contracts still work.
       const items = aggregatePulse([], [], []);
       expect(items).toEqual([]);
+    });
+  });
+});
+
+// VTID-04266: source-contract check — both the /pulse route's fetchExecutions
+// query and the /pulse/counts badge query must include awaiting_approval in
+// their status filter. This can't be exercised as a unit test (both do real
+// network I/O against Supabase), so it's pinned directly against the source
+// text the same way this repo pins other SQL/query-shape invariants.
+describe('VTID-04266: awaiting_approval included in both execution status filters', () => {
+  const src = require('fs').readFileSync(
+    require('path').resolve(__dirname, '../src/routes/autonomy-pulse.ts'),
+    'utf8',
+  ) as string;
+
+  it('fetchExecutions (the /pulse feed) queries awaiting_approval alongside the other active statuses', () => {
+    const matches = src.match(/status=in\.\([^)]*awaiting_approval[^)]*\)/g) || [];
+    expect(matches.length).toBeGreaterThanOrEqual(2); // /pulse feed + /pulse/counts badge
+    matches.forEach((m) => {
+      expect(m).toContain('cooling');
+      expect(m).toContain('running');
+      expect(m).toContain('awaiting_approval');
     });
   });
 });

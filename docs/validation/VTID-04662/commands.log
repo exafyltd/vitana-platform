@@ -1,0 +1,17 @@
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04662-service-health-registered-routes.test.ts test/vtid-04661-service-health-panel.test.ts test/routes/admin-health-registry.test.ts test/command-hub/t12-health-registry-backend-fed.test.ts   # 91/91
+curl each staging-tests.json http path against https://preview-aws-gateway.vitanaland.com   # 18/18 PASS (13 x 200 JSON, 5 x 401 JSON)
+# STAGING-VERIFY for VTID-04661 (runs 44/45/47) failed its two app.js body checks although staging
+# serves both functions: run.mjs cut every body at 1 MB and app.js is 2,534,820 bytes (functions at
+# byte 1,201,087 / 1,202,342). Cap raised to 8 MB here; the VTID-04661 suite re-runs on this deploy.
+curl -s "https://preview-aws-gateway.vitanaland.com/command-hub/app.js?v=20261017-vtid-04661" | grep -o "function orderedHealthGroups(items, preferred)"  # -> found
+node --test scripts/ci/staging-verify/lib.test.cjs   # 16 pass, 0 fail
+# Follow-up to Codex review of P1–P4 (#3784, #3789, #3790, #3793), read after merge:
+#  - Nova Sonic /health returned ok:true while not ready -> route now sets status from readiness
+#  - Memory Broker /admin/memory/health is a dashboard feed (15 counts) -> removed from the 30 s poll (117 checks)
+#  - ORB session ledger ignored state_writes_24h -> starts>=5 && writes==0 is down (ALERT-ORB-SESSION-STATE-HEALTH rule)
+#  - Support tickets missed spec_pending/answer_pending/approved/reopened -> all 11 non-terminal statuses (live CHECK constraint)
+#  - Scheduled workflows treated action_required/cancelled as healthy -> only success/skipped/neutral are ok
+#  - Dependency probe schema listing timeout 10 s > summary 5 s deadline -> 3 s
+# Live read (read-only): ci_orb_session_state_health() = starts 121, writes 37 -> ok; open tickets older than 7 d = 4 -> unchanged.
+npx jest   # 1375 suites passed, 22136 tests

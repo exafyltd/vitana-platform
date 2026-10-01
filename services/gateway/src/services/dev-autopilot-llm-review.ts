@@ -35,6 +35,7 @@
  */
 
 import githubService from './github-service';
+import { isValidatorMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { runStageToolLoop } from './llm-stage-tool-loop';
 import { createValidatorToolExecutor, validatorRouterTools } from './dev-autopilot-llm-review-tools';
 
@@ -109,7 +110,7 @@ export function buildDiffBundle(files: PrFileForReview[]): string {
   return parts.join('\n');
 }
 
-export function buildReviewPrompt(vtid: string, diffBundle: string, toolsAvailable: boolean = false): string {
+export function buildReviewPrompt(vtid: string, diffBundle: string, toolsAvailable: boolean = false, devMemoryBlock?: string): string {
   return [
     `You are a pre-merge safety reviewer for an autonomous code-change pipeline.`,
     `A PR for ${vtid} is about to be auto-merged with no human review. Look ONLY`,
@@ -137,6 +138,7 @@ export function buildReviewPrompt(vtid: string, diffBundle: string, toolsAvailab
     ``,
     `## Diff`,
     diffBundle,
+    devMemoryBlock ? `\n${devMemoryBlock}\n` : '',
   ].join('\n');
 }
 
@@ -178,6 +180,16 @@ export async function runLlmMergeReview(params: {
   }
 
   const diffBundle = buildDiffBundle(files);
+  // VTID-04224 Phase 3: flag-gated file-scoped dev_agent_memory recall,
+  // fail-open — a recall failure must never block or degrade the review.
+  let devMemoryBlock = '';
+  if (isValidatorMemoryRecallEnabled()) {
+    try {
+      devMemoryBlock = await buildFileScopedMemoryBlock(files.map((f) => f.filename), 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
 
   // VTID-04231: resolve the PR head so every tool reads exactly what would
   // merge. A failure here is not a review failure — it just means the
@@ -193,7 +205,7 @@ export async function runLlmMergeReview(params: {
     }
   }
   const toolsOn = Boolean(headSha);
-  const prompt = buildReviewPrompt(params.vtid, diffBundle, toolsOn);
+  const prompt = buildReviewPrompt(params.vtid, diffBundle, toolsOn, devMemoryBlock);
 
   const loop = await runStageToolLoop({
     stage: 'validator',

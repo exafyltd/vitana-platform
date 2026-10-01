@@ -1,0 +1,5 @@
+create extension if not exists pgcrypto;
+create table global_community_events (id uuid primary key default gen_random_uuid(), title text, description text, start_time timestamptz, end_time timestamptz, location text, virtual_link text, slug text);
+create table global_event_participants (id uuid primary key default gen_random_uuid(), event_id uuid, user_id uuid, status text, registered_at timestamptz default now(), unique(event_id,user_id));
+create table calendar_events (id uuid primary key default gen_random_uuid(), user_id uuid, title text, description text, start_time timestamptz, end_time timestamptz, location text, event_type text, status text default 'confirmed', metadata jsonb default '{}', source_type text default 'manual', role_context text default 'community', source_ref_id text, source_ref_type text, created_at timestamptz default now(), updated_at timestamptz default now());
+create unique index idx_calendar_events_source_ref on calendar_events (user_id, source_ref_id, source_ref_type) where source_ref_id is not null;

@@ -2,8 +2,8 @@
  * AWS CloudWatch Logs read-only client — VTID-04020 (operator agent W5a).
  *
  * Backs the Operator Console's `dev_cloudwatch_logs` tool: "what did
- * service X log in the last N minutes matching Y" for the `/ecs/vitana-*`
- * log groups the ECS services in CLAUDE.md §1b write to — the third item
+ * service X log in the last N minutes matching Y" for the `/vitana/*`
+ * log groups the ECS services in CLAUDE.md §1b write to (VTID-04672) — the third item
  * of the gap analysis' §4.4 access list ("CloudWatch logs:FilterLogEvents
  * on /ecs/vitana-*"). Until now the console could see a service's ECS
  * rollout state (VTID-03836) but never what the service actually said.
@@ -12,7 +12,7 @@
  * and cached client; runs under the gateway task's own broad IAM role (the
  * platform owner's recorded VTID-03929 decision — no narrow role); every
  * call is read-only (`FilterLogEventsCommand` only); the log group must
- * match the documented `/ecs/vitana-…` shape before any AWS call is made;
+ * resolve to a `/vitana/<service>` group before any AWS call is made;
  * the window, the event count and the total payload are bounded so one
  * tool call can never pull a whole day of a busy service into a prompt.
  * If the task role lacks `logs:FilterLogEvents`, the AWS error is returned
@@ -25,8 +25,36 @@ import { CloudWatchLogsClient, FilterLogEventsCommand } from '@aws-sdk/client-cl
 
 const REGION = process.env.AWS_LOGS_REGION || process.env.AWS_ECS_REGION || process.env.AWS_REGION || 'eu-central-1';
 
-/** `/ecs/vitana-<service>` — the log-group shape the §1b task definitions use. */
-export const ALLOWED_LOG_GROUP_RE = /^\/ecs\/vitana-[a-z0-9-]{2,60}$/;
+/**
+ * `/vitana/<service>` — the log group every ECS task definition actually
+ * writes to (`awslogs-group`, read live 2026-09-26: vitana-gateway →
+ * /vitana/gateway, vitana-gateway-awsdr → /vitana/gateway-awsdr,
+ * vitana-autopilot-executor → /vitana/autopilot-executor, …).
+ *
+ * VTID-04672: this module originally allowed only `/ecs/vitana-<service>`,
+ * a shape no task definition uses, so the tool could never read a real log
+ * (staging answered "The specified log group does not exist."). The old
+ * shape is still ACCEPTED as input and mapped to the real group, so a model
+ * or prompt that learned it keeps working.
+ */
+export const ALLOWED_LOG_GROUP_RE = /^\/vitana\/[a-z0-9-]{2,60}$/;
+const LEGACY_LOG_GROUP_RE = /^\/ecs\/vitana-([a-z0-9-]{2,60})$/;
+const BARE_SERVICE_RE = /^(?:vitana-)?([a-z0-9-]{2,60})$/;
+
+/**
+ * Map what a caller names to the real log group: `/vitana/<svc>` as is,
+ * the legacy `/ecs/vitana-<svc>` and a bare `gateway` / `vitana-gateway`
+ * to `/vitana/<svc>`. Returns null for anything else.
+ */
+export function resolveLogGroup(input: string): string | null {
+  const v = (input || '').trim();
+  if (ALLOWED_LOG_GROUP_RE.test(v)) return v;
+  const legacy = LEGACY_LOG_GROUP_RE.exec(v);
+  if (legacy) return `/vitana/${legacy[1]}`;
+  const bare = BARE_SERVICE_RE.exec(v);
+  if (bare && !v.includes('/')) return `/vitana/${bare[1]}`;
+  return null;
+}
 
 export const LOGS_DEFAULT_MINUTES = 30;
 export const LOGS_MAX_MINUTES = 24 * 60;
@@ -59,9 +87,10 @@ export interface LogsQueryNormalized {
 
 /** Validate + clamp a query; throws on a log group outside the documented shape. */
 export function normalizeLogsQuery(q: LogsQuery): LogsQueryNormalized {
-  const logGroup = (q.logGroup || '').trim();
-  if (!ALLOWED_LOG_GROUP_RE.test(logGroup)) {
-    throw new Error(`log_group "${logGroup}" is not an /ecs/vitana-<service> log group — only the documented ECS services' groups can be read`);
+  const requested = (q.logGroup || '').trim();
+  const logGroup = resolveLogGroup(requested);
+  if (!logGroup) {
+    throw new Error(`log_group "${requested}" is not a /vitana/<service> log group — only the Vitana ECS services' groups can be read (e.g. /vitana/gateway, /vitana/gateway-awsdr, /vitana/autopilot-executor)`);
   }
   const minutesRaw = Number(q.minutes);
   const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? Math.min(Math.floor(minutesRaw), LOGS_MAX_MINUTES) : LOGS_DEFAULT_MINUTES;

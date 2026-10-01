@@ -748,7 +748,8 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runMemoryInformedMatching',
   },
   {
-    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts)
+    // Audit-only: the real extraction pipeline (inline-fact-extractor.ts via
+    // extraction-dedup-manager deduplicatedExtract)
     // already runs outside the registry per session end; no
     // 'orb.session.ended' event is dispatched to trigger this today.
     id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',
@@ -883,6 +884,29 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     triggerConfig: { cronExpression: '15 * * * *' }, // hourly at :15
     targetRoles: [...MEMBER_ROLES],
     handler: 'runOwnPostMemoryCapture',
+  },
+  {
+    // VTID-04391: one daily_learning episode per active user per local day
+    // (diary + session summaries + new facts, condensed by the memory
+    // stage). Hourly; each user is processed in their own local 22:xx hour,
+    // at most once per date (unique index), 25 users / 4 minutes per run.
+    id: 'AP-0914', name: 'Daily Learning Episode', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '45 * * * *' }, // hourly at :45
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningEpisodes',
+  },
+  {
+    // VTID-04444 (WS-4.2): the nightly consolidator's loop 10 — themes per
+    // user from the last 30 days of diary entries, stored as
+    // diary_themes_v1 and read by AP-0911's profile synthesis. Daily before
+    // the synthesis hours; a no-op unless CONSOLIDATOR_DIARY_ROLLUP_ENABLED
+    // is exactly 'true'.
+    id: 'AP-0915', name: 'Diary Theme Rollup', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '25 4 * * *' }, // daily 4:25am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDiaryThemeRollup',
   },
 ];
 

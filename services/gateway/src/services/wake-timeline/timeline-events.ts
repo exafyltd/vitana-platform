@@ -22,6 +22,8 @@ export const WAKE_TIMELINE_EVENT_NAMES = [
   'continuation_decision_started',
   'continuation_decision_finished',
   'wake_brief_selected',
+  // VTID-04422 (WS-2.2): the shadow relevance ranking beside the live one.
+  'continuation_shadow_ranked',
   'upstream_live_connect_started',
   'upstream_live_connected',
   'first_model_output',

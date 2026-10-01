@@ -1,0 +1,7 @@
+# VTID-04307 / VTID-04308 — 2026-09-22
+# live read-only (Supabase MCP): feedback_tickets status/kind counts, cron.job feedback-*, autopilot_recommendations source_type counts
+cd services/gateway
+npx tsc --noEmit                                  # clean
+npx jest test/routes/tenant-specialists.test.ts test/vtid-04308-feedback-approve-dispatch.test.ts \
+  test/vtid-04246-auto-approve-vtid-allocation.test.ts test/feedback-pipeline.test.ts test/architecture/   # outputs/jest.txt
+npx jest --testPathPattern '(autopilot|feedback|tenant|vtid-042|vtid-043)'   # 1076 suites, 0 failures after the seam fix

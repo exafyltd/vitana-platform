@@ -2,8 +2,8 @@
  * VTID-01952 — Identity Guardrail Block (brain prompt section)
  *
  * Builds the [USER IDENTITY] block injected at the TOP of every brain system
- * prompt. Identity values come from app_users (canonical) — NEVER from
- * memory_facts (mirror) — so even if Cognee or some legacy bug wrote a
+ * prompt. Identity values come from profiles + app_users (canonical) — NEVER from
+ * memory_facts (mirror) — so even if an extractor or some legacy bug wrote a
  * wrong name into memory, the brain can never speak it.
  *
  * Two guardrails:
@@ -21,21 +21,6 @@ import * as repo from './identity-guardrail-block-repository';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-// Columns on app_users that we treat as identity-class for the prompt block.
-// Mirrors IDENTITY_LOCKED_KEYS in memory-identity-lock.ts (different shape
-// because app_users uses snake_case column names without the user_ prefix).
-const IDENTITY_COLUMNS = [
-  'first_name',
-  'last_name',
-  'display_name',
-  'date_of_birth',
-  'gender',
-  'pronouns',
-  'locale',
-  'country',
-  'city',
-] as const;
 
 interface IdentityRow {
   first_name?: string | null;
@@ -74,15 +59,24 @@ export async function buildIdentityGuardrailBlock(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // VTID-04572: profile fields from `profiles`, locale from `app_users`.
+  // Either read failing degrades to what the other returned — a missing
+  // locale must not hide the member's name and birthday.
   let row: IdentityRow | null = null;
   try {
-    const { data, error } = await repo.fetchAppUserIdentityRow(supabase, IDENTITY_COLUMNS.join(','), input.user_id);
-
-    if (error) {
-      console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
-      return '';
+    const [profileRes, appUserRes] = await Promise.all([
+      repo.fetchProfileIdentityRow(supabase, input.user_id),
+      repo.fetchAppUserIdentityRow(supabase, input.user_id),
+    ]);
+    if (profileRes.error) {
+      console.warn('[VTID-01952] identity-guardrail: profiles select error:', profileRes.error.message);
     }
-    row = (data as unknown) as IdentityRow | null;
+    if (appUserRes.error) {
+      console.warn('[VTID-01952] identity-guardrail: app_users select error:', appUserRes.error.message);
+    }
+    const profile = (profileRes.error ? null : profileRes.data) as IdentityRow | null;
+    const appUser = (appUserRes.error ? null : appUserRes.data) as IdentityRow | null;
+    row = profile || appUser ? { ...(profile ?? {}), locale: appUser?.locale ?? null } : null;
   } catch (err) {
     console.warn('[VTID-01952] identity-guardrail: lookup failed:', err);
     return '';
@@ -130,10 +124,15 @@ export async function buildIdentityGuardrailBlock(
     '',
     'GUARDRAIL — anti-drift (NON-NEGOTIABLE):',
     '- NEVER address the user by any name other than the one above.',
-    '- NEVER state the user\'s age, birthday, gender, pronouns, email, phone, or address from a value other than what is shown above.',
+    '- NEVER state the user\'s OWN age, birthday, gender, pronouns, email, phone, or address from a value other than what is shown above.',
     '- If memory blocks below contain a different value for any of these fields, IGNORE the memory block and use the [USER IDENTITY] above. The Profile is the only source of truth.',
-    '- If the user asks you to change any of these fields ("call me X", "my birthday is Y", "change my email to Z"), respond with the sanctioned refusal: tell them this kind of basic information can only be changed in their Profile / Settings, and offer to take them there. NEVER perform the change yourself, NEVER promise that you will, NEVER ask follow-ups about the new value.',
+    '- If the user asks you to change any of these fields of their own ("call me X", "my birthday is Y", "change my email to Z"), respond with the sanctioned refusal: tell them this kind of basic information can only be changed in their Profile / Settings, and offer to take them there. NEVER perform the change yourself, NEVER promise that you will, NEVER ask follow-ups about the new value.',
     '- If unsure whether a fact in memory belongs to the user vs someone they mentioned, default to [USER IDENTITY] for self-referencing fields.',
+    // VTID-04729: live staging — "wie heißt meine Frau" with no spouse fact
+    // stored got this block's refusal ("… nur in deinem Profil … Möchtest
+    // du, dass ich dich zu deinen Profileinstellungen bringe?"). The rules
+    // above are about the user's own fields; say so, and where the rest goes.
+    '- SCOPE: this block covers only the user\'s OWN profile fields. The user\'s partner, family and friends (their names, birthdays, anniversaries) are not profile fields and are never answered with the refusal above or sent to the Profile: they are what the user told you, answered from memory as the memory self-check says — and when nothing about them is stored, say you do not know it yet and ask.',
     '',
   ].join('\n');
 }

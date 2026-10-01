@@ -189,13 +189,7 @@
           resultLine.style.color = '#9ca3af';
           resultLine.textContent = 'Calling POST /api/v1/operator/publish — bake checks then EXEC-DEPLOY dispatch.';
 
-          fetch('/api/v1/operator/publish', {
-            method: 'POST',
-            credentials: 'include',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-            body: JSON.stringify({ confirm_short_sha: shortSha }),
-          })
-            .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
+          postPublish({ confirm_short_sha: shortSha }, headers)
             .then(function (payload) {
               if (payload.status >= 200 && payload.status < 300 && payload.body && payload.body.ok) {
                 const url = payload.body.workflow_url;
@@ -896,6 +890,35 @@
     return card;
   };
 
+  /**
+   * VTID-04646: POST /api/v1/operator/publish, and when the server refuses
+   * because the staging commit has no passing STAGING-VERIFY run
+   * (409 staging_not_verified), ask the admin for a written reason and retry
+   * once with override_reason. Cancel or a too-short reason keeps the refusal.
+   * Resolves { status, body } exactly like the plain fetch did.
+   */
+  var PUBLISH_OVERRIDE_MIN = 10;
+  function postPublish(payload, headers) {
+    function send(body) {
+      return fetch('/api/v1/operator/publish', {
+        method: 'POST',
+        credentials: 'include',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+        body: JSON.stringify(body),
+      }).then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); });
+    }
+    return send(payload).then(function (p) {
+      if (p.status !== 409 || !p.body || p.body.error !== 'staging_not_verified') return p;
+      var reason = window.prompt(
+        'Staging is not verified for this commit.\n\n' + (p.body.detail || '') +
+        '\n\nTo publish anyway, write why (at least ' + PUBLISH_OVERRIDE_MIN + ' characters). It is recorded.',
+        ''
+      );
+      if (!reason || reason.trim().length < PUBLISH_OVERRIDE_MIN) return p;
+      return send(Object.assign({}, payload, { override_reason: reason.trim() }));
+    });
+  }
+
   function dispatchPublish(mode, headers, opts) {
     const sf = window.__vitana_state && window.__vitana_state.publishFlow;
     if (!sf) return;
@@ -903,10 +926,7 @@
     sf.startedAt = Date.now();
     if (typeof renderApp === 'function') renderApp();
 
-    fetch('/api/v1/operator/publish', { method: 'POST', credentials: 'include',
-      headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-      body: JSON.stringify({ confirm_short_sha: (sf.sourceCommit || '').slice(0, 7), mode: mode }) })
-      .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+    postPublish({ confirm_short_sha: (sf.sourceCommit || '').slice(0, 7), mode: mode }, headers)
       .then(function (p) {
         if (p.status >= 200 && p.status < 300 && p.body && p.body.ok) {
           sf.vtid = p.body.vtid || null;

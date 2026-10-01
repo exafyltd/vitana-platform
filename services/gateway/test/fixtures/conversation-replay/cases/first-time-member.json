@@ -1,0 +1,40 @@
+{
+ "schema_version": 1,
+ "id": "first-time-member",
+ "description": "A brand-new member's first session on the safe-fast path (context not ready yet, as on staging) gets the first-time welcome.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "greeting": {
+   "hasPriorSession": false,
+   "greetingIsFirstTime": true,
+   "greetingNeedsOnboarding": true,
+   "bucket": "first",
+   "lastFullBriefingDate": null,
+   "contextReadyResolved": false,
+   "safeFastGreetingLive": true
+  },
+  "providers": []
+ },
+ "turns": [
+  {
+   "route": "/home",
+   "user": "Hi, I just joined, what can you do for me"
+  }
+ ],
+ "expect": {
+  "opener_kind": "safe_fast_first_time_welcome",
+  "register": "first_time",
+  "silent_opening": false,
+  "candidate_provider": null,
+  "turns": [
+   {
+    "route_groups": [
+     "journey"
+    ],
+    "advisor_eligible": true
+   }
+  ]
+ }
+}

@@ -1,0 +1,18 @@
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/services/vtid-04410-genai-semconv.test.ts
+  VTID-04410 GenAI semantic-convention mapper
+    ✓ AC-1: provider keys map to gen_ai.provider.name well-known values (4 ms)
+    ✓ AC-2: trace id is 32 hex (UUID dashes stripped), span id 16 hex and stable (1 ms)
+    ✓ AC-3: completed span carries usage, response model, OK status and no content (2 ms)
+    ✓ AC-4: failed span is ERROR with error.type; started span is UNSET without usage (5 ms)
+  VTID-04410 llm.call.* payloads carry the span
+    ✓ AC-5: started/completed/failed share one trace and span id; existing fields unchanged (3 ms)
+    ✓ AC-6: a fallback reports the serving model as gen_ai.response.model
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.438 s, estimated 1 s
+Ran all test suites matching /test\/services\/vtid-04410-genai-semconv.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

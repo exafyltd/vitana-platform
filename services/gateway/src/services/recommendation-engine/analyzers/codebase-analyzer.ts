@@ -56,6 +56,16 @@ const DEFAULT_CONFIG: CodebaseAnalyzerConfig = {
   file_size_threshold_lines: 1000,
 };
 
+// VTID-04275: this file's own source necessarily contains the literal
+// strings TODO/FIXME/HACK/XXX as part of implementing todo detection (the
+// regex above, the TodoMatch['type'] union, the severity comparison below)
+// — its own grep sweep over services/ matches itself, producing a phantom
+// finding with nothing to resolve (the "TODO" is the detection code, not
+// an actionable comment). Self-match only; other analyzer files are
+// legitimately scanned.
+const TODO_SCAN_SELF_MATCH_FILE =
+  'services/gateway/src/services/recommendation-engine/analyzers/codebase-analyzer.ts';
+
 // =============================================================================
 // Todo/Fixme Scanner
 // =============================================================================
@@ -90,10 +100,12 @@ async function scanTodos(basePath: string, config: CodebaseAnalyzerConfig): Prom
           const match = line.match(/^(.+?):(\d+):(.+)$/);
           if (match) {
             const [, file, lineNum, content] = match;
+            const relFile = file.replace(basePath + '/', '');
+            if (relFile === TODO_SCAN_SELF_MATCH_FILE) continue;
             const typeMatch = content.match(/(TODO|FIXME|HACK|XXX)/i);
             if (typeMatch) {
               todos.push({
-                file: file.replace(basePath + '/', ''),
+                file: relFile,
                 line: parseInt(lineNum, 10),
                 type: typeMatch[1].toUpperCase() as TodoMatch['type'],
                 text: content.trim(),

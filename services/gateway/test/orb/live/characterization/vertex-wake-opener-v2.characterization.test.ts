@@ -59,7 +59,7 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
     expect(brain).not.toMatch(/pick ONE of: "Let me show you where we are\./);
   });
 
-  it('orb-live.ts delegates the sync opening rungs to computeGreetingDecision', () => {
+  it('orb-live.ts delegates the sync opening rungs to the brain', () => {
     // VTID-03607: this used to pin the literal spellings `computeGreetingDecision({`
     // and `_syncDecision.directive`. Those are the shape the code happened to
     // have, not the invariant this test protects — which is "the transport
@@ -69,7 +69,8 @@ describe('VTID-03104 / 1c: override_v2 opener lives in the brain; transport dele
     // closure, both of which honour the invariant exactly. Assert the
     // invariant; the rung-by-rung behaviour is pinned by the brain's own
     // golden snapshots, not by grepping this file.
-    expect(orbLive).toMatch(/computeGreetingDecision\(/);
+    // VTID-04416: the brain entry point (decideOpeningFlow → decideConversationFlow).
+    expect(orbLive).toMatch(/decideOpeningFlow\(/);
     expect(orbLive).toMatch(/const _baseCtxSync: GreetingDecisionContext = \{/);
     expect(orbLive).toMatch(/decision\.directive !== null/);
     expect(orbLive).toMatch(/decision\.effects\.armWatchdog/);

@@ -10,7 +10,7 @@
  *   - setupCors wiring: allowed origin gets Access-Control-Allow-Origin and a
  *     working preflight; blocked origin propagates an error (500) with no
  *     CORS headers.
- *   - sseHeaders: applies SSE headers only on GET /stream|/events paths, never
+ *   - sseHeaders: applies SSE headers only on GET /stream paths (and /events when the client asks for text/event-stream), never
  *     on POST /stream/send-style JSON routes.
  */
 
@@ -117,8 +117,8 @@ describe('setupCors (Express integration)', () => {
 });
 
 describe('sseHeaders', () => {
-  function run(method: string, path: string) {
-    const req: any = { method, path };
+  function run(method: string, path: string, accept?: string) {
+    const req: any = { method, path, headers: accept ? { accept } : {} };
     const res: any = { setHeader: jest.fn() };
     const next = jest.fn();
     sseHeaders(req, res, next);
@@ -133,8 +133,20 @@ describe('sseHeaders', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('sets SSE headers on GET /events paths', () => {
-    const { res, next } = run('GET', '/api/v1/oasis/events');
+  // VTID-04695: every GET under /events is a JSON route; they were served as
+  // text/event-stream (STAGING-VERIFY: calendar window 401 was event-stream,
+  // /api/v1/oasis/events a JSON list labelled event-stream).
+  it.each(['/api/v1/oasis/events', '/api/v1/calendar/events/window', '/api/v1/calendar/events', '/api/v1/universal-cart/events'])(
+    'does NOT set SSE headers on the JSON route GET %s (VTID-04695)',
+    (path) => {
+      const { res, next } = run('GET', path, 'application/json');
+      expect(res.setHeader).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalled();
+    },
+  );
+
+  it('sets SSE headers on GET /events when the client asks for a stream (EventSource)', () => {
+    const { res, next } = run('GET', '/api/v1/oasis/events', 'text/event-stream');
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
     expect(next).toHaveBeenCalled();
   });
@@ -142,6 +154,32 @@ describe('sseHeaders', () => {
   it('does NOT set SSE headers on POST /stream/send (JSON route regression)', () => {
     const { res, next } = run('POST', '/api/v1/live/stream/send');
     expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it.each([
+    '/command-hub/oasis/events/',
+    '/command-hub/oasis/streams/',
+    '/command-hub/command-hub/events/',
+    '/command-hub/events.js',
+  ])('does NOT set SSE headers on Command Hub page %s (VTID-04615)', (path) => {
+    const { res, next } = run('GET', path);
+    expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('still sets SSE headers on the API stream the Command Hub opens', () => {
+    const { res } = run('GET', '/api/v1/events/stream');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+  });
+
+  it.each([
+    '/api/v1/calendar/events',
+    '/api/v1/calendar/events/window',
+    '/api/v1/calendar/events/abc-123',
+  ])('does NOT set SSE headers on the calendar JSON API: %s (VTID-04680)', (path) => {
+    const { res, next } = run('GET', path);
+    expect(res.setHeader).not.toHaveBeenCalledWith('Content-Type', 'text/event-stream');
     expect(next).toHaveBeenCalled();
   });
 

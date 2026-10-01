@@ -19,10 +19,14 @@
  * the handlers (A6).
  */
 
+// VTID-04561: one registry answers which roles get the privileged voice tools.
+import { roleGetsPrivilegedVoiceTools } from '../../profile/role-registry';
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools + per-surface catalog gating.
 import { BACKOFFICE_TOOL_SCHEMAS } from '../../../services/backoffice-voice-tools';
 import { resolveOrbSurface, type OrbSurface } from '../surface';
+import { OPERATOR_DELEGATE_TOOL, OPERATOR_DELEGATE_TOOL_NAME } from './operator-delegate';
+import { commerceDelegationTools, DEEP_DIVE_TOOL, DEEP_DIVE_TOOL_NAME, DELEGATION_COMPANION_TOOLS, memberDelegationTools } from './delegation-tools';
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
 // out from the Voice Tools Catalog's `status: planned` backlog + the P0
 // community-feature gaps. Handlers live in services/orb-tools/*, spread into
@@ -107,7 +111,7 @@ export function buildLiveApiTools(
   surface?: string | null,
 ): object[] {
   return applySurfaceGate(
-    buildLiveApiToolsUngated(mode, currentRoute, activeRole),
+    withNavV2ScreenDescription(buildLiveApiToolsUngated(mode, currentRoute, activeRole)),
     resolveOrbSurface({ currentRoute, explicit: surface }),
     mode,
   );
@@ -118,9 +122,19 @@ export function buildLiveApiTools(
  * before; on the admin and backoffice surfaces only the tools that belong to
  * that surface survive, and community/developer tools are ABSENT (not merely
  * discouraged in prose). backoffice additionally gains its own four tools.
- * vitanaland and command-hub are byte-for-byte unchanged.
+ * vitanaland is byte-for-byte unchanged; command-hub is gated by
+ * applyCommandHubGate (VTID-04310).
  */
 const NAVIGATION_TOOL_NAMES = new Set(['get_current_screen', 'navigate', 'end_conversation', 'search_knowledge']);
+/**
+ * VTID-04521: on the work surfaces (admin, backoffice, commerce) a screen
+ * that `navigate` found or offered is opened with navigate_to_screen, so
+ * with the screen registry it belongs to the navigation set there too.
+ * Before, a work surface could find a screen and never open it.
+ */
+function isSurfaceNavigationTool(name: string): boolean {
+  return NAVIGATION_TOOL_NAMES.has(name) || (name === 'navigate_to_screen' && process.env.NAV_V2_ENABLED === 'true');
+}
 // Computed lazily: the declaration arrays come from modules that some route
 // tests mock at import time, so reading them at module load would throw.
 const namesOf = (decls: unknown): string[] =>
@@ -131,7 +145,111 @@ function surfaceAllowlist(surface: 'admin' | 'backoffice'): Set<string> {
     : new Set<string>(namesOf(BACKOFFICE_TOOL_SCHEMAS));
 }
 
+/**
+ * VTID-04310 — the Command Hub developer voice catalog.
+ *
+ * The command-hub surface used to get the full community catalog (~290
+ * declarations, diary/water/journey tools included) with the developer
+ * tools appended last — so the tool-catalog byte budget (VTID-04026/04097)
+ * almost certainly trimmed the developer tools away. It now gets the
+ * navigation tools, memory/knowledge search, the developer read tools, and
+ * `operator_delegate` — the one way voice queues work (same Operator turn,
+ * approval hold and exafy_admin gate as the Operator Console).
+ *
+ * The legacy lifecycle tools below wrote to /api/v1/vtid/* and the worker
+ * orchestrator directly, outside the Operator on-ramp; they are retired from
+ * voice (their handlers stay for any other caller).
+ */
+export const COMMAND_HUB_RETIRED_VOICE_TOOLS = new Set([
+  'dev_allocate_vtid', 'dev_create_task', 'dev_update_task', 'dev_cancel_task', 'dev_complete_task',
+  'dev_terminalize_vtid', 'dev_execute_vtid', 'dev_run_exec_workflow', 'dev_submit_evidence',
+]);
+const COMMAND_HUB_EXTRA_TOOLS = new Set(['search_memory', OPERATOR_DELEGATE_TOOL_NAME, DEEP_DIVE_TOOL_NAME, ...DELEGATION_COMPANION_TOOLS.map((t) => t.name)]);
+function commandHubAllowlist(): Set<string> {
+  return new Set<string>([
+    ...namesOf(DEVELOPER_DOMAIN_TOOL_DECLARATIONS).filter((n) => !COMMAND_HUB_RETIRED_VOICE_TOOLS.has(n)),
+    ...COMMAND_HUB_EXTRA_TOOLS,
+  ]);
+}
+
+function applyCommandHubGate(tools: object[]): object[] {
+  const allowed = commandHubAllowlist();
+  const out: object[] = [];
+  let delegateAdded = false;
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
+        const name = typeof d?.name === 'string' ? d.name : '';
+        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+      });
+      if (!delegateAdded && !kept.some((d) => d.name === OPERATOR_DELEGATE_TOOL_NAME)) {
+        kept.push(OPERATOR_DELEGATE_TOOL as { name?: unknown });
+        // VTID-04386: the async companions — result on a later turn, and cancel.
+        for (const t of DELEGATION_COMPANION_TOOLS) {
+          if (!kept.some((d) => d.name === t.name)) kept.push(t as { name?: unknown });
+        }
+        // VTID-04563: the developer's deep dive.
+        if (!kept.some((d) => d.name === DEEP_DIVE_TOOL_NAME)) kept.push(DEEP_DIVE_TOOL as { name?: unknown });
+      }
+      delegateAdded = true;
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    } else {
+      out.push(group);
+    }
+  }
+  return out;
+}
+
+/**
+ * VTID-04326 — the commerce surface gets the navigation tools and knowledge
+ * search only. Community, health, diary, memory and developer tools are
+ * absent, so nothing personal can be read or written from business mode.
+ * VTID-04400 adds the commerce onboarding specialist (read-only, flag-gated).
+ */
+function applyCommerceGate(tools: object[]): object[] {
+  const out: object[] = [];
+  // VTID-04400: the commerce onboarding specialist (+ async companions),
+  // added to the first declaration group, only when its flag is 'true'.
+  let extra = commerceDelegationTools() as Array<{ name?: unknown }>;
+  for (const group of tools as Array<Record<string, unknown>>) {
+    if (Array.isArray(group.function_declarations)) {
+      const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) =>
+        isSurfaceNavigationTool(typeof d?.name === 'string' ? d.name : ''));
+      if (extra.length > 0) {
+        const present = new Set(kept.map((d) => String(d?.name ?? '')));
+        kept.push(...extra.filter((t) => !present.has(String(t.name))));
+        extra = [];
+      }
+      if (kept.length > 0) out.push({ ...group, function_declarations: kept });
+    }
+    // google_search grounding is dropped on commerce: answers come from the
+    // knowledge base, not the open web, while customer data is on screen.
+  }
+  return out;
+}
+
+/**
+ * VTID-04397 — the member ORB gets the support specialist (and the async
+ * companions) when ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is 'true'. Off:
+ * the catalog is returned untouched, byte for byte.
+ */
+function applyMemberDelegation(tools: object[]): object[] {
+  const extra = memberDelegationTools() as Array<{ name?: unknown }>;
+  if (extra.length === 0) return tools;
+  let added = false;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (added || !Array.isArray(group.function_declarations)) return group;
+    added = true;
+    const decls = group.function_declarations as Array<{ name?: unknown }>;
+    const present = new Set(decls.map((d) => String(d?.name ?? '')));
+    return { ...group, function_declarations: [...decls, ...extra.filter((t) => !present.has(String(t.name)))] };
+  });
+}
+
 export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'anonymous' | 'authenticated'): object[] {
+  if (surface === 'vitanaland') return mode === 'authenticated' ? applyMemberDelegation(tools) : tools;
+  if (surface === 'command-hub') return mode === 'authenticated' ? applyCommandHubGate(tools) : tools;
+  if (surface === 'commerce') return mode === 'authenticated' ? applyCommerceGate(tools) : tools;
   if (surface !== 'admin' && surface !== 'backoffice') return tools;
   if (mode !== 'authenticated') return tools; // anonymous sessions already get the narrow navigator-only set
   const allowed = surfaceAllowlist(surface);
@@ -140,7 +258,7 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
     if (Array.isArray(group.function_declarations)) {
       const kept = (group.function_declarations as Array<{ name?: unknown }>).filter((d) => {
         const name = typeof d?.name === 'string' ? d.name : '';
-        return NAVIGATION_TOOL_NAMES.has(name) || allowed.has(name);
+        return isSurfaceNavigationTool(name) || allowed.has(name);
       });
       if (surface === 'backoffice') {
         const present = new Set(kept.map((d) => String(d.name)));
@@ -153,6 +271,96 @@ export function applySurfaceGate(tools: object[], surface: OrbSurface, mode: 'an
   }
   return out;
 }
+
+/**
+ * VTID-04521 — `navigate_to_screen` as the screen registry opens it. The
+ * legacy description told the model that "where is …" is a hard redirect;
+ * with the registry a "where" question is answered with an offer and the
+ * screen opens only on a yes (owner decision 2026-09-24). Parameters are
+ * unchanged — entity screens still use them.
+ */
+export const NAVIGATE_TO_SCREEN_V2_DESCRIPTION = [
+  'Open one screen, panel or overlay of the Vitana app by its screen_id.',
+  '',
+  'Call it when:',
+  '- navigate returned POSSIBLE SCREENS and one clearly fits, or the member picked one;',
+  '- you offered a screen (after navigate said FOUND, or from your own knowledge) and the member said yes;',
+  '- the member asked to open a screen whose screen_id you already know.',
+  '',
+  'Do NOT call it for "where is …" / "wo finde ich …" questions — call navigate with intent "where",',
+  'tell them where it is and what it shows, and ask whether to open it.',
+  '',
+  'Use the exact screen_id a tool gave you; never guess one from a title. If you do not know the',
+  'screen_id, call navigate with the member\'s words instead.',
+  '',
+  'The screen opens when you finish speaking: say one short sentence that you are taking them there,',
+  'then stop. Panels (entry_kind overlay) open on top of the current screen and the conversation',
+  'carries on. If the result starts with NOTE, the previous screen did not open — say so plainly if',
+  'the member asks about it.',
+  '',
+  'Screens about one specific item need its id from a prior tool result: match_id, vitana_id,',
+  'meetup_id, event_id, user_id, recipient_id, chat_group_id, id, groupId, roomId. Never invent one.',
+  'Never speak a route or a screen_id aloud — use the title.',
+].join('\n');
+
+function withNavV2ScreenDescription(tools: object[]): object[] {
+  if (process.env.NAV_V2_ENABLED !== 'true') return tools;
+  return (tools as Array<Record<string, unknown>>).map((group) => {
+    if (!Array.isArray(group.function_declarations)) return group;
+    const decls = group.function_declarations as Array<Record<string, unknown>>;
+    if (!decls.some((d) => d?.name === 'navigate_to_screen')) return group;
+    return {
+      ...group,
+      function_declarations: decls.map((d) =>
+        d?.name === 'navigate_to_screen' ? { ...d, description: NAVIGATE_TO_SCREEN_V2_DESCRIPTION } : d),
+    };
+  });
+}
+
+/** VTID-04517 — `navigate` as the registry resolver answers it (NAV_V2_ENABLED). */
+export const NAVIGATE_V2_DECLARATION = {
+  name: 'navigate',
+  description: [
+    'Find the screen in the Vitana app that has what the member is asking',
+    'about, and open it or offer it. Pass the member\'s words; the backend',
+    'knows every screen, in every language.',
+    '',
+    'Set intent:',
+    '- "open": they asked to see or go somewhere ("open my wallet", "show me',
+    '  the news", "zeig mir meine Termine", "take me to…"). A clear match opens',
+    '  right away — say one short sentence that you are taking them there.',
+    '- "where": they asked where something is or whether it exists ("where can',
+    '  I see my lab results?", "wo finde ich…", "is there a page for…"). Nothing',
+    '  opens: you get the screen, tell them what they will find there, and ask',
+    '  whether to open it. On a yes, call navigate_to_screen with that',
+    '  screen_id — never navigate again for the same request.',
+    '',
+    'Do NOT call it for small talk or general knowledge questions.',
+    '',
+    'What comes back:',
+    '- "… opens as soon as you finish speaking": say one short sentence, then stop.',
+    '- FOUND: one screen, for a "where" question — answer and offer.',
+    '- POSSIBLE SCREENS: pick the one that fits and call navigate_to_screen',
+    '  with its screen_id, or ask one either/or question and then call it.',
+    '- NO MATCHING SCREEN: do not navigate; answer in voice.',
+    'Never speak a route or a screen_id aloud — use the title.',
+  ].join('\n'),
+  parameters: {
+    type: 'object',
+    properties: {
+      question: {
+        type: 'string',
+        description: 'The member\'s whole request, word for word, in their language ("pop up my wallet for a quick look", not "wallet"). The wording picks between a page, a tab and a popup.',
+      },
+      intent: {
+        type: 'string',
+        enum: ['open', 'where'],
+        description: '"open" when they asked to open/show/go to it; "where" when they asked where it is.',
+      },
+    },
+    required: ['question', 'intent'],
+  },
+};
 
 function buildLiveApiToolsUngated(
   mode: 'anonymous' | 'authenticated' = 'authenticated',
@@ -268,6 +476,15 @@ function buildLiveApiToolsUngated(
     },
   ];
 
+  // VTID-04517: with NAV_V2_ENABLED, `navigate` is answered by the screen
+  // registry and says whether the member wants the screen OPENED or only
+  // asked WHERE it is. Same name, so every other description that mentions
+  // navigate / navigate_to_screen stays true.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const i = navigatorTools.findIndex((t) => t.name === 'navigate');
+    navigatorTools[i] = NAVIGATE_V2_DECLARATION;
+  }
+
   if (mode === 'anonymous') {
     // VTID-NAV-ANON-FIX: On landing/portal pages, anonymous sessions get NO
     // tools — the signup-intent regex flow (detectAuthIntent + session_limit_reached)
@@ -294,13 +511,14 @@ function buildLiveApiToolsUngated(
         ...navigatorTools,
         {
           name: 'search_memory',
-          description: 'Search the user\'s personal memory and Memory Garden for information they have previously shared or recorded, including personal details, health data, preferences, goals, past conversations, daily diary entries, journal notes, and any other personal records.',
+          // VTID-04581: shortened to make room for remember_fact in the Nova budget.
+          description: 'Search what the member shared before: personal details, people, health, preferences, goals, past conversations, diary and notes.',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'The search query to find relevant memories, diary entries, or personal records',
+                description: 'What to look for',
               },
               categories: {
                 type: 'array',
@@ -309,6 +527,23 @@ function buildLiveApiToolsUngated(
               },
             },
             required: ['query'],
+          },
+        },
+        // VTID-04581: save a stated fact and learn what is already stored.
+        // Deliberately terse — the rules live in the prompt's MEMORY line and
+        // the Nova catalog budget is nearly full (VTID-04426).
+        {
+          name: 'remember_fact',
+          description: 'Save a stated fact; reply per STATUS.',
+          parameters: {
+            type: 'object',
+            properties: {
+              fact_key: { type: 'string' },
+              fact_value: { type: 'string' },
+              about: { type: 'string', enum: ['self', 'other'] },
+              confirm_replace: { type: 'boolean' },
+            },
+            required: ['fact_key', 'fact_value'],
           },
         },
         {
@@ -364,10 +599,9 @@ function buildLiveApiToolsUngated(
             'activity, or any calendar event.',
             '',
             'IMPORTANT:',
-            '- Always confirm the event details with the user BEFORE calling this tool.',
-            '- If the user does not specify an end time, default to 1 hour after start.',
-            '- Use ISO 8601 format for start_time and end_time (e.g. "2026-04-15T18:00:00Z").',
-            '- After creating, confirm the event title and time back to the user.',
+            '- Only when the user asks. Read the details back, get a yes, then pass confirmed=true.',
+            '- No end time given: 1 hour after start. Times in ISO 8601.',
+            '- After creating, say the title and time back to them.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -388,6 +622,10 @@ function buildLiveApiToolsUngated(
                 type: 'string',
                 description: 'Optional description or notes for the event.',
               },
+              confirmed: {
+                type: 'boolean',
+                description: 'true only after the user said yes to the read-back.',
+              },
               location: {
                 type: 'string',
                 description: 'Optional location of the event.',
@@ -404,7 +642,7 @@ function buildLiveApiToolsUngated(
         // VTID-01270A: Community & Events voice tools
         {
           name: 'search_events',
-          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again.',
+          description: 'Search upcoming community events, meetups, and live rooms. Supports filtering by activity/keyword, location, organizer, date range, and price. Call with no parameters to list all upcoming events. For follow-up questions about events already listed, answer from conversation context — do NOT call this tool again. Opens an event only with open_event.',
           parameters: {
             type: 'object',
             properties: {
@@ -436,6 +674,13 @@ function buildLiveApiToolsUngated(
                 type: 'string',
                 enum: ['meetup', 'live_room', 'all'],
                 description: 'Filter by event type. Defaults to all.',
+              },
+              // VTID-04533: opening an event closes the voice session, so it
+              // must be the member's explicit ask, never a side effect of a
+              // question that happens to return one event.
+              open_event: {
+                type: 'boolean',
+                description: 'true only if the member asked to open one event; omit for questions.',
               },
             },
             required: [],
@@ -857,34 +1102,26 @@ function buildLiveApiToolsUngated(
           description: [
             'File a customer-support ticket and hand the call to Devon, our',
             'tech-support colleague (VTID-03044 canary: Devon is the ONLY',
-            'enabled specialist; Sage / Atlas / Mira are disabled). This is',
-            'RARE — typically less than 5% of conversations. You ARE the',
-            'instruction manual; almost every question is yours to answer.',
+            'enabled specialist; Sage / Atlas / Mira are disabled).',
             '',
-            'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
-            'first say something like "Shall I bring in Devon to file this?"',
-            'and wait for the user to say yes. Implicit consent does NOT count.',
-            'Vary the proposal phrasing every time.',
+            'CALL IT when the user reports a CONCRETE PROBLEM: a bug, something',
+            'that does not work, a problem with their account, a refund or',
+            'claim. That IS a hand-off case. Confirm once, in your own words,',
+            'that they want it filed and passed to support; when they agree,',
+            'call it. One short confirmation is enough.',
             '',
-            'CALL ONLY WHEN ALL THREE are true:',
-            '  (1) the user has described a CONCRETE PROBLEM (bug, broken',
-            '      state, refund, account lockout, claim) — not a question',
-            '      about how something works,',
-            '  (2) the user has EXPLICITLY agreed to be connected to a',
-            '      specialist (after you proposed it), and',
-            '  (3) you can write a SPECIFIC `summary` (>= 15 words) that',
-            '      describes WHAT broke, on WHICH screen/feature, with the',
-            '      user\'s own words. If you cannot — because the user only',
-            '      said "I want to report a bug" without details — DO NOT',
-            '      CALL THIS TOOL YET. Instead ask ONE follow-up question:',
-            '      "What\'s breaking — which screen or feature?" Get the',
-            '      details, THEN call this tool. A vague summary causes the',
-            '      specialist to invent the issue, which is worse than not',
-            '      forwarding at all. Generic summaries like "user wants to',
-            '      report a bug" are FORBIDDEN.',
+            '`summary`: what went wrong and where, in the user\'s own words. A',
+            'short sentence is fine. If the user only said they want to report',
+            'something without saying what, ask one short question about what',
+            'is broken first. Placeholder summaries ("user wants to report a',
+            'bug") are rejected.',
             '',
-            'NEVER CALL for any of these — answer them yourself inline using',
-            'search_knowledge first:',
+            'The reply begins with a STATUS line. Only "STATUS: handoff_created."',
+            'means a colleague is joining; every other STATUS means you stay',
+            'with the user — follow its ACTION line.',
+            '',
+            'Do NOT call for how-to questions — you are the instruction manual',
+            'for those; answer them yourself inline using search_knowledge first:',
             '  - "How does X work?" / "What is X?" / "Explain X"',
             '  - "Show me how to use X" / "How do I X?" / "Teach me"',
             '  - "Tell me about X" / "I want to learn X" / "I am new"',
@@ -895,17 +1132,12 @@ function buildLiveApiToolsUngated(
             '    report. First-time users asking how to use the diary is a',
             '    teaching moment, NOT a customer-support ticket.',
             '',
-            'GATE-A enforcement: the backend re-checks the user\'s actual',
-            'recent words (not your summary). If the gate returns STAY_INLINE,',
-            'do NOT mention the routing decision out loud — silently answer',
-            'the question. Same if the conversation\'s forward budget is',
-            'exhausted (max 1 forward + 1 return per conversation).',
+            'The backend re-checks the user\'s actual recent words (not your',
+            'summary); max 1 forward + 1 return per conversation.',
             '',
-            'AFTER A FORWARD FIRES: speak ONE short bridge sentence in your',
-            'own natural words. ANNOUNCE the handoff — never INTRODUCE the',
-            'specialist ("Hi, here is Devon" — that is DEVON\'S job in his',
-            'own voice). Vary your phrasing every time, never recite a',
-            'template. Then STOP — the next voice is the specialist\'s.'
+            'AFTER STATUS handoff_created: one short turn in your own words',
+            'announcing the colleague by role — never introduce them or speak',
+            'for them (they greet in their own voice). Then STOP.'
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -925,10 +1157,39 @@ function buildLiveApiToolsUngated(
               },
               summary: {
                 type: 'string',
-                description: 'CONCRETE one-paragraph summary using the user\'s OWN WORDS. Must include: what broke (the symptom), where (which screen/feature/flow), and any specifics the user gave (error message, order id, account email, time of day, etc). Minimum 15 words. FORBIDDEN: placeholder summaries like "user wants to report a bug" or "user has an account issue" or "user has a question". If you do not have enough specifics, ASK the user one diagnostic question first and call this tool only after you have a real description. A vague summary causes the specialist to hallucinate the issue and forces the user to correct fiction — worse than not forwarding at all.',
+                description: 'What went wrong and where, in the user\'s own words (symptom, screen or feature, any specifics such as an error message or order id). A short sentence is enough. Placeholder summaries like "user wants to report a bug" are rejected.',
               },
             },
             required: ['kind', 'summary'],
+          },
+        },
+        // VTID-04332: the specialist (Devon) adds what the member tells them
+        // to the ticket Vitana filed at hand-off. Server-enforced: only a
+        // specialist persona, only after a hand-off in this session, only on
+        // a ticket owned by this user.
+        {
+          name: 'append_to_ticket',
+          description: [
+            'Support colleague only (not Vitana): add a detail the user gives',
+            'you to the ticket Vitana filed when she handed the user to you.',
+            'Call it for each substantive detail — what they did, what',
+            'happened, which screen, error text, device. Use ticket_id',
+            '"current" for this hand-off\'s ticket. Do not read the note back',
+            'to the user. Vitana files new reports with report_to_specialist.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              ticket_id: {
+                type: 'string',
+                description: '"current" for the ticket of this hand-off (default), or that ticket\'s id.',
+              },
+              note: {
+                type: 'string',
+                description: 'The detail to record, in plain words.',
+              },
+            },
+            required: ['note'],
           },
         },
         // VTID-01943: Contacts search. Routes to contacts.read capability.
@@ -1859,8 +2120,55 @@ function buildLiveApiToolsUngated(
                 description:
                   'The recommendation id from the initiative target. Pass verbatim — never construct or guess it.',
               },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY when a previous call returned awaiting_confirmation, you read the details back, and the user agreed.',
+              },
             },
             required: ['id'],
+          },
+        },
+        {
+          // VTID-04503 (Community Autopilot CA-3)
+          name: 'confirm_pending_action',
+          description: [
+            'The user just agreed ("yes", "okay, do it", "ja, mach das") to the',
+            'offer you made. Runs exactly that stored offer — no id needed.',
+            'If the result says awaiting_confirmation, read the details back in',
+            'your own words and, if the user agrees, call again with confirm=true.',
+            'If it says there is no open offer, ask what they would like to do.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              confirm: {
+                type: 'boolean',
+                description: 'True only after a read-back the user agreed to.',
+              },
+              offer_id: {
+                type: 'string',
+                description: 'OPTIONAL — the offer_id of the offer, when you have it.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          // VTID-04506 (Community Autopilot CA-6)
+          name: 'start_autopilot_slot',
+          description: [
+            'Start an Autopilot calendar slot that is due now and mark it done,',
+            'together with the suggestion it came from. Use it when the user',
+            'agrees to the due slot you offered (confirm_pending_action runs it',
+            'for you after a "yes"). Returns the screen to open, if any.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              event_id: { type: 'string', description: 'The calendar event id of the due slot.' },
+            },
+            required: ['event_id'],
           },
         },
         {
@@ -1900,9 +2208,11 @@ function buildLiveApiToolsUngated(
             '',
             'You normally call this with NO arguments right after',
             'get_autopilot_recommendations — it activates the actions you',
-            'just read aloud. To activate a subset, pass `ids` with the',
-            'specific recommendation ids from the items list (never guess an',
-            'id). Returns { ok, activated, spoken }; speak `spoken` verbatim.',
+            'just read aloud. To activate a subset, pass `positions` (1-based',
+            'numbers as read aloud: "the second one" → [2]) or `ids` from the',
+            'items list (never guess an id). Returns per-item results; confirm',
+            'in your own words what was activated and where it landed (calendar',
+            'slot), and say plainly if something could not be activated.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -1912,6 +2222,17 @@ function buildLiveApiToolsUngated(
                 items: { type: 'string' },
                 description:
                   'OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.',
+              },
+              positions: {
+                type: 'array',
+                items: { type: 'integer' },
+                description:
+                  'OPTIONAL — 1-based positions in the list just read aloud (e.g. [2] for "the second one").',
+              },
+              confirm: {
+                type: 'boolean',
+                description:
+                  'Set true ONLY after an item came back needing confirmation, you read it back, and the user agreed.',
               },
             },
             required: [],
@@ -2695,21 +3016,35 @@ function buildLiveApiToolsUngated(
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_TOOL_SCHEMAS
           : []),
         // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Developer voice tools (VTID-02782).
         // Same role gate as ADMIN_TOOL_SCHEMAS; handlers re-check role
         // server-side regardless (developer-tools.ts developerGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
           : []),
         // WAVE-3-VOICE-CATALOG-V2 — Admin voice tools (users/RBAC, moderation,
         // marketplace, notifications, governance, feedback). Handlers re-check
         // role server-side regardless (admin-users-rbac-tools.ts adminGate()).
-        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+        ...(roleGetsPrivilegedVoiceTools(activeRole)
           ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
+        // VTID-04684: forget a stored fact the member asks to forget. Last in
+        // the catalog on purpose: the Nova budget packs the remainder in
+        // catalog order, so appending it never moves another tool out. It is
+        // reachable through find_tool / use_tool, and the gateway backstop
+        // runs the forget when the model does not call it.
+        {
+          name: 'forget_fact',
+          description: 'Forget a stored fact the member asks you to forget; reply per STATUS.',
+          parameters: {
+            type: 'object',
+            properties: { what: { type: 'string' } },
+            required: ['what'],
+          },
+        },
       ],
     },
     // VTID-GOOGLE-SEARCH: Native Google Search grounding. Gemini calls

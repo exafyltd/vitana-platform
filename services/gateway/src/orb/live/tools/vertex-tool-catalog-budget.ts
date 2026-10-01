@@ -115,6 +115,7 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   'search_knowledge',
   // Memory / diary / reminders
   'search_memory',
+  'remember_fact',
   'save_diary_entry',
   'set_reminder',
   'find_reminders',
@@ -128,6 +129,12 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   // Persona hand-off
   'switch_persona',
   'report_to_specialist',
+  // VTID-04332: the specialist's way to enrich the hand-off ticket, and the
+  // two filing tools the system prompt's AVAILABLE TOOLS section describes —
+  // kept so the prompt and the trimmed Nova catalog agree.
+  'append_to_ticket',
+  'submit_bug_report',
+  'submit_support_ticket',
   // Day / calendar
   'get_day_summary',
   'get_schedule',
@@ -149,6 +156,23 @@ export const VERTEX_BRIDGE_PRIORITY_TOOLS: readonly string[] = [
   'get_pillar_subscores',
   'get_vitana_index',
   'explain_feature',
+];
+
+/**
+ * VTID-04397: priority names that exist only behind a feature flag (the
+ * member support specialist and its async companions, declared when
+ * ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is 'true'). Kept apart from the
+ * list above because that one is pinned to exist in every authenticated
+ * catalog; these are ranked right after it when present and skipped when not.
+ */
+export const FLAG_GATED_PRIORITY_TOOLS: readonly string[] = [
+  'ask_support_specialist',
+  // VTID-04400: the business ORB's commerce specialist (ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED).
+  'ask_commerce_specialist',
+  'get_delegation_result',
+  'cancel_delegation',
+  // VTID-04427: the live advisor's note (declared only while the advisor is active).
+  'get_guidance',
 ];
 
 export interface ToolCatalogBudgetResult {
@@ -244,7 +268,7 @@ export function resolveToolCatalogByteBudgetFor(
 export function enforceToolCatalogBudget(
   tools: object[],
   budgetBytes: number,
-  priority: readonly string[] = VERTEX_BRIDGE_PRIORITY_TOOLS,
+  priority: readonly string[] = [...VERTEX_BRIDGE_PRIORITY_TOOLS, ...FLAG_GATED_PRIORITY_TOOLS],
 ): ToolCatalogBudgetResult {
   const declarationsBefore = toolCatalogDeclarationCount(tools);
   const bytesBefore = toolCatalogDeclarationBytes(tools);

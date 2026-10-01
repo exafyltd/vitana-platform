@@ -279,4 +279,19 @@ describe('buildExecutionPrompt', () => {
     // Must explicitly tell the model NOT to use JSON (prevent regression).
     expect(p).toMatch(/NOT JSON/);
   });
+
+  // VTID-04224 Phase 2: file-scoped dev_agent_memory block, passed in
+  // pre-rendered (this builder stays pure/synchronous).
+  it('splices in the dev_agent_memory block when one is passed', () => {
+    const p = buildExecutionPrompt('f', 1, 'body', [], 'b', undefined, undefined, '**Engineering memory for these specific files**\n\n- a recalled gotcha');
+    expect(p).toContain('Engineering memory for these specific files');
+    expect(p).toContain('a recalled gotcha');
+  });
+
+  it('omits the dev_agent_memory section entirely when none is passed — byte-identical to before this phase', () => {
+    const withUndefined = buildExecutionPrompt('f', 1, 'body', [], 'b');
+    const withEmptyString = buildExecutionPrompt('f', 1, 'body', [], 'b', undefined, undefined, '');
+    expect(withUndefined).toBe(withEmptyString);
+    expect(withUndefined).not.toContain('Engineering memory for these specific files');
+  });
 });

@@ -1,0 +1,4 @@
+npx tsc --noEmit -p services/gateway                                   # clean
+npx jest test/vtid-04523* test/routes/autopilot-recommendations.test.ts  # 96 passed
+npx jest test/vtid-0449* test/vtid-045* test/voice-activate-recommendation-shared.test.ts test/routes/autopilot-recommendations.test.ts test/services/automation-handlers test/orb   # 273 suites, 4565 passed
+Mutation runs: see outputs/mutation.txt

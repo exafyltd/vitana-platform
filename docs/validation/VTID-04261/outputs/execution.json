@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04261",
+  "execution_id": "044980f5-5f45-4bc9-89fd-6164706171f3",
+  "finding_id": "7a93bca4-d753-428d-a24e-229c164df723",
+  "plan_version": 1,
+  "branch": "dev-autopilot/044980f5",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/vtid-04245-dependency-floors.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/lib/dependency-floor-policy.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/security/cve-overrides.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-22T12:34:02.238Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

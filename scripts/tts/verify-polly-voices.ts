@@ -39,6 +39,21 @@ const EXPECTED: Record<string, { voiceId: string; engine: string; languageCode: 
   tr: { voiceId: 'Burcu', engine: 'neural', languageCode: 'tr-TR' },
 };
 
+// VTID-04336 — mirrors POLLY_SPECIALIST_VOICES (the cascade's hand-off voice
+// for Devon). Docs-derived when added and never run against the live API by
+// the session that added it; the cascade retries with the receptionist voice
+// when one of these fails, so a wrong row costs the timbre change, not audio.
+const SPECIALIST_EXPECTED: Record<string, { voiceId: string; engine: string; languageCode: string }> = {
+  'en:specialist': { voiceId: 'Matthew', engine: 'neural', languageCode: 'en-US' },
+  'de:specialist': { voiceId: 'Daniel', engine: 'neural', languageCode: 'de-DE' },
+  'fr:specialist': { voiceId: 'Remi', engine: 'neural', languageCode: 'fr-FR' },
+  'es:specialist': { voiceId: 'Sergio', engine: 'neural', languageCode: 'es-ES' },
+  'ar:specialist': { voiceId: 'Zayd', engine: 'neural', languageCode: 'ar-AE' },
+  'ru:specialist': { voiceId: 'Maxim', engine: 'standard', languageCode: 'ru-RU' },
+  'pt:specialist': { voiceId: 'Thiago', engine: 'neural', languageCode: 'pt-BR' },
+  'pl:specialist': { voiceId: 'Jacek', engine: 'standard', languageCode: 'pl-PL' },
+};
+
 const SERBIAN_PREFIXES = ['sr'];
 
 async function main(): Promise<void> {
@@ -59,7 +74,7 @@ async function main(): Promise<void> {
   let failures = 0;
   // Advisory, never a failure — see the engine-upgrade block below.
   let upgrades = 0;
-  for (const [lang, want] of Object.entries(EXPECTED)) {
+  for (const [lang, want] of Object.entries({ ...EXPECTED, ...SPECIALIST_EXPECTED })) {
     const found = voices.find((v) => v.Id === want.voiceId);
     if (!found) {
       console.error(`✗ ${lang}: voice '${want.voiceId}' NOT FOUND in ${region}`);

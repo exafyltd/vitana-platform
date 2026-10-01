@@ -107,10 +107,14 @@ describe('VTID-03892: Operator dev_agent_memory context wiring', () => {
     });
     mockedCallViaRouter.mockResolvedValueOnce(routerOk('answer'));
 
+    // VTID-04560: a custom instruction keeps developer memory only for a
+    // developer/admin caller (the member ORB text path no longer gets it —
+    // see the member-caller test below).
     await processWithGemini({
       text: 'does Serbian TTS work?',
       threadId: 't1',
       systemInstruction: 'CUSTOM ORB MEMORY CONTEXT BLOCK',
+      userRole: 'developer',
     });
 
     const [, , opts] = mockedCallViaRouter.mock.calls[0];
@@ -118,6 +122,23 @@ describe('VTID-03892: Operator dev_agent_memory context wiring', () => {
     expect(opts.systemPrompt).toContain('Polly has no Serbian voice');
     expect(opts.systemPrompt.indexOf('CUSTOM ORB MEMORY CONTEXT BLOCK'))
       .toBeLessThan(opts.systemPrompt.indexOf('Polly has no Serbian voice'));
+  });
+
+  it('VTID-04560: a member caller with its own instruction never receives developer memory or engineering context', async () => {
+    mockedCallViaRouter.mockResolvedValueOnce(routerOk('answer'));
+    const recallCallsBefore = mockedRecallDevMemory.mock.calls.length;
+
+    await processWithGemini({
+      text: 'how is my sleep?',
+      threadId: 't-member',
+      systemInstruction: 'MEMBER ORB CONTEXT',
+      userRole: 'community',
+    });
+
+    expect(mockedRecallDevMemory.mock.calls.length).toBe(recallCallsBefore);
+    const [, , opts] = mockedCallViaRouter.mock.calls[mockedCallViaRouter.mock.calls.length - 1];
+    expect(opts.systemPrompt).toContain('MEMBER ORB CONTEXT');
+    expect(opts.systemPrompt).not.toContain('Codebase orientation');
   });
 
   it('never appends a memory block when recall returns no hits', async () => {

@@ -70,6 +70,26 @@ function withSupervisorDirective(userPrompt: string, supervisorInstructions: str
 
 export interface DraftOptions {
   supervisorInstructions?: string | null;
+  /**
+   * VTID-04431: similar resolved tickets to show the drafter. Omit to look
+   * them up (support_resolution_search); pass [] to skip the lookup.
+   */
+  priorResolutions?: import('./memory/support-ticket').PriorResolution[];
+}
+
+/**
+ * VTID-04431: append how similar tickets in the same tenant were resolved.
+ * Best effort — a failed or empty lookup leaves the prompt unchanged.
+ */
+async function withPriorResolutions(userPrompt: string, t: FeedbackTicketSnapshot, opts: DraftOptions): Promise<string> {
+  try {
+    const mod = await import('./memory/support-ticket');
+    const prior = opts.priorResolutions ?? await mod.findSimilarResolvedTickets(t.id, t.raw_transcript ?? '');
+    const block = mod.renderPriorResolutions(prior);
+    return block ? `${userPrompt}\n\n${block}` : userPrompt;
+  } catch {
+    return userPrompt;
+  }
 }
 
 function summarizeIntake(t: FeedbackTicketSnapshot): string {
@@ -147,7 +167,7 @@ Output: just the answer markdown. No preamble, no JSON wrappers, no system comme
 
 export async function llmDraftSageAnswer(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
   const base = `User support ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nDraft your answer now.`;
-  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
+  const userPrompt = await withPriorResolutions(withSupervisorDirective(base, opts.supervisorInstructions), t, opts);
   const r = await callRouter(SAGE_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('sage', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };
@@ -191,7 +211,7 @@ KEY MODULES (use these when the bug touches them):
 - Dev autopilot:                 \`services/gateway/src/services/dev-autopilot-execute.ts\`,
                                  \`services/gateway/src/services/dev-autopilot-safety.ts\`
 - Memory:                        \`services/gateway/src/services/orb-memory-bridge.ts\`,
-                                 \`services/gateway/src/services/cognee-extractor-client.ts\`
+                                 \`services/gateway/src/services/inline-fact-extractor.ts\`
 - Retrieval / RAG:               \`services/gateway/src/services/retrieval-router.ts\`
 - Vitana Index:                  \`services/agents/vitana-orchestrator/*\`
 - Command Hub UI:                \`services/gateway/src/frontend/command-hub/app.js\`
@@ -235,7 +255,7 @@ export async function llmDraftDevonSpec(
   opts: DraftOptions & { retryFeedback?: string } = {},
 ): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
   const base = `Ticket ${t.ticket_number ?? '(pending)'} (kind=${t.kind}):\n\n${summarizeIntake(t)}\n\nWrite the spec now.`;
-  const withDirective = withSupervisorDirective(base, opts.supervisorInstructions);
+  const withDirective = await withPriorResolutions(withSupervisorDirective(base, opts.supervisorInstructions), t, opts);
   // VTID-02671: when the bridge auto-retries because pre-flight rejected
   // the previous draft, append the rejection feedback so Devon corrects
   // himself without supervisor intervention.
@@ -276,7 +296,7 @@ Sign off with "— Mira".`;
 
 export async function llmDraftMiraResolution(t: FeedbackTicketSnapshot, opts: DraftOptions = {}): Promise<{ markdown: string; provider: 'llm' | 'fallback' }> {
   const base = `Ticket ${t.ticket_number ?? '(pending)'}:\n\n${summarizeIntake(t)}\n\nWrite the resolution plan now.`;
-  const userPrompt = withSupervisorDirective(base, opts.supervisorInstructions);
+  const userPrompt = await withPriorResolutions(withSupervisorDirective(base, opts.supervisorInstructions), t, opts);
   const r = await callRouter(MIRA_SYSTEM, userPrompt, t.ticket_number);
   if (!r.ok || !r.text) return { markdown: fallbackPlaceholder('mira', t), provider: 'fallback' };
   return { markdown: r.text.trim() + '\n', provider: 'llm' };

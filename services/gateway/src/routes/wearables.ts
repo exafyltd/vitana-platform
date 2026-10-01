@@ -10,6 +10,8 @@
  *   POST /api/v1/wearables/waitlist               — (unchanged — kept for Phase 0 stub during rollout)
  */
 
+import { gatewayBaseUrl } from '../env';
+import { signOAuthState, verifyOAuthState } from '../lib/oauth-state';
 import { Router, Request, Response } from 'express';
 import * as jose from 'jose';
 import { getSupabase } from '../lib/supabase';
@@ -140,9 +142,14 @@ router.post('/connect/:connector', async (req: Request, res: Response) => {
 
   // Generic OAuth2 flow stub for direct-integration connectors (Fitbit, Oura, ...)
   if (connector.auth_type === 'oauth2' && connector.getOAuthUrl) {
-    const state = JSON.stringify({ u: user.user_id, t: tenantId, c: connector.id });
-    const stateB64 = Buffer.from(state).toString('base64url');
-    const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? 'https://gateway-q74ibpv6ia-uc.a.run.app'}/api/v1/wearables/callback/${connector.id}`;
+    // VTID-04401: signed, expiring state (the callback has no bearer token).
+    let stateB64: string;
+    try {
+      stateB64 = signOAuthState({ u: user.user_id, t: tenantId, c: connector.id });
+    } catch {
+      return res.status(503).json({ ok: false, error: 'OAUTH_STATE_NOT_CONFIGURED' });
+    }
+    const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? gatewayBaseUrl()}/api/v1/wearables/callback/${connector.id}`;
     const url = connector.getOAuthUrl(stateB64, redirectUri);
     return res.json({ ok: true, connector: connector.id, auth_url: url });
   }
@@ -177,18 +184,16 @@ router.get('/callback/:connector', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing code or state' });
   }
 
-  // State was encoded as base64(JSON({ u: user_id, t: tenant_id, c: connector_id }))
-  let stateData: { u: string; t: string; c: string };
-  try {
-    stateData = JSON.parse(Buffer.from(state, 'base64url').toString('utf8'));
-  } catch {
+  // VTID-04401: only a signed, unexpired state names the user.
+  const stateData = verifyOAuthState<{ u: string; t: string; c: string }>(state);
+  if (!stateData || typeof stateData.u !== 'string') {
     return res.status(400).json({ ok: false, error: 'Invalid state' });
   }
   if (stateData.c !== connectorId) {
     return res.status(400).json({ ok: false, error: 'State/connector mismatch' });
   }
 
-  const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? 'https://gateway-q74ibpv6ia-uc.a.run.app'}/api/v1/wearables/callback/${connectorId}`;
+  const redirectUri = `${process.env.GATEWAY_PUBLIC_URL ?? gatewayBaseUrl()}/api/v1/wearables/callback/${connectorId}`;
 
   try {
     const result = await connector.exchangeCode(code, redirectUri);

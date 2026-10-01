@@ -24,46 +24,9 @@ export async function fetchAppUserIdentity(sb: SupabaseClient, userId: string, t
     .maybeSingle();
 }
 
-// ==================== mem_episodes (EPISODIC) ====================
-
-export async function fetchMemEpisodesRecency(
-  sb: SupabaseClient,
-  tenantId: string,
-  userId: string,
-  limit: number,
-  cutoffIso: string | null,
-) {
-  let q = sb
-    .from('mem_episodes')
-    .select('id, kind, content, category_key, source, importance, occurred_at, actor_id, conversation_id')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .is('valid_to', null) // active rows only
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
-  if (cutoffIso) q = q.gte('occurred_at', cutoffIso);
-  return q;
-}
-
-export async function rpcMemEpisodesSemanticSearch(
-  sb: SupabaseClient,
-  params: {
-    p_query_embedding: string;
-    p_top_k: number;
-    p_tenant_id: string;
-    p_user_id: string;
-    p_workspace_scope: null;
-    p_active_role: null;
-    p_categories: null;
-    p_visibility_scope: string;
-    p_max_age_hours: number | null;
-    p_recency_boost: boolean;
-  },
-) {
-  return sb.rpc('mem_episodes_semantic_search', params);
-}
-
-// ==================== memory_items / memory_semantic_search (legacy EPISODIC fallback) ====================
+// ==================== memory_items (EPISODIC) ====================
+// VTID-04366: the broker reads the canonical memory_items table only; the
+// tier-2 mem_episodes mirror is no longer read or written.
 
 export async function rpcMemorySemanticSearch(
   sb: SupabaseClient,
@@ -73,10 +36,10 @@ export async function rpcMemorySemanticSearch(
     p_tenant_id: string;
     p_user_id: string;
     p_workspace_scope: null;
-    p_active_role: null;
+    p_active_role: string | null;
     p_categories: null;
     p_visibility_scope: string;
-    p_max_age_hours: null;
+    p_max_age_hours: number | null;
     p_recency_boost: boolean;
   },
 ) {
@@ -88,27 +51,34 @@ export async function fetchMemoryItemsLegacyRest(
   tenantId: string,
   userId: string,
   fetchLimit: number,
+  roleOrFilter?: string | null,
+  cutoffIso?: string | null,
 ) {
-  return sb
+  let q = sb
     .from('memory_items')
     .select('id, category_key, content, importance, occurred_at, source')
     .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
+    .eq('user_id', userId);
+  if (roleOrFilter) q = q.or(roleOrFilter);
+  if (cutoffIso) q = q.gte('occurred_at', cutoffIso);
+  return q
     .order('importance', { ascending: false })
     .order('occurred_at', { ascending: false })
     .limit(fetchLimit);
 }
 
-// ==================== mem_facts (SEMANTIC) ====================
+// ==================== memory_facts (SEMANTIC) ====================
+// VTID-04366: current (non-superseded) facts from the canonical table.
 
-export async function fetchActiveMemFacts(sb: SupabaseClient, tenantId: string, userId: string, limit: number) {
+export async function fetchCurrentMemoryFacts(sb: SupabaseClient, tenantId: string, userId: string, limit: number) {
   return sb
-    .from('mem_facts')
-    .select('id, fact_key, fact_value, fact_value_type, entity, confidence, actor_id, asserted_at')
+    .from('memory_facts')
+    .select('id, fact_key, fact_value, fact_value_type, entity, provenance_confidence, provenance_source, extracted_at')
     .eq('tenant_id', tenantId)
     .eq('user_id', userId)
-    .is('valid_to', null)
-    .order('asserted_at', { ascending: false })
+    .is('superseded_at', null)
+    .order('provenance_confidence', { ascending: false })
+    .order('extracted_at', { ascending: false })
     .limit(limit);
 }
 
@@ -216,6 +186,25 @@ export async function fetchDiaryEntriesSince(
     .eq('user_id', userId)
     .gte('occurred_at', cutoffIso)
     .order('occurred_at', { ascending: false })
+    .limit(limit);
+}
+
+// VTID-04343: the Daily Diary the app actually writes (text/voice/photo
+// editors, Memory Garden "add memory"). 273 rows vs 1 in
+// memory_diary_entries, so reading only the latter meant diary_loaded=0 on
+// every turn. User-owned, no tenant column (a diary is personal).
+export async function fetchAppDiaryEntriesSince(
+  sb: SupabaseClient,
+  userId: string,
+  cutoffIso: string,
+  limit: number,
+) {
+  return sb
+    .from('diary_entries')
+    .select('id, created_at, text, tags')
+    .eq('user_id', userId)
+    .gte('created_at', cutoffIso)
+    .order('created_at', { ascending: false })
     .limit(limit);
 }
 

@@ -1,0 +1,36 @@
+# VTID-04371 — commands run (2026-09-23)
+
+## Read-only exploration (Supabase MCP execute_sql, project inmkhvwdcuyhnxkgfvsb)
+select topic, count(*) from oasis_events where topic in (...) and created_at > now() - interval '24 hours' group by 1
+select column_name ... from information_schema.columns where table_name in ('automation_runs','user_assistant_state','memory_facts')
+select automation_id, status, max(started_at) from automation_runs where automation_id like 'AP-09%' group by 1,2
+select indexname, indexdef from pg_indexes where tablename in ('automation_runs','memory_facts','user_assistant_state')
+select relname, n_live_tup, pg_total_relation_size(...) from pg_stat_user_tables where relname in (...)
+explain (analyze, buffers) <24 h opener-repeat join>   -> Execution Time: 3.433 ms (index scans on idx_oasis_events_topic_created_desc)
+
+## Migration (Supabase MCP apply_migration)
+apply_migration vtid_04371_conversation_metrics_hourly   -> success
+select public.conversation_metrics_backfill(168)          -> 168 hours, 14:13:36.48 -> 14:13:37.76 (1.3 s)
+select jobname, schedule, active from cron.job where jobname='conversation-metrics-hourly' -> '7 * * * *', active
+
+## Gateway
+npx tsc --noEmit -p .                                                           -> clean
+jest test/services/conversation/vtid-04371-conversation-metrics.test.ts \
+     test/routes/vtid-04371-conversation-metrics-routes.test.ts \
+     test/routes/conversation-hub.test.ts                                        -> 3 suites, 21 tests passed
+jest test/command-hub test/routes test/services/conversation test/vtid-0403 \
+     test/vtid-0426 test/vtid-04269 test/console-task-17 test/vtid-0410        -> 175 suites, 2675 passed, 1 skipped
+jest test/scripts test/vtid-03947 test/vtid-0413 test/vtid-0414 test/vtid-04033 \
+     test/vtid-04106 test/vtid-04104 test/vtid-04110                            -> 22 suites, 224 passed
+
+## Command Hub
+node --check app.js                                                             -> ok
+git diff -U0 -- services/gateway/src/frontend/command-hub/ > csp.diff
+node scripts/ci/validator-path-guard.cjs --csp-added-lines csp.diff             -> No CSP pattern hits in added lines.
+node docs/validation/VTID-04371/outputs/harness-server.js &                     -> local harness (working-tree statics, real summarizers, live rollup rows)
+node docs/validation/VTID-04371/outputs/harness-shoot.js > outputs/shoot-report.json
+   -> desktop + mobile, both views: no page errors, no horizontal overflow, window picker moves to "7 days"
+
+## Staging, pre-merge (anonymous)
+curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/metrics/summary -> 404 text/html (not deployed)
+curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/conversation/decisions       -> 401 application/json (router mounted)

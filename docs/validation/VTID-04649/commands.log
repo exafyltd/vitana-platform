@@ -1,0 +1,25 @@
+# Baseline on main b3bf5f1 (before the fix)
+cd services/gateway && npx tsc --noEmit -p .          # exit 0
+npx jest --silent --ci --maxWorkers=4                 # 1328 suites passed (1 skipped), 21380 tests passed, 0 failed
+# vitana-v1 main b76efab
+npx vitest run                                        # 190 files, 1136 tests passed
+
+# Live evidence (read-only, Supabase MCP)
+select created_at, message from oasis_events where topic='feedback.ticket.auto_dispatch_blocked' and created_at > '2026-09-24 10:20';
+#  -> 6 rows, all "approved_by must be a user UUID … got \"auto-dispatch\""
+
+# With the fix
+npx tsc --noEmit -p .                                  # exit 0
+npx jest --ci test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04333-feedback-bridge-ticket-ref.test.ts \
+  test/vtid-04308-feedback-approve-dispatch.test.ts test/feedback-pipeline.test.ts \
+  test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts
+#  -> 6 suites, 96 tests passed
+npx jest --ci test/vtid-04649-feedback-bridge-approver.test.ts   # 4 passed
+
+# Mutation: restore `approvedBy ?? null` at both bridge call sites
+npx jest --ci test/vtid-04456-customer-support-pipeline-regression.test.ts
+#  -> 7 failed, 15 passed (every auto-dispatch scenario). Fix restored afterwards.
+
+# Staging verification of the support work (read-only script, 43 checks)
+node verify-staging.mjs   # gateway 12135be / app b76efab3d283: 43 passed, 0 failed
+#  -> outputs/staging-support-verification-2026-09-26.json

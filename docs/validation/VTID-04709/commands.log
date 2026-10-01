@@ -1,0 +1,6 @@
+# VTID-04709 — commands run (repo root unless noted)
+git checkout -B claude/orb-interruption-voice-comms-x3wh7s origin/main
+# edit .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml (commit_sha input, pinned checkout, guard, stamp)
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"   # parses; inputs: reason, commit_sha, gateway_url, ...
+cd services/gateway && node node_modules/.bin/jest test/vtid-04709-staging-deploy-pinned-commit.test.ts <45 suites that read the workflow>
+# -> Test Suites: 46 passed, 46 total; Tests: 488 passed, 488 total

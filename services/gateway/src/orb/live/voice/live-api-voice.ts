@@ -24,8 +24,11 @@ interface LiveApiVoiceConfig {
 const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
   en: { voice_name: 'Aoede', fallback_lang: null },
   de: { voice_name: 'Kore', fallback_lang: null },
-  fr: { voice_name: 'Charon', fallback_lang: null },
-  es: { voice_name: 'Fenrir', fallback_lang: null },
+  // VTID-04445 — Vitana's voice is female in every language: fr was Charon
+  // and es was Fenrir, both male Gemini voices. Leda/Autonoe are female
+  // (`GEMINI_VOICE_GENDER`); the matching decision_policy rows moved too.
+  fr: { voice_name: 'Leda', fallback_lang: null },
+  es: { voice_name: 'Autonoe', fallback_lang: null },
   ar: { voice_name: 'Aoede', fallback_lang: 'en' },
   zh: { voice_name: 'Kore', fallback_lang: 'de' },
   ru: { voice_name: 'Aoede', fallback_lang: 'en' },
@@ -45,7 +48,8 @@ const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
   // VTID-03704 comment at the call sites), but an omission here still
   // falls back to `LIVE_API_VOICE_FALLBACKS['en']` silently, which is
   // exactly the "looks native, isn't" gap this table exists to make loud.
-  tr: { voice_name: 'Puck', fallback_lang: null },
+  // VTID-04445 — was Puck (male); Vitana speaks with a female voice.
+  tr: { voice_name: 'Erinome', fallback_lang: null },
 };
 
 // Dedup log lines so a hot per-session loop doesn't spam the logger.

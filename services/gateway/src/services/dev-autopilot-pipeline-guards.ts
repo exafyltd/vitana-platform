@@ -1,0 +1,172 @@
+/**
+ * VTID-04280: pure helpers that keep the Dev Autopilot pipeline from
+ * starving itself. Two defects, both measured on the live queue 2026-09-22:
+ *
+ * 1. Planner starvation. lazyPlanTick() read the top 12 candidates by
+ *    impact_score and skipped the ones that already had a plan. Once 12
+ *    higher-impact rows were planned-but-blocked (9 operator_onramp rows and
+ *    3 dev_autopilot rows held by the PR-flood guard), no planless finding
+ *    was ever reached again — and autoApproveTick() only approves findings
+ *    that HAVE a plan, so 5 low/medium findings from allowlisted scanners
+ *    sat at status='new' indefinitely. `selectPlanlessCandidates` filters
+ *    against the plan table in one batch so the window can be wide.
+ *
+ * 2. A closed PR counted as "stranded" forever. The PR-flood guard blocks a
+ *    finding while any prior execution has a pr_url and is not
+ *    completed/self_healed/auto_archived. The self-heal bridge closes a
+ *    CI-failed PR itself (revertExecutionPR, stage 'ci') and records the row
+ *    as `reverted` — so the guard then refused that finding's own self-heal
+ *    child ("already has an unmerged PR …/pull/3543") and every later
+ *    auto-approve. Only the `ci`-status reconciler ever mapped a closed PR to
+ *    auto_archived. `pr_closed_unmerged_at` on the row's metadata is the
+ *    fact "this PR is closed and was not merged"; every guard excludes it.
+ *    A merged PR is never stamped — it still blocks (the change landed).
+ */
+
+export const PR_CLOSED_UNMERGED_KEY = 'pr_closed_unmerged_at';
+export const PR_STATE_CHECKED_KEY = 'pr_state_checked_at';
+
+/**
+ * VTID-04428: a merged PR the bridge has since reverted ON MAIN (its revert
+ * PR merged). The change is no longer on main, so the PR is no reason to
+ * block the finding's next attempt — before this, every deploy/verification
+ * failure spawned a self-heal child that died on its own parent's merged PR
+ * (recovery doc item 6). A revert PR left open (auto-merge refused) is NOT
+ * stamped: the change is still live and a new attempt must wait.
+ */
+export const PR_REVERTED_KEY = 'pr_reverted_at';
+
+/**
+ * PostgREST filter fragment (leading '&') selecting executions whose PR is
+ * still a reason to block a new attempt for the same finding.
+ */
+export const STRANDED_PR_FILTER =
+  '&pr_url=not.is.null'
+  + '&status=not.in.(completed,self_healed,auto_archived)'
+  + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`
+  + `&metadata->>${PR_REVERTED_KEY}=is.null`;
+
+/**
+ * VTID-04293: execution statuses that still own their finding. Mirrors the
+ * autoApproveTick baseline pass. `awaiting_approval` is deliberately here
+ * even though the partial unique index
+ * `dev_autopilot_executions_finding_inflight_uniq` does not cover it: a held
+ * run waits for a human, and without this the impact pass re-approved the
+ * same finding every time the prior run reached the hold (staging,
+ * 2026-09-22: finding b560c306 approved at 21:03, 21:09 and 21:24).
+ */
+export const INFLIGHT_EXECUTION_STATUSES = [
+  'cooling', 'running', 'awaiting_approval', 'ci', 'merging', 'deploying', 'verifying',
+] as const;
+
+/** PostgREST filter fragment (leading '&') for an in-flight execution. */
+export const INFLIGHT_EXECUTION_FILTER = `&status=in.(${INFLIGHT_EXECUTION_STATUSES.join(',')})`;
+
+/** Keep candidate order; drop ids that already have a plan. */
+export function selectPlanlessCandidates<T extends { id: string }>(
+  candidates: T[],
+  plannedFindingIds: Iterable<string>,
+): T[] {
+  const planned = new Set(plannedFindingIds);
+  return candidates.filter((c) => !planned.has(c.id));
+}
+
+/** Keep candidate order; keep only ids that already have a plan. */
+export function selectPlannedCandidates<T extends { id: string }>(
+  candidates: T[],
+  plannedFindingIds: Iterable<string>,
+): T[] {
+  const planned = new Set(plannedFindingIds);
+  return candidates.filter((c) => planned.has(c.id));
+}
+
+/**
+ * VTID-04428: true when revertExecutionPR() reverted a MERGED change and its
+ * revert PR actually merged (a post-merge stage, a real PR url, no error).
+ */
+export function isRevertMergedOnMain(
+  stage: string,
+  revert: { ok: boolean; revert_pr_url?: string | null; error?: string | null; reverted_on_main?: boolean },
+): boolean {
+  return stage !== 'ci' && revert.ok && revert.reverted_on_main === true && !revert.error;
+}
+
+/**
+ * True when revertExecutionPR() really closed the PR (not a dry-run stub and
+ * not a merged-PR revert). `#closed` is the suffix its CI-stage path returns
+ * after a successful PATCH state=closed; the dry-run stub is `#closed-dry-run`.
+ */
+export function isRealCiClose(stage: string, revertPrUrl: string | null | undefined): boolean {
+  return stage === 'ci' && typeof revertPrUrl === 'string' && revertPrUrl.endsWith('#closed');
+}
+
+export type PrLifecycle = 'open' | 'merged' | 'closed_unmerged' | 'unknown';
+
+export function classifyPrState(
+  pr: { state?: string | null; merged?: boolean | null } | null | undefined,
+): PrLifecycle {
+  if (!pr || typeof pr.state !== 'string') return 'unknown';
+  if (pr.merged) return 'merged';
+  if (pr.state === 'closed') return 'closed_unmerged';
+  if (pr.state === 'open') return 'open';
+  return 'unknown';
+}
+
+/** PR number from the row, else parsed from its pr_url (some rows carry only the URL). */
+export function prNumberOf(row: { pr_number?: number | null; pr_url?: string | null }): number | null {
+  if (typeof row.pr_number === 'number' && row.pr_number > 0) return row.pr_number;
+  const m = typeof row.pr_url === 'string' ? row.pr_url.match(/\/pull\/(\d+)(?:[#/?]|$)/) : null;
+  return m ? Number(m[1]) : null;
+}
+
+/** Chunk ids for PostgREST in.(...) lists so a URL never grows unbounded. */
+export function chunkIds(ids: string[], size = 50): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
+/**
+ * VTID-04376: the concurrency cap bounds agent tasks, not the post-merge tail.
+ *
+ * `countRunningExecutions` counted running + ci + merging + deploying +
+ * verifying against `dev_autopilot_config.concurrency_cap` (default 2), so two
+ * rows parked in `verifying` (a 5-minute window) or waiting on CI blocked every
+ * new dispatch (recovery doc 2026-09-21, item 10). The cap exists to bound
+ * agent runs and LLM spend; CI, merges and deploys cost neither. The tail keeps
+ * its own, larger bound so a burst of merges cannot pile onto `main` unchecked.
+ */
+export const POST_MERGE_TAIL_STATUSES = ['ci', 'merging', 'deploying', 'verifying'] as const;
+export const DEFAULT_TAIL_CAP = 8;
+
+export function resolveTailCap(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.DEV_AUTOPILOT_TAIL_CAP);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_TAIL_CAP;
+}
+
+export interface PipelineCounts { cooling: number; running: number; tail: number }
+
+export function countPipelineStatuses(rows: Array<{ status: string }> | null | undefined): PipelineCounts {
+  const c: PipelineCounts = { cooling: 0, running: 0, tail: 0 };
+  for (const r of rows || []) {
+    if (r.status === 'cooling') c.cooling++;
+    else if (r.status === 'running') c.running++;
+    else if ((POST_MERGE_TAIL_STATUSES as readonly string[]).includes(r.status)) c.tail++;
+  }
+  return c;
+}
+
+/**
+ * Free slots for a tick. `claim` counts only agents already running (a cooling
+ * row is what gets claimed); `approve` also counts the cooling queue so
+ * auto-approve does not stack more work than the cap can run.
+ */
+export function pipelineSlots(
+  kind: 'claim' | 'approve',
+  counts: PipelineCounts,
+  concurrencyCap: number,
+  tailCap: number = DEFAULT_TAIL_CAP,
+): number {
+  const agents = kind === 'claim' ? counts.running : counts.running + counts.cooling;
+  return Math.max(0, Math.min(concurrencyCap - agents, tailCap - counts.tail));
+}

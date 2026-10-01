@@ -236,4 +236,28 @@ describe('Admin Notification Categories Routes', () => {
     expect(response.status).toBe(409);
     expect(response.body.error).toBe('SLUG_CONFLICT');
   });
+
+  // VTID-04674: account/security categories members may not switch off.
+  it('PATCH /:id saves member_can_disable', async () => {
+    mockVerifiedJwt(ADMIN_CLAIMS);
+    const chain = chainFor('notification_categories');
+    chain.mockResolvedValueOnce({ data: { id: 'c1', slug: 'account', member_can_disable: false }, error: null });
+
+    const response = await request(app)
+      .patch('/c1')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ member_can_disable: false });
+
+    expect(response.status).toBe(200);
+    expect(chain.update).toHaveBeenCalledWith(expect.objectContaining({ member_can_disable: false }));
+  });
+
+  it('PATCH /:id rejects a non-boolean member_can_disable', async () => {
+    mockVerifiedJwt(ADMIN_CLAIMS);
+    const response = await request(app)
+      .patch('/c1')
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ member_can_disable: 'no' });
+    expect(response.status).toBe(400);
+  });
 });

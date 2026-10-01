@@ -1,0 +1,2 @@
+    ✕ a template rejected twice in 30 days is suppressed (5 ms)
+Tests:       1 failed, 14 passed, 15 total

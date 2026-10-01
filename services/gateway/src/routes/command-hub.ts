@@ -5,6 +5,7 @@
  * Access Control: Requires developer, admin, or exafy_admin role.
  * Community/patient/professional users are blocked with 403.
  */
+import { oasisOperatorBaseUrl } from '../env';
 import { Router, Request, Response } from 'express';
 import path from 'path';
 import { naturalLanguageService } from '../services/natural-language-service';
@@ -12,6 +13,7 @@ import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-j
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import * as repo from './command-hub-repository';
 
+import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
 
 /** Allowed roles for Command Hub access */
@@ -106,7 +108,7 @@ router.post('/api/chat', requireAuth, requireDeveloperAccess, async (req: Reques
     
     if (cmd === '/services') {
       try {
-        const response = await fetch('https://oasis-operator-86804897789.us-central1.run.app/health/services');
+        const response = await fetch(`${oasisOperatorBaseUrl()}/health/services`);
         if (response.ok) {
           const data: any = await response.json();
           const serviceList = (data.services || [])
@@ -140,8 +142,9 @@ router.post('/api/chat', requireAuth, requireDeveloperAccess, async (req: Reques
   }
 });
 
-router.get('/health', (req: Request, res: Response) => {
-  res.json({
+router.get('/health', async (req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.json(await withDependencyHealth([{ file: path.join(__dirname, '../frontend/command-hub/app.js') }, { file: path.join(__dirname, '../frontend/command-hub/index.html') }], {
     status: 'healthy',
     service: 'command-hub',
     version: '2.0.0',
@@ -154,7 +157,7 @@ router.get('/health', (req: Request, res: Response) => {
       screens: 87
     },
     timestamp: new Date().toISOString()
-  });
+  }));
 });
 
 /**

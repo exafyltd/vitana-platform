@@ -25,7 +25,7 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import type { CicdEventType } from '../types/cicd';
-import { supa, getSupabase, type SupaConfig } from './dev-autopilot-execute';
+import { supa, getSupabase, applyExecTerminalSideEffects, type SupaConfig } from './dev-autopilot-execute';
 import { createPullRequest } from './github-service';
 
 const LOG_PREFIX = '[dev-autopilot-approval]';
@@ -298,6 +298,9 @@ export async function rejectExecution(
     }),
   });
   if (!patch.ok) return { ok: false, error: patch.error };
+  // VTID-04378: a rejected hold is terminal — close the finding's ledger VTID
+  // as cancelled (the raw PATCH above used to leave it IN PROGRESS forever).
+  applyExecTerminalSideEffects(s, execId, 'cancelled');
 
   await emitOasisEvent({
     vtid: EXEC_VTID,

@@ -100,6 +100,28 @@ describe('forgery defenses', () => {
 });
 
 describe('happy path', () => {
+  // VTID-04711: the callback records the surface that started the flow.
+  async function completeWith(state: string) {
+    const manifests = tableStub({ data: { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required' } });
+    const oasisEvents = tableStub({});
+    const tables: Record<string, any> = { integration_manifest: manifests, partner_oauth_credential: tableStub({}), oasis_events: oasisEvents };
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn((t: string) => tables[t] ?? tableStub({})) });
+    (global.fetch as jest.Mock).mockResolvedValue(
+      new Response(JSON.stringify({ access_token: 'tok_xyz', token_type: 'Bearer' }), { status: 200 }),
+    );
+    const res = await request(app).get('/api/v1/vcaop/fhir-oauth/callback').query({ code: 'the-code', state });
+    expect(res.status).toBe(200);
+    return oasisEvents.insert.mock.calls[0][0].metadata.surface;
+  }
+
+  test('records the onboarding surface carried in the state', async () => {
+    expect(await completeWith(await makeState({ surface: 'partner_onboarding' }))).toBe('partner_onboarding');
+  });
+
+  test('a state without a surface records the merchant surface', async () => {
+    expect(await completeWith(await makeState())).toBe('merchant_self_service');
+  });
+
   test('verified callback exchanges the code, stores the credential, and advances state', async () => {
     const state = await makeState();
     const manifests = tableStub({ data: { id: 'm-1', connector_id: 'smart_fhir', status: 'authorization_required' } });

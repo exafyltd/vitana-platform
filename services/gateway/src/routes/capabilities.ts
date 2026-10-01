@@ -8,11 +8,14 @@
  * Mounted at /api/v1/capabilities by src/index.ts.
  */
 import { Router, Request, Response } from 'express';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { listCapabilities, executeCapability } from '../capabilities';
 import { listConnectors } from '../connectors';
 import * as repo from './capabilities-repository';
 
 const router = Router();
+// VTID-04401: verify every bearer token before a handler reads the identity.
+router.use(optionalAuth);
 
 async function getServiceClient() {
   const url = process.env.SUPABASE_URL;
@@ -22,19 +25,14 @@ async function getServiceClient() {
   return createClient(url, key);
 }
 
+// VTID-04401: the identity comes from optionalAuth, which VERIFIES the token.
+// This used to base64-decode the payload without checking the signature, so a
+// forged token naming any user id reached that user's connected accounts with
+// the service role.
 function extractUserFromJwt(req: Request): { userId: string; tenantId: string } | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const token = authHeader.split(' ')[1];
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-    return {
-      userId: payload.sub,
-      tenantId: payload.app_metadata?.active_tenant_id || process.env.DEFAULT_TENANT_ID || '',
-    };
-  } catch {
-    return null;
-  }
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!identity?.user_id) return null;
+  return { userId: identity.user_id, tenantId: identity.tenant_id || process.env.DEFAULT_TENANT_ID || '' };
 }
 
 /** GET /api/v1/capabilities — list the full capability catalogue. */

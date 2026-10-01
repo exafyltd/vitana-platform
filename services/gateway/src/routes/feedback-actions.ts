@@ -8,7 +8,7 @@
  *     POST /tickets/:id/draft-spec       Devon placeholder
  *     POST /tickets/:id/draft-resolution Mira/Atlas placeholder
  *     POST /tickets/:id/send-answer      flips to resolved
- *     POST /tickets/:id/approve          flips to in_progress
+ *     POST /tickets/:id/approve          bug/ux: dispatch to Dev Autopilot (VTID-04308); others: flips to in_progress
  *     POST /tickets/:id/resolve          flips to resolved
  *     POST /tickets/:id/reject           flips to rejected
  *     POST /tickets/:id/mark-duplicate   links to canonical
@@ -44,13 +44,18 @@ function decodeJwtSub(token: string): string | null {
   catch { return null; }
 }
 function emitFeedbackEvent(type: string, ticket: Record<string, unknown>, payload: Record<string, unknown> = {}, actorId?: string) {
+  // VTID-04333: an event about a ticket that has its own VTID is filed under
+  // it, so the ticket's ledger row carries its own trail.
+  const ownVtid = typeof payload.vtid === 'string' && /^VTID-\d{4,5}$/.test(payload.vtid) ? payload.vtid
+    : typeof ticket.linked_vtid === 'string' && /^VTID-\d{4,5}$/.test(ticket.linked_vtid) ? ticket.linked_vtid
+    : null;
   emitOasisEvent({
-    vtid: VTID,
+    vtid: ownVtid ?? VTID,
     type: type as any,
     source: 'feedback-actions-gateway',
     status: 'info',
     message: `${type} for ${ticket.ticket_number ?? ticket.id}`,
-    payload: { ticket_id: ticket.id, ticket_number: ticket.ticket_number, ...payload },
+    payload: { ticket_id: ticket.id, ticket_number: ticket.ticket_number, linked_vtid: ownVtid, ...payload },
     actor_id: actorId,
     actor_role: actorId ? 'operator' : 'system',
     surface: 'command-hub',
@@ -63,6 +68,14 @@ function emitFeedbackEvent(type: string, ticket: Record<string, unknown>, payloa
 // ===========================================================================
 
 export const adminRouter = Router();
+
+// VTID-04312: tell the member their ticket was resolved (best-effort).
+async function notifyReporter(ticketId: string): Promise<void> {
+  try {
+    const { notifyFeedbackReporter } = await import('../services/feedback-reporter-notify');
+    await notifyFeedbackReporter(ticketId);
+  } catch { /* never blocks the action */ }
+}
 
 const DraftSchema = z.object({ notes: z.string().max(2000).optional() });
 const ReasonSchema = z.object({ reason: z.string().max(500).optional() });
@@ -153,6 +166,24 @@ adminRouter.post('/tickets/:id/draft-resolution', async (req: Request, res: Resp
 adminRouter.post('/tickets/:id/approve', async (req: Request, res: Response) => {
   const token = getBearerToken(req); if (!token) return res.status(401).json({ ok: false });
   const actor = decodeJwtSub(token);
+  // VTID-04308: a bug / ux_issue ticket is dispatched to Dev Autopilot here
+  // (recommendation + VTID + execution). Approving used to only flip the
+  // status, which stranded the ticket at in_progress with nothing running.
+  const snap = await loadTicketSnapshot(req.params.id);
+  const { DISPATCHABLE_KINDS, approveAndDispatchTicket } = await import('../services/feedback-execution-bridge');
+  if (snap && DISPATCHABLE_KINDS.has(String((snap as { kind?: string }).kind))) {
+    const d = await approveAndDispatchTicket(req.params.id, actor);
+    if (!d.ok) {
+      return res.status(409).json({ ok: false, error: 'DISPATCH_BLOCKED', details: d.error, violations: d.violations ?? [] });
+    }
+    emitFeedbackEvent('feedback.ticket.status_changed', d.ticket ?? (snap as Record<string, unknown>), {
+      new_status: 'in_progress', from: 'approve', dispatched: true,
+      recommendation_id: d.recommendation_id, execution_id: d.execution_id, vtid: d.vtid,
+    }, actor ?? undefined);
+    return res.json({ ok: true, ticket: d.ticket, dispatch: {
+      recommendation_id: d.recommendation_id, execution_id: d.execution_id, vtid: d.vtid,
+    } });
+  }
   const { data, error } = await repo.approveTicket(getServiceClient(), req.params.id);
   if (error || !data) return res.status(409).json({ ok: false, error: 'NOT_APPROVABLE', details: error?.message });
   emitFeedbackEvent('feedback.ticket.status_changed', data, { new_status: 'in_progress', from: 'approve' }, actor ?? undefined);
@@ -169,6 +200,7 @@ adminRouter.post('/tickets/:id/send-answer', async (req: Request, res: Response)
   });
   if (error || !data) return res.status(409).json({ ok: false, error: 'NOT_SENDABLE', details: error?.message });
   emitFeedbackEvent('feedback.ticket.resolved', data, { from: 'send-answer', resolver_agent: data.resolver_agent }, actor ?? undefined);
+  void notifyReporter(String(data.id));
   return res.json({ ok: true, ticket: data });
 });
 
@@ -181,6 +213,7 @@ adminRouter.post('/tickets/:id/resolve', async (req: Request, res: Response) => 
   });
   if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
   emitFeedbackEvent('feedback.ticket.resolved', data, { from: 'manual-resolve' }, actor ?? undefined);
+  void notifyReporter(String(data.id));
   return res.json({ ok: true, ticket: data });
 });
 

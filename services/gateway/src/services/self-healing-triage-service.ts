@@ -83,6 +83,8 @@ export interface TriageResult {
   ok: boolean;
   report?: TriageReport;
   error?: string;
+  /** VTID-04759: an enforced Jev gate skipped triage (the caller escalates as on any failed triage). */
+  skipped_by_gate?: { gate: string; reason: string };
 }
 
 // =============================================================================
@@ -369,6 +371,18 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   //    pre-fetched events if any.
   const prompt = buildPrompt(input) + oasisEventsBlock;
 
+  // 2b. VTID-04759: Jev P1 gates B1 (same open incident?) and B2 (provider
+  //     failure type). Off by default; shadow records and triage proceeds;
+  //     enforce skips a triage that cannot help (a provider outage, or an
+  //     incident already triaged in the last 30 minutes).
+  const { runSelfHealGates, recordSelfHealGateOutcome } = await import('./jev/gates/selfheal-gates');
+  const gates = await runSelfHealGates(input);
+  if (gates.skip) {
+    console.warn(`${LOG_PREFIX} Triage for ${input.vtid} skipped by ${gates.skip.gate}: ${gates.skip.reason}`);
+    void recordSelfHealGateOutcome(gates, { ok: false, skipped: true });
+    return { ok: false, error: `jev_gate:${gates.skip.gate}:${gates.skip.reason}`, skipped_by_gate: gates.skip };
+  }
+
   // 3. The `triage` stage, through the shared bounded tool loop (VTID-04232):
   //    the provider comes from llm_routing_policy; the tools are the
   //    investigator's read-only set (self-healing-triage-tools.ts). With the
@@ -396,6 +410,7 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
     allowFallback: true,
   });
   const r = { ok: loop.ok, text: loop.text, error: loop.error, provider: loop.provider, model: loop.model };
+  void recordSelfHealGateOutcome(gates, { ok: r.ok && !!r.text, error: r.error });
 
   const elapsedMs = Date.now() - startTime;
 

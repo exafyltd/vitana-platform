@@ -1,0 +1,4 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory test/services/vtid-04591-remember-backstop.test.ts test/orb   # 296 suites, 4825 tests passed
+npx jest test/services/memory/vtid-04697-remember-claim-backstop.test.ts   # 13 passed; the live-turn test fails with the hook change removed

@@ -51,6 +51,7 @@ import type {
 } from '../types';
 import {
   localHourInTimezone,
+  logicalDayInTimezone,
   pickSalutationKind,
   todayInTimezone,
   type SalutationKind,
@@ -676,7 +677,13 @@ export function makeLoginBriefingProvider(
       const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
 
       const todayIso = todayInTimezone(nowDate, inputs.timezone);
-      const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
+      // VTID-04595 — last_session_date records the Vitana day (starts 05:00),
+      // so the gap is measured against the Vitana day too: 01:00 after a
+      // 23:00 conversation is the same day, not "a day away".
+      const daysSinceLastSession = dayDiff(
+        logicalDayInTimezone(nowDate, inputs.timezone),
+        userJourney?.last_session_date ?? null,
+      );
 
       // §10 spine — day index of the longevity journey (1 = the start day),
       // from user_journey.started_at in the user's timezone. Null when unknown.
@@ -990,7 +997,11 @@ export async function gatherBriefingFactsForFastOpener(
   const trend = readIndexTrend(indexSnap);
   const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
   const todayIso = todayInTimezone(new Date(nowMs), timezone);
-  const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
+  // VTID-04595 — measured against the Vitana day, see the provider above.
+  const daysSinceLastSession = dayDiff(
+    logicalDayInTimezone(new Date(nowMs), timezone),
+    userJourney?.last_session_date ?? null,
+  );
   const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
   const primaryGoalLabel =
     typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0 ? primaryGoalRaw.trim() : null;

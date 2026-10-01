@@ -52,6 +52,7 @@ describe('VTID-03108 / 1c: cadence-silence lives in the brain; transport delegat
 
   it('orb-live.ts no longer carries the inline cadence-silence branch', () => {
     expect(orbLive).not.toMatch(/wake_opener: 'silenced_on_cadence'/);
-    expect(orbLive).toMatch(/computeGreetingDecision\(/);
+    // VTID-04416: the brain entry point (decideOpeningFlow → decideConversationFlow).
+    expect(orbLive).toMatch(/decideOpeningFlow\(/);
   });
 });

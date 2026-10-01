@@ -5,6 +5,15 @@ import path from 'path';
 import fs from 'fs';
 import githubService from '../services/github-service';
 import * as repo from '../services/testing/testing-repository';
+import { loadTestCatalog, queryCatalog, suiteDetail } from '../services/testing/test-catalog';
+import { requireAuth, requireExafyAdmin } from '../middleware/auth-supabase-jwt';
+import { listCompletedWorkflowRuns, getWorkflowRunJobs } from '../services/github-service';
+import {
+  ensureFreshResults, summarizeWorkflows, summarizeEnvironments,
+  type SyncDeps, type GitHubRun, type CiTestRunRow,
+} from '../services/testing/test-results';
+import { listLaunchable, validateLaunch, dispatchInputs } from '../services/testing/test-launcher';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
@@ -18,6 +27,38 @@ const GATEWAY_UNIT_WORKFLOW = 'TEST-SUITE.yml';
 const GATEWAY_UNIT_PROJECT = 'gateway-jest';
 
 const router = Router();
+
+// VTID-04635: every route that starts work (a GitHub workflow dispatch, a
+// local Playwright run, a new cycle) requires an authenticated exafy_admin.
+// These were mounted with no auth at all, so an anonymous request could
+// dispatch TEST-SUITE.yml / E2E-TEST-RUN.yml / E2E-ORB-MONITOR.yml. Reads
+// (suites, runs, cycles, orb-monitor status) stay open for now; the rebuilt
+// screens (plan: Testing & QA rebuild) move them behind the same gate. The
+// middleware is written out on each route (not spread from an array) so the
+// Impact Scan's auth rule can see it.
+
+// VTID-04635: E2E runs target staging only. The owner rule (CLAUDE.md 48,
+// vitana-v1 absolute rule) forbids automated suites against production, and
+// E2E-TEST-RUN.yml already refuses production hosts; the gateway now refuses
+// anything but the staging community app before dispatching, instead of
+// forwarding whatever URL the caller sent.
+export const E2E_STAGING_COMMUNITY_URL = 'https://preview-aws.vitanaland.com';
+const E2E_ALLOWED_COMMUNITY_HOSTS = new Set(['preview-aws.vitanaland.com']);
+
+/** Returns the staging URL to test, or null when the caller asked for any other host. */
+export function resolveE2eCommunityUrl(requested: unknown): string | null {
+  if (requested === undefined || requested === null || requested === '') return E2E_STAGING_COMMUNITY_URL;
+  if (typeof requested !== 'string') return null;
+  let host: string;
+  try {
+    const u = new URL(requested);
+    if (u.protocol !== 'https:') return null;
+    host = u.hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return null;
+  }
+  return E2E_ALLOWED_COMMUNITY_HOSTS.has(host) ? E2E_STAGING_COMMUNITY_URL : null;
+}
 
 // ─── Available E2E test suites (from Playwright config) ───────────────────
 const E2E_SUITES = [
@@ -56,6 +97,280 @@ router.get('/suites', (_req: Request, res: Response) => {
 });
 
 // ─── GET /runs — List historical test runs ────────────────────────────────
+// ─── GET /catalog — the generated test catalog (VTID-04637) ──────────────
+// Every automated test in both repositories, grouped into suites, with the
+// workflows that run them, their schedules and the environment each touches
+// (dev_pr / nightly / staging / production). Built by TEST-CATALOG.yml on
+// every merge; read here from S3. exafy_admin only: it lists internal hosts,
+// workflow files and gaps.
+router.get('/catalog', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  try {
+    const { catalog, fromCache, source } = await loadTestCatalog();
+    const q = req.query as Record<string, string | undefined>;
+    const body = queryCatalog(catalog, {
+      environment: q.environment,
+      domain: q.domain,
+      runner: q.runner,
+      repo: q.repo,
+      q: q.q,
+      include_files: q.include_files === 'true',
+    });
+    res.json({ ok: true, from_cache: fromCache, source, ...body });
+  } catch (err: any) {
+    res.status(503).json({ ok: false, error: 'catalog_unavailable', message: err?.message || String(err) });
+  }
+});
+
+// ─── GET /catalog/suite?id=… — one suite with its files (VTID-04637) ─────
+router.get('/catalog/suite', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const id = String(req.query.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  try {
+    const { catalog } = await loadTestCatalog();
+    const detail = suiteDetail(catalog, id);
+    if (!detail) return res.status(404).json({ ok: false, error: 'suite_not_found' });
+    res.json({ ok: true, ...detail });
+  } catch (err: any) {
+    res.status(503).json({ ok: false, error: 'catalog_unavailable', message: err?.message || String(err) });
+  }
+});
+
+// ─── Results store (VTID-04641) ──────────────────────────────────────────
+// Every completed run of a catalogued test / gate / monitor / e2e workflow in
+// both repositories, copied from GitHub Actions into ci_test_runs. Reads sync
+// lazily when the copy is older than five minutes. exafy_admin only.
+
+function repoToken(repoName: string): string | undefined {
+  return repoName === 'exafyltd/vitana-v1' ? process.env.FRONTEND_DEPLOY_TOKEN : undefined;
+}
+
+async function resultsDeps(): Promise<SyncDeps> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { catalog } = await loadTestCatalog();
+  return {
+    supabase,
+    catalog,
+    listRuns: (r, since, page) => listCompletedWorkflowRuns(r, since, page, repoToken(r)) as Promise<GitHubRun[]>,
+    listJobs: async (r, runId) => (await getWorkflowRunJobs(r, runId, repoToken(r))).jobs,
+  };
+}
+
+/** Reads wait at most this long for a sync; a longer one finishes in the background. */
+const READ_SYNC_WAIT_MS = 4000;
+
+async function freshen(force = false): Promise<{ synced: boolean; pending?: boolean; sync_error: string | null }> {
+  const run = ensureFreshResults(resultsDeps, { force })
+    .then((r) => ({ ...r, sync_error: null as string | null }))
+    .catch((err: any) => ({ synced: false, sync_error: String(err?.message || err) }));
+  if (force) return run;
+  let timer: NodeJS.Timeout | undefined;
+  const wait = new Promise<{ synced: boolean; pending: boolean; sync_error: null }>((resolve) => {
+    timer = setTimeout(() => resolve({ synced: false, pending: true, sync_error: null }), READ_SYNC_WAIT_MS);
+  });
+  try {
+    return await Promise.race([run, wait]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Latest STAGING-VERIFY verdict per service, from the OASIS events it records (VTID-04613). */
+async function latestStagingVerify(supabase: NonNullable<ReturnType<typeof getSupabase>>) {
+  const { data } = await supabase
+    .from('oasis_events')
+    .select('created_at, topic, metadata')
+    .like('topic', 'staging.verify.%')
+    .order('created_at', { ascending: false })
+    .limit(40);
+  const seen = new Map<string, Record<string, unknown>>();
+  for (const e of data || []) {
+    const m = (e.metadata || {}) as Record<string, any>;
+    const service = String(m.service || 'unknown');
+    if (seen.has(service)) continue;
+    const results = Array.isArray(m.results) ? m.results : [];
+    seen.set(service, {
+      service,
+      outcome: String(e.topic).replace('staging.verify.', ''),
+      commit: m.commit || null,
+      at: e.created_at,
+      run_url: m.run_url || null,
+      tests: results.length,
+      failed: results.filter((r: any) => r && r.ok === false).map((r: any) => ({ suite: r.suite, name: r.name, problems: r.problems })),
+    });
+  }
+  return [...seen.values()];
+}
+
+router.get('/results/summary', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  const sync = await freshen();
+  const since = new Date(Date.now() - 30 * 864e5).toISOString();
+  const rows: CiTestRunRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('ci_test_runs')
+      .select('repo,run_id,run_attempt,workflow_file,workflow_name,kind,environments,event,branch,head_sha,status,conclusion,actor,html_url,run_created_at,run_started_at,run_updated_at,duration_s')
+      .gte('run_created_at', since)
+      .order('run_created_at', { ascending: false })
+      .range(from, from + 999);
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    rows.push(...((data || []) as CiTestRunRow[]));
+    if (!data || data.length < 1000 || from >= 20000) break;
+  }
+  const workflows = summarizeWorkflows(rows);
+  const { data: state } = await supabase.from('ci_test_sync_state').select('*');
+  res.json({
+    ok: true,
+    window_days: 30,
+    runs: rows.length,
+    environments: summarizeEnvironments(workflows),
+    workflows,
+    staging_verify: await latestStagingVerify(supabase),
+    sync: { ...sync, state: state || [] },
+  });
+});
+
+router.get('/results/runs', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  const sync = await freshen();
+  const q = req.query as Record<string, string | undefined>;
+  const limit = Math.min(Math.max(parseInt(q.limit || '50', 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(q.offset || '0', 10) || 0, 0);
+  let query = supabase.from('ci_test_runs').select('*')
+    .order('run_created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (q.repo) query = query.eq('repo', q.repo);
+  if (q.workflow) query = query.eq('workflow_file', q.workflow);
+  if (q.conclusion) query = query.eq('conclusion', q.conclusion);
+  if (q.environment) query = query.contains('environments', [q.environment]);
+  if (q.kind) query = query.eq('kind', q.kind);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  res.json({ ok: true, runs: data || [], count: (data || []).length, offset, limit, sync_error: sync.sync_error });
+});
+
+router.post('/results/sync', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  // impact-allow-no-oasis: a sync copies GitHub run history into ci_test_runs; it is a read-side refresh (polling), which CLAUDE.md §6 keeps out of OASIS.
+  const sync = await freshen(true);
+  if (sync.sync_error) return res.status(503).json({ ok: false, error: sync.sync_error });
+  res.json({ ok: true, ...sync });
+});
+
+// ─── Run Tests launcher (VTID-04643) ──────────────────────────────────────
+// Starts a reviewed test workflow on GitHub Actions. Only the workflows on the
+// launch list (services/testing/test-launcher.ts) can be started: staging and
+// development tests, and read-only production health checks. Every launch is
+// recorded in OASIS with who started it and why. exafy_admin only.
+
+const STAGING_GATEWAY_URL = process.env.STAGING_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com';
+
+/** The full commit staging serves now (build-info), or null. */
+async function stagingGatewayCommit(): Promise<string | null> {
+  try {
+    const r = await fetch(`${STAGING_GATEWAY_URL}/api/v1/admin/build-info`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const body = (await r.json()) as { git_commit?: unknown };
+    return typeof body.git_commit === 'string' && /^[0-9a-f]{40}$/.test(body.git_commit) ? body.git_commit : null;
+  } catch {
+    return null;
+  }
+}
+
+router.get('/launchable', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  let catalog = null;
+  let catalog_error: string | null = null;
+  try {
+    catalog = (await loadTestCatalog()).catalog;
+  } catch (err: any) {
+    catalog_error = String(err?.message || err);
+  }
+  res.json({ ok: true, ...listLaunchable(catalog), e2e_projects: E2E_SUITES, catalog_error });
+});
+
+router.post('/launch', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const v = validateLaunch(req.body || {}, E2E_SUITES.map((s) => s.project));
+  if (!v.ok) return res.status(v.status).json({ ok: false, error: v.error });
+  const identity = (req as any).identity as { user_id: string; email: string | null } | undefined;
+
+  let inputs: Record<string, string>;
+  try {
+    const commit = v.policy.inputs === 'staging_verify_gateway' ? await stagingGatewayCommit() : null;
+    inputs = dispatchInputs(v.policy, v.projects, commit, E2E_STAGING_COMMUNITY_URL);
+  } catch (err: any) {
+    return res.status(503).json({ ok: false, error: String(err?.message || err) });
+  }
+
+  const token = v.policy.repo === 'exafyltd/vitana-v1' ? process.env.FRONTEND_DEPLOY_TOKEN : undefined;
+  if (v.policy.repo === 'exafyltd/vitana-v1' && !token) {
+    return res.status(503).json({ ok: false, error: 'FRONTEND_DEPLOY_TOKEN is not set on this gateway, so it cannot start vitana-v1 workflows' });
+  }
+  try {
+    await githubService.triggerWorkflow(v.policy.repo, v.policy.file, 'main', inputs, token);
+  } catch (err: any) {
+    return res.status(502).json({ ok: false, error: 'GitHub dispatch failed: ' + (err?.message || 'unknown') });
+  }
+
+  const launchedAt = new Date().toISOString();
+  await emitOasisEvent({
+    vtid: 'VTID-04643',
+    type: 'testing.run.launched',
+    source: 'command-hub-testing',
+    status: 'info',
+    message: `${identity?.email || identity?.user_id || 'unknown'} started ${v.policy.file} (${v.policy.environment}): ${v.reason}`,
+    payload: {
+      repo: v.policy.repo,
+      workflow: v.policy.file,
+      label: v.policy.label,
+      environment: v.policy.environment,
+      reason: v.reason,
+      inputs,
+      launched_at: launchedAt,
+    },
+    actor_id: identity?.user_id,
+    actor_email: identity?.email || undefined,
+    actor_role: 'admin',
+    surface: 'command-hub',
+  }).catch((err) => console.warn('[Testing] launch event not recorded:', err));
+
+  res.json({
+    ok: true,
+    status: 'dispatched',
+    repo: v.policy.repo,
+    workflow: v.policy.file,
+    environment: v.policy.environment,
+    inputs,
+    launched_at: launchedAt,
+    actions_url: `https://github.com/${v.policy.repo}/actions/workflows/${v.policy.file}`,
+  });
+});
+
+router.get('/launches', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  const { data, error } = await supabase
+    .from('oasis_events')
+    .select('created_at, message, metadata, actor_email')
+    .eq('topic', 'testing.run.launched')
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  res.json({
+    ok: true,
+    launches: (data || []).map((e: any) => ({
+      at: e.created_at,
+      by: e.actor_email || null,
+      repo: e.metadata?.repo || null,
+      workflow: e.metadata?.workflow || null,
+      label: e.metadata?.label || null,
+      environment: e.metadata?.environment || null,
+      reason: e.metadata?.reason || null,
+    })),
+  });
+});
+
 router.get('/runs', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
@@ -86,8 +401,9 @@ router.get('/runs/:id', async (req: Request, res: Response) => {
 });
 
 // ─── POST /run — Trigger a test run ──────────────────────────────────────
-router.post('/run', async (req: Request, res: Response) => {
-  const { projects = [], type = 'e2e', community_url } = req.body;
+router.post('/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
+  const { projects = [], type = 'e2e' } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
   }
@@ -119,6 +435,11 @@ router.post('/run', async (req: Request, res: Response) => {
       console.error('[Testing] gateway-jest poll failed:', err);
     });
     return;
+  }
+
+  const community_url = resolveE2eCommunityUrl(req.body?.community_url);
+  if (!community_url) {
+    return res.status(400).json({ ok: false, error: `E2E runs target staging only (${E2E_STAGING_COMMUNITY_URL})` });
   }
 
   // Validate projects exist
@@ -156,9 +477,9 @@ router.post('/run', async (req: Request, res: Response) => {
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
       projects: validProjects.join(','),
-      ...(community_url ? { community_url } : {}),
+      community_url,
     });
-    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects, community_url: community_url || 'default' });
+    res.json({ ok: true, status: 'dispatched', via: 'github-actions', projects: validProjects, community_url });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
   }
@@ -176,7 +497,8 @@ router.get('/cycles', async (_req: Request, res: Response) => {
 });
 
 // ─── POST /cycles — Create a test cycle ──────────────────────────────────
-router.post('/cycles', async (req: Request, res: Response) => {
+router.post('/cycles', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
@@ -192,7 +514,12 @@ router.post('/cycles', async (req: Request, res: Response) => {
 });
 
 // ─── POST /cycles/:id/run — Execute a test cycle ────────────────────────
-router.post('/cycles/:id/run', async (req: Request, res: Response) => {
+router.post('/cycles/:id/run', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
+  const community_url = resolveE2eCommunityUrl(req.body?.community_url);
+  if (!community_url) {
+    return res.status(400).json({ ok: false, error: `E2E runs target staging only (${E2E_STAGING_COMMUNITY_URL})` });
+  }
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
@@ -219,7 +546,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
     await repo.updateCycle(supabase, cycle.id, { last_run_id: run.id, last_run_at: new Date().toISOString() });
 
     res.json({ ok: true, run_id: run.id, status: 'running', cycle_name: cycle.name, via: 'local' });
-    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, req.body?.community_url).catch(err => {
+    executePlaywrightRun(run.id, cycle.projects, cycle.type, supabase, community_url).catch(err => {
       console.error('[Testing] Cycle run failed:', err);
     });
     return;
@@ -230,6 +557,7 @@ router.post('/cycles/:id/run', async (req: Request, res: Response) => {
     const projects = Array.isArray(cycle.projects) ? cycle.projects : [];
     await githubService.triggerWorkflow(GITHUB_REPO, E2E_TEST_WORKFLOW, 'main', {
       projects: projects.join(','),
+      community_url,
     });
 
     await repo.updateCycle(supabase, cycle.id, { last_run_at: new Date().toISOString() });
@@ -484,7 +812,8 @@ router.get('/orb-monitor/status', async (_req: Request, res: Response) => {
   }
 });
 
-router.post('/orb-monitor/trigger', async (_req: Request, res: Response) => {
+router.post('/orb-monitor/trigger', requireAuth, requireExafyAdmin, async (_req: Request, res: Response) => {
+  // impact-allow-no-oasis: run attribution (who started what, where) is recorded by the Testing & QA results store (rebuild phase P2); this handler's contract is unchanged by VTID-04635.
   try {
     await githubService.triggerWorkflow(GITHUB_REPO, ORB_MONITOR_WORKFLOW, 'main');
     res.json({ ok: true, message: 'ORB Monitor workflow triggered' });

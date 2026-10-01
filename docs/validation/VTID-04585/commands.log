@@ -1,0 +1,4 @@
+cd services/gateway && npx tsc --noEmit -p .
+npx jest test/services/social-read-tools.test.ts test/services/social-memory/social-read-tools.test.ts
+npx jest --silent
+LANG_CODE=de node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=3 --utterance-pcm=q_follows_de.raw   # staging, after deploy

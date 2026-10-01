@@ -34,6 +34,8 @@
  * logging the structured overflow warning when trimming occurs.
  */
 
+import { packBootstrapContext } from './bootstrap-packer';
+
 /**
  * Default aggregate byte budget for the assembled `system_instruction` text.
  * 30 KB leaves headroom under the ~32 KB Vertex Live `setup` envelope budget
@@ -41,6 +43,42 @@
  * transcription flags) that shares the same frame.
  */
 export const INSTRUCTION_TOTAL_BYTE_BUDGET = 30_720; // 30 * 1024
+
+/**
+ * VTID-04555 — the budget for the upstream actually serving the session.
+ *
+ * The 30 KB default exists for the Vertex Live `setup` frame (~32 KB with the
+ * surrounding JSON). It was applied to every provider, and the static scaffold
+ * alone had grown to ~33 KB, so on Nova Sonic the whole brain bootstrap — the
+ * member's memory, goal and context — was dropped from every authenticated
+ * session (measured on staging 2026-09-25: scaffold 32,919 B + bootstrap
+ * 12,072 B → bootstrap dropped, still over budget). The new session then told
+ * the member it knew nothing about what they had said minutes earlier.
+ *
+ * Nova 2 Sonic has a 1M-token context and this gateway already chunks its
+ * instruction (`NOVA_SONIC_INSTRUCTION_CHUNK_BYTES`), so the Vertex frame limit
+ * does not apply to it; the cascade sends the instruction to Bedrock as text.
+ * Both get 64 KB (`NOVA_INSTRUCTION_BYTE_BUDGET` overrides for Nova). Vertex and
+ * any unknown provider keep the 30 KB default. Pure; reads only `env`.
+ */
+export const NOVA_INSTRUCTION_BYTE_BUDGET_ENV = 'NOVA_INSTRUCTION_BYTE_BUDGET';
+export const NOVA_INSTRUCTION_BYTE_BUDGET_DEFAULT = 65_536; // 64 * 1024
+export const CASCADE_INSTRUCTION_BYTE_BUDGET = 65_536;
+
+export function resolveInstructionByteBudgetFor(
+  provider: string | null | undefined,
+  env: Record<string, string | undefined> = process.env,
+): number {
+  if (provider === 'nova_sonic') {
+    const raw = (env[NOVA_INSTRUCTION_BYTE_BUDGET_ENV] || '').trim();
+    const n = raw === '' ? NaN : Number(raw);
+    // A garbage or too-small value falls back to the default rather than
+    // silently re-creating the 30 KB drop this exists to end.
+    return Number.isFinite(n) && n >= INSTRUCTION_TOTAL_BYTE_BUDGET ? Math.floor(n) : NOVA_INSTRUCTION_BYTE_BUDGET_DEFAULT;
+  }
+  if (provider === 'cascaded') return CASCADE_INSTRUCTION_BYTE_BUDGET;
+  return INSTRUCTION_TOTAL_BYTE_BUDGET;
+}
 
 /**
  * Stable, model-ignored HTML-comment delimiter emitted by
@@ -118,6 +156,11 @@ export interface InstructionBudgetResult {
   totalBytesAfter: number;
   /** Section kinds that were dropped (in the order they were dropped). */
   trimmedSections: InstructionSectionKind[];
+  /**
+   * VTID-04534: section kinds that were SHORTENED but kept (member context
+   * repacked smaller, history cut to its most recent turns).
+   */
+  shortenedSections: InstructionSectionKind[];
   /** Per-section UTF-8 byte sizes of the ORIGINAL (pre-trim) input. */
   sectionBytes: Record<string, number>;
 }
@@ -133,7 +176,10 @@ export function byteLength(text: string): number {
  * than silently believing the context was complete.
  */
 export const SECTION_TRIM_SENTINEL = (kind: InstructionSectionKind): string =>
-  `\n[${kind} context omitted to fit the Vertex Live setup budget]`;
+  // VTID-04579: the member's memory is still reachable through search_memory.
+  kind === 'bootstrap' || kind === 'history'
+    ? `\n[${kind} context omitted to fit the Vertex Live setup budget; use search_memory for anything not shown here]`
+    : `\n[${kind} context omitted to fit the Vertex Live setup budget]`;
 
 /**
  * Enforce an aggregate byte budget on an assembled instruction built from
@@ -177,14 +223,47 @@ export function enforceInstructionBudget(
       totalBytesBefore,
       totalBytesAfter: totalBytesBefore,
       trimmedSections: [],
+      shortenedSections: [],
       sectionBytes,
     };
   }
 
   const trimmedSections: InstructionSectionKind[] = [];
+  const shortenedSections: InstructionSectionKind[] = [];
+  const over = () => byteLength(assemble(working)) - budget;
+
+  // VTID-04534 — shrink before dropping. The old guard dropped whole sections,
+  // so once the static scaffold alone neared the budget the member's context
+  // and the conversation history vanished on nearly every session (measured
+  // on staging 2026-09-25: bootstrap omitted in 106/133 sessions over 7 days,
+  // history omitted in 8/9 sessions that day — "Vitana does not know what I
+  // just said"). Now, in order:
+  //   1. bootstrap → repacked down to BOOTSTRAP floor (priority-aware)
+  //   2. history   → cut to its most recent turns, down to HISTORY floor
+  //   3. bootstrap → dropped
+  //   4. history   → dropped
+  //   5. specialist → dropped (unchanged: last, as before)
+  for (const kind of ['bootstrap', 'history'] as const) {
+    if (over() <= 0) break;
+    const floor = SECTION_TRIM_FLOORS[kind];
+    // Shrink the largest section of this kind first.
+    const parts = working.filter((p) => p.kind === kind).sort((a, b) => byteLength(b.text) - byteLength(a.text));
+    for (const part of parts) {
+      const excess = over();
+      if (excess <= 0) break;
+      const size = byteLength(part.text);
+      const target = Math.max(floor, size - excess);
+      if (target >= size) continue;
+      const shrunk = kind === 'history' ? shrinkHistoryToBytes(part.text, target) : shrinkBootstrapToBytes(part.text, target);
+      if (shrunk !== null && byteLength(shrunk) < size) {
+        part.text = shrunk;
+        if (!shortenedSections.includes(kind)) shortenedSections.push(kind);
+      }
+    }
+  }
 
   for (const dropKind of DROP_ORDER) {
-    if (byteLength(assemble(working)) <= budget) break;
+    if (over() <= 0) break;
     if (PRESERVED.has(dropKind)) continue; // defensive; DROP_ORDER excludes these
 
     let droppedAny = false;
@@ -194,7 +273,11 @@ export function enforceInstructionBudget(
         droppedAny = true;
       }
     }
-    if (droppedAny) trimmedSections.push(dropKind);
+    if (droppedAny) {
+      trimmedSections.push(dropKind);
+      const i = shortenedSections.indexOf(dropKind);
+      if (i >= 0) shortenedSections.splice(i, 1);
+    }
   }
 
   const text = assemble(working);
@@ -203,8 +286,67 @@ export function enforceInstructionBudget(
     totalBytesBefore,
     totalBytesAfter: byteLength(text),
     trimmedSections,
+    shortenedSections,
     sectionBytes,
   };
+}
+
+/**
+ * VTID-04534: the smallest a section may be shrunk to before it is dropped
+ * whole. Below these the remainder is not worth its bytes.
+ */
+export const SECTION_TRIM_FLOORS = { bootstrap: 3_000, history: 1_200 } as const;
+
+/** Sentinel line left where older history turns were cut. */
+export const HISTORY_EARLIER_TURNS_OMITTED = '[earlier turns omitted to fit the setup budget]';
+
+/**
+ * Keep the history block's opening tag and preamble, then as many of the MOST
+ * RECENT turn lines as fit in `maxBytes`, then the closing tag. Returns null
+ * when not even one turn fits (the caller then drops the block whole).
+ * Pure.
+ */
+export function shrinkHistoryToBytes(block: string, maxBytes: number): string | null {
+  const open = block.indexOf(INSTRUCTION_MARKERS.HISTORY_OPEN);
+  const close = block.lastIndexOf(INSTRUCTION_MARKERS.HISTORY_CLOSE);
+  if (open < 0 || close < 0 || close < open) return null;
+  const inner = block.slice(open + INSTRUCTION_MARKERS.HISTORY_OPEN.length, close);
+  const lines = inner.split('\n');
+  // lines[0] is the remainder of the tag line (normally ''), lines[1] the preamble.
+  const headCount = Math.min(2, lines.length);
+  const head = block.slice(0, open) + INSTRUCTION_MARKERS.HISTORY_OPEN + lines.slice(0, headCount).join('\n');
+  const tail = '\n' + INSTRUCTION_MARKERS.HISTORY_CLOSE + block.slice(close + INSTRUCTION_MARKERS.HISTORY_CLOSE.length);
+  const turns = lines.slice(headCount).filter((l) => l.length > 0);
+  const kept: string[] = [];
+  let used = byteLength(head) + byteLength(tail) + byteLength('\n' + HISTORY_EARLIER_TURNS_OMITTED);
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const cost = byteLength('\n' + turns[i]);
+    if (used + cost > maxBytes) break;
+    kept.unshift(turns[i]);
+    used += cost;
+  }
+  if (kept.length === 0) return null;
+  const omitted = kept.length < turns.length ? '\n' + HISTORY_EARLIER_TURNS_OMITTED : '';
+  return head + omitted + '\n' + kept.join('\n') + tail;
+}
+
+/**
+ * Repack a bootstrap section with the priority packer (VTID-04393) until it
+ * fits `maxBytes`, so pinned blocks (identity, the session-owning modes, the
+ * memory self-check) are the last to go. Returns null when even the pinned
+ * minimum does not fit. Pure.
+ */
+export function shrinkBootstrapToBytes(text: string, maxBytes: number): string | null {
+  const bytes = byteLength(text);
+  if (bytes <= maxBytes) return text;
+  const ratio = text.length / Math.max(1, bytes);
+  let maxChars = Math.floor(maxBytes * ratio);
+  for (let i = 0; i < 12 && maxChars > 200; i++) {
+    const packed = packBootstrapContext(text, maxChars).text;
+    if (byteLength(packed) <= maxBytes) return packed;
+    maxChars = Math.floor(maxChars * 0.85);
+  }
+  return null;
 }
 
 /**
@@ -353,4 +495,43 @@ function pushBootstrapRegion(
   if (cursor < end) {
     out.push({ kind, text: text.slice(cursor, end) });
   }
+}
+
+/**
+ * VTID-04525 (Conversation hub B2) — the `instruction_budget` diag payload.
+ *
+ * The budget guard used to report only to the console
+ * (`[voice.instruction.budget_ok|overflow]`), so neither the Command Hub nor
+ * a query could say how often context was dropped, or which section. One diag
+ * per upstream setup carries the byte accounting as a state record, not a
+ * heartbeat. It carries sizes and section kinds only, never instruction text.
+ *
+ * Pure.
+ */
+export type InstructionBudgetDiag = {
+  budget_bytes: number;
+  total_bytes_before: number;
+  total_bytes_after: number;
+  trimmed: boolean;
+  trimmed_sections: InstructionSectionKind[];
+  /** VTID-04534: kinds shortened but kept. */
+  shortened_sections: InstructionSectionKind[];
+  still_over_budget: boolean;
+  section_bytes: Record<string, number>;
+};
+
+export function instructionBudgetDiagPayload(
+  result: InstructionBudgetResult,
+  budget: number = INSTRUCTION_TOTAL_BYTE_BUDGET,
+): InstructionBudgetDiag {
+  return {
+    budget_bytes: budget,
+    total_bytes_before: result.totalBytesBefore,
+    total_bytes_after: result.totalBytesAfter,
+    trimmed: result.trimmedSections.length > 0,
+    trimmed_sections: [...result.trimmedSections],
+    shortened_sections: [...(result.shortenedSections ?? [])],
+    still_over_budget: result.totalBytesAfter > budget,
+    section_bytes: { ...result.sectionBytes },
+  };
 }

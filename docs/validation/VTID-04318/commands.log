@@ -1,0 +1,6 @@
+$ cd services/gateway && node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .
+(exit 0)
+$ node node_modules/.bin/jest test/vtid-04318-orchestrator-p0.test.ts test/test-contracts.test.ts test/self-healing-reconciler-autopilot-link.test.ts test/voice-synthetic-probe.test.ts test/routes/discover-recommendations.test.ts test/routes/discover-recommendations-public.test.ts test/operator-command.test.ts test/vtid-04220-gateway-base-url.test.ts
+Test Suites: 8 passed, 8 total
+Tests:       2 skipped, 90 passed, 92 total
+$ node --max-old-space-size=6144 node_modules/.bin/jest --silent   (full gateway suite, see outputs/jest-full.txt)

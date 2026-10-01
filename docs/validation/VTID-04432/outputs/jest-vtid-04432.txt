@@ -1,0 +1,61 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [specialist-evals] support 13/13, commerce 12/12
+
+      at Object.<anonymous> (test/services/orchestrator/vtid-04432-specialist-evals.test.ts:80:13)
+
+PASS test/services/orchestrator/vtid-04432-specialist-evals.test.ts
+  VTID-04432 support specialist eval suite
+    ✓ AC-1/AC-3 support.open-tickets (5 ms)
+    ✓ AC-1/AC-3 support.spoken-ticket-number (1 ms)
+    ✓ AC-1/AC-3 support.bare-number (1 ms)
+    ✓ AC-1/AC-3 support.other-members-ticket (1 ms)
+    ✓ AC-1/AC-3 support.other-members-bare-number (1 ms)
+    ✓ AC-1/AC-3 support.knowledge (1 ms)
+    ✓ AC-1/AC-3 support.bad-arguments (1 ms)
+    ✓ AC-1/AC-3 support.write-tool-refused (1 ms)
+    ✓ AC-1/AC-3 support.dependency-failure (1 ms)
+    ✓ AC-1/AC-3 support.tool-budget (1 ms)
+    ✓ AC-1/AC-3 support.findings-bounded
+    ✓ AC-1/AC-3 support.model-failure (1 ms)
+    ✓ AC-1/AC-3 support.signed-out (1 ms)
+    ✓ AC-1/AC-3 support.cancelled
+    ✓ AC-3 the findings bound actually clipped the over-long answer
+    ✓ AC-3 the tool budget case ends with a tool-less call and six executed tools (1 ms)
+  VTID-04432 commerce specialist eval suite
+    ✓ AC-2/AC-3 commerce.list-organizations (1 ms)
+    ✓ AC-2/AC-3 commerce.admin-status (1 ms)
+    ✓ AC-2/AC-3 commerce.member-status-no-invites
+    ✓ AC-2/AC-3 commerce.ambiguous
+    ✓ AC-2/AC-3 commerce.single-org-default (4 ms)
+    ✓ AC-2/AC-3 commerce.other-users-organization
+    ✓ AC-2/AC-3 commerce.no-memberships (1 ms)
+    ✓ AC-2/AC-3 commerce.knowledge (1 ms)
+    ✓ AC-2/AC-3 commerce.write-tool-refused
+    ✓ AC-2/AC-3 commerce.tool-budget (1 ms)
+    ✓ AC-2/AC-3 commerce.model-failure
+    ✓ AC-2/AC-3 commerce.signed-out
+    ✓ AC-3 memberships are read once per run however many tools ask for them (1 ms)
+  VTID-04432 suite summary
+    ✓ AC-1/AC-2 both suites score 100% (5 ms)
+    ✓ AC-5 case ids are unique and every case says what it checks (3 ms)
+  VTID-04432 the harness catches broken specialists (mutation checks)
+    ✓ AC-4 an unscoped read fails the suite (1 ms)
+    ✓ AC-4 another member's data surfacing fails the suite (1 ms)
+    ✓ AC-4 findings over the bound fail the suite
+    ✓ AC-4 a case expectation that does not hold is reported, not swallowed (1 ms)
+    ✓ AC-4 fixtures really hold a second user (the leak checks are not vacuous)
+
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        0.463 s, estimated 1 s
+Ran all test suites matching /test\/services\/orchestrator\/vtid-04432-specialist-evals.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -36,7 +36,7 @@ export function promoteUserProvidedCover(sb: SupabaseClient, intentId: string, c
 }
 
 export async function updateIntentEmbedding(sb: SupabaseClient, intentId: string, embedding: unknown) {
-  return sb.from('user_intents').update({ embedding: embedding as any }).eq('intent_id', intentId);
+  return sb.from('user_intents').update({ embedding_v2: embedding as any }) // VTID-04460.eq('intent_id', intentId);
 }
 
 export async function fetchIntentVisibilityForMatchmakerPoll(sb: SupabaseClient, intentId: string) {

@@ -60,7 +60,7 @@ jobs:
       - name: Refresh audit metadata per service (best-effort)
         continue-on-error: true
         run: |
-          for svc in services/gateway services/autopilot-worker services/oasis-operator services/oasis-projector services/worker-runner services/data-sync services/agents/vitana-orchestrator; do
+          for svc in services/gateway services/oasis-operator services/oasis-projector services/data-sync services/agents/vitana-orchestrator; do
             if [ -f "$svc/package-lock.json" ]; then
               echo "::group::npm install --omit=dev --ignore-scripts $svc"
               (cd "$svc" && npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline) || echo "  install failed — npm audit may be incomplete"

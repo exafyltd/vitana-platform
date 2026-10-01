@@ -12,6 +12,7 @@
 
 import type { GuidedTopicNarrationContent } from '../../../services/assistant-continuation/providers/guided-topic-narration';
 import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
+import { registerRuleForLang } from '../../../i18n/llm-locale';
 
 /**
  * VTID-03795 — the four headings `buildGuidedTopicNarrationBlock` can emit
@@ -162,6 +163,7 @@ export function buildGuidedTopicNarrationBlock(
           '## GUIDE-MODUS (NACH DER LEKTION) — die Lektion wurde bereits per Audio vorgetragen',
           '',
           'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch, für die GANZE Sitzung.',
+          registerRuleForLang('de'),
           '',
           `Die Lektion zu ${content.topic_title} wurde der Person GERADE als vorab aufgenommene Audio-Lektion vorgespielt und muss nicht wiederholt werden.`,
           '',
@@ -183,6 +185,7 @@ export function buildGuidedTopicNarrationBlock(
           '## GUIDE MODE (POST-LESSON) — the lesson was already narrated via audio',
           '',
           `LANGUAGE: Speak ONLY in ${LOCALE_ENGLISH_NAME[resolveLocaleStrict(lang) ?? 'en'] || 'English'}, for the WHOLE session.`,
+          ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
           '',
           `The lesson on ${content.topic_title} was just delivered to the person as a pre-recorded audio narration and does not need to be repeated.`,
           '',
@@ -228,6 +231,7 @@ export function buildGuidedTopicNarrationBlock(
       '## GUIDE-MODUS (LEHREN) — du STELLST dieses Thema VOR und LEHRST es',
       '',
       'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung.',
+      registerRuleForLang('de'),
       '',
       `Die Person hat in Meine Reise das Thema ${content.topic_title} angetippt, um es von dir erklärt zu bekommen. Stell es vor und LEHRE es — proaktiv, in EIGENEN Worten.`,
       '',
@@ -272,6 +276,7 @@ export function buildGuidedTopicNarrationBlock(
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',
     '',
     `LANGUAGE: Speak ONLY in ${langName}. The teaching material below may be written in German — translate and deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session.`,
+    ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
     '',
     `The person tapped the topic ${content.topic_title} in My Journey to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
     '',

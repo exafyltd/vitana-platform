@@ -49,7 +49,7 @@ import {
   resolveGreetingDirectiveByteBudget,
   greetingDirectiveExceedsBudget,
 } from '../../orb/live/instruction/greeting-directive-budget';
-import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools';
+import { buildOpeningIntentDirective, PHRASING_RULE } from './phrasing-rule';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
@@ -140,8 +140,47 @@ export type WakeOpener =
    *  fact this VTID exists to make measurable, and collapsing them would hide it. */
   | 'newday_overview'
   | 'override_v2'
+  /** VTID-04395 — the member opened the ORB from Support to report a problem. */
+  | 'support_report'
+  /** VTID-04575 — the member reopened a conversation that carries its earlier
+   *  turns: turn 1 continues that thread instead of starting a new one. */
+  | 'resume_thread'
   | 'silenced_on_cadence'
-  | 'legacy_default';
+  | 'legacy_default'
+  /** VTID-04560 — a work surface (Command Hub / admin / BackOffice /
+   *  commerce) opens with its own role's opener; no member rung can win. */
+  | 'work_surface_open';
+
+/**
+ * VTID-04525 (Conversation hub B1) — every rung, in the order the type above
+ * declares them (not the ladder's evaluation order), for the Command Hub
+ * Opening tab. The `Record` makes this exhaustive at compile time: adding a
+ * member to `WakeOpener` without listing it here fails `tsc`.
+ */
+const WAKE_OPENER_ORDER: Record<WakeOpener, number> = {
+  safe_fast_newday_overview: 0,
+  safe_fast_first_time_welcome: 1,
+  conv_resume: 2,
+  safe_fast_proactive: 3,
+  safe_fast_newday: 4,
+  safe_fast_pending_context: 5,
+  silent_reconnect: 6,
+  day_close: 7,
+  newday_overview: 8,
+  override_v2: 9,
+  support_report: 10,
+  resume_thread: 11,
+  silenced_on_cadence: 12,
+  legacy_default: 13,
+  work_surface_open: 14,
+};
+export const WAKE_OPENERS: readonly WakeOpener[] = (Object.keys(WAKE_OPENER_ORDER) as WakeOpener[])
+  .sort((a, b) => WAKE_OPENER_ORDER[a] - WAKE_OPENER_ORDER[b]);
+
+/** Whether a rung is switched on in this process (module switches set at boot by orb-live.ts). */
+export function wakeOpenerRungSwitches(): { newday_overview: boolean; day_close: boolean } {
+  return { newday_overview: _newdayOverviewRungEnabled, day_close: _dayCloseRungEnabled };
+}
 
 /** Side effects the live adapter must still perform after rendering, kept as
  *  DATA so the pure core never performs them (it only describes them). Mirrors
@@ -294,6 +333,18 @@ export interface GreetingDecisionContext {
   // --- wake-brief / cadence ------------------------------------------------
   /** !!session.guidedTopicNarrationContent — switches override_v2 to teach mode. */
   guidedTopicNarrationContent: string | null;
+  /**
+   * VTID-04395: true when the member opened the ORB from Support → "report by
+   * voice" (session-start body `support_report: true`, one-shot). The
+   * support-report rung then opens as an intake instead of any briefing.
+   */
+  supportReportOpen?: boolean;
+  /**
+   * VTID-04575: true when this session was started by the client with the
+   * earlier turns of the same conversation (`transcript_history`) and nothing
+   * has been said on it yet. The resume_thread rung then continues that thread.
+   */
+  reopenedWithHistory?: boolean;
   /** One-shot: true only on the resend that follows a `day_close` open getting
    *  `nova_validation`-closed. Rebuilds `day_close`'s directive with
    *  `buildDayCloseOpenerLine` (short, no quoted exemplars) instead of
@@ -336,6 +387,16 @@ export interface GreetingDecisionContext {
   /** A prepared autopilot checkpoint that can genuinely be activated tonight —
    *  offered by name, never invented. */
   pendingCheckpointTitle?: string | null;
+
+  // --- VTID-04560 work surface ---------------------------------------------
+  /** The session's served surface (session.assistantProfile.surface). Any
+   *  surface other than `vitanaland` takes the work_surface_open rung first. */
+  surface?: string | null;
+  /** The role the work surface serves (developer / admin / backoffice / commerce). */
+  workSurfaceRole?: string | null;
+  /** Short factual lines the opener may lead with (system pulse / admin
+   *  briefing). Facts, never finished sentences. */
+  workSurfaceHighlights?: string[] | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -401,6 +462,13 @@ export function dayCloseNightKey(todayLocalIso: string, localHour: number): stri
 export function tryDayCloseRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!_dayCloseRungEnabled) return null;
   if (ctx.isAnonymous) return null;
+  // VTID-04255 — same missing invariant as `shouldAttemptNewdayOverview`
+  // above, same sibling rung shape (a once-per-day stamp with no independent
+  // temporal-proximity check). A `reconnect`-bucketed session must never
+  // open with a fresh day_close either, regardless of `lastDayCloseDate`'s
+  // durability. See the long comment on `shouldAttemptNewdayOverview` for
+  // the full production evidence.
+  if (ctx.bucket === 'reconnect') return null;
   // `todayTz: ''` is the documented placeholder orb-live.ts seeds the SYNC
   // context with before the timezone helpers resolve (mirrors `localHour: -1`
   // on the safe-fast side) — an empty string is not a valid ISO date and must
@@ -479,8 +547,24 @@ function firstTimeWelcomeFires(ctx: GreetingDecisionContext): boolean {
 /** The once-per-real-day briefing is due unless we already stamped today (or a
  *  future date). Mirrors `_briefingDueNd` (orb-live L7711). */
 function briefingDue(ctx: GreetingDecisionContext): boolean {
+  // VTID-04595 — the new day starts at 05:00 local (owner rule 2026-09-26).
+  // Between 00:00 and 04:59 the member is still in the previous day: the
+  // briefing never fires then, so it can never stamp the new calendar date
+  // and swallow the real first conversation of the morning (a 00:39 session
+  // did exactly that). From 05:00 on `todayTz` is the day the stamp records.
+  // An unknown hour (the -1 placeholder) keeps the date-only rule.
+  if (isBeforeNewDayStartHour(ctx.localHour)) return false;
   const d = ctx.lastFullBriefingDate;
   return !(typeof d === 'string' && d >= ctx.todayTz);
+}
+
+/** VTID-04595 — local hours 00:00–04:59 still belong to the previous day.
+ *  Mirrors `isBeforeNewDayStart` in new-day-return.ts; inlined so this pure
+ *  brain keeps no import of a provider module. The two are pinned equal by
+ *  test/vtid-04595-new-day-starts-at-5am.test.ts. */
+export const BRIEFING_DAY_START_HOUR = 5;
+export function isBeforeNewDayStartHour(localHour: number): boolean {
+  return Number.isInteger(localHour) && localHour >= 0 && localHour < BRIEFING_DAY_START_HOUR;
 }
 
 /** The substantive-content gate for the rich new-day overview (orb-live L7771).
@@ -539,7 +623,36 @@ export function shouldAttemptNewdayOverview(ctx: GreetingDecisionContext): boole
     // index, the calendar and the journey is worth speaking whether or not the
     // prefetch that carries the name happened to run.
     ctx.hasUserId &&
-    ctx.hasSupabase
+    ctx.hasSupabase &&
+    // VTID-04255 — this gate had NO temporal-proximity check at all, and
+    // `briefingDue()` below depends entirely on `stampBriefingDate` having
+    // been durably written after the LAST time this rung fired. When that
+    // write fails (measured live 2026-09-21/22: `permission denied for table
+    // user_journey` — a broken AWS Secrets Manager credential, not a logic
+    // bug), `lastFullBriefingDate` never advances, `briefingDue` stays true
+    // forever, and the ONLY thing standing between that and firing the full
+    // briefing on every single session is this function. `bucket==='reconnect'`
+    // (< ~2 min since the user's last turn, per describeTimeSince's own
+    // threshold) is NOT covered by the sibling `silent_reconnect` defense
+    // elsewhere in this ladder — that one keys off `ctx.openDecision.mode
+    // ==='silent'`, a transport-level native-WS-resume signal, and a fresh
+    // reconnect-bucketed session (a brand new session_id, just temporally
+    // close to the last one) never sets it. So a reconnect got the FULL
+    // new-day overview 3x in 21h for the same user, live in production,
+    // entirely independent of the DB write's health.
+    //
+    // Fix: make this ONE always-true, DB-independent invariant explicit here
+    // — a session bucketed `reconnect` never opens with a fresh greeting of
+    // any kind, full stop, matching the rest of this codebase's established
+    // meaning for that bucket (`decideGreetingPolicyWithEvidence`'s own
+    // `bucket_reconnect_forces_skip`). This does NOT block a genuine
+    // day-boundary crossing that happens to fall inside the reconnect
+    // window (23:58→00:02): that case still gets the briefing on the VERY
+    // NEXT session once the gap widens past `reconnect`, exactly once,
+    // because `briefingDue` is unaffected by this change when the durable
+    // stamp IS working. What this closes is the failure mode where a broken
+    // stamp write turns "reconnect" into "briefing on every single reopen."
+    ctx.bucket !== 'reconnect'
   );
 }
 
@@ -567,7 +680,84 @@ export function shouldAttemptResumeOverview(ctx: GreetingDecisionContext): {
  * adapter must perform. The ladder order + guards mirror orb-live.ts exactly.
  */
 export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingDecision {
+  // VTID-04560: a work surface never reaches a member rung, on either ladder
+  // and whether or not context resolved in time.
+  const workSurface = tryWorkSurfaceRung(ctx);
+  if (workSurface) return workSurface;
   return safeFastApplies(ctx) ? computeSafeFastLadder(ctx) : computeNormalLadder(ctx);
+}
+
+/** Per-role opener intent for the work surfaces (English INTENT, NEVER rule 41). */
+const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
+  developer:
+    'You are the developer\'s system supervisor for Vitanaland. Lead with the single most important thing ' +
+    'in the system right now, taken from the facts below: a failure, something waiting for their approval, ' +
+    'or a difference between staging and production. When nothing needs attention, say in fresh words that ' +
+    'the system looks steady. Then offer ONE concrete next step you can take for them: dig into it, show it, ' +
+    'or start a task. Stay on the system and the engineering work.',
+  admin:
+    'You are the tenant administrator\'s assistant. Lead with the single most important item from the facts ' +
+    'below (an approval, a flagged item, a KPI that moved). When nothing needs attention, say so in fresh words. ' +
+    'Then offer ONE concrete next step you can take for them. Stay on administration of the community.',
+  backoffice:
+    'You are the BackOffice operations assistant. Lead with the most important pending item from the facts ' +
+    'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
+    'ONE concrete next step. Stay on business operations.',
+  commerce:
+    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
+    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
+    'Stay on the organisation\'s business work.',
+};
+
+/**
+ * VTID-04560 — the work-surface opener. Returns null on the member surface
+ * (and for anonymous sessions), so every existing ladder is unchanged there.
+ * Keeps a genuine transport reconnect silent, exactly like silent_reconnect.
+ */
+export function tryWorkSurfaceRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  const surface = typeof ctx.surface === 'string' ? ctx.surface : null;
+  if (!surface || surface === 'vitanaland') return null;
+  if (ctx.isAnonymous) return null;
+  const od = ctx.openDecision;
+  if (od && od.mode === 'silent' && (od.source === 'native_resume' || od.source === 'reconnect_no_handle')) {
+    return {
+      wakeOpener: 'silent_reconnect',
+      directive: null,
+      diag: { lang: ctx.lang, prompt_len: 0, wake_opener: 'silent_reconnect', opening_source: od.source, surface },
+      effects: { markGreetingSent: true, armWatchdog: false },
+    };
+  }
+  const role = ctx.workSurfaceRole || 'developer';
+  const intent = WORK_SURFACE_OPENER_INTENT[role] || WORK_SURFACE_OPENER_INTENT.developer;
+  const highlights = (ctx.workSurfaceHighlights || [])
+    .map((h) => (typeof h === 'string' ? h.replace(/\s+/g, ' ').trim() : ''))
+    .filter((h) => h.length > 0)
+    .slice(0, 6)
+    .map((h) => (h.length > 240 ? `${h.slice(0, 237)}...` : h));
+  // VTID-04586: these facts come from the snapshot taken as the session opened.
+  // Without saying so, the conduct rule "use your tools before you state a
+  // current fact" made the model call dev_system_status before its opener on
+  // most Command Hub sessions — a full tool round trip (~1.3-2 s) before the
+  // first word, re-fetching what it had just been given.
+  const facts = highlights.length > 0
+    ? `\nFacts (loaded as this session opened — current enough for this opening; speak from them directly and call no tool before this first reply):\n${highlights.map((h) => `- ${h}`).join('\n')}`
+    : '\nFacts: none loaded yet — offer to check the system status for them.';
+  const directive =
+    `Open with ONE or TWO short spoken sentences, as audio. INTENT: ${intent} ` +
+    `Compose the wording yourself, fresh each time.${facts}`;
+  return {
+    wakeOpener: 'work_surface_open',
+    directive,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: directive.length,
+      wake_opener: 'work_surface_open',
+      surface,
+      role,
+      highlight_count: highlights.length,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
 }
 
 /**
@@ -775,6 +965,95 @@ export function buildGuidedTopicOpenTrigger(): string {
   );
 }
 
+/**
+ * VTID-04395 — the member tapped Support → "report by voice". They opened the
+ * ORB to tell us about a problem, so turn 1 is an intake, not a briefing.
+ *
+ * Written as an English INTENT (NEVER-rule 41 / §13b): the model composes
+ * the words in the member's language. No quoted dialogue — the shape the
+ * Nova content filter has repeatedly reacted to (VTID-03674 / VTID-03797).
+ * Filing still goes through report_to_specialist and its STATUS contract
+ * (VTID-04332); this rung only changes how the conversation opens.
+ */
+export function buildSupportReportOpenTrigger(): string {
+  return (
+    `The member opened voice from the Support screen because they want to report a problem or get help.\n` +
+    `Open with ONE short, warm sentence in the member's own language that invites them to describe what happened. ` +
+    `Skip any daily briefing, news or suggestions in this turn.\n` +
+    `When they have described it, file it with report_to_specialist using a concrete summary in their own words, ` +
+    `then follow the result it returns. Compose every sentence yourself. Then stop and listen.`
+  );
+}
+
+/**
+ * VTID-04575 — the member closed and reopened the voice conversation, and the
+ * client sent its earlier turns. Turn 1 continues that conversation.
+ *
+ * This replaced the reconnect recovery prompt for reopens: a long user-role
+ * block ("You are recovering from a brief connection blip…" plus a stack of
+ * prohibitions) that Nova's content filter rejected on 44 of 61 reopens in
+ * 14 days. Written as a positive English intent (NEVER-rule 41, VTID-04124):
+ * no quoted dialogue, no prohibition stack, the model composes the words.
+ */
+export function buildResumeThreadOpenTrigger(): string {
+  return (
+    `Open with one to three short spoken sentences, as audio. ` +
+    `INTENT: The member closed this voice conversation and has just reopened it; its earlier turns are in the conversation history in your instructions. ` +
+    `Continue that conversation from where it stopped: name the topic you were on in a few words and carry it forward. ` +
+    // VTID-04724 — this rung had NO language nudge at all, and it is the one
+    // that tells the model to continue from the conversation history. That
+    // history is German for most members (DE is the source of truth), so on a
+    // non-German session the model continued in the history's language and the
+    // session's own "Respond ONLY in X" lost to the immediate task. Measured
+    // live on 2026-09-27: one member, nine `lang:'ru'` sessions in ten minutes,
+    // 4 of 6 `resume_thread` opens answered in German while `safe_fast_proactive`
+    // (0/5) and `legacy_default` (0/1) answered in Russian.
+    //
+    // Deliberately GENERIC — it does not name the target language. Naming it
+    // was measured WORSE and reverted (VTID-04010 follow-up #1/#2, see rung 4
+    // below: 2/11 authenticated trials, the rest 1007-closed); `override_v2`'s
+    // proven 24/24 wording only ever says "in the user's own language" and
+    // leaves language SELECTION to the system prompt. This says the same, and
+    // names the history only as the thing NOT to mirror — exactly how rung 4
+    // names English.
+    `Speak in the user's own language for this session, even when the earlier turns in that history are in another language — carry the topic across, not its wording. ` +
+    `When their last question is still unanswered, answer it now; otherwise offer the next step on that same topic and ask whether to go ahead. ` +
+    `${PHRASING_RULE} Then stop and listen.`
+  );
+}
+
+function tryResumeThreadRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.reopenedWithHistory || ctx.isAnonymous) return null;
+  const trigger = buildResumeThreadOpenTrigger();
+  return {
+    wakeOpener: 'resume_thread',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'resume_thread',
+      decision_id: ctx.wakeBriefDecisionId || null,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
+function trySupportReportRung(ctx: GreetingDecisionContext): GreetingDecision | null {
+  if (!ctx.supportReportOpen || ctx.isAnonymous) return null;
+  const trigger = buildSupportReportOpenTrigger();
+  return {
+    wakeOpener: 'support_report',
+    directive: trigger,
+    diag: {
+      lang: ctx.lang,
+      prompt_len: trigger.length,
+      wake_opener: 'support_report',
+      decision_id: ctx.wakeBriefDecisionId || null,
+    },
+    effects: { markGreetingSent: true, armWatchdog: true },
+  };
+}
+
 function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | null {
   if (!ctx.guidedTopicNarrationContent || ctx.isAnonymous) return null;
   const od = ctx.openDecision;
@@ -801,14 +1080,57 @@ function tryGuidedTopicRung(ctx: GreetingDecisionContext): GreetingDecision | nu
   };
 }
 
+/**
+ * VTID-04544 — true when a rung that never reads the overview payloads or the
+ * spoken-facts ledger is certain to win this opening, so the caller can skip
+ * gathering them (the payloads would be discarded).
+ *
+ * Single-sourced with the ladders: it asks the SAME rung functions both
+ * ladders consult, and both ladders consult them ABOVE day-close, the new-day
+ * overview and the resume rung (`computeSafeFastLadder`, `computeNormalLadder`).
+ * The normal ladder's `silent_reconnect` sits above these too; it skips the
+ * payloads as well, and the caller's pre-guard already excludes it.
+ *
+ * Reads only facts that are fixed synchronously at greeting time
+ * (`supportReportOpen`, `guidedTopicNarrationContent`, `isAnonymous`,
+ * `openDecision`) — never a greeting-facts pre-fetch field. Pure.
+ */
+export function overviewIndependentOpenerWins(ctx: GreetingDecisionContext): boolean {
+  // VTID-04586: the work-surface rung outranks every ladder and never reads a
+  // member payload, so a Command Hub / admin / BackOffice session must not pay
+  // for the member new-day gather (measured 350-470 ms on staging) or the
+  // greeting-facts wait in front of it.
+  return (
+    tryWorkSurfaceRung(ctx) !== null ||
+    trySupportReportRung(ctx) !== null ||
+    tryGuidedTopicRung(ctx) !== null
+  );
+}
+
+/** VTID-04420: the name clause of the first-time welcome intent. */
+function firstTimeNamePart(firstName: string | null | undefined): string {
+  const n = typeof firstName === 'string' ? firstName.trim().replace(/"/g, '') : '';
+  return n ? `The user's name is "${n}" — address them by it. ` : '';
+}
+
 // --- SAFE-FAST ladder (rungs 1–6) ------------------------------------------
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // VTID-03724 — a tapped guided topic outranks every rung below, including
   // the day-close/newday-overview rungs this ladder is about to try. See
   // tryGuidedTopicRung's own comment for the full root-cause trace. This
   // ladder previously had no guided-topic handling at all.
+  // VTID-04395 — Support "report by voice" is an explicit request, like a
+  // tapped topic: it outranks every briefing rung.
+  const supportFast = trySupportReportRung(ctx);
+  if (supportFast) return supportFast;
+
   const guidedFast = tryGuidedTopicRung(ctx);
   if (guidedFast) return guidedFast;
+
+  // VTID-04575 — a reopened conversation continues its own thread; it
+  // outranks every briefing, resume-NBA and proactive rung below.
+  const resumeFast = tryResumeThreadRung(ctx);
+  if (resumeFast) return resumeFast;
 
   // VTID-03604 — the day-close outranks every morning rung, on BOTH ladders.
   // At 00:15 the calendar date has rolled and the morning briefing believes it
@@ -822,9 +1144,16 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
 
   // Rung 2 — safe_fast_first_time_welcome (a brand-new user gets onboarding).
   if (firstTimeWelcomeFires(ctx)) {
-    const welcome = buildFirstTimeWelcomeLine(ctx.greetLang, ctx.firstName ?? null);
-    const safeWel = welcome.replace(/"/g, '\\"');
-    const welPrompt = `Say exactly: "${safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
+    // VTID-04420 (WS-2.1): was `Say exactly: "<per-language welcome speech>"`
+    // from greeting-pools' buildFirstTimeWelcomeLine — a hardcoded spoken
+    // sentence (NEVER-rule 41) in the verbatim-recitation shape the Nova
+    // guardrail blocks (VTID-03797). Same content, stated as an intent.
+    const welPrompt = buildOpeningIntentDirective(
+      `${firstTimeNamePart(ctx.firstName)}This is their very first voice conversation. Welcome them warmly to Maxina, ` +
+        'introduce yourself as Vitana, their personal longevity assistant, say you will guide them step by step through their journey ' +
+        'and show them how everything works, and invite them to start their first session together.',
+      'short_welcome',
+    );
     return {
       wakeOpener: 'safe_fast_first_time_welcome',
       directive: welPrompt,
@@ -954,41 +1283,17 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   const isNewDay =
     ctx.bucket === 'today' || ctx.bucket === 'yesterday' || ctx.bucket === 'week' || ctx.bucket === 'long';
   if (isNewDay && typeof ctx.firstName === 'string' && ctx.firstName.trim().length > 0) {
-    const name = ctx.firstName.trim();
+    const name = ctx.firstName.trim().replace(/"/g, '');
     const tod = ctx.timeOfDay === 'night' ? 'evening' : ctx.timeOfDay || 'day';
-    const greetingByLang: Record<string, string> = {
-      en:
-        tod === 'morning'
-          ? `Good morning, ${name}.`
-          : tod === 'afternoon'
-            ? `Good afternoon, ${name}.`
-            : tod === 'evening'
-              ? `Good evening, ${name}.`
-              : `Hello, ${name}.`,
-      de:
-        tod === 'morning'
-          ? `Guten Morgen, ${name}.`
-          : tod === 'evening'
-            ? `Guten Abend, ${name}.`
-            : `Guten Tag, ${name}.`,
-      es:
-        tod === 'morning'
-          ? `Buenos días, ${name}.`
-          : tod === 'evening'
-            ? `Buenas noches, ${name}.`
-            : `Buenas tardes, ${name}.`,
-      fr: tod === 'evening' ? `Bonsoir, ${name}.` : `Bonjour, ${name}.`,
-      sr:
-        tod === 'morning'
-          ? `Добро јутро, ${name}.`
-          : tod === 'evening'
-            ? `Добро вече, ${name}.`
-            : `Добар дан, ${name}.`,
-    };
-    const lk = langKey2(ctx.greetLang);
-    const spoken = greetingByLang[lk] || greetingByLang.en;
-    const safe = spoken.replace(/"/g, '\\"');
-    const newDayPrompt = `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+    // VTID-04420 (WS-2.1): was a per-language `Record<lang, string>` of
+    // finished greetings recited with `Say exactly:` — NEVER-rule 41's own
+    // example of what not to write, and it only covered en/de/es/fr/sr, so a
+    // pt/pl/ru/tr/ar/zh session was greeted in English. Now an intent the
+    // model phrases in the session's language.
+    const newDayPrompt = buildOpeningIntentDirective(
+      `The user's name is "${name}" and it is their first visit today (${tod}). ` +
+        'Greet them warmly by name with a greeting that fits the time of day, as a single short phrase.',
+    );
     return {
       wakeOpener: 'safe_fast_newday',
       directive: newDayPrompt,
@@ -1040,8 +1345,17 @@ function computeNormalLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // tryGuidedTopicRung's own comment for the full root-cause trace: this is
   // the exact defect reported live ("tapping a session starts the new-day
   // overview instead").
+  // VTID-04395 — same position as the guided rung: below silent_reconnect,
+  // above day_close / newday_overview.
+  const supportNormal = trySupportReportRung(ctx);
+  if (supportNormal) return supportNormal;
+
   const guidedNormal = tryGuidedTopicRung(ctx);
   if (guidedNormal) return guidedNormal;
+
+  // VTID-04575 — same position on the normal ladder (see computeSafeFastLadder).
+  const resumeNormal = tryResumeThreadRung(ctx);
+  if (resumeNormal) return resumeNormal;
 
   // VTID-03604 — day-close, below silent_reconnect (a reconnect stays silent,
   // and a goodnight is loud) and above every morning rung.

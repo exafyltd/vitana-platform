@@ -1,0 +1,6 @@
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        0.493 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04485-specialist-voice-ack-window.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

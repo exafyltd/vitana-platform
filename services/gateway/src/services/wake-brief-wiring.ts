@@ -24,6 +24,32 @@
  */
 
 import { decideContinuation } from './assistant-continuation/decide-continuation';
+// VTID-04422 (WS-2.2): shadow relevance scoring.
+import {
+  loadScoringWeights,
+  loadUserOutcomes,
+  localHourIn,
+  partOfDayForHour,
+  rankInShadow,
+  type ScorableCandidate,
+} from './conversation/candidate-scoring';
+// VTID-04435 (WS-4.3): per-user weights from the user's own outcomes.
+import { isPersonalWeightsLive, personalizeWeights } from './conversation/personal-weights';
+// VTID-04454: the relevance score chooses the opening (BRAIN_SCORED_OPENING=true).
+import {
+  applyScoredOpening,
+  isScoredOpeningEnabled,
+  scoredOpeningTimeoutMs,
+  withinBound,
+  type ScoredOpeningResult,
+} from './conversation/scored-opening';
+// VTID-04423 (WS-2.3): the opening's candidates, kept for the conversation.
+import {
+  BRAIN_CANDIDATES_TTL_MIN,
+  isTurnCandidatesEnabled,
+  toStoredTurnCandidates,
+  type StoredTurnCandidates,
+} from './conversation/turn-candidates';
 import {
   defaultProviderRegistry,
 } from './assistant-continuation/provider-registry';
@@ -80,6 +106,11 @@ import {
   PARTNER_HEALTH_RESULT_READY_EXTRA_KEY,
   PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY,
 } from './assistant-continuation/providers/partner-health-result-ready';
+import {
+  makeAutopilotSlotDueProvider,
+  AUTOPILOT_SLOT_DUE_PROVIDER_KEY,
+  AUTOPILOT_SLOT_DUE_EXTRA_KEY,
+} from './assistant-continuation/providers/autopilot-slot-due';
 // VTID-03164: new-day-return provider — fires first session of a new
 // calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
 // and wake-brief (80). Suppresses cleanly when same-day repeat or when
@@ -257,6 +288,11 @@ export function ensureWakeBriefProviderRegistered(): void {
   if (!defaultProviderRegistry.get(PARTNER_HEALTH_RESULT_READY_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makePartnerHealthResultReadyProvider());
   }
+  // VTID-04506 (CA-6): a due Autopilot calendar slot leads the wake as an offer
+  // (priority 93). Suppresses cleanly (no_due_slot) so registering is safe.
+  if (!defaultProviderRegistry.get(AUTOPILOT_SLOT_DUE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeAutopilotSlotDueProvider());
+  }
   // VTID-03307 (SAFE rebuild): Conversation Flow v3 at priority 88. Speak-only;
   // self-suppresses when its flag is off, so registering always is safe.
   if (!defaultProviderRegistry.get(FLOW_V3_PROVIDER_KEY)) {
@@ -279,6 +315,13 @@ ensureWakeBriefProviderRegistered();
 // inputs is a future-slice concern (B1 cadence signals will extend
 // GreetingPolicyInput, which flows through here naturally).
 // ---------------------------------------------------------------------------
+
+/**
+ * VTID-03741 — per-provider timeout for an explicitly tapped topic or focus
+ * step, instead of the ambient default. Exported (VTID-04525) so the
+ * Conversation hub reports the value the ranker actually uses.
+ */
+export const EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS = 10_000;
 
 export interface DecideWakeBriefArgs {
   sessionId: string;
@@ -390,6 +433,11 @@ export interface DecideWakeBriefArgs {
    * fall back to wake-brief, same as before this slice.
    */
   timezone?: string | null;
+  /**
+   * VTID-04422 (WS-2.2): the screen the user opened the ORB on. Only the
+   * shadow relevance score reads it (screen fit); the live ranking does not.
+   */
+  currentRoute?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +660,8 @@ export async function decideWakeBriefForSession(
         tenantId: args.tenantId,
         lang: args.lang,
       };
+      // VTID-04506: autopilot-slot-due inputs (suppresses with no due slot).
+      extra[AUTOPILOT_SLOT_DUE_EXTRA_KEY] = { supabase: args.supabase, userId: args.userId };
       // Advice #4: real-life-invite inputs. Always forwarded — the provider
       // self-suppresses unless its flag is on, so passing it is safe.
       extra[REAL_LIFE_INVITE_EXTRA_KEY] = {
@@ -650,7 +700,7 @@ export async function decideWakeBriefForSession(
   // fought to fix. Give explicit-selection turns a generous ceiling instead of
   // the ambient default — this still bounds a genuinely hung Supabase/Polly
   // call, it just does not mistake a slow cache-miss synthesis for one.
-  const EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS = 10_000;
+  // (EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS is a module export, see above.)
 
   let storedRecentOpeners: string[] = [];
   if (args.supabase && args.userId) {
@@ -681,7 +731,7 @@ export async function decideWakeBriefForSession(
   const recentlyServedDedupeKeys: string[] = isExplicitSelection ? [] : storedRecentOpeners;
 
   const t0 = now();
-  const decision = await decideContinuation({
+  const fixedDecision = await decideContinuation({
     surface: 'orb_wake',
     recentlyServedDedupeKeys,
     ...(isExplicitSelection ? { providerTimeoutMs: EXPLICIT_SELECTION_PROVIDER_TIMEOUT_MS } : {}),
@@ -693,6 +743,38 @@ export async function decideWakeBriefForSession(
       extra,
     },
   });
+
+  // VTID-04454: with BRAIN_SCORED_OPENING=true the weighted relevance score
+  // chooses the opening among the candidates the providers returned. The
+  // scoring is bounded (BRAIN_SCORED_OPENING_TIMEOUT_MS, 400 ms default); when
+  // it runs out or fails, the fixed-priority decision is served unchanged.
+  // Explicit selections never reach the score. With the flag off the score is
+  // only recorded, after the fact and off the session-start path (VTID-04422).
+  let decision = fixedDecision;
+  let scoredOpening: ScoredOpeningResult | null = null;
+  if (!isExplicitSelection && isScoredOpeningEnabled()) {
+    const ts = now();
+    const bounded = await withinBound(
+      computeOpeningRanking(args, fixedDecision, storedRecentOpeners, isPersonalWeightsLive()).then((r) => ({ r })),
+      scoredOpeningTimeoutMs(),
+    );
+    const computed = bounded?.r ?? null;
+    scoredOpening = applyScoredOpening(fixedDecision, computed?.ranking ?? null);
+    if (!bounded) scoredOpening.reason = 'scoring_timeout_or_error';
+    decision = scoredOpening.decision;
+    if (computed) {
+      recordRanking(recorder, args.sessionId, fixedDecision, computed, scoredOpening, Math.max(0, now() - ts));
+    } else {
+      safeRecord(recorder, args.sessionId, 'continuation_shadow_ranked', {
+        decisionId: fixedDecision.decisionId,
+        ranking_mode: scoredOpening.mode,
+        ranking_reason: scoredOpening.reason,
+        live_winner: scoredOpening.fixed_winner,
+        served_winner: scoredOpening.served_winner,
+        durationMs: Math.max(0, now() - ts),
+      });
+    }
+  }
 
   // wake_brief_selected — fires once per wake. Carries either the
   // selected kind OR none_with_reason. B0d.3's aggregator reads
@@ -793,17 +875,48 @@ export async function decideWakeBriefForSession(
     ) {
       const onYesTool = (selCta as { onYesTool: string }).onYesTool;
       const ctaPayload = (selCta as { payload?: Record<string, unknown> }).payload ?? {};
-      void import('./orb/orb-session-state')
-        .then(({ writeOrbSessionState }) =>
-          writeOrbSessionState(
-            args.supabase!,
-            args.userId!,
-            'pending_cta',
-            { tool: onYesTool, payload: ctaPayload, offered_at: new Date().toISOString() },
-            5, // minutes — the offer is only live for the immediate follow-up
-          ),
+      // VTID-04355: the one pending_cta writer — records the offer, its
+      // provider and dedupe key, and the offer lifecycle events.
+      void import('./assistant-continuation/offer-outcomes')
+        .then(({ recordPendingOffer }) =>
+          recordPendingOffer(args.supabase!, args.userId!, {
+            tool: onYesTool,
+            payload: ctaPayload,
+            source: 'wake_brief',
+            // VTID-04422: the provider that produced the winning candidate (was
+            // the candidate's kind), so outcomes can be scored per provider.
+            provider: winningProviderKey(decision) ?? (sel as { kind?: string } | null)?.kind ?? null,
+            key: sel?.dedupeKey ?? null,
+            ttlMinutes: 5, // the offer is only live for the immediate follow-up
+          }),
         )
         .catch(() => { /* pending-CTA persistence is best-effort */ });
+    }
+  }
+
+  // VTID-04422 (WS-2.2): score the same candidates with the weighted formula
+  // and record both rankings. SHADOW ONLY — nothing here changes the decision
+  // returned above, and it runs after it, off the session-start path. An
+  // explicit selection (tapped topic / focus step) is not a ranking question
+  // and is skipped.
+  if (!isExplicitSelection && !scoredOpening) {
+    void recordShadowRanking(recorder, args, decision, storedRecentOpeners).catch(() => {
+      /* shadow scoring is best-effort */
+    });
+  }
+
+  // VTID-04423 (WS-2.3): keep this opening's candidates for the rest of the
+  // conversation; get_next_best_action re-ranks them when the model asks.
+  // Stored only — nothing here is spoken.
+  if (args.recordEmission && args.supabase && args.userId && isTurnCandidatesEnabled()) {
+    const candidates = toStoredTurnCandidates(decision);
+    if (candidates.length) {
+      const value: StoredTurnCandidates = { decision_id: decision.decisionId, stored_at: new Date(now()).toISOString(), candidates };
+      void import('./orb/orb-session-state')
+        .then(({ writeOrbSessionState }) =>
+          writeOrbSessionState(args.supabase!, args.userId!, 'brain_candidates', value, BRAIN_CANDIDATES_TTL_MIN),
+        )
+        .catch(() => { /* best-effort */ });
     }
   }
 
@@ -813,6 +926,142 @@ export async function decideWakeBriefForSession(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** VTID-04422: the provider key whose candidate the ranker selected. */
+function winningProviderKey(decision: AssistantContinuationDecision): string | null {
+  const sel = decision.selectedContinuation;
+  if (!sel) return null;
+  const r = decision.sourceProviderResults.find((x) => x.candidate === sel || (x.candidate && x.candidate.id === sel.id));
+  return r?.providerKey ?? null;
+}
+
+/** VTID-04422: the returned candidates in the scorer's shape. */
+export function toScorableCandidates(decision: AssistantContinuationDecision): ScorableCandidate[] {
+  return decision.sourceProviderResults
+    .filter((r) => r.status === 'returned' && r.candidate && r.candidate.kind !== 'none_with_reason')
+    .map((r) => {
+      const c = r.candidate!;
+      const cta = c.cta as { type?: string; route?: string } | undefined;
+      return {
+        provider: r.providerKey,
+        kind: c.kind,
+        dedupeKey: c.dedupeKey ?? null,
+        priority: typeof c.priority === 'number' ? c.priority : 0,
+        ctaRoute: cta?.type === 'navigate' && typeof cta.route === 'string' ? cta.route : null,
+      };
+    });
+}
+
+interface OpeningRanking {
+  ranking: ReturnType<typeof rankInShadow>;
+  personal: ReturnType<typeof personalizeWeights>;
+  sharedWeightsWinner: string | null;
+  outcomeProviders: number;
+}
+
+/**
+ * VTID-04422 / VTID-04454: score the returned candidates. `livePersonal`
+ * decides which weights rank them — the user's own (BRAIN_PERSONAL_WEIGHTS)
+ * or the shared row; the shared-weights winner is kept beside it either way.
+ * Null when there is nothing to rank.
+ */
+async function computeOpeningRanking(
+  args: DecideWakeBriefArgs,
+  decision: AssistantContinuationDecision,
+  recentlyServed: string[],
+  livePersonal: boolean,
+): Promise<OpeningRanking | null> {
+  const candidates = toScorableCandidates(decision);
+  if (candidates.length === 0) return null;
+  const weights = await loadScoringWeights(args.supabase ?? null);
+  let outcomes: Record<string, { accepted: number; settled: number; declined?: number; ignored?: number }> = {};
+  if (args.supabase && args.userId) {
+    try {
+      outcomes = await loadUserOutcomes(args.supabase, args.userId);
+    } catch {
+      outcomes = {};
+    }
+  }
+  const scoringCtx = {
+    recentlyServed,
+    recentWindow: RECENT_OPENERS_WINDOW,
+    currentRoute: args.currentRoute ?? null,
+    partOfDay: partOfDayForHour(localHourIn(args.timezone ?? null)),
+    outcomes,
+  };
+  const personal = personalizeWeights(weights, outcomes);
+  const usePersonal = livePersonal && personal.adjustment.applied;
+  const ranking = rankInShadow(candidates, winningProviderKey(decision), scoringCtx, usePersonal ? personal.weights : weights);
+  const sharedWeightsWinner = usePersonal
+    ? rankInShadow(candidates, null, scoringCtx, weights).shadow_winner
+    : ranking.shadow_winner;
+  return { ranking, personal, sharedWeightsWinner, outcomeProviders: Object.keys(outcomes).length };
+}
+
+/** VTID-04454: the ranking that chose (or declined to change) the opening. */
+function recordRanking(
+  recorder: typeof defaultWakeTimelineRecorder,
+  sessionId: string,
+  fixedDecision: AssistantContinuationDecision,
+  computed: OpeningRanking,
+  scored: ScoredOpeningResult,
+  durationMs: number,
+): void {
+  safeRecord(recorder, sessionId, 'continuation_shadow_ranked', {
+    decisionId: fixedDecision.decisionId,
+    ...computed.ranking,
+    personal: computed.personal.adjustment,
+    shadow_winner_shared_weights: computed.sharedWeightsWinner,
+    outcome_providers: computed.outcomeProviders,
+    ranking_mode: scored.mode,
+    ...(scored.reason ? { ranking_reason: scored.reason } : {}),
+    served_winner: scored.served_winner,
+    durationMs,
+  });
+}
+
+async function recordShadowRanking(
+  recorder: typeof defaultWakeTimelineRecorder,
+  args: DecideWakeBriefArgs,
+  decision: AssistantContinuationDecision,
+  recentlyServed: string[],
+): Promise<void> {
+  const candidates = toScorableCandidates(decision);
+  if (candidates.length === 0) return;
+  const t0 = Date.now();
+  const weights = await loadScoringWeights(args.supabase ?? null);
+  let outcomes: Record<string, { accepted: number; settled: number; declined?: number; ignored?: number }> = {};
+  if (args.supabase && args.userId) {
+    try {
+      outcomes = await loadUserOutcomes(args.supabase, args.userId);
+    } catch {
+      outcomes = {};
+    }
+  }
+  const scoringCtx = {
+    recentlyServed,
+    recentWindow: RECENT_OPENERS_WINDOW,
+    currentRoute: args.currentRoute ?? null,
+    partOfDay: partOfDayForHour(localHourIn(args.timezone ?? null)),
+    outcomes,
+  };
+  // VTID-04435 (WS-4.3): the shadow score uses this user's copy of the
+  // weights (their own outcomes, within fixed limits). The shared-weights
+  // winner is recorded beside it, so the effect of personalisation is visible.
+  const personal = personalizeWeights(weights, outcomes);
+  const ranking = rankInShadow(candidates, winningProviderKey(decision), scoringCtx, personal.weights);
+  const baseWinner = personal.adjustment.applied
+    ? rankInShadow(candidates, null, scoringCtx, weights).shadow_winner
+    : ranking.shadow_winner;
+  safeRecord(recorder, args.sessionId, 'continuation_shadow_ranked', {
+    decisionId: decision.decisionId,
+    ...ranking,
+    personal: personal.adjustment,
+    shadow_winner_shared_weights: baseWinner,
+    outcome_providers: Object.keys(outcomes).length,
+    durationMs: Date.now() - t0,
+  });
+}
 
 function safeRecord(
   recorder: typeof defaultWakeTimelineRecorder,

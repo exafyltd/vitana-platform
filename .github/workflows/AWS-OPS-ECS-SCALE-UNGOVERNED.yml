@@ -1,0 +1,106 @@
+# AWS-OPS-ECS-SCALE-UNGOVERNED — stop (or restore) the ECS services the
+# platform owner decided to retire (VTID-04324, Orchestrator plan §8.1;
+# VTID-04327, §8.5).
+#
+# What it may touch, and only this: the 23 services created in the
+# 2026-07-09 bulk-provisioning event that have no source of record, no
+# ingress (no ALB target group, no Cloud Map), and no deploy pipeline
+# (docs/AURORA-MIGRATION-STATUS-2026-09-10.md, 2026-09-11 roster
+# addendum), plus vitana-worker-runner (retired under VTID-04327). The
+# allowlist below is exhaustive: any other name is refused before any AWS
+# call, so this workflow can never scale the gateway, the frontends, the
+# operator, the ERP bridge or anything else that serves traffic.
+#
+# Why scale to zero instead of delete: scale-to-zero is reversible with one
+# dispatch (`desired_count: 1`), keeps the task definitions for inspection,
+# and stops every running copy of the production credentials those task
+# definitions inject (DB_PASSWORD, SUPABASE_SERVICE_ROLE). Deleting the
+# services and deregistering their task definitions is a later, separate
+# step after a quiet window.
+#
+# Why a workflow: CLAUDE.md ALWAYS 17 — ECS state changes go through CI,
+# never a hand-run `aws ecs update-service`. workflow_dispatch only,
+# required `reason`, dry run by default.
+
+name: AWS Ops — Scale Ungoverned ECS Services
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why (required, recorded in the run log)'
+        required: true
+      services:
+        description: 'Comma-separated service names, or "all" for the whole allowlist'
+        required: true
+        default: 'all'
+      desired_count:
+        description: '0 to stop, 1 to restore'
+        required: true
+        default: '0'
+      dry_run:
+        description: 'true = print the plan only'
+        required: true
+        default: 'true'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-ops-ecs-scale-ungoverned
+  cancel-in-progress: false
+
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: eu-central-1
+      ECS_CLUSTER: Vitana-ECS-Cluster
+      REASON: ${{ inputs.reason }}
+      SERVICES_INPUT: ${{ inputs.services }}
+      DESIRED: ${{ inputs.desired_count }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate inputs against the allowlist
+        id: plan
+        run: node scripts/ci/ecs-scale-allowlist.cjs
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify account
+        run: |
+          set -euo pipefail
+          acct="$(aws sts get-caller-identity --query Account --output text)"
+          test "$acct" = "472838866351" || { echo "wrong account $acct"; exit 1; }
+
+      - name: Scale
+        env:
+          TARGETS: ${{ steps.plan.outputs.targets }}
+        run: |
+          set -euo pipefail
+          echo "reason: $REASON"
+          echo "desired_count: $DESIRED  dry_run: $DRY_RUN"
+          for svc in $TARGETS; do
+            before="$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+              --query 'services[0].[desiredCount,runningCount,taskDefinition]' --output text)"
+            echo "BEFORE $svc $before"
+            if [ "$DRY_RUN" = "true" ]; then continue; fi
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$svc" \
+              --desired-count "$DESIRED" --query 'service.[serviceName,desiredCount]' --output text
+          done
+          if [ "$DRY_RUN" != "true" ]; then
+            echo "Waiting for services to settle"
+            # shellcheck disable=SC2086
+            printf '%s\n' $TARGETS | xargs -n 10 aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services
+            for svc in $TARGETS; do
+              echo "AFTER $svc $(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+                --query 'services[0].[desiredCount,runningCount]' --output text)"
+            done
+          fi

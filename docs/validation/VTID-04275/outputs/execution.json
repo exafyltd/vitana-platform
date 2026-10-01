@@ -1,0 +1,55 @@
+{
+  "vtid": "VTID-04275",
+  "title": "TODO/FIXME scanners self-match their own detection-pattern source",
+  "profile": "gateway_backend",
+  "executor": "claude-code-session",
+  "self_match_findings_confirmed": [
+    {
+      "id": "5fbe06e1-e3e3-4869-9181-3c6182d2ec8f",
+      "signal_fingerprint": "b039ba88a65b40a3",
+      "flagged_line": "scripts/ci/dev-autopilot-scan.mjs:77 — severity: m[1] === 'FIXME' || m[1] === 'HACK' ? 'medium' : 'low',"
+    },
+    {
+      "id": "8caa3710-2ed0-4f4b-9945-0dbd7c742a1a",
+      "signal_fingerprint": "89edf21d0d8c36a2",
+      "flagged_files": ["scripts/ci/dev-autopilot-scan.mjs", "scripts/ci/scanners/registry.mjs (own catalog title: 'TODO / FIXME / HACK markers')"]
+    },
+    {
+      "id": "23e083d1-29e3-4509-856a-b54f8ee49212",
+      "signal_fingerprint": "b976bcea3e9cf425",
+      "flagged_line": "codebase-analyzer.ts:274 — const severity = todo.type === 'FIXME' || todo.type === 'HACK' ? 'high' : 'medium';"
+    }
+  ],
+  "unrelated_row_closed": {
+    "id": "7a93bca4-d753-428d-a24e-229c164df723",
+    "activated_vtid": "VTID-04261",
+    "reason": "underlying fix already shipped this session (PR #3570), row was never marked completed"
+  },
+  "files_changed": [
+    "scripts/ci/dev-autopilot-scan.mjs",
+    "services/gateway/src/services/recommendation-engine/analyzers/codebase-analyzer.ts",
+    "services/gateway/test/scripts/dev-autopilot-todo-scanner-self-match.test.ts",
+    "services/gateway/test/services/recommendation-engine/analyzers/codebase-analyzer.test.ts",
+    "docs/validation/VTID-04275/acceptance.md",
+    "docs/validation/VTID-04275/commands.log",
+    "docs/validation/VTID-04275/outputs/execution.json"
+  ],
+  "checks": {
+    "new_tests": { "count": 6, "passing": 6, "total": 6, "mutation_verified": true },
+    "full_gateway_suite": {
+      "suites_passing": 1062,
+      "suites_total": 1063,
+      "suites_pre_existing_skip": 1,
+      "tests_passing": 17331,
+      "tests_total": 17366,
+      "tests_skipped_pre_existing": 29,
+      "tests_todo_pre_existing": 6,
+      "snapshots_passing": 42,
+      "snapshots_total": 42,
+      "failures": 0
+    },
+    "tsc_noemit": "clean"
+  },
+  "supabase_mutations_from_this_session": "autopilot_recommendations row 7a93bca4 set status='completed' (already-fixed finding, see unrelated_row_closed)",
+  "live_verification": "not yet performed — the next scheduled scan while dev-autopilot-scan.mjs / codebase-analyzer.ts / registry.mjs are unchanged should not re-emit the two self-match findings"
+}

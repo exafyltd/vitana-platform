@@ -1,0 +1,163 @@
+{
+  "summary": {
+    "label": "auth-en-commandhub",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "en",
+    "route": "/command-hub",
+    "auth": true,
+    "trials": 6,
+    "with_audio": 6,
+    "no_audio": 0,
+    "first_audio_ms": {
+      "min": 808,
+      "p50": 1255,
+      "p90": 2062,
+      "max": 2062
+    },
+    "first_model_audio_ms": {
+      "min": 4050,
+      "p50": 4904,
+      "p90": 7910,
+      "max": 7910
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 281,
+        "thinking": 1,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367465423,
+      "sessionStartMs": 967,
+      "sessionId": "live-b4b22893-0c60-4946-acf1-024f9d1aff15",
+      "sseOpenMs": 1569,
+      "firstAudioMs": 2062,
+      "firstAudioSource": "activation_chime",
+      "text": "The system snapshot shows a critical Dev Autopilot health issue: only 2% of executions succeeded this week, with 594 failures out of 619, primarily due to LLM call failures on both Bedrock providers. Additionally, there is one execution waiting for your approval.\nWould you like me to investigate the failing LLM calls further or review the pending approval?",
+      "firstModelAudioMs": 7910,
+      "turnCompleteMs": 10348
+    },
+    {
+      "idx": 2,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 280,
+        "thinking": 1,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367475972,
+      "sessionStartMs": 818,
+      "sessionId": "live-3f7207b4-e6e3-4b03-aa9b-21f81beb94ce",
+      "sseOpenMs": 993,
+      "firstAudioMs": 1255,
+      "firstAudioSource": "activation_chime",
+      "text": "The system snapshot shows a critical Dev Autopilot issue: only 2% of executions succeeded this week, with 594 failures out of 619, primarily due to LLM call failures on Bedrock. Additionally, there is one execution waiting for your approval.\nWould you like me to investigate the failed LLM calls further or help you approve the pending execution?",
+      "firstModelAudioMs": 4904,
+      "turnCompleteMs": 8884
+    },
+    {
+      "idx": 3,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 265,
+        "thinking": 1,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367485221,
+      "sessionStartMs": 820,
+      "sessionId": "live-33615bed-f55c-4e63-b0d9-f64f8221f5bf",
+      "sseOpenMs": 982,
+      "firstAudioMs": 1383,
+      "firstAudioSource": "activation_chime",
+      "text": "The system snapshot shows a critical Dev Autopilot issue: only 2% of executions succeeded this week, with 594 failures out of 619, primarily due to LLM call failures on Bedrock. Additionally, there is one execution waiting for your approval.\nWould you like me to investigate the failed executions or review the pending approval?",
+      "firstModelAudioMs": 5656,
+      "turnCompleteMs": 9341
+    },
+    {
+      "idx": 4,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 249,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367495080,
+      "sessionStartMs": 519,
+      "sessionId": "live-b26660c6-7633-42d7-9b65-acbb897f04ae",
+      "sseOpenMs": 683,
+      "firstAudioMs": 808,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's an execution waiting for your approval. Also, staging and production are on different builds. Want me to pull up the pending approval details and the diff between staging and production builds so we can get this sorted?",
+      "firstModelAudioMs": 4050,
+      "turnCompleteMs": 7549
+    },
+    {
+      "idx": 5,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 275,
+        "thinking": 1,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367502825,
+      "sessionStartMs": 577,
+      "sessionId": "live-3fdb9e45-76a2-4996-9efb-1071e12b3ffd",
+      "sseOpenMs": 752,
+      "firstAudioMs": 1116,
+      "firstAudioSource": "activation_chime",
+      "text": "The system snapshot shows a critical Dev Autopilot issue: only 2% of executions succeeded this week, with the top failure being LLM call failures on both Bedrock providers. There's also one execution waiting for your approval.\nWould you like me to investigate the LLM failure cause in detail, or would you prefer to review and approve the pending execution first?",
+      "firstModelAudioMs": 4885,
+      "turnCompleteMs": 8708
+    },
+    {
+      "idx": 6,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 299,
+        "thinking": 1,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790367511986,
+      "sessionStartMs": 456,
+      "sessionId": "live-89b73068-8f8a-41b9-910a-293947ecc3b4",
+      "sseOpenMs": 635,
+      "firstAudioMs": 935,
+      "firstAudioSource": "activation_chime",
+      "text": "The system snapshot shows a critical Dev Autopilot issue: only 2% of executions succeeded this week, with the top failure being LLM call failures on both Bedrock providers. There's also one execution waiting for your approval.\nI can help you investigate the LLM failure root cause and review the pending approval. Should I pull the details of the failed executions and the pending approval for you?",
+      "firstModelAudioMs": 4074,
+      "turnCompleteMs": 8212
+    }
+  ]
+}

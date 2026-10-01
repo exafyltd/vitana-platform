@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
+import { requireLedgerWriteAuth, getLedgerWriteActor } from '../middleware/ledger-write-auth';
 
 export const oasisTasksRouter = Router();
 
@@ -252,7 +253,7 @@ oasisTasksRouter.get('/api/v1/oasis/tasks', async (req: Request, res: Response) 
   }
 });
 
-oasisTasksRouter.post('/api/v1/oasis/tasks', async (req: Request, res: Response) => {
+oasisTasksRouter.post('/api/v1/oasis/tasks', requireLedgerWriteAuth, async (req: Request, res: Response) => {
   try {
     const validation = TaskCreateSchema.safeParse(req.body);
     if (!validation.success) return res.status(400).json({ error: 'Validation failed', detail: validation.error.errors });
@@ -328,7 +329,7 @@ oasisTasksRouter.get('/api/v1/oasis/tasks/:id', async (req: Request, res: Respon
   }
 });
 
-oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', async (req: Request, res: Response) => {
+oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', requireLedgerWriteAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const validation = TaskUpdateSchema.safeParse(req.body);
@@ -379,7 +380,7 @@ oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', async (req: Request, res: Resp
  *
  * Never allows deletion of in_progress or completed tasks.
  */
-oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Response) => {
+oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', requireLedgerWriteAuth, async (req: Request, res: Response) => {
   try {
     const { id: vtid } = req.params;
     const svcKey = process.env.SUPABASE_SERVICE_ROLE;
@@ -446,7 +447,9 @@ oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', async (req: Request, res: Res
 
     // Step 3: Perform soft delete transaction
     const timestamp = new Date().toISOString();
-    const deletedBy = req.headers['x-vitana-user-email'] as string || 'command-hub';
+    // VTID-04727: the verified actor wins; the header is only a fallback while the
+    // gate runs in log mode (it is caller-supplied and cannot be trusted).
+    const deletedBy = getLedgerWriteActor(req) || (req.headers['x-vitana-user-email'] as string) || 'command-hub';
 
     // Update vtid_ledger: set status='deleted', terminal state, deleted_at, deleted_by, delete_reason, voided_at, voided_reason
     const updatePayload = {
@@ -544,7 +547,7 @@ const TerminalCompletionSchema = z.object({
   terminal_outcome: z.enum(['success', 'failed', 'cancelled']).default('success'),
 });
 
-oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', async (req: Request, res: Response) => {
+oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', requireLedgerWriteAuth, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
 

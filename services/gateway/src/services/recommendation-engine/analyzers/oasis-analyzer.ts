@@ -9,6 +9,7 @@
  */
 
 import { createHash } from 'crypto';
+import { isRecommendationNoiseTopic } from '../../oasis-noise-topics';
 
 const LOG_PREFIX = '[VTID-01185:OASIS]';
 
@@ -97,60 +98,146 @@ async function queryOasisEvents(
 // Error Pattern Analyzer
 // =============================================================================
 
-interface ErrorCluster {
+export interface ErrorCluster {
+  /** Cluster identity: `topic:service`, or `provider:<provider>:<error class>` (VTID-04666). */
+  key: string;
   topic: string;
   service: string;
   count: number;
   recent_messages: string[];
   event_ids: string[];
+  /** VTID-04666: set when the cluster is one provider failure root cause. */
+  root_cause?: { provider: string; error_class: string; services: string[]; topics: string[] };
+}
+
+/** Minimal shape of an oasis_events row as read by this analyzer. */
+export interface OasisErrorEventRow {
+  id?: string;
+  topic?: string | null;
+  service?: string | null;
+  status?: string | null;
+  message?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+/**
+ * VTID-04666: error class of a provider failure, from the event itself.
+ * Order: an explicit error code, an HTTP status (field, then message), a
+ * known AWS/network/provider error token, else 'unknown'. Deterministic so
+ * the same outage always yields the same fingerprint.
+ */
+export function classifyProviderErrorClass(event: OasisErrorEventRow): string {
+  const md = (event.metadata || {}) as Record<string, unknown>;
+  const code = str(md.error_code) || str(md.errorCode) || str(md.code);
+  if (code) return code.toLowerCase();
+
+  const statusField = md.status_code ?? md.http_status ?? md.statusCode;
+  if (typeof statusField === 'number' && statusField >= 400 && statusField < 600) return String(statusField);
+  if (typeof statusField === 'string' && /^[45]\d\d$/.test(statusField)) return statusField;
+
+  const text = [str(md.error_message), str(md.error), str(event.message)].filter(Boolean).join(' ');
+  const http = text.match(/\b([45]\d\d)\b/);
+  if (http) return http[1];
+
+  const token = text.match(
+    /(AccessDenied\w*|Throttling\w*|ValidationException|ServiceUnavailable\w*|ModelNotReady\w*|invoke_failed|timed out|timeout|ECONNRESET|ETIMEDOUT|ENOTFOUND|rate.?limit|insufficient.?balance|credit balance)/i,
+  );
+  if (token) return token[1].toLowerCase().replace(/\s+/g, '_');
+  return 'unknown';
+}
+
+/**
+ * VTID-04666: is this error event a provider (LLM / voice / TTS) call that
+ * failed? Those are clustered by root cause, not per service, so one outage
+ * becomes one recommendation instead of one per calling service.
+ */
+export function providerOfFailure(event: OasisErrorEventRow): string | null {
+  const provider = str((event.metadata || {})['provider']);
+  if (!provider) return null;
+  const topic = event.topic || '';
+  if (topic.startsWith('llm.') || /fail|error/.test(topic)) {
+    return provider.toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Pure clustering of error events (VTID-04666: extracted so it is testable).
+ *  - noise topics (bookkeeping, telemetry — see oasis-noise-topics.ts) never cluster;
+ *  - provider failures cluster by provider + error class across services;
+ *  - everything else clusters by topic + service, as before;
+ *  - only clusters with count >= threshold are returned, largest first.
+ */
+export function clusterErrorEvents(events: OasisErrorEventRow[], threshold: number): ErrorCluster[] {
+  const grouped = new Map<string, { events: OasisErrorEventRow[]; provider?: string; errorClass?: string }>();
+  for (const event of events) {
+    const topic = event.topic || 'unknown';
+    if (isRecommendationNoiseTopic(topic)) continue;
+    const provider = providerOfFailure(event);
+    let key: string;
+    let entry: { events: OasisErrorEventRow[]; provider?: string; errorClass?: string } | undefined;
+    if (provider) {
+      const errorClass = classifyProviderErrorClass(event);
+      key = `provider:${provider}:${errorClass}`;
+      entry = grouped.get(key) || { events: [], provider, errorClass };
+    } else {
+      key = `${topic}:${event.service || 'unknown'}`;
+      entry = grouped.get(key) || { events: [] };
+    }
+    entry.events.push(event);
+    grouped.set(key, entry);
+  }
+
+  const clusters: ErrorCluster[] = [];
+  for (const [key, g] of grouped) {
+    if (g.events.length < threshold) continue;
+    const first = g.events[0];
+    const services = Array.from(new Set(g.events.map((e) => e.service || 'unknown')));
+    const topics = Array.from(new Set(g.events.map((e) => e.topic || 'unknown')));
+    clusters.push({
+      key,
+      topic: first.topic || 'unknown',
+      service: g.provider ? services.join(',') : first.service || 'unknown',
+      count: g.events.length,
+      recent_messages: g.events.slice(0, 5).map((e) => e.message || 'No message'),
+      event_ids: g.events.slice(0, 10).map((e) => e.id).filter((id): id is string => typeof id === 'string'),
+      ...(g.provider
+        ? { root_cause: { provider: g.provider, error_class: g.errorClass || 'unknown', services, topics } }
+        : {}),
+    });
+  }
+  clusters.sort((a, b) => b.count - a.count);
+  return clusters;
 }
 
 async function analyzeErrorPatterns(config: OasisAnalyzerConfig): Promise<ErrorCluster[]> {
-  const clusters: ErrorCluster[] = [];
-
   try {
     const lookbackTime = new Date(Date.now() - config.lookback_hours * 60 * 60 * 1000).toISOString();
 
-    // Query error events
-    const query = `status=eq.error&created_at=gte.${lookbackTime}&order=created_at.desc&limit=1000`;
+    // Query error events. VTID-04666: voice.latency.* is high-volume telemetry
+    // written with status=error — exclude it server-side so it cannot eat the
+    // 1000-row page; every other noise topic is dropped in clusterErrorEvents.
+    const query =
+      `status=eq.error&created_at=gte.${lookbackTime}` +
+      `&topic=not.like.voice.latency.*` +
+      `&select=id,topic,service,status,message,metadata` +
+      `&order=created_at.desc&limit=1000`;
     const result = await queryOasisEvents(query);
 
     if (!result.ok || !result.data) {
       console.warn(`${LOG_PREFIX} Failed to fetch error events:`, result.error);
-      return clusters;
+      return [];
     }
 
-    // Group by topic + service
-    const grouped = new Map<string, any[]>();
-    for (const event of result.data) {
-      const key = `${event.topic || 'unknown'}:${event.service || 'unknown'}`;
-      if (!grouped.has(key)) {
-        grouped.set(key, []);
-      }
-      grouped.get(key)!.push(event);
-    }
-
-    // Filter clusters with count >= threshold
-    for (const [key, events] of grouped) {
-      if (events.length >= config.error_threshold) {
-        const [topic, service] = key.split(':');
-        clusters.push({
-          topic,
-          service,
-          count: events.length,
-          recent_messages: events.slice(0, 5).map((e) => e.message || 'No message'),
-          event_ids: events.slice(0, 10).map((e) => e.id),
-        });
-      }
-    }
-
-    // Sort by count descending
-    clusters.sort((a, b) => b.count - a.count);
+    return clusterErrorEvents(result.data as OasisErrorEventRow[], config.error_threshold);
   } catch (error) {
     console.error(`${LOG_PREFIX} Error analyzing error patterns:`, error);
+    return [];
   }
-
-  return clusters;
 }
 
 // =============================================================================
@@ -234,7 +321,11 @@ async function analyzeFailedDeploys(config: OasisAnalyzerConfig): Promise<Failed
     const lookbackTime = new Date(Date.now() - config.lookback_hours * 60 * 60 * 1000).toISOString();
 
     // Query deploy failure events
-    const query = `or=(topic.eq.deploy.failed,topic.eq.cicd.deploy.service.failed,topic.eq.deploy.gateway.failed)&created_at=gte.${lookbackTime}&order=created_at.desc&limit=500`;
+    // VTID-04666: the AWS deploy workflows write staging.deploy.failed /
+    // prod.deploy.failed; the three older topics are GCP-era and no longer
+    // emitted. The error clustering treats all deploy topics as noise, so this
+    // pass is the only place deploy failures become recommendations.
+    const query = `or=(topic.eq.deploy.failed,topic.eq.cicd.deploy.service.failed,topic.eq.deploy.gateway.failed,topic.eq.staging.deploy.failed,topic.eq.prod.deploy.failed)&created_at=gte.${lookbackTime}&order=created_at.desc&limit=500`;
     const result = await queryOasisEvents(query);
 
     if (!result.ok || !result.data) {
@@ -298,6 +389,24 @@ export async function analyzeOasisEvents(
     for (const cluster of errorClusters) {
       const severity =
         cluster.count > 100 ? 'critical' : cluster.count > 50 ? 'high' : cluster.count > 20 ? 'medium' : 'low';
+
+      if (cluster.root_cause) {
+        // VTID-04666: one provider outage = one signal. The source (and so
+        // the fingerprint) is the root cause, not the calling service.
+        const rc = cluster.root_cause;
+        signals.push({
+          type: 'error_pattern',
+          severity,
+          source: cluster.key,
+          message:
+            `Provider failure: ${rc.provider} ${rc.error_class} (${cluster.count} occurrences in ` +
+            `${fullConfig.lookback_hours}h across ${rc.services.join(', ')}; topics: ${rc.topics.join(', ')})`,
+          count: cluster.count,
+          suggested_action: `Investigate ${rc.provider} ${rc.error_class} failures (provider outage or configuration)`,
+          event_ids: cluster.event_ids,
+        });
+        continue;
+      }
 
       signals.push({
         type: 'error_pattern',

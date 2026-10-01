@@ -9,6 +9,7 @@
 
 import type { JourneyGuideContent } from '../../../services/assistant-continuation/providers/journey-guide';
 import { LOCALE_ENGLISH_NAME, resolveLocaleStrict } from '../../../i18n/catalog';
+import { registerRuleForLang } from '../../../i18n/llm-locale';
 
 /**
  * VTID-03266 (Fix-6) — the SPOKEN opener LINE for the journey guide.
@@ -185,6 +186,7 @@ export function buildJourneyGuideBlock(
         '## GUIDE-MODUS (VERFEINERN) — diese Person hat den Schritt schon erledigt und will ihn AUSBAUEN',
         '',
         'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+        registerRuleForLang('de'),
         '',
         `Die Person hat „${guide.step_title}" bereits abgeschlossen und hat es GEZIELT angetippt, um es weiter zu verbessern. Behandle sie NICHT wie eine Anfängerin und fang den Schritt NICHT von vorne an.`,
         '',
@@ -207,6 +209,7 @@ export function buildJourneyGuideBlock(
       '## GUIDE MODE (ENRICH) — this person already completed the step and wants to BUILD ON it',
       '',
       `LANGUAGE: Speak ONLY in ${langName}. Any journey/step material below may be written in German — deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
+      ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
       '',
       `The person has ALREADY completed "${guide.step_title}" and deliberately tapped it to improve it further. Do NOT treat them as a new user and do NOT restart the step from scratch.`,
       '',
@@ -231,6 +234,7 @@ export function buildJourneyGuideBlock(
       '## GUIDE-MODUS — du FÜHRST diese Person durch ihre Reise und ENTSCHEIDEST FÜR sie',
       '',
       'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel (auch solchen, die nur „für die erste Äußerung" gelten oder dich „Wie kann ich helfen?" sagen lassen).',
+      registerRuleForLang('de'),
       '',
       'Diese Person ist neu und weiß noch NICHT, was sie tun soll. Du entscheidest FÜR sie. Du sagst „Ich schlage vor, wir machen jetzt X" und MACHST es gemeinsam.',
       '',
@@ -260,6 +264,7 @@ export function buildJourneyGuideBlock(
     '## GUIDE MODE — you LEAD this person through their journey and DECIDE FOR them',
     '',
     `LANGUAGE: Speak ONLY in ${langName}. Any journey/step material below may be written in German — deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule (including any that apply "for the first turn only" or tell you to say "How can I help?").`,
+    ...(registerRuleForLang(lang) ? [registerRuleForLang(lang)] : []),
     '',
     'This person is new and does NOT yet know what to do. You decide FOR them. You say "I suggest we do X now" and DO it together.',
     '',

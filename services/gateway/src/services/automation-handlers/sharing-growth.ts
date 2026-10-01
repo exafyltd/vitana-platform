@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 import * as repo from './sharing-growth-repository';
+import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
@@ -228,36 +229,31 @@ async function runEventCountdownSharePrompt(ctx: AutomationContext) {
 }
 
 // ── AP-0410: Viral Loop — Shared Link → New User Onboarding ─
-// Real schema: relationship_edges is source_type/source_id/target_type/
-// target_id/edge_type/metadata (jsonb, not stringified), unique key
-// (tenant_id, source_type, source_id, target_type, target_id, edge_type).
-// global_community_events/global_event_participants, not community_meetups.
+// VTID-04510 (CA-8): this used to connect the new member to whoever invited
+// them and sign them up for the shared event without asking. It now proposes
+// both to the new member ("say hello to <inviter>", "join the event") and
+// acts only when they say yes. The inviter's thank-you note is unchanged.
 async function runViralLoopOnboarding(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { referred_id, referrer_id, target_type, target_id } = payload || {};
   if (!referred_id || !referrer_id) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
+  const run = { supabase, automationId: ctx.run.automation_id, runId: ctx.run.id };
+  const outcomes: ProposalOutcome[] = [];
 
-  // Auto-connect referrer and referred
-  await repo.upsertRelationshipEdge(supabase, {
-    tenant_id: tenantId,
-    source_type: 'person',
-    source_id: referred_id,
-    target_type: 'person',
-    target_id: referrer_id,
-    edge_type: 'connected',
-    strength: 30,
-    metadata: { origin: 'referral' },
-  });
+  outcomes.push(await proposeToMember(run, {
+    userId: referred_id, template: 'connect_referrer', domain: 'connect',
+    action: { kind: 'open_screen', params: { route: `/profile/${referrer_id}`, target_user_id: referrer_id } },
+    fingerprint: `connect_referrer:${referrer_id}`,
+  }));
 
-  // If target is an event, auto-register.
   if (target_type === 'event' && target_id) {
-    await repo.upsertEventParticipant(supabase, {
-      event_id: target_id,
-      user_id: referred_id,
-      status: 'attending',
-    });
+    outcomes.push(await proposeToMember(run, {
+      userId: referred_id, template: 'event_rsvp_referral', domain: 'community',
+      action: { kind: 'rsvp_event', params: { event_id: target_id } },
+      fingerprint: `event_rsvp:${target_id}`,
+    }));
   }
 
   // Notify referrer
@@ -267,11 +263,12 @@ async function runViralLoopOnboarding(ctx: AutomationContext) {
     data: { url: '/wallet' },
   });
 
+  const tally = tallyOutcomes(outcomes);
   await ctx.emitEvent('autopilot.sharing.viral_signup', {
-    referrer_id, referred_id, target_type, target_id,
+    referrer_id, referred_id, target_type, target_id, proposals: tally,
   });
 
-  return { usersAffected: 2, actionsTaken: 3 };
+  return { usersAffected: 1 + (tally.proposed > 0 ? 1 : 0), actionsTaken: 1 + tally.proposed };
 }
 
 // ── AP-0403: Social Media Event Card Generator ──────────────

@@ -1,0 +1,9 @@
+# VTID-04354
+npx jest test/command-hub test/frontend      # 52 suites / 575 tests passed (outputs/jest.txt)
+npx tsc --noEmit -p services/gateway         # exit 0
+git diff origin/main -- services/gateway/src/frontend/ > csp.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines csp.txt   # No CSP pattern hits in added lines.
+# Visual verification (nothing live):
+PORT=18483 node docs/validation/VTID-04354/outputs/harness-server.js &
+node docs/validation/VTID-04354/outputs/harness-shoot.js > outputs/shoot-result.json
+# Fixture: read-only SELECT from agent_runs_unified / agents_registry (Supabase MCP), 2026-09-23.

@@ -20,8 +20,11 @@ import { markInProgress as autopilotMarkInProgress } from './autopilot-controlle
 // VTID-01175: Verification Engine Configuration
 // =============================================================================
 
-const VERIFICATION_ENGINE_URL = process.env.VERIFICATION_ENGINE_URL ||
-  'https://vitana-verification-engine-q74ibpv6ia-uc.a.run.app';
+// VTID-04318: no default. The only default ever set was the deleted Cloud Run
+// host, so every verification failed with a network error and retried. The
+// ECS verification-engine has no ingress (CLAUDE.md §1b); unset now reports
+// `not_configured` without a network call instead of pretending to verify.
+const VERIFICATION_ENGINE_URL = (process.env.VERIFICATION_ENGINE_URL || '').trim();
 
 const VERIFICATION_TIMEOUT_MS = parseInt(process.env.VERIFICATION_TIMEOUT_MS || '30000', 10);
 const MAX_VERIFICATION_RETRIES = parseInt(process.env.MAX_VERIFICATION_RETRIES || '2', 10);
@@ -1202,6 +1205,17 @@ export async function verifyWorkerOutput(
       should_retry: false,
       reason: 'No files to verify'
     };
+  }
+
+  if (!VERIFICATION_ENGINE_URL) {
+    const reason = 'Verification engine not configured (VERIFICATION_ENGINE_URL unset)';
+    console.warn(`[VTID-04318] ${reason} — ${vtid} not verified`);
+    await emitVerificationEvent(vtid, 'error', 'warning', reason, {
+      run_id,
+      domain,
+      not_configured: true,
+    });
+    return { passed: false, should_retry: false, reason };
   }
 
   const request: VerifyRequest = {

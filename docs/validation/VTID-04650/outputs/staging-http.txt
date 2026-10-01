@@ -1,0 +1,1 @@
+PASS  VTID-04650  the scan tick that applies retirement is deployed and refuses a caller without the internal token

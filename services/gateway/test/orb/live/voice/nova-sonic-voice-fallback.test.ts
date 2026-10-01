@@ -14,6 +14,7 @@ import {
   logNovaSonicVoiceFallbackOnce,
   __resetNovaSonicVoiceFallbackLog,
   NOVA_SONIC_FALLBACK_VOICE,
+  NOVA_SONIC_MALE_FALLBACK_VOICE,
 } from '../../../../src/orb/live/voice/nova-sonic-voice';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -53,7 +54,13 @@ describe('VTID-03682: Nova voice fallback is explicit', () => {
     // test loudly rather than drift.
     expect(NOVA_SONIC_FALLBACK_VOICE).toBe('tina');
     expect(resolveNovaSonicVoiceOrFallback({ language: 'ru', persona: 'vitana' }).voice).toBe('tina');
-    expect(resolveNovaSonicVoiceOrFallback({ language: 'ru', persona: 'devon' }).voice).toBe('tina');
+    // VTID-04445 — Devon's fallback is the male voice of the same German
+    // locale; he never falls back to Vitana's female voice.
+    expect(NOVA_SONIC_MALE_FALLBACK_VOICE).toBe('lennart');
+    expect(resolveNovaSonicVoiceOrFallback({ language: 'ru', persona: 'devon' })).toEqual({
+      voice: 'lennart',
+      fallback: true,
+    });
   });
 
   it('preserves the null contract of the underlying resolver', () => {

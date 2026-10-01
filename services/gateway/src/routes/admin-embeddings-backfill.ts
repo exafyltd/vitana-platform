@@ -26,7 +26,8 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
-import { generateEmbedding } from '../services/embedding-service';
+// VTID-04342: memory_items uses the single memory embedder (Titan V2, 1024-dim).
+import { generateMemoryEmbedding as generateEmbedding } from '../services/memory-embedding';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './admin-embeddings-backfill-repository';
 

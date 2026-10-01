@@ -144,11 +144,11 @@
       "playground"
     ],
     "testing-qa": [
-      "unit-tests",
-      "integration-tests",
-      "validator-tests",
-      "e2e",
-      "ci-reports"
+      "overview",
+      "catalog",
+      "runs",
+      "run-tests",
+      "e2e"
     ],
     "intelligence-memory-dev": [
       "memory-vault",

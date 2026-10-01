@@ -86,7 +86,7 @@ describe('state signing', () => {
     const mod = await freshModule();
     const state = mod.signState('manifest-123');
     const decoded = mod.decodeAndVerifyState(state);
-    expect(decoded).toEqual({ manifestId: 'manifest-123' });
+    expect(decoded).toEqual({ manifestId: 'manifest-123', surface: 'merchant_self_service' });
   });
 
   test('a tampered state (different manifest id spliced in) is rejected', async () => {
@@ -113,6 +113,40 @@ describe('state signing', () => {
     setConfigured();
     const mod = await freshModule();
     expect(mod.decodeAndVerifyState('not-valid-base64url!!!')).toBeNull();
+  });
+
+  // VTID-04711: the initiating surface rides in the signed state.
+  test('the merchant surface keeps the pre-04711 three-part token shape', async () => {
+    setConfigured();
+    const mod = await freshModule();
+    const raw = Buffer.from(mod.signState('manifest-123', 'merchant_self_service'), 'base64url').toString('utf8');
+    expect(raw.split('.')).toHaveLength(3);
+  });
+
+  test('the onboarding surface round-trips through the signed state', async () => {
+    setConfigured();
+    const mod = await freshModule();
+    const state = mod.signState('manifest-123', 'partner_onboarding');
+    expect(mod.decodeAndVerifyState(state)).toEqual({ manifestId: 'manifest-123', surface: 'partner_onboarding' });
+  });
+
+  test('a surface swapped into a signed state is rejected', async () => {
+    setConfigured();
+    const mod = await freshModule();
+    const raw = Buffer.from(mod.signState('manifest-123', 'partner_onboarding'), 'base64url').toString('utf8');
+    const [id, expires, , sig] = raw.split('.');
+    const forged = Buffer.from(`${id}.${expires}.merchant_self_service.${sig}`).toString('base64url');
+    expect(mod.decodeAndVerifyState(forged)).toBeNull();
+  });
+
+  test('an unknown surface in a validly signed state falls back to the merchant surface', async () => {
+    setConfigured();
+    const mod = await freshModule();
+    const expires = Date.now() + 60_000;
+    const payload = `manifest-123.${expires}.somewhere_else`;
+    const sig = createHmac('sha256', 'test-client-secret').update(payload).digest('hex');
+    const state = Buffer.from(`${payload}.${sig}`).toString('base64url');
+    expect(mod.decodeAndVerifyState(state)).toEqual({ manifestId: 'manifest-123', surface: 'merchant_self_service' });
   });
 });
 

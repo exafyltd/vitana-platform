@@ -285,3 +285,110 @@ describe('dev-autopilot-outcomes — recordExecOutcome', () => {
     await expect(recordExecOutcome('f8', 'success')).resolves.toBeUndefined();
   });
 });
+
+// VTID-04267: Dev Autopilot spend surfacing. dev_autopilot_outcomes has no
+// updated_at column, so "today's spend" can't be a server-side date filter
+// — summarizeSpendToday is a pure function over a bounded recent window of
+// rows, filtering each agent_runs[] entry by its own recorded_at. No
+// Supabase/env dependency, unlike the rest of this file.
+describe('dev-autopilot-outcomes — summarizeSpendToday (VTID-04267)', () => {
+  function buildRun(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      execution_id: 'e-1',
+      vtid: 'VTID-1',
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      input_tokens: 1000,
+      output_tokens: 200,
+      cost_usd: 0.01,
+      turns: 5,
+      fix_rounds: 0,
+      checks_refused: 0,
+      fallback_used: false,
+      fix_mode: false,
+      outcome: 'pr_opened',
+      elapsed_ms: 12000,
+      recorded_at: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('sums cost_usd and tokens across agent_runs[] recorded today, across multiple rows', () => {
+    const { summarizeSpendToday } = loadModule();
+    const now = new Date('2026-09-22T12:00:00.000Z');
+    const rows = [
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.01, input_tokens: 1000, output_tokens: 100, recorded_at: '2026-09-22T09:00:00.000Z' })] } },
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.02, input_tokens: 2000, output_tokens: 200, recorded_at: '2026-09-22T11:00:00.000Z' })] } },
+    ];
+    const summary = summarizeSpendToday(rows, now);
+    expect(summary.spend_usd_today).toBeCloseTo(0.03, 6);
+    expect(summary.input_tokens_today).toBe(3000);
+    expect(summary.output_tokens_today).toBe(300);
+    expect(summary.runs_today).toBe(2);
+  });
+
+  it('excludes runs recorded before the start of the current UTC day', () => {
+    const { summarizeSpendToday } = loadModule();
+    const now = new Date('2026-09-22T01:00:00.000Z');
+    const rows = [
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.5, recorded_at: '2026-09-21T23:59:59.000Z' })] } }, // yesterday
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.05, recorded_at: '2026-09-22T00:00:01.000Z' })] } }, // today
+    ];
+    const summary = summarizeSpendToday(rows, now);
+    expect(summary.spend_usd_today).toBeCloseTo(0.05, 6);
+    expect(summary.runs_today).toBe(1);
+  });
+
+  it('sums multiple runs on the SAME outcome row (agent_runs[] can hold several entries)', () => {
+    const { summarizeSpendToday } = loadModule();
+    const now = new Date('2026-09-22T12:00:00.000Z');
+    const rows = [
+      {
+        metadata: {
+          agent_runs: [
+            buildRun({ execution_id: 'e-1', cost_usd: 0.01, recorded_at: '2026-09-22T08:00:00.000Z' }),
+            buildRun({ execution_id: 'e-2', cost_usd: 0.02, recorded_at: '2026-09-22T09:00:00.000Z' }),
+          ],
+        },
+      },
+    ];
+    const summary = summarizeSpendToday(rows, now);
+    expect(summary.spend_usd_today).toBeCloseTo(0.03, 6);
+    expect(summary.runs_today).toBe(2);
+  });
+
+  it('returns all zeros for an empty input, and never throws on malformed metadata', () => {
+    const { summarizeSpendToday } = loadModule();
+    expect(summarizeSpendToday([])).toEqual({
+      spend_usd_today: 0,
+      input_tokens_today: 0,
+      output_tokens_today: 0,
+      runs_today: 0,
+    });
+    // Rows with no metadata, non-object metadata, or a non-array agent_runs
+    // must all be skipped without throwing.
+    const malformed = [
+      { metadata: null },
+      { metadata: 'not-an-object' as unknown },
+      { metadata: {} },
+      { metadata: { agent_runs: 'not-an-array' } },
+      { metadata: { agent_runs: [null, 42, { no_recorded_at: true }] } },
+    ];
+    expect(() => summarizeSpendToday(malformed as any)).not.toThrow();
+    expect(summarizeSpendToday(malformed as any).runs_today).toBe(0);
+  });
+
+  it('rounds spend_usd_today to 6 decimal places, matching agent_cost_usd_total\'s own rounding', () => {
+    const { summarizeSpendToday } = loadModule();
+    const now = new Date('2026-09-22T12:00:00.000Z');
+    const rows = [
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.00000051, recorded_at: now.toISOString() })] } },
+      { metadata: { agent_runs: [buildRun({ cost_usd: 0.00000049, recorded_at: now.toISOString() })] } },
+    ];
+    const summary = summarizeSpendToday(rows, now);
+    // 0.00000051 + 0.00000049 = 0.000001 exactly, so rounding to 6dp is a no-op
+    // here — the point is the SHAPE (Math.round(x * 1e6) / 1e6), which floating-
+    // point addition of the two raw floats alone would not reliably land on.
+    expect(summary.spend_usd_today).toBe(0.000001);
+  });
+});

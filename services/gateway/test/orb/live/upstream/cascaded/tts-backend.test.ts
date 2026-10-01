@@ -50,7 +50,8 @@ describe('VTID-03987: cascade TTS backend boundary', () => {
       mockSynthesizeFish.mockResolvedValueOnce({ audioB64: 'BBBB', sampleRateHz: 16000 });
       const result = await fishBackend.synthesize('zdravo', 'sr');
       expect(result).toEqual({ audioB64: 'BBBB' });
-      expect(mockSynthesizeFish).toHaveBeenCalledWith({ text: 'zdravo', lang: 'sr', format: 'pcm' });
+      // VTID-04445: the role is passed explicitly (Vitana → receptionist).
+      expect(mockSynthesizeFish).toHaveBeenCalledWith({ text: 'zdravo', lang: 'sr', format: 'pcm', voiceRole: 'receptionist' });
     });
 
     it('fishBackend.synthesize returns null when Fish returns null', async () => {

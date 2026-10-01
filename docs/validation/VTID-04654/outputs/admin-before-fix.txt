@@ -1,0 +1,2 @@
+auth-admin: Es tut mir leid, aber ich kann die für Ihre Anfrage erforderlichen Informationen nicht abrufen. Möchten Sie, dass ich die Informationen erneut abrufe?
+auth-backoffice: Ich bin Vitana, Ihre BackOffice-Betriebsassistentin. Gerade laufen zwei wichtige Themen: Einmal, dass 100 % der aktiven Produkte seit 14 Tagen nicht mehr aktualisiert wurden, was zu falschen Preisen o

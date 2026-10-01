@@ -1,0 +1,5 @@
+# VTID-04514
+select count(*) on the four tables (live, read-only) -> 0,0,0,0
+FK / view / function dependency query (live, read-only)
+BEGIN READ ONLY; DO <guard>; ROLLBACK;  -> passed
+npx vitest run src/lib/dead-autopilot-tables.test.ts (vitana-v1)

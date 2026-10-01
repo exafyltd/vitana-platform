@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04260",
+  "executor": "claude-code-session",
+  "profile": "gateway_backend",
+  "changed_files": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts",
+    "docs/validation/VTID-04260/acceptance.md",
+    "docs/validation/VTID-04260/commands.log",
+    "docs/validation/VTID-04260/outputs/execution.json"
+  ],
+  "root_cause": "Command Hub Autopilot 'Runs' tab called GET /api/v1/automations/runs (tenant-scoped consumer automation engine) instead of GET /api/v1/dev-autopilot/runs (dev_autopilot_runs scan-run history, the subsystem every sibling Autopilot tab already reads from). The consumer route 400s 'tenant_id required' for any Command Hub call because getTenantId() never reads the X-Vitana-Tenant header the Command Hub sends.",
+  "fix": "Repointed fetchAutopilotRuns() at /api/v1/dev-autopilot/runs and rewrote renderAutopilotRunsView()/autopilotStatusColor() to the real dev_autopilot_runs row shape and status enum (running|ingesting|ranking|planning|done|failed).",
+  "test_suite": "services/gateway/test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts",
+  "test_results": {
+    "new_suite": { "suites": 1, "tests": 7, "passed": 7, "failed": 0 },
+    "full_command_hub_suite": { "suites": 18, "tests": 266, "passed": 266, "failed": 0 },
+    "mutation_check": "reverting the endpoint string to /api/v1/automations/runs fails exactly 1 assertion in the new suite, confirming the test is load-bearing"
+  },
+  "not_done": "An operator executor run (agent 7f837403 / VTID-04256) had been queued for this same fix and exhausted its 120-turn cap without committing a change; this VTID supersedes that attempt with a direct, verified fix. The underlying reason the agent burned its turn budget purely on search/read tool calls (search_text/read_file/find_files) without ever reaching a write_file/edit_file call is a separate, unaddressed defect in the agent executor and is not fixed by this VTID."
+}

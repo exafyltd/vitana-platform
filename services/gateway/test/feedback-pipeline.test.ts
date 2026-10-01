@@ -43,6 +43,9 @@ const store: {
   oasis_events: [],
 };
 
+// VTID-04333: dev_autopilot_executions rows for the latest_execution join.
+const executionsFixture: Array<Record<string, any>> = [];
+
 const TEST_USER_ID = '11111111-1111-1111-1111-111111111111';
 const TEST_VITANA_ID = '@testuser123';
 
@@ -126,6 +129,10 @@ function makeMockClient() {
           if (single) return { data: rows[0] ?? null, error: null };
           return { data: rows, error: null };
         }
+      }
+      if (table === 'dev_autopilot_executions') {
+        const rows = applyFilters(executionsFixture);
+        return { data: single ? rows[0] ?? null : rows, error: null };
       }
       if (table === 'app_users') {
         if (filters.find(f => f.col === 'user_id' && f.val === TEST_USER_ID)) {
@@ -480,6 +487,33 @@ describe('VTID-02047 Unified Feedback Pipeline — full lifecycle', () => {
     expect(dup.status).toBe(200);
     expect(dup.body.ticket.status).toBe('duplicate');
     expect(dup.body.ticket.duplicate_of).toBe(a.body.id);
+  });
+
+  test('VTID-04333: admin ticket list + detail carry linked_* and latest_execution', async () => {
+    store.tickets.set('tk-9', {
+      id: 'tk-9', ticket_number: 'FB-2026-09-000009', kind: 'bug', status: 'in_progress', priority: 'p2',
+      created_at: new Date().toISOString(), linked_vtid: 'VTID-04900', linked_finding_id: 'rec-9', linked_pr_url: null,
+    });
+    store.tickets.set('tk-10', {
+      id: 'tk-10', ticket_number: 'FB-2026-09-000010', kind: 'support_question', status: 'triaged', priority: 'p3',
+      created_at: new Date().toISOString(), linked_vtid: null, linked_finding_id: null, linked_pr_url: null,
+    });
+    executionsFixture.length = 0;
+    executionsFixture.push(
+      { id: 'ex-old', finding_id: 'rec-9', status: 'failed', failure_stage: 'ci', created_at: '2026-09-01T00:00:00Z' },
+      { id: 'ex-new', finding_id: 'rec-9', status: 'ci', failure_stage: null, pr_url: 'https://gh/pr/9', pr_number: 9, created_at: '2026-09-02T00:00:00Z' },
+    );
+    const list = await request(app).get('/api/v1/admin/feedback/tickets').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    expect(list.status).toBe(200);
+    const t9 = list.body.tickets.find((t: any) => t.id === 'tk-9');
+    expect(t9.linked_vtid).toBe('VTID-04900');
+    expect(t9.latest_execution).toMatchObject({ id: 'ex-new', status: 'ci', stage: 'ci', pr_number: 9 });
+    expect(list.body.tickets.find((t: any) => t.id === 'tk-10').latest_execution).toBeNull();
+
+    const detail = await request(app).get('/api/v1/admin/feedback/tickets/tk-9').set('Authorization', `Bearer ${TEST_TOKEN}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.latest_execution).toMatchObject({ id: 'ex-new', stage: 'ci' });
+    executionsFixture.length = 0;
   });
 
   test('all routes return 401 without Bearer token', async () => {

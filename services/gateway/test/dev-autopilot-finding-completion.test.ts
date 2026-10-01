@@ -130,8 +130,10 @@ describe('approveAutoExecute — VTID-02639 finding-completion guard', () => {
     }]));
     // Open-PR check → empty (no stranded PR from a prior execution).
     fetchMock.mockResolvedValueOnce(mockResponse([]));
+    // VTID-04293 in-flight check → empty (no live execution for the finding).
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
     // Plan-version lookup → empty (so we error with "plan version required",
-    // proving we got past both early guards).
+    // proving we got past every early guard).
     fetchMock.mockResolvedValueOnce(mockResponse([]));
 
     const result = await approveAutoExecute({ finding_id: 'f-5' });
@@ -140,7 +142,7 @@ describe('approveAutoExecute — VTID-02639 finding-completion guard', () => {
     expect(result.error).not.toMatch(/status is/);
     expect(result.error).not.toMatch(/already has an unmerged PR/);
     expect(result.error).toMatch(/plan version required/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -231,6 +233,8 @@ describe('approveAutoExecute — VTID-AUTOPILOT-PR-FLOOD open-PR guard', () => {
     }]));
     // Open-PR check → empty (filter excludes completed/self_healed/auto_archived).
     fetchMock.mockResolvedValueOnce(mockResponse([]));
+    // VTID-04293 in-flight check → empty.
+    fetchMock.mockResolvedValueOnce(mockResponse([]));
     // Plan-version lookup → empty so we error with "plan version required".
     fetchMock.mockResolvedValueOnce(mockResponse([]));
 
@@ -239,7 +243,7 @@ describe('approveAutoExecute — VTID-AUTOPILOT-PR-FLOOD open-PR guard', () => {
     expect(result.ok).toBe(false);
     expect(result.error).not.toMatch(/already has an unmerged PR/);
     expect(result.error).toMatch(/plan version required/);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('issues the correct PostgREST filter for the open-PR check', async () => {

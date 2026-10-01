@@ -268,7 +268,7 @@ export interface ContextPack {
   /** UI context from request */
   ui_context?: UIContext;
 
-  /** Relationship graph context from cognee extraction (human-readable strings) */
+  /** Relationship graph context (human-readable strings) */
   relationship_context?: string[];
 
   /** Intelligent Calendar: calendar memory context */

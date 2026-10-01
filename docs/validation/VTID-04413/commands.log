@@ -1,0 +1,3 @@
+cd services/gateway
+npx jest test/orb/live/upstream/vtid-04413-cascade-delegation-tools.test.ts test/orb/live/upstream/cascaded   # all passed
+npx tsc --noEmit   # clean

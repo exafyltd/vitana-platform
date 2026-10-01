@@ -20,6 +20,12 @@
 import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 import * as repo from './memory-broker-repository';
+import { memoryRoleForRead, memoryRoleOrFilter } from './memory/scope';
+
+/** VTID-04367: the role a read is scoped to — `lens.active_role` wins over `role`. */
+function readRole(input: MemoryReadInput): string | undefined {
+  return input.lens?.active_role || input.role || undefined;
+}
 
 const VTID = 'VTID-02026';
 const POLICY_VERSION = 'mem-2026.04';
@@ -68,7 +74,9 @@ export type ChannelKind =
   | 'brief'
   | 'admin';
 
-export type RoleKind = 'community' | 'developer' | 'admin';
+// VTID-04367: any session role. Personal roles read personal memory only;
+// a work role also reads memory written in that role (services/memory/scope.ts).
+export type RoleKind = 'community' | 'developer' | 'admin' | string;
 
 export interface ContextLens {
   tenant_id: string;
@@ -90,9 +98,9 @@ export interface MemoryReadInput {
   // Lens overrides — most callers leave this empty
   lens?: Partial<ContextLens>;
   ui_context?: { surface?: string; weakest_pillar?: string; active_goal_category?: string };
-  // Phase 6b: when present, EPISODIC switches from recency-order to
-  // semantic-rank using mem_episodes_semantic_search (cosine + recency
-  // boost combined_score). Empty/short query falls back to recency.
+  // When present, EPISODIC first semantic-ranks memory_items via
+  // memory_semantic_search (Titan V2, VTID-04342). Empty/short query
+  // falls back to recency.
   query?: string;
 }
 
@@ -136,7 +144,6 @@ export interface EpisodicBlock {
   kind: 'EPISODIC';
   hits: EpisodicHit[];
   source:
-    | 'mem_episodes'
     | 'memory_items_semantic'
     | 'memory_items_rest';
   fetched_at: string;
@@ -156,7 +163,7 @@ export interface SemanticFact {
 export interface SemanticBlock {
   kind: 'SEMANTIC';
   facts: SemanticFact[];
-  source: 'mem_facts';
+  source: 'memory_facts';
   fetched_at: string;
 }
 
@@ -250,6 +257,7 @@ export interface DiaryEntry {
 export interface DiaryBlock {
   kind: 'DIARY';
   entries: DiaryEntry[];
+  // VTID-04343: merged from both diary tables, newest first.
   source: 'memory_diary_entries';
   fetched_at: string;
 }
@@ -438,84 +446,29 @@ async function fetchEpisodicBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  // VTID-03156 (CPB-1/2): the broker now owns the full episodic
-  // fallback ladder that used to live in context-pack-builder.ts.
-  // Order is preserved end-to-end:
-  //   1. mem_episodes_semantic_search RPC (if query.length > 5)
-  //   2. mem_episodes recency-ordered select
-  //   3. memory_semantic_search RPC (legacy; if query.length > 5)
-  //   4. memory_items REST (legacy; importance+recency-ordered)
-  // Each step falls through only when the previous step produced
-  // 0 hits — preserves the byte-identical surface CPB used to give
-  // its callers when it ran these steps inline.
+  // VTID-03156 (CPB-1/2): the broker owns the full episodic ladder.
+  //
+  // VTID-04366: memory_items is the only episodic store the broker reads.
+  // The tier-2 mem_episodes mirror (a dual-write copy whose embeddings froze
+  // on 2026-04-28) is gone from this path. Two steps:
+  //   1. memory_semantic_search on memory_items (Titan V2 1024-dim)
+  //   2. memory_items REST, importance- then recency-ordered
+  // Step 2 runs only when step 1 produced 0 hits or had no query.
+  //
+  // VTID-04367: both steps are role-scoped. Personal memory
+  // (active_role NULL) is visible in every role; memory written in a work
+  // role only in that role (services/memory/scope.ts).
   const trimmedQuery = (input.query ?? '').trim();
 
-  // Step 1: mem_episodes semantic-rank.
   if (trimmedQuery.length > 5) {
-    const semantic = await fetchEpisodicSemantic(
-      input, trimmedQuery, limit, maxAgeHours
-    );
+    const semantic = await fetchEpisodicLegacySemantic(input, trimmedQuery, limit, maxAgeHours);
     if (semantic.ok && semantic.block && semantic.block.hits.length > 0) {
       return { block: semantic.block, latency_ms: Date.now() - t0 };
     }
   }
 
-  // Step 2: mem_episodes recency-order.
-  let recencyBlock: EpisodicBlock | null = null;
-  {
-    const cutoff = maxAgeHours && maxAgeHours > 0
-      ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
-      : null;
-    const { data, error } = await repo.fetchMemEpisodesRecency(supabase, input.tenant_id, input.user_id, limit, cutoff);
-    if (!error) {
-      recencyBlock = {
-        kind: 'EPISODIC',
-        hits: (data ?? []).map(r => ({
-          id: r.id,
-          kind: r.kind,
-          content: (r.content ?? '').slice(0, 400),
-          category_key: r.category_key,
-          source: r.source,
-          importance: r.importance ?? 30,
-          occurred_at: r.occurred_at,
-          actor_id: r.actor_id,
-          conversation_id: r.conversation_id,
-        })),
-        source: 'mem_episodes',
-        fetched_at: new Date().toISOString(),
-      };
-      if (recencyBlock.hits.length > 0) {
-        return { block: recencyBlock, latency_ms: Date.now() - t0 };
-      }
-    } else {
-      console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
-    }
-  }
-
-  // Step 3: legacy semantic on memory_items (only when query is
-  // meaningful, matching the pre-VTID-03156 CPB threshold).
-  if (trimmedQuery.length > 5) {
-    const legacySemantic = await fetchEpisodicLegacySemantic(
-      input, trimmedQuery, limit
-    );
-    if (
-      legacySemantic.ok &&
-      legacySemantic.block &&
-      legacySemantic.block.hits.length > 0
-    ) {
-      return { block: legacySemantic.block, latency_ms: Date.now() - t0 };
-    }
-  }
-
-  // Step 4: legacy REST fallback on memory_items.
-  const legacyRest = await fetchEpisodicLegacyRest(input, limit);
-  if (legacyRest.ok && legacyRest.block) {
-    return { block: legacyRest.block, latency_ms: Date.now() - t0 };
-  }
-
-  // Last resort — return the (possibly empty) recency block so the
-  // caller still sees a well-formed EpisodicBlock.
-  return { block: recencyBlock, latency_ms: Date.now() - t0 };
+  const rest = await fetchEpisodicLegacyRest(input, limit, maxAgeHours);
+  return { block: rest.block, latency_ms: Date.now() - t0 };
 }
 
 // -----------------------------------------------------------------------------
@@ -532,12 +485,14 @@ async function fetchEpisodicLegacySemantic(
   input: MemoryReadInput,
   query: string,
   limit: number,
+  maxAgeHours: number | null = null,
 ): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
-  const { generateEmbedding } = await import('./embedding-service');
+  // VTID-04342: query in the same Titan V2 space as memory_items.embedding.
+  const { embedMemoryText } = await import('./memory-embedding');
   const supabase = getSupabase();
   if (!supabase) return { ok: false, block: null };
 
-  const emb = await generateEmbedding(query);
+  const emb = await embedMemoryText(query);
   if (!emb.ok || !emb.embedding) return { ok: false, block: null };
 
   const { data, error } = await repo.rpcMemorySemanticSearch(supabase, {
@@ -546,10 +501,10 @@ async function fetchEpisodicLegacySemantic(
     p_tenant_id: input.tenant_id,
     p_user_id: input.user_id,
     p_workspace_scope: null,
-    p_active_role: null,
+    p_active_role: memoryRoleForRead(readRole(input)),
     p_categories: null,
     p_visibility_scope: 'private',
-    p_max_age_hours: null,
+    p_max_age_hours: maxAgeHours && maxAgeHours > 0 ? maxAgeHours : null,
     p_recency_boost: true,
   });
   if (error) {
@@ -583,6 +538,7 @@ async function fetchEpisodicLegacySemantic(
 async function fetchEpisodicLegacyRest(
   input: MemoryReadInput,
   limit: number,
+  maxAgeHours: number | null = null,
 ): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
   const supabase = getSupabase();
   if (!supabase) return { ok: false, block: null };
@@ -595,7 +551,12 @@ async function fetchEpisodicLegacyRest(
   // term overlap — when no overlap, the blender ordering collapsed
   // to importance+recency anyway).
   const fetchLimit = limit * 3;
-  const { data, error } = await repo.fetchMemoryItemsLegacyRest(supabase, input.tenant_id, input.user_id, fetchLimit);
+  const cutoff = maxAgeHours && maxAgeHours > 0
+    ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
+    : null;
+  const { data, error } = await repo.fetchMemoryItemsLegacyRest(
+    supabase, input.tenant_id, input.user_id, fetchLimit, memoryRoleOrFilter(readRole(input)), cutoff,
+  );
 
   if (error) {
     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
@@ -632,85 +593,32 @@ async function fetchSemanticBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  // Active facts only (the canonical "current truth" view from mem_facts).
-  const { data, error } = await repo.fetchActiveMemFacts(supabase, input.tenant_id, input.user_id, limit);
+  // VTID-04366: current facts from the canonical memory_facts table, most
+  // confident first. mem_facts (the tier-2 mirror) was written by only two
+  // callers, so this block was near-empty for most users.
+  const { data, error } = await repo.fetchCurrentMemoryFacts(supabase, input.tenant_id, input.user_id, limit);
 
   if (error) {
-    console.warn(`[${VTID}] mem_facts query failed: ${error.message}`);
+    console.warn(`[${VTID}] memory_facts query failed: ${error.message}`);
     return { block: null, latency_ms: Date.now() - t0 };
   }
 
   const block: SemanticBlock = {
     kind: 'SEMANTIC',
-    facts: (data ?? []).map(r => ({
+    facts: (data ?? []).map((r: any) => ({
       id: r.id,
       fact_key: r.fact_key,
       fact_value: r.fact_value,
       fact_value_type: r.fact_value_type,
       entity: r.entity,
-      confidence: r.confidence ?? 1.0,
-      actor_id: r.actor_id,
-      asserted_at: r.asserted_at,
+      confidence: r.provenance_confidence != null ? Number(r.provenance_confidence) : 1.0,
+      actor_id: r.provenance_source,
+      asserted_at: r.extracted_at,
     })),
-    source: 'mem_facts',
+    source: 'memory_facts',
     fetched_at: new Date().toISOString(),
   };
   return { block, latency_ms: Date.now() - t0 };
-}
-
-// -----------------------------------------------------------------------------
-// EPISODIC semantic mode — calls mem_episodes_semantic_search RPC
-// -----------------------------------------------------------------------------
-
-async function fetchEpisodicSemantic(
-  input: MemoryReadInput,
-  query: string,
-  limit: number,
-  maxAgeHours: number | null
-): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
-  // Lazy-import to avoid a hard dep when EPISODIC isn't requested.
-  const { generateEmbedding } = await import('./embedding-service');
-  const supabase = getSupabase();
-  if (!supabase) return { ok: false, block: null };
-
-  const emb = await generateEmbedding(query);
-  if (!emb.ok || !emb.embedding) return { ok: false, block: null };
-
-  const { data, error } = await repo.rpcMemEpisodesSemanticSearch(supabase, {
-    p_query_embedding: '[' + emb.embedding.join(',') + ']',
-    p_top_k: limit,
-    p_tenant_id: input.tenant_id,
-    p_user_id: input.user_id,
-    p_workspace_scope: null,
-    p_active_role: null,
-    p_categories: null,
-    p_visibility_scope: 'private',
-    p_max_age_hours: maxAgeHours ?? null,
-    p_recency_boost: true,
-  });
-
-  if (error) {
-    console.warn(`[${VTID}] mem_episodes_semantic_search RPC failed: ${error.message}`);
-    return { ok: false, block: null };
-  }
-
-  const block: EpisodicBlock = {
-    kind: 'EPISODIC',
-    hits: (data ?? []).map((r: any) => ({
-      id: r.id,
-      kind: 'utterance',
-      content: (r.content ?? '').slice(0, 400),
-      category_key: r.category_key,
-      source: r.source,
-      importance: r.importance ?? 30,
-      occurred_at: r.occurred_at,
-      actor_id: r.actor_id,
-      conversation_id: r.conversation_id,
-    })),
-    source: 'mem_episodes',
-    fetched_at: new Date().toISOString(),
-  };
-  return { ok: true, block };
 }
 
 // -----------------------------------------------------------------------------
@@ -897,7 +805,7 @@ async function fetchBiometricsBlock(
 }
 
 // -----------------------------------------------------------------------------
-// DIARY — memory_diary_entries (legacy; Phase 8 will migrate to mem_episodes)
+// DIARY — diary_entries (the app's Daily Diary) + memory_diary_entries, merged (VTID-04343)
 // -----------------------------------------------------------------------------
 
 async function fetchDiaryBlock(
@@ -910,21 +818,42 @@ async function fetchDiaryBlock(
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
   const cutoff = new Date(Date.now() - daysBack * 24 * 3600 * 1000).toISOString();
-  const { data, error } = await repo.fetchDiaryEntriesSince(supabase, input.tenant_id, input.user_id, cutoff, limit);
 
-  if (error) {
-    // Table may not exist on all environments — graceful empty.
+  // VTID-04343: read BOTH diary stores and merge newest-first. The app's
+  // Daily Diary writes diary_entries (273 rows); memory_diary_entries holds
+  // almost nothing (1 row), so reading only it left the diary out of every
+  // prompt (memory.orchestrator.context_built reported diary_loaded=0).
+  const [legacy, app] = await Promise.all([
+    repo.fetchDiaryEntriesSince(supabase, input.tenant_id, input.user_id, cutoff, limit),
+    repo.fetchAppDiaryEntriesSince(supabase, input.user_id, cutoff, limit),
+  ]);
+
+  // Either table may be missing in an environment — each fails independently.
+  if (legacy.error && app.error) {
     return { block: null, latency_ms: Date.now() - t0 };
   }
 
-  const block: DiaryBlock = {
-    kind: 'DIARY',
-    entries: (data ?? []).map(e => ({
+  const entries: DiaryEntry[] = [
+    ...(legacy.error ? [] : (legacy.data ?? [])).map(e => ({
       id: e.id,
       occurred_at: e.occurred_at,
       category_key: e.category_key,
       content: (e.content ?? '').slice(0, 400),
     })),
+    ...(app.error ? [] : (app.data ?? [])).map((e: any) => ({
+      id: e.id,
+      occurred_at: e.created_at,
+      category_key: Array.isArray(e.tags) && e.tags.length > 0 ? String(e.tags[0]) : 'diary',
+      content: (e.text ?? '').slice(0, 400),
+    })),
+  ]
+    .filter(e => e.content.trim().length > 0)
+    .sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
+    .slice(0, limit);
+
+  const block: DiaryBlock = {
+    kind: 'DIARY',
+    entries,
     source: 'memory_diary_entries',
     fetched_at: new Date().toISOString(),
   };
@@ -1099,11 +1028,11 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       withBudget(fetchEpisodicBlock(input, limit, maxAge), budgetMs).then(r => {
         if (r.timedOut) {
           degraded = true;
-          latencyPerStream['mem_episodes'] = budgetMs;
+          latencyPerStream['memory_items'] = budgetMs;
         } else if (r.value?.block) {
           blocks['EPISODIC'] = r.value.block;
-          streamsHit.push('mem_episodes');
-          latencyPerStream['mem_episodes'] = r.value.latency_ms;
+          streamsHit.push('memory_items');
+          latencyPerStream['memory_items'] = r.value.latency_ms;
         }
       })
     );
@@ -1114,11 +1043,11 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       withBudget(fetchSemanticBlock(input, 50), budgetMs).then(r => {
         if (r.timedOut) {
           degraded = true;
-          latencyPerStream['mem_facts'] = budgetMs;
+          latencyPerStream['memory_facts'] = budgetMs;
         } else if (r.value?.block) {
           blocks['SEMANTIC'] = r.value.block;
-          streamsHit.push('mem_facts');
-          latencyPerStream['mem_facts'] = r.value.latency_ms;
+          streamsHit.push('memory_facts');
+          latencyPerStream['memory_facts'] = r.value.latency_ms;
         }
       })
     );
