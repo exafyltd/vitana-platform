@@ -8,6 +8,8 @@
  *
  *   GET  /api/v1/journey/audiobook/topics/:topicId/audio → topic narration MP3
  *                                  (VTID-04761, Audiobook listening mode)
+ *   POST /api/v1/journey/audiobook/reminder → { time: 'HH:MM', tz } | { time: null }
+ *                                  (VTID-04763, daily episode reminder)
  *
  * Mode is PRODUCT/UX state. These routes never read or write subscription or
  * feature-permission state. Per-topic progress + practice-completion writes land
@@ -22,6 +24,8 @@ import {
   setJourneyMode,
   completePractice,
   recordListenedSession,
+  setAudiobookReminder,
+  parseReminderPref,
 } from '../services/guided-journey/guided-journey-state';
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -157,7 +161,9 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
   // 1) Durable progress — must succeed. A failure here is a real error.
   let state;
   try {
-    state = await recordListenedSession(client, userId, session);
+    // VTID-04763: the member's local calendar day, for the daily episode goal.
+    const localDate = typeof req.body?.localDate === 'string' ? req.body.localDate : null;
+    state = await recordListenedSession(client, userId, session, undefined, localDate);
   } catch (err: any) {
     console.error(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] session-listened persist failed: ${err?.message}`);
     return res.status(500).json({ ok: false, error: 'session_listened_failed', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
@@ -207,6 +213,37 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
     current_session: state.currentSession,
     vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
   });
+});
+
+// VTID-04763 — the member's daily Audiobook reminder ("your episode for
+// today"), at a local time they pick. Body: { time: 'HH:MM', tz: '<IANA>' } to
+// set, { time: null } to switch it off.
+router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'VTID-04763' });
+  }
+  const off = req.body?.time === null || req.body?.time === 'off';
+  const pref = off ? null : parseReminderPref(req.body);
+  if (!off && !pref) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_reminder',
+      detail: "time must be 'HH:MM' (24h) and tz a valid IANA time zone, or time null to switch off",
+      vtid: 'VTID-04763',
+    });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'VTID-04763' });
+  }
+  try {
+    const state = await setAudiobookReminder(client, userId, pref);
+    return res.json({ ok: true, state, vtid: 'VTID-04763' });
+  } catch (err: any) {
+    console.error(`[VTID-04763] audiobook reminder update failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'reminder_update_failed', vtid: 'VTID-04763' });
+  }
 });
 
 // VTID-04761 — Audiobook listening mode. The narration of ONE published topic
