@@ -9,3 +9,4 @@ npx jest test/routes test/orb/routes test/orb/live/ws-transport-default.test.ts 
 npm run test:roles ; npm run test:support ; npm run test:operator              # 105 / 82 / 30 pass — outputs/jest-related-suites.txt
 npx jest (full gateway suite)                                                  # 1426 suites, 22950 tests, 0 failed — outputs/jest-full-gateway.txt
 # VTID-04542 snapshot NOT updated: no voice payload changed.
+npx jest (full gateway suite, after replacing the defaulting with a loud skip)   # 1426 suites, 22951 tests, 0 failed — outputs/jest-full-gateway.txt
