@@ -7,3 +7,4 @@ npx jest $(grep -rl partner-onboarding test)                            # partne
 # Fixed during the build: business decisions are tenant-scoped (decide() denies tenant_required); the check now
 # runs under the submitting user's active tenant from the JWT and is skipped without one.
 # Evidence: production has 0 partner organizations yet (plan §10.3 E); the gate is ready for the first submits.
+npx jest (full gateway suite, merged with origin/main f423d2b)          # 1462 suites, 23467 passed, 0 failed (outputs/jest-full.txt)
