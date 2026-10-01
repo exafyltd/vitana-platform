@@ -1047,6 +1047,8 @@ export function createUpstreamLiveMessageHandler(
                   tenant_id: session.identity.tenant_id,
                   user_id: session.identity.user_id,
                   session_id: session.sessionId,
+                  work_surface: session.assistantProfile?.isWorkSurface === true,
+                  served_role: session.active_role,
                   turn_count: session.turn_count,
                   force: !!session.pendingNavigation,
                 });
@@ -2943,6 +2945,8 @@ export function handleTurnComplete(
         tenant_id: session.identity.tenant_id,
         user_id: session.identity.user_id,
         session_id: session.sessionId,
+        work_surface: session.assistantProfile?.isWorkSurface === true,
+        served_role: session.active_role,
         turn_count: session.turn_count,
         force: !!session.pendingNavigation,
       });

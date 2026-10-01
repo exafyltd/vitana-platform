@@ -1,0 +1,44 @@
+name: SQL-MEMORY-SENSITIVITY
+run-name: 'memory sensitivity against a throwaway Postgres [VTID: VTID-04798] (${{ github.ref_name }})'
+
+# VTID-04798 — runs the memory sensitivity migration (GDPR Art. 9 marking on
+# memory_facts and memory_items) against a disposable Postgres service
+# container: backfill, insert/update trigger, never lowering a marked row,
+# the check constraint, token rules and idempotency. Never runs against
+# Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*memory_sensitivity*.sql'
+      - 'scripts/ci/sql-tests/**'
+      - '.github/workflows/SQL-MEMORY-SENSITIVITY.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the memory sensitivity test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-memory-sensitivity-test.sh 2>&1 | tee /tmp/sensitivity.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-04798 memory sensitivity' /tmp/sensitivity.log

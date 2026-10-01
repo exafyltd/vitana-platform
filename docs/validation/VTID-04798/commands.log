@@ -1,0 +1,12 @@
+# Read-only checks on the live project (2026-10-01)
+SELECT active_role, workspace_scope, visibility_scope, sensitivity_flag, count(*) FROM memory_items GROUP BY ...   -> 3,737 rows, all personal, no sensitivity
+SELECT entity, count(*) FROM memory_facts GROUP BY 1                                                             -> self 11,728, disclosed 229
+memory_sensitivity_of() pattern over current fact keys                                                         -> 95 special_category of 392 keys, 457 fact rows; 65 items (health, health_wellness)
+SELECT feature_key, count(*) FROM health_features_daily                                                        -> journal, water, meals, wearable sleep/workout/steps/heart rate, meditation, mood
+
+# Local verification
+scripts/ci/sql-tests/run-memory-sensitivity-test.sh (throwaway local Postgres 16)   -> PASS vtid-04798 memory sensitivity
+cd services/gateway && npx tsc --noEmit -p .                                         -> exit 0
+npx jest test/services/memory/vtid-04798-memory-scope-sensitivity.test.ts           -> 15 passed
+npx jest ranker, extraction-dedup, remember-backstop, services/memory, orb/live/session, conversation suites,
+         vtid-04560 roles, vtid-04456 support, vtid-04465 operator                    -> 93 suites, 1520 tests passed

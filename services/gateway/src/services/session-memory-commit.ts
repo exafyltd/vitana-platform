@@ -49,6 +49,12 @@ export interface CommitSessionMemoryArgs {
   userId: string;
   sessionId: string;
   activeRole?: string | null;
+  /**
+   * VTID-04798: the session ran on a work surface. Its facts are not the
+   * member's personal memory, so no facts are extracted (the summary, scoped
+   * to activeRole, is still written).
+   */
+  workSurface?: boolean;
   /** Which surface the session ran on; recorded on the summary. */
   channel?: SessionChannel;
   /** Which code path ended the session; for telemetry only. */
@@ -209,6 +215,8 @@ export function commitSessionMemory(args: CommitSessionMemoryArgs): CommitSessio
       user_id: args.userId,
       session_id: args.sessionId,
       force: true,
+      work_surface: args.workSurface,
+      served_role: args.activeRole,
     });
   } catch (err) {
     console.warn(
