@@ -35,6 +35,7 @@ import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
 import { collectTestSelectionInput, isTestSelectionOn, runTestSelectionCheck } from '../jev/gates/test-selection-gate';
+import { changeRiskInput, isChangeRiskOn, runChangeRiskCheck } from '../jev/gates/change-risk-gate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
@@ -448,6 +449,17 @@ export async function runAgentExecutionSession(
     if (fixMode) {
       // Same PR, new head — the watcher tracks this row on the parent's PR number.
       return finish({ ok: true, pr_url: fixMode.pr_url, pr_number: fixMode.pr_number, branch, session_id: sessionId });
+    }
+    // VTID-04815 (Jev A9, shadow): score the pushed change from its own diff,
+    // read now while the clone exists. Never awaited; nothing here changes the PR.
+    if (isChangeRiskOn()) {
+      try {
+        const riskDiff = await gitDiffAgainstBase(repoDir, baseSha);
+        const riskClass = (findR.ok && findR.data && findR.data[0]?.spec_snapshot?.risk_class) as string | undefined;
+        void runChangeRiskCheck({ executionId, input: changeRiskInput({ findingTitle: contract.title, findingRiskClass: riskClass, diff: riskDiff, fixRounds }) });
+      } catch (err: any) {
+        console.warn(`${LOG_PREFIX} [${short}] jev change_risk skipped: ${err?.message || err}`);
+      }
     }
     // VTID-04029: hold for a human Approve/Reject on the diff before any PR
     // exists. The branch is already pushed (the scratch dir dies with this
