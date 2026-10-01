@@ -381,6 +381,32 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04802 (Jev P2 B4): could this commit, from the last deploy, have
+    // caused this error? Commit subject and file paths only — never a diff.
+    name: 'commit_cause_score',
+    description: 'How likely a recently deployed commit caused an operational error.',
+    roles: ENGINEERING,
+    input: z.object({
+      error: text(4000),
+      endpoint: optText(200),
+      commit_message: text(300),
+      files: z.array(z.string().max(300)).max(60),
+    }),
+    questions: {
+      likelihood: {
+        type: 'score',
+        instructions: 'How likely is it that this commit caused the error?',
+        criteria: ['Unrelated', 'Possible', 'Likely', 'Almost certainly the cause'],
+      },
+    },
+    primary: 'likelihood',
+    threshold: 0.5,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ error_event: { message: i.error, endpoint: i.endpoint ?? null }, commit: { subject: i.commit_message, files: i.files } }),
+  },
+  {
     // VTID-04801 (Jev P2 A4): a new attempt at a finding whose last attempt
     // failed — is it the same approach again? Plans and the failure text
     // only (paths, never code).
