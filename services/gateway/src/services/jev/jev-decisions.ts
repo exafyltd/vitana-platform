@@ -852,6 +852,42 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ opener: i }),
   },
+  {
+    // VTID-04818 (P3 F): a lesson about to be written to dev_agent_memory —
+    // is it new and durable, or a repeat / a one-off?
+    name: 'lesson_novelty',
+    description: 'Whether an engineering lesson is new and durable enough to keep, next to the most similar lessons already stored.',
+    roles: ENGINEERING,
+    input: z.object({
+      category: text(40),
+      title: text(300),
+      content: text(1500),
+      existing: z.array(z.object({ category: text(40), title: text(300), content: text(600), similarity: z.number().min(0).max(1), age_days: z.number().min(0) })).max(3),
+    }),
+    questions: {
+      new_and_durable: {
+        type: 'noul',
+        instructions: 'Is this a new lesson that will still be true and useful in later work, rather than a repeat of a stored one or a one-off detail of this run?',
+      },
+      kind: {
+        type: 'choice',
+        instructions: 'Compared with the stored lessons, what is it?',
+        criteria: {
+          new: 'A lesson not stored yet.',
+          duplicate: 'Says the same as a stored lesson.',
+          update: 'Changes or corrects a stored lesson (it should replace it).',
+          too_specific: 'True only for this run or this one task.',
+          not_a_lesson: 'A status note or narration, not something to remember.',
+        },
+      },
+    },
+    primary: 'new_and_durable',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ candidate: { category: i.category, title: i.title, content: i.content }, stored: i.existing }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
