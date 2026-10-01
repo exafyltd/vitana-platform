@@ -604,6 +604,45 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ session: i }),
   },
+  {
+    // VTID-04806 (P2 A3): before the planner spends a session on a Dev
+    // Autopilot finding — is it concrete enough to plan at all?
+    name: 'finding_plannable',
+    description: 'Whether a Dev Autopilot finding is specific and bounded enough for the planner to produce a working plan.',
+    roles: ENGINEERING,
+    input: z.object({
+      title: text(300),
+      summary: text(3000),
+      domain: optText(80),
+      risk_class: optText(20),
+      signal_type: optText(80),
+      suggested_action: optText(1000),
+      files: z.array(z.string().trim().max(300)).max(20),
+    }),
+    questions: {
+      plannable: {
+        type: 'noul',
+        instructions: 'Is this finding specific and bounded enough that an engineer could write a concrete, file-level change plan for it without asking anyone first?',
+      },
+      blocker: {
+        type: 'choice',
+        instructions: 'What most stands in the way of planning it?',
+        criteria: {
+          none: 'Nothing; the problem, the place and the expected change are clear.',
+          too_vague: 'The problem or the expected change is not stated clearly enough.',
+          too_broad: 'It spans so much of the codebase that one plan cannot cover it.',
+          needs_human_decision: 'It needs a product or design decision before anyone can plan it.',
+          missing_location: 'It does not say where in the code the problem is.',
+        },
+      },
+    },
+    primary: 'plannable',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ finding: i }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));
