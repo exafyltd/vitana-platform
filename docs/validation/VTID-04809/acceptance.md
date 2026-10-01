@@ -54,3 +54,7 @@ SCOPE_ALLOWLIST:
 - docs/business-model/BUSINESS-MODEL.md
 - .claude/rules/backend.md
 - docs/validation/VTID-04809/**
+
+ACCEPTANCE: AC-1..AC-6 above, each mapped to a test.
+MERGE_PAYLOAD_PREVIEW: migration `20261001180000_vtid_04809_vtna_reward_ledger.sql` (no new tables: two columns on user_wallets, two on wallet_transactions, one unique index, credit_wallet re-created, update_user_balance tightened, one RLS policy dropped per table, grants revoked, four exchange_rates rows) — NOT applied by merge; RUN-MIGRATION.yml after approval. Gateway: three reward callers move to credit_wallet, one new key helper. Docs: DATABASE_SCHEMA.md, BUSINESS-MODEL.md, backend rules.
+OASIS_IMPACT: no
