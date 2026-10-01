@@ -101,7 +101,7 @@ Problem with today's hello: sender is a stranger, no reason to answer. Keep it; 
    in Berlin — want me to say hi for you?" On yes → drafted DM shown/read back → sent (existing confirm flow),
    framed with the *shared reason*. Replies land in the normal inbox with a push.
 2. **Reason-rich prompt to the existing member**, not a bare DM: the existing in-app card ("New here: Sam — also into sleep optimisation. Say hi?"). **In-app card only — no push, no new surface (owner decision).** Reuse the existing new-member card; only enrich its copy with the shared reason.
-3. **Mariia Maksina is the communication centre (owner decision).** Instead of a pool of hosts, Vitana routes onboarding communication through Mariia: when a member reaches a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" and, on yes, sends that chat message (read-back + confirm flow). Mariia is the human welcome point; her inbox load needs a cap/digest (max N onboarding messages/day, grouped) so she isn't flooded. Welcome Hosts pool is dropped for v1.
+3. **Mariia Maksina is the communication centre (owner decision).** Instead of a pool of hosts, Vitana routes onboarding communication through Mariia: when a member reaches a milestone Vitana offers "Shall I tell Mariia you're onboarded and happy to join the Longevity Journey?" and, on yes, sends that chat message (read-back + confirm flow). Mariia is the human welcome point; her inbox is capped at **5 onboarding messages per day**; anything beyond is grouped into one daily digest (owner decision 2026-10-01). Welcome Hosts pool is dropped for v1.
 4. **Alle Beisammen welcome thread**: weekly "new faces" post by Vitana that names the week's newcomers (with their consent) and asks one easy question.
 5. **Welcome message from Mariia Maksina to every new member (owner decision).** In addition to the member→everyone hello, each new member
    in the cohort receives a personal welcome DM *from Mariia*. Owner's wording, used as the seed: "So nice to see you with us. Welcome, and I'm looking
@@ -142,7 +142,7 @@ itself, because made-up or wrongly attributed quotes are common and would embarr
   feeling in our own words ("Today feels like 'Here Comes the Sun' — The Beatles ☀️"), not quoted lyric lines.
   Short lyric quotes only after a legal check.
 - Each entry has: text per locale, author, source, theme tags (weekend, start, gratitude, movement, friendship,
-  longevity), mood check = positive, `status` draft → approved. An admin approves entries; only approved ones are used.
+  longevity), mood check = positive, `status` draft → approved. The owner (admin) approves entries; only approved ones are used.
 - Seed: ~150 entries (≥ 30 per theme) so a member never sees a repeat within 90 days; feed-wide, the same quote is
   not reused by anyone within 4 weeks.
 
@@ -169,9 +169,8 @@ itself, because made-up or wrongly attributed quotes are common and would embarr
 - Reuse what exists: the `Inspiration` templates screen (`vitana-v1/src/pages/messages/Inspiration.tsx`) and
   `profile_posts`; the card is a new post type rendered by the existing feed (`NewsFeedItemCard`).
 
-**Pilot.** Posts in the real feed are seen by every member, not only the four pilot accounts, so pilot posts
-need an owner decision (see §8 open item c). Default until then: pilot posts are created as non-public (visible to
-the author only) to test the whole flow without anyone else seeing them.
+**Pilot (owner decision 2026-10-01).** Pilot posts are created non-public, visible to the author only, so the whole
+flow is tested without any other member seeing them. Going public is a separate owner step after the pilot.
 
 ### 4.7 Channels
 - **ORB**: new greeting rung `onboarding_coach` between `first_time_welcome` and `journey_guide` for cohort members; also a `onboarding_coach`
@@ -245,9 +244,10 @@ So the "test run with a new registered user" is done in three safe layers:
 5. Email dropped.
 6. Inspiration posts: Autopilot prepares positive quote-card posts on the member's behalf (weekend wishes, quotes from happy songs and historical figures).
 
-Open:
-- (a) Mariia's daily inbox cap / digest size.
-- (b) Roles in the pilot (proposed: Jovana, Alex Red, Alex Blue = new members; Mariia = receiver).
-- (c) Pilot inspiration posts: may they be public in the real feed (all members see them), or stay non-public during the pilot (default)?
-- (d) Inspiration posts: no push to the tenant (recommended), confirm.
-- (e) Who approves quote-library entries (owner, Mariia, or an admin)?
+7. Mariia's inbox: max **5 onboarding messages per day**; anything beyond is grouped into one daily digest.
+8. Pilot roles: Jovana, Alex Red, Alex Blue = new members; Mariia = receiver.
+9. Pilot inspiration posts are **visible to the author only**.
+10. Inspiration posts send **no push** to the community (feed only).
+11. Quote-library entries are approved by the **owner (admin)**.
+
+Open: none — plan ready for build once the owner says the plan is complete.
