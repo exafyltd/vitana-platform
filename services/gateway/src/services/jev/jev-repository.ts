@@ -104,6 +104,29 @@ export async function fetchRecentDeployEvents(sb: SupabaseClient, topic: string,
     .limit(limit);
 }
 
+/** VTID-04805: stalled voice sessions in a window (metadata only). */
+export async function fetchStallEvents(sb: SupabaseClient, sinceIso: string, untilIso: string, limit = 500) {
+  return sb
+    .from('oasis_events')
+    .select('metadata, created_at')
+    .eq('topic', 'orb.live.stall_detected')
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+}
+
+/** VTID-04805: one voice session's own events in a window (topic + metadata only). */
+export async function fetchSessionEvents(sb: SupabaseClient, sessionId: string, sinceIso: string, untilIso: string, limit = 400) {
+  return sb
+    .from('oasis_events')
+    .select('topic, metadata')
+    .eq('metadata->>session_id', sessionId)
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
 /** VTID-04804: voice backstop diag events in a window (metadata only). */
 export async function fetchVoiceDiagEvents(sb: SupabaseClient, stages: readonly string[], sinceIso: string, untilIso: string, limit = 5000) {
   return sb

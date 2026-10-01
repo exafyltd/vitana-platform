@@ -1839,6 +1839,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Jev voice backstop cluster scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-04805 (Jev C3): stalled voice sessions, cause judged once per UTC day.
+      // Off unless JEV_VOICE_SLOW_SESSION_MODE is set; shadow only.
+      try {
+        const { startSlowSessionScheduler } = require('./services/jev/gates/slow-session-gate');
+        if (startSlowSessionScheduler()) console.log('🐢 Jev slow voice session scheduler started (VTID-04805)');
+      } catch (error) {
+        console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');
