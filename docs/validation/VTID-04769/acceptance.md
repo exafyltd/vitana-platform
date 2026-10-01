@@ -8,16 +8,29 @@ Commerce sign-up never calls the self-service submit step).
 
 ## Acceptance criteria
 
-| # | Criterion | Proven by |
-|---|---|---|
-| AC-1 | When an org reaches `live` (incl. the legacy `POST /partner-orgs/:id/activate`), its waiting products go on | scenarios "go-live: …", "team Activate: hand product on Discover" |
-| AC-2 | A product added while the org is live goes on at once; while not live it waits | "insert while live: on", "insert while not live: off, waiting" |
-| AC-3 | Pause/suspend hide the org's products; returning to live restores them | "pause: …", "resume: …", "suspend: hidden" |
-| AC-4 | An admin switch-off is never undone; an admin switch-on while not live is held until live | "admin switch-off …", "admin switch-on while paused: held", "resume: admin-off stays off" |
-| AC-5 | Test and service accounts never list, and registering one later takes its products down | "test owner: …", "service-account merchant product never on" |
-| AC-6 | Network products (Awin etc.) are never read or written | "backfill: network …", "network admin switch-on" |
-| AC-7 | Products added by hand (owner-keyed merchant) follow the owner's single org, never guessed | "hand merchant linked …", "earlier hand merchant adopted …", "two orgs: not linked", "second not linked" |
-| AC-8 | The migration is re-runnable | "re-run: …" |
+AC-1 — When an org reaches `live` (incl. the legacy `POST /partner-orgs/:id/activate`), its waiting products go on.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "go-live: …", "team Activate: hand product on Discover")
+
+AC-2 — A product added while the org is live goes on at once; while not live it waits.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "insert while live: on", "insert while not live: off, waiting")
+
+AC-3 — Pause/suspend hide the org's products; returning to live restores them.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "pause: …", "resume: …", "suspend: hidden")
+
+AC-4 — An admin switch-off is never undone; an admin switch-on while not live is held until live.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "admin switch-off …", "admin switch-on while paused: held", "resume: admin-off stays off")
+
+AC-5 — Test and service accounts never list, and registering one later takes its products down.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "test owner: …", "service-account merchant product never on")
+
+AC-6 — Network products (Awin etc.) are never read or written.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "backfill: network …", "network admin switch-on")
+
+AC-7 — Products added by hand (owner-keyed merchant) follow the owner's single org, never guessed.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "hand merchant linked …", "earlier hand merchant adopted …", "two orgs: not linked", "second not linked")
+
+AC-8 — The migration is re-runnable.
+TEST: services/gateway/test/vtid-04769-supplier-go-live-listing.test.ts + docs/validation/VTID-04769/migration-scenarios.sql (scenarios "re-run: …")
 
 ## Evidence
 
