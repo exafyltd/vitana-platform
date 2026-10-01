@@ -28,6 +28,13 @@
 --   * product added while eligible → on at once.
 --   * an admin switching a product on while its org is not live → stays off,
 --                         held, and goes on with the org.
+--
+-- Owner-keyed merchants (the manual "Add products yourself" path) are linked
+-- to their owner's organization when the owner owns exactly one and that org
+-- has no merchant yet — the same adoption the catalogue route already does.
+--
+-- impact-allow-solo-migration: every reader already filters on
+-- products.is_active; no gateway code needs to change for this to apply.
 
 ALTER TABLE public.products
   ADD COLUMN IF NOT EXISTS first_listed_at TIMESTAMPTZ,
@@ -103,6 +110,10 @@ BEGIN
     RETURN 0;
   END IF;
 
+  -- Mark these writes as the gate's own, so trg_products_supplier_gate does
+  -- not read them as an admin decision. Transaction-local, reset below.
+  PERFORM set_config('vitana.supplier_gate_refresh', 'on', true);
+
   IF v_block = 'eligible' THEN
     UPDATE products
        SET is_active = TRUE,
@@ -127,6 +138,8 @@ BEGIN
        AND listing_hold <> v_block;
     GET DIAGNOSTICS v_n2 = ROW_COUNT;
   END IF;
+
+  PERFORM set_config('vitana.supplier_gate_refresh', 'off', true);
   RETURN v_n1 + v_n2;
 END;
 $$;
@@ -134,7 +147,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- products: a new supplier product follows its org; an admin switch-on of a
 -- product whose org is not eligible is held instead of shown.
--- Skipped inside the refresh above (pg_trigger_depth() > 1).
+-- Skipped for the refresh's own writes (vitana.supplier_gate_refresh).
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.trg_products_supplier_gate()
 RETURNS TRIGGER
@@ -145,7 +158,7 @@ AS $$
 DECLARE
   v_block TEXT;
 BEGIN
-  IF pg_trigger_depth() > 1 THEN
+  IF current_setting('vitana.supplier_gate_refresh', true) = 'on' THEN
     RETURN NEW;
   END IF;
   v_block := public.supplier_listing_block(NEW.merchant_id);
@@ -166,22 +179,38 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- UPDATE
+  -- UPDATE. The trigger only fires when is_active or merchant_id is in the
+  -- SET list, so a write that keeps is_active unchanged is still a decision
+  -- (an admin keeping a held product off), except for a pure merchant move.
   IF NEW.merchant_id IS DISTINCT FROM OLD.merchant_id
-     OR NEW.is_active IS DISTINCT FROM OLD.is_active THEN
-    IF NEW.is_active THEN
-      IF v_block = 'eligible' THEN
-        NEW.listing_hold := NULL;
-        NEW.first_listed_at := COALESCE(NEW.first_listed_at, now());
-      ELSE
-        NEW.is_active := FALSE;
-        NEW.listing_hold := v_block;      -- goes on with the org
-      END IF;
-    ELSE
-      -- Someone switched it off on purpose: never bring it back automatically.
+     AND NEW.is_active IS NOT DISTINCT FROM OLD.is_active THEN
+    -- Moved to another merchant: re-apply the gate, no decision implied.
+    IF NEW.is_active AND v_block <> 'eligible' THEN
+      NEW.is_active := FALSE;
+      NEW.listing_hold := v_block;
+    ELSIF NOT NEW.is_active AND v_block = 'eligible'
+          AND (OLD.listing_hold IS NOT NULL OR NEW.first_listed_at IS NULL) THEN
+      NEW.is_active := TRUE;
       NEW.listing_hold := NULL;
       NEW.first_listed_at := COALESCE(NEW.first_listed_at, now());
+    ELSIF v_block <> 'eligible' AND NEW.listing_hold IS NOT NULL THEN
+      NEW.listing_hold := v_block;
     END IF;
+    RETURN NEW;
+  END IF;
+
+  IF NEW.is_active THEN
+    IF v_block = 'eligible' THEN
+      NEW.listing_hold := NULL;
+      NEW.first_listed_at := COALESCE(NEW.first_listed_at, now());
+    ELSE
+      NEW.is_active := FALSE;
+      NEW.listing_hold := v_block;      -- goes on with the org
+    END IF;
+  ELSE
+    -- Switched off on purpose: never bring it back automatically.
+    NEW.listing_hold := NULL;
+    NEW.first_listed_at := COALESCE(NEW.first_listed_at, now());
   END IF;
   RETURN NEW;
 END;
@@ -247,6 +276,79 @@ CREATE TRIGGER trg_merchant_refresh_listings
   FOR EACH ROW EXECUTE FUNCTION public.trg_merchant_refresh_listings();
 
 -- ---------------------------------------------------------------------------
+-- Owner-keyed merchants follow their owner's organization.
+-- The manual "Add products yourself" path (POST /vcaop/portal/my/merchants)
+-- keys a merchant by owner_user_id only; the catalogue route already adopts
+-- such a merchant into the org (PUT .../catalogue/merchant). Without the same
+-- link here, products added by hand would never list when the org goes live.
+-- Linked only when the owner owns exactly one organization and that org has
+-- no merchant yet (the catalogue route reads one merchant per org) — never
+-- guessed.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.sole_owned_partner_org(p_user_id UUID)
+RETURNS UUID
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT o.id
+    FROM (
+      SELECT CASE WHEN count(*) = 1 THEN min(id::text)::uuid END AS id
+        FROM partner_organizations
+       WHERE owner_user_id = p_user_id
+         AND lifecycle_state <> 'rejected'
+    ) o
+   WHERE o.id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM merchants m WHERE m.partner_organization_id = o.id);
+$$;
+
+CREATE OR REPLACE FUNCTION public.trg_merchant_link_owner_org()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.partner_organization_id IS NULL AND NEW.owner_user_id IS NOT NULL THEN
+    NEW.partner_organization_id := public.sole_owned_partner_org(NEW.owner_user_id);
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_merchant_link_owner_org ON public.merchants;
+CREATE TRIGGER trg_merchant_link_owner_org
+  BEFORE INSERT ON public.merchants
+  FOR EACH ROW EXECUTE FUNCTION public.trg_merchant_link_owner_org();
+
+-- An org registered after its owner already added products by hand.
+CREATE OR REPLACE FUNCTION public.trg_partner_org_adopt_owner_merchants()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.owner_user_id IS NOT NULL
+     AND public.sole_owned_partner_org(NEW.owner_user_id) = NEW.id
+     AND (SELECT count(*) FROM merchants
+           WHERE owner_user_id = NEW.owner_user_id AND partner_organization_id IS NULL) = 1 THEN
+    UPDATE merchants
+       SET partner_organization_id = NEW.id
+     WHERE owner_user_id = NEW.owner_user_id
+       AND partner_organization_id IS NULL;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_partner_org_adopt_owner_merchants ON public.partner_organizations;
+CREATE TRIGGER trg_partner_org_adopt_owner_merchants
+  AFTER INSERT ON public.partner_organizations
+  FOR EACH ROW EXECUTE FUNCTION public.trg_partner_org_adopt_owner_merchants();
+
+-- ---------------------------------------------------------------------------
 -- An account registered as test/service (or removed from the registry) after
 -- its products already exist.
 -- ---------------------------------------------------------------------------
@@ -284,13 +386,14 @@ CREATE TRIGGER trg_test_actor_refresh_listings
 -- Internal helpers: not callable through PostgREST by members.
 REVOKE ALL ON FUNCTION public.supplier_listing_block(UUID) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.refresh_supplier_listings(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.sole_owned_partner_org(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.supplier_listing_block(UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.refresh_supplier_listings(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION public.sole_owned_partner_org(UUID) TO service_role;
 
 -- ---------------------------------------------------------------------------
--- Backfill: bring every existing supplier merchant in line once.
--- Products an admin already switched on get first_listed_at so a later
--- switch-off by the org gate can be undone at the next go-live.
+-- Backfill 1: products an admin already switched on get first_listed_at, so
+-- a later switch-off by the org gate can be undone at the next go-live.
 -- ---------------------------------------------------------------------------
 UPDATE public.products p
    SET first_listed_at = COALESCE(p.updated_at, now())
@@ -299,6 +402,23 @@ UPDATE public.products p
    AND (m.partner_organization_id IS NOT NULL OR m.owner_user_id IS NOT NULL)
    AND p.is_active = TRUE
    AND p.first_listed_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Backfill 2: link existing owner-keyed merchants to their owner's single
+-- organization (fires trg_merchant_refresh_listings for each). Only an owner
+-- with exactly one such merchant, so no org ends up with two.
+-- ---------------------------------------------------------------------------
+UPDATE public.merchants m
+   SET partner_organization_id = public.sole_owned_partner_org(m.owner_user_id)
+ WHERE m.partner_organization_id IS NULL
+   AND m.owner_user_id IS NOT NULL
+   AND public.sole_owned_partner_org(m.owner_user_id) IS NOT NULL
+   AND (SELECT count(*) FROM public.merchants x
+         WHERE x.owner_user_id = m.owner_user_id AND x.partner_organization_id IS NULL) = 1;
+
+-- ---------------------------------------------------------------------------
+-- Backfill 3: bring every existing supplier merchant in line once.
+-- ---------------------------------------------------------------------------
 
 DO $$
 DECLARE
