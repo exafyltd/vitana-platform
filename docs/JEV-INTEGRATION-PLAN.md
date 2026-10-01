@@ -835,6 +835,18 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   legal-form words are removed; agreement is written against that at once.
   Leads and contacts (people) wait for the DPA.
 
+- **E7 — VTID-04811 (shadow).** `jev/gates/approval-risk-gate.ts`. When a
+  High-risk Backoffice command is queued for a second person, Jev
+  `approval_risk` scores it (routine / some risk / high risk / looks wrong)
+  from the type, action, escalations, an allow-list of business values
+  (amount, currency, kind, dates, references, line counts) and the other
+  payload fields by name only; payroll is never sent. The approver's verdict
+  is the outcome ("high risk" or worse agrees with a rejection). Showing the
+  hint to approvers is enforce, after the data.
+
+With E7 every P2 slice has landed in shadow (A3–A8, B3–B6, C2–C3, E5, E7).
+Enforcing any gate waits for agreement data, which needs a production deploy.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
