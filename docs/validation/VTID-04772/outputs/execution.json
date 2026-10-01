@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-04772",
+  "execution_id": "d444ead5-c506-410e-bb7e-e72d4083f19c",
+  "finding_id": "32cb12c5-7709-4d5d-aee3-b513e7f97e8c",
+  "plan_version": 1,
+  "branch": "dev-autopilot/d444ead5",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/src/services/voice-spec-hints.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/orb/live/poc/livekit-poc-config.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/livekit-poc-config.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-10-01T10:02:46.056Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}
