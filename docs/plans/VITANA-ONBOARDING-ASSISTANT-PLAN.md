@@ -74,7 +74,7 @@ through the presence pacer. Nothing existing is deleted; the hello DM stays.
 `user_id, tenant_id, stage (d0,d1,d2_3,d4_7,d8_30,d31_60,d61_90,done), milestones jsonb, last_touch_at, next_action_key,
 snoozed_until, shy_score, opted_out_at`. Milestones are **derived from live tables** (like Journey Foundation), not
 self-reported: first ORB conversation, profile complete, avatar, interests ≥3, first diary entry, life compass set,
-Index baseline, push permission granted, T251–T254 heard, first group joined, first DM sent, first DM *reply received*,
+Index baseline, push permission granted, Audiobook Season 0 (T255–T260) and T251–T254 heard (by topic id), first group joined, first DM sent, first DM *reply received*,
 first event RSVP, first invite.
 
 ### 4.4 The activation ladder (what it teaches, in order)
@@ -83,12 +83,12 @@ never hardcoded; push/in-app titles are `tt()` catalog keys in all 11 locales.
 
 | Days | Theme | Rung → benefit |
 |---|---|---|
-| 0 | Meet Vitana | Wizard → ORB says hi, asks ONE question ("what brought you here?"), heard T251 "Starte deine Longevity-Reise". Benefit: she now knows you. |
+| 0 | Meet Vitana | Wizard → "Play Episode 1" (Audiobook, T255) → ORB says hi and asks ONE question ("what brought you here?"). Benefit: she now knows you. |
 | 0–1 | First value | Set a goal (Life Compass) or answer a 3-question Index baseline → member sees a first Vitana Index number. Ask push permission *after* this moment of value, not at signup. |
 | 1–3 | Talk to Vitana | "Try asking me: …" (3 contextual sample asks, tied to interests). Diary voice note (30 s). T252–T254. |
 | 3–7 | First people | Vitana-hosted intros (§4.5); join 1–2 groups incl. Alle Beisammen; see 1 event. |
 | 8–30 | Habit | Daily/weekly rhythm: morning brief opt-in, reminders, Autopilot slots, Did-You-Know tour (existing 30-usage-day curriculum). First inspiration post on the first Friday (§4.6). One new feature per week, max. |
-| 31–60 | Deepen | Guided sessions pace (existing daily goal), events/meetups in real life, first invite of a friend. |
+| 31–60 | Deepen | One Audiobook episode a day, events/meetups in real life, first invite of a friend. |
 | 61–90 | Own it | Recap ("your 60 days"), switch to Full mode, graduate; hand over to normal Autopilot. |
 
 Cadence: at most 1 proactive onboarding touch/day (pacer default cap is 2 — VOA takes 1 of them), quiet hours respected,
@@ -195,8 +195,8 @@ OASIS events (`onboarding.coach.stage_changed`, `.touch_sent`, `.touch_skipped{r
 |---|---|---|---|
 | 0 | Fix-first list §3 | platform + v1 | independent |
 | 1 | Coach engine + state table + milestone derivation + `tt()` keys + pacer integration + **shadow mode** + tick endpoint | platform | Jest incl. simulation harness (§6) |
-| 2 | FE: "Your start" card, i18n'd wizard speech, push-permission priming after first value, nav-registry/What's New entry | v1 | RTL + du-form; screenshots desktop+mobile |
-| 3 | ORB rung + context provider + sample-ask prompts | platform | extend greeting characterization tests; kill switch |
+| 2 | FE: "Your start" card (defers to the Audiobook Journey card, §9 C4), push-permission priming after the first episode, nav-registry/What's New entry | v1 | RTL + du-form; screenshots desktop+mobile |
+| 3 | ORB rung + context provider + sample-ask prompts | platform | only after the Audiobook is merged (§9 C8); kill switch |
 | 4 | Mariia welcome DM + Social bridge: intro proposals, veteran prompt, Alle Beisammen thread; Mariia-centred flow | both | consent + rate limits; test-account exclusion |
 | 5 | Inspiration posts: quote library + admin review, post draft/offer flow, quote card post type, trigger skip for `post_kind='inspiration'`, feed cap | both | legal check for song lines; no tenant push |
 | 6 | Day 8–90 cadence, recap, EventBridge script | platform | no email |
@@ -251,3 +251,47 @@ So the "test run with a new registered user" is done in three safe layers:
 11. Quote-library entries are approved by the **owner (admin)**.
 
 Open: none — plan ready for build once the owner says the plan is complete.
+
+## 9. Coordination with parallel sessions (checked 2026-10-01)
+
+### 9.1 "First-time user onboarding in Vitana Land" — the Audiobook (VTID-04760…04763)
+Session `session_01LRqEtGSPKaEEJPnJDjm3ZB`, branch `claude/modest-meitner-9qkwd1` in both repos, **not merged yet**
+(6 platform + 12 app commits). It turns the Guided Journey into an **Audiobook**: the welcome ends on "Play Episode 1",
+a listening player, Season 0 "Prolog" (6 new story episodes T255–T260 before everything else), one episode a day,
+an opt-in daily reminder push, and audiobook analytics.
+
+It is the "learn by listening" half of onboarding. VOA is the "do it / meet people" half. They fit together,
+but these points must be aligned before VOA code is written:
+
+| # | Overlap | Audiobook does | VOA adjustment |
+|---|---|---|---|
+| C1 | Opening episodes | Prepends T255–T260 and **shifts all session numbers +6** | Milestones use **topic ids, never session numbers**. Day-0 step = "Episode 1" (T255), not T251. |
+| C2 | First-time welcome (ORB) | Rewrites the provider: an intent that points at Episode 1 | VOA's ORB rung sits *after* it and builds on the new version; it never repeats the Episode-1 invitation. |
+| C3 | Signup wizard | Already moved the speech bubbles to i18n and added a "Play Episode 1 / Later" final step | **Drop** "i18n'd wizard speech" from VOA slice 2 — done there. Push-permission ask comes after the first episode, not inside the wizard. |
+| C4 | Home | Longevity Journey card now plays today's episode in one tap | One onboarding card, not two: when the next step is "listen", the VOA "Your start" card points at the Journey card instead of showing its own player. |
+| C5 | Daily push | Opt-in daily "your episode for today" push via the `reminder_due` gate — **not** through the presence pacer | Shared budget: the audiobook reminder counts as that day's onboarding touch; VOA sends no other push on a day it fires and never nudges "listen" when the member has the reminder on. |
+| C6 | Daily goal | 1 episode/day (was 5) | Ladder text "guided sessions pace" now means 1 episode/day. |
+| C7 | Voice overlay | ORB front door stays closed while the player is playing | VOA's ORB rung and nudges respect the same rule — never talk over an episode. |
+| C8 | Greeting code | Edits `compute-greeting-decision.ts`, `first-time-welcome/*`, greeting snapshots | VOA slice 3 starts only after the Audiobook is merged and rebases on it (same high-risk files). |
+| C9 | Measurement | `/analytics/audiobook`: listen-through, Season 0 completion, day-7 return | VOA funnel reads these instead of computing its own day-7 return; adds social metrics only. |
+| C10 | Naming | Guided Journey → Audiobook / Hörbuch, sessions → episodes | VOA copy and plan use the same words. |
+
+**Order of execution:** Audiobook merges and is staging-verified first → VOA slice 0 (fix-first) can run in parallel
+(no file overlap) → VOA slices 1–7 build on the merged Audiobook.
+
+### 9.2 "User engagement rewards strategy" (VTN rewards)
+Session `session_01CJy9EepPdwUcjKtuUdb2sm`: a 6-phase plan (VTN earning per activity → redemption → reminders →
+measurement), waiting on owner decisions; **no code pushed yet**, so no file conflict today. Points to settle
+before either is built:
+- R-1 **Inspiration posts and rewards:** posts drafted by Vitana must not become a way to farm VTN. Proposed: an inspiration
+  post earns nothing (or only the reactions it receives), never the "create a post" reward.
+- R-2 **Reminders:** that plan adds its own reminders. All reminders to a member in the first 90 days share the VOA daily
+  budget (1 touch/day) so a new member is not hit from three sides (VOA, Audiobook, rewards).
+- R-3 **Milestones = earning events:** VOA milestones (first DM, first reply, first group…) are natural reward triggers;
+  both should read the same milestone events (§4.8) instead of detecting them twice.
+
+### 9.3 Already merged, no conflict
+- What's New card automation (VTID-04733/04739) — VOA adds a What's New entry when its first slice ships.
+- New-member card hides after messaging (PR #1170) — VOA §4.5.2 enriches that same card.
+- Community Autopilot v2 (VTID-047xx, live) — VOA proposals go through its `proposeToMember`, no new queue.
+
