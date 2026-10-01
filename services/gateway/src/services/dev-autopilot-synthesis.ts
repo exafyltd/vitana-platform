@@ -14,6 +14,7 @@
 import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from './recommendation-quality/scoring-service';
 import { createHash, randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { isFindingDedupeOn, runFindingDedupeCheck, type FindingDedupeDeps, type FindingLike } from './jev/gates/finding-dedupe-gate';
 import {
   devRecommendationExpiresAtIso,
   recentlyRejectedFingerprintsPath,
@@ -141,6 +142,28 @@ async function supaRequest<T>(
   } catch (err) {
     return { ok: false, status: 500, error: String(err) };
   }
+}
+
+type FindingSnapshotRow = { id: string; title: string | null; summary: string | null; spec_snapshot: { signal_type?: string; file_path?: string } | null };
+
+function toFindingLike(r: FindingSnapshotRow): FindingLike {
+  return { id: r.id, title: r.title, summary: r.summary, signal_type: r.spec_snapshot?.signal_type ?? null, file_path: r.spec_snapshot?.file_path ?? null };
+}
+
+/** VTID-04797: the two reads the A8 gate needs, over this file's PostgREST helper. */
+function findingDedupeDeps(supa: SupaConfig): FindingDedupeDeps {
+  const cols = 'select=id,title,summary,spec_snapshot';
+  return {
+    loadNew: async (fingerprint) => {
+      const r = await supaRequest<FindingSnapshotRow[]>(supa, `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&signal_fingerprint=eq.${fingerprint}&status=eq.new&${cols}&order=created_at.desc&limit=1`);
+      const row = r.ok ? (r.data || [])[0] : undefined;
+      return row ? toFindingLike(row) : null;
+    },
+    loadCandidates: async (filePath, excludeId, limit) => {
+      const r = await supaRequest<FindingSnapshotRow[]>(supa, `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&status=in.(new,snoozed,activated)&spec_snapshot->>file_path=eq.${encodeURIComponent(filePath)}&id=neq.${excludeId}&${cols}&order=last_seen_at.desc&limit=${limit}`);
+      return r.ok ? (r.data || []).map(toFindingLike) : [];
+    },
+  };
 }
 
 // =============================================================================
@@ -628,7 +651,12 @@ async function ingestScanBody(supa: SupaConfig, runId: string, input: ScanInput)
         },
       }),
     });
-    if (inserted.ok) newCount++;
+    if (inserted.ok) {
+      newCount++;
+      // VTID-04797 (Jev A8): near-duplicate check against live findings on
+      // the same file. Off unless JEV_FINDING_DEDUPE_MODE is set; never awaited.
+      if (isFindingDedupeOn()) void runFindingDedupeCheck({ fingerprint, deps: findingDedupeDeps(supa) });
+    }
   }
 
   // VTID-04668: score the rows this run created (priority_score + quality,

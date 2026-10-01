@@ -740,6 +740,16 @@ top classes become findings.
   explicitly a company; agreement against the kind the create implies. Both
   pinned shadow on both gateways.
 
+### 10.4b P2 progress
+P1 gates have no production data yet (production was not deployed after they
+merged), so P2 does not switch any P1 gate to enforce; the new P2 gates land
+in shadow first, and enforce is decided per gate once agreement data exists.
+
+- **A8 — VTID-04797 (shadow).** `jev/gates/finding-dedupe-gate.ts`, after a
+  new `dev_autopilot` finding is inserted: Jev `finding_duplicate` against up
+  to 3 live findings on the same file. One row per new finding naming the
+  closest; agreement from how that finding ends (join on its id).
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
