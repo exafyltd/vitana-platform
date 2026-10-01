@@ -10,3 +10,7 @@ cd services/gateway && npx tsc --noEmit -p .                                    
 npx jest test/services/memory/vtid-04798-memory-scope-sensitivity.test.ts           -> 15 passed
 npx jest ranker, extraction-dedup, remember-backstop, services/memory, orb/live/session, conversation suites,
          vtid-04560 roles, vtid-04456 support, vtid-04465 operator                    -> 93 suites, 1520 tests passed
+npx jest --ci (full gateway suite, first run)   -> 3 suites failed on the intended contract change: session-memory-commit
+         (extractor args), community-member-ranker (health lane), VTID-04542 voice payload snapshot (2 extraction args);
+         tests updated, snapshot regenerated with -u
+npx jest --ci (full gateway suite, final)       -> 1439 passed, 1 skipped; 23100 tests passed (outputs/jest-full.txt)
