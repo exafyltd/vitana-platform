@@ -511,7 +511,7 @@ router.get('/product/:id', async (req: Request, res: Response) => {
 // `include_empty=true` returns every category and subcategory (the supplier
 // portal's picker); otherwise only those with live products.
 
-router.get('/categories', async (req: Request, res: Response) => {
+router.get('/categories', async (req: Request, res: Response) => { // public-route — anonymous Discover browsing, read-only catalogue metadata
   const supabase = getSupabase();
   if (!supabase) {
     res.status(500).json({ ok: false, error: 'Supabase unavailable' });
