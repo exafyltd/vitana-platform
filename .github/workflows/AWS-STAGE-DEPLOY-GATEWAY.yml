@@ -270,10 +270,19 @@ jobs:
         run: |
           set -euo pipefail
           NAME="vitana/gateway/staging/typesafe-api-key"
-          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+          # VTID-04754: keep the AWS error so "not found" and "access denied"
+          # are told apart in the log instead of both reading as "absent".
+          ERR="$RUNNER_TEMP/jev-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
           F="$RUNNER_TEMP/connected-apps.json"
           if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
-            echo "  $NAME absent - Jev stays inert (VTID-04473)"
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - Jev stays inert (VTID-04473)"
+            elif grep -qE 'AccessDenied|not authorized' "$ERR"; then
+              echo "::warning::$NAME access denied for the deploy role - Jev stays inert: $(head -c 300 "$ERR")"
+            else
+              echo "::warning::$NAME lookup failed - Jev stays inert: $(head -c 300 "$ERR")"
+            fi
             jq -c '.env += [{name:"JEV_DECISIONS_ENABLED", value:"false"}]' "$F" > "$F.tmp"
           else
             echo "  resolved $NAME -> TYPESAFE_API_KEY, JEV_DECISIONS_ENABLED=true"

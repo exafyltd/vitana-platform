@@ -13,6 +13,7 @@ jest.mock('../src/services/oasis-event-service', () => ({
 import { decide, decideMany } from '../src/services/jev/jev-decision-service';
 import { getJevStats, resetJevStatsForTest } from '../src/services/jev/jev-telemetry';
 import type { JevCallResult } from '../src/services/jev/jev-client';
+import { createMemoryJevControl, setDefaultJevControlForTest } from '../src/services/jev/jev-tenant-control';
 
 const ENV = { JEV_DECISIONS_ENABLED: 'true', TYPESAFE_API_KEY: 'k' } as NodeJS.ProcessEnv;
 const staff = { actor_id: 'user-1', active_role: 'staff', tenant_id: 't1' };
@@ -29,6 +30,8 @@ const ticketAnswers = (confidence: number) => ({
 beforeEach(() => {
   emitted.length = 0;
   resetJevStatsForTest();
+  // VTID-04754: tenant flag + spend store; no flag = internal-plane default.
+  setDefaultJevControlForTest(createMemoryJevControl().control);
 });
 
 describe('VTID-04473 decide()', () => {
@@ -99,7 +102,7 @@ describe('VTID-04473 decide()', () => {
   test('stats split by plane, decision and role', async () => {
     const call = jest.fn().mockResolvedValue(ok(ticketAnswers(0.9), 500_000));
     await decide('support_ticket_triage', { body: 'a' }, staff, { source: 't', call, env: ENV });
-    await decide('support_ticket_triage', { body: 'b' }, { actor_id: 'x', exafy_admin: true }, { source: 't', call, env: ENV });
+    await decide('support_ticket_triage', { body: 'b' }, { actor_id: 'x', exafy_admin: true, tenant_id: 't1', cross_tenant: true }, { source: 't', call, env: ENV });
     const s = getJevStats();
     expect(s.total).toMatchObject({ calls: 2, decided: 2, input_tokens: 1_000_000 });
     expect(s.by_plane.internal.calls).toBe(2);
@@ -125,7 +128,7 @@ describe('VTID-04473 decideMany()', () => {
       });
     });
     const inputs = Array.from({ length: 20 }, (_, i) => ({ query: 'invoices', text: i % 3 === 0 ? `doc ${i} yes` : `doc ${i}` }));
-    const rs = await decideMany('document_relevance', inputs, { actor_id: 'b', active_role: 'backoffice' }, { source: 't', call, env: ENV, concurrency: 4 });
+    const rs = await decideMany('document_relevance', inputs, { actor_id: 'b', active_role: 'backoffice', tenant_id: 't1' }, { source: 't', call, env: ENV, concurrency: 4 });
     expect(peak).toBeLessThanOrEqual(4);
     expect(rs).toHaveLength(20);
     rs.forEach((r, i) => {

@@ -22,29 +22,34 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { getSupabase } from '../lib/supabase';
-import { fetchCallerActiveRoleForTenant } from '../middleware/require-tenant-admin-repository';
 import { decide, decideMany, JEV_MAX_BATCH, JevDecisionResult } from '../services/jev/jev-decision-service';
 import { listJevDecisions } from '../services/jev/jev-decisions';
 import { resolveJevAccess, roleMayUseDecision, isJevCommunityEnabled, JevCaller } from '../services/jev/jev-access';
 import { isJevConfigured, jevModel } from '../services/jev/jev-client';
 import { getJevStats } from '../services/jev/jev-telemetry';
+import { resolveJevCaller, JevCallerError } from '../services/jev/jev-caller';
+import { currentMonthUtc } from '../services/jev/jev-tenant-control';
+import { fetchMonthSpendRows, shadowGateStatsRpc } from '../services/jev/jev-repository';
 
 const router = Router();
 
-/** Builds the caller from the verified identity; the role is looked up, never taken from the body. */
-export async function resolveJevCaller(req: AuthenticatedRequest): Promise<JevCaller> {
-  const id = req.identity!;
-  const caller: JevCaller = { actor_id: id.user_id, exafy_admin: id.exafy_admin, tenant_id: id.tenant_id };
-  if (id.exafy_admin || !id.tenant_id) return caller;
+// VTID-04754: caller resolution moved to services/jev/jev-caller.ts (canonical
+// role, permitted-role check, tenant fallback, exafy_admin target tenant).
+export { resolveJevCaller };
+
+/** Resolves the caller or answers the request with the named refusal. */
+async function callerOr(req: AuthenticatedRequest, res: Response): Promise<JevCaller | null> {
   try {
-    const sb = getSupabase();
-    if (!sb) return caller;
-    const { data } = await fetchCallerActiveRoleForTenant(sb, id.user_id, id.tenant_id);
-    caller.active_role = (data as { active_role?: string } | null)?.active_role ?? null;
+    return await resolveJevCaller(req);
   } catch (err: any) {
-    console.warn('[jev] active_role lookup failed:', err?.message || err);
+    if (err instanceof JevCallerError) {
+      res.status(err.status).json({ ok: false, error: err.reason });
+      return null;
+    }
+    console.warn('[jev] caller resolution failed:', err?.message || err);
+    res.status(503).json({ ok: false, error: 'caller_resolution_failed' });
+    return null;
   }
-  return caller;
 }
 
 function sendResult(res: Response, r: JevDecisionResult): void {
@@ -56,7 +61,8 @@ function sendResult(res: Response, r: JevDecisionResult): void {
 }
 
 router.get('/jev/decisions', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const caller = await resolveJevCaller(req);
+  const caller = await callerOr(req, res);
+  if (!caller) return;
   const access = resolveJevAccess(caller);
   const decisions = access.allowed
     ? listJevDecisions()
@@ -67,6 +73,8 @@ router.get('/jev/decisions', requireAuth, async (req: AuthenticatedRequest, res:
           primary: d.primary,
           threshold: d.threshold,
           pii: d.pii,
+          planes: d.planes,
+          data: d.data,
           questions: Object.fromEntries(Object.entries(d.questions).map(([k, q]) => [k, { type: q.type, instructions: q.instructions }])),
         }))
     : [];
@@ -77,6 +85,8 @@ router.get('/jev/decisions', requireAuth, async (req: AuthenticatedRequest, res:
       model: jevModel(),
       access: access.allowed ? { allowed: true, plane: access.plane, role: access.role } : { allowed: false, reason: access.reason },
       community_enabled: isJevCommunityEnabled(),
+      tenant_id: caller.tenant_id ?? null,
+      ...(caller.identity_gaps?.length ? { identity_gaps: caller.identity_gaps } : {}),
       decisions,
     },
   });
@@ -84,7 +94,8 @@ router.get('/jev/decisions', requireAuth, async (req: AuthenticatedRequest, res:
 
 router.post('/jev/decisions/:name', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   // impact-allow-no-oasis: decide() emits the jev.decision.* OASIS event for every call.
-  const caller = await resolveJevCaller(req);
+  const caller = await callerOr(req, res);
+  if (!caller) return;
   const input = (req.body && typeof req.body === 'object' && 'input' in req.body) ? req.body.input : req.body;
   sendResult(res, await decide(String(req.params.name), input, caller, { source: 'api' }));
 });
@@ -105,7 +116,8 @@ router.post('/jev/documents/classify', requireAuth, async (req: AuthenticatedReq
     res.status(400).json({ ok: false, error: 'invalid_input', detail: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') });
     return;
   }
-  const caller = await resolveJevCaller(req);
+  const caller = await callerOr(req, res);
+  if (!caller) return;
   const access = resolveJevAccess(caller);
   if (!access.allowed) {
     res.status(403).json({ ok: false, error: access.reason });
@@ -164,8 +176,42 @@ router.post('/jev/documents/classify', requireAuth, async (req: AuthenticatedReq
   });
 });
 
-router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, (_req: AuthenticatedRequest, res: Response) => {
-  res.json({ ok: true, data: { configured: isJevConfigured(), model: jevModel(), community_enabled: isJevCommunityEnabled(), ...getJevStats() } });
+router.get('/jev/admin/stats', requireAuth, requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  // VTID-04754: since-boot counters (this task) + persisted month spend per
+  // tenant × plane + shadow agreement per gate + the gate kill switches.
+  const days = Math.max(1, Math.min(Number(req.query.days) || 14, 90));
+  const month = currentMonthUtc();
+  const sb = getSupabase();
+  let spend: unknown = null;
+  let gates: unknown = null;
+  const errors: string[] = [];
+  if (sb) {
+    const [s1, s2] = await Promise.all([fetchMonthSpendRows(sb, month), shadowGateStatsRpc(sb, days)]);
+    if (s1.error) errors.push(`spend: ${s1.error.message}`);
+    else spend = s1.data;
+    if (s2.error) errors.push(`shadow: ${s2.error.message}`);
+    else gates = s2.data;
+  } else {
+    errors.push('no_supabase_client');
+  }
+  const gate_modes = Object.fromEntries(
+    Object.entries(process.env).filter(([k]) => /^JEV_[A-Z0-9_]+_MODE$/.test(k)).map(([k, v]) => [k, v]),
+  );
+  res.json({
+    ok: true,
+    data: {
+      configured: isJevConfigured(),
+      model: jevModel(),
+      community_enabled: isJevCommunityEnabled(),
+      ...getJevStats(),
+      month,
+      spend_month: spend,
+      shadow_days: days,
+      shadow_gates: gates,
+      gate_modes,
+      ...(errors.length ? { errors } : {}),
+    },
+  });
 });
 
 export default router;

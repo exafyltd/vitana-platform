@@ -11,13 +11,18 @@ describe('VTID-04473 jev access gate', () => {
     expect(resolveJevAccess({ actor_id: 'u', active_role: role }, {})).toEqual({ allowed: true, plane: 'internal', role });
   });
 
-  test.each(['community', 'patient'])('%s is refused while community is off (owner decision)', (role) => {
-    expect(resolveJevAccess({ actor_id: 'u', active_role: role }, {})).toMatchObject({ allowed: false, plane: 'community', reason: 'community_not_enabled' });
+  // VTID-04754: community → member plane; patient has its own plane, off until a DPA + PHI gate.
+  test('community is refused while community is off (owner decision)', () => {
+    expect(resolveJevAccess({ actor_id: 'u', active_role: 'community' }, {})).toMatchObject({ allowed: false, plane: 'member', reason: 'community_not_enabled' });
+  });
+
+  test('patient is refused even with the community flag on', () => {
+    expect(resolveJevAccess({ actor_id: 'u', active_role: 'patient' }, { JEV_COMMUNITY_ENABLED: 'true' })).toMatchObject({ allowed: false, plane: 'patient', reason: 'patient_plane_off' });
   });
 
   test('community opens only on the exact flag value', () => {
     expect(resolveJevAccess({ actor_id: 'u', active_role: 'community' }, { JEV_COMMUNITY_ENABLED: 'TRUE' }).allowed).toBe(false);
-    expect(resolveJevAccess({ actor_id: 'u', active_role: 'community' }, { JEV_COMMUNITY_ENABLED: 'true' })).toMatchObject({ allowed: true, plane: 'community' });
+    expect(resolveJevAccess({ actor_id: 'u', active_role: 'community' }, { JEV_COMMUNITY_ENABLED: 'true' })).toMatchObject({ allowed: true, plane: 'member' });
   });
 
   test('exafy_admin and system are internal; no role and unknown roles are refused', () => {

@@ -870,6 +870,9 @@ jobs:
           # Applied unconditionally below, in every deploy mode (env-only too),
           # in this step because step 1/2 is at the 20,000-char run limit.
           GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI
+          # VTID-04754: the TypeSafe key (shared with staging, owner decision
+          # 2026-09-30). Pinned as a full ARN for the same reason as above.
+          JEV_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/typesafe-api-key-YElucz
           NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
           NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
           ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
@@ -1146,6 +1149,18 @@ jobs:
             .containerDefinitions[0].secrets |=
               ( [ (. // [])[] | select(.name != "GITHUB_SAFE_MERGE_TOKEN") ]
                 + [ {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$GH} ] )')
+
+          # VTID-04754: Jev (TypeSafe System One) decisions, internal roles
+          # only. Declared here so prod no longer relies on the live task def
+          # carrying rev 140's manual edit forward. JEV_COMMUNITY_ENABLED is
+          # never set (community plane stays off).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg J "$JEV_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
+                + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
+            | .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED") ]
+                + [ {name:"JEV_DECISIONS_ENABLED", value:"true"} ] )')
 
           # VTID-03958: the generic escape hatch. Runs LAST, after every
           # named-input override above, so it can override anything they set

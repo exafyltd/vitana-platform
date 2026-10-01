@@ -568,7 +568,7 @@ control."*
 | Telemetry | `jev.decision.completed / .fallback / .failed` OASIS events (no state in the payload) + in-process counters split by plane, decision and role |
 | Cost | `MODEL_COSTS['jev-1.13.0'] = $0.042/M input`, priced unrounded |
 | API | `GET /api/v1/jev/decisions`, `POST /api/v1/jev/decisions/:name`, `POST /api/v1/jev/documents/classify` (≤500 docs per call, ranked), `GET /api/v1/jev/admin/stats` (exafy_admin) |
-| Staging wiring | `AWS-STAGE-DEPLOY-GATEWAY.yml` step "Resolve Jev decision config". The key is wired only if `vitana/gateway/staging/typesafe-api-key` exists; `JEV_DECISIONS_ENABLED` is always written. Production is not wired. |
+| Staging wiring | `AWS-STAGE-DEPLOY-GATEWAY.yml` step "Resolve Jev decision config". The key is wired only if `vitana/gateway/staging/typesafe-api-key` exists; `JEV_DECISIONS_ENABLED` is always written. Production: declared since VTID-04754 (§10.1). |
 | Secret | `scripts/aws/setup-typesafe-secret.sh` (owner-run) |
 
 Wave-1 decisions and who may call them:
@@ -597,6 +597,124 @@ exafy_admin may use every decision.
 - A Command Hub spend panel over `/jev/admin/stats` and the OASIS events.
 - The Jev Ultrafast browser worker (Phase 4).
 - Community cost control: quotas and a second key, per §8. After that, `JEV_COMMUNITY_ENABLED`.
+
+## 10. Process integration plan, phase 2+ (2026-09-30)
+
+Owner hand-over after slice 1. Evidence is 14 days of production data
+(2026-09-30). One VTID and one PR per slice, staging first.
+
+### 10.1 Known debt (fixed in P0, VTID-04754)
+- `AWS-PROD-DEPLOY-GATEWAY.yml` did not declare Jev; prod kept it only because
+  the workflow carries the live task def (rev 140, added by hand) forward.
+  Step 2/2 now pins `JEV_SECRET_ARN` and upserts `TYPESAFE_API_KEY` +
+  `JEV_DECISIONS_ENABLED=true`.
+- The staging probe swallowed the AWS error; it now logs not-found,
+  access-denied and other failures separately.
+
+### 10.2 Planes and data classes
+Every decision declares `planes` and one `data` class (`jev-policy.ts`).
+
+| Plane | Who |
+|---|---|
+| `internal` | internal roles, exafy_admin, platform system callers |
+| `partner_org` | reseller role; only when the tenant flag lists it |
+| `member` | community members |
+| `patient` | patient mode — off |
+| `system_autopilot` | Community Autopilot acting for members |
+
+| Data | Rule |
+|---|---|
+| `telemetry`, `business` | allowed on the internal plane now |
+| `member_content` | `JEV_COMMUNITY_ENABLED` + tenant flag lists `member` + a monthly budget, whoever calls |
+| `phi` | refused until a TypeSafe DPA/zero-retention agreement AND a PHI redaction gate (reuse AP-0601) exist — both code changes |
+
+Community Autopilot may send telemetry; member data follows the member rules
+(owner decision 4 is assumed "yes" until answered).
+
+### 10.3 Foundation — P0 (VTID-04754, built)
+1. Caller: `pickEffectiveRole` (role_preferences → user_tenants.active_role),
+   validated against the tenant's permitted roles (mirror of
+   `get_my_permitted_roles`), tenant fallback to the primary user_tenants row,
+   optional acting role (`x-jev-acting-role`) only if permitted. Cognito
+   tokens are reported as `identity_gaps` (no exafy_admin claim yet).
+2. exafy_admin names a target tenant (`x-jev-tenant`, uuid or slug) for
+   tenant-scoped decisions; telemetry records actor, tenant, `cross_tenant: true`.
+3. Policy gate above, before any token is spent.
+4. `tenant_settings.feature_flags.jev = {enabled, planes[], monthly_budget_usd}`.
+   No flag = internal planes only, no cap. Malformed or unreadable = fail
+   closed. Spend persisted per tenant × plane × month (`jev_spend_counters`).
+   Budget exhausted → fallback 429 + event.
+5. Shadow framework: `jev_shadow_decisions`, `JEV_<GATE>_MODE=off|shadow|enforce`
+   (exact; anything else off), `runJevGate()`, `recordJevShadowOutcome()`.
+   Command Hub card `/command-hub/jev.html`: calls, cost, month spend,
+   agreement per gate.
+
+### 10.4 The gates
+**A. Developer build loop** (internal; telemetry/business). Evidence: autopilot
+agent 13,256 calls, 650M input tokens, $151; 21 of 675 executions completed;
+75 runs hit the turn cap (≈$100); planner 117 failed vs 71 plans.
+A1 progress check every 10 turns · A2 feasibility gate before dispatch ·
+A3 plannability check · A4 duplicate plan/run guard · A5 test-suite selection
+for the diff · A6 CI failure routing · A7 clash check between parallel green
+PRs · A8 finding dedupe + noise filter · A9 per-change risk score (advisory) ·
+A10 Operator Console router.
+
+**B. Self-healing and ops.** Evidence: 2,855 `llm.call.failed`, 1,050 of them
+self-healing triage retrying one outage; 479 runs lost.
+B1 incident dedupe · B2 provider-failure type · B3 pre-triage
+(`ops_error_triage`) · B4 likely-cause commit ranking · B5 "no deploy seen"
+classification · B6 fix verification.
+
+**C. Voice / conversation** (post-session telemetry only). Evidence: 1,231
+upstream closes, 762 missed prewarms, 72 watchdog fires, content-filter vs
+idle-timeout conflated (VTID-04124), backstop/hold/tool-loop counts.
+C1 per-session outcome class · C2 backstop → defect cluster → finding ·
+C3 slow-session cause · C4 opener/next-step outcome learning.
+
+**D. Member ranking** (plane member; build + shadow on internal/test accounts,
+live only after community cost control). Evidence: calendar-prioritizer ignores
+the Vitana Index; next-action picker chose its forward candidates once in
+~1,237 offers; daily_matches 565 in 30 d, 0 viewed; events/groups scored by a
+Gemini edge function (forbidden Google).
+Fix first, no Jev, own VTIDs: daily_matches delivery/view tracking; tenant
+filter in daily_matches generation and community-member-ranker; pillar gap in
+calendar-prioritizer.
+D1 calendar priority · D2 next-action choice · D3 Find-a-Match re-rank ·
+D4 events/groups relevance · D5 Community Autopilot suggestion scoring ·
+D6 notification worth-it/fatigue · D7 Discover feed weight · D8 guide/directory
+tie-breaks.
+
+**E. Backoffice, documents, Sales & CRM** (internal; business). Evidence: 0
+erp_commands, 0 capability grants, 0 partner orgs in prod.
+E1 Drive/OneDrive search (owner names the drive) · E2 document type routing ·
+E3 lead scoring · E4 deal next step · E5 duplicate contact detection ·
+E6 account classification on create · E7 approval risk hint · E8 payment↔invoice
+match · E9 contract clause flags · E10 partner onboarding triage (advisory) ·
+E11 tenant KB freshness. CRM contacts are personal data: send business fields;
+names only after the DPA.
+
+**F. Learning loop.** Root-cause class per finished execution/incident; Jev
+decides whether a lesson is new and durable before `dev_agent_memory`; weekly
+top classes become findings.
+
+### 10.5 Order of work
+P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
+the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
+E8, E10, A9, A10, C4, F · P4 D1–D8 live (after community cost control) ·
+P5 phi/patient (after the DPA + PHI gate).
+
+Measures: tokens per landed PR, turn-capped runs/week, failed calls per
+incident, voice failure rate per class, task→PR time, recommendation
+engagement, backoffice review time. Jev fees ≈ $10–20/month for
+dev/ops/backoffice; member ranking priced per tenant budget.
+
+### 10.6 Owner decisions still open
+1. TypeSafe DPA / zero-retention (unlocks member_content and phi).
+2. Which Drive/OneDrive account(s) Backoffice search reads.
+3. Community cost control: per-tenant monthly budget, which tenants (maxina,
+   alkalma) get the member plane.
+4. Whether Community Autopilot on member data counts as the member plane
+   (implemented as yes).
 
 ## Sources
 
