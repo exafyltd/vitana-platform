@@ -2682,7 +2682,10 @@ export async function handleLiveSessionStop(
       user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
       model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
     },
-    outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop'), // VTID-04775
+    // VTID-04775 flow-test-exempt: post-session telemetry handed to the
+    // self-healing dispatch after the session has stopped; nothing Vitana says,
+    // picks or remembers changes. Wiring pinned by test/vtid-04775-voice-outcome-gate.test.ts.
+    outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop'),
   });
 
   // Session-end memory commit from the in-memory transcriptTurns (the full,

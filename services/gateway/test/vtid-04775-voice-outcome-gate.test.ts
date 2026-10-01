@@ -193,6 +193,7 @@ describe('VTID-04775 wiring and pins', () => {
     expect(orb).toContain("buildVoiceOutcomeSignals(liveSession, 'ws_stop_session')");
     expect(orb).toContain('connection_failed: true');
     expect(ctrl).toContain("outcomeSignals: buildVoiceOutcomeSignals(session, 'user_stop')");
+    expect(ctrl).toContain('VTID-04775 flow-test-exempt');
   });
 
   test('both gateways pin shadow, never enforce', () => {
