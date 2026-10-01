@@ -467,3 +467,93 @@ export async function isDispatchAllowed(
 
   return { allowed: true, reason: 'active' };
 }
+
+// =============================================================================
+// Telemetry continuity probe (VTID-04770)
+// =============================================================================
+
+/**
+ * Result of a telemetry continuity probe. All three counters reflect what
+ * the database returned for the probe key after the write — not the full
+ * class history.
+ */
+export interface TelemetryContinuityResult {
+  ok: boolean;
+  /** Number of rows found for the probe key in voice_healing_history. */
+  dispatch_count: number;
+  /** Rows with verdict='rollback' for the probe key. */
+  rollback_count: number;
+  /** Rows with verdict='suppressed' for the probe key. */
+  suppressed_count: number;
+  /** Human-readable reason when ok=false. */
+  detail?: string;
+}
+
+/**
+ * VTID-04770 — "VERIFY THEN HOLD" post-migration check.
+ *
+ * Writes a synthetic suppressed verdict for the well-known probe key
+ * (class='bedrock-verification-test', signature='probe_continuity_check'),
+ * then reads back the history for that key and verifies the row appears.
+ * This confirms that appendVerdict → voice_healing_history round-trip is
+ * working post-Bedrock-transport migration, without touching real incident
+ * classes.
+ *
+ * The probe key is intentionally outside VOICE_FAILURE_CLASSES so it can
+ * never be confused with a real dispatch. It is safe to call from an ops
+ * endpoint or a scheduled health check.
+ *
+ * Never throws — returns ok=false with a detail string on any failure.
+ */
+export async function probeTelemetryContinuity(): Promise<TelemetryContinuityResult> {
+  const PROBE_CLASS = 'bedrock-verification-test';
+  const PROBE_SIG = 'probe_continuity_check';
+
+  const empty: TelemetryContinuityResult = {
+    ok: false,
+    dispatch_count: 0,
+    rollback_count: 0,
+    suppressed_count: 0,
+  };
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { ...empty, detail: 'supabase_not_configured' };
+  }
+
+  // 1. Write a synthetic suppressed verdict.
+  const wrote = await appendVerdict({
+    class: PROBE_CLASS,
+    normalized_signature: PROBE_SIG,
+    verdict: 'suppressed',
+    gateway_revision: process.env.K_REVISION ?? null,
+    vtid: 'VTID-04770',
+  });
+  if (!wrote) {
+    return { ...empty, detail: 'write_failed' };
+  }
+
+  // 2. Read back the history for the probe key (last 24 h is enough).
+  try {
+    const since = isoMinusHours(24);
+    const url =
+      `${SUPABASE_URL}/rest/v1/voice_healing_history?` +
+      `class=eq.${encodeURIComponent(PROBE_CLASS)}&` +
+      `normalized_signature=eq.${encodeURIComponent(PROBE_SIG)}&` +
+      `dispatched_at=gte.${encodeURIComponent(since)}&` +
+      `select=verdict`;
+    const res = await fetch(url, { headers: supabaseHeaders() });
+    if (!res.ok) {
+      return { ...empty, detail: `read_failed_${res.status}` };
+    }
+    const rows = (await res.json()) as Array<{ verdict: string }>;
+    if (rows.length === 0) {
+      return { ...empty, detail: 'write_not_visible' };
+    }
+    const dispatch_count = rows.length;
+    const rollback_count = rows.filter((r) => r.verdict === 'rollback').length;
+    const suppressed_count = rows.filter((r) => r.verdict === 'suppressed').length;
+    return { ok: true, dispatch_count, rollback_count, suppressed_count };
+  } catch (err: any) {
+    return { ...empty, detail: `read_threw: ${err?.message ?? String(err)}` };
+  }
+}

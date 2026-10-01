@@ -15,6 +15,7 @@ import {
   releaseQuarantine,
   getQuarantineState,
   isDispatchAllowed,
+  probeTelemetryContinuity,
 } from '../src/services/voice-recurrence-sentinel';
 
 const mockFetch = jest.fn();
@@ -375,5 +376,134 @@ describe('VTID-01962: Recurrence Sentinel — getQuarantineState', () => {
     mockFetch.mockResolvedValue(jsonResp([]));
     const r = await getQuarantineState('c', 's');
     expect(r).toBeNull();
+  });
+});
+
+// =============================================================================
+// VTID-04770: Telemetry continuity probe
+// =============================================================================
+
+describe('VTID-04770: probeTelemetryContinuity', () => {
+  test('write succeeds and row is visible → ok=true with correct counters', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      // appendVerdict POST
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      // read-back GET — return one suppressed row
+      if (url.includes('voice_healing_history') && url.includes('bedrock-verification-test')) {
+        return Promise.resolve(jsonResp([{ verdict: 'suppressed' }]));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(true);
+    expect(r.dispatch_count).toBe(1);
+    expect(r.suppressed_count).toBe(1);
+    expect(r.rollback_count).toBe(0);
+    expect(r.detail).toBeUndefined();
+  });
+
+  test('write fails → ok=false, detail=write_failed', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({ error: 'db error' }, 500));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('write_failed');
+    expect(r.dispatch_count).toBe(0);
+  });
+
+  test('write ok but read returns empty → ok=false, detail=write_not_visible', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      if (url.includes('voice_healing_history') && url.includes('bedrock-verification-test')) {
+        return Promise.resolve(jsonResp([]));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('write_not_visible');
+  });
+
+  test('read throws → ok=false, detail starts with read_threw', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      if (url.includes('voice_healing_history')) {
+        return Promise.reject(new Error('network failure'));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/^read_threw/);
+  });
+
+  test('read returns non-2xx → ok=false, detail=read_failed_503', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      if (url.includes('voice_healing_history')) {
+        return Promise.resolve(jsonResp({ error: 'unavailable' }, 503));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(false);
+    expect(r.detail).toBe('read_failed_503');
+  });
+
+  test('multiple rows with mixed verdicts → counters are correct', async () => {
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      if (url.includes('voice_healing_history') && url.includes('bedrock-verification-test')) {
+        return Promise.resolve(
+          jsonResp([
+            { verdict: 'suppressed' },
+            { verdict: 'suppressed' },
+            { verdict: 'rollback' },
+          ]),
+        );
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    const r = await probeTelemetryContinuity();
+    expect(r.ok).toBe(true);
+    expect(r.dispatch_count).toBe(3);
+    expect(r.suppressed_count).toBe(2);
+    expect(r.rollback_count).toBe(1);
+  });
+
+  test('probe uses bedrock-verification-test class and probe_continuity_check signature', async () => {
+    let capturedWriteBody: any = null;
+    let capturedReadUrl = '';
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('voice_healing_history') && init?.method === 'POST') {
+        capturedWriteBody = JSON.parse((init?.body as string) || '{}');
+        return Promise.resolve(jsonResp({}, 201));
+      }
+      if (url.includes('voice_healing_history')) {
+        capturedReadUrl = url;
+        return Promise.resolve(jsonResp([{ verdict: 'suppressed' }]));
+      }
+      throw new Error('unexpected: ' + url);
+    });
+    await probeTelemetryContinuity();
+    expect(capturedWriteBody.class).toBe('bedrock-verification-test');
+    expect(capturedWriteBody.normalized_signature).toBe('probe_continuity_check');
+    expect(capturedWriteBody.verdict).toBe('suppressed');
+    expect(capturedReadUrl).toContain('bedrock-verification-test');
+    expect(capturedReadUrl).toContain('probe_continuity_check');
   });
 });
