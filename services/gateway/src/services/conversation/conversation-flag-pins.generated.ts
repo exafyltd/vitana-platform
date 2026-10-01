@@ -61,6 +61,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_FIX_VERIFICATION_MODE: { staging: "shadow", prod: "shadow" },
   JEV_LESSON_NOVELTY_MODE: { staging: "shadow", prod: "shadow" },
   JEV_OPERATOR_ROUTE_MODE: { staging: "shadow", prod: "shadow" },
+  JEV_PARTNER_ONBOARDING_TRIAGE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_PAYMENT_INVOICE_MATCH_MODE: { staging: "shadow", prod: "shadow" },
   JEV_PLANNABILITY_MODE: { staging: "shadow", prod: "shadow" },
   JEV_PR_CLASH_MODE: { staging: "shadow", prod: "shadow" },

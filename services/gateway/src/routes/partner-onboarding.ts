@@ -39,6 +39,7 @@ import {
   type Checklist,
 } from '../services/partner-onboarding-checklist';
 import { getCallerId, requireOrgAdmin } from './partner-orgs';
+import { isPartnerTriageOn, runPartnerTriage } from '../services/jev/gates/partner-triage-gate';
 import { detectPlatform } from '../services/platform-detect';
 import { VERIFICATION_LEVEL_REQUIRED } from '../services/partner-onboarding-checklist';
 import {
@@ -623,6 +624,12 @@ router.post('/:orgId/submit', requireAuth, requireOrgAdmin(), async (req: Reques
       },
       actor_id: callerId ?? undefined,
     });
+  }
+
+  // VTID-04820 (Jev E10, shadow): advisory triage of the submitted application,
+  // next to the rules' outcome. Never awaited; the submit is unchanged.
+  if (applied.length && isPartnerTriageOn()) {
+    void runPartnerTriage({ org, tenantId: (req as AuthenticatedRequest).identity?.tenant_id ?? null, steps: checklist.steps, verificationLevel: checklist.verification_level_required, rulesOutcome: verdict.outcome });
   }
 
   return respondWithState(res, supabase, orgId, 200, {

@@ -895,6 +895,18 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   this slice to keep the task-definition step under GitHub's 20,000-char limit
   (19,759 now); the next few pins fit, after that the Jev pins need their own step.
 
+- **E10 — VTID-04820 (shadow, advisory).** `jev/gates/partner-triage-gate.ts`,
+  after a partner onboarding submit's state moves: Jev
+  `partner_onboarding_triage` (ready? main concern) from business facts
+  (type, vertical, legal name, country, website host, VAT id present) and the
+  checklist, next to the rules' live / needs_action outcome, under the
+  submitting user's tenant (business decisions are tenant-scoped). Never
+  contact persons; showing it to the reviewer is enforce; approval stays
+  human.
+
+P3 status: A9, A10, C4, F (first slice), E8, E10 built in shadow. E1/E2 wait
+for the owner to name the Drive/OneDrive account(s).
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

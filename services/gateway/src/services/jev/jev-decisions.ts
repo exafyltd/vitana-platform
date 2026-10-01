@@ -262,6 +262,46 @@ const defs: JevDecisionDef[] = [
     }),
   },
   {
+    // VTID-04820 (P3 E10): a partner submitted its onboarding. Advisory triage
+    // for the reviewer from business facts and the checklist — never the
+    // people behind it. Approval stays with the rules and a human.
+    name: 'partner_onboarding_triage',
+    description: 'Whether a submitted partner onboarding looks ready to go live, and the main concern.',
+    roles: BACKOFFICE,
+    input: z.object({
+      partner_type: text(40),
+      commerce_vertical: optText(60),
+      legal_name: optText(200),
+      country: optText(2),
+      website_host: optText(200),
+      has_vat_id: z.boolean(),
+      verification_level_required: z.number().int().min(0).max(2),
+      steps: z.array(z.object({ key: text(60), required: z.boolean(), status: text(20), missing: z.array(text(60)).max(10) })).max(20),
+      rules_outcome: text(20),
+    }),
+    questions: {
+      ready: { type: 'noul', instructions: 'From these facts and checklist results, does this partner look ready to go live?' },
+      concern: {
+        type: 'choice',
+        instructions: 'What is the main concern for the reviewer, if any?',
+        criteria: {
+          none: 'Nothing stands out.',
+          verification_gap: 'A required verification is missing or failed.',
+          identity_mismatch: 'The legal name, website and country do not fit together.',
+          category_risk: 'The partner type or vertical needs extra care (health claims, regulated products).',
+          incomplete_setup: 'Catalogue, terms or connections are not really in place.',
+          unclear: 'Not enough information to tell.',
+        },
+      },
+    },
+    primary: 'ready',
+    threshold: 0.7,
+    planes: INTERNAL,
+    data: 'business',
+    pii: 'redact',
+    buildState: (i) => ({ partner: { type: i.partner_type, vertical: i.commerce_vertical ?? null, legal_name: i.legal_name ?? null, country: i.country ?? null, website: i.website_host ?? null, has_vat_id: i.has_vat_id }, verification_level_required: i.verification_level_required, checklist: i.steps, rules_outcome: i.rules_outcome }),
+  },
+  {
     // VTID-04811 (P2 E7): a High-risk Backoffice command is waiting for a
     // second person. A risk hint for the approver, from the command's own
     // business fields — never who requested it or any person's data.
