@@ -59,6 +59,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: null },
   MARKETPLACE_SYNC_SECRET: { staging: null, prod: "dynamic" },
   MEMORY_ORB_RECALL_ENABLED: { staging: "true", prod: null },
+  MEMORY_ORB_RECALL_SHADOW: { staging: "true", prod: "true" },
   NARRATION_AUDIO_BUCKET: { staging: null, prod: "dynamic" },
   NARRATION_AUDIO_CACHE: { staging: null, prod: "dynamic" },
   NAV_CONTINUATION_BIND: { staging: "true", prod: "true" },

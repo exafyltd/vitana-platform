@@ -502,6 +502,12 @@ Each phase is its own VTID, its own PR, a staging verification, and the owner's 
    - Erasure: apply the migration, then deploy the edge function.
    - People model.
 2. **Production voice on `recall()`.** Flip `MEMORY_ORB_RECALL_ENABLED` in production after a staging comparison of both read paths on the same sessions (read-only).
+   - **Started 2026-10-01 (VTID-04784): shadow comparison.**
+     - With `MEMORY_ORB_RECALL_SHADOW=true` (pinned on both gateways), every ORB memory read also reads the other path in the background.
+     - It logs one counts-only `[VTID-04784] recall-shadow` line per session: facts on each side, facts only on one side, value differences, `ai_memory` rows, other items, prompt size and latency.
+     - Production keeps serving the legacy read, so members see no change.
+     - `scripts/memory/recall-shadow-report.sh /vitana/gateway-awsdr 72` summarises the lines.
+     - **Flip when** shadow failures are about 0, facts agree (apart from rows the legacy read should not show), and recall is not slower.
 3. **Scope + sensitivity columns** on `memory_facts` and `memory_items`.
    - Backfill: everything existing is `personal`; developer/customer/support rows get their scopes.
    - RLS policies.
