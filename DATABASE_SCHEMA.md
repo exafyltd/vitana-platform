@@ -2933,7 +2933,7 @@ Helpers `supplier_listing_block(uuid)` and `refresh_supplier_listings(uuid)`
 are service_role only. Scenarios: `docs/validation/VTID-04769/`.
 
 
-### Discover categories as data (VTID-04783) — NOT YET APPLIED
+### Discover categories as data (VTID-04783) — APPLIED 2026-10-01 (VTID-04783)
 
 Migration `20261001140000_vtid_04783_discover_categories.sql`.
 
