@@ -89,7 +89,7 @@ export interface CsvImportResult {
 
 const TEXT_COLUMNS = [
   'title', 'description', 'brand', 'currency', 'affiliate_url',
-  'origin_country', 'availability', 'category',
+  'origin_country', 'availability', 'category', 'subcategory',
 ] as const;
 const LIST_COLUMNS = ['images', 'ships_to_countries', 'ships_to_regions'] as const;
 const MONEY_COLUMNS = ['price', 'price_cents', 'compare_at_price', 'compare_at_price_cents'] as const;

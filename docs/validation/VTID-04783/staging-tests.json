@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-04783",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/discover/categories",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "discover.categoryNames.",
+      "reason": "the new read-only category list answers from the data tables, with i18n label keys"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/discover/categories?include_empty=true",
+      "expect_status": 200,
+      "expect_body_contains": "\"key\":\"fitness\"",
+      "reason": "every category, including the new ones that have no products yet, is offered to the supplier portal"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/discover-categories.test.ts test/routes/vcaop-portal-my-products.test.ts test/services/partner-catalogue-csv.test.ts test/vtid-04783-discover-categories-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the category mapping trigger writes products in the shared production database, so it is proven by the scenario run (docs/validation/VTID-04783/migration-scenarios.sql) and these suites, not on staging"
+    }
+  ]
+}
