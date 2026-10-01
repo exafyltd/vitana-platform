@@ -1,0 +1,53 @@
+# VTID-04758 — commands and measurements (2026-10-01, this session's container)
+
+## Diagnosis
+command -v repowise graphify                      → neither installed; ToolSearch "repowise" → no MCP tools
+git rev-parse --is-shallow-repository             → true (vitana-platform 141 commits, vitana-v1 70)
+CODEINTEL-INDEX runs (GitHub API)                  → 268 total; last 40: 38 success, 2 cancelled (queued, superseded)
+S3 latest/manifest.json (boto3, session creds)     → vitana-platform e36e486a == origin/main; vitana-v1 a72684ba (main 793482a4)
+CODEINTEL run #268 step "Build the RepoWise index" → 9m48s (vitana-platform), 5m51s (vitana-v1)
+hook: timeout 300 s total; graphify label up to 300 s, then repowise init capped at 280 s → cannot finish
+hook: [ -d .repowise ] with committed .repowise/decisions.yaml → `repowise update` on a fresh clone
+
+## Portability of a RepoWise index (vtna-token, then vitana-platform)
+init at path A, copy to path B, repowise doctor     → ok, "Database -> 0 pages"
+only stored copy of the build path                  → repositories.local_path (1 row); rewrite → pages back
+repowise mcp on the relocated index                 → initialize ok, 10 tools, get_overview ok (0.2 s)
+
+## Graphify seeding (vitana-platform)
+CI-equivalent build                                 → 129 s, graph.json 65 MB, graphify-out tarball 5.6 MB
+seeded graphify-out + path rewrite, graphify update → 176 s, "4379 uncached files" → not worth seeding
+
+## What makes `repowise update` re-render every page (small repo, hook removed)
+[A] .ts change only                                 → Pages to regenerate: 1
+[B] workflow .yml change                            → Config files changed, all pages
+[C] edit .repowise/config.yaml + .ts change         → Config files changed, all pages
+[D] .ts change after C                              → Pages to regenerate: 1
+init --no-claude-md --no-agents, never moved:
+  state.json config_fingerprint == current config?  → False (init stamps before writing editor flags)
+  first update                                      → Config files changed, all pages
+after scripts/codeintel/repowise_restamp_config.py  → relocated + .ts change: Pages to regenerate: 1
+
+## Steady state on the real checkout (/home/user/vitana-platform)
+repowise update with nothing new                    → "Already up to date", 3 s
+one-file commit (throwaway local branch, deleted)    → git commit returned in 0 s; post-commit update:
+                                                       1 changed, Pages to regenerate: 1, 2m47s
+running `repowise mcp` started before any index     → "no repowise index yet"; same process serves the
+                                                       overview after the worker builds it (no restart)
+
+## End to end (outputs/e2e-*.txt)
+fallback, no seed (real S3 → NoSuchKey)             → ready in 19 s (vtna-token); re-run 9 s via existing
+seed (pre-fix CI flags + config edit)                → ready in 872 s, 6705 files / all pages re-rendered
+seed (--no-claude-md --no-agents, no restamp)        → ready in 819 s, Pages to regenerate: 6703
+seed (final: restamped, seed before graphify)        → hook 0 s, queryable 7 s (3942 pages),
+                                                       first update 1 page / 3m28s, ready 340 s, tree clean
+
+## Bugs found by running it, fixed
+graphify hook install wrote an untracked .gitattributes → line moved to .git/info/attributes
+claude mcp add --scope user -e K=V NAME …            → "Invalid environment variable format: NAME"; name first
+[ -d "$r/.git" ] skipped git worktrees               → git rev-parse --is-inside-work-tree
+session restarts killed detached builds twice        → worker is flock-guarded; local build resumes with --resume
+
+## Tests
+npx jest test/vtid-04758-codeintel-session-setup.test.ts test/vtid-04229-code-index.test.ts \
+         test/vtid-04241-codeintel-index-queues.test.ts            → 3 suites, 47 tests passed (outputs/jest.txt)
