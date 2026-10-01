@@ -885,6 +885,16 @@ Enforcing any gate waits for agreement data, which needs a production deploy.
   superseding updates is enforce. The weekly root-cause roll-up into findings
   is a later slice.
 
+- **E8 — VTID-04819 (shadow).** `jev/gates/payment-match-gate.ts`, after an
+  executed `finance.payment.allocate`: the payment and the invoice are read
+  through the bridge's own read actions; Jev `payment_invoice_match` sees
+  amounts, currencies, dates, references and whether the parties are the same
+  (compared here, names never sent). A rule is certain on a different party or
+  currency (no match) and on same party + currency + exact amount (match);
+  agreement at once there. The prod workflow's Jev comment is shortened in
+  this slice to keep the task-definition step under GitHub's 20,000-char limit
+  (19,759 now); the next few pins fit, after that the Jev pins need their own step.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

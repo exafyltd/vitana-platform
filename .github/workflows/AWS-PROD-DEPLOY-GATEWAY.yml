@@ -1184,12 +1184,9 @@ jobs:
                     {name:"JEV_CHANGE_RISK_MODE", value:"shadow"},
                     {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"},
                     {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"},
-                    {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"} ] )')
-          # Jev gates (VTID-04759 B1/B2, 04764 A1, 04774 A2, 04775 C1, 04782 E3/E6, 04797 A8,
-          # 04799 B3, 04800 A6, 04801 A4, 04802 B4/B5, 04803 B6, 04804 C2, 04805 C3,
-          # 04806 A3, 04807 A5, 04808 A7, 04810 E5, 04811 E7, 04815 A9, 04816 A10, 04817 C4,
-          # 04818 F): shadow only, record and
-          # change nothing; enforce is a per-gate decision once agreement data exists.
+                    {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"},
+                    {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"} ] )')
+          # Jev gates (one VTID each, docs/JEV-INTEGRATION-PLAN.md §10.4): shadow only; enforce per gate after agreement data.
 
           # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
           # memory read; recall() runs in the background and one counts-only
