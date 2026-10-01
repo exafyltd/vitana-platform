@@ -19,7 +19,15 @@
  * "prompt is too long" 14. A rule answers those exactly and for free. Jev
  * (ops_error_triage) is asked only for text the rules do not recognise.
  *
- * Both gates default to off (no read, no write, no call). shadow records a
+ *   selfheal_pretriage         (JEV_SELFHEAL_PRETRIAGE_MODE)         — B3 (VTID-04799)
+ *     For an incident that is NOT a provider failure: Jev ops_error_triage
+ *     names the cause class (transient / configuration / code_defect /
+ *     dependency / data) and whether a human is needed, before the triage
+ *     LLM call. Agreement comes from triage's own report: "not transient"
+ *     should match a warning/critical report, "transient" an info one.
+ *     enforce skips triage only for a decided "transient".
+ *
+ * All gates default to off (no read, no write, no call). shadow records a
  * jev_shadow_decisions row and triage runs as before. enforce skips triage
  * when the gate says so; the caller escalates exactly as on a failed triage.
  * The outcome is written back from triage's own result, so the agreement
@@ -35,6 +43,7 @@ import * as repo from '../jev-repository';
 
 export const PROVIDER_FAILURE_GATE = 'selfheal_provider_failure';
 export const INCIDENT_DEDUPE_GATE = 'selfheal_incident_dedupe';
+export const PRETRIAGE_GATE = 'selfheal_pretriage';
 
 export type ProviderFailureClass =
   | 'credit'
@@ -130,6 +139,8 @@ export interface SelfHealGateResult {
   skip: { gate: string; reason: string } | null;
   provider: { mode: JevGateMode; verdict: ProviderFailureVerdict; shadow_id: string | null };
   dedupe: { mode: JevGateMode; key: string; duplicate_of: string | null; shadow_id: string | null };
+  /** VTID-04799 (B3). `cause` is null when the gate was off, not asked, or Jev did not decide. */
+  pretriage?: { mode: JevGateMode; cause: string | null; needs_human: boolean | null; shadow_id: string | null };
 }
 
 export interface SelfHealGateInput {
@@ -158,14 +169,16 @@ export async function runSelfHealGates(input: SelfHealGateInput, opts: SelfHealG
   const now = opts.now ?? Date.now;
   const pMode = jevGateMode(PROVIDER_FAILURE_GATE, env);
   const dMode = jevGateMode(INCIDENT_DEDUPE_GATE, env);
+  const tMode = jevGateMode(PRETRIAGE_GATE, env);
   const verdict = classifyProviderFailure(failureTextOf(input));
   const key = incidentKey(verdict, input);
   const result: SelfHealGateResult = {
     skip: null,
     provider: { mode: pMode, verdict, shadow_id: null },
     dedupe: { mode: dMode, key, duplicate_of: null, shadow_id: null },
+    pretriage: { mode: tMode, cause: null, needs_human: null, shadow_id: null },
   };
-  if (pMode === 'off' && dMode === 'off') return result;
+  if (pMode === 'off' && dMode === 'off' && tMode === 'off') return result;
 
   const sb = opts.sb === undefined ? getSupabase() : opts.sb;
 
@@ -235,6 +248,50 @@ export async function runSelfHealGates(input: SelfHealGateInput, opts: SelfHealG
         result.skip = { gate: PROVIDER_FAILURE_GATE, reason: `provider_${verdict.cls}` };
       }
     }
+
+    // B3 — every incident B2 does not own: what kind of error is this?
+    const text = failureTextOf(input);
+    if (tMode !== 'off' && verdict.cls === 'none' && text) {
+      const r = await decide(
+        'ops_error_triage',
+        {
+          service: (input.failure?.endpoint || input.endpoint || 'self-healing').slice(0, 120),
+          topic: `self-healing:${input.mode}`,
+          message: text,
+          context: input.failure_class ? `failure class: ${input.failure_class}` : undefined,
+        },
+        SYSTEM_CALLER,
+        { ...(opts.decideOptions || {}), source: `gate:${PRETRIAGE_GATE}`, env },
+      );
+      const decided = r.ok && r.outcome === 'decided';
+      const cause = decided ? String(r.verdict.value) : null;
+      const needsHuman = r.ok && typeof r.answers.needs_human?.value === 'boolean' ? (r.answers.needs_human.value as boolean) : null;
+      result.pretriage = {
+        mode: tMode,
+        cause,
+        needs_human: needsHuman,
+        shadow_id: await recordJevShadowDecision(
+          {
+            gate: PRETRIAGE_GATE,
+            decision: 'ops_error_triage',
+            mode: tMode,
+            plane: 'internal',
+            tenant_id: null,
+            subject_type: 'triage',
+            subject_ref: input.vtid,
+            jev_outcome: r.outcome,
+            jev_verdict: r.ok ? { cause: r.verdict.value, needs_human: needsHuman, triage_mode: input.mode } : { reason: r.reason, triage_mode: input.mode },
+            jev_confidence: r.ok ? r.verdict.confidence : null,
+            system_action: 'triage',
+            cost_usd: r.ok ? r.cost_usd : 0,
+          },
+          sb,
+        ),
+      };
+      if (tMode === 'enforce' && cause === 'transient' && !result.skip) {
+        result.skip = { gate: PRETRIAGE_GATE, reason: 'pretriage_transient' };
+      }
+    }
   } catch (err: any) {
     // A gate must never break triage: on any error, triage runs as before.
     console.warn(`[jev] self-heal gates failed, triage proceeds: ${err?.message || err}`);
@@ -263,7 +320,29 @@ export async function recordSelfHealGateOutcome(
       await recordJevShadowOutcome(gates.provider.shadow_id, outcome, null, sb);
     }
     if (gates.dedupe.shadow_id) await recordJevShadowOutcome(gates.dedupe.shadow_id, outcome, null, sb);
+    // B3 is judged against the parsed report (recordPretriageOutcome); a
+    // triage that never produced one leaves its row without agreement.
+    if (gates.pretriage?.shadow_id && (triage.skipped || !triage.ok)) await recordJevShadowOutcome(gates.pretriage.shadow_id, outcome, null, sb);
   } catch (err: any) {
     console.warn(`[jev] self-heal gate outcome not recorded: ${err?.message || err}`);
+  }
+}
+
+/**
+ * VTID-04799 (B3): agreement from triage's own report. Jev "transient" should
+ * come with an info-severity report; any other cause with warning/critical.
+ */
+export async function recordPretriageOutcome(
+  gates: SelfHealGateResult,
+  report: { severity: string },
+  sb?: SupabaseClient | null,
+): Promise<void> {
+  try {
+    const p = gates.pretriage;
+    if (!p?.shadow_id) return;
+    const agreed = p.cause ? (p.cause === 'transient') === (report.severity === 'info') : null;
+    await recordJevShadowOutcome(p.shadow_id, `triage_ok:${report.severity}`, agreed, sb);
+  } catch (err: any) {
+    console.warn(`[jev] ${PRETRIAGE_GATE} outcome not recorded: ${err?.message || err}`);
   }
 }
