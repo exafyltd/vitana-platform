@@ -139,6 +139,17 @@ export async function fetchSessionEvents(sb: SupabaseClient, sessionId: string, 
     .limit(limit);
 }
 
+/** VTID-04817: finalized conversation sessions in a window (metadata only). */
+export async function fetchFinalizedSessions(sb: SupabaseClient, sinceIso: string, untilIso: string, limit = 10000) {
+  return sb
+    .from('oasis_events')
+    .select('metadata')
+    .eq('topic', 'conversation.session.finalized')
+    .gte('created_at', sinceIso)
+    .lt('created_at', untilIso)
+    .limit(limit);
+}
+
 /** VTID-04804: voice backstop diag events in a window (metadata only). */
 export async function fetchVoiceDiagEvents(sb: SupabaseClient, stages: readonly string[], sinceIso: string, untilIso: string, limit = 5000) {
   return sb

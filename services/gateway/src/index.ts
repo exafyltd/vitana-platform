@@ -1848,6 +1848,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Jev slow voice session scheduler initialization failed (non-fatal):', error);
       }
 
+      // VTID-04817 (Jev C4): voice opener outcomes over the last 7 days, judged once per UTC day.
+      // Off unless JEV_VOICE_OPENER_OUTCOMES_MODE is set; shadow only.
+      try {
+        const { startOpenerOutcomesScheduler } = require('./services/jev/gates/opener-outcome-gate');
+        if (startOpenerOutcomesScheduler()) console.log('👋 Jev voice opener outcomes scheduler started (VTID-04817)');
+      } catch (error) {
+        console.warn('⚠️ Jev voice opener outcomes scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');

@@ -811,6 +811,47 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ message: i.message, developer_tools_available: i.developer_tools }),
   },
+  {
+    // VTID-04817 (P3 C4): a voice opener (how Vitana starts the session and
+    // which next step it offers), over a week: is it working? Counts only.
+    name: 'opener_effectiveness',
+    description: 'Whether a voice-session opener leads members into a conversation, and what to do about it.',
+    roles: ENGINEERING,
+    input: z.object({
+      wake_opener: text(80),
+      candidate_kind: text(80),
+      sessions: z.number().int().min(0),
+      finalized: z.number().int().min(0),
+      engaged_pct: z.number().min(0).max(100),
+      avg_user_turns: z.number().min(0),
+      avg_duration_s: z.number().min(0),
+      overall_engaged_pct: z.number().min(0).max(100),
+      window_days: z.number().int().min(1).max(30),
+    }),
+    questions: {
+      working: {
+        type: 'noul',
+        instructions: 'Is this opener working — do members who hear it go on to talk with Vitana, compared with sessions overall?',
+      },
+      next_step: {
+        type: 'choice',
+        instructions: 'What should be done with this opener?',
+        criteria: {
+          keep: 'It works; keep it as is.',
+          reword: 'The idea is right but the wording or length puts members off.',
+          reposition: 'It fits some situations but is used in the wrong ones (time of day, route, returning member).',
+          drop: 'It does not engage members; replace it.',
+          too_little_data: 'Too few sessions or too few finalized sessions to tell.',
+        },
+      },
+    },
+    primary: 'working',
+    threshold: 0.7,
+    pii: 'forbid',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ opener: i }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

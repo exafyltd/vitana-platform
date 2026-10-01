@@ -69,6 +69,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   JEV_SELFHEAL_PROVIDER_FAILURE_MODE: { staging: "shadow", prod: "shadow" },
   JEV_TEST_SELECTION_MODE: { staging: "shadow", prod: "shadow" },
   JEV_VOICE_BACKSTOP_CLUSTERS_MODE: { staging: "shadow", prod: "shadow" },
+  JEV_VOICE_OPENER_OUTCOMES_MODE: { staging: "shadow", prod: "shadow" },
   JEV_VOICE_SESSION_OUTCOME_MODE: { staging: "shadow", prod: "shadow" },
   JEV_VOICE_SLOW_SESSION_MODE: { staging: "shadow", prod: "shadow" },
   LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: null },
