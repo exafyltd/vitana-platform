@@ -750,6 +750,12 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   to 3 live findings on the same file. One row per new finding naming the
   closest; agreement from how that finding ends (join on its id).
 
+- **B3 — VTID-04799 (shadow).** In `jev/gates/selfheal-gates.ts`, for every
+  incident B2 does not own: Jev `ops_error_triage` names the cause class and
+  whether a human is needed before the triage LLM call. Agreement from
+  triage's own report ("transient" ↔ info severity). Enforce would skip only
+  a decided "transient"; not pinned.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,

@@ -375,7 +375,7 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   //     failure type). Off by default; shadow records and triage proceeds;
   //     enforce skips a triage that cannot help (a provider outage, or an
   //     incident already triaged in the last 30 minutes).
-  const { runSelfHealGates, recordSelfHealGateOutcome } = await import('./jev/gates/selfheal-gates');
+  const { runSelfHealGates, recordSelfHealGateOutcome, recordPretriageOutcome } = await import('./jev/gates/selfheal-gates');
   const gates = await runSelfHealGates(input);
   if (gates.skip) {
     console.warn(`${LOG_PREFIX} Triage for ${input.vtid} skipped by ${gates.skip.gate}: ${gates.skip.reason}`);
@@ -431,6 +431,7 @@ export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult
   report.llm_fallback_used = loop.fallbackUsed;
   report.tool_calls = loop.toolCalls;
   report.tools_used = loop.toolNames;
+  void recordPretriageOutcome(gates, report); // VTID-04799 (Jev B3)
   console.log(
     `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} fallback=${loop.fallbackUsed} tool_calls=${loop.toolCalls}${loop.toolNames.length ? ` (${loop.toolNames.join(', ')})` : ''} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
   );
