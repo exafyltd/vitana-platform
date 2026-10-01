@@ -22,8 +22,8 @@
   "connect:authenticated-community-de-first-day": {
     "provider": "nova_sonic",
     "voice": "tina",
-    "instruction_sha256": "9dd92d096ef1f41d3681baefafea4517b97cf5d758eb503525035ba440e11500",
-    "instruction_bytes": 20410,
+    "instruction_sha256": "87f4910ec414e0e2139e359844209463470a6f5e7013a224e0439cc0b10dabdf",
+    "instruction_bytes": 20543,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -32,8 +32,8 @@
   "connect:authenticated-community-en-returning": {
     "provider": "nova_sonic",
     "voice": "amy",
-    "instruction_sha256": "e95224c1144d44c0ea1b2cbd4b3aaa6106825d12f01b0db6e559d235c08fe1a9",
-    "instruction_bytes": 21210,
+    "instruction_sha256": "ddc1633f3e7493eb1466f2e39a40f78d989b7645db32ae8b4c26d412eaf9311d",
+    "instruction_bytes": 21343,
     "tools_sha256": "83aa75524c96ac8ce108a7bfce07395526c52163625d442a631daebd91807281",
     "tools_bytes": 65549,
     "tool_count": 45,
@@ -42,8 +42,8 @@
   "connect:cascade-ru": {
     "provider": "cascaded",
     "voice": "polly:ru",
-    "instruction_sha256": "bbdbc323002540e855b134fde65f5bc3c8d74e17fca36d764656bc918218e22d",
-    "instruction_bytes": 20176,
+    "instruction_sha256": "2a683385e72bb66f471d42652ced881227d2866df10223aa5c13fbfc3c61413f",
+    "instruction_bytes": 20309,
     "tools_sha256": "f9b5f9d07533e1f39b35d4aeab391fc06dc1274ca1c38b2d5a33a9c969dc8a61",
     "tools_bytes": 228798,
     "tool_count": 296,
@@ -82,8 +82,8 @@
   "connect:vertex-serbian-bridge-sr": {
     "provider": "vertex",
     "voice": "Aoede",
-    "instruction_sha256": "7593c3df1cc408844b63223b82b8017fcfaf013a36447f3c265dae2dd1eb1029",
-    "instruction_bytes": 20188,
+    "instruction_sha256": "9a6ed3c39aeff4b8e340bfe75c8807fb2c0c7df8ebf3d368233b538fd2a881d8",
+    "instruction_bytes": 20321,
     "tools_sha256": "0e6608d2759ca1c5c214dab99863231db756c5246d087065d7be239f254e7798",
     "tools_bytes": 49198,
     "tool_count": 34,
@@ -111,8 +111,8 @@
   },
   "greeting:first_time_welcome (safe-fast)": {
     "wake_opener": "safe_fast_first_time_welcome",
-    "directive_sha256": "510d33eda433aaf5db9bf8f87a43cdb8aa4b41bb2ac9bbaf32c1cb8da8a90dce",
-    "directive_bytes": 561
+    "directive_sha256": "39580f3474dab0c6522549392189fee70001e47f838050a27c75e976280c38b3",
+    "directive_bytes": 612
   },
   "greeting:guided topic (override_v2 guided)": {
     "wake_opener": "override_v2",

@@ -77,7 +77,7 @@ exports[`replay first-time-member matches its recorded transcript 1`] = `
       "candidate_spoken": false,
       "candidates_returned": 0,
     },
-    "directive_chars": 557,
+    "directive_chars": 608,
     "nba": null,
     "opener_kind": "safe_fast_first_time_welcome",
     "personal_weights_applied": false,

@@ -160,6 +160,22 @@ const BOOTSTRAP_CACHE_MAX_ENTRIES = 1000;
 type BootstrapCacheEntry = { value: Record<string, unknown>; cachedAt: number };
 const BOOTSTRAP_CACHE = new Map<string, BootstrapCacheEntry>();
 
+/**
+ * VTID-04760: the line the LiveKit agent may speak via session.say(). That
+ * call is deterministic TTS with no model in between, so a continuation whose
+ * `userFacingLine` is an INTENT for the model to compose from (the
+ * first-time welcome, NEVER-rule 41) must never reach it — it would be read
+ * out literally. Such a winner is treated like "no line": the agent keeps its
+ * own greeting and no first-turn suppression is applied.
+ */
+export function livekitSpeakableWakeLine(
+  picked: { userFacingLine?: string; dedupeKey?: string } | null | undefined,
+): string {
+  if (!picked) return '';
+  if (picked.dedupeKey?.startsWith('first-time-welcome:')) return '';
+  return picked.userFacingLine?.trim() ?? '';
+}
+
 function bootstrapCacheKey(userId: string | null, agentId: string, lang: string): string {
   return `${userId ?? 'anon'}|${agentId}|${lang}`;
 }
@@ -1808,7 +1824,7 @@ router.get(
     let wakeOverrideApplied = false;
     try {
       const picked = wakeBriefDecision?.selectedContinuation ?? null;
-      const line = picked?.userFacingLine?.trim();
+      const line = livekitSpeakableWakeLine(picked);
       if (picked && line && line.length > 0 && !isReconnect) {
         wakeOverrideApplied = true;
         // LiveKit first-turn suppression — split into TWO parts so the bootstrap
@@ -2002,7 +2018,7 @@ normal conversation flow.`;
             decision_id: wakeBriefDecision.decisionId,
             selected_kind: wakeBriefDecision.selectedContinuation?.kind ?? 'none_with_reason',
             suppression_reason: wakeBriefDecision.suppressionReason ?? null,
-            user_facing_line: wakeBriefDecision.selectedContinuation?.userFacingLine ?? null,
+            user_facing_line: livekitSpeakableWakeLine(wakeBriefDecision.selectedContinuation) || null,
             // VTID-03076 (P0-C): expose dedupe_key + source_key on the
             // bootstrap response so the LiveKit agent can POST
             // accepted/dismissed events to /voice/next-action/event
