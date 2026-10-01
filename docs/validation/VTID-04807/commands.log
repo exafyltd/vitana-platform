@@ -1,0 +1,10 @@
+# VTID-04807 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_TEST_SELECTION_MODE "04807 A5"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04807 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-a5.txt
+npx jest $(grep -rlE "run-agent-execution|dev-autopilot-watcher" test)   # 31 runner/watcher suites (outputs/jest-runner-watcher.txt)
+# (the A6 fixture prints "Tests: 1 failed, 200 passed" to stdout; it is test data, filtered out)
+# Evidence (production, read-only SQL, 30 days to 2026-10-01): dev_autopilot.execution.ci_failed by failed checks —
+# [] 11, validate-pr 8, Gateway Service Tests 6, Test Suite Summary + Gateway (Jest) 2, Path Ownership Guard 2, …
+npx jest (full gateway suite, merged with origin/main eed65af)          # 1450 suites, 23258 passed, 0 failed (outputs/jest-full.txt)

@@ -34,6 +34,7 @@ import { buildAgentSystemPrompt, buildAgentTaskPrompt, buildFixModeTaskPrompt, b
 import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from '../dev-agent-memory-file-recall';
 import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
+import { collectTestSelectionInput, isTestSelectionOn, runTestSelectionCheck } from '../jev/gates/test-selection-gate';
 import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
@@ -402,6 +403,18 @@ export async function runAgentExecutionSession(
       break; // verified
     }
     if (!finished) return finish({ ok: false, error: 'agent did not finish', session_id: sessionId, branch });
+
+    // VTID-04807 (Jev A5, shadow): the suites that import a changed module but
+    // were not run above. Listed now, while the clone exists; judged without
+    // being awaited. Nothing here changes what runs or what the PR contains.
+    if (isTestSelectionOn()) {
+      try {
+        const selInput = collectTestSelectionInput(repoDir, changed.map((c) => c.path));
+        if (selInput) void runTestSelectionCheck({ executionId, title: finished.pr_title, input: selInput });
+      } catch (err: any) {
+        console.warn(`${LOG_PREFIX} [${short}] jev test_selection skipped: ${err?.message || err}`);
+      }
+    }
 
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
     // VTID-04333: a feedback-ticket finding carries its FB-… number on the PR.

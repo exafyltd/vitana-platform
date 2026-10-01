@@ -28,6 +28,7 @@ import { applyExecTerminalSideEffects, terminalizeVtidLedgerForExecution } from 
 import { filterOwnedExecutions } from './dev-autopilot-env-ownership';
 import { collectCiFailureEvidence, renderCiEvidence } from './dev-autopilot-ci-logs';
 import { isCiFailureRoutingOn, runCiFailureRouting } from './jev/gates/ci-failure-gate';
+import { isTestSelectionOn, recordTestSelectionOutcome } from './jev/gates/test-selection-gate';
 import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
@@ -780,6 +781,8 @@ export async function ciWatcherTick(): Promise<void> {
       // governance / dependency / infrastructure). Off unless
       // JEV_CI_FAILURE_ROUTING_MODE is set; never awaited, routing unchanged.
       if (isCiFailureRoutingOn()) void runCiFailureRouting({ executionId: exec.id, failedChecks: analysis.failedNames, evidence });
+      // VTID-04807 (Jev A5): did a failing suite match one Jev would have run?
+      if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: false, evidence });
       await bridgeFailure(exec.id, 'ci', failureReasonWithEvidence);
       continue;
     }
@@ -847,6 +850,7 @@ export async function ciWatcherTick(): Promise<void> {
         non_blocking_failures: analysis.failedNames,
       },
     });
+    if (isTestSelectionOn()) void recordTestSelectionOutcome(exec.id, { passed: true });
 
     // Defense-in-depth: check risk class one more time before auto-merging.
     // The approve safety-gate already rejected high-risk, but an execution

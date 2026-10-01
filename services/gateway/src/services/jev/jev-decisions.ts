@@ -643,6 +643,33 @@ const defs: JevDecisionDef[] = [
     data: 'telemetry',
     buildState: (i) => ({ finding: i }),
   },
+  {
+    // VTID-04807 (P2 A5): the agent runner re-runs only the name-paired test
+    // suites before opening a PR. Should this other suite — one that imports
+    // a changed module — run too?
+    name: 'test_suite_relevance',
+    description: 'Whether an existing test suite that imports changed code is likely to catch a regression from this change.',
+    roles: ENGINEERING,
+    input: z.object({
+      change_title: text(300),
+      changed_files: z.array(z.string().trim().max(300)).max(20),
+      test_path: text(300),
+      imports_changed: z.array(z.string().trim().max(120)).max(10),
+      test_titles: z.array(z.string().trim().max(160)).max(30),
+    }),
+    questions: {
+      run: {
+        type: 'noul',
+        instructions: 'Would running this test suite be likely to catch a regression introduced by this change, judging from what the suite tests and which changed modules it imports?',
+      },
+    },
+    primary: 'run',
+    threshold: 0.7,
+    pii: 'redact',
+    planes: INTERNAL_AND_AUTOPILOT,
+    data: 'telemetry',
+    buildState: (i) => ({ change: { title: i.change_title, files: i.changed_files }, suite: { path: i.test_path, imports: i.imports_changed, titles: i.test_titles } }),
+  },
 ];
 
 export const JEV_DECISIONS: ReadonlyMap<string, JevDecisionDef> = new Map(defs.map((d) => [d.name, d]));

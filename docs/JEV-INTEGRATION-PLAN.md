@@ -806,6 +806,16 @@ in shadow first, and enforce is decided per gate once agreement data exists.
   agreement — most of the 30 days' plan failures are ~30-39 s "unknown
   error", not the finding).
 
+- **A5 — VTID-04807 (shadow).** `jev/gates/test-selection-gate.ts`. The
+  agent runner re-runs only name-paired suites (+ asset readers); suites that
+  import a changed module under another name first run in CI. After the
+  runner's checks pass, those importer suites (max 8) are listed from the
+  clone and Jev `test_suite_relevance` judges each from its path, the changed
+  modules it imports and its test titles. When CI reports, the row records
+  whether a failing suite was one Jev picked (agreed) or skipped (disagreed).
+  Like A1, it runs where the agent runs; the ECS executor task needs the
+  TypeSafe secret before it produces rows there.
+
 ### 10.5 Order of work
 P0 foundation (VTID-04754) · P1 shadow: A1, A2, B1, B2, C1, E3/E6 · P2 enforce
 the P1 gates that proved right; add A3–A8, B3–B6, C2–C3, E5, E7 · P3 E1/E2,
