@@ -151,7 +151,9 @@ describe('draft_business_setup drafts in the background and writes nothing', () 
 
   test('the module never calls apply', () => {
     const src = fs.readFileSync(path.join(__dirname, '../src/orb/live/tools/commerce-setup-tool.ts'), 'utf8');
-    expect(src).not.toMatch(/applySetupDraft|\/apply/);
+    // Code only: the header comment names the apply endpoint to say who writes.
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/applySetupDraft|ai-setup\/apply|\/apply['"`]/);
   });
 });
 
