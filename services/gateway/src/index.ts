@@ -1622,6 +1622,27 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ORB WebSocket server initialization failed (non-fatal):', error);
       }
 
+      // VTID-04835: SIGTERM/SIGINT drain. Before this the gateway had no
+      // signal handler at all, so a task ECS replaced ended every live ORB
+      // voice session with no vtid.live.session.stop / voice_session_facts end.
+      // Emits a `server_shutdown` stop per unreported live session (bounded,
+      // 5 s), then closes the server and exits.
+      try {
+        const { installGracefulShutdown } = require('./services/graceful-shutdown');
+        const { emitShutdownStopsForLiveSessions } = require('./orb/live/session/live-session-controller');
+        installGracefulShutdown(server, {
+          drainTimeoutMs: 5_000,
+          drainHooks: [
+            async () => {
+              const r = await emitShutdownStopsForLiveSessions('server_shutdown', 4_500);
+              console.log(`[VTID-04835] live-session drain: emitted=${r.emitted} skipped=${r.skipped} timedOut=${r.timedOut}`);
+            },
+          ],
+        });
+      } catch (error) {
+        console.warn('⚠️ Graceful shutdown handler installation failed (non-fatal):', error);
+      }
+
       // VTID-01178: Initialize autopilot controller (ensure VTIDs exist in ledger)
       try {
         const { initializeAutopilotController } = require('./services/autopilot-controller');

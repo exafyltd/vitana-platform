@@ -570,9 +570,19 @@ export function noteFirstAudioOut(session: LiveSessionLike & { _factsTtfaRecorde
   }
 }
 
+/**
+ * VTID-04835: wait for every facts write queued so far (each chain already
+ * swallows its own error, so this never rejects). Used by the SIGTERM drain,
+ * which bounds it with its own timeout — a hung PostgREST call must not hold
+ * the task past ECS's stopTimeout.
+ */
+export async function flushVoiceSessionFactsWrites(): Promise<void> {
+  await Promise.all([...chains.values()]);
+}
+
 /** Test-only: wait for every queued write. */
 export async function __flushVoiceSessionFactsForTests(): Promise<void> {
-  await Promise.all([...chains.values()]);
+  await flushVoiceSessionFactsWrites();
 }
 
 /** Test-only: forget in-process bookkeeping between tests. */

@@ -1477,8 +1477,9 @@ const FACTS_ACTIVITY_SYNC_MS = 5 * 60 * 1000;
 
 // Sweep every 60s, not every 5 min: a 5-minute idle budget checked on a
 // 5-minute interval yields up to 10 minutes of actual billed idle.
-setInterval(() => {
-  const now = Date.now();
+// VTID-04834: body exported (unchanged behaviour) so the once-per-session
+// stop latch is testable; the interval below only calls it.
+export function sweepIdleLiveSessions(now: number = Date.now()): number {
   let purged = 0;
   for (const [sid, s] of liveSessions) {
     const closeReason = classifyIdleSession({
@@ -1494,45 +1495,52 @@ setInterval(() => {
       // VTID-04353: an abandoned session (stop POST lost, tab killed) used to
       // be reaped with no memory commit at all.
       finalizeLiveSession(s, { sessionId: sid, reason: `idle_sweep_${closeReason}` });
-      // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
-      // (client closed tab / mobile killed app mid-conversation) show up in
-      // OASIS instead of just disappearing. Prior behaviour left a silent
-      // gap (~10 of 67 sessions / 24 h had no stop event — see diag runs).
-      emitLiveSessionEvent('vtid.live.session.stop', {
-        session_id: sid,
-        user_id: s.identity?.user_id || null,
-        tenant_id: s.identity?.tenant_id || null,
-        transport: s.clientWs ? 'websocket' : 'sse',
-        reason: closeReason,
-        // VTID-03510: idle_ms makes the saving auditable — it is the billed
-        // silence this sweep stopped paying for. Without it the only way to
-        // tell a 5-minute reap from a 32-minute one is duration_ms, which
-        // also includes the useful part of the session.
-        idle_ms: now - s.lastActivity.getTime(),
-        audio_in_chunks: s.audioInChunks,
-        audio_out_chunks: s.audioOutChunks,
-        duration_ms: Date.now() - s.createdAt.getTime(),
-        turn_count: s.turn_count,
-        ...stopEventContext(s, closeReason), // VTID-04776
-      }).catch(() => { });
-      s.stopEventEmitted = true; // VTID-03561
-      recordLiveSessionEnd(s, sid, closeReason); // VTID-04776
-      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
-      // VTID-01994: pass session metrics so quality classifier can detect
-      // failures regardless of mode and route to investigator.
-      dispatchVoiceFailureFireAndForget({
-        sessionId: sid,
-        tenantScope: s.identity?.tenant_id || 'global',
-        metadata: { synthetic: (s as any).synthetic === true },
-        sessionMetrics: {
+      // VTID-04834: a session another end path already reported (the WS
+      // `stop_session` frame, a supersede, POST /live/session/stop) can still
+      // be sitting in liveSessions; reaping it must not book a second stop.
+      // Measured on prod: every WS `stop_session` was followed ~2 min later by
+      // an `idle_no_engagement` stop for the same conversation.
+      if (!s.stopEventEmitted) {
+        s.stopEventEmitted = true; // VTID-03561 — latched before the emit
+        // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
+        // (client closed tab / mobile killed app mid-conversation) show up in
+        // OASIS instead of just disappearing. Prior behaviour left a silent
+        // gap (~10 of 67 sessions / 24 h had no stop event — see diag runs).
+        emitLiveSessionEvent('vtid.live.session.stop', {
+          session_id: sid,
+          user_id: s.identity?.user_id || null,
+          tenant_id: s.identity?.tenant_id || null,
+          transport: s.clientWs ? 'websocket' : 'sse',
+          reason: closeReason,
+          // VTID-03510: idle_ms makes the saving auditable — it is the billed
+          // silence this sweep stopped paying for. Without it the only way to
+          // tell a 5-minute reap from a 32-minute one is duration_ms, which
+          // also includes the useful part of the session.
+          idle_ms: now - s.lastActivity.getTime(),
           audio_in_chunks: s.audioInChunks,
-          audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
           audio_out_chunks: s.audioOutChunks,
           duration_ms: Date.now() - s.createdAt.getTime(),
           turn_count: s.turn_count,
-        },
-        outcomeSignals: buildVoiceOutcomeSignals(s, `idle_sweep_${closeReason}`), // VTID-04775
-      });
+          ...stopEventContext(s, closeReason), // VTID-04776
+        }).catch(() => { });
+        recordLiveSessionEnd(s, sid, closeReason); // VTID-04776
+        // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+        // VTID-01994: pass session metrics so quality classifier can detect
+        // failures regardless of mode and route to investigator.
+        dispatchVoiceFailureFireAndForget({
+          sessionId: sid,
+          tenantScope: s.identity?.tenant_id || 'global',
+          metadata: { synthetic: (s as any).synthetic === true },
+          sessionMetrics: {
+            audio_in_chunks: s.audioInChunks,
+            audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
+            audio_out_chunks: s.audioOutChunks,
+            duration_ms: Date.now() - s.createdAt.getTime(),
+            turn_count: s.turn_count,
+          },
+          outcomeSignals: buildVoiceOutcomeSignals(s, `idle_sweep_${closeReason}`), // VTID-04775
+        });
+      }
       s.active = false;
       liveSessions.delete(sid);
       purged++;
@@ -1544,7 +1552,9 @@ setInterval(() => {
     }
   }
   if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
-}, 60 * 1000);
+  return purged;
+}
+setInterval(() => { sweepIdleLiveSessions(); }, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
@@ -1608,10 +1618,14 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
     // Emit OASIS event (fire-and-forget)
     // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
     // this event when the user next opens the ORB.
+    // VTID-04834: once per session, like every other end path.
+    if (existingSession.stopEventEmitted) continue;
+    existingSession.stopEventEmitted = true; // VTID-03561 — latched before the emit
     emitLiveSessionEvent('vtid.live.session.stop', {
       session_id: sid,
       user_id: existingSession.identity?.user_id || null,
       tenant_id: existingSession.identity?.tenant_id || null,
+      transport: existingSession.clientWs ? 'websocket' : 'sse', // VTID-04834
       reason: 'superseded_by_new_session',
       audio_in_chunks: existingSession.audioInChunks,
       audio_out_chunks: existingSession.audioOutChunks,
@@ -1619,7 +1633,6 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       turn_count: existingSession.turn_count,
       ...stopEventContext(existingSession, 'superseded_by_new_session'), // VTID-04776
     }).catch(() => {});
-    existingSession.stopEventEmitted = true; // VTID-03561
     recordLiveSessionEnd(existingSession, sid, 'superseded_by_new_session'); // VTID-04776
     // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
     // VTID-01994: pass session metrics for mode-independent quality classifier.
@@ -18941,39 +18954,13 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     console.log(`[VTID-01222] Live API connected for session ${sessionId}`);
 
-    // Emit OASIS event with context info
-    emitLiveSessionEvent('vtid.live.session.start', {
-      session_id: sessionId,
-      lang,
-      // VTID-03704 — `voice` here is the LIVE-API (Gemini-era) voice name and is
-      // NOT what Nova speaks with; Nova resolves its own id separately. Keeping
-      // it alone made "which voice did this user actually hear?" unanswerable,
-      // which is exactly what the pre/post-login voice report ran into. The
-      // three fields below are the ones that decide the audible voice.
-      voice: getLiveApiVoice(lang),
-      nova_voice: resolveNovaSonicVoiceOrFallback({ language: lang, persona: null }).voice,
-      nova_language_supported: isNovaSonicLanguageSupported(lang),
-      response_modalities: responseModalities,
-      transport: 'websocket',
-      // VTID-04776: which Vitana this is, as on the shared start event.
-      active_role: liveSession.active_role || liveSession.assistantProfile?.role || null,
-      surface: liveSession.assistantProfile?.surface ?? null,
-      // VTID-01224: Include context bootstrap info
-      authenticated: !!identity,
-      tenant_id: identity?.tenant_id || null,
-      user_id: identity?.user_id || null,
-      email: identity?.email || null,
-      user_agent: clientSession.userAgent,
-      origin: clientSession.originUrl,
-      context_bootstrap: {
-        included: !!contextInstruction,
-        latency_ms: contextBootstrapLatencyMs || 0,
-        skipped_reason: contextBootstrapSkippedReason || null,
-        memory_hits: contextPack?.memory_hits?.length || 0,
-        knowledge_hits: contextPack?.knowledge_hits?.length || 0,
-        tools_enabled: !!identity,
-      },
-    }).catch(() => { });
+    // VTID-04834: no `vtid.live.session.start` here any more. The shared
+    // controller (handleLiveSessionStart, reached via startLiveSessionForWs
+    // above) already emitted the one start event for this session; this
+    // second emit (transport:'websocket') made every WS session count twice.
+    // Its extra fields (nova_voice, nova_language_supported, the Live-API
+    // voice, context_bootstrap hit counts, authenticated) now ride on the
+    // controller's emit.
 
     // Send session_started + setupComplete (v1 client compatibility)
     // v1 VertexLiveService expects { setupComplete: true } before considering ready
@@ -19402,13 +19389,22 @@ function handleWsStopSession(clientSession: WsClientSession): void {
   console.log(`[VTID-01222] Stopping session: ${sessionId}`);
 
   if (liveSession) {
+    // VTID-04834: `sessionId` above is the `ws-<uuid>` SOCKET id. Since
+    // VTID-03471 the live session is keyed by its OWN id; this handler kept
+    // using the socket id, so its stop was filed under a key no start event
+    // ever used AND `liveSessions.delete(sessionId)` deleted nothing — the
+    // stopped session stayed in the map until the idle sweep reaped it and
+    // booked a SECOND stop (prod: every `ws_stop_session` stop carried a
+    // `ws-` id, followed ~2 min later by an `idle_no_engagement` stop for the
+    // live id). Same fix cleanupWsSession got in VTID-03471.
+    const liveSessionKey = liveSession.sessionId || sessionId;
     liveSession.active = false;
 
     // VTID-04353: commit memory + summary here too — this handler nulls
     // clientSession.liveSession, so the socket-close cleanup that follows
     // can no longer reach the transcript.
     finalizeLiveSession(liveSession, {
-      sessionId: liveSession.sessionId || sessionId,
+      sessionId: liveSessionKey,
       reason: 'ws_stop',
     });
 
@@ -19438,47 +19434,51 @@ function handleWsStopSession(clientSession: WsClientSession): void {
     // Emit OASIS event
     // VTID-NAV-TIMEJOURNEY: include user_id so fetchLastSessionInfo can find
     // this event when the user next opens the ORB.
-    emitLiveSessionEvent('vtid.live.session.stop', {
-      session_id: sessionId,
-      user_id: liveSession.identity?.user_id || null,
-      tenant_id: liveSession.identity?.tenant_id || null,
-      audio_in_chunks: liveSession.audioInChunks,
-      // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
-      // classification. Kept alongside raw audio_in_chunks for back-compat.
-      audio_in_forwarded_chunks: liveSession.audioInForwarded,
-      audio_out_chunks: liveSession.audioOutChunks,
-      video_frames: liveSession.videoInFrames,
-      transport: 'websocket',
-      turn_count: liveSession.turn_count,
-      user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
-      model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
-      // VTID-04776: this stop had no reason and no duration. It is the
-      // client's explicit `stop_session` frame on the WS transport.
-      duration_ms: Date.now() - liveSession.createdAt.getTime(),
-      ...stopEventContext(liveSession, 'ws_stop_session'),
-    }).catch(() => { });
-    liveSession.stopEventEmitted = true; // VTID-03561
-    recordLiveSessionEnd(liveSession, liveSession.sessionId || sessionId, 'ws_stop_session'); // VTID-04776
-    // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
-    // VTID-01994: pass session metrics for mode-independent quality classifier.
-    dispatchVoiceFailureFireAndForget({
-      sessionId,
-      tenantScope: liveSession.identity?.tenant_id || 'global',
-      metadata: { synthetic: (liveSession as any).synthetic === true },
-      sessionMetrics: {
+    // VTID-04834: once per session (the shared VTID-03561 latch), latched
+    // before the emit so a racing socket close cannot double-book.
+    if (!liveSession.stopEventEmitted) {
+      liveSession.stopEventEmitted = true;
+      emitLiveSessionEvent('vtid.live.session.stop', {
+        session_id: liveSessionKey,
+        user_id: liveSession.identity?.user_id || null,
+        tenant_id: liveSession.identity?.tenant_id || null,
         audio_in_chunks: liveSession.audioInChunks,
-        // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
-        audio_in_forwarded: liveSession.audioInForwarded,
+        // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
+        // classification. Kept alongside raw audio_in_chunks for back-compat.
+        audio_in_forwarded_chunks: liveSession.audioInForwarded,
         audio_out_chunks: liveSession.audioOutChunks,
-        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        video_frames: liveSession.videoInFrames,
+        transport: 'websocket',
         turn_count: liveSession.turn_count,
         user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
         model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
-      },
-      outcomeSignals: buildVoiceOutcomeSignals(liveSession, 'ws_stop_session'), // VTID-04775
-    });
+        // VTID-04776: this stop had no reason and no duration. It is the
+        // client's explicit `stop_session` frame on the WS transport.
+        duration_ms: Date.now() - liveSession.createdAt.getTime(),
+        ...stopEventContext(liveSession, 'ws_stop_session'),
+      }).catch(() => { });
+      recordLiveSessionEnd(liveSession, liveSessionKey, 'ws_stop_session'); // VTID-04776
+      // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
+      // VTID-01994: pass session metrics for mode-independent quality classifier.
+      dispatchVoiceFailureFireAndForget({
+        sessionId: liveSessionKey,
+        tenantScope: liveSession.identity?.tenant_id || 'global',
+        metadata: { synthetic: (liveSession as any).synthetic === true },
+        sessionMetrics: {
+          audio_in_chunks: liveSession.audioInChunks,
+          // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
+          audio_in_forwarded: liveSession.audioInForwarded,
+          audio_out_chunks: liveSession.audioOutChunks,
+          duration_ms: Date.now() - liveSession.createdAt.getTime(),
+          turn_count: liveSession.turn_count,
+          user_turns: liveSession.transcriptTurns.filter(t => t.role === 'user').length,
+          model_turns: liveSession.transcriptTurns.filter(t => t.role === 'assistant').length,
+        },
+        outcomeSignals: buildVoiceOutcomeSignals(liveSession, 'ws_stop_session'), // VTID-04775
+      });
+    }
 
-    liveSessions.delete(sessionId);
+    liveSessions.delete(liveSessionKey);
   }
 
   clientSession.liveSession = null;
@@ -19513,3 +19513,8 @@ export default router;
 // capture exactly what each upstream receives (instruction + tool catalog).
 // Re-export only: no behaviour, no new code path.
 export { connectToLiveAPI as __connectToLiveAPIForTest };
+
+// VTID-04834 — test-only handle on the WS `stop_session` frame handler, so the
+// once-per-session stop contract is driven through the real code. Re-export
+// only: no behaviour, no new code path.
+export { handleWsStopSession as __handleWsStopSessionForTest };
