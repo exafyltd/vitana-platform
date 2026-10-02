@@ -175,6 +175,11 @@ describe('VTID-04777 / VTID-04780 voice-supervisor.js', () => {
   });
 
   it('is allowlisted in the Command Hub ownership guard', () => {
-    expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/VTID-04777\|VTID-04778\|VTID-04779\|VTID-04780\|/);
+    // Membership, not position: later VTIDs may be added anywhere in the list.
+    const m = GUARD.match(/ALLOWED_VTID_PATTERN = \/(.*)\/i;/);
+    expect(m).not.toBeNull();
+    for (const v of ['VTID-04777', 'VTID-04778', 'VTID-04779', 'VTID-04780']) {
+      expect(m![1].split('|')).toContain(v);
+    }
   });
 });

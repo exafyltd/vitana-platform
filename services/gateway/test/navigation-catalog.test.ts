@@ -585,7 +585,7 @@ describe('navigation-catalog — 89 canonical paths snapshot (VTID-02770)', () =
     { path: '/auth', expectedScreenId: 'AUTH.GENERIC' },
     { path: '/maxina', expectedScreenId: 'AUTH.MAXINA_PORTAL' },
     { path: '/alkalma', expectedScreenId: 'AUTH.ALKALMA_PORTAL' },
-    { path: '/earthlinks', expectedScreenId: 'AUTH.EARTHLINKS_PORTAL' },
+    // VTID-04836: /earthlinks is a redirect to /maxina, not a screen any more.
     { path: '/home', expectedScreenId: 'HOME.OVERVIEW' },
     { path: '/me/matches', expectedScreenId: 'HOME.MATCHES' },
     // /community → /comm (canonical alias)

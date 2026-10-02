@@ -39368,7 +39368,8 @@ function renderDocsSystemKnowledgeView() {
 // right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
 // Edits route to the System Knowledge tab where the existing editor lives.
 
-const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
+// VTID-04836: earthlinks retired (merged into Maxina, VTID-01985).
+const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'community'];
 const MANUAL_MODULE_LABELS = {
     '00-concepts': '0. Mission, Voice & Core Concepts',
     '01-public': '1. Public & Onboarding',
