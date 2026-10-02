@@ -199,6 +199,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const partnerOnboardingRouter = require('./routes/partner-onboarding').default;
   const partnerOnboardingCatalogueRouter = require('./routes/partner-onboarding-catalogue').default;
   const partnerOnboardingConnectionsRouter = require('./routes/partner-onboarding-connections').default;
+  // VTID-04838: Commerce "Set up with AI" — website → draft, confirmed draft → business (COMMERCE_AI_SETUP_ENABLED)
+  const commerceAiSetupRouter = require('./routes/commerce-ai-setup').default;
   // VTID-03939: Commerce Partner Onboarding Phase 3 — a patient's own aggregated health results
   const patientHealthResultsRouter = require('./routes/patient-health-results').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
@@ -1162,6 +1164,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingCatalogueRouter, { owner: 'partner-onboarding-catalogue' });
   // VTID-04499: onboarding connections step (/:orgId/connections)
   mountRouterSync(app, '/api/v1/partner-onboarding', partnerOnboardingConnectionsRouter, { owner: 'partner-onboarding-connections' });
+  // VTID-04838: Commerce "Set up with AI" (off unless COMMERCE_AI_SETUP_ENABLED=true)
+  mountRouterSync(app, '/api/v1/commerce/ai-setup', commerceAiSetupRouter, { owner: 'commerce-ai-setup' });
   // VTID-03939: Commerce Partner Onboarding Phase 3 — GET /api/v1/patient/health-results
   mountRouterSync(app, '/api/v1/patient', patientHealthResultsRouter, { owner: 'patient-health-results' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)

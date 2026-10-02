@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04838",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/commerce/ai-setup/draft",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the AI setup draft endpoint is mounted and refuses an unauthenticated caller before reading any website"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/commerce/ai-setup/apply",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the apply endpoint is mounted behind its auth gate"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04838-commerce-ai-setup.test.ts test/vtid-04837-partner-setup-idempotency.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "drafting calls a model and applying creates a business and products in the shared production database, so both are proven with injected fetch/model fakes here; the owner runs the one real end-to-end setup on staging (owner decision 2026-10-02)"
+    }
+  ]
+}
