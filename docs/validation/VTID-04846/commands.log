@@ -1,0 +1,8 @@
+$ npx tsc --noEmit -p services/gateway        # clean
+$ npx jest test/navigation/vtid-04846-registry-only.test.ts   # 30 passed
+$ npx jest test/nav-redirect test/navigation test/nav-golden  # 569 passed
+$ npx jest (full gateway suite)               # 1475 suites passed, 23703 tests passed, 0 failed
+$ npx tsx <scratch> legacy lookupByRoute vs registry findScreenForRoute over every catalog + registry route:
+  { legacyOnly: 6, newOnly: 76, both: 168, none: 0 }
+  legacy-only: /auth /cart /health-tracker /messages (vitana-v1 <Navigate> redirects),
+  /command-hub/diagnostics/voice-lab/ /command-hub/infrastructure/self-healing/ (Command Hub AUTONOMY_REDIRECTS)

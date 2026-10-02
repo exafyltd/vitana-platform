@@ -140,7 +140,15 @@ export type NavResolution =
   | { kind: 'none'; candidates: []; top_score: number; page_gap: number };
 
 export function isReachable(s: NavScreen, ctx: NavResolveContext): boolean {
-  if (!isVoiceTarget(s)) return false;
+  return isVoiceTarget(s) && isOpenableFor(s, ctx);
+}
+
+/**
+ * VTID-04846 — the visitor/device/tenant/surface gates alone, for screens
+ * opened with an entity id (which are never voice targets on their own).
+ */
+export function isOpenableFor(s: NavScreen, ctx: NavResolveContext): boolean {
+  if (s.disabled) return false;
   if (!ctx.authenticated && s.access !== 'public') return false;
   if (ctx.viewport && s.viewport && s.viewport !== ctx.viewport) return false;
   if (ctx.excluded?.has(s.id)) return false;

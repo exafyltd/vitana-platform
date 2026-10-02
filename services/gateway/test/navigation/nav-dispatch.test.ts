@@ -123,11 +123,14 @@ describe('navigate — open vs. where', () => {
     expect(resolved.payload).toMatchObject({ resolver: 'registry-v2', kind: 'match', intent: 'open' });
   });
 
-  it('returns null so the caller falls back when the resolver cannot run', async () => {
+  it('says so honestly, and never guesses, when the resolver cannot run (VTID-04846)', async () => {
     const f = await loadRegistryFixture();
     __setNavServiceForTests({ index: f.index, embedder: createStaticNavEmbedder(new Map([['x', new Float32Array(512)]])) });
     try {
-      expect(await navigateByRequest('something never embedded', 'open', member)).toBeNull();
+      const r = ok(await navigateByRequest('something never embedded', 'open', member));
+      expect(r.result.decision).toBe('unavailable');
+      expect(r.result.directive).toBeUndefined();
+      expect(r.text).toMatch(/SCREEN LOOKUP UNAVAILABLE/);
     } finally {
       __setNavServiceForTests({ index: f.index, embedder: f.embedder });
     }
@@ -146,11 +149,17 @@ describe('the shared voice tools with NAV_V2_ENABLED', () => {
     expect(ok(r).result.offer.screen_id).toBe('INBOX.OVERVIEW');
   });
 
-  it('keeps role surfaces on the legacy navigator', async () => {
+  it('refuses voice navigation in the admin area (VTID-04846)', async () => {
     const r = await dispatchOrbTool('navigate', { question: 'Open my messages', intent: 'open', current_route: '/admin/users' }, identity as any);
-    expect((ok(r).result as any)?.offer).toBeUndefined();
+    expect(r.ok).toBe(false);
+    expect((r as any).error).toMatch(/admin area/);
     const types = (emitOasisEvent as jest.Mock).mock.calls.map((c) => c[0].type);
     expect(types).not.toContain('orb.navigator.resolved');
+  });
+
+  it('serves the other role areas from the member app, as the legacy navigator did (VTID-04846)', async () => {
+    const r = await dispatchOrbTool('navigate', { question: 'Open my messages', intent: 'open', current_route: '/backoffice/orders' }, identity as any);
+    expect(directive(r)?.screen_id).toBe('INBOX.OVERVIEW');
   });
 
   it('navigate_to_screen resolves an invented id from the stated reason instead of fuzzy-matching it', async () => {

@@ -100,6 +100,62 @@ export function pageOf(route: string): string {
   return route.split('?')[0].replace(/\/+$/, '') || '/';
 }
 
+/** A route template's page as a matcher: "/u/:identifier" matches "/u/maria". */
+function templateMatcher(template: string): RegExp | null {
+  const page = pageOf(template);
+  if (!page.includes(':')) return null;
+  const body = page.split('/').map((seg) => (seg.startsWith(':') ? '[^/]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('/');
+  return new RegExp(`^${body}$`);
+}
+
+/**
+ * VTID-04846 — the screen a member is on, for "where am I" and the screen
+ * hints in the system instruction. Unlike findRegistryScreenByRoute it
+ * covers every screen, entity pages included ("/u/maria" is a member
+ * profile), and prefers the page itself over a tab or a panel on it.
+ * A section page names its first tab; unknown deeper paths fall back to
+ * their nearest known parent ("/comm/events-meetups/x/y" → Events & Meetups).
+ */
+export function findScreenForRoute(route: string | null | undefined, surface?: NavSurface): NavScreen | null {
+  if (!route) return null;
+  const all = getNavRegistry().registry.screens;
+  const surfaced = surface ? all.filter((s) => screenSurface(s) === surface) : all;
+  // A panel shares its host page's route; name the page, unless the panel is
+  // all the registry has for it (/calendar is both a page and a panel).
+  const screens = surfaced.filter((s) => !s.overlay);
+  const exact = screens.find((s) => s.route === route || s.mobileRoute === route);
+  if (exact) return exact;
+  // The page itself (no tab or section query) first, then any of its tabs.
+  const onPage = (page: string) => {
+    const hits = screens.filter((s) => pageOf(s.route) === page || (s.mobileRoute ? pageOf(s.mobileRoute) === page : false));
+    return hits.find((s) => !s.route.includes('?') && !s.disabled) || hits.find((s) => !s.disabled) || hits[0]
+      || surfaced.find((s) => s.overlay && pageOf(s.route) === page) || null;
+  };
+  const page = pageOf(route);
+  const direct = onPage(page);
+  if (direct) return direct;
+  const templated = screens.find((s) => templateMatcher(s.route)?.test(page) || (s.mobileRoute ? templateMatcher(s.mobileRoute)?.test(page) : false));
+  if (templated) return templated;
+  // A section page whose tabs carry their own routes ("/command-hub/overview"
+  // → its first tab), as the app shows it.
+  const child = screens.find((s) => !s.disabled && pageOf(s.route).startsWith(`${page}/`) && !s.route.includes(':'));
+  if (child) return child;
+  const parts = page.split('/').filter(Boolean);
+  while (parts.length > 1) {
+    parts.pop();
+    const parent = onPage(`/${parts.join('/')}`);
+    if (parent) return parent;
+  }
+  return null;
+}
+
+/** A screen's title and description in the member's language (English fallback). */
+export function screenText(s: NavScreen, lang: string): { title: string; shows?: string } {
+  const l = (lang || 'en').split('-')[0].toLowerCase();
+  const t = s.i18n[l] || s.i18n.en;
+  return { title: t?.title || s.i18n.en.title, shows: t?.shows || s.i18n.en.shows };
+}
+
 /** Returns a list of problems; empty means the registry is usable. */
 export function validateNavRegistry(value: unknown): string[] {
   const problems: string[] = [];

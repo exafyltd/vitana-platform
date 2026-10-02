@@ -3331,6 +3331,66 @@ export async function tool_respond_to_match(
 }
 
 /**
+ * NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
+ * dispatch a model-supplied identifier — the model invents slugs like
+ * "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
+ * through the canonical member directory instead (design invariants #1/#5/#7).
+ * Flag-gated. Only triggers when the identifier looks like a de-slugged NAME
+ * (has a separator) or an explicit name/query was supplied — a concrete
+ * @vitana_id handle still passes straight through (returns null).
+ * VTID-04846: shared by the registry and the legacy path.
+ */
+async function openProfileByName(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient | undefined,
+  screenIdArg: string,
+  sessionId: string | null,
+): Promise<OrbToolResult | null> {
+  if (process.env.NAV_ENTITY_RESOLVE !== 'true' || !sb || !id.user_id || !id.tenant_id) return null;
+  const rawId = String(args.identifier ?? args.target ?? '').trim();
+  const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
+  const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
+  const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
+  if (!nameQuery || !looksLikeName) return null;
+  const { emitOasisEvent } = await import('./oasis-event-service');
+  emitOasisEvent({
+    vtid: 'VTID-NAV-01',
+    type: 'orb.navigator.blocked',
+    source: 'orb-tools-shared',
+    status: 'info',
+    message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
+    payload: {
+      session_id: sessionId,
+      attempted_screen_id: screenIdArg,
+      entity_query: nameQuery.slice(0, 120),
+      error_kind: 'entity_resolve',
+    },
+  }).catch(() => {});
+  const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
+  if (memberRes.ok === false) return memberRes;
+  // Adapt the resolver's result to the navigate_to_screen contract so BOTH
+  // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
+  // LiveKit reads result.directive). The resolver already built the correct
+  // profile directive (its own route + search_id for the match card).
+  const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
+  if (d && d.route) {
+    return {
+      ok: true,
+      result: {
+        screen_id: d.screen_id || 'profile_with_match',
+        route: d.route,
+        title: d.title || 'Profile',
+        entry_kind: 'route',
+        directive: d,
+      },
+      text: memberRes.text,
+    };
+  }
+  return memberRes;
+}
+
+/**
  * PR 1.B-5: lifts orb-live.ts:handleNavigateToScreen's 7 gates into the
  * shared dispatcher so LiveKit's tool_navigate_to_screen enforces the
  * same robustness Vertex has today.
@@ -3388,28 +3448,29 @@ export async function tool_navigate_to_screen(
   const lang = (id.lang || 'en') as string;
   const sessionId = id.session_id || null;
 
-  // VTID-04517: with NAV_V2_ENABLED the screen registry decides. Screens that
-  // need an entity id (a member's profile, one meetup) and role surfaces the
-  // registry does not cover yet still use the legacy path below.
+  // VTID-04517 / VTID-04846: with NAV_V2_ENABLED the screen registry decides
+  // every case, entity screens included; the legacy catalog below only runs
+  // with the flag off.
   if (process.env.NAV_V2_ENABLED === 'true') {
     const nav = await import('../navigation/nav-dispatch');
-    if (!nav.isLegacySurface(currentRoute)) {
-      const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
-      const screen = nav.findRegistryScreen(screenIdArg, nav.callSurface({ currentRoute }));
-      if (screen && !nav.needsEntity(screen)) {
-        return nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true });
+    if (nav.isNavigationOffSurface(currentRoute)) return nav.navigationOffResult();
+    const navCtx = { lang, isAnonymous: !!isAnon, isMobile: !!isMobile, currentRoute, sessionId };
+    const screen = nav.findRegistryScreen(screenIdArg, nav.callSurface({ currentRoute }));
+    if (screen) {
+      if (screen.id === 'PROFILE.PUBLIC') {
+        const byName = await openProfileByName(args, id, sb, screenIdArg, sessionId);
+        if (byName) return byName;
       }
-      if (!screen) {
-        // An id the registry does not know is usually invented. Resolve what
-        // the model said it wanted instead of fuzzy-matching the id string.
-        const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
-        const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
-        // VTID-04629: the member's own words first, as navigate does.
-        const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
-        const r = await nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
-        if (r) return r;
-      }
+      const opened = await nav.openScreen(screen.id, String(args.reason || ''), navCtx, { keepOrbOpen: args.keep_orb_open === true, entityArgs: args });
+      return applyJourneyModeRequest(opened, `${String(args.reason || '')} ${typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : ''}`, id, sb);
     }
+    // An id the registry does not know is usually invented. Resolve what
+    // the model said it wanted instead of fuzzy-matching the id string.
+    const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+    const query = reasonText.length >= 4 ? reasonText : screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+    // VTID-04629: the member's own words first, as navigate does.
+    const memberWords = typeof args.transcript_excerpt === 'string' ? args.transcript_excerpt : '';
+    return nav.navigateByRequest(query, 'open', { ...navCtx, memberWords });
   }
 
   const { emitOasisEvent } = await import('./oasis-event-service');
@@ -3601,59 +3662,9 @@ export async function tool_navigate_to_screen(
     }
   }
 
-  // NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
-  // dispatch a model-supplied identifier — the model invents slugs like
-  // "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
-  // through the canonical member directory instead (design invariants #1/#5/#7).
-  // Flag-gated; verify on staging. Only triggers when the identifier looks like
-  // a de-slugged NAME (has a separator) or an explicit name/query was supplied
-  // — a concrete @vitana_id handle still passes straight through.
-  if (
-    process.env.NAV_ENTITY_RESOLVE === 'true' &&
-    sb &&
-    entry.screen_id === 'PROFILE.PUBLIC' &&
-    id.user_id && id.tenant_id
-  ) {
-    const rawId = String(args.identifier ?? args.target ?? '').trim();
-    const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
-    const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
-    const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
-    if (nameQuery && looksLikeName) {
-      emitOasisEvent({
-        vtid: 'VTID-NAV-01',
-        type: 'orb.navigator.blocked',
-        source: 'orb-tools-shared',
-        status: 'info',
-        message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
-        payload: {
-          session_id: sessionId,
-          attempted_screen_id: screenIdArg,
-          entity_query: nameQuery.slice(0, 120),
-          error_kind: 'entity_resolve',
-        },
-      }).catch(() => {});
-      const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
-      if (memberRes.ok === false) return memberRes;
-      // Adapt the resolver's result to the navigate_to_screen contract so BOTH
-      // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
-      // LiveKit reads result.directive). The resolver already built the correct
-      // profile directive (its own route + search_id for the match card).
-      const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
-      if (d && d.route) {
-        return {
-          ok: true,
-          result: {
-            screen_id: d.screen_id || 'profile_with_match',
-            route: d.route,
-            title: d.title || 'Profile',
-            entry_kind: 'route',
-            directive: d,
-          },
-          text: memberRes.text,
-        };
-      }
-      return memberRes;
-    }
+  if (entry.screen_id === 'PROFILE.PUBLIC') {
+    const byName = await openProfileByName(args, id, sb, screenIdArg, sessionId);
+    if (byName) return byName;
   }
 
   // GATE 3: mobile_route override (VTID-02789).
@@ -3810,6 +3821,87 @@ export async function tool_navigate_to_screen(
 // ---------------------------------------------------------------------------
 
 /**
+ * NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
+ * durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
+ * the Einführung/Vollversion toggle). Which mode, if any, the member asked
+ * for. VTID-04846: shared by the registry and the legacy navigator.
+ */
+export function detectJourneyModeRequest(text: string): 'guided' | 'full' | null {
+  const intentText = text.toLowerCase();
+  // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
+  // broad — people don't say "guided journey" verbatim; they say "the
+  // simple one", "step by step", "der Anfänger-Modus", "show me everything".
+  // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
+  //     onboarding / walk me through / simple(r) / basic / easy mode.
+  // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
+  //     leicht (+ "-modus"/"-version").
+  // VTID-04760: the guided view is presented to members as the Audiobook
+  //     (DE "Hörbuch"), so those names select it too.
+  const wantsGuided =
+    /guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
+      intentText,
+    );
+  // EN: full app/version/mode/experience / complete / advanced /
+  //     everything / all features / pro mode.
+  // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
+  //     erweitert / alle Funktionen / alles / Profi-Modus.
+  const wantsFull =
+    /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
+      intentText,
+    );
+  // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
+  // to guided just because the word "guided" appears. Detect a negation
+  // token within ~3 words before a mode NAME and discount that side, so the
+  // explicitly-rejected mode never wins. Targets the named modes (the words
+  // people actually contrast); broad synonyms aren't negated in practice.
+  const negatedGuided =
+    /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch)/.test(
+      intentText,
+    );
+  const negatedFull =
+    /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
+      intentText,
+    );
+  const pickGuided = wantsGuided && !negatedGuided;
+  const pickFull = wantsFull && !negatedFull;
+  // Guided wins ties only among modes that were actually requested (i.e.
+  // not negated). "full not guided" → guided negated → full; "guided not
+  // full" → full negated → guided.
+  return pickGuided ? 'guided' : pickFull ? 'full' : null;
+}
+
+/**
+ * VTID-04846 — the registry path's half of NAV-GUIDED-JOURNEY: when a
+ * navigation is about to open My Journey and the member asked for the
+ * Audiobook (guided) or the full app, switch the durable mode first so they
+ * land in that view, and tell Vitana to explain the difference.
+ */
+export async function applyJourneyModeRequest(
+  r: OrbToolResult,
+  memberText: string,
+  id: OrbToolIdentity,
+  sb?: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (process.env.NAV_GUIDED_JOURNEY !== 'true' || !sb || !id.user_id || !r.ok) return r;
+  const directive = (r.result as { directive?: { route?: string } } | undefined)?.directive;
+  if (!directive?.route || directive.route.split('?')[0].replace(/\/+$/, '') !== '/autopilot') return r;
+  const mode = detectJourneyModeRequest(memberText);
+  if (!mode) return r;
+  try {
+    const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+    await setJourneyMode(sb, id.user_id, mode);
+  } catch (e) {
+    // The screen is still right, just in the member's previous mode.
+    console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+    return r;
+  }
+  const note = mode === 'guided'
+    ? 'MODE_SWITCH: You switched the member into the AUDIOBOOK view of My Journey (the guided journey; German "Hörbuch") — short episodes to listen to one after another. Briefly explain how it differs from the FULL app and that they can switch back with the Hörbuch/Vollversion toggle at the top of the screen, or by asking you.'
+    : 'MODE_SWITCH: You switched the member into the FULL app view of My Journey — everything available at once. Briefly explain how it differs from the AUDIOBOOK (the guided, listen-only episodes) and that they can switch back with the Hörbuch/Vollversion toggle at the top of the screen, or by asking you.';
+  return { ...r, text: `${r.text || ''}\n${note}`.trim() };
+}
+
+/**
  * Surface-scoped role derivation. Mirrors orb-live.ts:deriveSurfaceRole —
  * vitanaland.com routes → community, /admin/* → admin, /command-hub/* →
  * developer. The DB role is deliberately ignored: a developer browsing
@@ -3850,34 +3942,33 @@ export async function tool_navigate(
   const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
   const isAnonymous = !id.user_id || !id.tenant_id;
 
-  // VTID-04517: with NAV_V2_ENABLED the registry resolver answers. `intent`
-  // says whether the member asked to open something or where it is; only an
-  // explicit open moves the screen. Falls back to the legacy navigator below
-  // when the resolver cannot run, or on role surfaces it does not cover yet.
+  // VTID-04517 / VTID-04846: with NAV_V2_ENABLED the registry resolver
+  // answers every request. `intent` says whether the member asked to open
+  // something or where it is; only an explicit open moves the screen. The
+  // legacy navigator below only runs with the flag off.
   if (process.env.NAV_V2_ENABLED === 'true') {
     const nav = await import('../navigation/nav-dispatch');
-    if (!nav.isLegacySurface(currentRoute)) {
-      const intent = args.intent === 'open' ? 'open' : 'where';
-      // VTID-04521: a "where" answer ends with an offer; hold it so a bare
-      // "yes" opens that screen (the continuation bind consumes pending_cta).
-      const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
-        ? async (o: { screen_id: string; title: string; route: string }) => {
-            const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
-            await recordPendingOffer(sb, id.user_id as string, {
-              tool: 'navigate_to_screen',
-              payload: { screen_id: o.screen_id, route: o.route, title: o.title },
-              source: 'navigator_v2_offer',
-              key: `nav:${o.screen_id}`,
-              ttlMinutes: 5,
-            });
-          }
-        : undefined;
-      const r = await nav.navigateByRequest(question, intent, {
-        lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
-        memberWords: transcriptExcerpt,
-      });
-      if (r) return r;
-    }
+    if (nav.isNavigationOffSurface(currentRoute)) return nav.navigationOffResult();
+    const intent = args.intent === 'open' ? 'open' : 'where';
+    // VTID-04521: a "where" answer ends with an offer; hold it so a bare
+    // "yes" opens that screen (the continuation bind consumes pending_cta).
+    const recordOffer = process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id
+      ? async (o: { screen_id: string; title: string; route: string }) => {
+          const { recordPendingOffer } = await import('./assistant-continuation/offer-outcomes');
+          await recordPendingOffer(sb, id.user_id as string, {
+            tool: 'navigate_to_screen',
+            payload: { screen_id: o.screen_id, route: o.route, title: o.title },
+            source: 'navigator_v2_offer',
+            key: `nav:${o.screen_id}`,
+            ttlMinutes: 5,
+          });
+        }
+      : undefined;
+    const r = await nav.navigateByRequest(question, intent, {
+      lang, isAnonymous, isMobile: !!isMobile, currentRoute, sessionId: id.session_id ?? null, recordOffer,
+      memberWords: transcriptExcerpt,
+    });
+    return applyJourneyModeRequest(r, `${question} ${transcriptExcerpt}`, id, sb);
   }
 
   const { consultNavigator } = await import('./navigator-consult');
@@ -4030,47 +4121,7 @@ export async function tool_navigate(
         sb && id.user_id &&
         entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
       ) {
-        const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
-        // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
-        // broad — people don't say "guided journey" verbatim; they say "the
-        // simple one", "step by step", "der Anfänger-Modus", "show me everything".
-        // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
-        //     onboarding / walk me through / simple(r) / basic / easy mode.
-        // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
-        //     leicht (+ "-modus"/"-version").
-        // VTID-04760: the guided view is presented to members as the Audiobook
-        //     (DE "Hörbuch"), so those names select it too.
-        const wantsGuided =
-          /guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
-            intentText,
-          );
-        // EN: full app/version/mode/experience / complete / advanced /
-        //     everything / all features / pro mode.
-        // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
-        //     erweitert / alle Funktionen / alles / Profi-Modus.
-        const wantsFull =
-          /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
-            intentText,
-          );
-        // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
-        // to guided just because the word "guided" appears. Detect a negation
-        // token within ~3 words before a mode NAME and discount that side, so the
-        // explicitly-rejected mode never wins. Targets the named modes (the words
-        // people actually contrast); broad synonyms aren't negated in practice.
-        const negatedGuided =
-          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung|audio[\s-]?book|h(?:ö|oe?)rbuch)/.test(
-            intentText,
-          );
-        const negatedFull =
-          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
-            intentText,
-          );
-        const pickGuided = wantsGuided && !negatedGuided;
-        const pickFull = wantsFull && !negatedFull;
-        // Guided wins ties only among modes that were actually requested (i.e.
-        // not negated). "full not guided" → guided negated → full; "guided not
-        // full" → full negated → guided.
-        const targetMode: 'guided' | 'full' | null = pickGuided ? 'guided' : pickFull ? 'full' : null;
+        const targetMode = detectJourneyModeRequest(`${question} ${transcriptExcerpt}`);
         if (targetMode) {
           try {
             const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
@@ -4634,6 +4685,40 @@ export async function tool_get_current_screen(
       result: { route: null, recent_screens: [] },
       text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen — then PROPOSE one concrete next step (e.g. continuing their journey, or opening their dashboard) and offer to take them there. RULE 0: do NOT ask them what they'd like to do.",
     };
+  }
+
+  // VTID-04846: with NAV_V2_ENABLED the screen registry names the screen —
+  // the same list Vitana opens screens from, entity pages included.
+  if (process.env.NAV_V2_ENABLED === 'true') {
+    const nav = await import('../navigation/nav-dispatch');
+    const surface = nav.callSurface({ currentRoute: route });
+    const s = nav.findScreenForRoute(route, surface);
+    if (s) {
+      const trailTitles: string[] = [];
+      for (const r of recent) {
+        if (r === route) continue;
+        const prev = nav.findScreenForRoute(r, nav.callSurface({ currentRoute: r }));
+        if (prev && prev.id !== s.id) trailTitles.push(nav.screenText(prev, lang).title);
+        if (trailTitles.length >= 4) break;
+      }
+      const text = nav.screenText(s, lang);
+      const screen = withState({
+        title: text.title,
+        description: text.shows || '',
+        category: s.category,
+        screen_id: s.id,
+        route,
+        recent_screens: trailTitles,
+      });
+      return { ok: true, result: screen, text: JSON.stringify(screen) };
+    }
+    const unknown = withState({
+      title: 'Unknown screen',
+      description: 'The member is on a page the screen registry does not describe.',
+      route,
+      recent_screens: [] as string[],
+    });
+    return { ok: true, result: unknown, text: JSON.stringify(unknown) };
   }
 
   const entry = lookupByRoute(route);

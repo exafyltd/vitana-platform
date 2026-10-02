@@ -17,11 +17,11 @@
  * then the screen opens through openScreen(), with every gate (access,
  * viewport, already there) exactly as when the model calls the tool.
  *
- * Registry dispatcher only (NAV_V2_ENABLED), never on role surfaces the
- * registry does not cover. `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
+ * Registry dispatcher only (NAV_V2_ENABLED), never in the admin area (no
+ * voice navigation there, VTID-04846). `ORB_NAV_OPEN_BACKSTOP_ENABLED=false` turns it off.
  */
 import WebSocket from 'ws';
-import { callSurface, isLegacySurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
+import { callSurface, isNavigationOffSurface, isNavV2Enabled, openScreen, type NavCallContext } from '../../../navigation/nav-dispatch';
 import { recordPendingNavAck, type NavAckSession } from '../../../navigation/nav-ack';
 import { resolveScreenRequest } from '../../../navigation/nav-service';
 
@@ -138,7 +138,7 @@ export function maybeRunExplicitOpenBackstop(
   if (!isExplicitOpenBackstopEnabled() || !isNavV2Enabled()) return null;
   if (!session.active || navigatedDuringTurn || session.navigationDispatched || session.pendingNavigation) return null;
   const currentRoute = session.current_route || null;
-  if (isLegacySurface(currentRoute)) return null;
+  if (isNavigationOffSurface(currentRoute)) return null;
   if (!detectExplicitOpenRequest(userText)) return null;
 
   const words = userText.replace(/\s+/g, ' ').trim().slice(-300);

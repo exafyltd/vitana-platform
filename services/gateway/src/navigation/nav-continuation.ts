@@ -9,7 +9,7 @@
  * navigation — every gate, speak first, confirmed by the app's nav_result —
  * and the latch stays off.
  */
-import { findRegistryScreen, isLegacySurface, isNavV2Enabled, openScreen } from './nav-dispatch';
+import { findRegistryScreen, isNavigationOffSurface, isNavV2Enabled, openScreen } from './nav-dispatch';
 import { recordPendingNavAck, type NavAckSession } from './nav-ack';
 
 export interface ContinuationSession extends NavAckSession {
@@ -31,7 +31,7 @@ export async function buildContinuationDirective(
 ): Promise<ContinuationDirective | null> {
   if (!payload.screen_id) return null;
   const currentRoute = session.current_route || null;
-  if (isNavV2Enabled() && !isLegacySurface(currentRoute) && findRegistryScreen(payload.screen_id)) {
+  if (isNavV2Enabled() && !isNavigationOffSurface(currentRoute) && findRegistryScreen(payload.screen_id)) {
     const r = await openScreen(payload.screen_id, 'continuation_accept', {
       lang: session.lang || 'en',
       isAnonymous: !!session.isAnonymous,
