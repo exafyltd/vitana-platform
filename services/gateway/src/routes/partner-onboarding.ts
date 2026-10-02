@@ -113,7 +113,7 @@ export async function loadOrg(supabase: Supa, orgId: string): Promise<{ org: Org
   return { org: (data as OrgRow | null) ?? null, error: null };
 }
 
-async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
+export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
   if (!isPartnerType(org.partner_type)) return { checklist: null, error: null };
 
   const [steps, terms, members] = await Promise.all([

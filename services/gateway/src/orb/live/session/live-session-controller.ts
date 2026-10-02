@@ -1382,7 +1382,11 @@ export async function handleLiveSessionStart(
     const wsStart = Date.now();
     contextReadyPromise = Promise.resolve().then(async () => {
       const [briefingResult, storedLangResult, workContextResult] = await Promise.allSettled([
-        wsIdentity.tenant_id ? fetchAdminBriefingBlock(wsIdentity.tenant_id, 3) : Promise.resolve(null),
+        // VTID-04844: the tenant-admin briefing is admin context; a supplier on
+        // the commerce surface must never hear the tenant's admin insights.
+        wsIdentity.tenant_id && assistantProfile.surface !== 'commerce'
+          ? fetchAdminBriefingBlock(wsIdentity.tenant_id, 3)
+          : Promise.resolve(null),
         storedLangPromise,
         import('../../profile/work-surface-context')
           .then((m) => m.buildWorkSurfaceKnowledge(assistantProfile, {

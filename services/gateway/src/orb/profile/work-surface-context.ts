@@ -51,6 +51,16 @@ export async function buildWorkSurfaceKnowledge(
   input: WorkSurfaceKnowledgeInput,
 ): Promise<WorkSurfaceKnowledge> {
   if (!profile.isWorkSurface) return EMPTY;
+  // VTID-04844: the commerce Vitana starts with this supplier's businesses
+  // and their setup state, so she can guide from where they are.
+  if (profile.surface === 'commerce') {
+    try {
+      const { loadCommerceKnowledge } = await import('./commerce-knowledge');
+      return await loadCommerceKnowledge(input.userId);
+    } catch {
+      return EMPTY;
+    }
+  }
   if (profile.surface === 'command-hub') {
     if (!developerLoader) {
       try {

@@ -20,6 +20,7 @@
  *     prompt sections with AssistantDecisionContext-rendered output.
  */
 
+import { COMMERCE_GUIDE_CONDUCT, COMMERCE_GUIDE_FACTS } from './commerce-guide';
 import type { ClientContext } from '../types';
 import { registerRuleForLang } from '../../../i18n/llm-locale';
 import { getPersonalityConfigSync } from '../../../services/ai-personality-service';
@@ -429,6 +430,16 @@ ${common}
   if (surface === 'backoffice') {
     return `WORK SURFACE — BACKOFFICE OPERATIONS:
 - You assist with the business operations of this tenant (CRM, sales, finance, accounting) through the typed BackOffice commands and their approval rules.
+${common}
+
+`;
+  }
+  if (surface === 'commerce') {
+    // VTID-04844: the supplier's onboarding guide and Commerce specialist.
+    return `WORK SURFACE — BUSINESS (commerce):
+${COMMERCE_GUIDE_CONDUCT()}
+
+${COMMERCE_GUIDE_FACTS}
 ${common}
 
 `;

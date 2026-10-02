@@ -708,9 +708,10 @@ const WORK_SURFACE_OPENER_INTENT: Record<string, string> = {
     'below (an approval waiting, an escalation). When nothing is pending, say so in fresh words. Then offer ' +
     'ONE concrete next step. Stay on business operations.',
   commerce:
-    'You are the business assistant for this partner organisation. Lead with the most important open item ' +
-    'from the facts below, or say in fresh words that nothing is open. Then offer ONE concrete next step. ' +
-    'Stay on the organisation\'s business work.',
+    'You are this supplier\'s onboarding guide and Vitanaland Commerce specialist. Lead with where they stand, ' +
+    'taken from the facts below: their business and the one step that comes next, or, when they have no ' +
+    'business yet, that you can set it up together. Then offer to take that ONE step with them now. ' +
+    'Stay on their business on Vitanaland.',
 };
 
 /**
@@ -721,10 +722,11 @@ const WORK_SURFACE_TASK_INTENT: Record<string, { role: string; intent: string }>
   commerce_setup: {
     role: 'commerce',
     intent:
-      'The user asked you to set up their business on Vitanaland with them. Ask for the address of their website, ' +
-      'so you can read it and prepare the business and its products or services for them to check. Mention that ' +
-      'nothing is saved until they confirm it on the screen. As soon as they give an address, call ' +
-      'draft_business_setup with it. If they have no website, tell them they can fill the business in on the screen.',
+      'The user asked you, as their onboarding guide, to set up their business on Vitanaland with them. Briefly ' +
+      'say you will guide them through it, then ask for the address of their website so you can read it and ' +
+      'prepare the business and its products or services for them to check. Mention that nothing is saved until ' +
+      'they confirm it on the screen. As soon as they give an address, call draft_business_setup with it. If they ' +
+      'have no website, guide them through the screen one step at a time.',
   },
 };
 
