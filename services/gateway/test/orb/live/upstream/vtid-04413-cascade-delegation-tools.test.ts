@@ -43,8 +43,9 @@ describe('VTID-04413 cascade specialist delegation tools', () => {
       ],
     }];
     const tools = extractCascadeTools(catalog as Array<Record<string, unknown>>);
+    // VTID-04846: navigate is always a cascade tool now; log_water stays off.
     expect(tools.map((t) => t.name)).toEqual([
-      'report_to_specialist', 'switch_persona', 'ask_support_specialist', 'get_delegation_result', 'cancel_delegation',
+      'report_to_specialist', 'switch_persona', 'ask_support_specialist', 'get_delegation_result', 'cancel_delegation', 'navigate',
     ]);
     const support = tools.find((t) => t.name === 'ask_support_specialist')!;
     expect(support.inputSchema).toEqual((ASK_SUPPORT_SPECIALIST_TOOL as { parameters: unknown }).parameters);

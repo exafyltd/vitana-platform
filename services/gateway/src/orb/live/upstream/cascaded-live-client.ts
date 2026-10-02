@@ -159,15 +159,14 @@ export const CASCADE_TOOL_ALLOWLIST: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * VTID-04521 — voice navigation on the cascade. With the screen registry
- * (NAV_V2_ENABLED) the three navigation tools run here exactly as on Nova:
- * the same executeLiveApiTool path, the directive played out after the
- * reply. Off the flag the cascade keeps its hand-off-only catalog.
+ * VTID-04521 — voice navigation on the cascade. The three navigation tools
+ * run here exactly as on Nova: the same executeLiveApiTool path, the
+ * directive played out after the reply.
  */
 export const CASCADE_NAV_TOOLS: ReadonlySet<string> = new Set(['navigate', 'navigate_to_screen', 'get_current_screen']);
 
 export function isCascadeTool(name: string): boolean {
-  return CASCADE_TOOL_ALLOWLIST.has(name) || (process.env.NAV_V2_ENABLED === 'true' && CASCADE_NAV_TOOLS.has(name));
+  return CASCADE_TOOL_ALLOWLIST.has(name) || CASCADE_NAV_TOOLS.has(name);
 }
 
 /** VTID-04336 — how long one tool call may take before a synthetic error result. */

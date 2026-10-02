@@ -13,6 +13,18 @@
       "ref": "npx jest test/nav-redirect test/navigation test/nav-golden",
       "cwd": "services/gateway",
       "reason": "member and Command Hub navigation unchanged: golden set, 50-case redirect suite, leave-one-out ratchet and the VTID-04814 surface isolation all pass"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/admin-navigator-telemetry.test.ts test/vtid-04513-matches-route.test.ts test/vtid-04519-removed-home-subpages.test.ts test/nav-guided-journey.test.ts",
+      "cwd": "services/gateway",
+      "reason": "part 2: the admin Navigator API serves telemetry only and reads the registry navigator's events; the matches/removed-home-page guarantees hold on the registry; the My Journey mode switch runs without the legacy consult"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/live/characterization test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/services/conversation/vtid-04443-conversation-replay.test.ts",
+      "cwd": "services/gateway",
+      "reason": "part 2: the voice instruction and tool catalogue every session gets are exactly the NAV_V2 ones production already served; no flag-off variant remains"
     }
   ]
 }

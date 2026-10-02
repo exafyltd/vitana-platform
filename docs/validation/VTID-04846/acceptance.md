@@ -74,12 +74,47 @@ AC-7: everything else unchanged: golden set, the 50-case redirect suite, the
   suite all pass.
 TEST: npx jest test/nav-redirect test/navigation test/nav-golden
 
-## Not in this step
+## Part 2 — the legacy navigator is deleted
 
-- Deleting the legacy navigator, its boot warmers, the DB poll, the flag-off
-  paths and their tests (next PR).
-- Retiring the Catalog / Coverage / History admin pages (vitana-v1) and their
-  gateway routes. Telemetry stays (owner decision 2026-10-02).
+Part 1 (#3892) made the registry answer every case. Part 2 removes what
+nothing reaches any more:
+
+- `lib/navigation-catalog.ts`, `lib/nav-catalog-db(-repository).ts`,
+  `lib/nav-query-expansion.ts`, `services/navigator-consult.ts`, the
+  `navigator` admin scanner, the seed/sync/generator scripts
+  (`nav:sync`/`nav:check`), `lib/spa-routes-fallback.ts`.
+- The boot warmers: the 60 s `nav_catalog` Supabase poll, and the batch
+  embedding call over the static catalog that ran on every gateway start.
+- Every `NAV_V2_ENABLED` branch: the registry is the only navigator. The flag
+  leaves the conversation-flag registry. The deploy workflows still set it,
+  inert, so the production workflow is not touched here.
+- `/api/v1/admin/navigator/*` keeps only `GET /telemetry`, which now also
+  reads the registry navigator's events (owner decision 2026-10-02). The
+  vitana-v1 pages were retired in VTID-04853, already merged.
+- `writeNavigatorActionMemory` moved unchanged to
+  `navigation/nav-action-memory.ts`.
+
+AC-8: the admin Navigator API serves telemetry only. Telemetry counts opened
+  screens, misses (none or unavailable) and near ties from registry events,
+  and still reads legacy events in the same window.
+TEST: npx jest test/routes/admin-navigator-telemetry.test.ts
+AC-9: no source file imports the deleted modules or reads `NAV_V2_ENABLED`.
+  The registry guarantees of VTID-04513 and VTID-04519, and the 67 legacy
+  DEVHUB ids, still hold.
+TEST: npx jest test/vtid-04513-matches-route.test.ts test/vtid-04519-removed-home-subpages.test.ts test/navigation/vtid-04814-command-hub-navigation.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+AC-10: the instruction and tool catalogue are the ones production already
+  served under NAV_V2 (snapshots re-recorded with the flag gone). The full
+  gateway suite passes: 1,465 suites, 23,376 tests, 0 failed.
+TEST: npx jest test/orb/live/characterization test/orb/latency/vtid-04542-voice-payload-identity.test.ts
+
+## Not in this change
+
+- The `nav-catalog` surface of the db-i18n pipeline (the I18N-DB-SEED daily
+  cron and `scripts/nav/generate-nav-catalog-translations.mjs`), plus the two
+  health checks that read `nav_catalog_i18n` coverage. That is a separate
+  cleanup in the translation pipeline.
+- Dropping the `nav_catalog*` tables. It can't be undone, so it is left for
+  an explicit decision.
+- Removing `NAV_V2_ENABLED` from the deploy workflows. The setting is inert
+  now.
 - The LiveKit agent's tool wrappers do not pass entity ids or `intent` yet.
-  They go through the same dispatcher, so they gain the registry path but not
-  entity opening.

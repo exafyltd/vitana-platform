@@ -208,11 +208,6 @@ export const CONVERSATION_FLAGS: readonly ConversationFlagDef[] = [
     read: (env) => resolveVertexToolCatalogByteBudget(env),
   },
   {
-    name: 'NAV_V2_ENABLED', area: 'tools', vtid: 'VTID-04517', parse: 'exact_true', code_default: 'off',
-    description: 'Registry-backed navigation: `navigate` is answered by the screen registry (open vs where-is).',
-    read: exactTrue('NAV_V2_ENABLED'),
-  },
-  {
     name: 'NAV_CONTINUATION_BIND', area: 'tools', vtid: null, parse: 'exact_true', code_default: 'off',
     description: 'A spoken yes to a pending navigation offer the model did not act on opens the offered screen.',
     read: exactTrue('NAV_CONTINUATION_BIND'),

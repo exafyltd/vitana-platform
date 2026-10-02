@@ -6,3 +6,8 @@ $ npx tsx <scratch> legacy lookupByRoute vs registry findScreenForRoute over eve
   { legacyOnly: 6, newOnly: 76, both: 168, none: 0 }
   legacy-only: /auth /cart /health-tracker /messages (vitana-v1 <Navigate> redirects),
   /command-hub/diagnostics/voice-lab/ /command-hub/infrastructure/self-healing/ (Command Hub AUTONOMY_REDIRECTS)
+
+# part 2
+$ npx tsc --noEmit -p services/gateway        # clean
+$ npx jest (full gateway suite, legacy navigator deleted)   # 1465 suites passed, 23376 tests passed, 0 failed
+$ npx jest test/routes/admin-navigator-telemetry.test.ts   # 3 passed
