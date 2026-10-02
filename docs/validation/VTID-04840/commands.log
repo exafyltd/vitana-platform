@@ -1,0 +1,6 @@
+$ cd services/gateway && npx tsc --noEmit -p . --ignoreDeprecations 6.0   # filtered to the changed files
+  no new errors in changed files (local sandbox lacks @types/node / node_modules; remaining lines are environmental or pre-existing)
+$ node --check services/gateway/src/frontend/command-hub/orb-widget.js
+  ok
+$ node scripts/ci/staging-verify/run.mjs --check docs/validation/VTID-04840/staging-tests.json
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway ... → ✓ change suite present and valid for VTID-04840

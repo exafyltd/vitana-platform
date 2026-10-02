@@ -33,9 +33,7 @@ import { loadOrg, makeOrgKey, type Supa } from '../routes/partner-onboarding';
 
 const VTID = 'VTID-04838';
 
-export function isCommerceAiSetupEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.COMMERCE_AI_SETUP_ENABLED === 'true';
-}
+export { isCommerceAiSetupEnabled } from './commerce-ai-setup-flag';
 
 // ==================== Vocabulary ====================
 
@@ -371,6 +369,31 @@ export function normalizeDraft(site: SiteReading, args: Record<string, unknown> 
     source: site.feed_products.length > 0 ? 'shop_feed' : 'website',
     notes: (Array.isArray(a.notes) ? a.notes : []).map((n) => str(n, 200)).filter((n): n is string => !!n).slice(0, 5),
   };
+}
+
+/**
+ * Drafting reads a site and calls the model, so it is bounded per member:
+ * 10 an hour, shared by the portal's /draft endpoint and Vitana's
+ * draft_business_setup voice tool (VTID-04840).
+ */
+const DRAFT_LIMIT_PER_HOUR = 10;
+const draftWindows = new Map<string, number[]>();
+
+export function allowDraft(userId: string, now: number = Date.now()): boolean {
+  const hourAgo = now - 60 * 60 * 1000;
+  const recent = (draftWindows.get(userId) ?? []).filter((t) => t > hourAgo);
+  if (recent.length >= DRAFT_LIMIT_PER_HOUR) {
+    draftWindows.set(userId, recent);
+    return false;
+  }
+  recent.push(now);
+  draftWindows.set(userId, recent);
+  return true;
+}
+
+/** Test hook. */
+export function resetDraftLimits(): void {
+  draftWindows.clear();
 }
 
 export type DraftResult =

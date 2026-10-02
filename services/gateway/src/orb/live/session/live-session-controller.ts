@@ -2005,6 +2005,9 @@ export async function handleLiveSessionStart(
     // voice". The widget sends it on the first start only; the greeting
     // ladder opens with the support-report intake while no turn has run.
     support_report: (body as any).support_report === true,
+    // VTID-04840: the supplier tapped "Talk to Vitana" in the commerce AI
+    // setup sheet; the commerce opener then asks for their website.
+    commerce_setup: (body as any).commerce_setup === true,
     // VTID-04430: the host app's build stamp; voice-filed tickets store it.
     app_version: normalizeAppVersion((body as any).app_version),
   };

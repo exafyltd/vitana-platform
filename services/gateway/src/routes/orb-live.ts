@@ -1380,6 +1380,8 @@ export interface GeminiLiveSession {
   guided_topic_resume?: boolean;
   /** VTID-04395: opened from Support → "report by voice" (support-report intake). */
   support_report?: boolean;
+  /** VTID-04840: opened from the commerce AI setup sheet ("Talk to Vitana"). */
+  commerce_setup?: boolean;
   /** VTID-04430: the host app's build stamp; voice-filed tickets store it. */
   app_version?: string | null;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
@@ -7005,6 +7007,23 @@ async function executeLiveApiToolInner(
       case 'ask_commerce_specialist': {
         const { runAskCommerceSpecialist } = await import('../orb/live/tools/delegation-tools');
         return await runAskCommerceSpecialist(session, args ?? {});
+      }
+
+      // VTID-04840: business ORB → draft the supplier's business from their
+      // website. Returns at once; the draft reaches the screen as an
+      // orb_directive and is only saved by the supplier's own tap there.
+      case 'draft_business_setup': {
+        const { runDraftBusinessSetup } = await import('../orb/live/tools/commerce-setup-tool');
+        return await runDraftBusinessSetup(session as any, args ?? {}, {
+          send: (message) => {
+            try {
+              if (session.sseResponse) session.sseResponse.write(`data: ${JSON.stringify(message)}\n\n`);
+              if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) session.clientWs.send(JSON.stringify(message));
+            } catch (err) {
+              console.warn(`[VTID-04840] commerce setup directive emit failed (non-fatal): ${(err as Error).message}`);
+            }
+          },
+        });
       }
 
       case 'get_delegation_result': {
