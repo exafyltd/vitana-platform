@@ -219,7 +219,7 @@ import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 // VTID-03848: BackOffice voice tools (surface-gated) + shared surface resolver.
 import { BACKOFFICE_TOOL_HANDLERS, BACKOFFICE_TOOL_NAMES } from '../services/backoffice-voice-tools';
-import { resolveOrbSurface, navigatorRoleForSurface, isWorkSurface } from '../orb/live/surface';
+import { isWorkSurface } from '../orb/live/surface';
 import { resolveAssistantProfile, clampRoleToProfile, type AssistantProfile } from '../orb/profile/assistant-profile';
 import { sessionServedRole, sessionServedSurface, workSurfaceGreetingFields } from '../orb/profile/session-profile';
 import {
@@ -313,20 +313,8 @@ import { ContextLens, createContextLens } from '../types/context-lens';
 import { scoreAndRankEvents, formatForVoice, EventRecord, EventSearchFilters, ScoredEventResults } from '../services/event-relevance-scoring';
 // VTID-01224: Conversation types for thread continuity
 import { ContextPack } from '../types/conversation';
-// VTID-NAV: Vitana Navigator — consult orchestration + action memory writer
-import {
-  consultNavigator,
-  formatConsultResultForLLM,
-  writeNavigatorActionMemory,
-  NavigatorConsultInput,
-} from '../services/navigator-consult';
-import {
-  lookupScreen as lookupNavScreen,
-  suggestSimilar as suggestNavSimilar,
-  getContent as getNavContent,
-  lookupByRoute as lookupNavByRoute,
-  lookupByAlias as lookupNavByAlias,
-} from '../lib/navigation-catalog';
+// VTID-NAV: action memory writer (VTID-04846: moved out of the retired navigator-consult)
+import { writeNavigatorActionMemory } from '../navigation/nav-action-memory';
 // VTID-01112: Context Assembly Engine (D20 Core Intelligence)
 import {
   getOrbContext,
@@ -3502,33 +3490,11 @@ const ANONYMOUS_SAFE_TOOLS = new Set<string>([
 ]);
 
 /**
- * Derive the Navigator's role from the surface the user is currently in.
- * The ORB must never cross surfaces: mobile and vitanaland.com → community,
- * /admin/* inside the community app → admin, /command-hub/* → developer.
- * The DB's active_role is deliberately NOT consulted — a user's DB role can
- * legitimately be "developer" while they are browsing the community app, and
- * in that case the Navigator should still only surface community routes.
- */
-function deriveSurfaceRole(currentRoute: string | undefined | null): string {
-  // VTID-03848: one resolver for every surface decision (adds /backoffice).
-  return navigatorRoleForSurface(resolveOrbSurface({ currentRoute }));
-}
-
-/**
- * VTID-NAV: Handle navigator_consult tool call. Self-contained — does not
- * require an authenticated identity (anonymous sessions can still consult,
- * just with empty memory hints).
- */
-/**
- * VTID-NAV-UNIFIED: Single unified navigate tool handler.
- *
- * Replaces the old two-tool dance (navigator_consult → navigate_to_screen).
- * The LLM just passes the user's words. This function:
- * 1. Runs the consult (catalog scoring + KB search + memory hints)
- * 2. If a match is found: queues the orb_directive AND returns guidance text
- * 3. If no match: returns a clarification prompt
- *
- * Gemini never sees screen_ids. Never guesses. Just speaks the guidance.
+ * VTID-NAV-UNIFIED: the single navigate tool handler. The member's words go
+ * to the shared navigate tool, which the screen registry answers
+ * (VTID-04517 / VTID-04846): a clear "open" request queues the orb_directive,
+ * a "where" question offers the screen, anything unclear comes back as
+ * candidates or "nothing matches". Never guesses.
  */
 async function handleNavigate(
   session: GeminiLiveSession,
@@ -3539,7 +3505,7 @@ async function handleNavigate(
   // the model (observed on Nova Sonic, which can chain a second tool call
   // before ever emitting END_TURN — see the BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX
   // comment on handleNavigateToScreen below) tries to re-open the Navigator
-  // anyway, short-circuit instead of re-running consultNavigator and risking
+  // anyway, short-circuit instead of resolving again and risking
   // a second, deeper disambiguation question stacked on top of the first.
   //
   // VTID-03583: scoped to the CURRENT TURN. This originally read the
@@ -3552,7 +3518,7 @@ async function handleNavigate(
     };
   }
   // PR 1.B-4: lifted to services/orb-tools-shared.ts:tool_navigate. Both
-  // pipelines now run the same consultNavigator + decision logic + directive
+  // pipelines now run the same registry resolver + decision logic + directive
   // payload construction + OASIS emit chain. Vertex post-processes the
   // result to: emit the directive immediately on its SSE/WS transport,
   // mutate session.pendingNavigation + session.current_route +
@@ -3574,7 +3540,7 @@ async function handleNavigate(
     'navigate',
     {
       question,
-      // VTID-04517: open vs. where — only read when NAV_V2_ENABLED.
+      // VTID-04517: open vs. where.
       intent: args.intent === 'open' ? 'open' : args.intent === 'where' ? 'where' : undefined,
       current_route: session.current_route ?? null,
       recent_routes: Array.isArray(session.recent_routes) ? session.recent_routes : [],
@@ -3682,70 +3648,10 @@ async function handleNavigate(
   return { success: true, result: withNavFailureNote(session, typeof r.text === 'string' ? r.text : '') };
 }
 
-// Legacy handler — kept for test imports but no longer called by the tool path
-async function handleNavigatorConsult(
-  session: GeminiLiveSession,
-  args: Record<string, unknown>
-): Promise<{ success: boolean; result: string; error?: string }> {
-  const hasIdentity = !!(session.identity?.tenant_id && session.identity?.user_id);
-  const question = String(args.question || '').trim();
-  if (!question) {
-    return { success: false, result: '', error: 'navigator_consult requires a non-empty question.' };
-  }
-
-  const surfaceRole = deriveSurfaceRole(session.current_route);
-
-  const consultInput: NavigatorConsultInput = {
-    question,
-    lang: session.lang || 'en',
-    identity: hasIdentity
-      ? {
-          user_id: session.identity!.user_id,
-          tenant_id: session.identity!.tenant_id as string,
-          role: surfaceRole,
-        }
-      : null,
-    is_anonymous: !!session.isAnonymous || !hasIdentity,
-    current_route: session.current_route,
-    recent_routes: session.recent_routes,
-    transcript_excerpt: session.inputTranscriptBuffer,
-    session_id: session.sessionId,
-    turn_number: session.turn_count,
-    conversation_start: session.createdAt.toISOString(),
-  };
-
-  const consultResult = await consultNavigator(consultInput);
-  const formatted = formatConsultResultForLLM(consultResult);
-
-  emitOasisEvent({
-    vtid: 'VTID-NAV-01',
-    type: 'orb.navigator.consulted',
-    source: 'orb-live-ws',
-    status: consultResult.confidence === 'low' ? 'warning' : 'info',
-    message: `navigator_consult: confidence=${consultResult.confidence}, primary=${consultResult.primary?.screen_id || 'none'}`,
-    payload: {
-      session_id: session.sessionId,
-      question,
-      primary_screen_id: consultResult.primary?.screen_id || null,
-      alternative_screen_id: consultResult.alternative?.screen_id || null,
-      confidence: consultResult.confidence,
-      confirmation_needed: consultResult.confirmation_needed,
-      kb_excerpt_count: consultResult.kb_excerpt_count,
-      memory_hint_count: consultResult.memory_hint_count,
-      ms_elapsed: consultResult.ms_elapsed,
-      lang: consultInput.lang,
-      is_anonymous: consultInput.is_anonymous,
-      blocked_reason: consultResult.blocked_reason || null,
-    },
-  }).catch(() => { /* ignore telemetry failure */ });
-
-  return { success: true, result: formatted };
-}
-
 /**
  * VTID-NAV: Handle navigate_to_screen tool call. Self-contained — does not
- * require an authenticated identity. Anonymous sessions are gated to
- * anonymous_safe screens by the catalog access check below.
+ * require an authenticated identity. Anonymous sessions are gated to public
+ * screens by the screen registry's access check (openScreen).
  */
 // VTID-NAV-TEST: Exported for integration test that verifies the full
 // navigate_to_screen → pendingNavigation → orb_directive dispatch flow
@@ -6593,10 +6499,9 @@ async function executeLiveApiToolInner(
       // VTID-02770: navigate_to_screen is routed at the top of handleToolCall
       // (line ~4064) directly to handleNavigateToScreen, so this switch case
       // is unreachable. The duplicated TARGET_ROUTES table that used to live
-      // here was deleted — the catalog (with aliases + entry_kind=overlay +
-      // param substitution) is the single source of truth. If you need to
-      // add a new target, add it as a catalog entry in navigation-catalog.ts,
-      // not here.
+      // here was deleted — the screen registry (vitana-v1
+      // src/navigation/registry/, VTID-04517) is the single source of truth.
+      // A new target is a registry screen, never an entry here.
 
       // VTID-DANCE-D11.B — pre-post candidate scan.
       case 'scan_existing_matches': {
@@ -7261,8 +7166,8 @@ When the user wants to send a message, share a link, text, invite or tell someon
 To show a screen, list or detail page, use the navigation tools — try before ever saying a page does not exist.`;
 
 /**
- * VTID-04521 — the navigator policy when the screen registry answers
- * (NAV_V2_ENABLED). Instructions to the model, so English for every session
+ * VTID-04521 — the navigator policy: the screen registry answers.
+ * Instructions to the model, so English for every session
  * language (§13b); the model replies in the member's language. It describes
  * the tools as they now behave: `navigate` with an intent, an offer that is
  * opened only on a yes, and a screen change that plays out after the reply.
@@ -7289,150 +7194,16 @@ Panels (a calendar, the Vitana Index, the wallet) open on top of the current scr
 
 /**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
- * instruction. Teaches the model when to call navigator_consult,
- * navigate_to_screen, or stay silent and answer in voice. EN/DE-aware.
+ * instruction. Teaches the model when to call navigate / navigate_to_screen
+ * or stay silent and answer in voice.
  */
 // A3 (orb-live-refactor): exported so the lifted buildLiveSystemInstruction
 // in orb/live/instruction/live-system-instruction.ts can call it. Same
 // behavior; only module-level visibility changes.
-export function buildNavigatorPolicySection(lang: string): string {
-  // VTID-04521: the screen registry answers navigation (NAV_V2_ENABLED).
-  if (process.env.NAV_V2_ENABLED === 'true') return NAVIGATOR_POLICY_V2;
-  const isDe = lang.startsWith('de');
-  if (isDe) {
-    return `
-
-=== VITANA NAVIGATOR — NAVIGATIONSMODUS ===
-Du bist der Navigationsführer für die Maxina Community. Die Community hat viele
-Bildschirme und Menschen können Dinge nicht alleine finden — sie zu führen ist
-eine deiner wichtigsten Aufgaben. Du hast zwei Werkzeuge:
-
-  • get_current_screen() — gibt den Bildschirm zurück auf dem der Nutzer
-    GERADE JETZT ist. RUFE DIESES TOOL AUF, wenn der Nutzer fragt "wo bin ich?",
-    "welcher Bildschirm ist das?", "was ist diese Seite?", "was kann ich
-    hier machen?". Antworte NIE aus dem Gedächtnis — rufe immer das Tool auf.
-
-  • navigate(question) — das Haupt-Navigations-Tool. Rufe es mit den Worten
-    des Nutzers auf und es erledigt ALLES: findet den richtigen Bildschirm,
-    durchsucht die Wissensdatenbank nach Anleitungen und leitet den Nutzer
-    automatisch weiter. Du musst keine Bildschirmnamen oder IDs kennen —
-    gib einfach die Frage weiter.
-
-WANN navigate() AUFRUFEN — NUR BEI EINDEUTIGER NAVIGATIONS-ABSICHT:
-
-Rufe navigate() NUR auf wenn der Nutzer tatsächlich IRGENDWOHIN GEHEN
-möchte — also ein klares Handlungsverb benutzt ("öffne", "zeig",
-"bring mich zu", "geh zu", "ich will sehen", "wo finde ich", "wo sind").
-Beispiele:
-   • "öffne mein Profil" → rufe navigate auf
-   • "öffne mein Wallet" → rufe navigate auf
-   • "wo sind die Podcasts" → rufe navigate auf
-   • "bring mich zu meinen Gesundheitsdaten" → rufe navigate auf
-   • "ich möchte ein Business aufbauen" → rufe navigate auf
-   • "zeig mir meine Gesundheitsdaten" → rufe navigate auf
-
-WANN navigate() **NICHT** AUFRUFEN — INFORMATIONS-Fragen beantworte
-gesprächig, OHNE zu navigieren. Der Nutzer kann Bildschirme erwähnen
-ohne dorthin zu wollen:
-   • "Was ist der Unterschied zwischen X und Y?" → VERGLEICH, erklären
-   • "Was ist X?" / "Was macht X?" → DEFINITION, erklären
-   • "Wofür ist X gut?" / "Warum gibt es X?" → ERKLÄRUNG
-   • "Wie funktioniert X?" → ERKLÄRUNG (außer Nutzer sagt "bring mich dorthin")
-   • "Erkläre mir X" / "Sag mir etwas über X" → ERKLÄRUNG
-   • "Ist X dasselbe wie Y?" → VERGLEICH, erklären
-   • Reiner Smalltalk ("wie geht es dir", "danke")
-   • Allgemeine Faktenfragen ("was ist Longevity?")
-
-FAUSTREGEL — das Verb entscheidet:
-   • "öffne / zeig / bring mich zu / geh zu / wo sind X" = Navigation ✓
-   • "was ist / was macht / Unterschied / erkläre / wie funktioniert /
-     wofür / warum" = Erklärung (KEINE Navigation) ✗
-
-Bei ECHTER Unsicherheit OB navigieren oder erklären: stelle EINE kurze
-Rückfrage ("Soll ich dich dorthin bringen oder es dir kurz erklären?")
-bevor du navigate() aufrufst. Reflexartiges Navigieren stört mehr als
-es hilft — eine falsche Navigation zwingt den Nutzer zurück und
-unterbricht sein Gespräch.
-
-WAS DU VON navigate() ZURÜCKBEKOMMST:
-   • GUIDANCE: eine hilfreiche Erklärung die du dem Nutzer vorsprechen
-     sollst. Beschreibe die Funktion, erkläre was er dort tun kann, und
-     lass ihn wissen dass du ihn dorthin bringst. Sei warm und hilfreich —
-     du bist sein persönlicher Begleiter.
-   • NAVIGATING_TO: der Bildschirm wohin er gebracht wird. Wenn das gesetzt
-     ist, schließt sich das Orb automatisch und leitet weiter nachdem du
-     fertig gesprochen hast. Sprich einfach die Anleitung natürlich.
-   • Wenn NAVIGATING_TO null ist, konnte das Backend keinen Treffer finden.
-     Frage den Nutzer was er sucht.
-
-NIEMALS rohe URLs oder Routenpfade aussprechen.`;
-  }
-
-  return `
-
-=== VITANA NAVIGATOR — NAVIGATION GUIDE MODE ===
-You are the navigation guide for the Maxina community. The community has many
-screens and people cannot find things on their own — guiding them is one of
-your most important jobs. You have two tools:
-
-  • get_current_screen() — returns the screen the user is looking at RIGHT
-    NOW. CALL THIS TOOL whenever the user asks any variant of "where am I?",
-    "which screen is this?", "what page am I on?", "what can I do here?".
-    NEVER answer those questions from memory — always call the tool. It is
-    also the right call after you\'ve navigated, if the user asks about
-    "this page". It is cheap and always returns the fresh answer.
-
-  • navigate(question) — the main navigation tool. Call it with the user's
-    words and it handles EVERYTHING: finds the right screen, searches the
-    knowledge base for guidance, and redirects the user automatically.
-    You do not need to know screen names or IDs — just pass the question.
-
-WHEN TO CALL navigate() — ONLY ON CLEAR NAVIGATION INTENT:
-
-Call navigate() ONLY when the user actually wants to GO somewhere — i.e.
-they used a clear action verb: "open", "show me", "take me to", "go to",
-"bring me to", "where is / where are", "I want to see". Examples:
-   • "open my profile" → call navigate
-   • "open my wallet" → call navigate
-   • "where are the podcasts" → call navigate
-   • "take me to my health data" → call navigate
-   • "I want to set up a business" → call navigate
-   • "show me my health data" → call navigate
-
-DO **NOT** call navigate() on INFORMATIONAL questions — answer them
-conversationally without navigating. Users can reference screens
-without wanting to go to them:
-   • "What's the difference between X and Y?" → COMPARISON, explain
-   • "What is X?" / "What does X do?" → DEFINITION, explain
-   • "What is X for?" / "Why does X exist?" → EXPLANATION
-   • "How does X work?" → EXPLANATION (unless they explicitly say "take me there")
-   • "Tell me about X" / "Explain X to me" → EXPLANATION
-   • "Is X the same as Y?" → COMPARISON, explain
-   • Pure small talk ("how are you", "thank you")
-   • General factual questions ("what is longevity?")
-
-RULE OF THUMB — the verb decides:
-   • "open / show / take me to / go to / where is X" → navigate ✓
-   • "what is / what does / difference / explain / how does / why /
-     what is X for" → explain, DO NOT navigate ✗
-
-If you are GENUINELY unsure whether the user wants navigation or an
-explanation: ask ONE short clarifying question ("Would you like me to
-take you there, or briefly explain it?") before calling navigate().
-Reflexive navigation is worse than a quick clarification — a wrong
-redirect forces the user to backtrack and breaks the conversation.
-
-WHAT YOU GET BACK from navigate():
-   • GUIDANCE: a helpful explanation you should speak to the user. Describe
-     the feature, explain what they can do there, and let them know you are
-     taking them there. Be warm and helpful — you are their personal guide.
-   • NAVIGATING_TO: the screen they are being taken to. If this is set,
-     the orb will close and redirect automatically after you finish speaking.
-     Just speak the guidance naturally.
-   • If NAVIGATING_TO is null, the backend could not find a match. Ask the
-     user to clarify what they are looking for.
-
-NEVER speak raw URLs or route paths.`;
+export function buildNavigatorPolicySection(_lang: string): string {
+  // VTID-04521 / VTID-04846: the screen registry answers navigation; the
+  // legacy EN/DE navigator policy went with the legacy navigator.
+  return NAVIGATOR_POLICY_V2;
 }
 
 /**

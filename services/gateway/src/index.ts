@@ -519,8 +519,6 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminI18nOpsRouter = require('./routes/admin-i18n-ops').default;
   // VTID-AP-ADMIN: Tenant-scoped Autopilot admin — settings, bindings, runs, recommendations
   const adminAutopilotRouter = require('./routes/admin-autopilot').default;
-  // VTID-NAV-02: Navigator catalog DB cache warmer (runs at boot)
-  const { warmNavCatalogCache } = require('./lib/nav-catalog-db');
   // Voice Feedback — Test user bug reports & UX improvement suggestions
   const voiceFeedbackRouter = require('./routes/voice-feedback').default;
   // VTID-01250: Autopilot Automations Engine — AP-XXXX registry, executor, wallet, sharing
@@ -2068,28 +2066,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
       }
 
-      // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh
-      try {
-        warmNavCatalogCache();
-        console.log('🧭 Navigator catalog DB cache warming (VTID-NAV-02)');
-
-        // VTID-NAV-SEMANTIC: Pre-compute embedding vectors for semantic search.
-        // Non-blocking — runs in the background, keyword scorer is the fallback
-        // until embeddings are ready.
-        const { warmCatalogEmbeddings } = require('./lib/navigation-catalog');
-        warmCatalogEmbeddings()
-          .then(() => console.log('🧠 Navigator semantic embeddings warmed'))
-          .catch((err: any) => console.warn('⚠️ Semantic embedding warm failed (non-fatal):', err.message));
-      } catch (error) {
-        console.warn('⚠️ Navigator catalog cache warm failed (non-fatal, using static fallback):', error);
-      }
-
-      // VTID-04517: registry-backed navigation (NAV_V2_ENABLED). Loads the
+      // VTID-04517 / VTID-04846: registry-backed navigation. Loads the
       // frontend's /nav-registry.json and builds the screen index in the
       // background; the bundled vectors make that near-instant unless the
-      // registry gained texts. Non-fatal: tools fall back to the legacy
-      // navigator until the index exists.
-      if (process.env.NAV_V2_ENABLED === 'true') {
+      // registry gained texts. Until the index exists the tools open exact
+      // screen names only and say so otherwise.
+      {
         const { warmNavService, navServiceStatus } = require('./navigation/nav-service');
         warmNavService()
           .then(() => console.log('🧭 Registry navigation ready', JSON.stringify(navServiceStatus())))

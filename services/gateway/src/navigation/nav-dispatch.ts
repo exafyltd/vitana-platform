@@ -1,7 +1,7 @@
 /**
- * VTID-04517 — the navigation dispatcher behind NAV_V2_ENABLED.
+ * VTID-04517 — the navigation dispatcher.
  *
- * With the flag on, the two existing voice tools keep their names (every
+ * The two existing voice tools keep their names (every
  * prompt and tool description refers to them) but run here:
  *
  *   navigate(question, intent)   → the registry resolver (nav-resolver.ts).
@@ -31,10 +31,6 @@ import { findScreenForRoute, getNavRegistry, isVoiceTarget, NavScreen, NavSurfac
 export { findScreenForRoute, screenText };
 import { candidateFor, isOpenableFor, isReachable, NavCandidate, NavResolveContext, routeFor } from './nav-resolver';
 import { resolveScreenRequest } from './nav-service';
-
-export function isNavV2Enabled(): boolean {
-  return process.env.NAV_V2_ENABLED === 'true';
-}
 
 /**
  * VTID-04846 — the admin area has no screens Vitana can open by voice (the

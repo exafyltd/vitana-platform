@@ -36,8 +36,8 @@ describe('VTID-04517: staging pins registry navigation', () => {
     expect(prod).not.toContain('preview-aws.vitanaland.com/nav-registry.json');
   });
 
-  it('is read with the exact-string check (a typo is off)', () => {
+  it('is no longer read by the code: the registry is the only navigator (VTID-04846)', () => {
     const src = fs.readFileSync(path.resolve(__dirname, '../src/services/orb-tools-shared.ts'), 'utf8');
-    expect(src).toContain("process.env.NAV_V2_ENABLED === 'true'");
+    expect(src).not.toContain('NAV_V2_ENABLED');
   });
 });

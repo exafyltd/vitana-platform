@@ -24,7 +24,6 @@ jest.mock('../../src/services/orb-memory-bridge', () => ({
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { NAVIGATION_CATALOG } from '../../src/lib/navigation-catalog';
 import { callSurface, findRegistryScreen, NavCallContext, navigateByRequest, openScreen } from '../../src/navigation/nav-dispatch';
 import { getNavRegistry, loadCommandHubScreens, screenSurface, surfaceForRoute } from '../../src/navigation/nav-registry';
 import { isReachable, resolveWithIndex } from '../../src/navigation/nav-resolver';
@@ -33,6 +32,80 @@ import { buildLiveApiTools } from '../../src/orb/live/tools/live-tool-catalog';
 import { COMMAND_HUB_CASES } from '../nav-golden/command-hub-golden';
 import { GOLDEN_SET } from '../nav-golden/golden-set';
 import { loadRegistryFixture, RegistryFixture } from '../nav-golden/registry-fixture';
+
+/**
+ * The 67 Command Hub ids the legacy navigation catalog carried, frozen when
+ * that catalog was deleted (VTID-04846): every one must keep opening.
+ */
+const LEGACY_DEVHUB_IDS = [
+  'DEVHUB.ADMIN.ANALYTICS',
+  'DEVHUB.ADMIN.CONTENT_MODERATION',
+  'DEVHUB.ADMIN.IDENTITY_ACCESS',
+  'DEVHUB.ADMIN.PERMISSIONS',
+  'DEVHUB.ADMIN.TENANTS',
+  'DEVHUB.ADMIN.USERS',
+  'DEVHUB.AGENTS.PIPELINES',
+  'DEVHUB.AGENTS.REGISTERED',
+  'DEVHUB.AGENTS.TELEMETRY',
+  'DEVHUB.AUTOPILOT.ENGINE',
+  'DEVHUB.AUTOPILOT.GROWTH',
+  'DEVHUB.AUTOPILOT.LIVE',
+  'DEVHUB.AUTOPILOT.REGISTRY',
+  'DEVHUB.AUTOPILOT.RUNS',
+  'DEVHUB.AUTOPILOT.SCANNERS',
+  'DEVHUB.COMMAND_HUB.APPROVALS',
+  'DEVHUB.COMMAND_HUB.EVENTS',
+  'DEVHUB.COMMAND_HUB.LIVE_CONSOLE',
+  'DEVHUB.COMMAND_HUB.TASKS',
+  'DEVHUB.COMMAND_HUB.VTIDS',
+  'DEVHUB.DATABASES.SUPABASE',
+  'DEVHUB.DATABASES.VECTORS',
+  'DEVHUB.DIAGNOSTICS.DEBUG_PANEL',
+  'DEVHUB.DIAGNOSTICS.HEALTH_CHECKS',
+  'DEVHUB.DIAGNOSTICS.LATENCY',
+  'DEVHUB.DIAGNOSTICS.VOICE_LAB',
+  'DEVHUB.DOCS.API_INVENTORY',
+  'DEVHUB.DOCS.ARCHITECTURE',
+  'DEVHUB.DOCS.DATABASE_SCHEMAS',
+  'DEVHUB.GOVERNANCE.CONTROLS',
+  'DEVHUB.GOVERNANCE.EVALUATIONS',
+  'DEVHUB.GOVERNANCE.RULES',
+  'DEVHUB.GOVERNANCE.VIOLATIONS',
+  'DEVHUB.INFRA.CONFIG',
+  'DEVHUB.INFRA.DEPLOYMENTS',
+  'DEVHUB.INFRA.HEALTH',
+  'DEVHUB.INFRA.LOGS',
+  'DEVHUB.INFRA.SELF_HEALING',
+  'DEVHUB.INFRA.SERVICES',
+  'DEVHUB.INTEGRATIONS.APIS',
+  'DEVHUB.INTEGRATIONS.LLM_PROVIDERS',
+  'DEVHUB.INTEGRATIONS.MCP',
+  'DEVHUB.INTELLIGENCE.EMBEDDINGS',
+  'DEVHUB.INTELLIGENCE.KNOWLEDGE_GRAPH',
+  'DEVHUB.INTELLIGENCE.MEMORY_VAULT',
+  'DEVHUB.MODELS.EVALUATIONS',
+  'DEVHUB.MODELS.PLAYGROUND',
+  'DEVHUB.OASIS.EVENTS',
+  'DEVHUB.OASIS.VTID_LEDGER',
+  'DEVHUB.OPERATOR.DASHBOARD',
+  'DEVHUB.OPERATOR.DEPLOYMENTS',
+  'DEVHUB.OPERATOR.EVENT_STREAM',
+  'DEVHUB.OPERATOR.RUNBOOK',
+  'DEVHUB.OPERATOR.TASK_QUEUE',
+  'DEVHUB.OVERVIEW.ERRORS_VIOLATIONS',
+  'DEVHUB.OVERVIEW.LIVE_METRICS',
+  'DEVHUB.OVERVIEW.RECENT_EVENTS',
+  'DEVHUB.OVERVIEW.RELEASE_FEED',
+  'DEVHUB.OVERVIEW.SYSTEM_OVERVIEW',
+  'DEVHUB.SECURITY.AUDIT_LOG',
+  'DEVHUB.SECURITY.KEYS_SECRETS',
+  'DEVHUB.SECURITY.RLS',
+  'DEVHUB.TESTING.CATALOG',
+  'DEVHUB.TESTING.CI_REPORTS',
+  'DEVHUB.TESTING.E2E',
+  'DEVHUB.TESTING.OVERVIEW',
+  'DEVHUB.TESTING.RUN_TESTS',
+];
 
 const APP_JS = fs.readFileSync(path.join(__dirname, '../../src/frontend/command-hub/app.js'), 'utf8');
 
@@ -85,10 +158,9 @@ describe('the Command Hub screen list matches the Command Hub', () => {
   });
 
   it('keeps every legacy DEVHUB id working', () => {
-    const legacy = NAVIGATION_CATALOG.filter((e) => e.route.startsWith('/command-hub'));
-    expect(legacy.length).toBe(67);
-    const missing = legacy.filter((e) => screenSurface(findRegistryScreen(e.screen_id, 'command-hub') || {}) !== 'command-hub' || !findRegistryScreen(e.screen_id, 'command-hub'));
-    expect(missing.map((e) => e.screen_id)).toEqual([]);
+    expect(LEGACY_DEVHUB_IDS).toHaveLength(67);
+    const missing = LEGACY_DEVHUB_IDS.filter((id) => !findRegistryScreen(id, 'command-hub') || screenSurface(findRegistryScreen(id, 'command-hub') || {}) !== 'command-hub');
+    expect(missing).toEqual([]);
   });
 
   it('is merged into the registry the gateway uses, after every member screen', () => {

@@ -683,7 +683,7 @@ export function createUpstreamLiveMessageHandler(
                     .then(async (bound) => {
                       if (!bound || bound.tool !== 'navigate_to_screen') return;
                       const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-                      // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+                      // VTID-04521: the accepted offer goes through
                       // openScreen (every gate, speak first, no session latch).
                       const built = await buildContinuationDirective(session as any, p);
                       if (!built) return;
@@ -2669,7 +2669,7 @@ export function handleTurnComplete(
           .then(async (bound) => {
             if (!bound || bound.tool !== 'navigate_to_screen') return;
             const p = bound.payload as { screen_id?: string; route?: string; title?: string };
-            // VTID-04521: under NAV_V2_ENABLED the accepted offer goes through
+            // VTID-04521: the accepted offer goes through
             // openScreen (every gate, speak first, no session latch).
             const built = await buildContinuationDirective(session as any, p);
             if (!built) return;

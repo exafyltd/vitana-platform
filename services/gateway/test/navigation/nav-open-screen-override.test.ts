@@ -31,8 +31,8 @@ describe('VTID-04607 open-screen override', () => {
     expect(open).toBeLessThan(text.indexOf('VITANA NAVIGATOR'));
   });
 
-  it('is absent while the registry navigator is off', () => {
-    expect(instruction()).not.toContain('OPENING A SCREEN — OVERRIDES RULE 0');
+  it('is present without any flag: the registry is the only navigator (VTID-04846)', () => {
+    expect(instruction()).toContain('OPENING A SCREEN — OVERRIDES RULE 0');
   });
 
   it('names the tool, the intent and the member-words rule, worded positively', () => {
